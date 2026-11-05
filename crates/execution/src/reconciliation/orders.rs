@@ -1081,14 +1081,7 @@ pub(super) fn create_inferred_fill(
         );
     }
 
-    let liquidity_side = match order.order_type() {
-        OrderType::Market
-        | OrderType::StopMarket
-        | OrderType::MarketToLimit
-        | OrderType::TrailingStopMarket => LiquiditySide::Taker,
-        _ if order.is_post_only() => LiquiditySide::Maker,
-        _ => LiquiditySide::NoLiquiditySide,
-    };
+    let liquidity_side = inferred_fill_liquidity_side(order);
 
     let Some(last_px) = resolve_fill_price(order, report, instrument) else {
         log::warn!(

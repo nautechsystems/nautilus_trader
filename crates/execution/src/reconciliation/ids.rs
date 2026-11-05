@@ -249,7 +249,7 @@ fn synthetic_fill_id_suffix(
     }
     update_synthetic_fill_hash(&mut hash, &fill.ts_event.to_le_bytes());
     update_synthetic_fill_hash(&mut hash, fill.venue_order_id.as_str().as_bytes());
-    update_synthetic_fill_hash(&mut hash, order_side_tag(fill.side).as_bytes());
+    update_synthetic_fill_hash(&mut hash, fill.side.as_ref().as_bytes());
     update_synthetic_fill_hash(&mut hash, fill.qty.to_string().as_bytes());
     update_synthetic_fill_hash(&mut hash, fill.px.to_string().as_bytes());
 
@@ -293,11 +293,4 @@ fn update_synthetic_fill_hash(hash: &mut u64, bytes: &[u8]) {
 
     *hash ^= 0xff;
     *hash = hash.wrapping_mul(FNV_PRIME);
-}
-
-fn order_side_tag(side: OrderSide) -> &'static str {
-    match side {
-        OrderSide::Buy => "BUY",
-        OrderSide::Sell => "SELL",
-    }
 }

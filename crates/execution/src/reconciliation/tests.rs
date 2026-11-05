@@ -766,6 +766,22 @@ fn test_adjust_fills_partial_window_synthetic_opening_price(
 }
 
 #[rstest]
+fn test_adjust_fills_unpriceable_synthetic_opening_keeps_fills() {
+    let fills = vec![FillSnapshot::new(
+        create_test_venue_order_id("ORDER1"),
+        OrderSide::Buy,
+        dec!(1),
+        dec!(80000),
+        2000,
+    )];
+    let venue_position = venue_position_snapshot(dec!(2), dec!(10000));
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    assert_eq!(result, FillAdjustmentResult::NoAdjustment);
+}
+
+#[rstest]
 fn test_reconciliation_price_flat_to_long(_instrument: InstrumentAny) {
     let result = calculate_reconciliation_price(
         dec!(0),
@@ -1594,6 +1610,32 @@ fn test_process_mass_status_keeps_working_order_for_either_lifecycle_outcome(
             vec![VenueOrderId::from("ORDER4"), VenueOrderId::from("ORDER5")]
         );
     }
+}
+
+#[rstest]
+fn test_process_mass_status_filters_terminal_orders_by_current_fills(instrument: InstrumentAny) {
+    let retained = create_limit_order_report(&instrument, "ORDER4", OrderStatus::Filled, "0.05");
+    let previous = create_limit_order_report(&instrument, "ORDER1", OrderStatus::Filled, "0.05");
+    let unfilled = create_limit_order_report(&instrument, "ORDER9", OrderStatus::Canceled, "0.00");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![previous, retained.clone(), unfilled],
+        Quantity::from("0.10"),
+        dec!(4050.00),
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+    let mut expected_fills = mass_status.fill_reports();
+    expected_fills
+        .retain(|id, _| *id == VenueOrderId::from("ORDER4") || *id == VenueOrderId::from("ORDER5"));
+
+    assert_eq!(
+        result.orders.into_values().collect::<Vec<_>>(),
+        vec![retained]
+    );
+    assert_eq!(result.fills, expected_fills);
+    assert!(result.order_only_ids.is_empty());
+    assert!(result.order_only_fill_keys.is_empty());
 }
 
 #[rstest]
@@ -4683,6 +4725,8 @@ fn test_create_synthetic_venue_order_id_format() {
     );
     let id = create_synthetic_venue_order_id(&fill, InstrumentId::from("AUD/USD.SIM"));
 
+    assert_eq!(id.as_str(), "S-f4240-e4b58780");
+
     // Format: S-{hex_timestamp}-{hash_suffix}
     assert!(id.as_str().starts_with("S-"));
     let parts: Vec<&str> = id.as_str().split('-').collect();
@@ -4702,6 +4746,8 @@ fn test_create_synthetic_trade_id_format() {
     );
 
     let id = create_synthetic_trade_id(&fill);
+
+    assert_eq!(id.as_str(), "S-f4240-4a2000b3");
 
     // Format: S-{hex_timestamp}-{hash_suffix}
     assert!(id.as_str().starts_with("S-"));

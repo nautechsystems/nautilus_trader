@@ -195,10 +195,8 @@ fn process_mass_status_for_reconciliation_inner(
             });
 
             // Keep only orders that have fills or are still working
-            let orders_with_fills: ahash::AHashSet<VenueOrderId> =
-                fill_map.keys().copied().collect();
             order_map.retain(|id, order| {
-                orders_with_fills.contains(id)
+                fill_map.contains_key(id)
                     || !matches!(
                         order.order_status,
                         OrderStatus::Denied
@@ -236,9 +234,9 @@ pub(super) fn adjust_fills_for_partial_window(
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
 ) -> FillAdjustmentResult {
-    if fills.is_empty() {
+    let Some(first_fill) = fills.first() else {
         return FillAdjustmentResult::NoAdjustment;
-    }
+    };
 
     if venue_position.qty == Decimal::ZERO {
         return FillAdjustmentResult::NoAdjustment;
@@ -247,8 +245,8 @@ pub(super) fn adjust_fills_for_partial_window(
     let zero_crossings = detect_zero_crossings(fills);
     let venue_qty_signed = venue_position.signed_qty();
 
-    // Case 1: Has zero-crossings - focus on current lifecycle after last zero-crossing
-    if !zero_crossings.is_empty() {
+    // Focus on the current lifecycle after the last zero-crossing
+    if let Some(&last_zero_crossing_ts) = zero_crossings.last() {
         // Find the last zero-crossing that lands on FLAT (qty==0)
         // This separates lifecycles; flips within a lifecycle don't count
         let mut last_flat_crossing_ts = None;
@@ -263,8 +261,7 @@ pub(super) fn adjust_fills_for_partial_window(
             }
         }
 
-        let lifecycle_boundary_ts =
-            last_flat_crossing_ts.unwrap_or(*zero_crossings.last().unwrap());
+        let lifecycle_boundary_ts = last_flat_crossing_ts.unwrap_or(last_zero_crossing_ts);
 
         // Get fills from current lifecycle (after lifecycle boundary)
         let current_lifecycle_fills: Vec<FillSnapshot> = fills
@@ -273,9 +270,9 @@ pub(super) fn adjust_fills_for_partial_window(
             .cloned()
             .collect();
 
-        if current_lifecycle_fills.is_empty() {
+        let Some(first_fill) = current_lifecycle_fills.first() else {
             return FillAdjustmentResult::NoAdjustment;
-        }
+        };
 
         let (current_qty, current_value) = simulate_position(&current_lifecycle_fills);
 
@@ -288,131 +285,64 @@ pub(super) fn adjust_fills_for_partial_window(
         }
 
         // Current lifecycle doesn't match - replace with synthetic fill
-        if let Some(first_fill) = current_lifecycle_fills.first() {
-            let synthetic_fill = FillSnapshot::new(
-                first_fill.venue_order_id,
-                position_to_order_side(venue_position.side),
-                venue_position.qty,
-                venue_position.avg_px,
-                first_fill.ts_event.saturating_sub(1), // Timestamp before first fill
-            );
+        let synthetic_fill = FillSnapshot::new(
+            first_fill.venue_order_id,
+            position_to_order_side(venue_position.side),
+            venue_position.qty,
+            venue_position.avg_px,
+            first_fill.ts_event.saturating_sub(1), // Timestamp before first fill
+        );
 
-            return FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill };
-        }
+        return FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill };
+    }
 
+    let (oldest_qty, oldest_value) = simulate_position(fills);
+
+    if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
         return FillAdjustmentResult::NoAdjustment;
     }
 
-    // Case 2: Single lifecycle or one zero-crossing
-    // Determine which fills to analyze
-    let oldest_lifecycle_fills: Vec<FillSnapshot> =
-        if let Some(&first_zero_crossing_ts) = zero_crossings.first() {
-            // Get fills before first zero-crossing
-            fills
-                .iter()
-                .filter(|f| f.ts_event <= first_zero_crossing_ts)
-                .cloned()
-                .collect()
-        } else {
-            // No zero-crossings - all fills are in single lifecycle
-            fills.to_vec()
-        };
+    // Use the simulated position as current and the venue position as target
+    let oldest_avg_px = if oldest_qty == Decimal::ZERO {
+        None
+    } else {
+        Some(oldest_value / oldest_qty.abs())
+    };
 
-    if oldest_lifecycle_fills.is_empty() {
+    let Some(opening_px) = synthetic_opening_price(oldest_qty, oldest_avg_px, venue_position)
+    else {
+        return FillAdjustmentResult::NoAdjustment;
+    };
+
+    let opening_qty = if oldest_qty == Decimal::ZERO {
+        venue_qty_signed
+    } else {
+        // Work backwards: venue = opening + current fills
+        venue_qty_signed - oldest_qty
+    };
+
+    if opening_qty.abs() == Decimal::ZERO {
         return FillAdjustmentResult::NoAdjustment;
     }
 
-    let (oldest_qty, oldest_value) = simulate_position(&oldest_lifecycle_fills);
+    let synthetic_side = if opening_qty > Decimal::ZERO {
+        OrderSide::Buy
+    } else {
+        OrderSide::Sell
+    };
 
-    // If single lifecycle (no zero-crossings)
-    if zero_crossings.is_empty() {
-        if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
-            return FillAdjustmentResult::NoAdjustment;
-        }
+    let synthetic_fill = FillSnapshot::new(
+        first_fill.venue_order_id,
+        synthetic_side,
+        opening_qty.abs(),
+        opening_px,
+        first_fill.ts_event.saturating_sub(1),
+    );
 
-        if let Some(first_fill) = oldest_lifecycle_fills.first() {
-            // Calculate what opening fill is needed
-            // Use simulated position as current, venue position as target
-            let oldest_avg_px = if oldest_qty == Decimal::ZERO {
-                None
-            } else {
-                Some(oldest_value / oldest_qty.abs())
-            };
-
-            let reconciliation_price =
-                synthetic_opening_price(oldest_qty, oldest_avg_px, venue_position);
-
-            if let Some(opening_px) = reconciliation_price {
-                // Calculate opening quantity needed
-                let opening_qty = if oldest_qty == Decimal::ZERO {
-                    venue_qty_signed
-                } else {
-                    // Work backwards: venue = opening + current fills
-                    venue_qty_signed - oldest_qty
-                };
-
-                if opening_qty.abs() > Decimal::ZERO {
-                    let synthetic_side = if opening_qty > Decimal::ZERO {
-                        OrderSide::Buy
-                    } else {
-                        OrderSide::Sell
-                    };
-
-                    let synthetic_fill = FillSnapshot::new(
-                        first_fill.venue_order_id,
-                        synthetic_side,
-                        opening_qty.abs(),
-                        opening_px,
-                        first_fill.ts_event.saturating_sub(1),
-                    );
-
-                    return FillAdjustmentResult::AddSyntheticOpening {
-                        synthetic_fill,
-                        existing_fills: oldest_lifecycle_fills,
-                    };
-                }
-            }
-        }
-
-        return FillAdjustmentResult::NoAdjustment;
+    FillAdjustmentResult::AddSyntheticOpening {
+        synthetic_fill,
+        existing_fills: fills.to_vec(),
     }
-
-    // Has one zero-crossing - check if oldest lifecycle closes at zero
-    if oldest_qty == Decimal::ZERO {
-        // Lifecycle closes correctly - no adjustment needed
-        return FillAdjustmentResult::NoAdjustment;
-    }
-
-    // Oldest lifecycle doesn't close at zero - add synthetic opening fill
-    if !oldest_lifecycle_fills.is_empty()
-        && let Some(&first_zero_crossing_ts) = zero_crossings.first()
-    {
-        // Need to add opening fill that makes position close at zero-crossing
-        let current_lifecycle_fills: Vec<FillSnapshot> = fills
-            .iter()
-            .filter(|f| f.ts_event > first_zero_crossing_ts)
-            .cloned()
-            .collect();
-
-        if !current_lifecycle_fills.is_empty()
-            && let Some(first_current_fill) = current_lifecycle_fills.first()
-        {
-            let synthetic_fill = FillSnapshot::new(
-                first_current_fill.venue_order_id,
-                position_to_order_side(venue_position.side),
-                venue_position.qty,
-                venue_position.avg_px,
-                first_current_fill.ts_event.saturating_sub(1),
-            );
-
-            return FillAdjustmentResult::AddSyntheticOpening {
-                synthetic_fill,
-                existing_fills: oldest_lifecycle_fills,
-            };
-        }
-    }
-
-    FillAdjustmentResult::NoAdjustment
 }
 
 fn synthetic_opening_price(
@@ -859,13 +789,7 @@ pub(super) fn check_position_match(
         return true;
     }
 
-    // Guard against division by zero
-    let abs_qty = simulated_qty.abs();
-    if abs_qty == Decimal::ZERO {
-        return false;
-    }
-
-    let simulated_avg_px = simulated_value / abs_qty;
+    let simulated_avg_px = simulated_value / simulated_qty.abs();
 
     position_prices_match(
         simulated_avg_px,
