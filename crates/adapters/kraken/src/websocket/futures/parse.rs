@@ -22,9 +22,7 @@ use nautilus_model::{
         BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick,
         TradeTick,
     },
-    enums::{
-        AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
-    },
+    enums::{AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TriggerType},
     identifiers::{AccountId, ClientOrderId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
@@ -38,7 +36,7 @@ use super::messages::{
 };
 use crate::common::{
     enums::KrakenOrderSide,
-    parse::{fee_currency, parse_venue_order_id},
+    parse::{fee_currency, parse_futures_order_type_time_in_force, parse_venue_order_id},
 };
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
@@ -257,6 +255,7 @@ pub fn parse_futures_ws_order_status_report(
         order_type
     };
     let order_status = infer_order_status(order, is_cancel);
+    let (time_in_force, post_only) = parse_futures_order_type_time_in_force(order.order_type);
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -276,7 +275,7 @@ pub fn parse_futures_ws_order_status_report(
         venue_order_id,
         order_side: order_side.into(),
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -299,7 +298,7 @@ pub fn parse_futures_ws_order_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only,
         reduce_only: order.reduce_only,
         cancel_reason: None,
         ts_triggered: None,
@@ -446,7 +445,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{CurrencyType, LiquiditySide, OrderSide},
+        enums::{CurrencyType, LiquiditySide, OrderSide, TimeInForce},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
@@ -686,6 +685,49 @@ mod tests {
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.cancel_reason.as_deref(), Some("cancelled_by_user"));
+    }
+
+    /// The `ioc` and `post` types reach the report as `IOC` and post-only `GTC`, and any other type
+    /// stays `GTC` and not post-only.
+    #[rstest]
+    #[case::limit(KrakenFuturesOrderType::Limit, TimeInForce::Gtc, false)]
+    #[case::ioc(KrakenFuturesOrderType::Ioc, TimeInForce::Ioc, false)]
+    #[case::post(KrakenFuturesOrderType::Post, TimeInForce::Gtc, true)]
+    #[case::stop(KrakenFuturesOrderType::StopLower, TimeInForce::Gtc, false)]
+    #[case::take_profit(KrakenFuturesOrderType::TakeProfit, TimeInForce::Gtc, false)]
+    fn test_parse_futures_ws_order_status_report_time_in_force(
+        #[case] order_type: KrakenFuturesOrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] post_only: bool,
+    ) {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PI_XBTUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000100,
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
+            stop_price: None,
+            order_type,
+            order_id: "abc-123".to_string(),
+            cli_ord_id: None,
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+
+        let report = parse_futures_ws_order_status_report(
+            &order,
+            false,
+            None,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, time_in_force);
+        assert_eq!(report.post_only, post_only);
     }
 
     #[rstest]
