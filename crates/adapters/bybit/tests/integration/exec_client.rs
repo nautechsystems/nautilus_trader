@@ -115,6 +115,7 @@ struct TestServerState {
     amend_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_order_req_id_present: Arc<AtomicBool>,
     authenticated: Arc<AtomicBool>,
+    fee_rate_requests: Arc<AtomicUsize>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
     reject_trade_websocket: Arc<AtomicBool>,
@@ -130,8 +131,10 @@ struct TestServerState {
     orders_history_requests: Arc<AtomicUsize>,
     cancel_all_requests: Arc<AtomicUsize>,
     execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    subscription_execution: Arc<tokio::sync::Mutex<Option<Value>>>,
     position_requests: Arc<AtomicUsize>,
     wallet_balance_requests: Arc<AtomicUsize>,
+    repay_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
     switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -151,6 +154,7 @@ impl Default for TestServerState {
             amend_order_payloads: Arc::default(),
             trade_order_req_id_present: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
+            fee_rate_requests: Arc::new(AtomicUsize::new(0)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             reject_trade_websocket: Arc::new(AtomicBool::new(false)),
@@ -166,8 +170,10 @@ impl Default for TestServerState {
             orders_history_requests: Arc::default(),
             cancel_all_requests: Arc::new(AtomicUsize::new(0)),
             execution_response: Arc::default(),
+            subscription_execution: Arc::default(),
             position_requests: Arc::new(AtomicUsize::new(0)),
             wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
+            repay_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
             switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -221,7 +227,12 @@ async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl I
     Json(instruments).into_response()
 }
 
-async fn handle_get_fee_rate(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_fee_rate(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    state.fee_rate_requests.fetch_add(1, Ordering::Relaxed);
+
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -637,6 +648,17 @@ async fn handle_set_margin_mode(
     .into_response()
 }
 
+async fn handle_post_repay(State(state): State<TestServerState>) -> impl IntoResponse {
+    state.repay_requests.fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {"resultStatus": "SU"},
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+}
+
 async fn handle_server_time() -> impl IntoResponse {
     Json(json!({
         "retCode": 0,
@@ -666,6 +688,11 @@ async fn handle_trade_websocket(
     if state.reject_trade_websocket.load(Ordering::Relaxed) {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
+
+    if state.subscription_execution.lock().await.is_some() {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -696,139 +723,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 
         match msg {
             Message::Text(text) => {
-                let Ok(value) = serde_json::from_str::<Value>(&text) else {
-                    continue;
-                };
-
-                let op = value.get("op").and_then(|v| v.as_str());
-
-                match op {
-                    Some("ping") => {
-                        state.ping_count.fetch_add(1, Ordering::Relaxed);
-                        let pong_response = json!({
-                            "success": true,
-                            "ret_msg": "pong",
-                            "conn_id": "test-conn-id",
-                            "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            "op": "pong"
-                        });
-
-                        if socket
-                            .send(Message::Text(pong_response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("auth") => {
-                        let api_key = value
-                            .get("args")
-                            .and_then(|a| a.as_array())
-                            .and_then(|arr| arr.first())
-                            .and_then(|v| v.as_str());
-
-                        if api_key == Some("test_api_key") {
-                            state.authenticated.store(true, Ordering::Relaxed);
-                            let auth_response = json!({
-                                "success": true,
-                                "ret_msg": "",
-                                "op": "auth",
-                                "conn_id": "test-conn-id"
-                            });
-
-                            if socket
-                                .send(Message::Text(auth_response.to_string().into()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        } else {
-                            let auth_response = json!({
-                                "success": false,
-                                "ret_msg": "Invalid API key",
-                                "op": "auth",
-                                "conn_id": "test-conn-id"
-                            });
-
-                            if socket
-                                .send(Message::Text(auth_response.to_string().into()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    Some("subscribe") => {
-                        let args = value.get("args").and_then(|a| a.as_array());
-                        if let Some(topics) = args {
-                            for topic in topics {
-                                if let Some(topic_str) = topic.as_str() {
-                                    let mut subs = state.subscriptions.lock().await;
-                                    if !subs.contains(&topic_str.to_string()) {
-                                        subs.push(topic_str.to_string());
-                                    }
-                                }
-                            }
-                        }
-
-                        let sub_response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            "op": "subscribe"
-                        });
-
-                        if socket
-                            .send(Message::Text(sub_response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("order.create" | "order.amend" | "order.cancel" | "order.amend-batch") => {
-                        state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
-                        state.trade_order_payloads.lock().await.push(value.clone());
-                        let req_id = value.get("reqId").and_then(|v| v.as_str());
-                        state.trade_order_req_id_present.store(
-                            req_id.is_some_and(|req_id| !req_id.is_empty()),
-                            Ordering::Relaxed,
-                        );
-
-                        let ret_code = if op == Some("order.amend-batch") {
-                            state.trade_batch_ret_code.load(Ordering::Relaxed)
-                        } else {
-                            state.trade_order_ret_code.load(Ordering::Relaxed)
-                        };
-
-                        let ret_msg = if ret_code == 0 {
-                            "OK"
-                        } else {
-                            "Too many visits."
-                        };
-                        let response = json!({
-                            "retCode": ret_code,
-                            "retMsg": ret_msg,
-                            "data": {},
-                            "retExtInfo": {},
-                            "connId": "test-conn-id",
-                            "reqId": req_id.unwrap_or(""),
-                            "op": op.unwrap()
-                        });
-
-                        if socket
-                            .send(Message::Text(response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    _ => {}
+                if !handle_text_message(&mut socket, &state, &text).await {
+                    break;
                 }
             }
             Message::Ping(_) => {
@@ -849,6 +745,175 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
     *count = count.saturating_sub(1);
 }
 
+async fn handle_text_message(socket: &mut WebSocket, state: &TestServerState, text: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return true;
+    };
+
+    let op = value.get("op").and_then(|v| v.as_str());
+    match op {
+        Some("ping") => handle_ping_message(socket, state, &value).await,
+        Some("auth") => handle_auth_message(socket, state, &value).await,
+        Some("subscribe") => handle_subscription_message(socket, state, &value).await,
+        Some("order.create" | "order.amend" | "order.cancel" | "order.amend-batch") => {
+            handle_order_message(socket, state, op.unwrap(), &value).await
+        }
+        _ => true,
+    }
+}
+
+async fn handle_ping_message(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    value: &Value,
+) -> bool {
+    state.ping_count.fetch_add(1, Ordering::Relaxed);
+    let response = json!({
+        "success": true,
+        "ret_msg": "pong",
+        "conn_id": "test-conn-id",
+        "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
+        "op": "pong"
+    });
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
+async fn handle_auth_message(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    value: &Value,
+) -> bool {
+    let api_key = value
+        .get("args")
+        .and_then(|a| a.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str());
+    let authenticated = api_key == Some("test_api_key");
+    if authenticated {
+        state.authenticated.store(true, Ordering::Relaxed);
+    }
+
+    let response = if authenticated {
+        json!({
+            "success": true,
+            "ret_msg": "",
+            "op": "auth",
+            "conn_id": "test-conn-id"
+        })
+    } else {
+        json!({
+            "success": false,
+            "ret_msg": "Invalid API key",
+            "op": "auth",
+            "conn_id": "test-conn-id"
+        })
+    };
+
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
+async fn handle_subscription_message(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    value: &Value,
+) -> bool {
+    let args = value.get("args").and_then(|a| a.as_array());
+
+    let execution_topic = args.is_some_and(|topics| {
+        topics
+            .iter()
+            .any(|topic| topic.as_str() == Some("execution"))
+    });
+
+    if let Some(topics) = args {
+        for topic in topics {
+            if let Some(topic_str) = topic.as_str() {
+                let mut subs = state.subscriptions.lock().await;
+                if !subs.contains(&topic_str.to_string()) {
+                    subs.push(topic_str.to_string());
+                }
+            }
+        }
+    }
+
+    let response = json!({
+        "success": true,
+        "ret_msg": "",
+        "conn_id": "test-conn-id",
+        "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
+        "op": "subscribe"
+    });
+
+    if socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_err()
+    {
+        return false;
+    }
+
+    if execution_topic {
+        let execution = state.subscription_execution.lock().await.clone();
+        if let Some(execution) = execution
+            && socket
+                .send(Message::Text(execution.to_string().into()))
+                .await
+                .is_err()
+        {
+            return false;
+        }
+    }
+
+    true
+}
+
+async fn handle_order_message(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    op: &str,
+    value: &Value,
+) -> bool {
+    state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
+    state.trade_order_payloads.lock().await.push(value.clone());
+    let req_id = value.get("reqId").and_then(|v| v.as_str());
+    state.trade_order_req_id_present.store(
+        req_id.is_some_and(|req_id| !req_id.is_empty()),
+        Ordering::Relaxed,
+    );
+
+    let ret_code = if op == "order.amend-batch" {
+        state.trade_batch_ret_code.load(Ordering::Relaxed)
+    } else {
+        state.trade_order_ret_code.load(Ordering::Relaxed)
+    };
+
+    let ret_msg = if ret_code == 0 {
+        "OK"
+    } else {
+        "Too many visits."
+    };
+
+    let response = json!({
+        "retCode": ret_code,
+        "retMsg": ret_msg,
+        "data": {},
+        "retExtInfo": {},
+        "connId": "test-conn-id",
+        "reqId": req_id.unwrap_or(""),
+        "op": op
+    });
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/market/instruments-info", get(handle_get_instruments))
@@ -865,6 +930,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/position/switch-mode", post(handle_switch_mode))
         .route("/v5/position/set-leverage", post(handle_set_leverage))
         .route("/v5/account/set-margin-mode", post(handle_set_margin_mode))
+        .route("/v5/account/repay", post(handle_post_repay))
         .route("/v3/public/time", get(handle_server_time))
         .route("/v5/private", get(handle_private_websocket))
         .route("/v5/trade", get(handle_trade_websocket))
@@ -1383,13 +1449,21 @@ async fn test_exec_client_creation() {
 }
 
 #[rstest]
+#[case::standard(false, "execution")]
+#[case::fast(true, "execution.fast")]
 #[tokio::test]
-async fn test_exec_client_connect_disconnect() {
+async fn test_exec_client_connect_disconnect(
+    #[case] use_ws_execution_fast: bool,
+    #[case] expected_execution_topic: &str,
+) {
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
     let (addr, state) = start_test_server().await.unwrap();
     let registry = SocketReconnectRegistry::default();
-    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    let mut config = create_test_exec_config(addr);
+    config.use_ws_execution_fast = use_ws_execution_fast;
+    let (mut client, _rx, cache) =
+        registry.scope(|| create_test_execution_client_with_config(config));
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
     client.connect().await.unwrap();
@@ -1448,11 +1522,26 @@ async fn test_exec_client_connect_disconnect() {
     assert_eq!(disconnected, expected);
 
     let subs = state.subscriptions.lock().await;
-    assert!(subs.contains(&"order".to_string()));
-    assert!(subs.contains(&"execution".to_string()));
-    assert!(subs.contains(&"position".to_string()));
-    assert!(subs.contains(&"wallet".to_string()));
+    assert_eq!(
+        *subs,
+        vec![
+            "order".to_string(),
+            expected_execution_topic.to_string(),
+            "position".to_string(),
+            "wallet".to_string(),
+        ]
+    );
     drop(subs);
+
+    if use_ws_execution_fast {
+        wait_until_async(
+            || async { state.fee_rate_requests.load(Ordering::Relaxed) == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+    } else {
+        assert_eq!(state.fee_rate_requests.load(Ordering::Relaxed), 0);
+    }
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
@@ -1461,6 +1550,117 @@ async fn test_exec_client_connect_disconnect() {
             .iter()
             .all(|endpoint| registry.handle(*BYBIT_CLIENT_ID, *endpoint).is_none())
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_reconnect_installs_repay_sender_before_execution_subscription() {
+    let _capture = client_logging::capture_logs().await;
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Spot];
+    config.auto_repay_spot_borrows = true;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::from("ETHUSDT-SPOT.BYBIT");
+    let client_order_id = ClientOrderId::from("spot-repay-reconnect");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Ioc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::new(
+            trader_id,
+            Some(*BYBIT_CLIENT_ID),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { state.trade_order_payloads.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    let mut execution = load_test_data("ws_account_execution.json");
+    execution["data"][0]["category"] = json!("spot");
+    execution["data"][0]["symbol"] = json!("ETHUSDT");
+    execution["data"][0]["orderId"] = json!("spot-repay-order");
+    execution["data"][0]["orderLinkId"] = json!(client_order_id.as_str());
+    execution["data"][0]["execPrice"] = json!("3000");
+    execution["data"][0]["execQty"] = json!("0.01");
+    execution["data"][0]["execValue"] = json!("30");
+    execution["data"][0]["execFee"] = json!("0.00001");
+    execution["data"][0]["feeCurrency"] = json!("ETH");
+    execution["data"][0]["orderPrice"] = json!("3000");
+    execution["data"][0]["orderQty"] = json!("0.01");
+    execution["data"][0]["side"] = json!("Buy");
+    *state.subscription_execution.lock().await = Some(execution);
+
+    client.connect().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match rx.recv().await {
+                Some(ExecutionEvent::Order(OrderEventAny::Filled(filled)))
+                    if filled.client_order_id == client_order_id =>
+                {
+                    break;
+                }
+                Some(_) => {}
+                None => panic!("execution event channel closed"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    wait_until_async(
+        || async { state.repay_requests.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(95),
+    )
+    .await;
+    assert!(
+        !client_logging::messages()
+            .into_iter()
+            .any(|(_, message)| message.contains("Failed to enqueue spot borrow repayment"))
+    );
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

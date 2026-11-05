@@ -952,11 +952,13 @@ pub struct BybitWsAccountExecutionMsg {
 /// Slim execution payload delivered on the `execution.fast` private channel.
 ///
 /// The fast stream omits fee/exec-type metadata that the standard `execution`
-/// channel provides; subscribe to both if you need full fill data.
+/// channel provides. The execution client selects one stream; use the standard
+/// channel for venue-authoritative fees and all execution types.
 ///
 /// Note: `orderLinkId` is documented as always empty for maker fills (and for
 /// option maker fills); identity correlation by `orderLinkId` works only for
-/// taker fast fills.
+/// taker fast fills. The execution client correlates maker fills by venue order ID,
+/// deferring them until the corresponding order update arrives when necessary.
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/websocket/private/fast-execution>
