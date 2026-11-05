@@ -373,12 +373,8 @@ impl DockerizedIBGateway {
                 tracing::debug!("Status {:?}, removing existing container", status);
                 self.stop().await?;
             }
-            ContainerStatus::Ready => {
+            ContainerStatus::Ready | ContainerStatus::ContainerStarting => {
                 tracing::debug!("Status {:?}, using existing container", status);
-                return Ok(());
-            }
-            ContainerStatus::ContainerStarting => {
-                tracing::debug!("Status {status:?}, waiting for existing container");
                 return self.wait_until_ready(wait).await;
             }
             _ => {}
@@ -515,8 +511,8 @@ impl DockerizedIBGateway {
         .await
         .with_context(|| {
             format!(
-                "gateway `{}` not ready after {} seconds",
-                self.container_name, wait_time
+                "gateway `{}` not ready after {wait_time} seconds",
+                self.container_name
             )
         })?;
 
