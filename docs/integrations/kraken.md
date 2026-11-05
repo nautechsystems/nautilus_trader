@@ -714,6 +714,13 @@ Other gaps mark the set incomplete: closed or historical orders and fills that c
 instruments cannot be resolved. Position records do not contribute to the completeness flag. In-scope position
 failures fail the read.
 
+A venue order ID that is empty, blank, or not ASCII cannot be represented, so a report row carrying one counts as
+unparsable. A stream order update or fill carrying one is dropped and the order waits for a later frame or
+reconciliation. A status report can restore a dropped fill's quantity as an inferred fill, with a synthetic trade ID
+and an inferred price. A fill read supplies the real ones only if it arrives before or with that report. A
+successful submit or edit response carrying one leaves the outcome ambiguous: the command is not rejected, and the
+streams or reconciliation resolve the order.
+
 #### Single-order lookups
 
 A single-order status lookup that finds no report tells reconciliation that the venue

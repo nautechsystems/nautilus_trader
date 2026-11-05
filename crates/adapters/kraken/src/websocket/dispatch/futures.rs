@@ -185,7 +185,13 @@ fn delta_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
+    let Ok(venue_order_id) = VenueOrderId::new_checked(&delta.order.order_id) else {
+        log::error!(
+            "Invalid venue order ID '{}' on order delta for {client_order_id}",
+            delta.order.order_id,
+        );
+        return;
+    };
     let ts_event = millis_to_nanos(delta.order.last_update_time);
     let Ok(new_filled) = Quantity::from_decimal_dp(delta.order.filled, instrument.size_precision())
     else {
@@ -295,7 +301,13 @@ fn cancel_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
+    let Ok(venue_order_id) = VenueOrderId::new_checked(&delta.order.order_id) else {
+        log::error!(
+            "Invalid venue order ID '{}' on cancel delta for {client_order_id}",
+            delta.order.order_id,
+        );
+        return;
+    };
     let ts_event = millis_to_nanos(delta.order.last_update_time);
 
     let Ok(venue_filled) =
@@ -378,7 +390,14 @@ pub fn open_orders_cancel(
         return;
     }
 
-    let venue_order_id = VenueOrderId::new(&cancel.order_id);
+    let Ok(venue_order_id) = VenueOrderId::new_checked(&cancel.order_id) else {
+        log::error!(
+            "Invalid venue order ID '{}' on open orders cancel, cli_ord_id={:?}",
+            cancel.order_id,
+            cancel.cli_ord_id,
+        );
+        return;
+    };
     let resolved_id = cancel
         .cli_ord_id
         .as_ref()

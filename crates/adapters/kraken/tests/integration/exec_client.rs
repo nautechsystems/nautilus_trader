@@ -3541,6 +3541,61 @@ async fn test_spot_mass_status_skips_an_unparsable_closed_order_as_incomplete() 
     assert!(!mass_status.reports_complete());
 }
 
+/// A spot open order whose venue order ID the model cannot hold fails the read like any other open
+/// order it cannot parse: dropped, it reads to reconciliation as an order the venue does not have.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_fails_on_an_open_order_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(spot_open_order_json(OrderSide::Buy, "open").replace("OOPEN-BBBBB-BBBBBB", ""));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Invalid order_id '' in Kraken spot order"),
+        "{error:#}"
+    );
+}
+
+/// A spot closed order with an invalid order ID is skipped and leaves the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_skips_a_closed_row_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await = Some(EMPTY_SPOT_OPEN_ORDERS.to_string());
+    *state.closed_orders_json.lock().await = Some(spot_closed_sell_json(""));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.order_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_skips_a_fill_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_json(&["XBTUSDT"]).replace("O26VBY-ISGAE-JP5TLU", ""));
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
 /// What a single-order lookup answers for an order its read did not return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LookupAnswer {
@@ -4172,6 +4227,68 @@ async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
             assert!(format!("{error:#}").contains(message), "{error:#}");
         }
     }
+}
+
+/// A futures open order whose venue order ID the model cannot hold fails the read like any other
+/// open order it cannot parse.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_on_an_open_order_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(futures_open_orders_json("", "PI_XBTUSD"));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Invalid order_id '' in Kraken futures open order"),
+        "{error:#}"
+    );
+}
+
+/// An unsized trigger with an invalid venue order ID is skipped like any other, and the
+/// unidentified row leaves the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_skips_an_unsized_trigger_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(
+        load_test_data("http_futures_open_orders_unsized_trigger.json").replace("V-TRIGGER", ""),
+    );
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.order_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
+/// A futures fill with an invalid venue order ID is skipped and leaves the set incomplete, and its
+/// sibling on the page still reports.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_skips_a_fill_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        ("f-invalid", "", "5", "27000.0"),
+        ("f-sibling", "V-SIBLING", "5", "27000.0"),
+    ]));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let fill_reports = mass_status.fill_reports();
+    assert!(fill_reports.contains_key(&VenueOrderId::from("V-SIBLING")));
+    assert_eq!(fill_reports.len(), 1);
+    assert!(!mass_status.reports_complete());
 }
 
 /// What a futures read makes of an unsized trigger.
@@ -7342,6 +7459,26 @@ async fn test_mass_status_captures_collection_start(#[case] spot: bool) {
 
     assert!(snapshot.ts_init >= before);
     assert!(snapshot.ts_init <= request_ts);
+}
+
+/// A held order's status row with an invalid venue order ID fails the lookup rather than reading
+/// the order as absent, and that fails the read that needs the window.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_on_an_orders_status_row_with_an_invalid_order_id() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-001");
+    *state.orders_status_response.lock().await =
+        Some(ORDERS_STATUS_PART_FILLED_CANCEL.replace("V-HELD-001", ""));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("treating the lookup as failed"),
+        "{error:#}"
+    );
 }
 
 #[rstest]

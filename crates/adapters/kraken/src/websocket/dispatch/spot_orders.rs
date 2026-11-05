@@ -485,10 +485,10 @@ impl OrderRequestState {
             .result
             .as_ref()
             .and_then(|r| r.order_id.as_deref())
-            .map(VenueOrderId::new);
+            .and_then(|id| VenueOrderId::new_checked(id).ok());
         let Some(venue_order_id) = venue_order_id else {
             log::error!(
-                "Kraken WS add_order success without order_id client_order_id={client_order_id}",
+                "Kraken WS add_order success without a valid order_id client_order_id={client_order_id}",
             );
             return;
         };
@@ -566,12 +566,22 @@ impl OrderRequestState {
             );
             return;
         };
-        let venue_order_id = response
+        // An invalid ID is not an absent one: the outcome is ambiguous, so the pending ID must not
+        // vouch for it and the executions feed or reconciliation acknowledges the amend.
+        let Ok(venue_order_id) = response
             .result
             .as_ref()
             .and_then(|r| r.order_id.as_deref())
-            .map(VenueOrderId::new)
-            .or_else(|| pending.venue_order_ids.first().copied().flatten());
+            .map(VenueOrderId::new_checked)
+            .transpose()
+        else {
+            log::error!(
+                "Kraken WS amend_order success with an invalid order_id client_order_id={client_order_id}",
+            );
+            return;
+        };
+        let venue_order_id =
+            venue_order_id.or_else(|| pending.venue_order_ids.first().copied().flatten());
 
         let quantity = pending.new_quantity.unwrap_or(identity.quantity);
         if pending.new_quantity.is_some() {
@@ -720,7 +730,7 @@ impl OrderRequestState {
             let leg_success = leg_result.is_some_and(|r| r.success);
             let leg_venue_order_id = leg_result
                 .and_then(|r| r.order_id.as_deref())
-                .map(VenueOrderId::new)
+                .and_then(|id| VenueOrderId::new_checked(id).ok())
                 .or(leg_venue);
             let leg_error = leg_result.and_then(|r| r.error.clone()).or_else(|| {
                 if leg_result.is_none() {
@@ -1172,6 +1182,173 @@ mod tests {
             }
             other => panic!("expected Accepted, was {other:?}"),
         }
+    }
+
+    /// A success carrying an order ID the model cannot hold proves neither acceptance nor rejection,
+    /// so the executions feed or reconciliation resolves the order.
+    #[rstest]
+    fn test_handle_response_submit_with_an_invalid_order_id_emits_nothing() {
+        let mut harness = make_harness(60_000);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+
+        let req_id = 43;
+        harness
+            .state
+            .pending
+            .insert(req_id, make_identity(PendingOperation::Submit));
+
+        let response = make_response(KrakenWsMethod::AddOrder, true, req_id, Some(""), None);
+        harness.state.handle_response(&response, 1_000);
+
+        assert_eq!(harness.state.pending_len(), 0);
+        assert!(harness.event_rx.try_recv().is_err());
+        assert!(harness.dispatch_state.lookup_identity(&cl_ord_id).is_some());
+    }
+
+    /// An invalid ID differs from an absent one, which falls back to the pending ID: nothing here
+    /// proves the amend, so it neither emits an update nor moves the tracked quantity.
+    #[rstest]
+    fn test_handle_response_amend_with_an_invalid_order_id_emits_nothing() {
+        let mut harness = make_harness(60_000);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+
+        let req_id = 44;
+        harness.state.pending.insert(
+            req_id,
+            PendingRequest {
+                operation: PendingOperation::Amend,
+                client_order_ids: vec![cl_ord_id],
+                venue_order_ids: vec![Some(VenueOrderId::from(VENUE_ORDER_ID))],
+                ts_sent_ns: 0,
+                new_quantity: Some(Quantity::from("0.005")),
+                new_price: None,
+                new_trigger_price: None,
+            },
+        );
+
+        let response = make_response(KrakenWsMethod::AmendOrder, true, req_id, Some(""), None);
+        harness.state.handle_response(&response, 3_000);
+
+        assert!(harness.event_rx.try_recv().is_err());
+        assert_eq!(
+            harness
+                .dispatch_state
+                .lookup_identity(&cl_ord_id)
+                .unwrap()
+                .quantity,
+            Quantity::from("0.001")
+        );
+    }
+
+    /// A reply that names no order leaves the pending ID to identify it.
+    #[rstest]
+    fn test_handle_response_amend_without_an_order_id_uses_the_pending_id() {
+        let mut harness = make_harness(60_000);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+
+        let req_id = 45;
+        harness.state.pending.insert(
+            req_id,
+            PendingRequest {
+                operation: PendingOperation::Amend,
+                client_order_ids: vec![cl_ord_id],
+                venue_order_ids: vec![Some(VenueOrderId::from(VENUE_ORDER_ID))],
+                ts_sent_ns: 0,
+                new_quantity: None,
+                new_price: None,
+                new_trigger_price: None,
+            },
+        );
+
+        let response = make_response(KrakenWsMethod::AmendOrder, true, req_id, None, None);
+        harness.state.handle_response(&response, 3_000);
+
+        match harness.event_rx.try_recv().expect("event emitted") {
+            OrderEventAny::Updated(e) => {
+                assert_eq!(
+                    e.venue_order_id.expect("venue id present").as_str(),
+                    VENUE_ORDER_ID
+                );
+            }
+            other => panic!("expected Updated, was {other:?}"),
+        }
+    }
+
+    /// A success leg with an invalid ID emits nothing, a failed leg still rejects, and neither
+    /// disturbs a valid sibling.
+    #[rstest]
+    fn test_handle_response_batch_add_resolves_each_leg_of_an_invalid_order_id() {
+        let mut harness = make_harness(60_000);
+        let cl_a = ClientOrderId::from("O-A");
+        let cl_b = ClientOrderId::from("O-B");
+        let cl_c = ClientOrderId::from("O-C");
+        register_default_identity(&harness.dispatch_state, cl_a);
+        register_default_identity(&harness.dispatch_state, cl_b);
+        register_default_identity(&harness.dispatch_state, cl_c);
+
+        let req_id = 51;
+        harness.state.pending.insert(
+            req_id,
+            PendingRequest {
+                operation: PendingOperation::BatchAdd,
+                client_order_ids: vec![cl_a, cl_b, cl_c],
+                venue_order_ids: vec![None, None, None],
+                ts_sent_ns: 0,
+                new_quantity: None,
+                new_price: None,
+                new_trigger_price: None,
+            },
+        );
+
+        let response = KrakenWsOrderResponse {
+            method: KrakenWsMethod::BatchAdd,
+            req_id: Some(req_id),
+            success: true,
+            time_in: None,
+            time_out: None,
+            error: None,
+            result: Some(KrakenWsOrderResult {
+                order_id: None,
+                cl_ord_id: None,
+                order_userref: None,
+                warning: None,
+                orders: Some(vec![
+                    KrakenWsBatchOrderResult {
+                        success: true,
+                        order_id: Some(String::new()),
+                        cl_ord_id: Some("O-A".to_string()),
+                        error: None,
+                    },
+                    KrakenWsBatchOrderResult {
+                        success: false,
+                        order_id: Some(String::new()),
+                        cl_ord_id: Some("O-B".to_string()),
+                        error: Some("Bad price".to_string()),
+                    },
+                    KrakenWsBatchOrderResult {
+                        success: true,
+                        order_id: Some("V-C".to_string()),
+                        cl_ord_id: Some("O-C".to_string()),
+                        error: None,
+                    },
+                ]),
+            }),
+        };
+        harness.state.handle_response(&response, 9_000);
+
+        match harness.event_rx.try_recv().expect("the failed leg rejects") {
+            OrderEventAny::Rejected(e) => assert_eq!(e.client_order_id, cl_b),
+            other => panic!("expected Rejected, was {other:?}"),
+        }
+
+        match harness.event_rx.try_recv().expect("the valid leg accepts") {
+            OrderEventAny::Accepted(e) => assert_eq!(e.client_order_id, cl_c),
+            other => panic!("expected Accepted, was {other:?}"),
+        }
+        assert!(harness.event_rx.try_recv().is_err());
     }
 
     #[rstest]

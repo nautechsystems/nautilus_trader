@@ -499,6 +499,136 @@ fn test_futures_open_orders_cancel_fill_driven_skipped() {
     assert!(drain_events(&mut rx).is_empty());
 }
 
+/// A frame whose venue order ID the model cannot hold is dropped, and the tracked order stays
+/// tracked so a later frame or reconciliation can still advance it.
+#[rstest]
+#[case::order_delta(false, None)]
+#[case::cancel_delta(true, Some("cancelled_by_user"))]
+fn test_futures_delta_tracked_drops_an_invalid_venue_order_id(
+    #[case] is_cancel: bool,
+    #[case] reason: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-1");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let delta = make_open_orders_delta(
+        is_cancel,
+        reason,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-invalid-1"),
+        "",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+    assert!(!state.emitted_accepted.contains(&cid));
+}
+
+#[rstest]
+fn test_futures_delta_external_drops_an_invalid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let delta = make_open_orders_delta(false, None, dec!(0.0001), Decimal::ZERO, None, "");
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+/// A cancel-only frame is dropped before routing, so an invalid ID can neither cancel a tracked
+/// order nor report an external one.
+#[rstest]
+#[case::tracked(Some("uuid-invalid-2"))]
+#[case::external(None)]
+fn test_futures_open_orders_cancel_drops_an_invalid_venue_order_id(
+    #[case] cli_ord_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-2");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    // An earlier invalid delta leaves both entries, which is all an external report needs.
+    let order_instrument_map = empty_instrument_id_map();
+    order_instrument_map.insert(String::new(), InstrumentId::from(FUTURES_INSTRUMENT_ID));
+    let venue_order_qty = empty_quantity_map();
+    venue_order_qty.insert(String::new(), Quantity::from("0.0001"));
+
+    let cancel = make_open_orders_cancel(Some("cancelled_by_user"), cli_ord_id, "");
+    dispatch::futures::open_orders_cancel(
+        &cancel,
+        &state,
+        &emitter,
+        &empty_string_map(),
+        &order_instrument_map,
+        &empty_string_map(),
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+}
+
+/// A fill with an invalid venue order ID is dropped on its own, and its sibling in the frame still
+/// reports.
+#[rstest]
+fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let mut fills = make_fills_delta(None, "", "trade-invalid");
+    let sibling = make_fills_delta(None, "v-sibling", "trade-sibling");
+    fills.fills.extend(sibling.fills);
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], ExecutionEvent::Report(_)));
+}
+
 #[rstest]
 fn test_futures_delta_external_emits_status_report() {
     let (emitter, mut rx) = test_emitter();

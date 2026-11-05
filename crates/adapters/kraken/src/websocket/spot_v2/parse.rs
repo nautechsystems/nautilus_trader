@@ -419,7 +419,8 @@ pub fn parse_ws_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&exec.order_id);
+    let venue_order_id = VenueOrderId::new_checked(&exec.order_id)
+        .with_context(|| format!("Invalid order_id '{}' in Kraken execution", exec.order_id))?;
     let order_side = exec.side.map(Into::into);
     let order_type = parse_order_type(exec.order_type);
     let time_in_force = parse_time_in_force(exec.time_in_force, exec.post_only);
@@ -542,7 +543,6 @@ pub fn parse_ws_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&exec.order_id);
 
     let exec_id = exec
         .exec_id
@@ -550,6 +550,12 @@ pub fn parse_ws_fill_report(
         .context("Missing exec_id for trade execution")?;
     let trade_id =
         TradeId::new_checked(exec_id).context("Invalid exec_id in Kraken trade execution")?;
+    let venue_order_id = VenueOrderId::new_checked(&exec.order_id).with_context(|| {
+        format!(
+            "Invalid order_id '{}' in Kraken trade execution {exec_id}",
+            exec.order_id
+        )
+    })?;
 
     let order_side = exec
         .side
@@ -928,6 +934,47 @@ mod tests {
 
         assert_eq!(report.price, expected_price.map(Price::from));
         assert_eq!(report.avg_px, expected_avg_px);
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_fails_on_an_invalid_order_id() {
+        let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
+        execution.order_id = String::new();
+
+        let error = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "Invalid order_id '' in Kraken execution");
+    }
+
+    /// The dispatch logs only this message for the fill it drops, so the message names the fill.
+    #[rstest]
+    fn test_parse_ws_fill_report_names_the_execution_of_an_invalid_order_id() {
+        let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
+        execution.order_id = String::new();
+        execution.exec_type = KrakenExecType::Trade;
+        execution.exec_id = Some("TRADE-1".to_string());
+        execution.last_qty = Some(dec!(1));
+        execution.last_price = Some(dec!(100));
+
+        let error = parse_ws_fill_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken trade execution TRADE-1"
+        );
     }
 
     #[rstest]

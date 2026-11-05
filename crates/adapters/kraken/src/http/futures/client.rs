@@ -1919,7 +1919,12 @@ impl KrakenFuturesHttpClient {
                         order.symbol
                     );
                     coverage.skip(&order.order_id);
-                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
+
+                    // No history row can carry an invalid ID, and `skip` has marked the set
+                    // unidentified, so an invalid ID needs no entry here.
+                    if let Ok(venue_order_id) = VenueOrderId::new_checked(order.order_id.as_str()) {
+                        skipped_open_order_ids.insert(venue_order_id);
+                    }
                     continue;
                 }
 
@@ -2676,6 +2681,7 @@ impl KrakenFuturesHttpClient {
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - The edit fails on the exchange.
+    /// - The response carries an invalid order ID.
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
@@ -2728,7 +2734,12 @@ impl KrakenFuturesHttpClient {
             .or(original_order_id)
             .ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
-        Ok(VenueOrderId::new(&new_venue_order_id))
+        VenueOrderId::new_checked(&new_venue_order_id).map_err(|e| {
+            KrakenModifyOrderError::InvalidOrderId {
+                detail: format!("'{new_venue_order_id}': {e}"),
+            }
+            .into()
+        })
     }
 
     /// Cancels an order on the Kraken Futures exchange.
@@ -5267,6 +5278,63 @@ mod tests {
         let before_the_cut = UnixNanos::from((HISTORY_T1 as u64 - 120_000) * 1_000_000);
         assert!(coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(after_the_cut)));
         assert!(!coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(before_the_cut)));
+    }
+
+    /// An edit the venue applied, answered with an order ID the model cannot hold, returns the typed
+    /// error: an untyped one would read as a command never sent.
+    #[rstest]
+    #[tokio::test]
+    async fn test_modify_order_returns_a_typed_error_for_an_invalid_order_id() {
+        use axum::{Router, http::header, routing::any};
+
+        let app = Router::new().route(
+            "/derivatives/api/v3/editorder",
+            any(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/json")],
+                    r#"{"result":"success","editStatus":{"status":"edited","order_id":""}}"#,
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_futures_instrument(&client);
+
+        let error = client
+            .modify_order(
+                instrument_id,
+                None,
+                Some(VenueOrderId::from("V-EDIT")),
+                Some(Quantity::from("1")),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::InvalidOrderId { .. })
+            ),
+            "{error:#}"
+        );
     }
 
     /// A contract the listing spells two ways in different cases cannot be told apart by a
