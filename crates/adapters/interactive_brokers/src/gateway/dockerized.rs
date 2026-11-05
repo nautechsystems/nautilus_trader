@@ -25,6 +25,8 @@ use bollard::Docker;
 #[cfg(feature = "gateway")]
 use bollard::container::LogOutput;
 #[cfg(feature = "gateway")]
+use bollard::errors::Error as DockerError;
+#[cfg(feature = "gateway")]
 use bollard::models::{
     ContainerCreateBody, ContainerCreateResponse, HostConfig, PortBinding, RestartPolicy,
     RestartPolicyNameEnum,
@@ -342,11 +344,14 @@ impl DockerizedIBGateway {
         }
     }
 
-    /// Start the gateway container.
+    /// Start the gateway container, or reuse a running one, and wait for its login.
+    ///
+    /// Waits up to `wait` seconds, or the configured timeout without one.
     ///
     /// # Errors
     ///
-    /// Returns an error if container creation or startup fails.
+    /// Returns an error if container creation or startup fails, or if the gateway does not log in
+    /// within the wait.
     pub async fn start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
         tracing::debug!("Ensuring gateway is running");
 
@@ -367,9 +372,13 @@ impl DockerizedIBGateway {
                 tracing::debug!("Status {:?}, removing existing container", status);
                 self.stop().await?;
             }
-            ContainerStatus::Ready | ContainerStatus::ContainerStarting => {
+            ContainerStatus::Ready => {
                 tracing::debug!("Status {:?}, using existing container", status);
                 return Ok(());
+            }
+            ContainerStatus::ContainerStarting => {
+                tracing::debug!("Status {:?}, waiting for existing container", status);
+                return self.wait_until_ready(wait).await;
             }
             _ => {}
         }
@@ -461,12 +470,39 @@ impl DockerizedIBGateway {
             self.container_name
         );
 
-        // Wait for container to be ready
+        self.wait_until_ready(wait).await
+    }
+
+    /// Safely start the gateway, handling container already exists errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if startup fails (other than container exists).
+    pub async fn safe_start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
+        match self.start(wait).await {
+            Ok(()) => Ok(()),
+            Err(e)
+                if matches!(
+                    e.downcast_ref(),
+                    Some(DockerError::DockerResponseServerError {
+                        status_code: 409,
+                        ..
+                    })
+                ) =>
+            {
+                tracing::warn!("Container already exists, continuing");
+                self.wait_until_ready(wait).await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn wait_until_ready(&self, wait: Option<u64>) -> anyhow::Result<()> {
         let wait_time = wait.unwrap_or(self.config.timeout);
         let mut waited = 0u64;
 
         while waited < wait_time {
-            if self.is_logged_in(&container_id).await.unwrap_or(false) {
+            if matches!(self.container_status().await, Ok(ContainerStatus::Ready)) {
                 tracing::debug!(
                     "Gateway `{}` ready. VNC port is {:?}",
                     self.container_name,
@@ -485,22 +521,6 @@ impl DockerizedIBGateway {
             self.container_name,
             wait_time
         )
-    }
-
-    /// Safely start the gateway, handling container already exists errors.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if startup fails (other than container exists).
-    pub async fn safe_start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
-        match self.start(wait).await {
-            Ok(()) => Ok(()),
-            Err(e) if e.to_string().contains("already exists") => {
-                tracing::warn!("Container already exists, continuing");
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
     }
 
     /// Stop and remove the gateway container.

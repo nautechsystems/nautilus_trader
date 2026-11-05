@@ -821,8 +821,8 @@ not restart a subscription.
 | `vnc_port`        | `None`                             | Expose VNC on a port from `5900` through `5999`; `None` disables it. |
 
 `DockerizedIBGateway` exposes asynchronous and blocking `start`, `safe_start`, and `stop` methods,
-plus `container_status`. The safe start variants reuse a ready container and replace an unhealthy
-one.
+plus `container_status`. The safe start variants reuse a ready container, wait for a starting one to
+log in, and replace an unhealthy one.
 
 ## Python enum reference
 
