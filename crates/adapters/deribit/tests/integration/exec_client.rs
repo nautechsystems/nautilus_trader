@@ -44,7 +44,7 @@ use axum::{
 };
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     clock::VirtualClock,
     live::runner::{
         replace_exec_event_sender, replace_system_event_sender, set_exec_event_sender,
@@ -61,7 +61,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_deribit::{
     common::{
         consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
@@ -1119,6 +1119,352 @@ async fn test_generate_order_status_report_requires_identifier() {
         "Order lookup requires a client order ID or venue order ID"
     );
     assert_eq!(state.order_lookup_requests.lock().await.len(), 0);
+}
+
+async fn finish_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+
+    let worker = nautilus_common::live::get_runtime().spawn(async move {
+        task.collection.await;
+        std::thread::current().id()
+    });
+
+    assert_ne!(worker.await.unwrap(), core_thread);
+    (task.finish)()
+}
+
+fn assert_report_pairs_match(
+    before: UnixNanos,
+    after: UnixNanos,
+    pairs: impl IntoIterator<Item = (Value, Value)>,
+) {
+    for (mut inline, mut worker) in pairs {
+        for report in [&mut inline, &mut worker] {
+            let ts_init: UnixNanos = serde_json::from_value(report["ts_init"].clone()).unwrap();
+            assert!((before..=after).contains(&ts_init));
+            let fields = report.as_object_mut().unwrap();
+            fields.remove("report_id");
+            fields.remove("ts_init");
+            if fields.contains_key("position_side") {
+                let ts_last: UnixNanos =
+                    serde_json::from_value(fields.remove("ts_last").unwrap()).unwrap();
+                assert!((before..=after).contains(&ts_last));
+            }
+        }
+
+        assert_eq!(worker, inline);
+    }
+}
+
+#[tokio::test]
+async fn test_report_tasks_match_inline_fields() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let btc = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    let ts_ms = now_millis();
+    let client_order_id = ClientOrderId::from("O-LOOKUP-17");
+    let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+
+    state.order_lookup_responses.lock().await.insert(
+        "private/get_open_orders_by_instrument".to_string(),
+        (
+            StatusCode::OK,
+            json!({"result": [reconciliation_order("BTC-OPEN", "BTC-PERPETUAL", "open", ts_ms)]}),
+        ),
+    );
+    state.order_lookup_responses.lock().await.insert(
+        "private/get_order_state".to_string(),
+        (
+            StatusCode::OK,
+            order_lookup_response("valid", true, client_order_id),
+        ),
+    );
+    *state.positions_result.lock().await =
+        Some(json!([reconciliation_position("BTC-PERPETUAL", 50)]));
+    *state.user_trades_result.lock().await = trades_result(&[valid_btc_trade()]);
+
+    let mut client = connect_scoped_client(addr, Some(btc_scope())).await;
+
+    let single = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(btc),
+        Some(client_order_id),
+        Some(venue_order_id),
+        None,
+        None,
+    );
+
+    let bulk = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(btc),
+        None,
+        None,
+        None,
+        None,
+    );
+    let fills = fill_command(Some(btc), None);
+    let positions = position_reports_command(None);
+
+    let before = get_atomic_clock_realtime().get_time_ns();
+    let inline_single = client
+        .generate_order_status_report(&single)
+        .await
+        .unwrap()
+        .unwrap();
+    let worker_single =
+        finish_report_task(client.generate_order_status_report_task(&single).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+    let inline_bulk = client.generate_order_status_reports(&bulk).await.unwrap();
+    let worker_bulk = finish_report_task(client.generate_order_status_reports_task(&bulk).unwrap())
+        .await
+        .unwrap();
+    let inline_fills = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let worker_fills = finish_report_task(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    let inline_positions = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+    let worker_positions = finish_report_task(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let after = get_atomic_clock_realtime().get_time_ns();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(inline_bulk.len(), 1);
+    assert_eq!(worker_bulk.len(), 1);
+    assert_eq!(inline_fills.len(), 1);
+    assert_eq!(worker_fills.len(), 1);
+    assert_eq!(inline_positions.len(), 1);
+    assert_eq!(worker_positions.len(), 1);
+
+    let pairs = [
+        (
+            serde_json::to_value(inline_single).unwrap(),
+            serde_json::to_value(worker_single).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_bulk[0]).unwrap(),
+            serde_json::to_value(&worker_bulk[0]).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_fills[0]).unwrap(),
+            serde_json::to_value(&worker_fills[0]).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_positions[0]).unwrap(),
+            serde_json::to_value(&worker_positions[0]).unwrap(),
+        ),
+    ];
+
+    assert_report_pairs_match(before, after, pairs);
+}
+
+#[tokio::test]
+async fn test_report_tasks_match_inline_errors() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let (unconnected_client, _rx, _cache) = create_test_execution_client(addr);
+
+    let missing_ids = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let inline_error = unconnected_client
+        .generate_order_status_report(&missing_ids)
+        .await
+        .unwrap_err()
+        .to_string();
+    let worker_error = finish_report_task(
+        unconnected_client
+            .generate_order_status_report_task(&missing_ids)
+            .unwrap(),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert_eq!(
+        inline_error,
+        "Order lookup requires a client order ID or venue order ID"
+    );
+    assert_eq!(worker_error, inline_error);
+
+    state.order_lookup_responses.lock().await.insert(
+        "private/get_order_state".to_string(),
+        (
+            StatusCode::BAD_REQUEST,
+            order_lookup_response("absent", true, ClientOrderId::from("O-LOOKUP-17")),
+        ),
+    );
+
+    let absent = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        None,
+        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+        None,
+        None,
+    );
+    let inline_absent = unconnected_client
+        .generate_order_status_report(&absent)
+        .await
+        .unwrap();
+    let worker_absent = finish_report_task(
+        unconnected_client
+            .generate_order_status_report_task(&absent)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inline_absent, None);
+    assert_eq!(worker_absent, None);
+
+    let ts_ms = now_millis();
+    set_open_orders(
+        &state,
+        &[reconciliation_order(
+            "ETH-OPEN",
+            "ETH-PERPETUAL",
+            "open",
+            ts_ms,
+        )],
+    )
+    .await;
+    let mut client = connect_scoped_client(addr, None).await;
+    let bulk = order_reports_command(true);
+    let inline_error = client
+        .generate_order_status_reports(&bulk)
+        .await
+        .unwrap_err()
+        .to_string();
+    let worker_error =
+        finish_report_task(client.generate_order_status_reports_task(&bulk).unwrap())
+            .await
+            .unwrap_err()
+            .to_string();
+    client.disconnect().await.unwrap();
+
+    assert!(
+        inline_error
+            .contains("Open order ETH-OPEN has unresolved instrument ETH-PERPETUAL.DERIBIT"),
+        "error was: {inline_error}"
+    );
+    assert_eq!(worker_error, inline_error);
+}
+
+#[tokio::test]
+async fn test_report_tasks_apply_reconciliation_scope() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ts_ms = now_millis();
+
+    set_open_orders(
+        &state,
+        &[
+            reconciliation_order("BTC-OPEN", "BTC-PERPETUAL", "open", ts_ms),
+            reconciliation_order("ETH-OPEN", "ETH-PERPETUAL", "open", ts_ms),
+        ],
+    )
+    .await;
+    let mut recent_eth = uncached_eth_trade();
+    recent_eth["timestamp"] = json!(ts_ms);
+    *state.user_trades_result.lock().await = trades_result(&[valid_btc_trade(), recent_eth]);
+    *state.positions_result.lock().await = Some(json!([
+        reconciliation_position("BTC-PERPETUAL", 50),
+        reconciliation_position("ETH-PERPETUAL", 2),
+    ]));
+
+    let mut client = connect_scoped_client(addr, Some(btc_scope())).await;
+
+    let bulk = order_reports_command(true);
+    let fills = fill_command(None, None);
+    let positions = position_reports_command(None);
+
+    let single = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(ClientOrderId::from("BTC-OPEN")),
+        None,
+        None,
+        None,
+    );
+
+    let before = get_atomic_clock_realtime().get_time_ns();
+    let inline_single = client
+        .generate_order_status_report(&single)
+        .await
+        .unwrap()
+        .unwrap();
+    let worker_single =
+        finish_report_task(client.generate_order_status_report_task(&single).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+    let inline_bulk = client.generate_order_status_reports(&bulk).await.unwrap();
+    let worker_bulk = finish_report_task(client.generate_order_status_reports_task(&bulk).unwrap())
+        .await
+        .unwrap();
+    let inline_fills = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let worker_fills = finish_report_task(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    let inline_positions = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+    let worker_positions = finish_report_task(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let after = get_atomic_clock_realtime().get_time_ns();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(inline_single.venue_order_id, VenueOrderId::from("BTC-OPEN"));
+    assert_eq!(inline_bulk.len(), 1);
+    assert_eq!(worker_bulk.len(), 1);
+    assert_eq!(inline_fills.len(), 1);
+    assert_eq!(worker_fills.len(), 1);
+    assert_eq!(inline_positions.len(), 1);
+    assert_eq!(worker_positions.len(), 1);
+
+    let pairs = [
+        (
+            serde_json::to_value(inline_single).unwrap(),
+            serde_json::to_value(worker_single).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_bulk[0]).unwrap(),
+            serde_json::to_value(&worker_bulk[0]).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_fills[0]).unwrap(),
+            serde_json::to_value(&worker_fills[0]).unwrap(),
+        ),
+        (
+            serde_json::to_value(&inline_positions[0]).unwrap(),
+            serde_json::to_value(&worker_positions[0]).unwrap(),
+        ),
+    ];
+
+    assert_report_pairs_match(before, after, pairs);
 }
 
 #[rstest]

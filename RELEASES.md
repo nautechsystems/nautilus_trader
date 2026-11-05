@@ -222,9 +222,10 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Optimized Architect AX market data trade parsing and reduced allocations
-- Refined Derive report generation with HTTP collection on runtime workers (#5216)
+- Standardize Deribit report generation with HTTP collection on runtime workers (#5216)
+- Standardize Derive report generation with HTTP collection on runtime workers (#5216)
+- Standardize Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Refined Polymarket limit submit responses and venue order ID lookup
-- Refined Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Optimized `deserialize_decimal_from_str` and `deserialize_decimal_or_zero` to avoid intermediate string copies
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-binstall` tool to v1.26.2
@@ -796,8 +797,8 @@ Released on 15th October 2026 (UTC).
 - Migrated OKX built-in WebSocket URLs to port 443 for live and demo environments
 - Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
-- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Improved Lighter execution race coverage and grouped-order signer validation
+- Standardize Lighter report generation with HTTP collection on runtime workers (#5216)
 - Refined backtest replay with shared ordered batch consumption, thanks @faysou
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
 - Refined shared pointer cloning in network clients and transports (#5294), thanks @mirooon

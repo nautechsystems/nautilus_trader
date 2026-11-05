@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -649,124 +649,118 @@ impl ExecutionClient for DeribitExecutionClient {
         Ok(())
     }
 
+    fn generate_order_status_report_task(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let scope = self.reconciliation_scope();
+        let ts_init = self.clock.get_time_ns();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move {
+                collect_order_status_report(http_client, account_id, command, scope, ts_init).await
+            },
+            Ok,
+        ))
+    }
+
+    fn generate_order_status_reports_task(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let scope = self.reconciliation_scope();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move { collect_order_status_reports(http_client, account_id, command, scope).await },
+            Ok,
+        ))
+    }
+
+    fn generate_fill_reports_task(
+        &self,
+        cmd: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let scope = self.reconciliation_scope();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move { collect_fill_reports(http_client, account_id, command, scope).await },
+            Ok,
+        ))
+    }
+
+    fn generate_position_status_reports_task(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let scope = self.reconciliation_scope();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move {
+                collect_position_status_reports(http_client, account_id, command, scope).await
+            },
+            Ok,
+        ))
+    }
+
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let report = if let Some(venue_order_id) = &cmd.venue_order_id {
-            let params = GetOrderStateParams {
-                order_id: venue_order_id.to_string(),
-            };
-            let ts_init = self.clock.get_time_ns();
-
-            let response = match self.http_client.inner.get_order_state(params).await {
-                Ok(response) => response,
-                Err(DeribitHttpError::DeribitError {
-                    error_code: 10004, ..
-                }) => return Ok(None),
-                Err(e) => return Err(e.into()),
-            };
-
-            let order = response.result.context("missing order state result")?;
-            let instrument_id = InstrumentId::new(order.instrument_name.into(), *DERIBIT_VENUE);
-            let instrument = self
-                .http_client
-                .get_instrument(&order.instrument_name)
-                .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
-
-            parse_user_order_msg(&order, &instrument, self.core.account_id, ts_init)?
-        } else if let Some(client_order_id) = &cmd.client_order_id {
-            let reports = self
-                .http_client
-                .request_order_status_reports_in_scope(
-                    self.core.account_id,
-                    cmd.instrument_id,
-                    None,
-                    None,
-                    false, // Search all orders, not just open
-                    self.reconciliation_scope(),
-                )
-                .await?
-                .reports;
-
-            // Bulk reports can omit orders outside the cached products or venue history window
-            reports
-                .into_iter()
-                .find(|report| report.client_order_id == Some(*client_order_id))
-                .context("order lookup by client order ID was inconclusive")?
-        } else {
-            anyhow::bail!("Order lookup requires a client order ID or venue order ID");
-        };
-
-        // External orders can lack a venue label after Nautilus assigns a client order ID
-        anyhow::ensure!(
-            cmd.instrument_id
-                .is_none_or(|id| report.instrument_id == id)
-                && report
-                    .client_order_id
-                    .zip(cmd.client_order_id)
-                    .is_none_or(|(reported, queried)| reported == queried)
-                && cmd
-                    .venue_order_id
-                    .is_none_or(|id| report.venue_order_id == id),
-            "Order status report identity does not match query: instrument_id={}, client_order_id={:?}, venue_order_id={}",
-            report.instrument_id,
-            report.client_order_id,
-            report.venue_order_id,
-        );
-
-        Ok(Some(report))
+        collect_order_status_report(
+            self.http_client.clone(),
+            self.core.account_id,
+            cmd.clone(),
+            self.reconciliation_scope(),
+            self.clock.get_time_ns(),
+        )
+        .await
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let read = self
-            .http_client
-            .request_order_status_reports_in_scope(
-                self.core.account_id,
-                cmd.instrument_id,
-                cmd.start,
-                cmd.end,
-                cmd.open_only,
-                self.reconciliation_scope(),
-            )
-            .await?;
-        read.into_reports()
+        collect_order_status_reports(
+            self.http_client.clone(),
+            self.core.account_id,
+            cmd.clone(),
+            self.reconciliation_scope(),
+        )
+        .await
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let read = self
-            .http_client
-            .request_fill_reports_scoped(
-                self.core.account_id,
-                cmd.instrument_id,
-                cmd.start,
-                cmd.end,
-                cmd.venue_order_id.as_ref(),
-                self.reconciliation_scope(),
-            )
-            .await?;
-        read.into_reports()
+        collect_fill_reports(
+            self.http_client.clone(),
+            self.core.account_id,
+            cmd,
+            self.reconciliation_scope(),
+        )
+        .await
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        Ok(self
-            .http_client
-            .request_position_status_reports_in_scope(
-                self.core.account_id,
-                cmd.instrument_id,
-                self.reconciliation_scope(),
-            )
-            .await?
-            .reports)
+        collect_position_status_reports(
+            self.http_client.clone(),
+            self.core.account_id,
+            cmd.clone(),
+            self.reconciliation_scope(),
+        )
+        .await
     }
 
     async fn generate_mass_status(
@@ -1410,6 +1404,125 @@ impl ExecutionClient for DeribitExecutionClient {
 
         Ok(())
     }
+}
+
+async fn collect_order_status_report(
+    http_client: DeribitHttpClient,
+    account_id: AccountId,
+    cmd: GenerateOrderStatusReport,
+    scope: ReconciliationScope,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    let report = if let Some(venue_order_id) = &cmd.venue_order_id {
+        let params = GetOrderStateParams {
+            order_id: venue_order_id.to_string(),
+        };
+
+        let response = match http_client.inner.get_order_state(params).await {
+            Ok(response) => response,
+            Err(DeribitHttpError::DeribitError {
+                error_code: 10004, ..
+            }) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+
+        let order = response.result.context("missing order state result")?;
+        let instrument_id = InstrumentId::new(order.instrument_name.into(), *DERIBIT_VENUE);
+        let instrument = http_client
+            .get_instrument(&order.instrument_name)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+
+        parse_user_order_msg(&order, &instrument, account_id, ts_init)?
+    } else if let Some(client_order_id) = &cmd.client_order_id {
+        let reports = http_client
+            .request_order_status_reports_in_scope(
+                account_id,
+                cmd.instrument_id,
+                None,
+                None,
+                false, // Search all orders, not just open
+                scope,
+            )
+            .await?
+            .reports;
+
+        // Bulk reports can omit orders outside the cached products or venue history window
+        reports
+            .into_iter()
+            .find(|report| report.client_order_id == Some(*client_order_id))
+            .context("order lookup by client order ID was inconclusive")?
+    } else {
+        anyhow::bail!("Order lookup requires a client order ID or venue order ID");
+    };
+
+    // External orders can lack a venue label after Nautilus assigns a client order ID
+    anyhow::ensure!(
+        cmd.instrument_id
+            .is_none_or(|id| report.instrument_id == id)
+            && report
+                .client_order_id
+                .zip(cmd.client_order_id)
+                .is_none_or(|(reported, queried)| reported == queried)
+            && cmd
+                .venue_order_id
+                .is_none_or(|id| report.venue_order_id == id),
+        "Order status report identity does not match query: instrument_id={}, client_order_id={:?}, venue_order_id={}",
+        report.instrument_id,
+        report.client_order_id,
+        report.venue_order_id,
+    );
+
+    Ok(Some(report))
+}
+
+async fn collect_order_status_reports(
+    http_client: DeribitHttpClient,
+    account_id: AccountId,
+    cmd: GenerateOrderStatusReports,
+    scope: ReconciliationScope,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let read = http_client
+        .request_order_status_reports_in_scope(
+            account_id,
+            cmd.instrument_id,
+            cmd.start,
+            cmd.end,
+            cmd.open_only,
+            scope,
+        )
+        .await?;
+    read.into_reports()
+}
+
+async fn collect_fill_reports(
+    http_client: DeribitHttpClient,
+    account_id: AccountId,
+    cmd: GenerateFillReports,
+    scope: ReconciliationScope,
+) -> anyhow::Result<Vec<FillReport>> {
+    let read = http_client
+        .request_fill_reports_scoped(
+            account_id,
+            cmd.instrument_id,
+            cmd.start,
+            cmd.end,
+            cmd.venue_order_id.as_ref(),
+            scope,
+        )
+        .await?;
+    read.into_reports()
+}
+
+async fn collect_position_status_reports(
+    http_client: DeribitHttpClient,
+    account_id: AccountId,
+    cmd: GeneratePositionStatusReports,
+    scope: ReconciliationScope,
+) -> anyhow::Result<Vec<PositionStatusReport>> {
+    Ok(http_client
+        .request_position_status_reports_in_scope(account_id, cmd.instrument_id, scope)
+        .await?
+        .reports)
 }
 
 fn add_flat_reports_without_position(
