@@ -20,7 +20,10 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
 };
-use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
+use nautilus_execution::{
+    matching_engine::config::OrderPriorityResetPolicy,
+    models::fee::{FeeModelAny, MakerTakerFeeModel},
+};
 use nautilus_model::{
     identifiers::{AccountId, ClientId, TraderId, Venue},
     types::Money,
@@ -31,7 +34,7 @@ use nautilus_sandbox::{
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
     IntoPyObjectExt, Py, Python,
-    types::{PyAnyMethods, PyModule, PyTuple},
+    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTuple},
 };
 use rstest::rstest;
 
@@ -135,6 +138,7 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
                 starting_balances: vec![Money::from("100_000 USD")],
                 fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
                 queue_position: true,
+                order_priority_reset_policy: OrderPriorityResetPolicy::AnyModify,
                 liquidity_consumption: true,
                 bar_adaptive_high_low_ordering: true,
                 use_market_order_acks: true,
@@ -168,12 +172,20 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
             .expect("extracted factory should create exec client");
 
         assert!(sandbox_config.queue_position);
+        assert_eq!(
+            sandbox_config.order_priority_reset_policy,
+            OrderPriorityResetPolicy::AnyModify
+        );
         assert!(sandbox_config.liquidity_consumption);
         assert!(sandbox_config.bar_adaptive_high_low_ordering);
         assert!(sandbox_config.use_market_order_acks);
         assert!(sandbox_config.oto_full_trigger);
         assert_eq!(sandbox_config.price_protection_points, 50);
         assert!(engine_config.queue_position);
+        assert_eq!(
+            engine_config.order_priority_reset_policy,
+            OrderPriorityResetPolicy::AnyModify
+        );
         assert!(engine_config.liquidity_consumption);
         assert!(engine_config.bar_adaptive_high_low_ordering);
         assert!(engine_config.use_market_order_acks);
@@ -236,5 +248,46 @@ fn test_sandbox_config_positional_signature_binds_queue_position() {
                 "{model} must remain None",
             );
         }
+    });
+}
+
+#[rstest]
+fn test_sandbox_config_order_priority_reset_policy_keyword(
+    #[values(
+        OrderPriorityResetPolicy::PriceChange,
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+        OrderPriorityResetPolicy::AnyModify
+    )]
+    policy: OrderPriorityResetPolicy,
+) {
+    Python::initialize();
+    Python::attach(|py| {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("venue", Venue::new(SANDBOX)).unwrap();
+        kwargs
+            .set_item("starting_balances", vec![Money::from("100_000 USD")])
+            .unwrap();
+        kwargs
+            .set_item("order_priority_reset_policy", policy)
+            .unwrap();
+        let config = py
+            .get_type::<SandboxExecutionClientConfig>()
+            .call((), Some(&kwargs))
+            .unwrap();
+        assert_eq!(
+            config
+                .getattr("order_priority_reset_policy")
+                .unwrap()
+                .extract::<OrderPriorityResetPolicy>()
+                .unwrap(),
+            policy
+        );
+        let config = config.extract::<SandboxExecutionClientConfig>().unwrap();
+        assert_eq!(
+            config
+                .to_matching_engine_config()
+                .order_priority_reset_policy,
+            policy
+        );
     });
 }

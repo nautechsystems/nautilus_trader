@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added `HttpClient` certificate support through `certs_dir`
 - Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
 - Added `OrderModifyDenied` and `OrderCancelDenied` events and strategy and execution algorithm callbacks
+- Added `OrderPriorityResetPolicy` for sandbox and backtests (#5503), thanks for reporting @todorkolev
 - Added Python `ParquetDataCatalog.query_instrument_statuses` and `query_instrument_closes`
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
@@ -29,6 +30,9 @@ Released on TBD (UTC).
 
 - Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
+- Changed `OrderMatchingEngineConfig` literals; add `order_priority_reset_policy: Default::default()`
+- Changed `SimulatedVenueConfig` literals; add `order_priority_reset_policy: Default::default()`
+- Changed `SandboxExecutionClientConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `BacktestEngine::reset` to return trader reset errors; run the engine before resetting
 - Changed local modify/cancel refusals to denied events; handle `on_order_modify_denied` and `on_order_cancel_denied`
 - Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`

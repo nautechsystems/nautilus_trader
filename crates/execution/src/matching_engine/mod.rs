@@ -80,7 +80,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use self::{
-    config::OrderMatchingEngineConfig,
+    config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
     ids_generator::IdsGenerator,
     inflight::InflightOrders,
     orders::{MatchingOrders, OtoCommand},
@@ -3828,15 +3828,28 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let Some(refreshed) = self.resync_core_entry(command.client_order_id) else {
+        let Some(refreshed) = self.order_snapshot(command.client_order_id) else {
             return;
         };
 
-        // Skip queue reset on rejected modifies to preserve accrued position
         let price_changed = refreshed.price() != order.price()
             || refreshed.trigger_price() != order.trigger_price();
-        if price_changed
-            && refreshed.is_open()
+
+        let reset_priority = match self.config.order_priority_reset_policy {
+            OrderPriorityResetPolicy::PriceChange => false,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease => {
+                price_changed || refreshed.quantity() > order.quantity()
+            }
+            OrderPriorityResetPolicy::AnyModify => true,
+        };
+
+        self.sync_core_entry(&refreshed, reset_priority);
+        let reset_queue = match self.config.order_priority_reset_policy {
+            OrderPriorityResetPolicy::PriceChange => price_changed && refreshed.is_open(),
+            _ => reset_priority && !refreshed.is_closed(),
+        };
+
+        if reset_queue
             && self.config.queue_position
             && let Some(new_price) = refreshed.price()
         {
@@ -3997,32 +4010,37 @@ impl OrderMatchingEngine {
 
     fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
         let order = self.order_snapshot(client_order_id)?;
+        self.sync_core_entry(&order, false);
+        Some(order)
+    }
+
+    fn sync_core_entry(&mut self, order: &OrderAny, reset_priority: bool) {
+        let client_order_id = order.client_order_id();
 
         // Gate on `is_closed`, not `is_open`: cache may transiently hold the
         // order in `Submitted` (process_limit_order accepts before cache add)
         if order.is_closed() {
             self.delete_core_order(client_order_id);
             self.remove_queue_position(client_order_id);
-            return Some(order);
+            return;
         }
 
-        let new_match_info = Self::matching_core_entry(&order);
-
+        let new_match_info = Self::matching_core_entry(order);
         // Skip the delete+add when unchanged to preserve FIFO at the level
-        let unchanged = self
-            .core
-            .get_order(client_order_id)
-            .is_some_and(|existing| *existing == new_match_info);
+        let unchanged = !reset_priority
+            && self
+                .core
+                .get_order(client_order_id)
+                .is_some_and(|existing| *existing == new_match_info);
 
         if unchanged {
-            self.track_post_match_order(&order);
-            return Some(order);
+            self.track_post_match_order(order);
+            return;
         }
 
         self.delete_core_order(client_order_id);
-        self.track_post_match_order(&order);
+        self.track_post_match_order(order);
         self.core.add_order(new_match_info);
-        Some(order)
     }
 
     fn order_snapshot(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {

@@ -2571,6 +2571,7 @@ mod tests {
     };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
+        matching_engine::config::OrderPriorityResetPolicy,
         models::{
             fee::{FeeModelAny, MakerTakerFeeModel},
             latency::{LatencyModelHandle, StaticLatencyModel},
@@ -2606,13 +2607,23 @@ mod tests {
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
+    #[cfg(feature = "python")]
+    use pyo3::{prelude::*, types::PyDict};
     use rstest::*;
+    #[cfg(feature = "python")]
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
-    use crate::modules::{
-        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
-        SimulationModuleResult,
+    #[cfg(feature = "python")]
+    use crate::python::engine::PyBacktestEngine;
+    use crate::{
+        config::{BacktestRunConfig, BacktestVenueConfig},
+        modules::{
+            AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+            SimulationModuleResult,
+        },
+        node::BacktestNode,
     };
 
     #[derive(Debug)]
@@ -4579,6 +4590,96 @@ mod tests {
         option.price_precision = option.price_increment.precision;
         option.size_precision = 3;
         option
+    }
+
+    #[rstest]
+    fn test_node_forwards_order_priority_reset_policy(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[values(
+            OrderPriorityResetPolicy::PriceChange,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+            OrderPriorityResetPolicy::AnyModify
+        )]
+        policy: OrderPriorityResetPolicy,
+    ) {
+        let venue = BacktestVenueConfig::builder()
+            .name("BINANCE")
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec!["1_000_000 USDT".to_string()])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
+            .order_priority_reset_policy(policy)
+            .build()
+            .unwrap();
+        let config = BacktestRunConfig::builder()
+            .venues(vec![venue])
+            .data(Vec::new())
+            .build()
+            .unwrap();
+        let config_id = config.id().to_string();
+        let mut node = BacktestNode::new(vec![config]).unwrap();
+        node.build().unwrap();
+        let engine = node.get_engine_mut(&config_id).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        engine.add_instrument(&instrument).unwrap();
+        let exchange = engine.venues.get(&Venue::from("BINANCE")).unwrap().borrow();
+        let matching_engine = exchange.get_matching_engine(&instrument.id()).unwrap();
+
+        assert_eq!(matching_engine.config.order_priority_reset_policy, policy);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_python_add_venue_forwards_order_priority_reset_policy(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[values(
+            OrderPriorityResetPolicy::PriceChange,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+            OrderPriorityResetPolicy::AnyModify
+        )]
+        policy: OrderPriorityResetPolicy,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let engine = py
+                .get_type::<PyBacktestEngine>()
+                .call1((BacktestEngineConfig::default(),))
+                .unwrap();
+            let kwargs = PyDict::new(py);
+            let fee_model = py
+                .get_type::<MakerTakerFeeModel>()
+                .call1((Decimal::ZERO, Decimal::ZERO))
+                .unwrap();
+            kwargs.set_item("fee_model", fee_model).unwrap();
+            kwargs
+                .set_item("order_priority_reset_policy", policy)
+                .unwrap();
+            engine
+                .call_method(
+                    "add_venue",
+                    (
+                        Venue::from("BINANCE"),
+                        OmsType::Netting,
+                        AccountType::Margin,
+                        vec![Money::from("1_000_000 USDT")],
+                    ),
+                    Some(&kwargs),
+                )
+                .unwrap();
+            let mut engine = engine.extract::<PyRefMut<'_, PyBacktestEngine>>().unwrap();
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+            engine.inner_mut().add_instrument(&instrument).unwrap();
+            let exchange = engine
+                .inner()
+                .venues
+                .get(&Venue::from("BINANCE"))
+                .unwrap()
+                .borrow();
+            let matching_engine = exchange.get_matching_engine(&instrument.id()).unwrap();
+
+            assert_eq!(matching_engine.config.order_priority_reset_policy, policy);
+        });
     }
 
     #[rstest]

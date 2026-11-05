@@ -31,9 +31,12 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::python::{
-    fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
-    latency::pyobject_to_latency_model_any,
+use nautilus_execution::{
+    matching_engine::config::OrderPriorityResetPolicy,
+    python::{
+        fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
+        latency::pyobject_to_latency_model_any,
+    },
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -168,6 +171,7 @@ impl PyBacktestEngine {
             liquidation_enabled = false,
             liquidation_trigger_ratio = None,
             liquidation_cancel_open_orders = true,
+            order_priority_reset_policy = OrderPriorityResetPolicy::PriceChange,
         )
     )]
     #[expect(
@@ -211,6 +215,7 @@ impl PyBacktestEngine {
         liquidation_enabled: bool,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
+        order_priority_reset_policy: OrderPriorityResetPolicy,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
@@ -280,6 +285,7 @@ impl PyBacktestEngine {
             .allow_cash_borrowing(allow_cash_borrowing)
             .frozen_account(frozen_account)
             .queue_position(queue_position)
+            .order_priority_reset_policy(order_priority_reset_policy)
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
             .liquidation_enabled(liquidation_enabled)
@@ -1644,6 +1650,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 #[cfg(test)]
 mod model_tests {
     use nautilus_execution::{
+        matching_engine::config::OrderPriorityResetPolicy,
         models::fee::{FeeModelAny, MakerTakerFeeModel},
         python::{fee::PyFeeModel, fill::PyFillModel},
     };
@@ -1865,6 +1872,7 @@ mod model_tests {
                     false,
                     None,
                     true,
+                    OrderPriorityResetPolicy::PriceChange,
                 )
                 .unwrap();
 

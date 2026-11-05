@@ -204,8 +204,32 @@ For L3 MBO books:
 - A completed book snapshot keeps only surviving tracked order IDs ahead, each capped at its previous
   quantity.
 
-Changing a simulated order's price resets its queue position at the new level. A quantity-only change keeps
-the progress already made.
+### Order modifications
+
+Changing a simulated order's price resets its queue position at the new level. By default, a quantity-only
+change keeps the progress already made.
+
+Pass an `OrderPriorityResetPolicy` from `nautilus_trader.execution` as `order_priority_reset_policy` on
+`BacktestVenueConfig`, `SandboxExecutionClientConfig`, or `BacktestEngine.add_venue()`:
+
+| Policy                       | Quantity-only decrease | Quantity-only increase |
+| ---------------------------- | ---------------------- | ---------------------- |
+| `PRICE_CHANGE` (default)     | Preserve               | Preserve               |
+| `PRICE_OR_QUANTITY_INCREASE` | Preserve               | Reset                  |
+| `ANY_MODIFY`                 | Reset                  | Reset                  |
+
+Each successful `ModifyOrder` command applies the policy to the remaining resting order.
+`PRICE_OR_QUANTITY_INCREASE` also resets priority when the limit or trigger price changes.
+`ANY_MODIFY` resets priority even when the command leaves quantity and prices unchanged.
+A reset moves the order behind other simulated orders at its price, even with `queue_position=False`.
+With queue tracking enabled, it also snapshots the displayed quantity ahead again.
+Rejected modifications and automatic quantity updates, such as contingent order quantity synchronization,
+preserve priority.
+
+`ANY_MODIFY` models the queue reset on amendments documented by
+[Binance USD-M](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Modify-Order).
+`PRICE_OR_QUANTITY_INCREASE` matches
+[Kraken spot's quantity-only amendment rules](https://docs.kraken.com/exchange/guides/general/amends#queue-priority).
 
 ### L1 queue tracking
 

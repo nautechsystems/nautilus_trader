@@ -54,11 +54,55 @@ pub struct OrderMatchingEngineConfig {
     #[builder(default)]
     pub defer_option_settlement: bool,
     pub price_protection_points: Option<u32>,
+    /// The queue-priority reset policy for successful modify commands.
+    #[builder(default)]
+    pub order_priority_reset_policy: OrderPriorityResetPolicy,
 }
 
 impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
         Self::builder().build()
+    }
+}
+
+/// Determines when successful modify commands reset queue position and same-price priority.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.execution",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.execution")
+)]
+pub enum OrderPriorityResetPolicy {
+    /// Preserve quantity-only modifications and retain existing price-change handling.
+    #[default]
+    PriceChange = 0,
+    /// Reset when the limit or trigger price changes, or the total order quantity increases.
+    PriceOrQuantityIncrease = 1,
+    /// Reset after every successful modify command, including unchanged values.
+    AnyModify = 2,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl OrderPriorityResetPolicy {
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "PyO3 protocol methods borrow their receivers"
+    )]
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 }
 
@@ -83,8 +127,31 @@ mod tests {
         assert!(config.use_reduce_only);
         assert!(!config.use_market_order_acks);
         assert!(!config.queue_position);
+        assert_eq!(
+            config.order_priority_reset_policy,
+            OrderPriorityResetPolicy::PriceChange
+        );
         assert!(!config.oto_full_trigger);
         assert!(!config.defer_option_settlement);
         assert_eq!(config.price_protection_points, None);
+    }
+
+    #[rstest]
+    #[case(OrderPriorityResetPolicy::PriceChange, "PRICE_CHANGE")]
+    #[case(
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+        "PRICE_OR_QUANTITY_INCREASE"
+    )]
+    #[case(OrderPriorityResetPolicy::AnyModify, "ANY_MODIFY")]
+    fn test_order_priority_reset_policy_serde(
+        #[case] policy: OrderPriorityResetPolicy,
+        #[case] name: &str,
+    ) {
+        let value = serde_json::Value::String(name.to_owned());
+        assert_eq!(serde_json::to_value(policy).unwrap(), value);
+        assert_eq!(
+            serde_json::from_value::<OrderPriorityResetPolicy>(value).unwrap(),
+            policy
+        );
     }
 }

@@ -58,7 +58,7 @@ use super::{
     order_precision_valid, post_match_order_action,
 };
 use crate::{
-    matching_engine::config::OrderMatchingEngineConfig,
+    matching_engine::config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
     models::{
         fee::{FeeModel, FeeModelAny, FeeModelHandle, MakerTakerFeeModel},
         fill::{DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
@@ -3049,9 +3049,17 @@ fn test_cancel_removes_queue_position() {
 }
 
 #[rstest]
-fn test_modify_reindexes_queue_position() {
+fn test_modify_reindexes_queue_position(
+    #[values(
+        OrderPriorityResetPolicy::PriceChange,
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+        OrderPriorityResetPolicy::AnyModify
+    )]
+    policy: OrderPriorityResetPolicy,
+) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let (mut engine, _cache) = get_l3_queue_engine(instrument);
+    engine.config.order_priority_reset_policy = policy;
     let old_price = Price::from("100.00");
     let new_price = Price::from("101.00");
     let client_order_id = ClientOrderId::from("O-MODIFY-QUEUE");
@@ -3103,6 +3111,783 @@ fn test_modify_reindexes_queue_position() {
             .get(&client_order_id)
             .map(|orders| orders.keys().copied().collect::<Vec<_>>()),
         Some(vec![2]),
+    );
+}
+
+#[rstest]
+#[case::price_decrease(OrderPriorityResetPolicy::PriceChange, "3.000", "4.000", [0, 1])]
+#[case::price_same(OrderPriorityResetPolicy::PriceChange, "5.000", "4.000", [0, 1])]
+#[case::price_increase(OrderPriorityResetPolicy::PriceChange, "7.000", "4.000", [0, 1])]
+#[case::increase_decrease(OrderPriorityResetPolicy::PriceOrQuantityIncrease, "3.000", "4.000", [0, 1])]
+#[case::increase_same(OrderPriorityResetPolicy::PriceOrQuantityIncrease, "5.000", "4.000", [0, 1])]
+#[case::increase_increase(OrderPriorityResetPolicy::PriceOrQuantityIncrease, "7.000", "17.000", [1, 0])]
+#[case::any_decrease(OrderPriorityResetPolicy::AnyModify, "3.000", "17.000", [1, 0])]
+#[case::any_same(OrderPriorityResetPolicy::AnyModify, "5.000", "17.000", [1, 0])]
+#[case::any_increase(OrderPriorityResetPolicy::AnyModify, "7.000", "17.000", [1, 0])]
+fn test_modify_order_priority_reset(
+    #[values(BookType::L1_MBP, BookType::L2_MBP, BookType::L3_MBO)] book_type: BookType,
+    #[case] policy: OrderPriorityResetPolicy,
+    #[case] qty: &str,
+    #[case] expected_ahead: &str,
+    #[case] expected_indices: [usize; 2],
+    #[values(
+        (OrderSide::Buy, "100.00", AggressorSide::Sell),
+        (OrderSide::Sell, "101.00", AggressorSide::Buy),
+    )]
+    market: (OrderSide, &str, AggressorSide),
+) {
+    let reset_priority = expected_indices[0] == 1;
+    let (side, price, aggressor) = market;
+    let price = Price::from(price);
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, cache) = get_queue_engine(instrument, book_type);
+    engine.config.order_priority_reset_policy = policy;
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let saved_events = events.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        cache.borrow_mut().update_order(&event).unwrap();
+        saved_events.borrow_mut().push(event);
+    }));
+
+    let quote = QuoteTick::new(
+        engine.instrument.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    );
+
+    if book_type == BookType::L1_MBP {
+        engine.process_quote_tick(&quote);
+    } else {
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(side, price, Quantity::from("10.000"), 1),
+                0,
+                1,
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    let ids = [
+        ClientOrderId::from("MODIFY-FIRST"),
+        ClientOrderId::from("MODIFY-SECOND"),
+    ];
+
+    for id in ids {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(engine.instrument.id())
+            .client_order_id(id)
+            .side(side)
+            .price(price)
+            .quantity(Quantity::from("5.000"))
+            .post_only(true)
+            .submit(true)
+            .build();
+        process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    }
+
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        Quantity::from("6.000"),
+        aggressor,
+        TradeId::from("PROGRESS"),
+        2.into(),
+        2.into(),
+    ));
+    assert_eq!(
+        engine.queue_ahead_total[&ids[0]],
+        (price.raw(), Quantity::from("4.000").raw())
+    );
+
+    if book_type == BookType::L1_MBP {
+        engine.process_quote_tick(&QuoteTick::new(
+            quote.instrument_id,
+            quote.bid_price,
+            quote.ask_price,
+            Quantity::from("17.000"),
+            Quantity::from("17.000"),
+            3.into(),
+            3.into(),
+        ));
+    } else {
+        let (action, size, id) = if book_type == BookType::L3_MBO {
+            (BookAction::Add, "7.000", 2)
+        } else {
+            (BookAction::Update, "17.000", 1)
+        };
+
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                action,
+                BookOrder::new(side, price, Quantity::from(size), id),
+                0,
+                3,
+                3.into(),
+                3.into(),
+            ))
+            .unwrap();
+    }
+
+    let order = engine.order_snapshot(ids[0]).unwrap();
+    let quantity = Quantity::from(qty);
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            ids[0],
+            order.venue_order_id(),
+            Some(quantity),
+            None,
+            None,
+            UUID4::new(),
+            4.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+    let expected_ahead = Quantity::from(expected_ahead);
+    let expected_ids = expected_indices.map(|index| ids[index]);
+    let orders = engine.core.get_orders();
+
+    assert_eq!(
+        orders.iter().map(|o| o.client_order_id).collect::<Vec<_>>(),
+        expected_ids
+    );
+    assert_eq!(
+        engine.queue_ahead_total[&ids[0]],
+        (price.raw(), expected_ahead.raw())
+    );
+    assert_eq!(engine.order_snapshot(ids[0]).unwrap().quantity(), quantity);
+
+    if book_type == BookType::L3_MBO {
+        let expected = if reset_priority {
+            vec![
+                (1, Quantity::from("10.000").raw()),
+                (2, Quantity::from("7.000").raw()),
+            ]
+        } else {
+            vec![(1, Quantity::from("4.000").raw())]
+        };
+
+        assert_eq!(
+            engine.queue_ahead_orders[&ids[0]]
+                .iter()
+                .map(|(id, qty)| (*id, *qty))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_l3_queue_synced(&engine);
+    }
+
+    events.borrow_mut().clear();
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        Quantity::from("5.000"),
+        aggressor,
+        TradeId::from("FILL"),
+        5.into(),
+        5.into(),
+    ));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let expected_fills = vec![(expected_ids[0], price, Quantity::from("1.000"))];
+
+    assert_eq!(fills, expected_fills);
+}
+
+#[rstest]
+fn test_modify_order_priority_without_queue_tracking(
+    #[values(
+        OrderPriorityResetPolicy::PriceChange,
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+        OrderPriorityResetPolicy::AnyModify
+    )]
+    policy: OrderPriorityResetPolicy,
+    #[values(false, true)] rejected: bool,
+    #[values(false, true)] internal: bool,
+) {
+    let reset_priority = policy == OrderPriorityResetPolicy::AnyModify;
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.order_priority_reset_policy = policy;
+    let ids = [
+        ClientOrderId::from("MODIFY-FIRST"),
+        ClientOrderId::from("MODIFY-SECOND"),
+    ];
+
+    for id in ids {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(engine.instrument.id())
+            .client_order_id(id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1499.00"))
+            .quantity(Quantity::from("5.000"))
+            .post_only(true)
+            .submit(true)
+            .build();
+        process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    }
+
+    events.borrow_mut().clear();
+    let order = engine.order_snapshot(ids[0]).unwrap();
+    let price = rejected.then_some(Price::from("1501.00"));
+
+    if internal {
+        assert_eq!(
+            engine.update_order(
+                &order,
+                Some(Quantity::from("3.000")),
+                price,
+                None,
+                Some(false),
+                None
+            ),
+            !rejected
+        );
+        engine.resync_core_entry(ids[0]);
+    } else {
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                ids[0],
+                order.venue_order_id(),
+                Some(Quantity::from("3.000")),
+                price,
+                None,
+                UUID4::new(),
+                2.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+    }
+
+    let expected = if reset_priority && !rejected && !internal {
+        vec![ids[1], ids[0]]
+    } else {
+        ids.to_vec()
+    };
+
+    assert_eq!(
+        engine
+            .core
+            .get_orders_bid()
+            .iter()
+            .map(|o| o.client_order_id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        engine.order_snapshot(ids[0]).unwrap().quantity(),
+        Quantity::from(if rejected { "5.000" } else { "3.000" })
+    );
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::ModifyRejected(_)))
+            .count(),
+        usize::from(rejected)
+    );
+}
+
+#[rstest]
+fn test_modify_order_priority_preserves_rejected_and_internal_queue(
+    #[values(
+        OrderPriorityResetPolicy::PriceChange,
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+        OrderPriorityResetPolicy::AnyModify
+    )]
+    policy: OrderPriorityResetPolicy,
+    #[values(false, true)] internal: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, _cache) = get_l3_queue_engine(instrument);
+    engine.config.order_priority_reset_policy = policy;
+    let price = Price::from("100.00");
+    let order = rest_l3_queue_order(&mut engine, price, 1, ClientOrderId::from("MODIFY-QUEUE"));
+    let id = order.client_order_id();
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        Quantity::from("6.000"),
+        AggressorSide::Buy,
+        TradeId::from("PROGRESS"),
+        2.into(),
+        2.into(),
+    ));
+
+    if internal {
+        assert!(engine.update_order(
+            &order,
+            Some(Quantity::from("3.000")),
+            None,
+            None,
+            Some(false),
+            None
+        ));
+        engine.resync_core_entry(id);
+    } else {
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                id,
+                order.venue_order_id(),
+                Some(Quantity::from("3.000")),
+                Some(Price::from("100.001")),
+                None,
+                UUID4::new(),
+                3.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+    }
+
+    assert_eq!(
+        engine.queue_ahead_total[&id],
+        (price.raw(), Quantity::from("4.000").raw())
+    );
+    assert_eq!(
+        engine.queue_ahead_orders[&id]
+            .iter()
+            .map(|(id, qty)| (*id, *qty))
+            .collect::<Vec<_>>(),
+        vec![(1, Quantity::from("4.000").raw())]
+    );
+    assert_eq!(
+        engine.order_snapshot(id).unwrap().quantity(),
+        Quantity::from(if internal { "3.000" } else { "5.000" })
+    );
+    assert_l3_queue_synced(&engine);
+}
+
+#[rstest]
+#[case::legacy(OrderPriorityResetPolicy::PriceChange, "7.000", "100.00", "4.000")]
+#[case::increase(
+    OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+    "7.000",
+    "100.00",
+    "10.000"
+)]
+#[case::price(
+    OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+    "5.000",
+    "101.00",
+    "7.000"
+)]
+#[case::any(OrderPriorityResetPolicy::AnyModify, "3.000", "100.00", "10.000")]
+fn test_modify_order_priority_with_deferred_acceptance(
+    #[case] policy: OrderPriorityResetPolicy,
+    #[case] qty: &str,
+    #[case] limit: &str,
+    #[case] expected_ahead: &str,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, _cache) = get_l3_queue_engine(instrument);
+    engine.config.order_priority_reset_policy = policy;
+    engine.set_event_handler(Rc::new(|_| {}));
+    let price = Price::from("100.00");
+    let order = rest_l3_queue_order(
+        &mut engine,
+        price,
+        1,
+        ClientOrderId::from("MODIFY-DEFERRED"),
+    );
+    let id = order.client_order_id();
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        Quantity::from("6.000"),
+        AggressorSide::Buy,
+        TradeId::from("PROGRESS"),
+        2.into(),
+        2.into(),
+    ));
+    assert_eq!(
+        engine.queue_ahead_total[&id],
+        (price.raw(), Quantity::from("4.000").raw())
+    );
+    let new_price = Price::from(limit);
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            engine.instrument.id(),
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("101.00"),
+                Quantity::from("7.000"),
+                2,
+            ),
+            0,
+            3,
+            3.into(),
+            3.into(),
+        ))
+        .unwrap();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from(qty)),
+            Some(new_price),
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+    let refreshed = engine.order_snapshot(id).unwrap();
+    assert_eq!(refreshed.status(), OrderStatus::Submitted);
+    assert_eq!(refreshed.quantity(), Quantity::from(qty));
+    assert_eq!(refreshed.price(), Some(new_price));
+    assert_eq!(
+        engine.queue_ahead_total[&id],
+        (new_price.raw(), Quantity::from(expected_ahead).raw())
+    );
+    assert_eq!(
+        engine
+            .core
+            .get_orders_ask()
+            .iter()
+            .map(|o| o.client_order_id)
+            .collect::<Vec<_>>(),
+        vec![id]
+    );
+    assert_l3_queue_synced(&engine);
+}
+
+#[rstest]
+#[case::legacy(OrderPriorityResetPolicy::PriceChange, "0.000", Some(0))]
+#[case::increase(OrderPriorityResetPolicy::PriceOrQuantityIncrease, "0.000", Some(0))]
+#[case::any(OrderPriorityResetPolicy::AnyModify, "10.000", None)]
+fn test_modify_order_priority_resets_partially_filled_remainder(
+    #[case] policy: OrderPriorityResetPolicy,
+    #[case] expected_ahead: &str,
+    #[case] expected_excess: Option<QuantityRaw>,
+    #[values("4.000", "2.000")] qty: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.queue_position = true;
+    engine.config.order_priority_reset_policy = policy;
+    let price = Price::from("1499.00");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Buy)
+        .price(price)
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        Quantity::from("12.000"),
+        AggressorSide::Sell,
+        TradeId::from("PARTIAL"),
+        2.into(),
+        2.into(),
+    ));
+    assert_eq!(
+        engine.order_snapshot(id).unwrap().filled_qty(),
+        Quantity::from("2.000")
+    );
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from(qty)),
+            None,
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+    let refreshed = engine.order_snapshot(id).unwrap();
+    assert_eq!(refreshed.quantity(), Quantity::from(qty));
+    assert_eq!(refreshed.filled_qty(), Quantity::from("2.000"));
+
+    if qty == "2.000" {
+        assert_eq!(refreshed.status(), OrderStatus::Canceled);
+        assert!(!engine.core.order_exists(id));
+        assert!(!engine.queue_ahead_total.contains_key(&id));
+    } else {
+        assert_eq!(refreshed.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(refreshed.leaves_qty(), Quantity::from("2.000"));
+        assert_eq!(
+            engine.queue_ahead_total[&id],
+            (price.raw(), Quantity::from(expected_ahead).raw())
+        );
+        assert_eq!(engine.queue_excess.get(&id).copied(), expected_excess);
+    }
+
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0
+    );
+}
+
+#[rstest]
+#[case::legacy(OrderPriorityResetPolicy::PriceChange, [0, 1])]
+#[case::increase(OrderPriorityResetPolicy::PriceOrQuantityIncrease, [1, 0])]
+#[case::any(OrderPriorityResetPolicy::AnyModify, [1, 0])]
+fn test_modify_order_priority_triggered_limit_trigger_change(
+    #[case] policy: OrderPriorityResetPolicy,
+    #[case] expected_indices: [usize; 2],
+) {
+    let (mut engine, _events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.order_priority_reset_policy = policy;
+    engine.config.trade_execution = false;
+    let ids = [
+        ClientOrderId::from("MODIFY-TRIGGERED"),
+        ClientOrderId::from("MODIFY-PEER"),
+    ];
+    let mut stop = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(ids[0])
+        .side(OrderSide::Buy)
+        .price(Price::from("1499.00"))
+        .trigger_price(Price::from("1502.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .quantity(Quantity::from("5.000"))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut stop, AccountId::from("SIM-001"));
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        Price::from("1502.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Buy,
+        TradeId::from("TRIGGER"),
+        2.into(),
+        2.into(),
+    ));
+    assert_eq!(
+        engine.order_snapshot(ids[0]).unwrap().status(),
+        OrderStatus::Triggered
+    );
+    let mut peer = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(ids[1])
+        .side(OrderSide::Buy)
+        .price(Price::from("1499.00"))
+        .quantity(Quantity::from("5.000"))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut peer, AccountId::from("SIM-001"));
+    engine.process_modify(
+        &ModifyOrder::new(
+            stop.trader_id(),
+            None,
+            stop.strategy_id(),
+            stop.instrument_id(),
+            ids[0],
+            stop.venue_order_id(),
+            None,
+            None,
+            Some(Price::from("1503.00")),
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+    let refreshed = engine.order_snapshot(ids[0]).unwrap();
+    assert_eq!(refreshed.status(), OrderStatus::Triggered);
+    assert_eq!(refreshed.quantity(), Quantity::from("5.000"));
+    assert_eq!(refreshed.trigger_price(), Some(Price::from("1503.00")));
+    assert_eq!(
+        engine
+            .core
+            .get_orders_bid()
+            .iter()
+            .map(|order| order.client_order_id)
+            .collect::<Vec<_>>(),
+        expected_indices.map(|i| ids[i])
+    );
+}
+
+#[rstest]
+#[case::legacy(OrderPriorityResetPolicy::PriceChange, [0, 1])]
+#[case::increase(OrderPriorityResetPolicy::PriceOrQuantityIncrease, [0, 1])]
+#[case::any(OrderPriorityResetPolicy::AnyModify, [1, 0])]
+fn test_modify_order_priority_uses_effective_qty(
+    #[case] policy: OrderPriorityResetPolicy,
+    #[case] expected_indices: [usize; 2],
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.order_priority_reset_policy = policy;
+    engine.config.oto_full_trigger = true;
+    let book = OrderBook::new(engine.instrument.id(), BookType::L2_MBP);
+    engine.set_fill_model(FillModelHandle::new(TestBookFillModel { book }));
+    let ids = [
+        ClientOrderId::from("MODIFY-CHILD"),
+        ClientOrderId::from("MODIFY-PEER"),
+    ];
+    let parent_id = ClientOrderId::from("MODIFY-PARENT");
+    let parent_instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+    assert_ne!(parent_instrument.id(), engine.instrument.id());
+    let parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(parent_instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("5.000"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![ids[0]])
+        .submit(true)
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &parent,
+        &parent_instrument,
+        None,
+        None,
+        Some(Price::from("1500.00")),
+        None,
+        None,
+        Some(Money::zero(parent_instrument.quote_currency())),
+        None,
+        None,
+    );
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(parent, None, None, false)
+        .unwrap();
+    engine.cache.borrow_mut().update_order(&fill).unwrap();
+    let mut child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(ids[0])
+        .side(OrderSide::Buy)
+        .price(Price::from("1499.00"))
+        .quantity(Quantity::from("5.000"))
+        .parent_order_id(parent_id)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut child, AccountId::from("SIM-001"));
+    let mut peer = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(ids[1])
+        .side(OrderSide::Buy)
+        .price(Price::from("1499.00"))
+        .quantity(Quantity::from("5.000"))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut peer, AccountId::from("SIM-001"));
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            engine.instrument.id(),
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1499.00"),
+                Quantity::from("10.000"),
+                2,
+            ),
+            RecordFlag::F_LAST as u8,
+            2,
+            2.into(),
+            2.into(),
+        ))
+        .unwrap();
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            child.trader_id(),
+            None,
+            child.strategy_id(),
+            child.instrument_id(),
+            ids[0],
+            child.venue_order_id(),
+            Some(Quantity::from("7.000")),
+            None,
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+    let refreshed = engine.order_snapshot(ids[0]).unwrap();
+
+    let updates: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(update) => Some((update.client_order_id, update.quantity)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        updates,
+        vec![
+            (ids[0], Quantity::from("7.000")),
+            (ids[0], Quantity::from("5.000"))
+        ]
+    );
+    assert_eq!(refreshed.quantity(), Quantity::from("5.000"));
+    assert_eq!(refreshed.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(refreshed.status(), OrderStatus::Accepted);
+    assert_eq!(
+        engine
+            .core
+            .get_orders_bid()
+            .iter()
+            .map(|order| order.client_order_id)
+            .collect::<Vec<_>>(),
+        expected_indices.map(|i| ids[i])
     );
 }
 

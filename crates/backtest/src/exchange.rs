@@ -39,7 +39,7 @@ use nautilus_execution::{
     matching::RestingOrder,
     matching_engine::{
         OrderMatchingEngine,
-        config::OrderMatchingEngineConfig,
+        config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
         inflight::InflightOrders,
         orders::{MatchingOrders, OtoCommand},
     },
@@ -197,6 +197,7 @@ pub struct SimulatedExchange {
     allow_cash_borrowing: bool,
     frozen_account: bool,
     queue_position: bool,
+    order_priority_reset_policy: OrderPriorityResetPolicy,
     oto_full_trigger: bool,
     defer_option_settlement: bool,
     price_protection_points: u32,
@@ -289,6 +290,7 @@ impl SimulatedExchange {
             allow_cash_borrowing: config.allow_cash_borrowing,
             frozen_account: config.frozen_account,
             queue_position: config.queue_position,
+            order_priority_reset_policy: config.order_priority_reset_policy,
             oto_full_trigger: config.oto_full_trigger,
             defer_option_settlement: config.defer_option_settlement,
             price_protection_points: config.price_protection_points,
@@ -510,6 +512,7 @@ impl SimulatedExchange {
             .use_reduce_only(self.use_reduce_only)
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
+            .order_priority_reset_policy(self.order_priority_reset_policy)
             .oto_full_trigger(self.oto_full_trigger)
             .defer_option_settlement(self.defer_option_settlement)
             .maybe_price_protection_points(price_protection)
@@ -2407,6 +2410,98 @@ mod tests {
         }
 
         SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    #[rstest]
+    fn test_modify_order_priority_config_reaches_matching_engine(
+        #[values(
+            OrderPriorityResetPolicy::PriceChange,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+            OrderPriorityResetPolicy::AnyModify
+        )]
+        policy: OrderPriorityResetPolicy,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L2_MBP)
+            .starting_balances(vec![Money::from("1_000 USD")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .order_priority_reset_policy(policy)
+            .build()
+            .unwrap();
+        let mut exchange = SimulatedExchange::new(config, cache.clone(), clock).unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        exchange.add_instrument(instrument.clone()).unwrap();
+        let engine = exchange.matching_engines.get_mut(&instrument.id()).unwrap();
+        engine.set_event_handler(Rc::new(move |event| {
+            cache.borrow_mut().update_order(&event).unwrap();
+        }));
+
+        let ids = [
+            ClientOrderId::from("MODIFY-FIRST"),
+            ClientOrderId::from("MODIFY-SECOND"),
+        ];
+
+        for id in ids {
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(id)
+                .side(OrderSide::Buy)
+                .price(Price::from("1.00000"))
+                .quantity(Quantity::from("5"))
+                .submit(true)
+                .build();
+            exchange
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+            engine.process_order(&mut order, AccountId::from("SIM-001"));
+        }
+
+        let order = exchange.cache.borrow().order(&ids[0]).unwrap().clone();
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                ids[0],
+                order.venue_order_id(),
+                Some(Quantity::from("3")),
+                None,
+                None,
+                UUID4::new(),
+                1.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+
+        let expected = if policy == OrderPriorityResetPolicy::AnyModify {
+            vec![ids[1], ids[0]]
+        } else {
+            ids.to_vec()
+        };
+
+        assert_eq!(
+            engine
+                .get_core()
+                .get_orders_bid()
+                .iter()
+                .map(|o| o.client_order_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            exchange.cache.borrow().order(&ids[0]).unwrap().quantity(),
+            Quantity::from("3")
+        );
     }
 
     #[rstest]
