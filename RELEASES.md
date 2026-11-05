@@ -209,6 +209,7 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Optimized Architect AX market data trade parsing and reduced allocations
+- Refined Derive report generation with HTTP collection on runtime workers (#5216)
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Refined Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Optimized empty command-queue drains and L1 order-book quote replacement

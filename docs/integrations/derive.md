@@ -419,6 +419,12 @@ Derive uses the configured session key for authenticated execution:
   account, order, trade, and balance updates through private channels.
 - Report generation, account refreshes, and instrument lookups use REST.
 
+Order, fill, and position report collection runs on runtime workers. Order and fill results finalize
+on the core thread against current order bindings and fill delivery state. A change to an observed
+binding during collection fails the request, and fills already delivered are excluded. When the requested
+scope has a pending replacement or unresolved binding, order and fill reports collect inline. Startup
+mass-status collection remains inline.
+
 ### Fills and settlement
 
 The adapter ingests live and historical fills using `trade_id` and `order_id` as execution identities.

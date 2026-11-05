@@ -46,7 +46,7 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::{
     cache::{Cache, ORDER_NOT_FOUND},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     clock::VirtualClock,
     live::runner::{
         replace_data_event_sender, replace_exec_event_sender, replace_system_event_sender,
@@ -14403,7 +14403,10 @@ fn pagination_record(fills: bool, page: u8) -> Value {
 #[case::reversed_manager(8)]
 #[case::duplicate_engine(9)]
 #[case::duplicate_manager(10)]
-#[tokio::test]
+#[case::worker_single_current(11)]
+#[case::worker_single_parent(12)]
+#[case::worker_bulk(13)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_replacement_reports_project_logical_quantity_and_average(
     #[case] route: u8,
     #[values(false, true)] terminal: bool,
@@ -14566,6 +14569,46 @@ async fn test_replacement_reports_project_logical_quantity_and_average(
     let mut mass = None;
 
     let reports = match route {
+        11 | 12 => {
+            let command = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(instrument_id),
+                Some(cid),
+                Some(if route == 12 { parent_id } else { current_id }),
+                None,
+                None,
+            );
+            vec![
+                finish_report_task(
+                    tc.client
+                        .generate_order_status_report_task(&command)
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap(),
+            ]
+        }
+        13 => {
+            let command = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                !terminal,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+            finish_report_task(
+                tc.client
+                    .generate_order_status_reports_task(&command)
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        }
         0 | 1 => vec![
             tc.client
                 .generate_order_status_report(&GenerateOrderStatusReport::new(
@@ -14638,7 +14681,7 @@ async fn test_replacement_reports_project_logical_quantity_and_average(
             .iter()
             .filter(|report| report.venue_order_id == parent_id)
             .count(),
-        usize::from(route >= 3 || route == 2 && terminal),
+        usize::from((3..=10).contains(&route) || matches!(route, 2 | 13) && terminal),
     );
 
     tc.client.disconnect().await.unwrap();
@@ -18405,4 +18448,431 @@ async fn test_fresh_cache_replacement_rejects_invalid_ancestry(
         tc.cache.borrow().orders(None, None, None, None, None).len(),
         0
     );
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::orders_open(1)]
+#[case::orders_history(2)]
+#[case::fills(3)]
+#[case::positions(4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_matches_inline(
+    #[case] request: u8,
+    #[values("valid", "filtered", "malformed", "venue_error")] response: &str,
+) {
+    let state = RestState::default();
+    let order = sample_order_json();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [order.clone()], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({"orders": [order.clone()], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.get_order_response.lock().await = order;
+    *state.trade_history_response.lock().await = json!({"trades": [sample_trade_json("task-fill", "ord-mock-1", "ETH-PERP")], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await = json!({"positions": [sample_position_json("ETH-PERP", "1.23"), sample_position_json("BTC-PERP", "-2.34")], "subaccount_id": TEST_SUBACCOUNT});
+
+    if response == "venue_error" {
+        let error = json!({"id": 1, "error": {"code": 11000, "message": "report unavailable"}});
+        *state.get_order_response.lock().await = error.clone();
+        *state.trigger_orders_response.lock().await = error.clone();
+        *state.open_orders_response.lock().await = error.clone();
+        *state.order_history_response.lock().await = error.clone();
+        *state.trade_history_response.lock().await = error.clone();
+        *state.positions_response.lock().await = error;
+    } else if response == "malformed" {
+        state.get_order_response.lock().await["amount"] = json!("invalid");
+        state.open_orders_response.lock().await["orders"][0]["amount"] = json!("invalid");
+        state.order_history_response.lock().await["orders"][0]["amount"] = json!("invalid");
+        state.trade_history_response.lock().await["trades"][0]["trade_fee"] = json!("invalid");
+        state.positions_response.lock().await["positions"][0]["amount"] = json!("invalid");
+    }
+
+    let tc = build_report_client(state, WsState::default()).await;
+
+    let filter = if response == "filtered" {
+        "SOL-PERP.DERIVE"
+    } else {
+        "ETH-PERP.DERIVE"
+    };
+
+    let instrument_id = InstrumentId::from(filter);
+    let inline = request_report_content(&tc.client, request, instrument_id, false).await;
+    let worker = request_report_content(&tc.client, request, instrument_id, true).await;
+
+    match (inline, worker) {
+        (Ok(inline), Ok(worker)) => {
+            assert!(matches!(response, "valid" | "filtered"));
+            assert_eq!(worker, inline);
+
+            if response == "filtered" {
+                assert_eq!(worker, json!([]));
+            } else {
+                assert_eq!(worker.as_array().unwrap().len(), 1);
+            }
+        }
+        (Err(inline), Err(worker)) => {
+            assert!(matches!(response, "malformed" | "venue_error"));
+            assert_eq!(format!("{worker:#}"), format!("{inline:#}"));
+        }
+        result => panic!("inline and task results differ: {result:?}"),
+    }
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::orders(1)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_finalizes_against_current_cache(#[case] request: u8) {
+    let tc = build_report_client(RestState::default(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(instrument_id),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let task = if request == 0 {
+        let cmd = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(instrument_id),
+            None,
+            Some(VenueOrderId::from("ord-mock-1")),
+            None,
+            None,
+        );
+        let task = tc.client.generate_order_status_report_task(&cmd).unwrap();
+        ExecutionReportTask {
+            collection: task.collection,
+            finish: Box::new(move || Ok((task.finish)()?.into_iter().collect::<Vec<_>>())),
+        }
+    } else {
+        tc.client.generate_order_status_reports_task(&cmd).unwrap()
+    };
+
+    collect_report_with_borrowed_cache(task.collection, &tc.cache).await;
+    let cid = ClientOrderId::from("STRAT-O-1");
+    let order = accepted_order(
+        build_limit_order(
+            instrument_id,
+            cid,
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        VenueOrderId::from("ord-mock-1"),
+        AccountId::from("DERIVE-001"),
+    );
+    add_order_to_cache(&tc.cache, order, Some(ClientId::from("DERIVE")));
+    let error = (task.finish)().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Derive order binding changed during report collection for STRAT-O-1"
+    );
+    let retry = request_report_content(&tc.client, request, instrument_id, true)
+        .await
+        .unwrap();
+    assert_eq!(retry.as_array().unwrap().len(), 1);
+}
+
+#[rstest]
+#[case::cancel(false)]
+#[case::discard(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_disposal_preserves_retry(#[case] completed: bool) {
+    let state = RestState::default();
+    *state.trade_history_response.lock().await = json!({"trades": [sample_trade_json("retry-fill", "ord-mock-1", "ETH-PERP")], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    let tc = build_report_client(state.clone(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let response = state.trade_history_response.lock().await;
+    let task = tc.client.generate_fill_reports_task(&cmd).unwrap();
+    let worker = tokio::spawn(task.collection);
+    wait_until(
+        || {
+            let calls = state.trade_history_calls.clone();
+            async move { calls.lock().await.len() == 1 }
+        },
+        "fill collection reaches venue",
+    )
+    .await;
+
+    if completed {
+        drop(response);
+        worker.await.unwrap();
+        drop(task.finish);
+    } else {
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        drop(response);
+        assert_eq!(
+            (task.finish)().unwrap_err().to_string(),
+            "report collection stopped without a result"
+        );
+    }
+
+    let retry = finish_report_task(tc.client.generate_fill_reports_task(&cmd).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(retry.len(), 1);
+    assert_eq!(retry[0].trade_id, TradeId::from("retry-fill"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_uses_instrument_update_during_collection() {
+    let state = RestState::default();
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument_id),
+        None,
+        Some(VenueOrderId::from("ord-mock-1")),
+        None,
+        None,
+    );
+    let response = state.get_order_response.lock().await;
+    let task = tc.client.generate_order_status_report_task(&cmd).unwrap();
+    let worker = tokio::spawn(task.collection);
+    wait_until(
+        || {
+            let calls = state.get_order_calls.clone();
+            async move { calls.lock().await.len() == 1 }
+        },
+        "order collection reaches venue",
+    )
+    .await;
+
+    let mut definition: DeriveInstrument =
+        serde_json::from_value(sample_instrument_json()).unwrap();
+    definition.tick_size = dec!(0.0001);
+    definition.amount_step = dec!(0.00001);
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.client.on_instrument(instrument);
+    drop(response);
+    worker.await.unwrap();
+    let report = (task.finish)().unwrap().unwrap();
+    assert_eq!(report.price, Some(Price::from("3500.0000")));
+    assert_eq!(report.quantity, Quantity::from("1.00000"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_deduplicates_fill_delivered_after_collection() {
+    let state = RestState::default();
+    let ws_state = WsState::default();
+    let shared = sample_trade_json("task-shared-fill", "ord-1", "ETH-PERP");
+    let fresh = sample_trade_json("task-fresh-fill", "ord-2", "ETH-PERP");
+    *state.trade_history_response.lock().await = json!({"trades": [shared.clone(), fresh], "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    let mut tc = build_report_client(state, ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    drain_initial_account_state(&mut tc).await;
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = tc.client.generate_fill_reports_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    ws_state.push_notification(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.trades"),
+        &json!([shared]),
+    ));
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))),
+        "fill delivered before report acceptance",
+    )
+    .await;
+
+    let ExecutionEvent::Report(ExecutionReport::Fill(fill)) = event else {
+        unreachable!()
+    };
+
+    assert_eq!(fill.trade_id, TradeId::from("task-shared-fill"));
+    let reports = (task.finish)().unwrap();
+    let retry = tc.client.generate_fill_reports(cmd).await.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].trade_id, TradeId::from("task-fresh-fill"));
+    assert_eq!(
+        report_content(serde_json::to_value(reports).unwrap()),
+        report_content(serde_json::to_value(retry).unwrap())
+    );
+    tc.client.disconnect().await.unwrap();
+}
+
+async fn request_report_content(
+    client: &DeriveExecutionClient,
+    request: u8,
+    instrument_id: InstrumentId,
+    owned: bool,
+) -> anyhow::Result<Value> {
+    let now = UnixNanos::from(1_700_000_004_000_000_000);
+
+    let value = match request {
+        0 => {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                None,
+                Some(VenueOrderId::from("ord-mock-1")),
+                None,
+                None,
+            );
+
+            let report = report_result(
+                owned.then(|| client.generate_order_status_report_task(&cmd).unwrap()),
+                client.generate_order_status_report(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(report.into_iter().collect::<Vec<_>>())?
+        }
+        1 | 2 => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                now,
+                request == 1,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_order_status_reports_task(&cmd).unwrap()),
+                client.generate_order_status_reports(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        3 => {
+            let cmd = GenerateFillReports::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                Some(VenueOrderId::from(
+                    if instrument_id.symbol.as_str() == "SOL-PERP" {
+                        "excluded-order"
+                    } else {
+                        "ord-mock-1"
+                    },
+                )),
+                Some(UnixNanos::from(1_700_000_000_000_000_000)),
+                Some(now),
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_fill_reports_task(&cmd).unwrap()),
+                client.generate_fill_reports(cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        4 => {
+            let cmd = GeneratePositionStatusReports::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_position_status_reports_task(&cmd).unwrap()),
+                client.generate_position_status_reports(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(report_content(value))
+}
+
+fn report_content(mut value: Value) -> Value {
+    for report in value.as_array_mut().unwrap() {
+        let report = report.as_object_mut().unwrap();
+        if report["type"] == "PositionStatusReport" {
+            assert_eq!(report["ts_last"], report["ts_init"]);
+            report.insert("ts_last".to_string(), json!(0));
+        }
+
+        report.remove("report_id");
+        report.remove("ts_init");
+    }
+
+    value
+}
+
+async fn finish_report_task<T: 'static>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+
+    tokio::spawn(async move {
+        assert_ne!(std::thread::current().id(), core_thread);
+        task.collection.await;
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(std::thread::current().id(), core_thread);
+    (task.finish)()
+}
+
+async fn report_result<T: 'static>(
+    task: Option<ExecutionReportTask<T>>,
+    inline: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    match task {
+        Some(task) => finish_report_task(task).await,
+        None => inline.await,
+    }
+}
+
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "the cache borrow proves worker collection does not access core-thread state"
+)]
+async fn collect_report_with_borrowed_cache(
+    collection: impl std::future::Future<Output = ()> + Send + 'static,
+    cache: &RefCell<Cache>,
+) {
+    let cache_borrow = cache.borrow_mut();
+
+    tokio::spawn(collection).await.unwrap();
+    drop(cache_borrow);
 }
