@@ -558,18 +558,19 @@ impl OrderMatchingCore {
         }
 
         let trigger_price = order.trigger_price?;
+        let trigger_type = order.trigger_type.unwrap_or(TriggerType::Default);
 
         let is_triggered = match order.order_type {
             OrderType::MarketIfTouched | OrderType::LimitIfTouched => self
                 .is_touch_triggered_with_trigger_type(
                     order.order_side,
                     trigger_price,
-                    order.trigger_type.unwrap_or(TriggerType::Default),
+                    trigger_type,
                 ),
             _ => self.is_stop_matched_with_trigger_type(
                 order.order_side,
                 trigger_price,
-                order.trigger_type.unwrap_or(TriggerType::Default),
+                trigger_type,
             ),
         };
 
