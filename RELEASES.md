@@ -130,6 +130,10 @@ Released on TBD (UTC).
 - Fixed streaming backtests failing to resume when the first batch has only data before the start time
 - Fixed Python `ForexSession.__repr__` identifying sessions as `PositionSide`
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets
+- Fixed `ExecTester` stop replacements exceeding remaining quantity after partial fills
+- Fixed `ExecTester` losing order quantity precision and dropping batch order parameters
+- Fixed `ExecTester` retaining data subscriptions on stop in dry-run mode or after cache-miss startup
+- Fixed test data downloads ignoring configured retry deadlines and skipping later retry delays with `immediate_first`
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy

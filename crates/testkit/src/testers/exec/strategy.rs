@@ -41,7 +41,7 @@ use nautilus_trading::{
     nautilus_strategy,
     strategy::{Strategy, StrategyCore, StrategyNative},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
 use super::config::ExecTesterConfig;
 use crate::testers::timestamps::warn_if_implausible_unix_nanos;
@@ -235,54 +235,57 @@ impl DataActor for ExecTester {
         self.buy_stop_replacement = None;
         self.sell_stop_replacement = None;
 
+        let instrument_id = self.config.instrument_id;
+        let client_id = self.config.client_id;
+
         if self.config.dry_run {
             log_warn!("Dry run mode, skipping cancel all orders and close all positions");
+        } else {
+            let strategy_id = StrategyId::from(
+                DataActorNative::core(&self.core)
+                    .actor_id()
+                    .inner()
+                    .as_str(),
+            );
+
+            if self.config.cancel_orders_on_stop {
+                self.cancel_active_orders(instrument_id, strategy_id, client_id);
+            }
+
+            if self.config.close_positions_on_stop {
+                let time_in_force = self
+                    .config
+                    .close_positions_time_in_force
+                    .or(Some(TimeInForce::Gtc));
+
+                if let Err(e) = self.close_positions_on_stop(strategy_id, time_in_force) {
+                    log::error!("Failed to close all positions: {e}");
+                }
+            }
+        }
+
+        if !self.config.can_unsubscribe {
             return Ok(());
         }
 
-        let instrument_id = self.config.instrument_id;
-        let client_id = self.config.client_id;
-        let strategy_id = StrategyId::from(
-            DataActorNative::core(&self.core)
-                .actor_id()
-                .inner()
-                .as_str(),
-        );
-
-        if self.config.cancel_orders_on_stop {
-            self.cancel_active_orders(instrument_id, strategy_id, client_id);
+        self.unsubscribe_instrument(instrument_id, client_id, None);
+        if self.config.subscribe_quotes {
+            self.unsubscribe_quotes(instrument_id, client_id, None);
         }
 
-        if self.config.close_positions_on_stop {
-            let time_in_force = self
-                .config
-                .close_positions_time_in_force
-                .or(Some(TimeInForce::Gtc));
-
-            if let Err(e) = self.close_positions_on_stop(strategy_id, time_in_force) {
-                log::error!("Failed to close all positions: {e}");
-            }
+        if self.config.subscribe_trades {
+            self.unsubscribe_trades(instrument_id, client_id, None);
         }
 
-        if self.config.can_unsubscribe && self.instrument.is_some() {
-            if self.config.subscribe_quotes {
-                self.unsubscribe_quotes(instrument_id, client_id, None);
-            }
-
-            if self.config.subscribe_trades {
-                self.unsubscribe_trades(instrument_id, client_id, None);
-            }
-
-            if self.config.subscribe_book {
-                self.unsubscribe_book_at_interval(
-                    instrument_id,
-                    NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
-                        ConfigError::range("book_interval_ms", "must be positive, was 0")
-                    })?,
-                    client_id,
-                    None,
-                );
-            }
+        if self.config.subscribe_book {
+            self.unsubscribe_book_at_interval(
+                instrument_id,
+                NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
+                    ConfigError::range("book_interval_ms", "must be positive, was 0")
+                })?,
+                client_id,
+                None,
+            );
         }
 
         Ok(())
@@ -1198,7 +1201,7 @@ impl ExecTester {
         let clamp = self.config.clamp_to_instrument_price_range;
         let buy_price = clamp_price_to_range(unclamped_buy_price, instrument, clamp);
         let sell_price = clamp_price_to_range(unclamped_sell_price, instrument, clamp);
-        let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
+        let quantity = instrument.make_qty_from_decimal(self.config.order_qty.as_decimal(), None);
         let (time_in_force, expire_time) =
             self.resolve_time_in_force(self.config.limit_time_in_force);
         let instrument_id = self.config.instrument_id;
@@ -1249,7 +1252,9 @@ impl ExecTester {
         self.sell_order = Some(sell_order.clone());
 
         let client_id = self.config.client_id;
-        if let Err(e) = self.submit_order_list(vec![buy_order, sell_order], None, client_id, None) {
+        let params = self.config.order_params.clone();
+        if let Err(e) = self.submit_order_list(vec![buy_order, sell_order], None, client_id, params)
+        {
             log::error!("Failed to submit batch limit pair: {e}");
         }
     }
@@ -1508,9 +1513,26 @@ impl ExecTester {
             return;
         };
 
-        if let Err(e) =
-            self.submit_stop_order(side, replacement.trigger_price, replacement.limit_price)
-        {
+        let Some((quantity, quote_quantity)) = self
+            .cache()
+            .order(&client_order_id)
+            .map(|order| (order.leaves_qty(), order.is_quote_quantity()))
+        else {
+            log::error!("Canceled {side} stop order {client_order_id} is not cached");
+            return;
+        };
+
+        if quantity.is_zero() {
+            return;
+        }
+
+        if let Err(e) = self.submit_stop_order_with_qty(
+            side,
+            quantity,
+            replacement.trigger_price,
+            replacement.limit_price,
+            quote_quantity,
+        ) {
             log::error!("Failed to submit replacement {side} stop order: {e}");
         }
     }
@@ -1542,7 +1564,9 @@ impl ExecTester {
         let Some(instrument) = self.instrument.as_ref() else {
             anyhow::bail!("No instrument loaded");
         };
-        let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
+
+        let quantity = instrument.make_qty_from_decimal(self.config.order_qty.as_decimal(), None);
+
         let Some(order) = self.create_tracked_limit_order(order_side, price, quantity)? else {
             return Ok(());
         };
@@ -1658,10 +1682,6 @@ impl ExecTester {
     /// # Errors
     ///
     /// Returns an error if order creation or submission fails.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "stop order submission covers all supported stop order scenarios"
-    )]
     pub(super) fn submit_stop_order(
         &mut self,
         order_side: OrderSide,
@@ -1685,15 +1705,38 @@ impl ExecTester {
             return Ok(());
         }
 
+        let quantity = instrument.make_qty_from_decimal(self.config.order_qty.as_decimal(), None);
+
+        self.submit_stop_order_with_qty(
+            order_side,
+            quantity,
+            trigger_price,
+            limit_price,
+            self.config.use_quote_quantity,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "stop order submission covers all supported stop order scenarios"
+    )]
+    fn submit_stop_order_with_qty(
+        &mut self,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        limit_price: Option<Price>,
+        quote_quantity: bool,
+    ) -> anyhow::Result<()> {
         let (time_in_force, expire_time) =
             self.resolve_time_in_force(self.config.stop_time_in_force);
 
-        // Use instrument's make_qty to ensure correct precision
-        let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
         let instrument_id = self.config.instrument_id;
         let trigger_type = self.config.stop_trigger_type;
-        let quote_quantity = self.config.use_quote_quantity;
-        let display_qty = self.config.order_display_qty;
+        let display_qty = self
+            .config
+            .order_display_qty
+            .map(|display_qty| display_qty.min(quantity));
         let emulation_trigger = self.config.emulation_trigger;
         let stop_order_type = self.config.stop_order_type;
         let trailing_offset = self.config.trailing_offset;
@@ -1904,7 +1947,7 @@ impl ExecTester {
             anyhow::bail!("GTD time in force not supported for bracket stop-loss legs");
         }
 
-        let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
+        let quantity = instrument.make_qty_from_decimal(self.config.order_qty.as_decimal(), None);
         let increment = instrument.price_increment();
         let precision = instrument.price_precision();
         let bracket_offset_ticks = self.config.bracket_offset_ticks;
@@ -2074,7 +2117,7 @@ impl ExecTester {
             OrderSide::Sell
         };
 
-        let quantity = instrument.make_qty(net_qty.abs().to_f64().unwrap_or(0.0), None);
+        let quantity = instrument.make_qty_from_decimal(net_qty.abs(), None);
 
         // Test reduce_only rejection by setting reduce_only on open position order
         let reduce_only = if self.config.test_reject_reduce_only {
