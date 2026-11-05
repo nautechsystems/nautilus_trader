@@ -100,6 +100,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `Strategy::market_exit` skipping emulated and active-local orders during cancellation and completion
 - Fixed bounded reconciliation leaving retained positions open after explicit closing fills
 - Fixed Arrow trade tick decoding panicking on malformed trade IDs
 - Fixed shutdown drains opening new data subscriptions (#5435), thanks @imbolc

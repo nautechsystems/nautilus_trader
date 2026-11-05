@@ -724,7 +724,8 @@ is already in progress.
 The market exit process:
 
 1. Calls `on_market_exit()`.
-2. Cancels all open and in-flight orders for the strategy.
+2. Cancels all open, in-flight, emulated, and active-local orders for the strategy, including initialized and
+   released orders.
 3. Closes all open positions with market orders tagged `MARKET_EXIT`.
 1. Periodically checks (at `market_exit_interval_ms`) until all orders resolve and positions close. When the
    number of working orders is zero, it re-submits a closing order for any position still open.
