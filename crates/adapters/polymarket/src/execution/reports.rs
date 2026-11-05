@@ -279,6 +279,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn fill_context(&self) -> FillContext<'_> {
+        self.flush_pending_instruments();
         let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
@@ -466,6 +467,7 @@ impl PolymarketExecutionClient {
 
         let http_client = self.http_client.clone();
         let fill_tracker = self.fill_tracker.clone();
+        self.flush_pending_instruments();
         let token_instruments = self.shared_token_instruments.clone();
         let emitter = self.emitter.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
@@ -978,6 +980,7 @@ impl PolymarketExecutionClient {
     }
 
     fn report_client(&self) -> PolymarketReportClient {
+        self.flush_pending_instruments();
         PolymarketReportClient {
             clock: self.clock,
             account_id: self.core.account_id,

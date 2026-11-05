@@ -33,7 +33,10 @@ mod orders;
 mod reports;
 mod responses;
 
-use std::sync::{Arc, atomic::AtomicBool};
+use std::{
+    cell::RefCell,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -113,6 +116,7 @@ pub struct PolymarketExecutionClient {
     decline_observer: Option<TypedHandler<OrderEventAny>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
+    instruments_pending: RefCell<Option<Vec<InstrumentAny>>>,
     pending_submits: PendingSubmitTracker,
     pending_cancels: PendingCancelTracker,
     order_contexts: Arc<OrderContextRegistry>,
@@ -249,6 +253,7 @@ impl PolymarketExecutionClient {
             decline_observer: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),
+            instruments_pending: RefCell::new(Some(Vec::new())),
             pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
             order_contexts: Arc::new(OrderContextRegistry::default()),
@@ -453,7 +458,11 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        self.on_instrument_update(&instrument);
+        if let Some(pending) = self.instruments_pending.get_mut() {
+            pending.push(instrument);
+        } else {
+            self.on_instrument_update(&instrument);
+        }
     }
 
     fn calculate_commission(

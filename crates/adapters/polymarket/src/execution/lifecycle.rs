@@ -632,6 +632,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn get_neg_risk(&self, instrument_id: &InstrumentId) -> bool {
+        self.flush_pending_instruments();
         Self::get_neg_risk_from_snapshot(&self.neg_risk_index.load(), instrument_id)
     }
 
@@ -747,6 +748,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn load_instruments_from_cache(&self) {
+        self.flush_pending_instruments();
         let cache = self.core.cache();
         let instruments: Vec<InstrumentAny> = cache
             .instruments(&self.core.venue, None)
@@ -761,6 +763,16 @@ impl PolymarketExecutionClient {
         );
 
         log::debug!("Loaded {} instruments from cache", instruments.len());
+    }
+
+    pub(super) fn flush_pending_instruments(&self) {
+        if let Some(instruments) = self.instruments_pending.take() {
+            upsert_execution_lookups(
+                &self.shared_token_instruments,
+                &self.neg_risk_index,
+                &instruments,
+            );
+        }
     }
 
     pub(super) fn load_orders_from_cache(&self) {
@@ -914,6 +926,7 @@ impl PolymarketExecutionClient {
         self.clear_settlement_observers();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
+        *self.instruments_pending.get_mut() = Some(Vec::new());
         self.collateral_locks.lock().clear_session();
         self.ws_dispatch_state.lock().reset_session();
         self.settlement.clear();
@@ -2166,9 +2179,17 @@ mod tests {
 
     #[rstest]
     fn load_instruments_from_cache_preloads_expired_execution_lookup_state() {
-        let (client, cache) = test_client();
+        let (mut client, cache) = test_client();
         let active = test_binary_option("0xACTIVE", false, false);
         let expired = test_binary_option("0xEXPIRED", true, true);
+        let pending = test_binary_option("0xPENDING", false, true);
+
+        for instrument in [&active, &expired, &pending] {
+            client.on_instrument(instrument.clone());
+        }
+
+        assert!(client.shared_token_instruments.is_empty());
+        assert!(client.neg_risk_index.is_empty());
 
         {
             let mut cache = cache.borrow_mut();
@@ -2178,10 +2199,10 @@ mod tests {
 
         client.load_instruments_from_cache();
 
-        assert_eq!(client.shared_token_instruments.len(), 2);
-        assert_eq!(client.neg_risk_index.len(), 2);
+        assert_eq!(client.shared_token_instruments.len(), 3);
+        assert_eq!(client.neg_risk_index.len(), 3);
 
-        for (instrument, neg_risk) in [(&active, false), (&expired, true)] {
+        for (instrument, neg_risk) in [(&active, false), (&expired, true), (&pending, true)] {
             assert_eq!(
                 serde_json::to_value(
                     client
@@ -3698,6 +3719,7 @@ mod tests {
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xRESET", true, true);
         client.upsert_execution_lookup(&expired);
+        client.on_instrument(expired.clone());
         client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();
         client.settlement.quarantine_invalid_trade("trade-1");
@@ -3716,6 +3738,7 @@ mod tests {
         }
 
         client.reset_client();
+        client.flush_pending_instruments();
 
         let ticket = client
             .collateral_locks
