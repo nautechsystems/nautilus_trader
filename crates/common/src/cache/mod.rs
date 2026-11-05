@@ -3197,9 +3197,9 @@ impl Cache {
 
         // Reuse the existing cell on replace so the canonical entry stays in place
         // rather than orphaning a stale cell.
-        let order_cell = if let Some(order_cell) = self.orders.get(&client_order_id) {
+        let order_cell = if let Some(order_cell) = old_order_cell {
             *order_cell.borrow_mut() = order;
-            order_cell.clone()
+            order_cell
         } else {
             let order_cell = SharedCell::new(order);
             self.orders.insert(client_order_id, order_cell.clone());

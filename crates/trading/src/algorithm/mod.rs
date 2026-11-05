@@ -1003,13 +1003,18 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Submits an order to the execution engine via the risk engine.
     ///
     /// Orders carrying a live emulation trigger are refused before submission.
-    /// For spawned orders with a pending primary reduction, refusal restores the
-    /// cached primary order quantity while it remains local and publishes
-    /// `OrderUpdated`.
+    /// For new or locally active spawned orders with a pending primary reduction,
+    /// emulation refusal restores unfilled quantity to a locally active primary
+    /// that has not been handed off, publishing `OrderUpdated` when its quantity changes.
     ///
     /// # Errors
     ///
-    /// Returns an error if the order carries a live emulation trigger or submission fails.
+    /// Returns an error if:
+    /// - The algorithm is not registered.
+    /// - A cached order with the same client order ID is not `INITIALIZED`, `EMULATED`,
+    ///   or `RELEASED`.
+    /// - The order carries a live emulation trigger.
+    /// - Order submission fails.
     fn submit_order(
         &mut self,
         order: OrderAny,
@@ -1021,6 +1026,20 @@ pub trait ExecutionAlgorithm: DataActor {
     {
         let trader_id =
             registered_trader_id(ExecutionAlgorithmNative::exec_algorithm_core_mut(self))?;
+
+        let order_exists = {
+            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
+            let cached_order = cache.order(&order.client_order_id());
+
+            if cached_order
+                .as_ref()
+                .is_some_and(|cached_order| !cached_order.is_active_local())
+            {
+                anyhow::bail!("Order denied: duplicate {}", order.client_order_id());
+            }
+
+            cached_order.is_some()
+        };
 
         if order.emulation_trigger().is_some() {
             let client_order_id = order.client_order_id();
@@ -1038,11 +1057,6 @@ pub trait ExecutionAlgorithm: DataActor {
             .exec_spawn_id()
             .unwrap_or_else(|| order.client_order_id());
         let params = core.submit_params(&primary_id);
-
-        let order_exists = {
-            let cache = core.cache_ref();
-            cache.order_exists(&order.client_order_id())
-        };
 
         {
             let cache_rc = core.cache_rc();
@@ -2045,9 +2059,9 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderDenied, OrderDeniedReason, OrderRejected,
             order::spec::{
-                OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderExpiredSpec,
-                OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec, OrderSubmittedSpec,
-                OrderUpdatedSpec,
+                OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderEmulatedSpec,
+                OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
+                OrderReleasedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
             },
         },
         identifiers::{
@@ -3299,6 +3313,143 @@ mod tests {
     }
 
     #[rstest]
+    #[case::submitted(OrderStatus::Submitted)]
+    #[case::accepted(OrderStatus::Accepted)]
+    #[case::canceled(OrderStatus::Canceled)]
+    fn test_algorithm_submit_order_rejects_retained_initialized_order_with_non_local_cached_order(
+        #[case] status: OrderStatus,
+    ) {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::from("O-ALGO-RETAINED-ACCEPTED"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.25"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (handler, events) = subscribe_order_topic(order.strategy_id());
+
+        algo.submit_order(order.clone(), None, None).unwrap();
+        let mut before = order.clone();
+        submit_order_in_cache(&mut algo, &mut before);
+        if status != OrderStatus::Submitted {
+            accept_spawned_order(&mut algo, &mut before);
+        }
+
+        if status == OrderStatus::Canceled {
+            cancel_spawned_order(&mut algo, &mut before);
+        }
+
+        let snapshot = serde_json::to_value(&before).unwrap();
+
+        let result = algo.submit_order(order.clone(), None, None);
+
+        msgbus::unsubscribe_order_events(
+            format!("events.order.{}", order.strategy_id()).into(),
+            &handler,
+        );
+        let cache = algo.cache();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Order denied: duplicate {client_order_id}")
+        );
+        assert_eq!(risk_messages.get_messages().len(), 1);
+        assert_eq!(
+            *events.borrow(),
+            vec![OrderEventAny::Initialized(order.init_event().clone())]
+        );
+        assert_eq!(cached.status(), status);
+        assert_eq!(cached.events(), before.events());
+        assert_eq!(serde_json::to_value(&cached).unwrap(), snapshot);
+    }
+
+    #[rstest]
+    #[case::initialized(OrderStatus::Initialized)]
+    #[case::emulated(OrderStatus::Emulated)]
+    #[case::released(OrderStatus::Released)]
+    fn test_algorithm_submit_order_replaces_active_local_cached_order(#[case] status: OrderStatus) {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+        let client_order_id = ClientOrderId::from("O-LOCAL-REPLACE");
+        let mut local = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.25"))
+            .trigger_price(Price::from("51000.0"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+
+        if status == OrderStatus::Emulated {
+            let event = OrderEmulatedSpec::builder()
+                .trader_id(local.trader_id())
+                .strategy_id(local.strategy_id())
+                .instrument_id(local.instrument_id())
+                .client_order_id(client_order_id)
+                .build();
+            local.apply(OrderEventAny::Emulated(event)).unwrap();
+        } else if status == OrderStatus::Released {
+            let event = OrderReleasedSpec::builder()
+                .trader_id(local.trader_id())
+                .strategy_id(local.strategy_id())
+                .instrument_id(local.instrument_id())
+                .client_order_id(client_order_id)
+                .released_price(Price::from("51001.0"))
+                .build();
+            local.apply(OrderEventAny::Released(event)).unwrap();
+        }
+
+        let cache_rc = algo.core.cache_rc();
+        cache_rc
+            .borrow_mut()
+            .add_order(local.clone(), None, None, false)
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(local.instrument_id())
+            .strategy_id(local.strategy_id())
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.50"))
+            .build();
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        algo.submit_order(order.clone(), None, None).unwrap();
+
+        let cache = cache_rc.borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(local.status(), status);
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+        assert_eq!(cached.events(), order.events());
+        assert_eq!(
+            serde_json::to_value(&*cached).unwrap(),
+            serde_json::to_value(&order).unwrap()
+        );
+        let messages = risk_messages.get_messages();
+        assert_eq!(messages.len(), 1);
+
+        let TradingCommand::SubmitOrder(command) = &messages[0] else {
+            panic!("Expected SubmitOrder");
+        };
+
+        assert_eq!(command.order_init, *order.init_event());
+    }
+
+    #[rstest]
     fn test_algorithm_submit_order_publishes_initialized_for_new_order() {
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
@@ -3377,6 +3528,68 @@ mod tests {
 
         msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
         assert!(events.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_algorithm_submit_order_rejects_accepted_emulated_spawn_before_restoring_primary() {
+        let (mut algo, primary_id, _) = setup_pending_spawn();
+        let mut primary = algo.cache().order(&primary_id).unwrap();
+        let spawned = algo.spawn_limit(
+            &mut primary,
+            Quantity::from("0.2"),
+            Price::from("50000.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            true,
+        );
+        let retained = OrderAny::Limit(spawned);
+        let mut accepted = retained.clone();
+        accepted.set_emulation_trigger(None);
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        algo.submit_order(accepted.clone(), None, None).unwrap();
+        submit_order_in_cache(&mut algo, &mut accepted);
+        accept_spawned_order(&mut algo, &mut accepted);
+        let primary_before = algo.cache().order(&primary_id).unwrap();
+        let (handler, events) = subscribe_order_topic(retained.strategy_id());
+
+        let result = algo.submit_order(retained.clone(), None, None);
+
+        msgbus::unsubscribe_order_events(
+            format!("events.order.{}", retained.strategy_id()).into(),
+            &handler,
+        );
+        let cache = algo.cache();
+        let primary_after = cache.order(&primary_id).unwrap();
+        let cached = cache.order(&retained.client_order_id()).unwrap();
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Order denied: duplicate {}", retained.client_order_id())
+        );
+        assert_eq!(risk_messages.get_messages().len(), 1);
+        assert!(events.borrow().is_empty());
+        assert_eq!(primary_after.quantity(), Quantity::from("0.3"));
+        assert_eq!(primary_after.events(), primary_before.events());
+        assert_eq!(
+            serde_json::to_value(&primary_after).unwrap(),
+            serde_json::to_value(&primary_before).unwrap()
+        );
+        assert_eq!(cached.status(), OrderStatus::Accepted);
+        assert_eq!(cached.events(), accepted.events());
+        assert_eq!(
+            serde_json::to_value(&cached).unwrap(),
+            serde_json::to_value(&accepted).unwrap()
+        );
     }
 
     #[rstest]

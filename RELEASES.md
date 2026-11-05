@@ -128,6 +128,7 @@ Released on TBD (UTC).
 - Fixed managed order book subscriptions reusing a cached book of a different type
 - Fixed managed order book quotes using event time for `ts_init`
 - Fixed command refusals clearing unrelated pending operations or rolling back later order state
+- Fixed duplicate order submission overwriting non-local cached orders in strategies and execution algorithms
 - Fixed execution algorithms skipping spawn accounting for order events while stopped
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp

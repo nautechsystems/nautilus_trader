@@ -172,7 +172,12 @@ pub trait Strategy: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered or order submission fails.
+    /// Returns an error if:
+    /// - The strategy is not registered.
+    /// - The supplied order is not `INITIALIZED`.
+    /// - A cached order with the same client order ID is not `INITIALIZED`, `EMULATED`,
+    ///   or `RELEASED`.
+    /// - Order submission fails.
     fn submit_order(
         &mut self,
         order: OrderAny,
@@ -2412,12 +2417,6 @@ where
     let should_deny_for_market_exit =
         core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
 
-    if should_deny_for_market_exit {
-        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
-        return Ok(());
-    }
-
-    let core = StrategyNative::strategy_core_mut(strategy);
     let params = params.filter(|params| !params.is_empty());
 
     {
@@ -2428,7 +2427,22 @@ where
                 order.client_order_id()
             )
         })?;
-        cache.add_order(order.clone(), position_id, client_id, true)?;
+
+        if cache
+            .order(&order.client_order_id())
+            .is_some_and(|cached_order| !cached_order.is_active_local())
+        {
+            anyhow::bail!("Order denied: duplicate {}", order.client_order_id());
+        }
+
+        if !should_deny_for_market_exit {
+            cache.add_order(order.clone(), position_id, client_id, true)?;
+        }
+    }
+
+    if should_deny_for_market_exit {
+        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+        return Ok(());
     }
 
     publish_order_initialized(order);
@@ -3859,6 +3873,152 @@ mod tests {
         strategy.on_order_filled(&OrderFilledSpec::builder().build());
         strategy.on_order_fill_voided(&OrderFillVoidedSpec::builder().build());
         strategy.on_position_event(make_position_opened());
+    }
+
+    #[rstest]
+    #[case::submitted(OrderStatus::Submitted, false)]
+    #[case::accepted(OrderStatus::Accepted, false)]
+    #[case::accepted_exiting(OrderStatus::Accepted, true)]
+    #[case::canceled(OrderStatus::Canceled, false)]
+    fn test_submit_order_rejects_retained_initialized_order_with_non_local_cached_order(
+        #[case] status: OrderStatus,
+        #[case] exiting: bool,
+    ) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let order = make_initialized_market_order("O-RETAINED-ACCEPTED");
+        let client_order_id = order.client_order_id();
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let topic = format!("events.order.{}", order.strategy_id());
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.retained")));
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+
+        strategy
+            .submit_order(order.clone(), None, None, None)
+            .unwrap();
+        let cache_rc = strategy.core.cache_rc();
+        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("ACC-001"));
+        cache_rc.borrow_mut().update_order(&submitted).unwrap();
+        if status != OrderStatus::Submitted {
+            cache_rc
+                .borrow_mut()
+                .update_order(&make_accepted(client_order_id))
+                .unwrap();
+        }
+
+        if status == OrderStatus::Canceled {
+            cache_rc
+                .borrow_mut()
+                .update_order(&make_canceled(client_order_id))
+                .unwrap();
+        }
+
+        let before = cache_rc.borrow().order(&client_order_id).unwrap().clone();
+        let snapshot = serde_json::to_value(&before).unwrap();
+
+        strategy.core.is_exiting = exiting;
+        let result = strategy.submit_order(order.clone(), None, None, None);
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+        let cache = cache_rc.borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Order denied: duplicate {client_order_id}")
+        );
+        assert_eq!(risk_messages.get_messages().len(), 1);
+        assert_eq!(
+            event_messages.get_messages(),
+            vec![OrderEventAny::Initialized(order.init_event().clone())]
+        );
+        assert_eq!(cached.status(), status);
+        assert_eq!(cached.events(), before.events());
+        assert_eq!(serde_json::to_value(&*cached).unwrap(), snapshot);
+    }
+
+    #[rstest]
+    #[case::initialized(OrderStatus::Initialized)]
+    #[case::emulated(OrderStatus::Emulated)]
+    #[case::released(OrderStatus::Released)]
+    fn test_submit_order_replaces_active_local_cached_order(#[case] status: OrderStatus) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let client_order_id = ClientOrderId::from("O-LOCAL-REPLACE");
+        let mut local = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.25"))
+            .trigger_price(Price::from("51000.0"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+
+        if status == OrderStatus::Emulated {
+            let event = OrderEmulatedSpec::builder()
+                .trader_id(local.trader_id())
+                .strategy_id(local.strategy_id())
+                .instrument_id(local.instrument_id())
+                .client_order_id(client_order_id)
+                .build();
+            local.apply(OrderEventAny::Emulated(event)).unwrap();
+        } else if status == OrderStatus::Released {
+            let event = OrderReleasedSpec::builder()
+                .trader_id(local.trader_id())
+                .strategy_id(local.strategy_id())
+                .instrument_id(local.instrument_id())
+                .client_order_id(client_order_id)
+                .released_price(Price::from("51001.0"))
+                .build();
+            local.apply(OrderEventAny::Released(event)).unwrap();
+        }
+
+        let cache_rc = strategy.core.cache_rc();
+        cache_rc
+            .borrow_mut()
+            .add_order(local.clone(), None, None, false)
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(local.instrument_id())
+            .strategy_id(local.strategy_id())
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.50"))
+            .build();
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        strategy
+            .submit_order(order.clone(), None, None, None)
+            .unwrap();
+
+        let cache = cache_rc.borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(local.status(), status);
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+        assert_eq!(cached.events(), order.events());
+        assert_eq!(
+            serde_json::to_value(&*cached).unwrap(),
+            serde_json::to_value(&order).unwrap()
+        );
+        let messages = risk_messages.get_messages();
+        assert_eq!(messages.len(), 1);
+
+        let TradingCommand::SubmitOrder(command) = &messages[0] else {
+            panic!("Expected SubmitOrder");
+        };
+
+        assert_eq!(command.order_init, *order.init_event());
     }
 
     #[rstest]
