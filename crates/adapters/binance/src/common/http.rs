@@ -65,10 +65,44 @@ impl BinanceHttpBackoff {
             product => product,
         };
 
-        let endpoint = BinanceHttpEndpointScope::new(product, environment, base_url);
+        Self::new_scoped(
+            HttpScopeProduct::Standard(product),
+            BinanceHttpEndpointScope::new(product, environment, base_url),
+            proxy_url,
+            credential,
+        )
+    }
 
+    /// Creates the backoff for the Portfolio Margin service, whose IP quota is shared by every
+    /// PAPI request and must not merge with a standard product pool.
+    ///
+    /// `base_url` is the resolved PAPI host, so an omitted override and an override equal to the
+    /// official host share one scope.
+    pub(crate) fn new_papi(
+        environment: BinanceEnvironment,
+        base_url: &str,
+        proxy_url: Option<&str>,
+        credential: Option<&SigningCredential>,
+    ) -> Self {
+        Self::new_scoped(
+            HttpScopeProduct::Papi,
+            BinanceHttpEndpointScope::Custom {
+                environment,
+                base_url: base_url.trim_end_matches('/').to_string(),
+            },
+            proxy_url,
+            credential,
+        )
+    }
+
+    fn new_scoped(
+        product: HttpScopeProduct,
+        endpoint: BinanceHttpEndpointScope,
+        proxy_url: Option<&str>,
+        credential: Option<&SigningCredential>,
+    ) -> Self {
         let ip = Self::shared(HttpScope {
-            product,
+            product: product.clone(),
             endpoint: endpoint.clone(),
             proxy: proxy_url.map(sha256),
             account: None,
@@ -238,10 +272,18 @@ impl BinanceHttpEndpointScope {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct HttpScope {
-    product: BinanceProductType,
+    product: HttpScopeProduct,
     endpoint: BinanceHttpEndpointScope,
     proxy: Option<[u8; 32]>,
     account: Option<[u8; 32]>,
+}
+
+/// Distinguishes standard-product quota pools from the Portfolio Margin pool, whose IP weight
+/// budget is shared by every PAPI request and separate from each standard product host.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum HttpScopeProduct {
+    Standard(BinanceProductType),
+    Papi,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -632,6 +674,68 @@ mod tests {
                 .as_ref()
                 .is_some_and(|orders| Arc::ptr_eq(baseline.orders.as_ref().unwrap(), orders)),
             expected.1
+        );
+    }
+
+    #[rstest]
+    #[case::same_host("https://papi.binance.com", "https://papi.binance.com", (true, true))]
+    #[case::trailing_slash("https://papi.binance.com", "https://papi.binance.com/", (true, true))]
+    #[case::other_host("https://papi.binance.com", "https://papi-mirror.example", (false, false))]
+    fn test_backoff_papi_scope_sharing(
+        #[case] first_url: &str,
+        #[case] second_url: &str,
+        #[case] expected: (bool, bool),
+    ) {
+        let credential = SigningCredential::new("key-a".to_string(), "secret-a".to_string());
+        let baseline = BinanceHttpBackoff::new_papi(
+            BinanceEnvironment::Live,
+            first_url,
+            Some("proxy-a"),
+            Some(&credential),
+        );
+        let other = BinanceHttpBackoff::new_papi(
+            BinanceEnvironment::Live,
+            second_url,
+            Some("proxy-a"),
+            Some(&credential),
+        );
+
+        assert_eq!(Arc::ptr_eq(&baseline.ip, &other.ip), expected.0);
+        assert_eq!(
+            other
+                .orders
+                .as_ref()
+                .is_some_and(|orders| Arc::ptr_eq(baseline.orders.as_ref().unwrap(), orders)),
+            expected.1
+        );
+    }
+
+    #[rstest]
+    fn test_backoff_papi_scope_is_isolated_from_standard_products() {
+        // A standard client overridden to the PAPI host must still keep its own quota pool:
+        // the PAPI service budget is separate from every standard product budget.
+        let credential = SigningCredential::new("key-a".to_string(), "secret-a".to_string());
+        let papi = BinanceHttpBackoff::new_papi(
+            BinanceEnvironment::Live,
+            "https://papi.binance.com",
+            None,
+            Some(&credential),
+        );
+
+        let usdm_on_papi_host = BinanceHttpBackoff::new(
+            BinanceProductType::UsdM,
+            BinanceEnvironment::Live,
+            Some("https://papi.binance.com"),
+            None,
+            Some(&credential),
+        );
+
+        assert!(!Arc::ptr_eq(&papi.ip, &usdm_on_papi_host.ip));
+        assert!(
+            papi.orders
+                .as_ref()
+                .zip(usdm_on_papi_host.orders.as_ref())
+                .is_some_and(|(papi_orders, usdm_orders)| !Arc::ptr_eq(papi_orders, usdm_orders))
         );
     }
 

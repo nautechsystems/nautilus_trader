@@ -27,6 +27,8 @@
 //! The crate also includes shared enums, endpoint constants, URL routing, and
 //! credential plumbing for adjacent Binance surfaces such as Margin and European Options.
 //! Those surfaces do not have live data or execution clients in this crate.
+//! Portfolio Margin likewise has no live clients here, but its signed REST transport
+//! is available in [`papi`].
 //!
 //! The official Binance API reference can be found at <https://developers.binance.com/en/docs/>.
 //!
@@ -79,6 +81,7 @@ pub mod config;
 pub mod data_types;
 pub mod factories;
 pub mod futures;
+pub mod papi;
 pub mod spot;
 
 pub(crate) mod book;
