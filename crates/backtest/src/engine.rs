@@ -2569,9 +2569,10 @@ mod tests {
         },
         nautilus_actor,
     };
+    #[cfg(feature = "streaming")]
+    use nautilus_execution::matching_engine::config::OrderPriorityResetPolicy;
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
-        matching_engine::config::OrderPriorityResetPolicy,
         models::{
             fee::{FeeModelAny, MakerTakerFeeModel},
             latency::{LatencyModelHandle, StaticLatencyModel},
@@ -2615,14 +2616,15 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::modules::{
+        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+        SimulationModuleResult,
+    };
     #[cfg(feature = "python")]
     use crate::python::engine::PyBacktestEngine;
+    #[cfg(feature = "streaming")]
     use crate::{
         config::{BacktestRunConfig, BacktestVenueConfig},
-        modules::{
-            AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
-            SimulationModuleResult,
-        },
         node::BacktestNode,
     };
 
@@ -4592,6 +4594,7 @@ mod tests {
         option
     }
 
+    #[cfg(feature = "streaming")]
     #[rstest]
     fn test_node_forwards_order_priority_reset_policy(
         crypto_perpetual_ethusdt: CryptoPerpetual,
