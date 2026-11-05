@@ -140,6 +140,7 @@ impl HyperliquidExecutionClientConfig {
         ws_post_timeout_secs = None,
         transport_backend = None,
         scheduled_cancel_timeout_secs = None,
+        product_types = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -162,6 +163,7 @@ impl HyperliquidExecutionClientConfig {
         ws_post_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         scheduled_cancel_timeout_secs: Option<u64>,
+        product_types: Option<Vec<crate::common::enums::HyperliquidProductType>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -188,6 +190,7 @@ impl HyperliquidExecutionClientConfig {
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             outcome_settlement_poll_secs: defaults.outcome_settlement_poll_secs,
             scheduled_cancel_timeout_secs,
+            product_types: product_types.unwrap_or(defaults.product_types),
         }
     }
 
