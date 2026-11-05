@@ -8293,7 +8293,84 @@ async fn test_rpi_rest_batch_preserves_partial_success_items() {
 #[case("amend-order-code", false)]
 #[tokio::test]
 async fn test_rpi_minimum_notional_rest_rejections(#[case] case: &str, #[case] reverse: bool) {
-    let mut fixture = load_test_data("rpi_minimum_notional.json")[case].clone();
+    let fixture = load_test_data("rpi_minimum_notional.json")[case].clone();
+    assert_rpi_order_response(fixture, reverse).await;
+}
+
+#[rstest]
+#[case::spot("SPOT", "500")]
+#[case::futures("FUTURES", "2000")]
+#[case::swap("SWAP", "5000")]
+#[tokio::test]
+async fn test_rpi_minimum_notional_rest_boundaries(
+    #[case] product: &str,
+    #[case] minimum_notional: &str,
+    #[values("order", "amend-order", "batch-orders", "batch-amend-orders")] op: &str,
+    #[values(("below", -1), ("at", 0), ("above", 1))] boundary: (&str, i32),
+) {
+    let fixtures = load_test_data("rpi_minimum_notional.json");
+    let product = &fixtures["boundaries"][product];
+    let (boundary, offset) = boundary;
+    let qty = &product["quantities"][boundary];
+    let decimal = |value: &Value| Decimal::from_str_exact(value.as_str().unwrap()).unwrap();
+    let unit_notional = decimal(&product["px"]) * decimal(&product["baseUnitsPerContract"]);
+    let step = unit_notional * decimal(&product["lotSz"]);
+    let minimum = Decimal::from_str_exact(minimum_notional).unwrap();
+    assert_eq!(decimal(&product["minimumNotional"]), minimum);
+    assert_eq!(
+        decimal(qty) * unit_notional,
+        minimum + Decimal::from(offset) * step
+    );
+
+    let mut fixture = fixtures[op].clone();
+    let amend = op.contains("amend");
+
+    let requests = if let Some(items) = fixture["request"].as_array_mut() {
+        items.iter_mut().collect::<Vec<_>>()
+    } else {
+        vec![&mut fixture["request"]]
+    };
+
+    for request in requests {
+        request["instId"] = product["instId"].clone();
+        let request_qty = if request["clOrdId"] == "ORPI001" {
+            &product["quantities"]["at"]
+        } else {
+            qty
+        };
+
+        if amend {
+            request["newSz"] = request_qty.clone();
+            request.as_object_mut().unwrap().remove("newPx");
+        } else {
+            request["tdMode"] = product["tdMode"].clone();
+            request["sz"] = request_qty.clone();
+            request["px"] = product["px"].clone();
+        }
+    }
+
+    let response = &mut fixture["response"];
+    let item = response["data"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|item| item["clOrdId"] == "ORPI002")
+        .unwrap();
+
+    if offset < 0 {
+        item["sMsg"] = product["sMsg"].clone();
+    } else {
+        item["ordId"] = json!("2500000000000000002");
+        item["sCode"] = json!("0");
+        item["sMsg"] = json!("");
+        response["code"] = json!("0");
+        response["msg"] = json!("");
+    }
+
+    assert_rpi_order_response(fixture, false).await;
+}
+
+async fn assert_rpi_order_response(mut fixture: Value, reverse: bool) {
     if reverse {
         fixture["request"].as_array_mut().unwrap().reverse();
         fixture["response"]["data"]
@@ -8368,23 +8445,12 @@ async fn test_rpi_minimum_notional_rest_rejections(#[case] case: &str, #[case] r
 
     let requests = requests.lock().await;
     assert_eq!(requests.len(), 1);
-    let actual = &requests[0];
-    let expected_items = expected_request
-        .as_array()
-        .map_or_else(|| vec![&expected_request], |items| items.iter().collect());
-    let actual_items = actual
-        .as_array()
-        .map_or_else(|| vec![actual], |items| items.iter().collect());
-    assert_eq!(actual_items.len(), expected_items.len());
-    for (actual, expected) in actual_items.iter().zip(expected_items) {
-        for (field, value) in expected.as_object().unwrap() {
-            assert_eq!(&actual[field], value, "request field {field}");
-        }
-    }
+    assert_eq!(requests[0], expected_request);
 
-    if op.starts_with("batch-") {
+    if op.starts_with("batch-") || response["code"] == "0" {
         let items = result.unwrap();
-        assert_eq!(items.len(), 2);
+        assert_eq!(items.len(), response["data"].as_array().unwrap().len());
+
         for (item, expected) in items.iter().zip(response["data"].as_array().unwrap()) {
             assert_eq!(
                 item.cl_ord_id.as_ref().map(Ustr::as_str),

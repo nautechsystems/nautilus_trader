@@ -505,10 +505,12 @@ replace the order's client ID.
 ### RPI minimum notional
 
 RPI maker orders must meet both the instrument's `minSz` and the
-[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-08-18-rpi-maker-minimum-notional-amount):
+[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-09-15-rpi-maker-minimum-notional-amount-thresholds),
+effective 15 September 2026:
 
-- `SWAP` and `FUTURES`: 10,000 USD.
-- `SPOT`: 1,000 USD.
+- `SPOT`: 500 USD.
+- `FUTURES`: 2,000 USD.
+- `SWAP`: 5,000 USD.
 - `EVENTS`: exempt from the RPI minimum notional.
 
 OKX rejects an order below the applicable notional threshold with `54051`. The execution client emits

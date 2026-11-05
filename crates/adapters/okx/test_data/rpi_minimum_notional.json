@@ -20,7 +20,7 @@
           "ordId": "",
           "clOrdId": "ORPI002",
           "sCode": "54051",
-          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD)."
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD)."
         }
       ]
     }
@@ -64,7 +64,7 @@
           "ordId": "",
           "clOrdId": "ORPI002",
           "sCode": "54051",
-          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD)."
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD)."
         }
       ]
     }
@@ -84,7 +84,7 @@
       "id": "rpi-code-rejection",
       "op": "order",
       "code": "54051",
-      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD).",
       "data": []
     }
   },
@@ -108,7 +108,7 @@
           "ordId": "2500000000000000002",
           "clOrdId": "ORPI002",
           "sCode": "54051",
-          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD).",
           "reqId": "RPI-AMEND-2"
         }
       ]
@@ -152,7 +152,7 @@
           "ordId": "2500000000000000002",
           "clOrdId": "ORPI002",
           "sCode": "54051",
-          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD).",
           "reqId": "RPI-AMEND-2"
         }
       ]
@@ -172,8 +172,52 @@
       "id": "rpi-code-rejection",
       "op": "amend-order",
       "code": "54051",
-      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD).",
       "data": []
+    }
+  },
+  "boundaries": {
+    "SPOT": {
+      "instId": "BTC-USDT",
+      "tdMode": "cash",
+      "px": "50000",
+      "baseUnitsPerContract": "1",
+      "lotSz": "0.00001",
+      "minimumNotional": "500",
+      "quantities": {
+        "below": "0.00999",
+        "at": "0.01000",
+        "above": "0.01001"
+      },
+      "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (500 USD)."
+    },
+    "FUTURES": {
+      "instId": "BTC-USDT-261225",
+      "tdMode": "cross",
+      "px": "50000",
+      "baseUnitsPerContract": "0.01",
+      "lotSz": "1",
+      "minimumNotional": "2000",
+      "quantities": {
+        "below": "3",
+        "at": "4",
+        "above": "5"
+      },
+      "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (2000 USD)."
+    },
+    "SWAP": {
+      "instId": "BTC-USDT-SWAP",
+      "tdMode": "cross",
+      "px": "50000",
+      "baseUnitsPerContract": "0.01",
+      "lotSz": "1",
+      "minimumNotional": "5000",
+      "quantities": {
+        "below": "9",
+        "at": "10",
+        "above": "11"
+      },
+      "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (5000 USD)."
     }
   }
 }
