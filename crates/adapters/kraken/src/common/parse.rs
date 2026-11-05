@@ -41,8 +41,9 @@ use crate::{
     common::{
         consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
-            KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
-            KrakenOrderType, KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
+            KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
+            KrakenInstrumentType, KrakenOrderType, KrakenPositionSide, KrakenSpotTrigger,
+            KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -987,6 +988,18 @@ pub fn parse_fill_report(
     })
 }
 
+/// Returns the time in force and post-only flag for a Kraken futures order type: `ioc` is `IOC`,
+/// `post` is post-only `GTC`, and any other type defaults to `GTC` and not post-only.
+pub(crate) fn parse_futures_order_type_time_in_force(
+    order_type: KrakenFuturesOrderType,
+) -> (TimeInForce, bool) {
+    match order_type {
+        KrakenFuturesOrderType::Ioc => (TimeInForce::Ioc, false),
+        KrakenFuturesOrderType::Post => (TimeInForce::Gtc, true),
+        _ => (TimeInForce::Gtc, false),
+    }
+}
+
 /// Parses a Kraken futures open order into a Nautilus OrderStatusReport.
 ///
 /// # Errors
@@ -1010,6 +1023,7 @@ pub fn parse_futures_order_status_report(
         order_type
     };
     let order_status = order.status.into();
+    let (time_in_force, post_only) = parse_futures_order_type_time_in_force(order.order_type);
 
     let quantity_value = order
         .unfilled_size
@@ -1042,7 +1056,7 @@ pub fn parse_futures_order_status_report(
         venue_order_id,
         order_side,
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -1065,7 +1079,7 @@ pub fn parse_futures_order_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only,
         reduce_only: order.reduce_only.unwrap_or(false),
         cancel_reason: None,
         ts_triggered: None,
@@ -1513,10 +1527,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            KrakenFuturesOrderEventType, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
-            KrakenOrderSide,
-        },
+        common::enums::{KrakenFuturesOrderEventType, KrakenFuturesOrderStatus, KrakenOrderSide},
         http::{
             futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
             models::{
@@ -2323,6 +2334,50 @@ mod tests {
         assert!(report.price.is_none());
         assert!(report.reduce_only);
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    }
+
+    /// The `ioc` and `post` types reach the report as `IOC` and post-only `GTC`, and any other type
+    /// stays `GTC` and not post-only.
+    #[rstest]
+    #[case::limit(KrakenFuturesOrderType::Limit, TimeInForce::Gtc, false)]
+    #[case::ioc(KrakenFuturesOrderType::Ioc, TimeInForce::Ioc, false)]
+    #[case::post(KrakenFuturesOrderType::Post, TimeInForce::Gtc, true)]
+    #[case::stop(KrakenFuturesOrderType::StopLower, TimeInForce::Gtc, false)]
+    #[case::take_profit(KrakenFuturesOrderType::TakeProfit, TimeInForce::Gtc, false)]
+    fn test_parse_futures_order_status_report_time_in_force(
+        #[case] order_type: KrakenFuturesOrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] post_only: bool,
+    ) {
+        let order = FuturesOpenOrder {
+            order_id: "tif-001".to_string(),
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Buy,
+            order_type,
+            limit_price: Some(dec!(36000)),
+            stop_price: None,
+            unfilled_size: Some(dec!(500)),
+            received_time: "2023-11-14T22:13:20.000Z".to_string(),
+            status: KrakenFuturesOrderStatus::Untouched,
+            filled_size: Decimal::ZERO,
+            reduce_only: Some(false),
+            last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
+            trigger_signal: None,
+            cli_ord_id: None,
+            cli_ord_id_snake_case: None,
+        };
+
+        let report = parse_futures_order_status_report(
+            &order,
+            &create_mock_perp(),
+            AccountId::new("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, time_in_force);
+        assert_eq!(report.post_only, post_only);
     }
 
     #[rstest]

@@ -969,6 +969,11 @@ The order type is the only place the history states a time in force. `IoC` and `
 reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
 `GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
 
+The open-order read and order feed deltas for orders the adapter does not track report the `ioc` and `post` order
+types the same way, but Kraken documents neither there, and the orders-status window states no time in force or
+post-only flag. A resting post-only order the venue lists as a plain limit therefore reports as `GTC` and not
+post-only, and an order adopted from such a report keeps those values.
+
 The adapter skips unrepresentable rows with a warning:
 
 - An unknown event kind.
