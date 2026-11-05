@@ -14,8 +14,11 @@ A managed book subscription maintains the current book. On each delta batch, the
 - No in-flight order belonging to this strategy.
 
 When the bid is larger, the strategy buys at the best ask. When the ask is larger, it sells at the
-best bid. Each order is a non-post-only FOK limit order, capped at the smaller size and
-`max_trade_size`. Size truncates to instrument precision; a result of zero produces no order.
+best bid. Each order is a non-post-only limit order, capped at the smaller size and
+`max_trade_size`. `time_in_force` defaults to FOK, which fills the full quantity or cancels the order.
+Set it to IOC for venues such as Lighter and Hyperliquid: IOC fills the available quantity and
+cancels any remainder. Other time-in-force values are rejected so orders cannot rest on the book.
+Size truncates to instrument precision; a result of zero produces no order.
 Prices, sizes, and ratio thresholds use exact decimal arithmetic.
 
 L2 MBP best sizes represent price levels. For L3 MBO, the book API returns the first order at each
@@ -27,12 +30,13 @@ retains these semantics with an L3 MBO subscription in dry-run mode, sending no 
 After adding the instrument and simulated venue to a `BacktestEngine`:
 
 ```rust
-use nautilus_model::{identifiers::InstrumentId, types::Quantity};
+use nautilus_model::{enums::TimeInForce, identifiers::InstrumentId, types::Quantity};
 use nautilus_trading::examples::strategies::{OrderBookImbalance, OrderBookImbalanceConfig};
 
 let config = OrderBookImbalanceConfig::builder()
-    .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+    .instrument_id(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
     .max_trade_size(Quantity::from("1.000"))
+    .time_in_force(TimeInForce::Ioc)
     .build();
 engine.add_strategy(OrderBookImbalance::from_config(config)?)?;
 ```
@@ -47,15 +51,16 @@ With the same instrument and simulated venue registered:
 ```python
 from decimal import Decimal
 
-from nautilus_trader.model import BookType, InstrumentId, Quantity
+from nautilus_trader.model import BookType, InstrumentId, Quantity, TimeInForce
 from nautilus_trader.trading import OrderBookImbalanceConfig
 
 config = OrderBookImbalanceConfig(
-    instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
+    instrument_id=InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID"),
     max_trade_size=Quantity.from_str("1.000"),
     trigger_min_size=Decimal("100"),
     trigger_imbalance_ratio=Decimal("0.20"),
     book_type=BookType.L2_MBP,
+    time_in_force=TimeInForce.IOC,
 )
 engine.add_builtin_strategy("OrderBookImbalance", config)
 ```
@@ -65,8 +70,11 @@ engine.add_builtin_strategy("OrderBookImbalance", config)
 
 ## Lifecycle and dry-run mode
 
-Stop unsubscribes from deltas, cancels this strategy's open orders, and closes its positions. Resume
-restores the subscription and retains trigger spacing and counts. Reset clears runtime state.
+Stop unsubscribes from deltas, cancels this strategy's open orders, and attempts to close its positions.
+Resume restores the subscription and retains trigger spacing and counts. Reset clears runtime state.
+
+On Lighter, an IOC fill below the minimum quantity or notional can leave a position that the
+close-on-stop path rejects. Check residual positions after stopping; shutdown does not guarantee a flat account.
 
 Set `dry_run=True` in Python or `.dry_run(true)` in Rust to report eligible signals without sending
 order commands, including during shutdown. Dry-run retains thresholds, spacing, and the in-flight

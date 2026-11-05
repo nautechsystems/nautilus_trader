@@ -21,7 +21,7 @@ use nautilus_common::actor::{DataActor, DataActorNative};
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
 use nautilus_model::{
     data::OrderBookDeltas,
-    enums::{OrderSide, TimeInForce},
+    enums::OrderSide,
     instruments::Instrument,
     types::{Price, Quantity},
 };
@@ -51,8 +51,8 @@ impl OrderBookImbalance {
     ///
     /// # Errors
     ///
-    /// Returns an error if base configuration, thresholds, spacing, or size are invalid, or if
-    /// managed order features are enabled in dry-run mode.
+    /// Returns an error if base configuration, thresholds, spacing, size, or time-in-force are
+    /// invalid, or if managed order features are enabled in dry-run mode.
     pub fn from_config(config: OrderBookImbalanceConfig) -> anyhow::Result<Self> {
         config.validate()?;
         let trigger_interval_ns = secs_to_nanos(config.min_seconds_between_triggers)?;
@@ -229,7 +229,7 @@ impl OrderBookImbalance {
             side,
             quantity,
             price,
-            Some(TimeInForce::Fok),
+            Some(self.config.time_in_force),
             None,
             Some(false),
             None,

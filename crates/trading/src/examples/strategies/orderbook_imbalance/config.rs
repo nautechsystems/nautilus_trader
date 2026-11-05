@@ -17,7 +17,7 @@
 
 use nautilus_core::datetime::secs_to_nanos;
 use nautilus_model::{
-    enums::BookType,
+    enums::{BookType, TimeInForce},
     identifiers::{InstrumentId, StrategyId},
     types::Quantity,
 };
@@ -59,16 +59,23 @@ pub struct OrderBookImbalanceConfig {
     /// Book representation used by the managed subscription.
     #[builder(default = BookType::L2_MBP)]
     pub book_type: BookType,
-    /// Reports signals without submitting, canceling, or closing orders, including on stop.
-    #[builder(default)]
-    pub dry_run: bool,
+    /// Immediate execution policy: FOK requires a full fill; IOC permits partial fills.
+    #[builder(default = TimeInForce::Fok)]
+    pub time_in_force: TimeInForce,
     /// Snapshot logging interval in book updates, or zero to disable.
     #[builder(default)]
     pub log_interval: u64,
+    /// Reports signals without submitting, canceling, or closing orders, including on stop.
+    #[builder(default)]
+    pub dry_run: bool,
 }
 
 impl OrderBookImbalanceConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(self.time_in_force, TimeInForce::Fok | TimeInForce::Ioc),
+            "time_in_force must be FOK or IOC"
+        );
         anyhow::ensure!(
             self.max_trade_size.is_positive(),
             "max_trade_size must be positive"

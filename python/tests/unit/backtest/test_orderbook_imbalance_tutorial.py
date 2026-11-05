@@ -41,10 +41,12 @@ from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import RecordFlag
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.trading import OrderBookImbalanceConfig
@@ -78,6 +80,7 @@ def imbalance_engine() -> Iterator[BacktestEngine]:
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("time_in_force", [TimeInForce.FOK, TimeInForce.IOC])
 @pytest.mark.parametrize(
     ("ask", "expected_orders"),
     [("2000.10", 2), ("1999.90", 0), ("1999.80", 0), (None, 0)],
@@ -86,6 +89,7 @@ def imbalance_engine() -> Iterator[BacktestEngine]:
 def test_imbalance_requires_positive_spread(
     imbalance_engine: BacktestEngine,
     dry_run: bool,
+    time_in_force: TimeInForce,
     ask: str | None,
     expected_orders: int,
 ) -> None:
@@ -101,6 +105,7 @@ def test_imbalance_requires_positive_spread(
             instrument_id=instrument.id,
             max_trade_size=Quantity.from_str("0.01000"),
             trigger_min_size=Decimal(1),
+            time_in_force=time_in_force,
             dry_run=dry_run,
         ),
     )
@@ -136,35 +141,51 @@ def test_imbalance_requires_positive_spread(
     if expected_orders and not dry_run:
         assert {str(order.filled_qty) for order in orders} == {"0.01000"}
         assert {order.side for order in orders} == {OrderSide.BUY, OrderSide.SELL}
+        assert [order.time_in_force for order in orders if order.order_type == OrderType.LIMIT] == [
+            time_in_force,
+        ]
 
 
 def test_imbalance_config_preserves_native_fields() -> None:
     """
-    Preserve every configurable signal control across the Python binding.
+    Bind positional configuration values to their native fields.
     """
     instrument_id = TestInstrumentProvider.ethusdt_binance().id
     config = OrderBookImbalanceConfig(
-        instrument_id=instrument_id,
-        max_trade_size=Quantity.from_str("3.14259"),
-        trigger_min_size=Decimal("15.25"),
-        trigger_imbalance_ratio=Decimal("0.125"),
-        min_seconds_between_triggers=2.5,
-        book_type=BookType.L3_MBO,
-        dry_run=True,
-        log_interval=7,
-        strategy_id=StrategyId("IMBALANCE-123"),
-        order_id_tag="456",
+        instrument_id,
+        Quantity.from_str("3.14259"),
+        StrategyId("IMBALANCE-123"),
+        "456",
+        Decimal("15.25"),
+        Decimal("0.125"),
+        2.5,
+        BookType.L3_MBO,
+        TimeInForce.IOC,
+        7,
+        True,
     )
     assert config.instrument_id == instrument_id
     assert config.max_trade_size == Quantity.from_str("3.14259")
+    assert config.strategy_id == StrategyId("IMBALANCE-123")
+    assert config.order_id_tag == "456"
     assert config.trigger_min_size == Decimal("15.25")
     assert config.trigger_imbalance_ratio == Decimal("0.125")
     assert config.min_seconds_between_triggers == 2.5
     assert config.book_type == BookType.L3_MBO
-    assert config.dry_run is True
+    assert config.time_in_force == TimeInForce.IOC
     assert config.log_interval == 7
-    assert config.strategy_id == StrategyId("IMBALANCE-123")
-    assert config.order_id_tag == "456"
+    assert config.dry_run is True
+
+
+def test_imbalance_config_defaults_to_fok() -> None:
+    """
+    Preserve fill-or-kill behavior for existing strategy configurations.
+    """
+    config = OrderBookImbalanceConfig(
+        instrument_id=TestInstrumentProvider.ethusdt_binance().id,
+        max_trade_size=Quantity.from_str("1.00000"),
+    )
+    assert config.time_in_force == TimeInForce.FOK
 
 
 @pytest.mark.parametrize(
@@ -172,6 +193,11 @@ def test_imbalance_config_preserves_native_fields() -> None:
     [
         ("max_trade_size", Quantity.from_str("0"), "max_trade_size must be positive"),
         ("trigger_min_size", Decimal(-1), "trigger_min_size must be non-negative"),
+        ("time_in_force", TimeInForce.GTC, "time_in_force must be FOK or IOC"),
+        ("time_in_force", TimeInForce.GTD, "time_in_force must be FOK or IOC"),
+        ("time_in_force", TimeInForce.DAY, "time_in_force must be FOK or IOC"),
+        ("time_in_force", TimeInForce.AT_THE_OPEN, "time_in_force must be FOK or IOC"),
+        ("time_in_force", TimeInForce.AT_THE_CLOSE, "time_in_force must be FOK or IOC"),
         ("trigger_imbalance_ratio", Decimal(0), "trigger_imbalance_ratio must be in"),
         ("trigger_imbalance_ratio", Decimal(1), "trigger_imbalance_ratio must be in"),
         ("min_seconds_between_triggers", -1.0, "min_seconds_between_triggers must be finite"),

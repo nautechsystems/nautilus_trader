@@ -168,13 +168,16 @@ fn trading_commands() -> TypedIntoMessageSavingHandler<TradingCommand> {
 #[case("20", "3.999999", Some(OrderSide::Buy), "0.123456")]
 #[case("0", "20", None, "0")]
 #[case("20", "0", None, "0")]
-fn test_signal_boundaries_and_fok_fields(
+fn test_signal_boundaries_and_order_fields(
     #[case] bid: &str,
     #[case] ask: &str,
     #[case] side: Option<OrderSide>,
     #[case] qty: &str,
+    #[values(TimeInForce::Fok, TimeInForce::Ioc)] time_in_force: TimeInForce,
 ) {
-    let (mut strategy, _, cache) = register_strategy(config());
+    let mut config = config();
+    config.time_in_force = time_in_force;
+    let (mut strategy, _, cache) = register_strategy(config);
     let commands = trading_commands();
     strategy.start().unwrap();
     let deltas = book(&cache, BookType::L2_MBP, bid, ask);
@@ -205,11 +208,33 @@ fn test_signal_boundaries_and_fok_fields(
                 "100.00"
             }))
         );
-        assert_eq!(order.time_in_force(), TimeInForce::Fok);
+        assert_eq!(order.time_in_force(), time_in_force);
         assert!(!order.is_post_only());
         assert!(!order.is_reduce_only());
         assert_eq!(strategy.state.last_trigger_ns, Some(UnixNanos::default()));
     }
+}
+
+#[rstest]
+fn test_default_time_in_force_is_fok() {
+    assert_eq!(config().time_in_force, TimeInForce::Fok);
+}
+
+#[rstest]
+fn test_resting_time_in_force_is_rejected(
+    #[values(
+        TimeInForce::Gtc,
+        TimeInForce::Gtd,
+        TimeInForce::Day,
+        TimeInForce::AtTheOpen,
+        TimeInForce::AtTheClose
+    )]
+    time_in_force: TimeInForce,
+) {
+    let mut config = config();
+    config.time_in_force = time_in_force;
+    let error = OrderBookImbalance::from_config(config).unwrap_err();
+    assert_eq!(error.to_string(), "time_in_force must be FOK or IOC");
 }
 
 #[rstest]

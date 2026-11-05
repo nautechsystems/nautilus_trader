@@ -323,14 +323,15 @@ class OrderBookImbalanceConfig:
         self,
         instrument_id: model.InstrumentId,
         max_trade_size: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
         trigger_min_size: decimal.Decimal | None = None,
         trigger_imbalance_ratio: decimal.Decimal | None = None,
         min_seconds_between_triggers: float = 1.0,
         book_type: model.BookType = model.BookType.L2_MBP,
-        dry_run: bool = False,
+        time_in_force: model.TimeInForce = model.TimeInForce.FOK,
         log_interval: int = 0,
-        strategy_id: model.StrategyId | None = None,
-        order_id_tag: str | None = None,
+        dry_run: bool = False,
     ) -> None: ...
     @property
     def instrument_id(self) -> model.InstrumentId: ...
@@ -345,9 +346,11 @@ class OrderBookImbalanceConfig:
     @property
     def book_type(self) -> model.BookType: ...
     @property
-    def dry_run(self) -> bool: ...
+    def time_in_force(self) -> model.TimeInForce: ...
     @property
     def log_interval(self) -> int: ...
+    @property
+    def dry_run(self) -> bool: ...
 
 class ExecutionAlgorithm:
     def __init__(self, config: typing.Any | None = None) -> None: ...

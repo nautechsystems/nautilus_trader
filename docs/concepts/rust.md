@@ -215,7 +215,7 @@ also override order event handlers on the `Strategy` trait, such as `on_order_fi
 
 The built-in [`OrderBookImbalance`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/orderbook_imbalance)
 uses the same Rust implementation from Rust and Python. Its managed book subscription reads current best
-sizes, submits capped FOK limit orders, and supports dry-run signal reporting.
+sizes, submits capped FOK or IOC limit orders, and supports dry-run signal reporting.
 
 ### Order management
 

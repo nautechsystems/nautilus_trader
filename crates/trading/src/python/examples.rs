@@ -620,36 +620,42 @@ impl HurstVpinDirectionalConfig {
 impl OrderBookImbalanceConfig {
     /// Configuration for the current-book imbalance strategy.
     #[new]
-    #[pyo3(signature = (instrument_id, max_trade_size, trigger_min_size=None, trigger_imbalance_ratio=None, min_seconds_between_triggers=1.0, book_type=BookType::L2_MBP, dry_run=false, log_interval=0, strategy_id=None, order_id_tag=None))]
+    #[pyo3(signature = (
+        instrument_id,
+        max_trade_size,
+        strategy_id=None,
+        order_id_tag=None,
+        trigger_min_size=None,
+        trigger_imbalance_ratio=None,
+        min_seconds_between_triggers=1.0,
+        book_type=BookType::L2_MBP,
+        time_in_force=TimeInForce::Fok,
+        log_interval=0,
+        dry_run=false,
+    ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_id: InstrumentId,
         max_trade_size: Quantity,
+        strategy_id: Option<StrategyId>,
+        order_id_tag: Option<String>,
         trigger_min_size: Option<Decimal>,
         trigger_imbalance_ratio: Option<Decimal>,
         min_seconds_between_triggers: f64,
         book_type: BookType,
-        dry_run: bool,
+        time_in_force: TimeInForce,
         log_interval: u64,
-        strategy_id: Option<StrategyId>,
-        order_id_tag: Option<String>,
+        dry_run: bool,
     ) -> PyResult<Self> {
         let mut config = Self::builder()
             .instrument_id(instrument_id)
             .max_trade_size(max_trade_size)
             .min_seconds_between_triggers(min_seconds_between_triggers)
             .book_type(book_type)
-            .dry_run(dry_run)
+            .time_in_force(time_in_force)
             .log_interval(log_interval)
+            .dry_run(dry_run)
             .build();
-
-        if let Some(size) = trigger_min_size {
-            config.trigger_min_size = size;
-        }
-
-        if let Some(ratio) = trigger_imbalance_ratio {
-            config.trigger_imbalance_ratio = ratio;
-        }
 
         if let Some(id) = strategy_id {
             config.base.strategy_id = Some(id);
@@ -657,6 +663,14 @@ impl OrderBookImbalanceConfig {
 
         if let Some(tag) = order_id_tag {
             config.base.order_id_tag = Some(tag);
+        }
+
+        if let Some(size) = trigger_min_size {
+            config.trigger_min_size = size;
+        }
+
+        if let Some(ratio) = trigger_imbalance_ratio {
+            config.trigger_imbalance_ratio = ratio;
         }
 
         config.validate().map_err(to_pyvalue_err)?;
@@ -694,12 +708,17 @@ impl OrderBookImbalanceConfig {
     }
 
     #[getter]
-    fn dry_run(&self) -> bool {
-        self.dry_run
+    fn time_in_force(&self) -> TimeInForce {
+        self.time_in_force
     }
 
     #[getter]
     fn log_interval(&self) -> u64 {
         self.log_interval
+    }
+
+    #[getter]
+    fn dry_run(&self) -> bool {
+        self.dry_run
     }
 }
