@@ -4612,12 +4612,16 @@ impl OrderMatchingEngine {
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
-                    if self.maybe_activate_trailing_stop(
-                        &mut order,
-                        self.core.bid,
-                        self.core.ask,
-                        self.core.last,
-                    ) {
+                    // Like matching, trailing stops follow the market only while it
+                    // is open; they resume from the first price after it reopens
+                    if self.market_status == MarketStatus::Open
+                        && self.maybe_activate_trailing_stop(
+                            &mut order,
+                            self.core.bid,
+                            self.core.ask,
+                            self.core.last,
+                        )
+                    {
                         self.update_trailing_stop_order(&order);
                         self.resync_core_entry(client_order_id);
                     }
