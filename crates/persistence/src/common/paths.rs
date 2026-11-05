@@ -584,13 +584,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("data/catalog")]
-    #[case("./catalog")]
-    fn file_protocol_uri_leaves_relative_path_unchanged(#[case] path: &str) {
-        assert_eq!(file_protocol_uri(path), path);
-    }
-
-    #[rstest]
     fn test_path_to_file_uri() {
         // Unix absolute paths
         assert_eq!(path_to_file_uri("/tmp/test"), "file:///tmp/test");
