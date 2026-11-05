@@ -180,6 +180,27 @@ mod tests {
     }
 
     #[rstest]
+    #[case::bare("")]
+    #[case::dotted("./")]
+    fn open_catalog_resolves_relative_path(#[case] prefix: &str) {
+        let directory = TempDir::new_in(".").unwrap();
+        let name = directory.path().file_name().unwrap().to_string_lossy();
+        let config = DataCatalogConfig::new(format!("{prefix}{name}"), None, None);
+        let mut catalog = open_catalog(&config.connect_config()).unwrap();
+
+        catalog
+            .write_to_parquet(&[quote(1)], None, None, None)
+            .unwrap();
+
+        let quotes = catalog
+            .query::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap();
+
+        assert_eq!(quotes, vec![quote(1)]);
+        quote_file_metadata(&catalog, &directory);
+    }
+
+    #[rstest]
     #[case::moved_setting("batch_size")]
     #[case::unknown("no_such_param")]
     fn open_catalog_rejects_params_naming_key(#[case] key: &str) {

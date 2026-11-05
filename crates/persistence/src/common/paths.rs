@@ -254,17 +254,20 @@ fn is_windows_drive_path(path: &str) -> bool {
         && matches!(path.chars().nth(2), Some('\\' | '/'))
 }
 
-/// Returns a `file://` URI for a local catalog path.
+/// Returns a `file://` URI for an absolute local catalog path.
 ///
 /// A Windows drive path becomes `file:///C:/...`. UNC paths keep a direct
 /// `file://` join because [`file_uri_to_native_path`] does not restore the
-/// `\\server\share` prefix from `file://server/share`.
+/// `\\server\share` prefix from `file://server/share`. A relative path has no
+/// `file://` form, so it stays as it is for [`normalize_path_to_uri`] to resolve.
 #[must_use]
 pub(crate) fn file_protocol_uri(path: &str) -> String {
     if is_windows_drive_path(path) {
         path_to_file_uri(path)
-    } else {
+    } else if is_absolute_path(path) {
         format!("file://{path}")
+    } else {
+        path.to_string()
     }
 }
 
@@ -576,6 +579,13 @@ mod tests {
             file_protocol_uri(r"\\server\share\catalog"),
             r"file://\\server\share\catalog",
         );
+    }
+
+    #[rstest]
+    #[case("data/catalog")]
+    #[case("./catalog")]
+    fn file_protocol_uri_leaves_relative_path_unchanged(#[case] path: &str) {
+        assert_eq!(file_protocol_uri(path), path);
     }
 
     #[rstest]

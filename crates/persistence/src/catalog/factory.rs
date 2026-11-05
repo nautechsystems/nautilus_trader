@@ -66,6 +66,7 @@ impl CatalogConnectConfig {
     /// Builds a [`CatalogConnectConfig`] from `path` + optional `fs_protocol`.
     ///
     /// A `file` protocol with a Windows drive path becomes `file:///C:/...`.
+    /// A `file` protocol leaves a relative path unchanged, for the backend to resolve.
     /// A path that already contains `://` is left unchanged.
     #[must_use]
     pub fn from_path_and_protocol(
@@ -225,9 +226,6 @@ mod tests {
     fn from_path_and_protocol_keeps_non_drive_file_joins() {
         let cfg = CatalogConnectConfig::from_path_and_protocol("/tmp/cat", Some("file"), None);
         assert_eq!(cfg.uri, "file:///tmp/cat");
-
-        let cfg = CatalogConnectConfig::from_path_and_protocol("data/cat", Some("file"), None);
-        assert_eq!(cfg.uri, "file://data/cat");
 
         let cfg = CatalogConnectConfig::from_path_and_protocol(
             r"\\server\share\catalog",
