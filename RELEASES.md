@@ -41,6 +41,8 @@ Released on TBD (UTC).
 - Changed `Cache::cache_all` to replace preloaded Greeks and yield curves; add transient values after loading
 - Changed raw `Price` and `Quantity` construction and decoding to reject digits beyond precision; rescale or round first
 - Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
+- Changed `protection_price_calculate` to return `ProtectionPriceError`; update explicit error types
+- Changed `trailing_stop_calculate*` to return `TrailingStopError`; use `MissingLast` for missing last/mark prices
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
 - Changed Postgres cache schema in `defi` builds; run `nautilus database init`

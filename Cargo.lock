@@ -6386,6 +6386,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "thiserror 2.0.21",
  "ustr",
  "uuid",
 ]

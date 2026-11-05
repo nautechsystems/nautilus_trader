@@ -1310,6 +1310,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "smallvec",
+ "thiserror",
  "ustr",
  "uuid",
 ]
