@@ -477,7 +477,7 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_continues_when_spread_endpoint_fails() {
+async fn test_request_instruments_fails_with_the_rows_when_spread_endpoint_fails() {
     let state = TestServerState {
         fail_spreads: true,
         ..TestServerState::default()
@@ -491,9 +491,19 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .request_instruments(request)
         .expect("request_instruments");
 
-    let events =
-        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
-    let response = instruments_response(&events);
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the fetched instruments, received {failure:?}");
+    };
+
     let spread_count = response
         .data
         .iter()
@@ -506,6 +516,8 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .count();
     let spread_queries = state.spread_queries.lock().await;
 
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains("spread"), "{}", failure.reason);
     assert_eq!(spread_count, 0);
     assert_eq!(spot_count, 5);
     assert_eq!(spread_queries.len(), 1);

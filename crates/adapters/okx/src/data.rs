@@ -2696,6 +2696,7 @@ impl DataClient for OKXDataClient {
         self.spawn_task(async move {
             let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
             let mut all_instruments = Vec::new();
+            let mut failures = Vec::new();
 
             for inst_type in instrument_types {
                 let Some(families) = resolve_instrument_families(&instrument_families, inst_type)
@@ -2718,7 +2719,9 @@ impl DataClient for OKXDataClient {
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to fetch instruments for {inst_type:?}: {e:?}");
+                            failures.push(format!(
+                                "Failed to fetch instruments for {inst_type:?}: {e:#}"
+                            ));
                         }
                     }
                 } else {
@@ -2740,9 +2743,9 @@ impl DataClient for OKXDataClient {
                                 }
                             }
                             Err(e) => {
-                                log::error!(
-                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:?}"
-                                );
+                                failures.push(format!(
+                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:#}"
+                                ));
                             }
                         }
                     }
@@ -2770,7 +2773,7 @@ impl DataClient for OKXDataClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                        failures.push(format!("Failed to fetch OKX spread instruments: {e:#}"));
                     }
                 }
             }
@@ -2807,7 +2810,17 @@ impl DataClient for OKXDataClient {
                 params,
             ));
 
-            if let Err(e) = sender.send(completed_response(response)) {
+            let event = if failures.is_empty() {
+                completed_response(response)
+            } else {
+                DataEvent::RequestFailed(DataRequestFailed {
+                    request_id,
+                    reason: failures.join("; "),
+                    response: Some(response),
+                })
+            };
+
+            if let Err(e) = sender.send(event) {
                 log::error!("Failed to send instruments response: {e}");
             }
         });
