@@ -90,6 +90,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
+        price::PRICE_UNDEF,
     },
 };
 #[cfg(feature = "defi")]
@@ -461,6 +462,273 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         .collect();
 
     assert_eq!(canceled, vec![(usdjpy.id(), UnixNanos::from(3))]);
+}
+
+#[rstest]
+#[case::quote(None, Some("0.99000"), None, None, true)]
+#[case::trade(None, None, Some("0.99000"), None, true)]
+#[case::bar(None, None, None, Some("0.99000"), true)]
+#[case::mark_over_quote(Some("0.99000"), Some("1.00000"), None, None, true)]
+#[case::mark_over_quote_no_breach(Some("1.00000"), Some("0.99000"), None, None, false)]
+#[case::mark_over_trade_no_breach(Some("1.00000"), None, Some("0.99000"), None, false)]
+#[case::quote_over_trade_no_breach(None, Some("1.00000"), Some("0.99000"), None, false)]
+#[case::trade_over_bar_no_breach(None, None, Some("1.00000"), Some("0.99000"), false)]
+fn test_liquidation_values_positions_with_price_fallback(
+    audusd_sim: CurrencyPair,
+    #[case] mark: Option<&str>,
+    #[case] quote: Option<&str>,
+    #[case] trade: Option<&str>,
+    #[case] bar_close: Option<&str>,
+    #[case] expected_liquidation: bool,
+) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&audusd, OrderSide::Buy, &clock);
+    let ts = UnixNanos::from(2);
+
+    if let Some(price) = bar_close {
+        let price = Price::from(price);
+        let bar = Bar::new(
+            BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+            price,
+            price,
+            price,
+            price,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+    }
+
+    if let Some(price) = trade {
+        let trade = TradeTick::new(
+            audusd.id(),
+            Price::from(price),
+            Quantity::from("1000000"),
+            AggressorSide::Sell,
+            TradeId::from("T-FALLBACK-1"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_trade(trade).unwrap();
+        exchange.borrow_mut().process_trade_tick(&trade).unwrap();
+    }
+
+    if let Some(price) = quote {
+        add_fx_quote(&exchange, &cache, audusd.id(), price, price);
+    }
+
+    if let Some(price) = mark {
+        let mark = MarkPriceUpdate::new(audusd.id(), Price::from(price), ts, ts);
+        cache.borrow_mut().add_mark_price(mark).unwrap();
+        exchange.borrow_mut().process_mark_price(&mark).unwrap();
+    }
+
+    let liquidated = run_liquidation_check(&exchange, &clock, UnixNanos::from(3));
+    assert_eq!(liquidated, expected_liquidation);
+}
+
+// Bars are (bar type, close or `None` for `PRICE_UNDEF`, `ts_event` secs, `ts_init` secs)
+#[rstest]
+#[case::equal_close_bid_values_long(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL", Some("0.99000"), 60, 60),
+        ("AUD/USD.SIM-1-MINUTE-ASK-EXTERNAL", Some("1.00000"), 60, 60),
+    ],
+    true,
+)]
+#[case::equal_close_ask_values_short(
+    OrderSide::Sell,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL", Some("1.00000"), 60, 60),
+        ("AUD/USD.SIM-1-MINUTE-ASK-EXTERNAL", Some("1.01000"), 60, 60),
+    ],
+    true,
+)]
+#[case::open_stamped_latest_close(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("1.00000"), 3480, 3540),
+        ("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL", Some("0.99000"), 0, 3600),
+    ],
+    true,
+)]
+#[case::open_stamped_latest_close_no_breach(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("0.99000"), 3480, 3540),
+        ("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL", Some("1.00000"), 0, 3600),
+    ],
+    false,
+)]
+#[case::undefined_close_skipped(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("0.99000"), 60, 60),
+        ("AUD/USD.SIM-1-SECOND-LAST-EXTERNAL", None, 61, 61),
+    ],
+    true,
+)]
+fn test_liquidation_bar_fallback_selection(
+    audusd_sim: CurrencyPair,
+    #[case] side: OrderSide,
+    #[case] bars: &[(&str, Option<&str>, u64, u64)],
+    #[case] expected_liquidation: bool,
+) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let secs = |secs: u64| UnixNanos::from(secs * 1_000_000_000);
+    let ts_now = bars.iter().map(|bar| secs(bar.3)).max().unwrap();
+
+    // Each cache seeds its bar type map differently, so rebuild to cover both iteration orders
+    for _ in 0..32 {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let (exchange, cache) = liquidation_fallback_exchange(&audusd, side, &clock);
+
+        for &(bar_type, close, ts_event, ts_init) in bars {
+            let close = close.map_or_else(|| Price::from_raw(PRICE_UNDEF, 0), Price::from);
+            let bar = Bar::new(
+                BarType::from(bar_type),
+                close,
+                close,
+                close,
+                close,
+                Quantity::from("1000000"),
+                secs(ts_event),
+                secs(ts_init),
+            );
+            cache.borrow_mut().add_bar(bar).unwrap();
+            exchange.borrow_mut().process_bar(bar).unwrap();
+        }
+
+        let liquidated = run_liquidation_check(&exchange, &clock, ts_now);
+        assert_eq!(liquidated, expected_liquidation);
+    }
+}
+
+#[rstest]
+fn test_liquidation_bar_fallback_refreshes_between_checks(audusd_sim: CurrencyPair) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&audusd, OrderSide::Buy, &clock);
+    let mut actual = Vec::new();
+
+    for (bar_type, value, ts) in [
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", "1.00000", 2),
+        ("AUD/USD.SIM-1-SECOND-LAST-INTERNAL", "0.99000", 3),
+    ] {
+        let close = Price::from(value);
+        let ts = UnixNanos::from(ts);
+
+        let bar = Bar::new(
+            BarType::from(bar_type),
+            close,
+            close,
+            close,
+            close,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+        actual.push(run_liquidation_check(&exchange, &clock, ts));
+    }
+
+    assert_eq!(actual, vec![false, true]);
+}
+
+// Opens 100,000 AUD/USD at 1.00000 on `side` against 1,000 USD and 10 USD maintenance margin,
+// so the account is safe at 1.00000 and a 0.01000 adverse move takes equity to zero.
+fn liquidation_fallback_exchange(
+    audusd: &InstrumentAny,
+    side: OrderSide,
+    clock: &Rc<RefCell<VirtualClock>>,
+) -> (Rc<RefCell<SimulatedExchange>>, Rc<RefCell<Cache>>) {
+    let usd = Currency::USD();
+    let balance = AccountBalance::new(
+        Money::new(1_000.0, usd),
+        Money::zero(usd),
+        Money::new(1_000.0, usd),
+    );
+    let account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![balance],
+            vec![MarginBalance::new(
+                Money::new(10.0, usd),
+                Money::new(10.0, usd),
+                Some(audusd.id()),
+            )],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    let mut raw_cache = Cache::default();
+    raw_cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_fx_position_with_side(
+        &mut raw_cache,
+        audusd,
+        "T-LIQUIDATION-FALLBACK",
+        side,
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![balance.total])
+        .default_leverage(Decimal::ONE)
+        .liquidation_enabled(true)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+    let client = BacktestExecutionClient::new(
+        TraderId::test_default(),
+        AccountId::from("SIM-001"),
+        &exchange,
+        cache.clone(),
+        clock.clone(),
+        None,
+        None,
+    );
+    exchange.borrow_mut().register_client(Rc::new(client));
+    exchange
+        .borrow_mut()
+        .add_instrument(audusd.clone())
+        .unwrap();
+
+    (exchange, cache)
+}
+
+fn run_liquidation_check(
+    exchange: &Rc<RefCell<SimulatedExchange>>,
+    clock: &Rc<RefCell<VirtualClock>>,
+    ts_now: UnixNanos,
+) -> bool {
+    let saving_handler = register_order_event_saving_handler();
+    let _ = clock.borrow_mut().advance_time(ts_now, true);
+    exchange.borrow_mut().process_liquidations(ts_now);
+
+    saving_handler.get_messages().iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(fill) if fill.client_order_id.as_str().starts_with("LIQUIDATION-")
+        )
+    })
 }
 
 #[rstest]
@@ -4494,10 +4762,21 @@ fn add_fx_position(
     quantity: &str,
     price: &str,
 ) {
+    add_fx_position_with_side(cache, instrument, trade_id, OrderSide::Buy, quantity, price);
+}
+
+fn add_fx_position_with_side(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    trade_id: &str,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+) {
     cache.add_instrument(instrument.clone()).unwrap();
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
+        .side(side)
         .quantity(Quantity::from(quantity))
         .build();
     let fill = TestOrderEventStubs::filled(

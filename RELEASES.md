@@ -133,6 +133,7 @@ Released on TBD (UTC).
 - Fixed composite time bars closing before their final source bar at a shared deadline
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
 - Fixed backtest timer cancellation across data gaps and tail flushes
+- Fixed backtest liquidation on bar and trade data (#5538), thanks @stooq1
 - Fixed `BacktestEngine` reset hiding component reset failures
 - Fixed `EmaCross` and `DeltaNeutralVol` retaining runtime state on engine reset
 - Fixed streaming backtests failing to resume when the first batch has only data before the start time
