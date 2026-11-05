@@ -2633,45 +2633,51 @@ impl LiveNode {
             + data_cmd_rx.len();
         log::info!("Draining shutdown queues ({pending} events initially pending)");
 
-        let mut drained = 0usize;
-        let mut record_progress = || {
-            drained += 1;
-            if drained.is_multiple_of(10_000) {
-                log::info!("Processed {drained} events during shutdown drain");
+        let mut drained = 0;
+        let log_progress = |processed: usize| {
+            if processed.is_multiple_of(10_000) {
+                log::info!("Processed {processed} events during shutdown drain");
             }
         };
 
         while let Ok(handler) = time_evt_rx.try_recv() {
             let _ = AsyncRunner::handle_time_event(handler);
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while system_evt_rx.try_recv().is_ok() {
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while system_cmd_rx.try_recv().is_ok() {
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while let Ok(evt) = data_evt_rx.try_recv() {
             AsyncRunner::dispatch_data_event(evt);
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while let Ok(cmd) = data_cmd_rx.try_recv() {
             AsyncRunner::handle_data_command(cmd);
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
             AsyncRunner::dispatch_exec_event(evt);
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         while let Ok(cmd) = exec_cmd_rx.try_recv() {
             AsyncRunner::handle_trading_command(cmd);
-            record_progress();
+            drained += 1;
+            log_progress(drained);
         }
 
         log::info!("Drained {drained} remaining events during shutdown");
@@ -9550,9 +9556,8 @@ mod tests {
             }
 
             fn log(&self, record: &Record<'_>) {
-                if self.enabled(record.metadata()) {
-                    self.0.lock().push(record.args().to_string());
-                }
+                assert_eq!(record.level(), Level::Info);
+                self.0.lock().push(record.args().to_string());
             }
 
             fn flush(&self) {}
