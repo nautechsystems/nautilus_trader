@@ -213,6 +213,7 @@ Released on TBD (UTC).
 - Refined Derive report generation with HTTP collection on runtime workers (#5216)
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Refined Polymarket report generation with HTTP collection on runtime workers (#5216)
+- Optimized `deserialize_decimal_from_str` and `deserialize_decimal_or_zero` to avoid intermediate string copies
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-binstall` tool to v1.26.2
 - Upgraded `cargo-codspeed` tool to v6.0.0
