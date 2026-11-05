@@ -822,7 +822,8 @@ not restart a subscription.
 
 `DockerizedIBGateway` exposes asynchronous and blocking `start`, `safe_start`, and `stop` methods,
 plus `container_status`. The safe start variants reuse a ready container, wait for a starting one to
-log in, and replace an unhealthy one.
+log in, and replace an unhealthy one. A running container that never logs in is not replaced: the
+call fails at the timeout, and `stop` removes it.
 
 ## Python enum reference
 

@@ -344,14 +344,15 @@ impl DockerizedIBGateway {
         }
     }
 
-    /// Start the gateway container, or reuse a running one, and wait for its login.
+    /// Starts the gateway container, or reuses a running one, and waits for its login.
     ///
     /// Waits up to `wait` seconds, or the configured timeout without one.
     ///
     /// # Errors
     ///
-    /// Returns an error if container creation or startup fails, or if the gateway does not log in
-    /// within the wait.
+    /// Returns an error if:
+    /// - Container creation or startup fails.
+    /// - The gateway does not log in within the wait.
     pub async fn start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
         tracing::debug!("Ensuring gateway is running");
 
@@ -377,7 +378,7 @@ impl DockerizedIBGateway {
                 return Ok(());
             }
             ContainerStatus::ContainerStarting => {
-                tracing::debug!("Status {:?}, waiting for existing container", status);
+                tracing::debug!("Status {status:?}, waiting for existing container");
                 return self.wait_until_ready(wait).await;
             }
             _ => {}
@@ -473,28 +474,33 @@ impl DockerizedIBGateway {
         self.wait_until_ready(wait).await
     }
 
-    /// Safely start the gateway, handling container already exists errors.
+    /// Starts the gateway like [`Self::start`], and waits for the login of a container that
+    /// another caller has just created.
     ///
     /// # Errors
     ///
-    /// Returns an error if startup fails (other than container exists).
+    /// Returns an error if:
+    /// - Startup fails for a reason other than that conflict.
+    /// - The gateway does not log in within the wait.
     pub async fn safe_start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
         match self.start(wait).await {
             Ok(()) => Ok(()),
-            Err(e)
-                if matches!(
-                    e.downcast_ref(),
-                    Some(DockerError::DockerResponseServerError {
-                        status_code: 409,
-                        ..
-                    })
-                ) =>
-            {
+            Err(e) if Self::is_conflict(&e) => {
                 tracing::warn!("Container already exists, continuing");
                 self.wait_until_ready(wait).await
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn is_conflict(error: &anyhow::Error) -> bool {
+        matches!(
+            error.downcast_ref(),
+            Some(DockerError::DockerResponseServerError {
+                status_code: 409,
+                ..
+            })
+        )
     }
 
     async fn wait_until_ready(&self, wait: Option<u64>) -> anyhow::Result<()> {
@@ -509,7 +515,7 @@ impl DockerizedIBGateway {
         .await
         .with_context(|| {
             format!(
-                "Gateway `{}` not ready after {} seconds",
+                "gateway `{}` not ready after {} seconds",
                 self.container_name, wait_time
             )
         })?;
@@ -599,7 +605,7 @@ mod tests {
     use nautilus_core::string::secret::SecretString;
     use rstest::rstest;
 
-    use super::DockerizedIBGateway;
+    use super::{DockerError, DockerizedIBGateway};
     use crate::config::{DockerizedIBGatewayConfig, TradingMode};
 
     #[rstest]
@@ -665,6 +671,19 @@ mod tests {
         assert_eq!(gateway.password.expose_secret(), "test-password");
         assert!(gateway.config.username.is_none());
         assert!(gateway.config.password.is_none());
+    }
+
+    #[rstest]
+    #[case(409, true)]
+    #[case(404, false)]
+    fn conflict_is_found_through_context(#[case] status_code: u16, #[case] expected: bool) {
+        let error = anyhow::Error::new(DockerError::DockerResponseServerError {
+            status_code,
+            message: "the container name is already in use".to_string(),
+        })
+        .context("Failed to create container");
+
+        assert_eq!(DockerizedIBGateway::is_conflict(&error), expected);
     }
 
     #[rstest]
