@@ -23,8 +23,9 @@ use crate::{
     hypersync::{
         HypersyncLog,
         log::{
-            extract_address_from_topic, extract_block_number, extract_log_index,
-            extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
+            extract_address_from_topic, extract_block_hash, extract_block_number,
+            extract_log_index, extract_transaction_hash, extract_transaction_index,
+            validate_event_signature_hash,
         },
     },
     rpc::log as rpc_log,
@@ -104,6 +105,7 @@ pub fn parse_collect_event_hypersync(
             dex,
             pool_identifier,
             extract_block_number(log)?,
+            extract_block_hash(log),
             extract_transaction_hash(log)?,
             extract_transaction_index(log)?,
             extract_log_index(log)?,
@@ -156,6 +158,7 @@ pub fn parse_collect_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<C
         dex,
         pool_identifier,
         rpc_log::extract_block_number(log)?,
+        rpc_log::extract_block_hash(log)?,
         rpc_log::extract_transaction_hash(log)?,
         rpc_log::extract_transaction_index(log)?,
         rpc_log::extract_log_index(log)?,
@@ -170,8 +173,9 @@ pub fn parse_collect_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<C
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
+    use alloy::primitives::B256;
     use rstest::*;
     use serde_json::json;
 
@@ -232,6 +236,8 @@ mod tests {
         let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_collect_event_hypersync(dex, &hypersync_log).unwrap();
 
+        assert_eq!(event.block_hash, None);
+
         assert_eq!(
             event.pool_identifier.to_string(),
             "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
@@ -257,6 +263,11 @@ mod tests {
     fn test_parse_collect_event_rpc(rpc_log: RpcLog) {
         let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_collect_event_rpc(dex, &rpc_log).unwrap();
+
+        let expected =
+            B256::from_str("0xe925eaa1f5178ceedfa24043a974edb928ddab7195600b6b99ff5403fbf13c8b")
+                .unwrap();
+        assert_eq!(event.block_hash, Some(expected));
 
         assert_eq!(
             event.pool_identifier.to_string(),

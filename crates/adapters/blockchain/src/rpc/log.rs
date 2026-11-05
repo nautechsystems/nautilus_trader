@@ -17,7 +17,9 @@
 //!
 //! Converts `RpcLog` fields and hex strings to their domain types.
 
-use alloy::primitives::Address;
+use std::str::FromStr;
+
+use alloy::primitives::{Address, B256};
 use nautilus_core::hex;
 use nautilus_model::defi::rpc::RpcLog;
 
@@ -61,6 +63,22 @@ pub fn extract_block_number(log: &RpcLog) -> anyhow::Result<u64> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Missing block number"))?;
     parse_hex_u64(hex)
+}
+
+/// Extracts the block hash from an RPC log.
+///
+/// Returns `None` for pending logs, which carry no block hash.
+///
+/// # Errors
+///
+/// Returns an error if the reported block hash is not valid 32-byte hex.
+pub fn extract_block_hash(log: &RpcLog) -> anyhow::Result<Option<B256>> {
+    log.block_hash
+        .as_deref()
+        .map(|hash| {
+            B256::from_str(hash).map_err(|e| anyhow::anyhow!("Invalid block hash {hash}: {e}"))
+        })
+        .transpose()
 }
 
 /// Extract transaction hash from RPC log.
@@ -247,6 +265,28 @@ mod tests {
     #[rstest]
     fn test_extract_block_number(log: RpcLog) {
         assert_eq!(extract_block_number(&log).unwrap(), 185);
+    }
+
+    #[rstest]
+    fn test_extract_block_hash(log: RpcLog) {
+        let expected =
+            B256::from_str("0xd371b6c7b04ec33d6470f067a82e87d7b294b952bea7a46d7b939b4c7addc275")
+                .unwrap();
+        assert_eq!(extract_block_hash(&log).unwrap(), Some(expected));
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_pending_log_returns_none(mut log: RpcLog) {
+        log.block_hash = None;
+
+        assert_eq!(extract_block_hash(&log).unwrap(), None);
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_invalid_returns_error(mut log: RpcLog) {
+        log.block_hash = Some("0xnotahash".to_string());
+
+        assert!(extract_block_hash(&log).is_err());
     }
 
     #[rstest]

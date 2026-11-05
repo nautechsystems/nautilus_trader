@@ -15,6 +15,7 @@
 
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
+use alloy::primitives::B256;
 use anyhow::Context;
 use nautilus_common::{
     clients::DataClient,
@@ -44,6 +45,7 @@ use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
     data::{
+        block_hash_matches,
         core::BlockchainDataClientCore,
         subscription::{BlockFeedBackend, BlockFeedOwner},
     },
@@ -326,7 +328,7 @@ impl BlockchainDataClient {
             && let Some(block_number) = Self::pool_event_block_number(&dropped_msg)
         {
             log::warn!(
-                "Dropping oldest live pool event waiting for uncached block {block_number}; pending buffer reached {MAX_PENDING_POOL_MESSAGES} messages"
+                "Dropping oldest live pool event waiting for block {block_number} metadata; pending buffer reached {MAX_PENDING_POOL_MESSAGES} messages"
             );
         }
 
@@ -427,9 +429,11 @@ impl BlockchainDataClient {
         cache: &BlockchainCache,
     ) -> Option<u64> {
         let block_number = Self::pool_event_block_number(msg)?;
-        (cache.get_block_timestamp(block_number).is_none()
-            || cache.get_block_hash(block_number).is_none())
-        .then_some(block_number)
+        let observed_hash = Self::pool_event_block_hash(msg);
+        let hash_matches = cache
+            .get_block_hash(block_number)
+            .is_some_and(|cached| block_hash_matches(observed_hash, cached));
+        (cache.get_block_timestamp(block_number).is_none() || !hash_matches).then_some(block_number)
     }
 
     fn pool_event_block_number(msg: &BlockchainMessage) -> Option<u64> {
@@ -441,6 +445,19 @@ impl BlockchainDataClient {
             BlockchainMessage::FlashEvent(event) => Some(event.block_number),
             BlockchainMessage::FeeProtocolUpdateEvent(event) => Some(event.block_number),
             BlockchainMessage::FeeProtocolCollectEvent(event) => Some(event.block_number),
+            BlockchainMessage::Block(_) | BlockchainMessage::PoolLogRemoved { .. } => None,
+        }
+    }
+
+    fn pool_event_block_hash(msg: &BlockchainMessage) -> Option<B256> {
+        match msg {
+            BlockchainMessage::SwapEvent(event) => event.block_hash,
+            BlockchainMessage::MintEvent(event) => event.block_hash,
+            BlockchainMessage::BurnEvent(event) => event.block_hash,
+            BlockchainMessage::CollectEvent(event) => event.block_hash,
+            BlockchainMessage::FlashEvent(event) => event.block_hash,
+            BlockchainMessage::FeeProtocolUpdateEvent(event) => event.block_hash,
+            BlockchainMessage::FeeProtocolCollectEvent(event) => event.block_hash,
             BlockchainMessage::Block(_) | BlockchainMessage::PoolLogRemoved { .. } => None,
         }
     }
@@ -1480,9 +1497,9 @@ impl DataClient for BlockchainDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
-    use alloy::primitives::{I256, U160, U256, address};
+    use alloy::primitives::{B256, I256, U160, U256, address};
     use nautilus_core::UnixNanos;
     use nautilus_model::defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token};
     use rstest::rstest;
@@ -1495,6 +1512,10 @@ mod tests {
     };
 
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
+
+    fn fixture_hash(hash: &str) -> B256 {
+        B256::from_str(hash).expect("fixture block hash must be valid")
+    }
 
     #[rstest]
     fn pool_event_missing_block_metadata_clears_after_block_cache_update() {
@@ -1515,8 +1536,14 @@ mod tests {
             Some(42)
         );
 
-        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block);
+        let block = test_block(
+            42,
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block)
+            .expect("test block hash must be valid");
 
         assert_eq!(
             BlockchainDataClient::pool_event_missing_block_metadata(&msg, &cache),
@@ -1559,8 +1586,14 @@ mod tests {
                 .clone(),
         );
         let mut cache = BlockchainCache::new(chain);
-        let block_42 = test_block(42, "0x42", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block_42);
+        let block_42 = test_block(
+            42,
+            "0x4242424242424242424242424242424242424242424242424242424242424242",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block_42)
+            .expect("test block hash must be valid");
         let mut pending = VecDeque::from([flash_message(41), flash_message(42)]);
 
         let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
@@ -1579,8 +1612,14 @@ mod tests {
             Some(41)
         );
 
-        let block_41 = test_block(41, "0x41", 1_700_000_000_000_000_001);
-        cache.cache_block_metadata(&block_41);
+        let block_41 = test_block(
+            41,
+            "0x4141414141414141414141414141414141414141414141414141414141414141",
+            1_700_000_000_000_000_001,
+        );
+        cache
+            .cache_block_metadata(&block_41)
+            .expect("test block hash must be valid");
 
         let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
             &mut pending,
@@ -1618,8 +1657,14 @@ mod tests {
             Some(42)
         );
 
-        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block);
+        let block = test_block(
+            42,
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block)
+            .expect("test block hash must be valid");
 
         let message = BlockchainDataClient::ready_live_blockchain_message(
             BlockchainMessage::Block(block),
@@ -1648,8 +1693,109 @@ mod tests {
     #[case(flash_message_with_identity)]
     #[case(fee_protocol_update_message_with_identity)]
     #[case(fee_protocol_collect_message_with_identity)]
+    fn pool_event_with_mismatched_block_hash_defers_until_matching_metadata_arrives(
+        #[case] message_with_identity: fn(
+            u64,
+            Option<&str>,
+            PoolIdentifier,
+            &str,
+            u32,
+        ) -> BlockchainMessage,
+    ) {
+        let chain = Arc::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+        );
+        let mut cache = BlockchainCache::new(chain);
+        let mut pending = VecDeque::new();
+        let pool_identifier = weth_usdt_pool().pool_identifier;
+
+        let superseded = test_block(
+            42,
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&superseded)
+            .expect("test block hash must be valid");
+
+        let message = BlockchainDataClient::ready_live_blockchain_message(
+            message_with_identity(
+                42,
+                Some("0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"),
+                pool_identifier,
+                "0xdeadbeef",
+                7,
+            ),
+            &cache,
+            &mut pending,
+        );
+
+        assert!(message.is_none());
+        assert_eq!(pending.len(), 1);
+
+        let canonical = test_block(
+            42,
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            1_700_000_000_000_000_001,
+        );
+        cache
+            .cache_block_metadata(&canonical)
+            .expect("test block hash must be valid");
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
+
+        assert_eq!(ready_messages.len(), 1);
+        let expected_observed =
+            fixture_hash("0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+        assert_eq!(
+            BlockchainDataClient::pool_event_block_hash(&ready_messages[0]),
+            Some(expected_observed)
+        );
+        let expected_cached =
+            fixture_hash("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        assert_eq!(cache.get_block_hash(42), Some(expected_cached));
+        assert_eq!(
+            cache.get_block_timestamp(42),
+            Some(&UnixNanos::from(1_700_000_000_000_000_001))
+        );
+        assert!(pending.is_empty());
+
+        let message = BlockchainDataClient::ready_live_blockchain_message(
+            message_with_identity(
+                42,
+                Some("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                pool_identifier,
+                "0xf00",
+                8,
+            ),
+            &cache,
+            &mut pending,
+        );
+
+        assert!(message.is_some());
+        assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    #[case(swap_message_with_identity)]
+    #[case(mint_message_with_identity)]
+    #[case(burn_message_with_identity)]
+    #[case(collect_message_with_identity)]
+    #[case(flash_message_with_identity)]
+    #[case(fee_protocol_update_message_with_identity)]
+    #[case(fee_protocol_collect_message_with_identity)]
     fn removed_pool_log_purges_matching_pending_message_before_metadata_release(
-        #[case] message_with_identity: fn(u64, PoolIdentifier, &str, u32) -> BlockchainMessage,
+        #[case] message_with_identity: fn(
+            u64,
+            Option<&str>,
+            PoolIdentifier,
+            &str,
+            u32,
+        ) -> BlockchainMessage,
     ) {
         let chain = Arc::new(
             Chain::from_chain_id(1)
@@ -1661,7 +1807,7 @@ mod tests {
         let pool_identifier = weth_usdt_pool().pool_identifier;
 
         let message = BlockchainDataClient::ready_live_blockchain_message(
-            message_with_identity(42, pool_identifier, "0xdeadbeef", 42),
+            message_with_identity(42, None, pool_identifier, "0xdeadbeef", 42),
             &cache,
             &mut pending,
         );
@@ -1678,8 +1824,14 @@ mod tests {
         assert!(message.is_none());
         assert!(pending.is_empty());
 
-        let block = test_block(42, "0x42", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block);
+        let block = test_block(
+            42,
+            "0x4242424242424242424242424242424242424242424242424242424242424242",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block)
+            .expect("test block hash must be valid");
         let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
             &mut pending,
             &cache,
@@ -1701,10 +1853,10 @@ mod tests {
         let other_pool_identifier =
             PoolIdentifier::from_address(address!("2222222222222222222222222222222222222222"));
         let mut pending = VecDeque::from([
-            swap_message_with_identity(42, other_pool_identifier, "0xdeadbeef", 42),
-            swap_message_with_identity(42, pool_identifier, "0xdeadbeef", 42),
-            swap_message_with_identity(42, pool_identifier, "0xdeadbef0", 42),
-            swap_message_with_identity(42, pool_identifier, "0xdeadbeef", 43),
+            swap_message_with_identity(42, None, other_pool_identifier, "0xdeadbeef", 42),
+            swap_message_with_identity(42, None, pool_identifier, "0xdeadbeef", 42),
+            swap_message_with_identity(42, None, pool_identifier, "0xdeadbef0", 42),
+            swap_message_with_identity(42, None, pool_identifier, "0xdeadbeef", 43),
         ]);
         let expected = vec![
             (other_pool_identifier, "0xdeadbeef", 42),
@@ -1722,8 +1874,14 @@ mod tests {
         let pending_identities: Vec<_> = pending.iter().map(swap_identity).collect();
         assert_eq!(pending_identities, expected);
 
-        let block = test_block(42, "0x42", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block);
+        let block = test_block(
+            42,
+            "0x4242424242424242424242424242424242424242424242424242424242424242",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block)
+            .expect("test block hash must be valid");
         let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
             &mut pending,
             &cache,
@@ -1755,7 +1913,7 @@ mod tests {
         assert!(pending.is_empty());
 
         let message = BlockchainDataClient::ready_live_blockchain_message(
-            swap_message_with_identity(42, pool_identifier, "0xdeadbeef", 42),
+            swap_message_with_identity(42, None, pool_identifier, "0xdeadbeef", 42),
             &cache,
             &mut pending,
         );
@@ -1763,8 +1921,14 @@ mod tests {
         assert!(message.is_none());
         assert_eq!(pending.len(), 1);
 
-        let block = test_block(42, "0x42", 1_700_000_000_000_000_000);
-        cache.cache_block_metadata(&block);
+        let block = test_block(
+            42,
+            "0x4242424242424242424242424242424242424242424242424242424242424242",
+            1_700_000_000_000_000_000,
+        );
+        cache
+            .cache_block_metadata(&block)
+            .expect("test block hash must be valid");
         let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
             &mut pending,
             &cache,
@@ -1792,11 +1956,12 @@ mod tests {
 
     fn swap_message(block_number: u64) -> BlockchainMessage {
         let pool = weth_usdt_pool();
-        swap_message_with_identity(block_number, pool.pool_identifier, "0x1", 0)
+        swap_message_with_identity(block_number, None, pool.pool_identifier, "0x1", 0)
     }
 
     fn swap_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1808,6 +1973,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1848,11 +2014,12 @@ mod tests {
 
     fn flash_message(block_number: u64) -> BlockchainMessage {
         let pool = weth_usdt_pool();
-        flash_message_with_identity(block_number, pool.pool_identifier, "0x1", 0)
+        flash_message_with_identity(block_number, None, pool.pool_identifier, "0x1", 0)
     }
 
     fn flash_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1864,6 +2031,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1878,6 +2046,7 @@ mod tests {
 
     fn mint_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1889,6 +2058,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1904,6 +2074,7 @@ mod tests {
 
     fn burn_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1915,6 +2086,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1929,6 +2101,7 @@ mod tests {
 
     fn collect_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1940,6 +2113,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1954,6 +2128,7 @@ mod tests {
 
     fn fee_protocol_update_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1964,6 +2139,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
@@ -1974,6 +2150,7 @@ mod tests {
 
     fn fee_protocol_collect_message_with_identity(
         block_number: u64,
+        block_hash: Option<&str>,
         pool_identifier: PoolIdentifier,
         transaction_hash: &str,
         log_index: u32,
@@ -1985,6 +2162,7 @@ mod tests {
             Arc::clone(&pool.dex),
             pool_identifier,
             block_number,
+            block_hash.map(fixture_hash),
             transaction_hash.to_string(),
             0,
             log_index,
