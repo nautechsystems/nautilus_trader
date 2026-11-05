@@ -107,6 +107,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed stale bundled execution reports incorrectly voiding newer fills
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution
 - Fixed `Strategy::market_exit` skipping emulated and active-local orders during cancellation and completion

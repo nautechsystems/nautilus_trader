@@ -1097,22 +1097,7 @@ impl ExecutionEngine {
         drop(cache);
 
         if let Some(order) = order {
-            let ts_now = self.clock.borrow().timestamp_ns();
-
-            let events = if is_snapshot {
-                generate_reconciliation_order_snapshot_events(
-                    &order,
-                    report,
-                    instrument.as_ref(),
-                    ts_now,
-                )
-            } else {
-                generate_reconciliation_order_events(&order, report, instrument.as_ref(), ts_now)
-            };
-
-            for event in &events {
-                self.handle_event(event);
-            }
+            self.apply_order_report_events(&order, report, instrument.as_ref(), is_snapshot);
         } else {
             self.create_external_order(report, instrument.as_ref());
         }
@@ -1597,7 +1582,7 @@ impl ExecutionEngine {
             .is_some_and(|client| client.allows_reconciliation_overfill(order, report))
     }
 
-    /// Reconciles an [`OrderStatusReport`] paired with companion [`FillReport`]s
+    /// Reconciles a streamed [`OrderStatusReport`] paired with companion [`FillReport`]s
     /// for the same venue event.
     ///
     /// Real fills supplied by the adapter are applied first so their `trade_id` and
@@ -1605,7 +1590,20 @@ impl ExecutionEngine {
     /// then synthesized as an inferred fill from the status report's `avg_px`.
     /// Adapters use this to emit ADL / liquidation / settlement events without
     /// losing real fill metadata.
+    ///
+    /// A decrease in cumulative filled quantity voids retained fills only for
+    /// [`OrderStatus::Voided`] reports. Authoritative snapshot corrections use
+    /// [`Self::reconcile_execution_mass_status`].
     pub fn reconcile_order_with_fills(&mut self, report: &OrderStatusReport, fills: &[FillReport]) {
+        self.handle_order_with_fills(report, fills, false);
+    }
+
+    fn handle_order_with_fills(
+        &mut self,
+        report: &OrderStatusReport,
+        fills: &[FillReport],
+        is_snapshot: bool,
+    ) {
         msgbus::publish_any(
             MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
             report,
@@ -1638,13 +1636,7 @@ impl ExecutionEngine {
             if fills.is_empty()
                 && let Some(order) = order
             {
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let events =
-                    generate_reconciliation_order_snapshot_events(&order, report, None, ts_now);
-
-                for event in &events {
-                    self.handle_event(event);
-                }
+                self.apply_order_report_events(&order, report, None, is_snapshot);
             }
             return;
         };
@@ -1716,13 +1708,22 @@ impl ExecutionEngine {
             }
         }
 
+        self.apply_order_report_events(&order, report, Some(&instrument), is_snapshot);
+    }
+
+    fn apply_order_report_events(
+        &mut self,
+        order: &OrderAny,
+        report: &OrderStatusReport,
+        instrument: Option<&InstrumentAny>,
+        is_snapshot: bool,
+    ) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let events = generate_reconciliation_order_snapshot_events(
-            &order,
-            report,
-            Some(&instrument),
-            ts_now,
-        );
+        let events = if is_snapshot {
+            generate_reconciliation_order_snapshot_events(order, report, instrument, ts_now)
+        } else {
+            generate_reconciliation_order_events(order, report, instrument, ts_now)
+        };
 
         for event in &events {
             self.handle_event(event);
@@ -1899,7 +1900,7 @@ impl ExecutionEngine {
             if let Some(fills) = fill_reports.get(&order_report.venue_order_id)
                 && !fills.is_empty()
             {
-                self.reconcile_order_with_fills(order_report, fills);
+                self.handle_order_with_fills(order_report, fills, true);
                 paired_venue_ids.insert(order_report.venue_order_id);
             } else {
                 self.handle_order_status_report(order_report, true);

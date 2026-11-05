@@ -190,6 +190,9 @@ Adapters choose the variant that matches the venue event:
 - Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
   Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
 
+Streamed `OrderWithFills` reports can infer fill voids from a lower cumulative filled quantity only
+when their status is `VOIDED`. Use mass status for authoritative snapshot corrections.
+
 ### Snapshot freshness and fill corrections
 
 A snapshot must not undo a fill that occurs after the state it describes. Receiving a snapshot after a stream

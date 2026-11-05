@@ -23685,8 +23685,169 @@ fn test_reconcile_order_with_fills_uses_cached_order_side_when_status_side_missi
 }
 
 #[rstest]
-fn test_reconcile_order_with_fills_applies_companion_fill_before_void_correction(
+#[case::bundled(false, true)]
+#[case::separate(false, false)]
+#[case::known_companion(true, true)]
+fn test_reconcile_stale_order_with_fills_preserves_newer_fills(
     mut execution_engine: ExecutionEngine,
+    #[case] companion_known: bool,
+    #[case] bundled: bool,
+    #[values(true, false)] include_client_id: bool,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut newer_fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-NEWER"),
+        Quantity::from(60_000),
+        Price::from("1.10000"),
+    );
+    newer_fill.ts_event = UnixNanos::from(2_000_000);
+    newer_fill.commission = Money::from("0.60 USD");
+    let mut companion_fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-EARLIER"),
+        Quantity::from(10_000),
+        Price::from("1.00000"),
+    );
+    companion_fill.commission = Money::from("0.10 USD");
+    if companion_known {
+        execution_engine.reconcile_fill_report(&companion_fill);
+    }
+
+    execution_engine.reconcile_fill_report(&newer_fill);
+    let report = create_order_status_report(
+        include_client_id.then_some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(10_000),
+    );
+    let bundle =
+        ExecutionReport::OrderWithFills(Box::new(report.clone()), vec![companion_fill.clone()]);
+
+    for _ in 0..2 {
+        if bundled {
+            execution_engine.reconcile_execution_report(&bundle);
+        } else {
+            execution_engine.reconcile_order_status_report(&report);
+            execution_engine.reconcile_fill_report(&companion_fill);
+        }
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+
+    let fills = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from(70_000));
+    assert_eq!(order.voided_qty(), Quantity::from(0));
+    assert_eq!(order.leaves_qty(), Quantity::from(30_000));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert_eq!(fills.len(), 2);
+
+    for report in [&newer_fill, &companion_fill] {
+        let fill = fills
+            .iter()
+            .find(|fill| fill.trade_id == report.trade_id)
+            .unwrap();
+        assert_eq!(fill.last_qty, report.last_qty);
+        assert_eq!(fill.last_px, report.last_px);
+        assert_eq!(fill.commission, Some(report.commission));
+        assert_eq!(fill.ts_event, report.ts_event);
+    }
+
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(70_000));
+    assert_eq!(positions[0].fill_voids.len(), 0);
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.70 USD")]);
+}
+
+#[rstest]
+fn test_reconcile_stale_empty_bundle_without_cached_instrument_preserves_fills(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = InstrumentAny::from(audusd_sim());
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, AccountId::test_default(), venue_order_id);
+    order.apply(accepted).unwrap();
+    let fill = OrderFilledTestBuilder::new(&order, &instrument)
+        .trade_id(TradeId::from("T-RETAINED"))
+        .last_qty(Quantity::from(70_000))
+        .build();
+
+    let OrderEventAny::Filled(filled) = &fill else {
+        panic!("expected fill event");
+    };
+
+    let position = Position::new(&instrument, filled.clone());
+    order.apply(fill).unwrap();
+    let client_order_id = order.client_order_id();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order, None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(10_000),
+    );
+
+    for _ in 0..2 {
+        execution_engine.reconcile_order_with_fills(&report, &[]);
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert!(cache.instrument(&instrument.id()).is_none());
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from(70_000));
+    assert_eq!(order.voided_qty(), Quantity::from(0));
+    assert_eq!(order.leaves_qty(), Quantity::from(30_000));
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("T-RETAINED")]);
+    let position = cache.position(&position.id).unwrap();
+    assert_eq!(position.quantity, Quantity::from(70_000));
+    assert_eq!(position.fill_voids.len(), 0);
+}
+
+#[rstest]
+#[case::snapshot(OrderStatus::Canceled, true, 20_000, 30_000)]
+#[case::streamed_void(OrderStatus::Voided, false, 50_000, 0)]
+fn test_reconcile_paired_fills_before_authorized_void_correction(
+    mut execution_engine: ExecutionEngine,
+    #[case] report_status: OrderStatus,
+    #[case] is_snapshot: bool,
+    #[case] expected_voided_qty: u64,
+    #[case] expected_leaves_qty: u64,
 ) {
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let client_order_id = order.client_order_id();
@@ -23728,19 +23889,44 @@ fn test_reconcile_order_with_fills_applies_companion_fill_before_void_correction
         Some(client_order_id),
         venue_order_id,
         instrument.id(),
-        OrderStatus::Canceled,
+        report_status,
         Quantity::from(100_000),
         Quantity::from(50_000),
     );
 
-    execution_engine.reconcile_order_with_fills(&report, &[companion_fill]);
+    let report = if is_snapshot {
+        let mut mass_status = ExecutionMassStatus::new(
+            ClientId::from("SIM"),
+            AccountId::test_default(),
+            Venue::from("SIM"),
+            UnixNanos::from(2_000_000),
+            None,
+        );
+
+        mass_status.add_order_reports(vec![report]);
+        mass_status.add_fill_reports(vec![companion_fill]);
+
+        ExecutionReport::MassStatus(Box::new(mass_status))
+    } else {
+        ExecutionReport::OrderWithFills(Box::new(report), vec![companion_fill])
+    };
+
+    execution_engine.reconcile_execution_report(&report);
+    execution_engine.reconcile_execution_report(&report);
 
     let cache = execution_engine.cache().borrow();
     let corrected_order = cache.order(&client_order_id).unwrap();
     let corrected_position = cache.position(&position_id).unwrap();
-    assert_eq!(corrected_order.status(), OrderStatus::Canceled);
+    assert_eq!(corrected_order.status(), report_status);
     assert_eq!(corrected_order.filled_qty(), Quantity::from(50_000));
-    assert_eq!(corrected_order.voided_qty(), Quantity::from(20_000));
+    assert_eq!(
+        corrected_order.voided_qty(),
+        Quantity::from(expected_voided_qty)
+    );
+    assert_eq!(
+        corrected_order.leaves_qty(),
+        Quantity::from(expected_leaves_qty)
+    );
     assert_eq!(corrected_position.quantity, Quantity::from(50_000));
     assert_eq!(corrected_position.fill_voids.len(), 2);
 }
