@@ -1801,7 +1801,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
-                            let ts_init = clock.get_time_ns();
+                            let ts_init = ts_event;
 
                             match super::parse::parse_quote_tick(
                                 instrument_id,
@@ -1992,7 +1992,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
-                            let ts_init = clock.get_time_ns();
+                            let ts_init = ts_event;
 
                             // Generate trade ID from exchange and special conditions if available
                             let trade_id = None;
