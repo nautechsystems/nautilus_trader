@@ -2526,9 +2526,6 @@ impl OrderMatchingEngine {
             );
         }
 
-        self.resolve_pending_on_trade(price_raw);
-        self.decrement_queue_on_trade(price_raw, trade.size.raw(), aggressor_side);
-
         self.iterate(trade.ts_init, aggressor_side);
 
         self.finish_trade_iteration();
@@ -4507,6 +4504,9 @@ impl OrderMatchingEngine {
         self.purge_applied_rejections();
         self.purge_applied_oto_terminals();
 
+        self.expire_gtd_orders(timestamp_ns);
+        self.process_trade_queue(aggressor_side);
+
         // Only reset bid/ask from book when not processing trade execution
         // (preserves transient trade price override for L2/L3 books). The
         // `last_trade_size` gate covers the no-aggressor trade-tick path
@@ -4608,9 +4608,7 @@ impl OrderMatchingEngine {
                     continue;
                 }
                 PostMatchOrderAction::Expire(order) => {
-                    self.delete_core_order(client_order_id);
                     self.expire_order(&order);
-                    self.purge_cached_filled_qty_if_closed(client_order_id);
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
@@ -4677,6 +4675,49 @@ impl OrderMatchingEngine {
         self.purge_applied_fills();
         self.purge_applied_rejections();
         self.purge_applied_oto_terminals();
+    }
+
+    fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
+        if !self.config.support_gtd_orders || self.post_match_order_ids.is_empty() {
+            return;
+        }
+
+        // Orders remain eligible to match at their exact expiry timestamp
+        let expired_order_ids: Vec<ClientOrderId> = {
+            let cache = self.cache.borrow();
+            self.post_match_order_ids
+                .iter()
+                .filter_map(|id| {
+                    let order = cache.order_ref(id)?;
+                    (!order.is_closed()
+                        && order
+                            .expire_time()
+                            .is_some_and(|expiry| timestamp_ns > expiry))
+                    .then_some(*id)
+                })
+                .collect()
+        };
+
+        for client_order_id in expired_order_ids {
+            if !self.core.order_exists(client_order_id) {
+                continue;
+            }
+
+            let Some(order) = self.order_snapshot(client_order_id) else {
+                continue;
+            };
+
+            self.expire_order(&order);
+        }
+    }
+
+    fn process_trade_queue(&mut self, aggressor_side: AggressorSide) {
+        let (Some(size), Some(price)) = (self.last_trade_size, self.core.last) else {
+            return;
+        };
+
+        self.resolve_pending_on_trade(price.raw());
+        self.decrement_queue_on_trade(price.raw(), size.raw(), aggressor_side);
     }
 
     fn fill_resting_limit_order(&mut self, client_order_id: ClientOrderId) {
@@ -7128,12 +7169,14 @@ impl OrderMatchingEngine {
     }
 
     fn expire_order(&mut self, order: &OrderAny) {
+        self.delete_core_order(order.client_order_id());
         self.remove_queue_position(order.client_order_id());
         if self.config.support_contingent_orders && order.contingency_type().is_some() {
             self.cancel_contingent_orders(order, &[]);
         }
 
         self.generate_order_expired(order);
+        self.purge_cached_filled_qty_if_closed(order.client_order_id());
     }
 
     fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {

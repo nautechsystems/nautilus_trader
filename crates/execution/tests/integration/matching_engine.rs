@@ -11610,6 +11610,573 @@ fn test_gtd_order_at_boundary_tick_fills_before_expiry(
 }
 
 #[rstest]
+#[case::before(-1, true, false)]
+#[case::boundary(0, true, false)]
+#[case::after(1, true, true)]
+#[case::disabled(1, false, false)]
+fn test_gtd_limit_crossing_tick(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] partial: bool,
+    #[case] expiry_offset: i64,
+    #[case] support_gtd_orders: bool,
+    #[case] expires: bool,
+) {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(clock.clone()),
+        Some(cache.clone()),
+        None,
+        Some(config),
+    );
+    let expiry = 1_500_000_000_000_000_000_u64;
+
+    let initial_price = if partial {
+        "1500.00"
+    } else if side == OrderSide::Buy {
+        "1505.00"
+    } else {
+        "1495.00"
+    };
+
+    let initial = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_order(BookOrder::new(
+            side.opposite(),
+            Price::from(initial_price),
+            Quantity::from("0.400"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&initial).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(expiry))
+        .submit(true)
+        .build();
+    let id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+
+    let initial_filled_qty = if partial { "0.400" } else { "0.000" };
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().filled_qty(),
+        Quantity::from(initial_filled_qty)
+    );
+    clear_order_event_handler_messages(&handler);
+
+    let timestamp = UnixNanos::from(expiry.checked_add_signed(expiry_offset).unwrap());
+    clock.borrow_mut().set_time(timestamp);
+    let crossing = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_order(BookOrder::new(
+            side.opposite(),
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .ts_init(timestamp)
+        .build();
+    engine.process_order_book_delta(&crossing).unwrap();
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].client_order_id(), id);
+
+    let expected_status = if expires {
+        OrderStatus::Expired
+    } else {
+        OrderStatus::Filled
+    };
+
+    let expected_filled_qty = if expires { initial_filled_qty } else { "1.000" };
+    let cache = cache.borrow();
+    let cached = cache.order(&id).unwrap();
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cached.filled_qty(), Quantity::from(expected_filled_qty));
+
+    if expires {
+        assert!(matches!(&events[0], OrderEventAny::Expired(event) if event.ts_event == timestamp));
+    } else {
+        let OrderEventAny::Filled(fill) = &events[0] else {
+            panic!("Expected fill, found {:?}", events[0]);
+        };
+
+        assert_eq!(
+            fill.last_qty,
+            Quantity::from(if partial { "0.600" } else { "1.000" })
+        );
+        assert_eq!(fill.last_px, Price::from("1500.00"));
+        assert_eq!(fill.order_side, side);
+    }
+
+    assert!(!engine.order_exists(id));
+    assert!(engine.get_open_orders().is_empty());
+}
+
+#[rstest]
+fn test_gtd_stop_crossing_tick_after_expiry(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(TriggerType::BidAsk, TriggerType::MarkPrice)] trigger_type: TriggerType,
+    #[values(false, true)] support_gtd_orders: bool,
+) {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        Some(clock.clone()),
+        Some(cache.clone()),
+        None,
+        Some(config),
+    );
+
+    let initial = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("2.000"),
+        Quantity::from("3.000"),
+        0.into(),
+        0.into(),
+    );
+    engine.process_quote_tick(&initial);
+
+    let trigger_price = Price::from(if side == OrderSide::Buy {
+        "1510.00"
+    } else {
+        "1490.00"
+    });
+
+    let expiry = UnixNanos::from(1_500_000_000_000_000_000_u64);
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(trigger_price)
+        .trigger_type(trigger_type)
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(expiry)
+        .submit(true)
+        .build();
+    let id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+    assert!(engine.order_exists(id));
+    clear_order_event_handler_messages(&handler);
+
+    let timestamp = UnixNanos::from(expiry.as_u64() + 1);
+    clock.borrow_mut().set_time(timestamp);
+
+    if trigger_type == TriggerType::MarkPrice {
+        let mark = MarkPriceUpdate::new(
+            instrument_eth_usdt.id(),
+            trigger_price,
+            timestamp,
+            timestamp,
+        );
+        engine.process_mark_price(&mark);
+    } else {
+        let crossing = QuoteTick::new(
+            instrument_eth_usdt.id(),
+            trigger_price,
+            trigger_price,
+            Quantity::from("2.000"),
+            Quantity::from("3.000"),
+            timestamp,
+            timestamp,
+        );
+        engine.process_quote_tick(&crossing);
+    }
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1, "{events:?}");
+
+    let (expected_status, expected_filled_qty) = match (&events[0], support_gtd_orders) {
+        (OrderEventAny::Expired(event), true) => {
+            assert_eq!(event.client_order_id, id);
+            assert_eq!(event.ts_event, timestamp);
+            (OrderStatus::Expired, Quantity::from("0.000"))
+        }
+        (OrderEventAny::Filled(fill), false) => {
+            let expected_price = match (trigger_type, side) {
+                (TriggerType::MarkPrice, OrderSide::Buy) => initial.ask_price,
+                (TriggerType::MarkPrice, OrderSide::Sell) => initial.bid_price,
+                _ => trigger_price,
+            };
+
+            assert_eq!(fill.client_order_id, id);
+            assert_eq!(fill.order_side, side);
+            assert_eq!(fill.last_qty, Quantity::from("1.000"));
+            assert_eq!(fill.last_px, expected_price);
+            (OrderStatus::Filled, Quantity::from("1.000"))
+        }
+        _ => panic!("Unexpected GTD stop event: {:?}", events[0]),
+    };
+
+    let cache = cache.borrow();
+    let cached = cache.order(&id).unwrap();
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cached.filled_qty(), expected_filled_qty);
+    assert!(!engine.order_exists(id));
+    assert!(engine.get_open_orders().is_empty());
+}
+
+#[rstest]
+fn test_gtd_expiry_cancels_crossing_contingent_order(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(ContingencyType::Oco, ContingencyType::Ouo)] contingency_type: ContingencyType,
+    #[values(false, true)] sibling_gtd: bool,
+    #[values(false, true)] support_gtd_orders: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(config),
+    );
+    let expiry = UnixNanos::from(1_500_000_000_000_000_000_u64);
+    let id = ClientOrderId::from("GTD");
+    let sibling_id = ClientOrderId::from("LINKED");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(id)
+        .side(side)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(expiry)
+        .contingency_type(contingency_type)
+        .linked_order_ids(vec![sibling_id])
+        .submit(true)
+        .build();
+    let mut sibling_builder = OrderTestBuilder::new(OrderType::Limit);
+    sibling_builder
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(sibling_id)
+        .side(side.opposite())
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .contingency_type(contingency_type)
+        .linked_order_ids(vec![id])
+        .submit(true);
+
+    if sibling_gtd {
+        sibling_builder
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(expiry);
+    }
+
+    let mut sibling = sibling_builder.build();
+    cache_order(&cache, &order);
+    cache_order(&cache, &sibling);
+    engine.process_order(&mut order, account_id);
+    engine.process_order(&mut sibling, account_id);
+    assert_eq!(engine.get_open_orders().len(), 2);
+    clear_order_event_handler_messages(&handler);
+
+    let timestamp = UnixNanos::from(expiry.as_u64() + 1);
+
+    let crossing = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Price::from("1500.00"),
+        Quantity::from("2.000"),
+        Quantity::from("3.000"),
+        timestamp,
+        timestamp,
+    );
+    engine.process_quote_tick(&crossing);
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 2, "{events:?}");
+
+    let (canceled_id, terminal_id) = if support_gtd_orders || side == OrderSide::Buy {
+        (sibling_id, id)
+    } else {
+        (id, sibling_id)
+    };
+
+    let (terminal_type, terminal_status, terminal_filled_qty) = if support_gtd_orders {
+        (
+            OrderEventType::Expired,
+            OrderStatus::Expired,
+            Quantity::from("0.000"),
+        )
+    } else {
+        (
+            OrderEventType::Filled,
+            OrderStatus::Filled,
+            Quantity::from("1.000"),
+        )
+    };
+
+    let summary: Vec<_> = events
+        .iter()
+        .map(|event| (event.client_order_id(), event.event_type()))
+        .collect();
+    let mut expected = vec![
+        (canceled_id, OrderEventType::Canceled),
+        (terminal_id, terminal_type),
+    ];
+
+    if !support_gtd_orders {
+        expected.reverse();
+    }
+
+    assert_eq!(summary, expected);
+
+    if let OrderEventAny::Filled(fill) = &events[usize::from(support_gtd_orders)] {
+        assert_eq!(fill.last_qty, Quantity::from("1.000"));
+        assert_eq!(fill.last_px, Price::from("1500.00"));
+        assert_eq!(fill.order_side, OrderSide::Buy);
+    }
+
+    let cache = cache.borrow();
+    for (order_id, status, filled_qty) in [
+        (canceled_id, OrderStatus::Canceled, Quantity::from("0.000")),
+        (terminal_id, terminal_status, terminal_filled_qty),
+    ] {
+        let cached = cache.order(&order_id).unwrap();
+        assert_eq!(cached.status(), status);
+        assert_eq!(cached.filled_qty(), filled_qty);
+    }
+
+    assert!(!engine.order_exists(id));
+    assert!(!engine.order_exists(sibling_id));
+    assert!(engine.get_open_orders().is_empty());
+}
+
+#[rstest]
+#[case::boundary(0, (OrderStatus::Filled, "1.000"), (OrderStatus::Accepted, "0.000"))]
+#[case::after(1, (OrderStatus::Expired, "0.000"), (OrderStatus::Filled, "1.000"))]
+fn test_gtd_expiry_preserves_trade_queue_volume(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[case] expiry_offset: u64,
+    #[case] expected_order: (OrderStatus, &str),
+    #[case] expected_eligible: (OrderStatus, &str),
+) {
+    let (mut engine, cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        0.into(),
+        0.into(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let price = Price::from(if side == OrderSide::Buy {
+        "1499.00"
+    } else {
+        "1501.00"
+    });
+
+    let expiry = 100_u64;
+    let id = ClientOrderId::from("GTD");
+    let eligible_id = ClientOrderId::from("ELIGIBLE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(id)
+        .side(side)
+        .price(price)
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(expiry))
+        .submit(true)
+        .build();
+    let mut eligible = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(eligible_id)
+        .side(side)
+        .price(price)
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    engine.process_order(&mut eligible, account_id);
+    assert_eq!(engine.get_open_orders().len(), 2);
+    clear_order_event_handler_messages(&handler);
+    let timestamp = UnixNanos::from(expiry + expiry_offset);
+
+    let aggressor = if side == OrderSide::Buy {
+        AggressorSide::Sell
+    } else {
+        AggressorSide::Buy
+    };
+
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        price,
+        Quantity::from("2.000"),
+        aggressor,
+        TradeId::from("QUEUE"),
+        timestamp,
+        timestamp,
+    );
+    engine.process_trade_tick(&trade);
+
+    let (expected_status, expected_filled_qty) = expected_order;
+    let (expected_eligible_status, expected_eligible_filled_qty) = expected_eligible;
+    let expires = expected_status == OrderStatus::Expired;
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), if expires { 2 } else { 1 }, "{events:?}");
+
+    if expires {
+        assert!(matches!(&events[0], OrderEventAny::Expired(event) if event.client_order_id == id));
+    }
+
+    let OrderEventAny::Filled(fill) = events.last().unwrap() else {
+        panic!("Expected fill, found {events:?}");
+    };
+
+    assert_eq!(fill.client_order_id, if expires { eligible_id } else { id });
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.last_px, price);
+    assert_eq!(fill.order_side, side);
+    let cache = cache.borrow();
+    assert_eq!(cache.order(&id).unwrap().status(), expected_status);
+    assert_eq!(
+        cache.order(&id).unwrap().filled_qty(),
+        Quantity::from(expected_filled_qty)
+    );
+    assert_eq!(
+        cache.order(&eligible_id).unwrap().status(),
+        expected_eligible_status
+    );
+    assert_eq!(
+        cache.order(&eligible_id).unwrap().filled_qty(),
+        Quantity::from(expected_eligible_filled_qty)
+    );
+    assert!(!engine.order_exists(id));
+    assert_eq!(engine.order_exists(eligible_id), !expires);
+}
+
+#[rstest]
+#[case::boundary(0, OrderStatus::Filled)]
+#[case::after(1, OrderStatus::Expired)]
+fn test_gtd_order_at_bar_timestamp(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[case] expiry_offset: u64,
+    #[case] expected_status: OrderStatus,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1495.00"),
+        Price::from("1505.00"),
+        Quantity::from("2.000"),
+        Quantity::from("3.000"),
+        0.into(),
+        0.into(),
+    );
+    engine.process_quote_tick(&quote);
+    let expiry = 1_500_000_000_000_000_000_u64;
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(expiry))
+        .submit(true)
+        .build();
+    let id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+    assert!(engine.order_exists(id));
+    clear_order_event_handler_messages(&handler);
+    let timestamp = UnixNanos::from(expiry + expiry_offset);
+
+    let bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        open: Price::from("1500.00"),
+        high: Price::from("1510.00"),
+        low: Price::from("1490.00"),
+        close: Price::from("1505.00"),
+        volume: Quantity::from("4.000"),
+        ts_event: UnixNanos::from(expiry - 1_000_000_000),
+        ts_init: timestamp,
+    };
+
+    engine.process_bar(&bar);
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].client_order_id(), id);
+
+    let expected_filled_qty = match expected_status {
+        OrderStatus::Filled => {
+            let OrderEventAny::Filled(fill) = &events[0] else {
+                panic!("Expected bar fill, found {events:?}");
+            };
+
+            assert_eq!(fill.last_qty, Quantity::from("1.000"));
+            assert_eq!(fill.last_px, bar.open);
+            assert_eq!(fill.order_side, side);
+            Quantity::from("1.000")
+        }
+        OrderStatus::Expired => {
+            assert_eq!(events[0].event_type(), OrderEventType::Expired);
+            Quantity::from("0.000")
+        }
+        _ => panic!("Unexpected expected order status: {expected_status:?}"),
+    };
+
+    let cache = cache.borrow();
+    let cached = cache.order(&id).unwrap();
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cached.filled_qty(), expected_filled_qty);
+    assert!(!engine.order_exists(id));
+    assert!(engine.get_open_orders().is_empty());
+}
+
+#[rstest]
 fn test_price_protection_exact_boundary_fills(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
