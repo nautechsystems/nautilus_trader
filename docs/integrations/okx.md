@@ -1468,6 +1468,10 @@ A truncated request fails with the reason `OKX page limit reached before the sta
 and funding rates, request the window again in smaller parts with both `start` and `end` set. An HTTP error,
 or a bar or funding rate that fails to parse, fails the request with the error as the reason and without rows.
 
+Instrument requests have no window to cover, so they answer with a completed `DataResponseEnvelope`, and
+`update_catalog` writes the definitions returned. `request_instruments` logs a failed fetch of an instrument
+type, family, or the spreads and answers with the rest, so a catalog can hold fewer definitions than OKX lists.
+
 Each data type has its own page limits:
 
 - **Trades**: `GET /api/v5/market/history-trades` returns up to 100 trades a page. The adapter walks back

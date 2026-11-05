@@ -222,8 +222,8 @@ Set `params={"update_catalog": True}` to write successful source responses back 
 Use `"catalog_name"` to select a registered catalog explicitly.
 
 Write-back requires a client that reports completion explicitly, such as Databento, OKX, or a Python adapter.
-OKX reports completion only for bar, trade, and funding rate windows it returned in full; see
-[OKX historical requests](../../integrations/okx.md#historical-requests).
+OKX reports completion for instrument requests, and for bar, trade, and funding rate windows only when it
+returned them in full; see [OKX historical requests](../../integrations/okx.md#historical-requests).
 Other clients return data without updating the catalog and log why write-back is skipped.
 
 Write-back applies these coverage rules:

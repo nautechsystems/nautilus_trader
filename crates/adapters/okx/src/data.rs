@@ -1605,9 +1605,7 @@ fn history_event(
     coverage: OKXHistoryCoverage,
 ) -> DataEvent {
     match coverage {
-        OKXHistoryCoverage::Complete => {
-            DataEvent::ResponseEnvelope(DataResponseEnvelope::new(response, true, None))
-        }
+        OKXHistoryCoverage::Complete => completed_response(response),
         OKXHistoryCoverage::Truncated => DataEvent::RequestFailed(DataRequestFailed {
             request_id,
             reason: "OKX page limit reached before the start of the window".to_string(),
@@ -1615,6 +1613,10 @@ fn history_event(
         }),
         OKXHistoryCoverage::Unverified => DataEvent::Response(response),
     }
+}
+
+fn completed_response(response: DataResponse) -> DataEvent {
+    DataEvent::ResponseEnvelope(DataResponseEnvelope::new(response, true, None))
 }
 
 /// The event that completes a request whose HTTP fetch failed.
@@ -2805,7 +2807,7 @@ impl DataClient for OKXDataClient {
                 params,
             ));
 
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
+            if let Err(e) = sender.send(completed_response(response)) {
                 log::error!("Failed to send instruments response: {e}");
             }
         });
@@ -2915,7 +2917,7 @@ impl DataClient for OKXDataClient {
                 params,
             )));
 
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
+            if let Err(e) = sender.send(completed_response(response)) {
                 log::error!("Failed to send instrument response: {e}");
             }
         });

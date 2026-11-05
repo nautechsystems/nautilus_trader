@@ -356,18 +356,29 @@ fn request_instrument(instrument_id: &str) -> RequestInstrument {
 fn instruments_response(events: &[DataEvent]) -> &InstrumentsResponse {
     events
         .iter()
-        .find_map(|event| match event {
-            DataEvent::Response(DataResponse::Instruments(response)) => Some(response),
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instruments(response)) => Some(response),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("expected DataResponse::Instruments, received {events:?}"))
+        .unwrap_or_else(|| {
+            panic!("expected a completed DataResponse::Instruments, received {events:?}")
+        })
 }
 
 fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
-    events.iter().find_map(|event| match event {
-        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+    events
+        .iter()
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instrument(response)) => Some(response.as_ref()),
+            _ => None,
+        })
+}
+
+fn completed_response(event: &DataEvent) -> Option<&DataResponse> {
+    match event {
+        DataEvent::ResponseEnvelope(envelope) if envelope.completed() => envelope.response(),
         _ => None,
-    })
+    }
 }
 
 fn book_response(events: &[DataEvent]) -> Option<&BookResponse> {
