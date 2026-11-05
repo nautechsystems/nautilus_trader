@@ -106,6 +106,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution
 - Fixed `Strategy::market_exit` skipping emulated and active-local orders during cancellation and completion
 - Fixed bounded reconciliation leaving retained positions open after explicit closing fills
