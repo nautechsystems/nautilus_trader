@@ -93,8 +93,6 @@ use crate::{
 };
 
 /// Live execution client for the Polymarket prediction market.
-///
-/// Initial instrument updates are cached in bulk when their lookup state is first needed.
 #[derive(Debug)]
 pub struct PolymarketExecutionClient {
     core: ExecutionClientCore,
