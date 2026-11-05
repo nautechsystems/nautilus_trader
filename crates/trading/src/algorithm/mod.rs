@@ -1467,15 +1467,22 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Handles an order event, filtering for algorithm-owned orders.
+    ///
+    /// For registered algorithms, spawn accounting runs in every component state.
+    /// Order callbacks require the running state before and after accounting.
     fn handle_order_event(&mut self, event: OrderEventAny)
     where
         Self: ExecutionAlgorithmNative,
     {
-        if DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core_mut(self)).state()
-            != ComponentState::Running
+        if !DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core(self))
+            .is_registered()
         {
             return;
         }
+
+        let was_running =
+            DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core(self)).state()
+                == ComponentState::Running;
 
         let order = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
@@ -1496,7 +1503,7 @@ pub trait ExecutionAlgorithm: DataActor {
 
         {
             let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
-            if core.config.log_events {
+            if core.config.log_events && was_running {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event}");
             }
@@ -1508,27 +1515,49 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         match &event {
-            OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
-            OrderEventAny::Denied(e) => {
-                self.restore_primary_order_quantity(&order, false);
-                self.on_order_denied(*e);
+            OrderEventAny::Denied(_)
+            | OrderEventAny::Rejected(_)
+            | OrderEventAny::Canceled(_)
+            | OrderEventAny::Expired(_) => self.restore_primary_order_quantity(&order, false),
+            OrderEventAny::Filled(_) => {
+                self.rededuct_late_spawn_fill(&order);
+                let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
+                if order.leaves_qty().is_zero()
+                    && core
+                        .spawn_reduction(order.client_order_id())
+                        .is_some_and(|reduction| reduction.restored_qty.is_none())
+                {
+                    core.take_pending_spawn_reduction(order.client_order_id());
+                }
             }
+            OrderEventAny::FillVoided(_)
+                if ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                    .spawn_reduction(order.client_order_id())
+                    .is_some_and(|reduction| reduction.restored_qty.is_some()) =>
+            {
+                self.restore_primary_order_quantity(&order, false);
+            }
+            _ => {}
+        }
+
+        if !was_running
+            || DataActorNative::core(ExecutionAlgorithmNative::exec_algorithm_core_mut(self))
+                .state()
+                != ComponentState::Running
+        {
+            return;
+        }
+
+        match &event {
+            OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
+            OrderEventAny::Denied(e) => self.on_order_denied(*e),
             OrderEventAny::Emulated(e) => self.on_order_emulated(*e),
             OrderEventAny::Released(e) => self.on_order_released(*e),
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
-            OrderEventAny::Rejected(e) => {
-                self.restore_primary_order_quantity(&order, false);
-                self.on_order_rejected(*e);
-            }
+            OrderEventAny::Rejected(e) => self.on_order_rejected(*e),
             OrderEventAny::Accepted(e) => self.on_order_accepted(*e),
-            OrderEventAny::Canceled(e) => {
-                self.restore_primary_order_quantity(&order, false);
-                self.on_algo_order_canceled(*e);
-            }
-            OrderEventAny::Expired(e) => {
-                self.restore_primary_order_quantity(&order, false);
-                self.on_order_expired(*e);
-            }
+            OrderEventAny::Canceled(e) => self.on_algo_order_canceled(*e),
+            OrderEventAny::Expired(e) => self.on_order_expired(*e),
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
             OrderEventAny::PendingCancel(e) => self.on_order_pending_cancel(*e),
@@ -1537,28 +1566,8 @@ pub trait ExecutionAlgorithm: DataActor {
             OrderEventAny::CancelDenied(e) => self.on_order_cancel_denied(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
-            OrderEventAny::Filled(e) => {
-                self.rededuct_late_spawn_fill(&order);
-                if order.leaves_qty().is_zero() {
-                    let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
-                    if core
-                        .spawn_reduction(order.client_order_id())
-                        .is_some_and(|reduction| reduction.restored_qty.is_none())
-                    {
-                        core.take_pending_spawn_reduction(order.client_order_id());
-                    }
-                }
-                self.on_algo_order_filled(e.clone());
-            }
-            OrderEventAny::FillVoided(e) => {
-                if ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
-                    .spawn_reduction(order.client_order_id())
-                    .is_some_and(|reduction| reduction.restored_qty.is_some())
-                {
-                    self.restore_primary_order_quantity(&order, false);
-                }
-                self.on_order_fill_voided(e);
-            }
+            OrderEventAny::Filled(e) => self.on_algo_order_filled(e.clone()),
+            OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
         }
 
         self.on_order_event(event);
@@ -2057,6 +2066,13 @@ mod tests {
     struct TestAlgorithm {
         core: ExecutionAlgorithmCore,
         order_client_ids: Vec<ClientOrderId>,
+        order_callbacks: Vec<&'static str>,
+    }
+
+    #[derive(Debug)]
+    struct LifecycleAlgorithm {
+        core: ExecutionAlgorithmCore,
+        order_callbacks: Vec<&'static str>,
     }
 
     #[derive(Debug)]
@@ -2097,6 +2113,7 @@ mod tests {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
                 order_client_ids: Vec::new(),
+                order_callbacks: Vec::new(),
             }
         }
     }
@@ -2107,6 +2124,42 @@ mod tests {
         fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
             self.order_client_ids.push(order.client_order_id());
             Ok(())
+        }
+
+        fn on_algo_order_canceled(&mut self, _event: OrderCanceled) {
+            self.order_callbacks.push("canceled");
+        }
+
+        fn on_algo_order_filled(&mut self, _event: OrderFilled) {
+            self.order_callbacks.push("filled");
+        }
+
+        fn on_order_event(&mut self, _event: OrderEventAny) {
+            self.order_callbacks.push("event");
+        }
+    });
+
+    impl DataActor for LifecycleAlgorithm {}
+
+    nautilus_execution_algorithm!(LifecycleAlgorithm, {
+        fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn restore_primary_order_quantity(&mut self, _order: &OrderAny, _refused: bool) {
+            if Component::state(self) == ComponentState::Running {
+                Component::stop(self).unwrap();
+            } else {
+                Component::resume(self).unwrap();
+            }
+        }
+
+        fn on_algo_order_canceled(&mut self, _event: OrderCanceled) {
+            self.order_callbacks.push("canceled");
+        }
+
+        fn on_order_event(&mut self, _event: OrderEventAny) {
+            self.order_callbacks.push("event");
         }
     });
 
@@ -4873,10 +4926,16 @@ mod tests {
     #[rstest]
     #[case::partial_fill(Quantity::from("0.1"))]
     #[case::full_fill(Quantity::from("0.5"))]
-    fn test_voided_late_spawn_fill_restores_primary_quantity(#[case] fill_qty: Quantity) {
+    fn test_voided_late_spawn_fill_restores_primary_quantity(
+        #[case] fill_qty: Quantity,
+        #[values(false, true)] stopped: bool,
+    ) {
         let (mut algo, primary_id, mut child) = setup_accepted_spawn();
         cancel_spawned_order(&mut algo, &mut child);
         fill_spawned_order(&mut algo, &mut child, fill_qty);
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
 
         void_last_spawn_fill(&mut algo, &mut child, fill_qty);
 
@@ -5078,12 +5137,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_primary_cancellation_clears_spawn_accounting() {
+    #[case(false)]
+    #[case(true)]
+    fn test_primary_cancellation_clears_spawn_accounting(#[case] stopped: bool) {
         let (mut algo, primary_id, mut child) = setup_accepted_spawn();
         cancel_spawned_order(&mut algo, &mut child);
         let second = spawn_reduced_child(&mut algo, primary_id, Quantity::from("0.8"));
         fill_spawned_order(&mut algo, &mut child, Quantity::from("0.4"));
         let mut primary = algo.cache().order(&primary_id).unwrap();
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
 
         cancel_spawned_order(&mut algo, &mut primary);
 
@@ -5193,6 +5257,96 @@ mod tests {
             Quantity::from("0.5"),
         );
         assert!(algo.core.take_pending_spawn_reduction(spawned_id).is_none());
+    }
+
+    #[rstest]
+    #[case::resume(ComponentState::Stopped, ComponentState::Running)]
+    #[case::stop(ComponentState::Running, ComponentState::Stopped)]
+    fn test_order_event_suppresses_callbacks_after_synchronous_state_change(
+        #[case] state_before: ComponentState,
+        #[case] state_after: ComponentState,
+    ) {
+        let (algo, _primary_id, child) = setup_accepted_spawn();
+
+        let mut algo = LifecycleAlgorithm {
+            core: algo.core,
+            order_callbacks: Vec::new(),
+        };
+
+        if state_before == ComponentState::Stopped {
+            Component::stop(&mut algo).unwrap();
+        }
+
+        let canceled = OrderCanceledSpec::builder()
+            .trader_id(child.trader_id())
+            .strategy_id(child.strategy_id())
+            .instrument_id(child.instrument_id())
+            .client_order_id(child.client_order_id())
+            .maybe_venue_order_id(child.venue_order_id())
+            .maybe_account_id(child.account_id())
+            .build();
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(canceled))
+            .unwrap();
+
+        algo.handle_order_event(OrderEventAny::Canceled(canceled));
+
+        assert_eq!(Component::state(&algo), state_after);
+        assert!(algo.order_callbacks.is_empty());
+    }
+
+    #[rstest]
+    fn test_unregistered_algorithm_ignores_order_event() {
+        let mut algo = create_test_algorithm();
+        let event = OrderCanceledSpec::builder().build();
+
+        algo.handle_order_event(OrderEventAny::Canceled(event));
+
+        assert!(algo.order_callbacks.is_empty());
+    }
+
+    #[rstest]
+    #[case(false, false, vec!["canceled", "event"])]
+    #[case(false, true, vec!["filled", "event"])]
+    #[case(true, false, vec![])]
+    #[case(true, true, vec![])]
+    fn test_spawn_accounting_preserves_callback_state_gate(
+        #[case] stopped: bool,
+        #[case] late_fill: bool,
+        #[case] expected_callbacks: Vec<&str>,
+    ) {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        if late_fill {
+            cancel_spawned_order(&mut algo, &mut child);
+        }
+
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
+
+        algo.order_callbacks.clear();
+        if late_fill {
+            fill_spawned_order(&mut algo, &mut child, Quantity::from("0.2"));
+        } else {
+            cancel_spawned_order(&mut algo, &mut child);
+        }
+
+        let primary = algo.cache().order(&primary_id).unwrap();
+        assert_eq!(algo.order_callbacks, expected_callbacks);
+        assert_eq!(
+            primary.quantity(),
+            if late_fill {
+                Quantity::from("0.8")
+            } else {
+                Quantity::from("1.0")
+            },
+        );
+        assert_eq!(
+            child.filled_qty() + primary.quantity(),
+            Quantity::from("1.0")
+        );
     }
 
     #[rstest]
@@ -5423,8 +5577,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_spawned_order_accepted_then_expired_restores_reduction() {
+    #[case(false)]
+    #[case(true)]
+    fn test_spawned_order_accepted_then_expired_restores_reduction(#[case] stopped: bool) {
         let (mut algo, client_order_id, mut spawned_order) = setup_accepted_spawn();
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
 
         expire_spawned_order(&mut algo, &mut spawned_order);
 
@@ -5455,9 +5614,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_fully_filled_spawned_order_consumes_reduction_without_restoration() {
+    #[case(false)]
+    #[case(true)]
+    fn test_fully_filled_spawned_order_consumes_reduction_without_restoration(
+        #[case] stopped: bool,
+    ) {
         let (mut algo, client_order_id, mut spawned_order) = setup_accepted_spawn();
         let spawned_id = spawned_order.client_order_id();
+
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
 
         fill_spawned_order(&mut algo, &mut spawned_order, Quantity::from("0.5"));
 
@@ -5469,12 +5636,18 @@ mod tests {
     #[rstest]
     #[case::denied(true)]
     #[case::rejected(false)]
-    fn test_spawned_order_refusal_then_terminal_event_restores_only_once(#[case] denied: bool) {
+    fn test_spawned_order_refusal_then_terminal_event_restores_only_once(
+        #[case] denied: bool,
+        #[values(false, true)] stopped: bool,
+    ) {
         // A canceled event after a denial/rejection is not an applicable state
         // transition and the engine drops such races before publication; the
         // second event is dispatched directly to exercise the handler's own
         // idempotence (the accounted unfilled quantity is unchanged).
         let (mut algo, client_order_id, spawned_order) = setup_pending_spawn();
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+        }
 
         if denied {
             let event = OrderDeniedSpec::builder()

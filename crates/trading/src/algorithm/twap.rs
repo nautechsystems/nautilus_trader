@@ -520,11 +520,16 @@ mod tests {
     };
     use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, TimeInForce},
-        events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
-        identifiers::{ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
+        enums::{LiquiditySide, OrderSide, OrderStatus, TimeInForce},
+        events::{
+            OrderDeniedReason, OrderEventAny,
+            order::spec::{OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec},
+        },
+        identifiers::{
+            AccountId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
         orders::{LimitOrder, MarketOrder},
-        types::Price,
+        types::{Currency, Price},
     };
     use rstest::rstest;
     use ustr::Ustr;
@@ -1428,6 +1433,118 @@ mod tests {
         assert_eq!(final_events.len(), 1);
         algo.handle_time_event(&final_events[0]);
         assert!(algo.scheduled_orders.get(&primary_id).is_none());
+    }
+
+    #[rstest]
+    #[case(false, Quantity::from("1.2"))]
+    #[case(true, Quantity::from("1.0"))]
+    fn test_twap_resume_preserves_spawn_accounting(
+        #[case] late_fill: bool,
+        #[case] expected_primary_qty: Quantity,
+    ) {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        add_instrument_to_cache(&algo);
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = msgbus::TypedIntoHandler::from({
+            let received = received.clone();
+            move |command: TradingCommand| {
+                if let TradingCommand::SubmitOrder(command) = command {
+                    received.borrow_mut().push(command);
+                }
+            }
+        });
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("40"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+        let child = algo
+            .cache()
+            .order(&received.borrow()[0].client_order_id)
+            .unwrap();
+        let accepted = OrderAcceptedSpec::builder()
+            .trader_id(child.trader_id())
+            .strategy_id(child.strategy_id())
+            .instrument_id(child.instrument_id())
+            .client_order_id(child.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-CHILD"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(accepted))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::Accepted(accepted));
+        let canceled = OrderCanceledSpec::builder()
+            .trader_id(child.trader_id())
+            .strategy_id(child.strategy_id())
+            .instrument_id(child.instrument_id())
+            .client_order_id(child.client_order_id())
+            .venue_order_id(accepted.venue_order_id)
+            .account_id(accepted.account_id)
+            .build();
+
+        if !late_fill {
+            Component::stop(&mut algo).unwrap();
+        }
+
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(canceled))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::Canceled(canceled));
+        if late_fill {
+            Component::stop(&mut algo).unwrap();
+            let filled = OrderFilledSpec::builder()
+                .trader_id(child.trader_id())
+                .strategy_id(child.strategy_id())
+                .instrument_id(child.instrument_id())
+                .client_order_id(child.client_order_id())
+                .venue_order_id(accepted.venue_order_id)
+                .account_id(accepted.account_id)
+                .trade_id(TradeId::from("TRADE-LATE"))
+                .order_side(child.order_side())
+                .order_type(child.order_type())
+                .last_qty(Quantity::from("0.2"))
+                .last_px(Price::from("3000.01"))
+                .currency(Currency::USDT())
+                .liquidity_side(LiquiditySide::Taker)
+                .build();
+            algo.core
+                .cache_rc()
+                .borrow_mut()
+                .update_order(&OrderEventAny::Filled(filled.clone()))
+                .unwrap();
+            algo.handle_order_event(OrderEventAny::Filled(filled));
+        }
+
+        Component::resume(&mut algo).unwrap();
+        let events = clock.borrow_mut().advance_time(20_000_000_000.into(), true);
+        assert_eq!(events.len(), 1);
+        algo.handle_time_event(&events[0]);
+
+        let received = received.borrow();
+        assert_eq!(received.len(), 2);
+        let primary = algo.cache().order(&received[1].client_order_id).unwrap();
+        let child = algo.cache().order(&child.client_order_id()).unwrap();
+        assert_eq!(primary.client_order_id(), primary_id);
+        assert_eq!(primary.quantity(), expected_primary_qty);
+        assert_eq!(
+            child.filled_qty() + primary.quantity(),
+            Quantity::from("1.2")
+        );
+        assert!(algo.scheduled_orders.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
     }
 
     #[rstest]
