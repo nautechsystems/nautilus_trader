@@ -200,9 +200,18 @@ jobs:
       - name: Build CodSpeed benchmarks
         run: make cargo-codspeed-build
 
+      - name: Configure CodSpeed download retries
+        id: codspeed-downloads
+        run: |
+          curl_home="$(mktemp -d "$RUNNER_TEMP/codspeed-curl.XXXXXX")"
+          printf '%s\n' 'retry = 3' 'retry-max-time = 120' > "$curl_home/.curlrc"
+          printf 'curl-home=%s\n' "$curl_home" >> "$GITHUB_OUTPUT"
+
       - name: Run CodSpeed benchmarks
         # https://github.com/CodSpeedHQ/action
         uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
+        env:
+          CURL_HOME: ${{ steps.codspeed-downloads.outputs.curl-home }}
         with:
           mode: simulation
           run: make cargo-codspeed-run
