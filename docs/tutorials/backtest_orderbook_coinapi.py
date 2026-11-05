@@ -26,10 +26,6 @@
 # - A CoinAPI key with Flat Files access and sufficient usage credits for
 #   the first download. Listing and downloading files incur charges; see
 #   [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
-# - The sibling
-#   [`orderbook_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_imbalance.py)
-#   file. Keep it beside this tutorial when downloading or converting it
-#   with Jupytext.
 #
 # From a source checkout, run the tutorial from the repository root after
 # building the Python extension:
@@ -61,7 +57,6 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import DataEngineConfig
-from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
@@ -81,6 +76,7 @@ from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 # %% [markdown]
@@ -280,8 +276,8 @@ print(f"Spread range: {top_of_book['spread'].min()} to {top_of_book['spread'].ma
 # price the strategy's market exit. Without them, it denies the closing
 # order with `MARKET_PRICE_UNAVAILABLE` and leaves the position open.
 #
-# Reuse `OrderBookImbalance` from the Binance and Bybit tutorials. When one
-# best-quote size is less than 20% of the other and the larger exceeds
+# Use the built-in Rust `OrderBookImbalance` through Python, as in the Binance and Bybit tutorials.
+# When one best-quote size is less than 20% of the other and the larger exceeds
 # one contract unit, the strategy submits a fill-or-kill limit order
 # against the thinner side. Each order is at most 0.01 contract units,
 # with at least one second between triggers. The strategy closes its
@@ -326,17 +322,13 @@ config = BacktestRunConfig(
     dispose_on_completion=False,
 )
 
-strategy_config = ImportableStrategyConfig(
-    strategy_path="orderbook_imbalance:OrderBookImbalance",
-    config_path="orderbook_imbalance:OrderBookImbalanceConfig",
-    config={
-        "instrument_id": str(instrument.id),
-        "book_type": book_type.name,
-        "max_trade_size": "0.01000",
-        "trigger_min_size": 1.0,
-        "trigger_imbalance_ratio": 0.20,
-        "min_seconds_between_triggers": 1.0,
-    },
+strategy_config = OrderBookImbalanceConfig(
+    instrument_id=instrument.id,
+    book_type=book_type,
+    max_trade_size=Quantity.from_str("0.01000"),
+    trigger_min_size=Decimal("1.0"),
+    trigger_imbalance_ratio=Decimal("0.20"),
+    min_seconds_between_triggers=1.0,
 )
 
 # %% [markdown]
@@ -361,7 +353,7 @@ strategy_config = ImportableStrategyConfig(
 # %%
 node = BacktestNode(configs=[config])
 node.build()
-node.add_strategy_from_config(config.id, strategy_config)
+node.add_builtin_strategy(config.id, "OrderBookImbalance", strategy_config)
 results = node.run()
 
 print(results)

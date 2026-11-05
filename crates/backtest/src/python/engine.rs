@@ -56,13 +56,10 @@ use nautilus_model::{
 };
 use nautilus_portfolio::python::PyPortfolio;
 #[cfg(feature = "examples")]
-use nautilus_trading::examples::{
-    actors::{BookImbalanceActor, BookImbalanceActorConfig},
-    strategies::{
-        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
-        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
-        HurstVpinDirectionalConfig,
-    },
+use nautilus_trading::examples::strategies::{
+    CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+    EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+    HurstVpinDirectionalConfig, OrderBookImbalance, OrderBookImbalanceConfig,
 };
 use nautilus_trading::{
     ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
@@ -1102,11 +1099,8 @@ type BuiltinActorRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>)
 type BuiltinStrategyRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-fn builtin_actor_register(type_name: &str) -> Option<BuiltinActorRegister> {
-    match type_name {
-        "BookImbalanceActor" => Some(register_book_imbalance_actor),
-        _ => None,
-    }
+fn builtin_actor_register(_type_name: &str) -> Option<BuiltinActorRegister> {
+    None
 }
 
 #[cfg(feature = "examples")]
@@ -1117,6 +1111,7 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
         "EmaCross" => Some(register_ema_cross),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        "OrderBookImbalance" => Some(register_orderbook_imbalance),
         _ => None,
     }
 }
@@ -1196,13 +1191,13 @@ fn register_hurst_vpin_directional(
 }
 
 #[cfg(feature = "examples")]
-fn register_book_imbalance_actor(
+pub(super) fn register_orderbook_imbalance(
     engine: &mut BacktestEngine,
     config: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
-    let config = config.extract::<BookImbalanceActorConfig>()?;
+    let config = config.extract::<OrderBookImbalanceConfig>()?;
     engine
-        .add_actor(BookImbalanceActor::from_config(config))
+        .add_strategy(OrderBookImbalance::from_config(config).map_err(to_pyvalue_err)?)
         .map_err(to_pyruntime_err)
 }
 
@@ -1219,14 +1214,9 @@ mod tests {
     #[case("EmaCross")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
+    #[case("OrderBookImbalance")]
     fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
         assert!(super::builtin_strategy_register(type_name).is_some());
-    }
-
-    #[rstest]
-    #[case("BookImbalanceActor")]
-    fn test_builtin_actor_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::builtin_actor_register(type_name).is_some());
     }
 
     #[rstest]
@@ -1250,17 +1240,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builtin_actor_register_rejects_mismatched_config() {
-        Python::initialize();
-
-        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
-        Python::attach(|py| {
-            let register = super::builtin_actor_register("BookImbalanceActor").unwrap();
-            let config = PyDict::new(py);
-            let error = register(&mut engine, config.as_any()).unwrap_err();
-
-            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
-        });
+    fn test_builtin_actor_register_rejects_retired_imbalance() {
+        assert!(super::builtin_actor_register("BookImbalanceActor").is_none());
     }
 
     #[rstest]

@@ -13,26 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Configuration for the book imbalance actor.
+//! Runtime state for the order book imbalance strategy.
 
-use nautilus_model::identifiers::{ActorId, InstrumentId};
+use nautilus_core::UnixNanos;
 
-/// Configuration for the order book imbalance actor.
-#[derive(Debug, Clone, bon::Builder)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.trading", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
-)]
-pub struct BookImbalanceActorConfig {
-    /// Instruments to subscribe to.
-    pub instrument_ids: Vec<InstrumentId>,
-    /// How often (in update count) to log a progress line. Set to 0 to disable.
-    #[builder(default = 100)]
-    pub log_interval: u64,
-    /// Actor identifier. Defaults to `BOOK_IMBALANCE-001`.
-    pub actor_id: Option<ActorId>,
+#[derive(Debug, Default)]
+pub(super) struct ImbalanceState {
+    pub size_precision: Option<u8>,
+    pub last_trigger_ns: Option<UnixNanos>,
+    pub update_count: u64,
+    pub signal_count: u64,
 }

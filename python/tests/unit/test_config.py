@@ -38,7 +38,7 @@ CONFIG_MODULE_NAMES = (
 )
 CONFIG_NAMES_EXCLUDED = frozenset(
     {
-        "BookImbalanceActorConfig",
+        "OrderBookImbalanceConfig",
         "CompositeMarketMakerConfig",
         "DeltaNeutralVolConfig",
         "EmaCrossConfig",

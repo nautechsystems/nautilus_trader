@@ -56,8 +56,7 @@ sys.path.insert(0, str(TUTORIAL_DIR))
 
 from orderbook_data import deltas_from_frame
 from orderbook_data import load_bybit_order_book_deltas
-from orderbook_imbalance import OrderBookImbalance
-from orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -192,15 +191,15 @@ def run_backtest(nrows: int = 1_000_000) -> object:
     )
     engine.add_actor(sampler)
 
-    strategy = OrderBookImbalance(
+    engine.add_builtin_strategy(
+        "OrderBookImbalance",
         OrderBookImbalanceConfig(
-            instrument_id=str(XRPUSDT_BYBIT.id),
-            book_type="L2_MBP",
-            max_trade_size="1.000",
+            instrument_id=XRPUSDT_BYBIT.id,
+            book_type=BookType.L2_MBP,
+            max_trade_size=Quantity.from_str("1.000"),
             min_seconds_between_triggers=1.0,
         ),
     )
-    engine.add_strategy(strategy)
     engine.run()
 
     samples_df = pd.DataFrame(sampler.samples)

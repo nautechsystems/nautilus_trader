@@ -30,6 +30,7 @@ Released on TBD (UTC).
 
 - Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
+- Removed `BookImbalanceActor` and its config; use `OrderBookImbalance` and `OrderBookImbalanceConfig`
 - Changed `OrderMatchingEngineConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SimulatedVenueConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SandboxExecutionClientConfig` literals; add `order_priority_reset_policy: Default::default()`
@@ -133,7 +134,7 @@ Released on TBD (UTC).
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
 - Fixed backtest timer cancellation across data gaps and tail flushes
 - Fixed `BacktestEngine` reset hiding component reset failures
-- Fixed `EmaCross`, `BookImbalanceActor`, and `DeltaNeutralVol` retaining runtime state on engine reset
+- Fixed `EmaCross` and `DeltaNeutralVol` retaining runtime state on engine reset
 - Fixed streaming backtests failing to resume when the first batch has only data before the start time
 - Fixed Python `ForexSession.__repr__` identifying sessions as `PositionSide`
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets

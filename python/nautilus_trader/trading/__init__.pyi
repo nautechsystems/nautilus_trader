@@ -3,6 +3,7 @@
 
 import collections.abc
 import datetime
+import decimal
 import enum
 import typing
 
@@ -12,7 +13,6 @@ from nautilus_trader import model
 from nautilus_trader import portfolio
 
 __all__ = [
-    "BookImbalanceActorConfig",
     "CompositeMarketMakerConfig",
     "Controller",
     "DeltaNeutralVolConfig",
@@ -25,6 +25,7 @@ __all__ = [
     "ImportableControllerConfig",
     "ImportableExecutionAlgorithmConfig",
     "ImportableStrategyConfig",
+    "OrderBookImbalanceConfig",
     "Strategy",
     "StrategyConfig",
     "fx_local_from_utc",
@@ -33,21 +34,6 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
-
-@typing.final
-class BookImbalanceActorConfig:
-    def __init__(
-        self,
-        instrument_ids: typing.Sequence[model.InstrumentId],
-        log_interval: int = 100,
-        actor_id: model.ActorId | None = None,
-    ) -> None: ...
-    @property
-    def instrument_ids(self) -> list[model.InstrumentId]: ...
-    @property
-    def log_interval(self) -> int: ...
-    @property
-    def actor_id(self) -> model.ActorId | None: ...
 
 @typing.final
 class CompositeMarketMakerConfig:
@@ -326,6 +312,42 @@ class ImportableStrategyConfig:
     def config_path(self) -> str: ...
     @property
     def config(self) -> dict: ...
+
+@typing.final
+class OrderBookImbalanceConfig:
+    @property
+    def strategy_id(self) -> model.StrategyId | None: ...
+    @property
+    def order_id_tag(self) -> str | None: ...
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        max_trade_size: model.Quantity,
+        trigger_min_size: decimal.Decimal | None = None,
+        trigger_imbalance_ratio: decimal.Decimal | None = None,
+        min_seconds_between_triggers: float = 1.0,
+        book_type: model.BookType = model.BookType.L2_MBP,
+        dry_run: bool = False,
+        log_interval: int = 0,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def max_trade_size(self) -> model.Quantity: ...
+    @property
+    def trigger_min_size(self) -> decimal.Decimal: ...
+    @property
+    def trigger_imbalance_ratio(self) -> decimal.Decimal: ...
+    @property
+    def min_seconds_between_triggers(self) -> float: ...
+    @property
+    def book_type(self) -> model.BookType: ...
+    @property
+    def dry_run(self) -> bool: ...
+    @property
+    def log_interval(self) -> int: ...
 
 class ExecutionAlgorithm:
     def __init__(self, config: typing.Any | None = None) -> None: ...

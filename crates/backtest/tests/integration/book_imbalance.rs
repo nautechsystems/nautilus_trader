@@ -19,21 +19,28 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
-use nautilus_common::actor::registry::try_get_actor_unchecked;
 use nautilus_core::UnixNanos;
+use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas},
     enums::{AccountType, BookAction, BookType, OmsType, OrderSide},
-    identifiers::{ActorId, InstrumentId, Venue},
+    identifiers::{InstrumentId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Money, Price, Quantity},
 };
-use nautilus_trading::examples::actors::{BookImbalanceActor, BookImbalanceActorConfig};
+use nautilus_trading::examples::strategies::{OrderBookImbalance, OrderBookImbalanceConfig};
 use rstest::*;
 
 fn create_engine() -> BacktestEngine {
-    let config = BacktestEngineConfig::default();
+    let config = BacktestEngineConfig {
+        data_engine: Some(DataEngineConfig {
+            emit_quotes_from_book: true,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
     let mut engine = BacktestEngine::new(config).unwrap();
     engine
         .add_venue(
@@ -52,20 +59,27 @@ fn create_engine() -> BacktestEngine {
 }
 
 #[rstest]
-fn test_from_config_consumes_l2_book_deltas(crypto_perpetual_ethusdt: CryptoPerpetual) {
+#[case::trading(false, 6, 1)]
+#[case::dry_run(true, 0, 0)]
+fn test_from_config_consumes_l2_book_deltas(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] dry_run: bool,
+    #[case] orders: usize,
+    #[case] positions: usize,
+) {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let actor_id = ActorId::from("BOOK_IMBALANCE-001");
-    let config = BookImbalanceActorConfig::builder()
-        .instrument_ids(vec![instrument_id])
+    let config = OrderBookImbalanceConfig::builder()
+        .instrument_id(instrument_id)
+        .max_trade_size(Quantity::from("0.100"))
+        .dry_run(dry_run)
         .log_interval(1)
-        .actor_id(actor_id)
         .build();
     engine
-        .add_actor(BookImbalanceActor::from_config(config))
+        .add_strategy(OrderBookImbalance::from_config(config).unwrap())
         .unwrap();
 
     engine
@@ -73,72 +87,60 @@ fn test_from_config_consumes_l2_book_deltas(crypto_perpetual_ethusdt: CryptoPerp
         .unwrap();
 
     engine.run(None, None, None, false).unwrap();
-    let actor = try_get_actor_unchecked::<BookImbalanceActor>(&actor_id.inner()).unwrap();
-    let state = &actor.states()[&instrument_id];
-
-    assert_eq!(state.update_count, 5);
-    assert!((state.bid_volume_total - 50.0).abs() < 1e-10);
-    assert!((state.ask_volume_total - 50.0).abs() < 1e-10);
-    assert!(state.imbalance().abs() < 1e-10);
-
     let result = engine.get_result();
     assert_eq!(result.iterations, 5);
-    assert_eq!(result.total_orders, 0);
-    assert_eq!(result.total_positions, 0);
+    assert_eq!(result.total_orders, orders);
+    assert_eq!(result.total_positions, positions);
     assert_eq!(result.summary["orders.open"], "0");
     assert_eq!(result.summary["positions.open"], "0");
+    assert_eq!(result.summary["orders.closed"], orders.to_string());
+    assert_eq!(result.summary["positions.closed"], positions.to_string());
 }
 
 fn book_deltas(instrument_id: InstrumentId) -> Vec<Data> {
-    [
-        ("1999.90", "2000.10"),
-        ("2000.00", "2000.20"),
-        ("2000.10", "2000.30"),
-        ("2000.20", "2000.40"),
-        ("2000.30", "2000.50"),
-    ]
-    .into_iter()
-    .enumerate()
-    .map(|(i, (bid, ask))| {
-        let ts = 1_600_000_000_000_000_000 + (i as u64 * 1_000_000_000);
-        let action = if i == 0 {
-            BookAction::Add
-        } else {
-            BookAction::Update
-        };
-        Data::BookDeltas(Box::new(OrderBookDeltas::new(
-            instrument_id,
-            vec![
-                OrderBookDelta::new(
-                    instrument_id,
-                    action,
-                    BookOrder::new(
-                        OrderSide::Buy,
-                        Price::from(bid),
-                        Quantity::from("10.000"),
-                        1,
+    (0..5)
+        .map(|i| {
+            let ts = 1_600_000_000_000_000_000 + (i as u64 * 1_000_000_000);
+
+            let action = if i == 0 {
+                BookAction::Add
+            } else {
+                BookAction::Update
+            };
+
+            Data::BookDeltas(Box::new(OrderBookDeltas::new(
+                instrument_id,
+                vec![
+                    OrderBookDelta::new(
+                        instrument_id,
+                        action,
+                        BookOrder::new(
+                            OrderSide::Buy,
+                            Price::from("1999.90"),
+                            Quantity::from("150.000"),
+                            1,
+                        ),
+                        0,
+                        (i as u64 * 2) + 1,
+                        UnixNanos::from(ts),
+                        UnixNanos::from(ts),
                     ),
-                    0,
-                    (i as u64 * 2) + 1,
-                    UnixNanos::from(ts),
-                    UnixNanos::from(ts),
-                ),
-                OrderBookDelta::new(
-                    instrument_id,
-                    action,
-                    BookOrder::new(
-                        OrderSide::Sell,
-                        Price::from(ask),
-                        Quantity::from("10.000"),
-                        2,
+                    OrderBookDelta::new(
+                        instrument_id,
+                        action,
+                        BookOrder::new(
+                            OrderSide::Sell,
+                            Price::from("2000.10"),
+                            Quantity::from("1.000"),
+                            2,
+                        ),
+                        0,
+                        (i as u64 * 2) + 2,
+                        UnixNanos::from(ts),
+                        UnixNanos::from(ts),
                     ),
-                    0,
-                    (i as u64 * 2) + 2,
-                    UnixNanos::from(ts),
-                    UnixNanos::from(ts),
-                ),
-            ],
-        )))
-    })
-    .collect()
+                ],
+            )))
+        })
+        .collect()
 }

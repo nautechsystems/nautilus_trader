@@ -13,8 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example data actors for backtesting and demonstration.
+//! Current-book imbalance strategy shared by Rust and Python examples.
 
-pub mod imbalance;
+pub mod config;
+pub mod strategy;
 
-pub use imbalance::{BookImbalanceActor, BookImbalanceActorConfig};
+mod state;
+
+#[cfg(test)]
+mod tests;
+
+pub use config::OrderBookImbalanceConfig;
+pub use strategy::OrderBookImbalance;

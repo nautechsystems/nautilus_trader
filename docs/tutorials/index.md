@@ -41,7 +41,7 @@ If you are new to NautilusTrader, complete these tutorials in order:
 | [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]          | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
 | [Backtest with Pre-IPO Order Book Data (CoinAPI)][backtest_orderbook_coinapi]    | Order book imbalance on ANTHROPIC-PERP.        | Python   | CoinAPI Flat Files key  |
 | [Backtest with Polymarket Order Book Data (FinFeed)][backtest_orderbook_finfeed] | Order book imbalance on Bitcoin Yes shares.    | Python   | FinFeed historical key  |
-| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)             | Book imbalance actor on Betfair L2 data.       | Rust     | User-provided           |
+| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)             | Book imbalance strategy on Betfair L2 data.    | Rust     | Sample or user-provided |
 
 ## Data workflows
 

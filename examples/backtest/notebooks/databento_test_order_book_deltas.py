@@ -22,7 +22,8 @@ Example of databento test order book deltas.
 # # Databento order-book deltas
 #
 # Load the tracked ESM4 MBO sample and replay it through the Rust-native book
-# imbalance actor with an L3 matching engine.
+# imbalance strategy in explicit dry-run mode with an L3 matching engine.
+# Signals are reported; no order commands are sent, including during shutdown.
 
 # %%
 from decimal import Decimal
@@ -37,9 +38,10 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import Quantity
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.trading import BookImbalanceActorConfig
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 # %%
@@ -79,10 +81,13 @@ if __name__ == "__main__":
     for instrument in instruments:
         engine.add_instrument(instrument)
     engine.add_data(deltas)
-    engine.add_builtin_actor(
-        "BookImbalanceActor",
-        BookImbalanceActorConfig(
-            instrument_ids=[instruments[0].id],
+    engine.add_builtin_strategy(
+        "OrderBookImbalance",
+        OrderBookImbalanceConfig(
+            instrument_id=instruments[0].id,
+            max_trade_size=Quantity.from_str("1"),
+            book_type=BookType.L3_MBO,
+            dry_run=True,
             log_interval=1_000,
         ),
     )

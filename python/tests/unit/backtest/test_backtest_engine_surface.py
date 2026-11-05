@@ -85,7 +85,6 @@ from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from nautilus_trader.risk import RiskEngineConfig
-from nautilus_trader.trading import BookImbalanceActorConfig
 from nautilus_trader.trading import CompositeMarketMakerConfig
 from nautilus_trader.trading import Controller
 from nautilus_trader.trading import EmaCrossConfig
@@ -94,6 +93,7 @@ from nautilus_trader.trading import GridMarketMakerConfig
 from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
+from nautilus_trader.trading import OrderBookImbalanceConfig
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import ActorLifecycleController
 from tests.unit.common.actor import ConfiguredIdProbeStrategy
@@ -526,9 +526,9 @@ def test_native_ema_cross_trades_whipsaw_quote_data() -> None:
     engine.dispose()
 
 
-def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd: object) -> None:
+def test_builtin_orderbook_imbalance_dry_run_consumes_l2_book_deltas(capfd: object) -> None:
     """
-    Test builtin book imbalance actor consumes l2 book deltas.
+    Test the native dry-run strategy consumes L2 book deltas without orders.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -545,9 +545,14 @@ def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd: object) -> 
         ),
     )
     engine.add_instrument(instrument)
-    engine.add_builtin_actor(
-        "BookImbalanceActor",
-        BookImbalanceActorConfig(instrument_ids=[instrument.id], log_interval=1),
+    engine.add_builtin_strategy(
+        "OrderBookImbalance",
+        OrderBookImbalanceConfig(
+            instrument_id=instrument.id,
+            max_trade_size=Quantity.from_str("1.00000"),
+            dry_run=True,
+            log_interval=1,
+        ),
     )
 
     engine.add_data(_book_deltas(instrument))
@@ -555,10 +560,7 @@ def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd: object) -> 
     result = engine.get_result()
     captured = capfd.readouterr()
 
-    assert (
-        "ETHUSDT.BINANCE  updates: 5  bid_vol: 50.00  ask_vol: 50.00  imbalance: 0.0000"
-        in captured.out
-    )
+    assert "[ETHUSDT.BINANCE] summary: updates=5 signals=0 dry_run=true" in captured.out
     assert result.iterations == 5
     assert result.total_orders == 0
     assert result.total_positions == 0

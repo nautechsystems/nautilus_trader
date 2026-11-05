@@ -338,12 +338,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "S101",
   "T201",
 ] # Snapshot assertions and visible reports are part of the lesson
-"docs/tutorials/orderbook_imbalance.py" = [
-  "D101",
-  "D102",
-  "D107",
-  "PLR0913",
-] # Tutorial prose documents the strategy; its config exposes the signal controls
 "docs/how_to/**/*.py" = [
   "B018",
   "CPY001",
