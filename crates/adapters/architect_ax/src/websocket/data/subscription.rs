@@ -171,11 +171,11 @@ mod tests {
         let mut second = order.next();
         first.wait().await;
 
-        let while_first_runs = tokio::time::timeout(Duration::from_millis(50), second.wait()).await;
+        let while_first_runs = futures_util::poll!(std::pin::pin!(second.wait()));
         drop(first);
         let after_first = tokio::time::timeout(Duration::from_secs(1), second.wait()).await;
 
-        assert!(while_first_runs.is_err());
+        assert!(while_first_runs.is_pending());
         assert!(after_first.is_ok());
     }
 

@@ -15,7 +15,6 @@
 
 use std::time::Duration;
 
-use nautilus_architect_ax::{common::consts::AX_CLIENT_ID, execution::AxExecutionClient};
 use nautilus_common::{
     clients::ExecutionClient,
     messages::{
@@ -34,13 +33,12 @@ use nautilus_model::{
 };
 use rstest::rstest;
 
-use crate::common::{
+use super::{
+    adapter::{common::consts::AX_CLIENT_ID, execution::AxExecutionClient},
     execution::{add_test_account_to_cache, create_test_execution_client, drain_rx},
     server::{TestServerState, load_test_data, start_test_server},
+    wait_for_pending_tasks,
 };
-
-const QUERY_ATTEMPTS: usize = 5;
-const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[rstest]
 #[case::missing_stream(true, false, false, "ACCEPTED", Some(OrderStatus::Accepted), false)]
@@ -167,16 +165,13 @@ async fn test_replacement_resolution_preserves_child(
             None,
         ))
         .unwrap();
-    wait_until_async(
-        || async {
-            state
-                .replace_order_count
-                .load(std::sync::atomic::Ordering::Relaxed)
-                == 1
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_pending_tasks(&client).await;
+    assert_eq!(
+        state
+            .replace_order_count
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
 
     let query_command = QueryOrder::new(
         TraderId::from("TESTER-001"),
@@ -192,11 +187,10 @@ async fn test_replacement_resolution_preserves_child(
     );
 
     if reconnect {
-        query_order_until_candidate(&client, &query_command, &state, proposed).await;
-        let event = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
-        assert!(
-            event.is_err(),
-            "replacement resolved before reconnect: {event:?}"
+        query_order_candidate(&client, &query_command, &state, proposed).await;
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
         );
 
         let command = GenerateOrderStatusReport::new(
@@ -231,13 +225,13 @@ async fn test_replacement_resolution_preserves_child(
     }
 
     if changing_parent {
-        let report = query_order_until_report(&client, &query_command, &mut rx).await;
+        let report = query_order_report(&client, &query_command, &mut rx).await;
         assert_eq!(report.venue_order_id, parent);
         assert_eq!(report.order_status, OrderStatus::Accepted);
     }
 
     if let Some(expected) = expected {
-        let report = query_order_until_report(&client, &query_command, &mut rx).await;
+        let report = query_order_report(&client, &query_command, &mut rx).await;
 
         assert_eq!(report.account_id, AccountId::from("AX-001"));
         assert_eq!(report.client_order_id, Some(client_order_id));
@@ -251,9 +245,11 @@ async fn test_replacement_resolution_preserves_child(
             Quantity::from(filled.to_string().as_str())
         );
     } else {
-        query_order_until_candidate(&client, &query_command, &state, proposed).await;
-        let event = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
-        assert!(event.is_err(), "unexpected replacement event: {event:?}");
+        query_order_candidate(&client, &query_command, &state, proposed).await;
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
     }
 
     assert!(
@@ -348,60 +344,39 @@ async fn test_replacement_resolution_preserves_child(
     }
 }
 
-async fn query_order_until_report(
+async fn query_order_report(
     client: &AxExecutionClient,
     command: &QueryOrder,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) -> OrderStatusReport {
-    for attempt in 0..QUERY_ATTEMPTS {
-        client.query_order(command.clone()).unwrap();
+    client.query_order(command.clone()).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("order report should arrive")
+        .expect("execution event channel open");
 
-        match tokio::time::timeout(QUERY_TIMEOUT, rx.recv()).await {
-            Ok(Some(ExecutionEvent::Report(ExecutionReport::Order(report)))) => return *report,
-            Ok(Some(event)) => panic!("unexpected event while querying order: {event:?}"),
-            Ok(None) => panic!("execution event channel closed"),
-            Err(_) if attempt + 1 < QUERY_ATTEMPTS => {}
-            Err(_) => panic!("order report did not arrive after {QUERY_ATTEMPTS} attempts"),
-        }
-    }
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        panic!("unexpected event while querying order: {event:?}");
+    };
 
-    unreachable!()
+    wait_for_pending_tasks(client).await;
+    *report
 }
 
-async fn query_order_until_candidate(
+async fn query_order_candidate(
     client: &AxExecutionClient,
     command: &QueryOrder,
     state: &TestServerState,
     candidate: VenueOrderId,
 ) {
-    for attempt in 0..QUERY_ATTEMPTS {
-        client.query_order(command.clone()).unwrap();
-
-        let queried = tokio::time::timeout(
-            QUERY_TIMEOUT,
-            wait_until_async(
-                || async {
-                    state
-                        .order_status_queries
-                        .lock()
-                        .await
-                        .iter()
-                        .any(|query| query.order_id.as_deref() == Some(candidate.as_str()))
-                },
-                Duration::from_secs(5),
-            ),
-        )
-        .await;
-
-        if queried.is_ok() {
-            return;
-        }
-
-        assert!(
-            attempt + 1 != QUERY_ATTEMPTS,
-            "candidate query did not arrive after {QUERY_ATTEMPTS} attempts"
-        );
-    }
-
-    unreachable!()
+    client.query_order(command.clone()).unwrap();
+    wait_for_pending_tasks(client).await;
+    assert!(
+        state
+            .order_status_queries
+            .lock()
+            .await
+            .iter()
+            .any(|query| query.order_id.as_deref() == Some(candidate.as_str()))
+    );
 }

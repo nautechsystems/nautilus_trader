@@ -1022,20 +1022,33 @@ async fn test_md_subscribe_same_level_is_idempotent() {
     )
     .await;
 
-    let initial_event_count = state.subscription_events().await.len();
     client
         .subscribe_instrument_status("EURUSD-PERP")
         .await
         .expect("Subscribe instrument status failed");
 
-    // Give the handler a moment to (not) send anything
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let events_after = state.subscription_events().await;
-    assert_eq!(
-        events_after.len(),
-        initial_event_count,
-        "no new subscribe traffic expected, events_after={events_after:?}",
-    );
+    // A later subscription fences earlier commands on the same handler and socket
+    client.subscribe_mark_prices("BTC-PERP").await.unwrap();
+    wait_until_async(
+        || async {
+            state
+                .subscription_events()
+                .await
+                .iter()
+                .any(|(topic, _)| topic.starts_with("BTC-PERP:"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let requests: Vec<_> = state
+        .get_messages()
+        .await
+        .into_iter()
+        .filter(|message| message["symbol"] == "EURUSD-PERP")
+        .filter_map(|message| message["type"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(requests, ["subscribe"]);
 
     client.close().await.expect("close WebSocket client");
 }

@@ -20,23 +20,7 @@
 
 use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::atomic::Ordering, time::Duration};
 
-use nautilus_architect_ax::{
-    common::{
-        consts::{AX_CLIENT_ID, AX_VENUE},
-        credential::Credential,
-        enums::{AxEnvironment, AxOrderStatus},
-        parse::client_order_id_to_cid,
-    },
-    config::AxExecutionClientConfig,
-    execution::AxExecutionClient,
-    factories::AxExecutionClientFactory,
-    http::{
-        client::AxRawHttpClient,
-        models::{AxFillsResponse, AxInstrumentsResponse, AxOrdersResponse},
-        parse::{parse_fill_report, parse_instrument, parse_order_detail_status_report},
-        query::GetOrdersParams,
-    },
-};
+use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
     clients::{ExecutionClient, ExecutionReportTask},
@@ -91,12 +75,32 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-use crate::common::{
+use super::{
+    adapter::{
+        common::{
+            consts::{AX_CLIENT_ID, AX_VENUE},
+            credential::Credential,
+            enums::{AxEnvironment, AxOrderStatus},
+            parse::client_order_id_to_cid,
+        },
+        config::AxExecutionClientConfig,
+        execution::AxExecutionClient,
+        factories::AxExecutionClientFactory,
+        http::{
+            client::AxRawHttpClient,
+            models::{AxFillsResponse, AxInstrumentsResponse, AxOrdersResponse},
+            parse::{parse_fill_report, parse_instrument, parse_order_detail_status_report},
+            query::GetOrdersParams,
+        },
+        websocket::messages::AxOrdersWsMessage,
+    },
     execution::{
-        add_test_account_to_cache, create_test_exec_config, create_test_execution_client,
-        create_test_execution_client_from_config, drain_rx, setup_exec_channel,
+        add_test_account_to_cache, collect_order_events, create_test_exec_config,
+        create_test_execution_client, create_test_execution_client_from_config, drain_rx,
+        setup_exec_channel,
     },
     server::{TestServerState, load_test_data, start_test_server},
+    wait_for_order_commands, wait_for_pending_tasks,
 };
 
 #[rstest]
@@ -446,30 +450,34 @@ async fn test_exec_client_refreshes_account_specific_fee_rates() {
             .unwrap();
         client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-        let wait = if expected.is_some() {
-            Duration::from_secs(5)
-        } else {
-            Duration::from_millis(250)
-        };
-
-        let result = tokio::time::timeout(wait, async {
-            loop {
-                if let Some(ExecutionEvent::Order(OrderEventAny::Filled(fill))) = rx.recv().await {
-                    break fill;
-                }
-            }
-        })
+        let cid = client_order_id_to_cid(&client_order_id);
+        wait_until_async(
+            || async {
+                state
+                    .get_messages()
+                    .await
+                    .iter()
+                    .any(|message| message["t"] == "p" && message["cid"].as_u64() == Some(cid))
+            },
+            Duration::from_secs(5),
+        )
         .await;
 
-        match (expected, result) {
-            (Some(expected), Ok(fill)) => {
-                assert_eq!(fill.client_order_id, client_order_id);
-                assert_eq!(fill.trade_id.as_str(), trade_id);
-                assert_eq!(fill.commission, Some(Money::from(expected)));
-            }
-            (Some(_), Err(_)) => panic!("stream fill should arrive for {order_id}"),
-            (None, Ok(fill)) => panic!("unexpected stream fill for {order_id}: {fill:?}"),
-            (None, Err(_)) => {}
+        let fills: Vec<_> = collect_order_events(&client, &state, &mut rx)
+            .await
+            .into_iter()
+            .filter_map(|event| match event {
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => Some(fill),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(fills.len(), usize::from(expected.is_some()));
+
+        if let Some(expected) = expected {
+            assert_eq!(fills[0].client_order_id, client_order_id);
+            assert_eq!(fills[0].trade_id.as_str(), trade_id);
+            assert_eq!(fills[0].commission, Some(Money::from(expected)));
         }
     }
 
@@ -589,9 +597,9 @@ async fn test_connect_restores_order_before_first_stream_fill(
     fill["o"]["s"] = serde_json::json!(symbol);
     fill["xs"]["s"] = serde_json::json!(symbol);
     fill["o"]["oid"] = serde_json::json!(venue_order_id.as_str());
-    fill["o"]["cid"] = serde_json::json!(
-        nautilus_architect_ax::common::parse::client_order_id_to_cid(&client_order_id)
-    );
+    fill["o"]["cid"] = serde_json::json!(super::adapter::common::parse::client_order_id_to_cid(
+        &client_order_id
+    ));
     fill["o"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     fill["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
 
@@ -1250,7 +1258,7 @@ fn add_open_order_to_cache(
 #[tokio::test]
 async fn test_cancel_all_orders_uses_http_endpoint() {
     let (addr, state) = start_test_server().await.unwrap();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
 
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
 
@@ -1292,8 +1300,25 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         .cancel_all_orders(cmd)
         .expect("cancel_all_orders should not error");
 
-    // Allow spawned task to complete
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let canceled = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut canceled = Vec::new();
+        while canceled.len() < 2 {
+            let event = rx.recv().await.expect("execution event channel open");
+            if let ExecutionEvent::Order(OrderEventAny::Canceled(event)) = event {
+                canceled.push(event.client_order_id);
+            }
+        }
+
+        canceled.sort();
+        canceled
+    })
+    .await
+    .expect("cancel-all should emit both cancellations");
+
+    assert_eq!(
+        canceled,
+        vec![ClientOrderId::from("O-001"), ClientOrderId::from("O-002")]
+    );
 
     assert_eq!(
         state
@@ -1303,10 +1328,11 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         "Expected HTTP cancel_all_orders endpoint to be called once"
     );
 
+    wait_for_order_commands(&client, &state).await;
     let messages = state.get_messages().await;
     let ws_cancel_count = messages
         .iter()
-        .filter(|m| m.get("t").and_then(|v| v.as_str()) == Some("c"))
+        .filter(|m| m.get("t").and_then(|v| v.as_str()) == Some("x"))
         .count();
     assert_eq!(ws_cancel_count, 0);
 
@@ -1382,8 +1408,7 @@ async fn test_cancel_all_orders_with_side_cancels_matching_side_via_batch(
         .cancel_all_orders(cmd)
         .expect("cancel_all_orders should not error");
 
-    // Allow spawned fan-out tasks to complete
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    wait_for_order_commands(&client, &state).await;
 
     assert_eq!(
         state
@@ -1456,8 +1481,7 @@ async fn test_cancel_all_orders_with_side_and_empty_cache_sends_nothing() {
     client
         .cancel_all_orders(cmd)
         .expect("cancel_all_orders should not error");
-
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    wait_for_order_commands(&client, &state).await;
 
     assert_eq!(
         state
@@ -1698,14 +1722,13 @@ async fn test_generate_order_status_reports_cleans_terminal_tracking(
     late_fill["o"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     late_fill["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     state.order_injected_events.lock().await.push(late_fill);
-    let event = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
-    match event {
-        Err(_) => {}
-        Ok(Some(ExecutionEvent::Report(ExecutionReport::Fill(report)))) => {
-            assert_eq!(report.venue_order_id, filled_venue_order_id);
+    for event in collect_order_events(&client, &state, &mut rx).await {
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.venue_order_id, filled_venue_order_id);
+            }
+            event => panic!("unexpected event after terminal cleanup: {event:?}"),
         }
-        Ok(Some(event)) => panic!("unexpected event after terminal cleanup: {event:?}"),
-        Ok(None) => panic!("execution event channel closed"),
     }
 
     let mut canceled = load_test_data("ws_order_canceled.json");
@@ -2592,19 +2615,19 @@ async fn test_live_cancel_on_disconnect_sandbox() {
 
         client.disconnect().await?;
 
-        let mut canceled = false;
-
-        for _ in 0..20 {
-            let status = raw.get_order_status_by_id(venue_order_id.as_str()).await?;
-            if status.status.state == AxOrderStatus::Canceled {
-                canceled = true;
-                break;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut poll = tokio::time::interval(Duration::from_millis(100));
+            loop {
+                poll.tick().await;
+                let status = raw.get_order_status_by_id(venue_order_id.as_str()).await?;
+                if status.status.state == AxOrderStatus::Canceled {
+                    return Ok::<(), anyhow::Error>(());
+                }
             }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Sandbox order was not canceled after disconnect"))??;
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        anyhow::ensure!(canceled, "Sandbox order was not canceled after disconnect");
         Ok::<(), anyhow::Error>(())
     }
     .await;
@@ -3330,7 +3353,7 @@ async fn test_generate_mass_status_aborts_on_uncached_instrument_failure(
     client.disconnect().await.expect("Failed to disconnect");
 }
 
-async fn set_uncached_mass_status_payload(state: &crate::common::server::TestServerState) {
+async fn set_uncached_mass_status_payload(state: &super::server::TestServerState) {
     *state.orders_payload.lock().await = Some(serde_json::json!({
         "orders": [{
             "ts": 1_704_067_200,
@@ -4214,10 +4237,9 @@ async fn test_generate_fill_reports_rejects_unrepresentable_fee() {
         "mass status error was: {mass_error:#}"
     );
 
-    let event = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
-    assert!(
-        event.is_err() || event.as_ref().is_ok_and(|msg| msg.is_none()),
-        "unrepresentable fee must not emit a fallback fill, was {event:?}"
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -4346,8 +4368,8 @@ async fn test_commission_failure_corrected_replay_applies_once(
     event["xs"]["agg"] = serde_json::json!(false);
     event["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     state.order_injected_events.lock().await.push(event.clone());
-    let failed = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
-    assert!(failed.is_err(), "commission failure emitted {failed:?}");
+    let failed = collect_order_events(&client, &state, &mut rx).await;
+    assert!(failed.is_empty(), "commission failure emitted {failed:?}");
     assert_eq!(
         harness
             .cache()
@@ -4829,13 +4851,23 @@ async fn test_submit_transport_failure_emits_no_order_rejected() {
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
     client.start().expect("Failed to start");
-    client.connect().await.expect("Failed to connect");
+    client
+        .ws_orders
+        .cache_instrument(super::server::create_test_instrument("EURUSD-PERP"));
+    client.ws_orders.connect("test-token").await.unwrap();
+    let stream = client.ws_orders.stream();
+    futures_util::pin_mut!(stream);
     drain_rx(&mut rx);
 
+    state.order_upgrade_reject.store(true, Ordering::Relaxed);
     state
         .disconnect_trigger
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 && !client.ws_orders.is_active() },
+        Duration::from_secs(5),
+    )
+    .await;
     let places_before = state
         .get_messages()
         .await
@@ -4864,27 +4896,54 @@ async fn test_submit_transport_failure_emits_no_order_rejected() {
         .submit_order(make_submit_order_cmd(&order))
         .expect("submit_order should not error");
 
-    let mut saw_submitted = false;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(800);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))) => {
-                assert_eq!(submitted.client_order_id, client_order_id);
-                saw_submitted = true;
+    // The transport waits for its five-second connect deadline before failing a queued send
+    let message = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let message = stream.next().await.expect("orders stream open");
+            match message {
+                AxOrdersWsMessage::Error(_) => break message,
+                AxOrdersWsMessage::PlaceOrderError { .. } => {
+                    panic!("transport failure must not reject the order: {message:?}");
+                }
+                _ => {}
             }
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::Rejected(rejected)))) => {
-                panic!(
-                    "transport failure must not emit OrderRejected, was {}",
-                    rejected.reason
-                );
-            }
-            Ok(Some(_) | None) | Err(_) => {}
         }
-    }
+    })
+    .await
+    .expect("transport send should report its failure");
+
+    let AxOrdersWsMessage::Error(error) = &message else {
+        unreachable!();
+    };
 
     assert!(
-        saw_submitted,
-        "expected OrderSubmitted before the failed send"
+        error.message.contains("Failed to send place order"),
+        "unexpected transport error: {error:?}"
+    );
+    super::super::dispatch_ws_message(
+        message,
+        &client.emitter,
+        client.ws_orders.caches(),
+        client.core.account_id,
+        &client.ws_orders.instruments_cache(),
+        &client.http_client.account_fee_rates,
+        client.clock,
+    );
+    wait_for_pending_tasks(&client).await;
+    let submitted = rx.try_recv().unwrap();
+    assert!(
+        matches!(submitted, ExecutionEvent::Order(OrderEventAny::Submitted(event))
+        if event.client_order_id == client_order_id)
+    );
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert!(
+        client
+            .ws_orders
+            .orders_metadata()
+            .contains_key(&client_order_id)
     );
     let places_after = state
         .get_messages()
@@ -4981,16 +5040,9 @@ async fn test_cancel_already_terminal_order_is_forwarded() {
     )
     .await;
 
-    let result = tokio::time::timeout(std::time::Duration::from_millis(300), rx.recv()).await;
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(
-                _
-            ))))
-        ),
-        "a forwarded cancel must not invent OrderCancelRejected, was {result:?}"
-    );
+    wait_for_order_commands(&client, &state).await;
+    let events = collect_order_events(&client, &state, &mut rx).await;
+    assert!(events.is_empty(), "forwarded cancels emitted {events:?}");
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -5110,10 +5162,7 @@ async fn test_modify_order_without_venue_order_id_emits_denial() {
         .modify_order(cmd)
         .expect("modify_order should not error");
 
-    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
-        .await
-        .expect("timed out waiting for modify denial")
-        .expect("execution event channel closed");
+    let event = rx.try_recv().expect("modify denial should be synchronous");
 
     let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
         panic!("expected OrderModifyDenied, was {event:?}");
@@ -5169,10 +5218,7 @@ async fn test_modify_order_with_trigger_price_is_denied_before_http() {
             .load(std::sync::atomic::Ordering::Relaxed),
         0
     );
-    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
-        .await
-        .expect("timed out waiting for modify denial")
-        .expect("execution event channel closed");
+    let event = rx.try_recv().expect("modify denial should be synchronous");
 
     let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
         panic!("expected OrderModifyDenied, was {event:?}");
@@ -5187,9 +5233,10 @@ async fn test_modify_order_with_trigger_price_is_denied_before_http() {
         "AX does not support venue-native trigger prices"
     );
     assert!(
-        tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
-            .await
-            .is_err(),
+        matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ),
         "expected exactly one modify denial",
     );
 
@@ -5231,10 +5278,7 @@ async fn test_modify_order_with_fractional_quantity_is_denied_before_http() {
         .modify_order(cmd)
         .expect("modify_order should not error");
 
-    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
-        .await
-        .expect("timed out waiting for modify denial")
-        .expect("execution event channel closed");
+    let event = rx.try_recv().expect("modify denial should be synchronous");
 
     let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
         panic!("expected OrderModifyDenied, was {event:?}");
@@ -5292,10 +5336,7 @@ async fn test_modify_order_while_disconnected_emits_local_denial() {
         .modify_order(cmd)
         .expect("modify_order should not error");
 
-    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
-        .await
-        .expect("timed out waiting for modify denial")
-        .expect("execution event channel closed");
+    let event = rx.try_recv().expect("modify denial should be synchronous");
 
     let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
         panic!("expected OrderModifyDenied, was {event:?}");
@@ -5384,15 +5425,10 @@ async fn test_modify_order_success_emits_no_rejection(#[case] stale: bool) {
     assert_eq!(requests[0]["q"], serde_json::json!(5));
 
     // No rejection event expected on success path
-    let result = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(
-                _
-            ))))
-        ),
-        "unexpected ModifyRejected on success path: {result:?}",
+    wait_for_pending_tasks(&client).await;
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -5455,15 +5491,10 @@ async fn test_modify_order_http_error_emits_no_rejection() {
     .await;
 
     // Ambiguous HTTP failure: no rejection event, outcome left to reconciliation
-    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(
-                _
-            ))))
-        ),
-        "expected no ModifyRejected for ambiguous HTTP failure, was {result:?}",
+    wait_for_pending_tasks(&client).await;
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -5521,16 +5552,10 @@ async fn test_modify_order_invalid_replacement_id_does_not_panic_or_reject() {
     )
     .await;
 
-    let result = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
-
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(
-                _
-            ))))
-        ),
-        "invalid replacement ID is ambiguous and must not reject, was {result:?}",
+    wait_for_pending_tasks(&client).await;
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -5597,15 +5622,10 @@ async fn test_cancel_all_orders_http_failure_emits_no_cancel_rejected() {
     .await;
 
     // A whole-request failure must not become one rejection per order
-    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(
-                _
-            ))))
-        ),
-        "expected no CancelRejected for whole-request failure, was {result:?}",
+    wait_for_pending_tasks(&client).await;
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -5881,7 +5901,7 @@ async fn test_submit_order_sends_custom_params_on_wire() {
 
     let messages = state.get_messages().await;
     let place = messages.iter().find(|m| m["t"] == "p").unwrap();
-    let cid = nautilus_architect_ax::common::parse::client_order_id_to_cid(&client_order_id);
+    let cid = super::adapter::common::parse::client_order_id_to_cid(&client_order_id);
 
     assert_eq!(
         place,
@@ -6288,7 +6308,7 @@ async fn test_submit_post_only_order_uses_default_rejection_policy() {
     .await;
     let messages = state.get_messages().await;
     let place = messages.iter().find(|m| m["t"] == "p").unwrap();
-    let cid = nautilus_architect_ax::common::parse::client_order_id_to_cid(&client_order_id);
+    let cid = super::adapter::common::parse::client_order_id_to_cid(&client_order_id);
 
     assert_eq!(
         place,
@@ -6423,51 +6443,45 @@ async fn test_query_order_uses_venue_id_from_place_response() {
         .expect("place request should contain rid");
     let expected_venue_order_id = format!("order-{request_id}");
 
-    let mut venue_query = None;
+    wait_until_async(
+        || async {
+            client
+                .ws_orders
+                .orders_metadata()
+                .get(&client_order_id)
+                .is_some_and(|metadata| {
+                    metadata.venue_order_id
+                        == Some(VenueOrderId::from(expected_venue_order_id.as_str()))
+                })
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    for attempt in 0..10 {
-        client
-            .query_order(QueryOrder::new(
-                TraderId::from("TESTER-001"),
-                Some(*AX_CLIENT_ID),
-                StrategyId::from("S-001"),
-                instrument_id,
-                client_order_id,
-                Some(VenueOrderId::from("STALE-CALLER-ID")),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .expect("query_order should not error");
-
-        wait_until_async(
-            || async { state.order_status_queries.lock().await.len() > attempt },
-            std::time::Duration::from_secs(5),
-        )
-        .await;
-
-        venue_query = state
-            .order_status_queries
-            .lock()
-            .await
-            .get(attempt)
-            .filter(|query| query.order_id.is_some())
-            .cloned();
-
-        if venue_query.is_some() {
-            break;
-        }
-
-        tokio::task::yield_now().await;
-    }
-
-    let venue_query = venue_query.expect("query should use venue order ID after place response");
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*AX_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            Some(VenueOrderId::from("STALE-CALLER-ID")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_for_pending_tasks(&client).await;
+    let queries = state.order_status_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    let venue_query = &queries[0];
     assert_eq!(
         venue_query.order_id.as_deref(),
         Some(expected_venue_order_id.as_str())
     );
     assert_eq!(venue_query.client_order_id, None);
+    drop(queries);
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -6603,10 +6617,12 @@ async fn test_submit_order_skips_closed_order() {
         .expect("submit_order should not error");
 
     // No event should be emitted for a closed order
-    let result = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
     assert!(
-        result.is_err(),
-        "expected no event for closed order, found {result:?}",
+        matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ),
+        "expected no event for closed order",
     );
 }
 
@@ -6872,7 +6888,7 @@ async fn test_owned_report_delay_allows_core_progress(#[case] cancel: bool) {
     );
     cache
         .borrow_mut()
-        .add_instrument(crate::common::server::create_test_instrument("CORE-PERP"))
+        .add_instrument(super::server::create_test_instrument("CORE-PERP"))
         .unwrap();
 
     if cancel {
@@ -6914,11 +6930,15 @@ async fn test_mass_status_timestamp_precedes_delayed_collection() {
     let clock = nautilus_core::time::get_atomic_clock_realtime();
     let before = clock.get_time_ns();
     let mut mass = Box::pin(client.generate_mass_status(Some(60)));
-    tokio::select! {
-        result = &mut mass => panic!("mass status finished before release: {result:?}"),
-        () = state.order_report_response_entered.notified() => {},
-        () = tokio::time::sleep(Duration::from_secs(5)) => panic!("report request did not start"),
-    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = &mut mass => panic!("mass status finished before release: {result:?}"),
+            () = state.order_report_response_entered.notified() => {},
+        }
+    })
+    .await
+    .expect("report request should start");
+
     let entered = clock.get_time_ns();
     state.order_report_response_release.notify_one();
     let report = mass.await.unwrap().unwrap();
@@ -7074,7 +7094,7 @@ async fn test_single_closed_order_lookup(#[case] by_venue: bool) {
     assert_eq!(queries[0].order_id.as_deref(), by_venue.then_some(order_id));
     assert_eq!(
         queries[0].client_order_id,
-        (!by_venue).then(|| nautilus_architect_ax::common::parse::client_order_id_to_cid(&coid))
+        (!by_venue).then(|| super::adapter::common::parse::client_order_id_to_cid(&coid))
     );
     drop(queries);
     client.disconnect().await.unwrap();
@@ -7399,11 +7419,9 @@ async fn test_post_only_replace_rejection_preserves_parent(
     }
 
     // A late HTTP receipt must not redirect the next query or cancel
-    assert!(
-        tokio::time::timeout(Duration::from_millis(200), rx.recv())
-            .await
-            .is_err()
-    );
+    wait_for_pending_tasks(&client).await;
+    let events = collect_order_events(&client, &state, &mut rx).await;
+    assert!(events.is_empty(), "late receipt emitted {events:?}");
     client
         .query_order(QueryOrder::new(
             TraderId::from("TESTER-001"),

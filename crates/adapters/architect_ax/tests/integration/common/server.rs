@@ -33,7 +33,7 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{Uri, header::CONTENT_TYPE},
+    http::{StatusCode, Uri, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -92,6 +92,7 @@ pub(crate) struct TestServerState {
     pub order_injected_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_login_response: Arc<AtomicBool>,
+    pub order_upgrade_reject: Arc<AtomicBool>,
     pub order_login_cod: Arc<tokio::sync::Mutex<Option<bool>>>,
     pub order_upgrade_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
@@ -155,6 +156,7 @@ impl Default for TestServerState {
             order_injected_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_login_response: Arc::new(AtomicBool::new(true)),
+            order_upgrade_reject: Arc::new(AtomicBool::new(false)),
             order_login_cod: Arc::new(tokio::sync::Mutex::new(None)),
             order_upgrade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -365,7 +367,8 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
 
                         if level == "TRADES" || include_trades {
-                            let trade_msg = load_test_data("ws_md_trade.json");
+                            let mut trade_msg = load_test_data("ws_md_trade.json");
+                            trade_msg["s"] = json!(symbol);
 
                             if socket
                                 .send(Message::Text(trade_msg.to_string().into()))
@@ -378,6 +381,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                         for instrument_state in state.md_ticker_states.lock().await.clone() {
                             let mut ticker = load_test_data("ws_md_ticker.json");
+                            ticker["s"] = json!(symbol);
                             ticker["i"] = json!(instrument_state);
 
                             if socket
@@ -550,6 +554,10 @@ async fn handle_orders_websocket(
     State(state): State<TestServerState>,
     uri: Uri,
 ) -> Response {
+    if state.order_upgrade_reject.load(Ordering::Relaxed) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     let query = uri.query().unwrap_or("").to_string();
     ws.on_upgrade(|socket| async move {
         state.order_upgrade_queries.lock().await.push(query);

@@ -495,7 +495,7 @@ async fn test_ticker_instrument_status_emitted_once_when_state_unchanged() {
     client
         .subscribe_instrument_status(instrument_status_subscription(instrument_id, client_id))
         .expect("Subscribe instrument status failed");
-    let statuses = collect_instrument_statuses(&mut rx).await;
+    let statuses = collect_instrument_statuses(&mut client, &state, &mut rx, client_id).await;
 
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0].instrument_id, instrument_id);
@@ -519,7 +519,7 @@ async fn test_ticker_instrument_status_emitted_on_transition() {
     client
         .subscribe_instrument_status(instrument_status_subscription(instrument_id, client_id))
         .expect("Subscribe instrument status failed");
-    let statuses = collect_instrument_statuses(&mut rx).await;
+    let statuses = collect_instrument_statuses(&mut client, &state, &mut rx, client_id).await;
 
     assert_eq!(statuses.len(), 2);
     assert_eq!(statuses[0].instrument_id, instrument_id);
@@ -554,7 +554,7 @@ async fn test_ticker_instrument_status_skipped_when_not_subscribed() {
     client
         .subscribe_trades(subscribe_cmd)
         .expect("Subscribe trades failed");
-    let statuses = collect_instrument_statuses(&mut rx).await;
+    let statuses = collect_instrument_statuses(&mut client, &state, &mut rx, client_id).await;
 
     assert!(statuses.is_empty());
 
@@ -602,25 +602,20 @@ async fn test_data_client_emits_trade_tick_via_channel() {
         .subscribe_trades(subscribe_cmd)
         .expect("Subscribe failed");
 
-    // Collect events - mock server sends book then trade
-    let mut found_trade = false;
-
-    for _ in 0..5 {
-        let result = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
-        match result {
-            Ok(Some(DataEvent::Data(Data::Trade(trade)))) => {
-                assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
-                assert!(trade.price.as_f64() > 0.0);
-                assert!(trade.size.as_f64() > 0.0);
-                found_trade = true;
-                break;
+    let trade = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("Data event channel open");
+            if let DataEvent::Data(Data::Trade(trade)) = event {
+                break trade;
             }
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => break,
         }
-    }
+    })
+    .await
+    .expect("Expected to receive a trade tick event");
 
-    assert!(found_trade, "Expected to receive a trade tick event");
+    assert_eq!(trade.instrument_id, instrument_id);
+    assert_eq!(trade.price.as_decimal(), dec!(50000.00));
+    assert_eq!(trade.size.as_decimal(), dec!(100));
     client.disconnect().await.expect("Failed to disconnect");
 }
 
@@ -1298,16 +1293,33 @@ async fn test_data_client_suppresses_book_frames_after_unsubscribe() {
         .expect("Unsubscribe failed");
     wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(5)).await;
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-    let mut late_deltas = 0;
+    // A later trade subscription fences the trailing book frame on the same socket
+    let marker = InstrumentId::from("XAU-PERP.AX");
+    client
+        .subscribe_trades(SubscribeTrades {
+            instrument_ids: vec![marker],
+            client_id: Some(client_id),
+            venue: None,
+            command_id: UUID4::new(),
+            ts_init: 0.into(),
+            correlation_id: None,
+            params: None,
+        })
+        .unwrap();
 
-    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
-        if matches!(event, DataEvent::Data(Data::BookDeltas(_))) {
-            late_deltas += 1;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("Data event channel open") {
+                DataEvent::Data(Data::BookDeltas(deltas)) => panic!("late book deltas: {deltas:?}"),
+                DataEvent::Data(Data::Trade(trade)) if trade.instrument_id == marker => {
+                    break;
+                }
+                _ => {}
+            }
         }
-    }
-
-    assert_eq!(late_deltas, 0);
+    })
+    .await
+    .expect("Trade marker should arrive");
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -1478,20 +1490,34 @@ async fn wait_for_requests(
 }
 
 async fn collect_instrument_statuses(
+    client: &mut AxDataClient,
+    state: &TestServerState,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    client_id: ClientId,
 ) -> Vec<InstrumentStatus> {
-    let mut statuses = Vec::new();
+    wait_for_requests(state, "subscribe", 1, Duration::from_secs(5)).await;
+    let marker = InstrumentId::from("XAU-PERP.AX");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(marker, client_id))
+        .unwrap();
 
-    loop {
-        match tokio::time::timeout(Duration::from_millis(250), rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::InstrumentStatus(status)))) => statuses.push(status),
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("Data event channel closed"),
-            Err(_) => break,
+    // The second symbol's status follows all frames for the first subscription
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut statuses = Vec::new();
+
+        loop {
+            let event = rx.recv().await.expect("Data event channel open");
+            if let DataEvent::Data(Data::InstrumentStatus(status)) = event {
+                if status.instrument_id == marker {
+                    return statuses;
+                }
+
+                statuses.push(status);
+            }
         }
-    }
-
-    statuses
+    })
+    .await
+    .expect("Instrument status marker should arrive")
 }
 
 async fn wait_for_quote(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) -> QuoteTick {

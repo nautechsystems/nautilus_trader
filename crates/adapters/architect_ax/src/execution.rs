@@ -3510,6 +3510,8 @@ mod tests {
                 if event.client_order_id == client_order_id
                     && event.reason.as_str().contains("channel closed")
         ));
+        // Rejection wakes the receiver before the submission task finishes cleanup
+        client.await_pending_tasks().await.unwrap();
         let cid = client_order_id_to_cid(&client_order_id);
         assert!(
             !client
@@ -5907,3 +5909,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "execution/tests.rs"]
+mod integration_tests;

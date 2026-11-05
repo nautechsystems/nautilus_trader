@@ -1364,23 +1364,22 @@ mod tests {
             None,
         );
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
+            let _dropped_tx = dropped_tx;
             started_tx.send(()).expect("started receiver");
             std::future::pending::<()>().await;
         });
-        let abort_handle = handle.abort_handle();
+
         client.task_handle.insert(handle);
         started_rx.await.expect("handler task started");
 
         drop(client);
 
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !abort_handle.is_finished() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("handler task aborted");
+        tokio::time::timeout(Duration::from_secs(5), dropped_rx)
+            .await
+            .expect("handler task future should be dropped")
+            .expect_err("aborted task should drop its sender");
     }
 
     #[rstest]

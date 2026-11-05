@@ -13,18 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, net::SocketAddr, rc::Rc};
+use std::{cell::RefCell, net::SocketAddr, rc::Rc, time::Duration};
 
 use nautilus_common::{
-    cache::Cache, live::runner::set_exec_event_sender, messages::ExecutionEvent,
+    cache::Cache, clients::ExecutionClient, live::runner::set_exec_event_sender,
+    messages::ExecutionEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType},
-    events::AccountState,
-    identifiers::{AccountId, TraderId},
+    events::{AccountState, OrderEventAny},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     types::{AccountBalance, Money},
 };
 
@@ -118,4 +119,42 @@ pub(crate) fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: 
 
 pub(crate) fn drain_rx(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>) {
     while rx.try_recv().is_ok() {}
+}
+
+pub(crate) async fn collect_order_events(
+    client: &AxExecutionClient,
+    state: &super::server::TestServerState,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<ExecutionEvent> {
+    let client_order_id = ClientOrderId::new(format!("CID-FENCE-{}", UUID4::new()));
+    let venue_order_id = VenueOrderId::new(format!("OID-FENCE-{}", UUID4::new()));
+    client.register_external_order(
+        client_order_id,
+        venue_order_id,
+        InstrumentId::from("EURUSD-PERP.AX"),
+        StrategyId::from("S-001"),
+        UnixNanos::default(),
+    );
+    let mut canceled = super::server::load_test_data("ws_order_canceled.json");
+    canceled["o"]["oid"] = serde_json::json!(venue_order_id.as_str());
+    state.order_injected_events.lock().await.push(canceled);
+
+    // The marker follows earlier frames through the same socket and execution stream
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+
+        loop {
+            let event = rx.recv().await.expect("execution event channel open");
+
+            if matches!(&event, ExecutionEvent::Order(OrderEventAny::Canceled(event))
+                if event.client_order_id == client_order_id)
+            {
+                return events;
+            }
+
+            events.push(event);
+        }
+    })
+    .await
+    .expect("order event marker should arrive")
 }
