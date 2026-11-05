@@ -534,6 +534,58 @@ def test_order_factory_bracket_forwards_leg_parameters() -> None:
     _assert_trigger_fields(take_profit)
 
 
+def test_order_factory_bracket_exits_are_reduce_only_by_default() -> None:
+    """
+    Test order factory bracket exits are reduce only by default.
+    """
+    factory = _factory()
+
+    entry, stop_loss, take_profit = factory.bracket(
+        INSTRUMENT_ID,
+        OrderSide.BUY,
+        QUANTITY,
+        tp_price=Price.from_str("55000.00"),
+        sl_trigger_price=Price.from_str("45000.00"),
+    )
+
+    assert entry.is_reduce_only is False
+    assert stop_loss.is_reduce_only is True
+    assert take_profit.is_reduce_only is True
+
+
+@pytest.mark.parametrize(
+    ("tp_reduce_only", "sl_reduce_only"),
+    [
+        (False, True),
+        (True, False),
+        (False, False),
+        (True, True),
+    ],
+)
+def test_order_factory_bracket_overrides_exit_reduce_only(
+    tp_reduce_only: bool,
+    sl_reduce_only: bool,
+) -> None:
+    """
+    Test order factory bracket overrides exit reduce only per leg.
+    """
+    factory = _factory()
+
+    entry, stop_loss, take_profit = factory.bracket(
+        INSTRUMENT_ID,
+        OrderSide.BUY,
+        QUANTITY,
+        tp_price=Price.from_str("55000.00"),
+        tp_reduce_only=tp_reduce_only,
+        sl_trigger_price=Price.from_str("45000.00"),
+        sl_reduce_only=sl_reduce_only,
+    )
+
+    assert entry.is_reduce_only is False
+    assert stop_loss.is_reduce_only is sl_reduce_only
+    assert take_profit.is_reduce_only is tp_reduce_only
+
+
 def test_order_factory_trailing_stop_market_activates_at_market() -> None:
     """
     Test order factory trailing stop market activates at market.

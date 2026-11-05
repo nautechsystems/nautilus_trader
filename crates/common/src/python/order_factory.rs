@@ -708,6 +708,7 @@ impl PyOrderFactory {
         tp_limit_offset=None,
         tp_time_in_force=TimeInForce::Gtc,
         tp_post_only=true,
+        tp_reduce_only=true,
         tp_exec_algorithm_id=None,
         tp_exec_algorithm_params=None,
         tp_tags=None,
@@ -719,6 +720,7 @@ impl PyOrderFactory {
         sl_trailing_offset=None,
         sl_trailing_offset_type=TrailingOffsetType::Price,
         sl_time_in_force=TimeInForce::Gtc,
+        sl_reduce_only=true,
         sl_exec_algorithm_id=None,
         sl_exec_algorithm_params=None,
         sl_tags=None,
@@ -754,6 +756,7 @@ impl PyOrderFactory {
         tp_limit_offset: Option<Decimal>,
         tp_time_in_force: TimeInForce,
         tp_post_only: bool,
+        tp_reduce_only: bool,
         tp_exec_algorithm_id: Option<ExecAlgorithmId>,
         tp_exec_algorithm_params: Option<IndexMap<String, String>>,
         tp_tags: Option<Vec<String>>,
@@ -765,6 +768,7 @@ impl PyOrderFactory {
         sl_trailing_offset: Option<Decimal>,
         sl_trailing_offset_type: TrailingOffsetType,
         sl_time_in_force: TimeInForce,
+        sl_reduce_only: bool,
         sl_exec_algorithm_id: Option<ExecAlgorithmId>,
         sl_exec_algorithm_params: Option<IndexMap<String, String>>,
         sl_tags: Option<Vec<String>>,
@@ -803,6 +807,7 @@ impl PyOrderFactory {
                 .maybe_tp_limit_offset(tp_limit_offset)
                 .tp_time_in_force(tp_time_in_force)
                 .tp_post_only(tp_post_only)
+                .tp_reduce_only(tp_reduce_only)
                 .maybe_tp_exec_algorithm_id(tp_exec_algorithm_id)
                 .maybe_tp_exec_algorithm_params(tp_exec_algorithm_params.map(str_indexmap_to_ustr))
                 .maybe_tp_tags(tp_tags.map(strings_to_ustrs))
@@ -814,6 +819,7 @@ impl PyOrderFactory {
                 .maybe_sl_trailing_offset(sl_trailing_offset)
                 .sl_trailing_offset_type(sl_trailing_offset_type)
                 .sl_time_in_force(sl_time_in_force)
+                .sl_reduce_only(sl_reduce_only)
                 .maybe_sl_exec_algorithm_id(sl_exec_algorithm_id)
                 .maybe_sl_exec_algorithm_params(sl_exec_algorithm_params.map(str_indexmap_to_ustr))
                 .maybe_sl_tags(sl_tags.map(strings_to_ustrs))

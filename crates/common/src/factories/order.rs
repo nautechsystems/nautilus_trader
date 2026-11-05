@@ -1126,8 +1126,12 @@ impl OrderFactory {
     /// - `entry_order_type`: `Market`; `tp_order_type`: `Limit`; `sl_order_type`: `StopMarket`.
     /// - `entry_tags`: `["ENTRY"]`; `tp_tags`: `["TAKE_PROFIT"]`; `sl_tags`: `["STOP_LOSS"]`.
     /// - `tp_post_only`: `true` for `Limit` and `LimitIfTouched`; `entry_post_only`: `false`.
-    /// - TP and SL legs are always `reduce_only = true`; the entry is `reduce_only = false`.
+    /// - `tp_reduce_only` and `sl_reduce_only`: `true`; the entry is always `reduce_only = false`.
     /// - TP and SL legs do not inherit `expire_time` from the entry.
+    ///
+    /// Setting `tp_reduce_only` or `sl_reduce_only` to `false` gives up the reduce-only guarantee
+    /// for that leg. If the position is closed separately, the leg can still fill and open a
+    /// position in the opposite direction.
     ///
     /// # Panics
     ///
@@ -1165,6 +1169,7 @@ impl OrderFactory {
         tp_limit_offset: Option<Decimal>,
         #[builder(default = TimeInForce::Gtc)] tp_time_in_force: TimeInForce,
         #[builder(default = true)] tp_post_only: bool,
+        #[builder(default = true)] tp_reduce_only: bool,
         tp_exec_algorithm_id: Option<ExecAlgorithmId>,
         tp_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("TAKE_PROFIT")])] tp_tags: Vec<Ustr>,
@@ -1177,6 +1182,7 @@ impl OrderFactory {
         sl_trailing_offset: Option<Decimal>,
         #[builder(default = TrailingOffsetType::Price)] sl_trailing_offset_type: TrailingOffsetType,
         #[builder(default = TimeInForce::Gtc)] sl_time_in_force: TimeInForce,
+        #[builder(default = true)] sl_reduce_only: bool,
         sl_exec_algorithm_id: Option<ExecAlgorithmId>,
         sl_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("STOP_LOSS")])] sl_tags: Vec<Ustr>,
@@ -1210,6 +1216,7 @@ impl OrderFactory {
             .maybe_tp_limit_offset(tp_limit_offset)
             .tp_time_in_force(tp_time_in_force)
             .tp_post_only(tp_post_only)
+            .tp_reduce_only(tp_reduce_only)
             .maybe_tp_exec_algorithm_id(tp_exec_algorithm_id)
             .maybe_tp_exec_algorithm_params(tp_exec_algorithm_params)
             .tp_tags(tp_tags)
@@ -1221,6 +1228,7 @@ impl OrderFactory {
             .maybe_sl_trailing_offset(sl_trailing_offset)
             .sl_trailing_offset_type(sl_trailing_offset_type)
             .sl_time_in_force(sl_time_in_force)
+            .sl_reduce_only(sl_reduce_only)
             .maybe_sl_exec_algorithm_id(sl_exec_algorithm_id)
             .maybe_sl_exec_algorithm_params(sl_exec_algorithm_params)
             .sl_tags(sl_tags)
@@ -1262,6 +1270,7 @@ impl OrderFactory {
         tp_limit_offset: Option<Decimal>,
         #[builder(default = TimeInForce::Gtc)] tp_time_in_force: TimeInForce,
         #[builder(default = true)] tp_post_only: bool,
+        #[builder(default = true)] tp_reduce_only: bool,
         tp_exec_algorithm_id: Option<ExecAlgorithmId>,
         tp_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("TAKE_PROFIT")])] tp_tags: Vec<Ustr>,
@@ -1274,6 +1283,7 @@ impl OrderFactory {
         sl_trailing_offset: Option<Decimal>,
         #[builder(default = TrailingOffsetType::Price)] sl_trailing_offset_type: TrailingOffsetType,
         #[builder(default = TimeInForce::Gtc)] sl_time_in_force: TimeInForce,
+        #[builder(default = true)] sl_reduce_only: bool,
         sl_exec_algorithm_id: Option<ExecAlgorithmId>,
         sl_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("STOP_LOSS")])] sl_tags: Vec<Ustr>,
@@ -1481,7 +1491,7 @@ impl OrderFactory {
                 tp_time_in_force,
                 None, // expire_time
                 tp_post_only,
-                true, // reduce_only
+                tp_reduce_only,
                 quote_quantity,
                 None, // display_qty
                 emulation_trigger,
@@ -1517,7 +1527,7 @@ impl OrderFactory {
                     tp_time_in_force,
                     None, // expire_time
                     tp_post_only,
-                    true, // reduce_only
+                    tp_reduce_only,
                     quote_quantity,
                     None, // display_qty
                     emulation_trigger,
@@ -1549,7 +1559,7 @@ impl OrderFactory {
                     tp_trigger_type,
                     tp_time_in_force,
                     None, // expire_time
-                    true, // reduce_only
+                    tp_reduce_only,
                     quote_quantity,
                     emulation_trigger,
                     trigger_instrument_id,
@@ -1588,7 +1598,7 @@ impl OrderFactory {
                     tp_trailing_offset_type,
                     tp_time_in_force,
                     None, // expire_time
-                    true, // reduce_only
+                    tp_reduce_only,
                     quote_quantity,
                     None, // display_qty
                     emulation_trigger,
@@ -1640,7 +1650,7 @@ impl OrderFactory {
                     tp_time_in_force,
                     None,  // expire_time
                     false, // post_only (TRAILING_STOP_LIMIT TP must not be post-only)
-                    true,  // reduce_only
+                    tp_reduce_only,
                     quote_quantity,
                     None, // display_qty
                     emulation_trigger,
@@ -1681,7 +1691,7 @@ impl OrderFactory {
                 sl_trigger_type,
                 sl_time_in_force,
                 None, // expire_time
-                true, // reduce_only
+                sl_reduce_only,
                 quote_quantity,
                 None, // display_qty
                 emulation_trigger,
@@ -1720,7 +1730,7 @@ impl OrderFactory {
                     sl_trailing_offset_type,
                     sl_time_in_force,
                     None, // expire_time
-                    true, // reduce_only
+                    sl_reduce_only,
                     quote_quantity,
                     None, // display_qty
                     emulation_trigger,
@@ -2506,6 +2516,121 @@ pub mod tests {
         assert!(!orders[0].is_reduce_only(), "entry must not be reduce-only");
         assert!(orders[1].is_reduce_only(), "SL must be reduce-only");
         assert!(orders[2].is_reduce_only(), "TP must be reduce-only");
+    }
+
+    #[rstest]
+    #[case::tp_disabled(false, true)]
+    #[case::sl_disabled(true, false)]
+    #[case::both_disabled(false, false)]
+    #[case::both_enabled(true, true)]
+    fn test_bracket_order_reduce_only_overrides(
+        mut order_factory: OrderFactory,
+        #[case] tp_reduce_only: bool,
+        #[case] sl_reduce_only: bool,
+    ) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .tp_price(Price::from("55000.00"))
+            .tp_reduce_only(tp_reduce_only)
+            .sl_trigger_price(Price::from("45000.00"))
+            .sl_reduce_only(sl_reduce_only)
+            .call();
+
+        assert!(!orders[0].is_reduce_only(), "entry must not be reduce-only");
+        assert_eq!(orders[1].is_reduce_only(), sl_reduce_only);
+        assert_eq!(orders[2].is_reduce_only(), tp_reduce_only);
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit, Some("55000.00"), None, None, None, None)]
+    #[case::limit_if_touched(
+        OrderType::LimitIfTouched,
+        Some("54500.00"),
+        Some("55000.00"),
+        None,
+        None,
+        None
+    )]
+    #[case::market_if_touched(OrderType::MarketIfTouched, None, Some("55000.00"), None, None, None)]
+    #[case::trailing_stop_market(
+        OrderType::TrailingStopMarket,
+        None,
+        Some("55000.00"),
+        Some("54500.00"),
+        Some(Decimal::new(75, 2)),
+        None
+    )]
+    #[case::trailing_stop_limit(
+        OrderType::TrailingStopLimit,
+        Some("55000.00"),
+        Some("54000.00"),
+        Some("53500.00"),
+        Some(Decimal::new(50, 2)),
+        Some(Decimal::new(10, 2))
+    )]
+    fn test_bracket_order_tp_reduce_only_disabled_for_each_tp_order_type(
+        mut order_factory: OrderFactory,
+        #[case] tp_order_type: OrderType,
+        #[case] tp_price: Option<&str>,
+        #[case] tp_trigger_price: Option<&str>,
+        #[case] tp_activation_price: Option<&str>,
+        #[case] tp_trailing_offset: Option<Decimal>,
+        #[case] tp_limit_offset: Option<Decimal>,
+    ) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(tp_order_type)
+            .maybe_tp_price(tp_price.map(Price::from))
+            .maybe_tp_trigger_price(tp_trigger_price.map(Price::from))
+            .maybe_tp_activation_price(tp_activation_price.map(Price::from))
+            .maybe_tp_trailing_offset(tp_trailing_offset)
+            .maybe_tp_limit_offset(tp_limit_offset)
+            .tp_reduce_only(false)
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[2].order_type(), tp_order_type);
+        assert!(!orders[2].is_reduce_only(), "TP must not be reduce-only");
+        assert!(orders[1].is_reduce_only(), "SL must remain reduce-only");
+    }
+
+    #[rstest]
+    #[case::stop_market(OrderType::StopMarket, None, None)]
+    #[case::trailing_stop_market(
+        OrderType::TrailingStopMarket,
+        Some("44000.00"),
+        Some(Decimal::new(50, 2))
+    )]
+    fn test_bracket_order_sl_reduce_only_disabled_for_each_sl_order_type(
+        mut order_factory: OrderFactory,
+        #[case] sl_order_type: OrderType,
+        #[case] sl_activation_price: Option<&str>,
+        #[case] sl_trailing_offset: Option<Decimal>,
+    ) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .sl_order_type(sl_order_type)
+            .sl_trigger_price(Price::from("45000.00"))
+            .maybe_sl_activation_price(sl_activation_price.map(Price::from))
+            .maybe_sl_trailing_offset(sl_trailing_offset)
+            .sl_reduce_only(false)
+            .call();
+
+        assert_eq!(orders[1].order_type(), sl_order_type);
+        assert!(!orders[1].is_reduce_only(), "SL must not be reduce-only");
+        assert!(orders[2].is_reduce_only(), "TP must remain reduce-only");
     }
 
     #[rstest]
