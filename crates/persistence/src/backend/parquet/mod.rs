@@ -201,6 +201,13 @@ mod tests {
     }
 
     #[rstest]
+    fn open_catalog_rejects_empty_path() {
+        let config = DataCatalogConfig::new(String::new(), None, None);
+
+        assert!(open_catalog(&config.connect_config()).is_err());
+    }
+
+    #[rstest]
     #[case::moved_setting("batch_size")]
     #[case::unknown("no_such_param")]
     fn open_catalog_rejects_params_naming_key(#[case] key: &str) {

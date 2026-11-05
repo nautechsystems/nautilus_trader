@@ -260,11 +260,13 @@ fn is_windows_drive_path(path: &str) -> bool {
 /// `file://` join because [`file_uri_to_native_path`] does not restore the
 /// `\\server\share` prefix from `file://server/share`. A relative path has no
 /// `file://` form, so it stays as it is for [`normalize_path_to_uri`] to resolve.
+/// An empty path keeps the join, so opening it fails rather than resolving to the
+/// current directory.
 #[must_use]
 pub(crate) fn file_protocol_uri(path: &str) -> String {
     if is_windows_drive_path(path) {
         path_to_file_uri(path)
-    } else if is_absolute_path(path) {
+    } else if path.is_empty() || is_absolute_path(path) {
         format!("file://{path}")
     } else {
         path.to_string()
