@@ -139,16 +139,6 @@ test_security_gate() {
   accepted_override_warning+=" until ${accepted_override_expiry}"
 
   mkdir -p "$mock_bin"
-  cat > "${mock_bin}/gh" << 'MOCK'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "${MOCK_GH_ARGS_LOG:?}"
-if [[ "$*" == *"/actions/runs/"*"/jobs"* ]]; then
-  printf '%s\n' "${MOCK_GH_JOBS_RESPONSE:-}"
-  exit 0
-fi
-exit 1
-MOCK
   cat > "${mock_bin}/date" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -172,80 +162,83 @@ fi
 
 case "$timestamp" in
   1970-01-01T00:00:50Z) echo 50 ;;
+  1970-01-01T00:01:40Z) echo 100 ;;
   1970-01-01T00:03:20Z) echo 200 ;;
+  1970-01-01T02:01:40Z) echo 7300 ;;
+  1970-01-01T02:01:41Z) echo 7301 ;;
   1970-01-01T03:00:00Z) echo 10800 ;;
   *) exit 1 ;;
 esac
 MOCK
-  chmod +x "${mock_bin}/date" "${mock_bin}/gh"
+  chmod +x "${mock_bin}/date"
 
-  run_audit_check() {
+  run_override_check() {
+    : > "${case_dir}/gate-output"
     PATH="${mock_bin}:$PATH" \
-      MOCK_GH_ARGS_LOG="${case_dir}/gh-args" \
-      MOCK_GH_JOBS_RESPONSE="${4:-}" \
-      GITHUB_REPOSITORY=nautechsystems/nautilus_trader \
-      GITHUB_RUN_ID=123 \
+      GITHUB_OUTPUT="${case_dir}/gate-output" \
       GITHUB_SHA=1111111111111111111111111111111111111111 \
       GITHUB_EVENT_NAME="${2:-push}" \
-      SECURITY_AUDIT_RESULT="${1:-}" \
-      SECURITY_GATE_OVERRIDE="${3:-}" \
-      bash "${repo_root}/scripts/ci/check-security-audit-result.sh"
+      GITHUB_REF="${3:-refs/heads/develop}" \
+      SECURITY_GATE_OVERRIDE="${1:-}" \
+      bash "${repo_root}/scripts/ci/check-security-gate-override.bash"
   }
 
-  run_gate_check() {
-    PATH="${mock_bin}:$PATH" \
-      SECURITY_GATE_RESULT="$1" \
-      SECURITY_GATE_OVERRIDE="${2:-}" \
-      SECURITY_GATE_SHA=1111111111111111111111111111111111111111 \
-      bash "${repo_root}/scripts/ci/check-security-gate-result.bash"
-  }
+  local override
+  for override in \
+    "" \
+    disabled \
+    malformed \
+    2999-01-01T00:00:00Z \
+    '1970-01-01T00:00:50Z@1111111111111111111111111111111111111111' \
+    '1970-01-01T00:01:40Z@1111111111111111111111111111111111111111' \
+    '1970-01-01T02:01:41Z@1111111111111111111111111111111111111111' \
+    '1970-01-01T03:00:00Z@1111111111111111111111111111111111111111' \
+    '1970-01-01T00:03:20Z@2222222222222222222222222222222222222222' \
+    '1970-02-30T00:00:00Z@1111111111111111111111111111111111111111'; do
+    run_expect_success "$output" run_override_check "$override"
+    assert_line "${case_dir}/gate-output" "override_active=false"
 
-  local audit_steps_failure='security audit / zizmor|Run zizmor|failure
-security audit / supply-chain|Run supply-chain audits|success'
-  local audit_steps_success="${audit_steps_failure/failure/success}"
+    EVENT_NAME=push \
+      FORCE_SECURITY_AUDIT=true \
+      SKIP_SECURITY_AUDIT="$(sed -n 's/^override_active=//p' "${case_dir}/gate-output")" \
+      GITHUB_OUTPUT="$output" \
+      bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+    assert_line "$output" "audit_needed=true"
+  done
 
-  run_audit_check success
-  run_expect_failure "$output" run_audit_check failure push "" "$audit_steps_failure"
-  grep -Fq "blocking publish" "$output" || fail "Failed audit must block publication"
-  run_expect_success "$output" run_audit_check \
-    failure \
-    push \
-    "$accepted_override" \
-    "$audit_steps_failure"
-  assert_line "$output" "$accepted_override_warning"
-  grep -Fq 'repos/nautechsystems/nautilus_trader/actions/runs/123/jobs' \
-    "${case_dir}/gh-args" || fail "Audit query did not bind the current build run"
-  run_expect_failure "$output" run_audit_check \
-    failure \
-    push \
-    "$accepted_override" \
-    "${audit_steps_failure%$'\n'*}"
-  grep -Fq "did not complete" "$output" || fail "Incomplete audit must not be overridden"
-  run_expect_failure "$output" run_audit_check \
-    failure \
-    push \
-    "$accepted_override" \
-    "$audit_steps_success"
-  grep -Fq "No completed audit step reported a failure" "$output" ||
-    fail "Non-audit workflow failure must not be overridden"
-  run_expect_failure "$output" run_audit_check neutral push "$accepted_override"
-  run_expect_failure "$output" run_audit_check failure pull_request "$accepted_override"
+  local event
+  for event in pull_request schedule workflow_dispatch; do
+    run_expect_success "$output" run_override_check "$accepted_override" "$event"
+    assert_line "${case_dir}/gate-output" "override_active=false"
+  done
 
-  run_gate_check success malformed
-  run_expect_success "$output" run_gate_check failure "$accepted_override"
+  local ref
+  for ref in refs/heads/master refs/heads/test-ci refs/heads/test-pre-commit refs/heads/test-security; do
+    run_expect_success "$output" run_override_check "$accepted_override" push "$ref"
+    assert_line "${case_dir}/gate-output" "override_active=false"
+  done
+
+  for ref in refs/heads/develop refs/heads/nightly; do
+    run_expect_success "$output" run_override_check "$accepted_override" push "$ref"
+    assert_line "${case_dir}/gate-output" "override_active=true"
+    assert_line "$output" "$accepted_override_warning"
+  done
+
+  MOCK_DATE_GNU_FAIL=true run_expect_success "$output" run_override_check "$accepted_override"
+  assert_line "${case_dir}/gate-output" "override_active=true"
   assert_line "$output" "$accepted_override_warning"
-  MOCK_DATE_GNU_FAIL=true run_expect_success "$output" run_gate_check failure "$accepted_override"
-  assert_line "$output" "$accepted_override_warning"
-  run_expect_failure "$output" run_gate_check failure disabled
-  run_expect_failure "$output" run_gate_check failure 2999-01-01T00:00:00Z
-  run_expect_failure "$output" run_gate_check failure \
-    '1970-01-01T00:00:50Z@1111111111111111111111111111111111111111'
-  run_expect_failure "$output" run_gate_check failure \
-    '1970-01-01T03:00:00Z@1111111111111111111111111111111111111111'
-  run_expect_failure "$output" run_gate_check failure \
-    '1970-01-01T00:03:20Z@2222222222222222222222222222222222222222'
-  run_expect_failure "$output" run_gate_check neutral \
-    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111'
+
+  run_expect_success "$output" run_override_check \
+    '1970-01-01T02:01:40Z@1111111111111111111111111111111111111111'
+  assert_line "${case_dir}/gate-output" "override_active=true"
+
+  : > "$output"
+  EVENT_NAME=push \
+    FORCE_SECURITY_AUDIT=true \
+    SKIP_SECURITY_AUDIT="$(sed -n 's/^override_active=//p' "${case_dir}/gate-output")" \
+    GITHUB_OUTPUT="$output" \
+    bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+  assert_line "$output" "audit_needed=false"
 
   : > "$output"
   EVENT_NAME=push \
@@ -304,6 +297,46 @@ security audit / supply-chain|Run supply-chain audits|success'
       bash "${repo_root}/scripts/ci/security-audit-gate.sh"
   )
   assert_line "$output" "audit_needed=true"
+}
+
+test_nightly_security_gate() {
+  local case_dir="${work_dir}/nightly-security"
+  local output="${case_dir}/output"
+  mkdir -p "$case_dir"
+
+  awk '
+    /^      - name: Require successful security gate$/ { step = 1; next }
+    step && /^        run: \|$/ { body = 1; next }
+    body && /^          / { sub(/^          /, ""); print; next }
+    body { exit }
+  ' "${repo_root}/.github/workflows/build.yml" > "${case_dir}/gate.bash"
+  [[ -s "${case_dir}/gate.bash" ]] || fail "Nightly security gate step is missing"
+
+  run_nightly_check() {
+    OVERRIDE_ACTIVE="$1" \
+      CARGO_AUDIT_OUTCOME="$2" \
+      OSV_SCAN_OUTCOME="$3" \
+      OSV_SEVERITY_OUTCOME="$4" \
+      bash -e "${case_dir}/gate.bash"
+  }
+
+  run_expect_success "$output" run_nightly_check true skipped skipped skipped
+  assert_line "$output" "Security audits skipped by override"
+  run_expect_success "$output" run_nightly_check false success success skipped
+  run_expect_success "$output" run_nightly_check false success failure success
+
+  local outcomes
+  local cargo
+  local osv
+  local severity
+  for outcomes in \
+    'failure success skipped' \
+    'success failure failure' \
+    'skipped skipped skipped'; do
+    read -r cargo osv severity <<< "$outcomes"
+    run_expect_failure "$output" run_nightly_check false "$cargo" "$osv" "$severity"
+    assert_line "$output" "::error::Nightly security gate failed"
+  done
 }
 
 test_sha256_portability() {
@@ -1012,6 +1045,7 @@ create_r2_mocks "${work_dir}/r2-bin"
 
 test_policy_and_version
 test_security_gate
+test_nightly_security_gate
 test_sha256_portability
 test_artifact_matrix
 test_stable_retention_plan

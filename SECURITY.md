@@ -155,8 +155,9 @@ The sections below detail the controls at each layer of that lifecycle.
   manifest as the anchor for downstream registry verification while staying compatible with GitHub
   release immutability.
 - **Deployment environments**: Release and package publishing jobs use scoped GitHub deployment
-  environments (`release`, `r2-develop`, and `r2-nightly`) so publishing credentials and OIDC
-  trusted-publisher identities stay isolated from test, lint, and build-only jobs.
+  environments (`release`, `r2-develop`, and `r2-nightly`). Security override checks share the R2
+  environments to read override variables but do not reference publishing credentials. Test, lint,
+  and build-only jobs do not use these environments.
 - **Publish authentication**: PyPI and crates.io uploads use Trusted Publishing (OIDC) bound to the
   `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived
   token scoped to the specific repo, workflow, and environment.
