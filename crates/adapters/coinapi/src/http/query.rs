@@ -28,8 +28,8 @@ pub const HISTORY_LIMIT_MAX: u32 = 100_000;
 
 /// An explicit historical time window and record limit.
 ///
-/// This represents one page. CoinAPI does not specify the timestamp or boundary
-/// inclusivity needed to guarantee lossless automatic continuation.
+/// This represents one provider page without local filtering. OHLCV responses can include
+/// periods outside these bounds; range methods filter them locally.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryQuery {
     #[serde(serialize_with = "serialize_time")]

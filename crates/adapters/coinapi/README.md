@@ -32,6 +32,7 @@ event-driven architecture, providing research-to-live semantic parity.
   incomplete bars. Transport reconnects restore subscriptions; a CoinAPI `error` ends the streams.
 - **History**: Trades, quotes, and bars require `start` and page through `[start, end)`, using now when
   `end` is absent. Results can be truncated with a warning when the local credit budget runs out.
+  OHLCV periods outside the window do not count toward a request's record limit.
   History can lag the live feed and does not fall back to latest-data endpoints. REST book requests
   return current L2 snapshots; historical book snapshots are unsupported.
 - **Flat files**: Rust and Python load downloaded semicolon-delimited CSV exports for books, quotes,

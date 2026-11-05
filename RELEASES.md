@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed Bybit option order book subscriptions defaulting to unsupported depth 50 and rejecting depths 25 and 100
 - Fixed CoinAPI dropping first book snapshots before subscription writes complete
 - Fixed CoinAPI L2 flat-file book loaders accepting unknown update types
+- Fixed CoinAPI OHLCV pagination stopping before the record limit after filtering leading periods
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1
 - Fixed Coinbase live fill IDs differing from REST reconciliation
 - Fixed Coinbase quote-sized fills being interpreted as base quantities

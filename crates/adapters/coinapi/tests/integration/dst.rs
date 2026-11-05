@@ -915,6 +915,150 @@ async fn range_full_page_at_limit_is_complete() {
     assert_request(&requests[0], &history_target("quotes", at(0), 3), &config);
 }
 
+#[rstest]
+#[case(1, 98, true)]
+#[case(2, 100, false)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_limit_after_filtering_leading_period(
+    #[case] credit_budget: u64,
+    #[case] count: i64,
+    #[case] truncated: bool,
+) {
+    let first: Vec<Timestamp> = (0..100).map(at).collect();
+    let mut responses = vec![(200, "", page("ohlcv", &first))];
+    if !truncated {
+        responses.push((200, "", page("ohlcv", &[at(99), at(100)])));
+    }
+
+    let (peer, config) = peer(responses).await;
+
+    let client = client(CoinApiHttpConfig {
+        credit_budget,
+        ..config.clone()
+    });
+
+    let mut range = history_range(Some(100));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    assert_eq!(keys, (1..=count).map(at).collect::<Vec<_>>());
+    assert_eq!(is_truncated, truncated);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), credit_budget as usize);
+    assert_request(
+        &requests[0],
+        &history_target("ohlcv", range.time_start, 100),
+        &config,
+    );
+
+    if !truncated {
+        assert_request(&requests[1], &history_target("ohlcv", at(99), 2), &config);
+    }
+
+    assert_eq!(client.credits_remaining(), 0);
+}
+
+#[rstest]
+#[case(1)]
+#[case(2)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_small_limit_skips_leading_period(#[case] limit: usize) {
+    let mut responses = vec![(200, "", page("ohlcv", &[at(0), at(1)]))];
+    if limit == 2 {
+        responses.push((200, "", page("ohlcv", &[at(1), at(2)])));
+    }
+
+    let (peer, config) = peer(responses).await;
+    let client = client(config.clone());
+    let mut range = history_range(Some(limit));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    assert_eq!(keys, (1..=limit as i64).map(at).collect::<Vec<_>>());
+    assert!(!is_truncated);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), limit);
+    assert_request(
+        &requests[0],
+        &history_target("ohlcv", range.time_start, 2),
+        &config,
+    );
+
+    if limit == 2 {
+        assert_request(&requests[1], &history_target("ohlcv", at(1), 2), &config);
+    }
+
+    assert_eq!(client.credits_remaining(), 100 - limit as u64);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_ohlcv_limit_one_caps_retained_periods() {
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &[at(0), at(1)]))]).await;
+    let client = client(config.clone());
+
+    let result = range_keys(&client, "ohlcv", &history_range(Some(1)))
+        .await
+        .unwrap();
+
+    assert_eq!(result, (vec![at(0)], false));
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_request(&requests[0], &history_target("ohlcv", at(0), 2), &config);
+    assert_eq!(client.credits_remaining(), 99);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_leading_period_restart_cannot_exceed_budget() {
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &[at(0), at(1)]))]).await;
+
+    let client = client(CoinApiHttpConfig {
+        credit_budget: 1,
+        ..config
+    });
+
+    let mut range = history_range(Some(2));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let result = range_keys(&client, "ohlcv", &range).await;
+
+    assert!(matches!(result, Err(Error::CreditBudget)));
+    assert_eq!(peer.await.unwrap().len(), 1);
+    assert_eq!(client.credits_remaining(), 0);
+}
+
+#[rstest]
+#[case(0)]
+#[case(500)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_full_page_reaching_end_is_complete(#[case] end_nanos: i64) {
+    let times: Vec<Timestamp> = (0..100).map(at).collect();
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &times))]).await;
+    let client = client(config);
+    let mut range = history_range(Some(100));
+    range.time_start += SignedDuration::from_nanos(500);
+    range.time_end = at(2) + SignedDuration::from_nanos(end_nanos);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    let expected = if end_nanos == 0 {
+        vec![at(1)]
+    } else {
+        vec![at(1), at(2)]
+    };
+
+    assert_eq!(keys, expected);
+    assert!(!is_truncated);
+    assert_eq!(peer.await.unwrap().len(), 1);
+    assert_eq!(client.credits_remaining(), 99);
+}
+
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn range_budget_truncates_before_trailing_timestamp_group() {
