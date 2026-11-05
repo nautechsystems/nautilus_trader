@@ -19,6 +19,9 @@
 //! to parsed Nautilus data types. Handler-level tests use the WebSocket stream directly,
 //! while full client tests use the event sender channel.
 
+#[path = "../stress/initial_replacements.rs"]
+mod initial_replacements;
+
 use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
 
 use futures_util::StreamExt;
