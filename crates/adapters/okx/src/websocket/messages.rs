@@ -133,6 +133,8 @@ pub enum OKXWsMessage {
         code: String,
         msg: String,
         data: Vec<serde_json::Value>,
+        /// Client order IDs correlated with the sent request, if still retained.
+        client_order_ids: Vec<ClientOrderId>,
     },
     /// Order push channel updates.
     Orders(Vec<OKXOrderMsg>),

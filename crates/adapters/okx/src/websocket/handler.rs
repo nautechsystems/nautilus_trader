@@ -33,7 +33,7 @@ use std::{
 };
 
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::live::dst::time;
+use nautilus_common::{cache::fifo::FifoCacheMap, live::dst::time};
 use nautilus_core::{AtomicTime, string::secret::REDACTED};
 pub use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::identifiers::ClientOrderId;
@@ -154,6 +154,7 @@ pub(super) struct OKXWsFeedHandler {
     retry_manager: RetryManager<OKXWsError>,
     pending_messages: VecDeque<OKXWsMessage>,
     pending_sends: VecDeque<PendingSend>,
+    sent_requests: FifoCacheMap<String, SentRequest, PENDING_SENDS_CAPACITY>,
 }
 
 impl OKXWsFeedHandler {
@@ -187,6 +188,7 @@ impl OKXWsFeedHandler {
             retry_manager: create_websocket_retry_manager(),
             pending_messages: VecDeque::new(),
             pending_sends: VecDeque::new(),
+            sent_requests: FifoCacheMap::new(),
         }
     }
 
@@ -284,6 +286,7 @@ impl OKXWsFeedHandler {
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
+                            self.sent_requests.clear();
                             return None;
                         }
                         HandlerCommand::Subscribe { args } => {
@@ -421,8 +424,22 @@ impl OKXWsFeedHandler {
                         OKXWsFrame::OrderResponse {
                             id, op, code, msg, data,
                         } => {
+                            let client_order_ids = id
+                                .as_ref()
+                                .and_then(|id| {
+                                    let request = self.sent_requests.get(id)?;
+
+                                    if request.op != op {
+                                        return None;
+                                    }
+
+                                    self.sent_requests.remove(id)
+                                })
+                                .filter(|request| request.sent_at.elapsed() < ORDER_RESPONSE_TTL)
+                                .map_or_else(Vec::new, |request| request.client_order_ids);
+
                             return Some(OKXWsMessage::OrderResponse {
-                                id, op, code, msg, data,
+                                id, op, code, msg, data, client_order_ids,
                             });
                         }
                         OKXWsFrame::Data { arg, data } => {
@@ -527,6 +544,25 @@ impl OKXWsFeedHandler {
         }
 
         let pending = self.pending_sends.pop_front().expect("pending send exists");
+
+        if (result.is_ok()
+            || matches!(
+                result,
+                Err(SendError::WriteTimeout | SendError::BrokenPipe(_))
+            ))
+            && let (Some(request_id), Some(op)) = (&pending.request_id, &pending.op)
+        {
+            // A buffered reply can still arrive after a reconnect or an uncertain write
+            self.sent_requests.insert(
+                request_id.clone(),
+                SentRequest {
+                    op: op.clone(),
+                    client_order_ids: pending.client_order_ids.clone(),
+                    sent_at: time::Instant::now(),
+                },
+            );
+        }
+
         if let Err(e) = result {
             self.fail_send(pending, OKXWsError::TransportSend(e));
         }
@@ -1014,6 +1050,13 @@ fn parse_array_items<T: serde::de::DeserializeOwned>(
 }
 
 const PENDING_SENDS_CAPACITY: usize = 1_024;
+const ORDER_RESPONSE_TTL: time::Duration = time::Duration::from_secs(60);
+
+struct SentRequest {
+    op: OKXWsOperation,
+    client_order_ids: Vec<ClientOrderId>,
+    sent_at: time::Instant,
+}
 
 struct PendingSend {
     payload: String,
@@ -1109,9 +1152,16 @@ mod tests {
         time::Duration,
     };
 
+    use ahash::AHashMap;
     use futures_util::{SinkExt, StreamExt};
+    use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{collections::AtomicMap, time::get_atomic_clock_realtime};
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_live::{ExecutionEventEmitter, execution::context::OrderIdentity};
+    use nautilus_model::{
+        enums::{AccountType, OrderSide, OrderType},
+        events::OrderEventAny,
+        identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
+    };
     use nautilus_network::{
         mode::{ConnectionMode, ReconnectRequestOutcome},
         ratelimiter::{RateLimiter, quota::Quota},
@@ -1130,6 +1180,11 @@ mod tests {
             consts::OKX_WS_TOPIC_DELIMITER,
             enums::{OKXBookAction, OKXBookChannel, OKXRpiPermission},
             testing::load_test_json,
+        },
+        websocket::{
+            client::PendingOrderInfo,
+            dispatch::{WsDispatchState, dispatch_ws_message},
+            parse::{FeeCache, FilledQtyCache},
         },
     };
 
@@ -2376,6 +2431,7 @@ mod tests {
         assert!(!peer.handler.pending_sends.front().unwrap().attempted);
         assert!(!peer.handler.auth_tracker.is_authenticated());
         assert!(!peer.handler.can_send_pending());
+        assert!(peer.handler.sent_requests.is_empty());
         assert!(peer.frames.try_recv().is_err());
         assert!(peer.messages.try_recv().is_err());
 
@@ -2475,6 +2531,7 @@ mod tests {
         );
         assert!(!peer.handler.auth_tracker.is_authenticated());
         assert!(!peer.handler.can_send_pending());
+        assert!(peer.handler.sent_requests.is_empty());
         assert!(peer.messages.try_recv().is_err());
         peer.handler.inner.as_ref().unwrap().disconnect().await;
     }
@@ -2482,6 +2539,11 @@ mod tests {
     #[tokio::test]
     async fn pending_send_capacity_and_drop_report_each_command() {
         let mut peer = handler_peer().await;
+        peer.handler
+            .pending_sends
+            .push_back(order_send("sent-request".to_string(), 9_999));
+        peer.handler.send_pending().await;
+        peer.frames.recv().await.unwrap();
         peer.handler.auth_tracker.invalidate();
         for index in 0..PENDING_SENDS_CAPACITY {
             peer.handler
@@ -2569,13 +2631,28 @@ mod tests {
         peer.server.abort();
     }
 
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
     #[tokio::test]
-    async fn reconnect_preserves_buffered_order_events() {
+    async fn reconnect_preserves_buffered_order_events(#[case] empty_refusal: bool) {
         let mut peer = handler_peer().await;
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         peer.handler.raw_rx = raw_rx;
-        let fixture: Value =
+        let mut fixture: Value =
             serde_json::from_str(&load_test_json("ws_reconnect_queued_frames.json")).unwrap();
+        let mut pending = order_send("request-17".to_string(), 17);
+        pending.request_id = Some("queued-response-17".to_string());
+        pending.op = Some(OKXWsOperation::Order);
+        peer.handler.pending_sends.push_back(pending);
+        peer.handler.send_pending().await;
+        peer.frames.recv().await.unwrap();
+
+        if empty_refusal {
+            fixture["response"]["code"] = json!("50124");
+            fixture["response"]["msg"] = json!("Market permission denied");
+            fixture["response"]["data"] = json!([]);
+        }
         let orders = load_test_json("ws_orders.json");
         let orders_frame: Value = serde_json::from_str(&orders).unwrap();
         let expected_orders: Vec<OKXOrderMsg> =
@@ -2614,6 +2691,7 @@ mod tests {
             code,
             msg,
             data,
+            client_order_ids,
         }) = response
         else {
             panic!("expected buffered order response, received {response:?}");
@@ -2625,8 +2703,10 @@ mod tests {
         );
         assert_eq!(id.as_deref(), Some("queued-response-17"));
         assert_eq!(op, OKXWsOperation::Order);
-        assert_eq!(code, "0");
-        assert_eq!(msg, "");
+        assert_eq!(code, if empty_refusal { "50124" } else { "0" });
+        assert_eq!(client_order_ids, vec![ClientOrderId::from("OQUEUED17")]);
+        assert!(peer.handler.sent_requests.is_empty());
+        assert_eq!(msg, fixture["response"]["msg"].as_str().unwrap());
         assert_eq!(data, *fixture["response"]["data"].as_array().unwrap());
         assert!(peer.handler.pending_messages.is_empty());
         assert!(peer.frames.try_recv().is_err());
@@ -2801,7 +2881,8 @@ mod tests {
             OKXWsError::TransportSend(SendError::BrokenPipe(_) | SendError::WriteTimeout)
         ));
         assert!(handler.pending_sends.is_empty());
-        let client = handler.inner.as_ref().unwrap();
+        assert!(handler.sent_requests.contains_key(&"17".to_string()));
+        let client = Arc::clone(handler.inner.as_ref().unwrap());
         tokio::time::timeout(Duration::from_secs(10), async {
             while client.connection_epoch() == 0 || !client.is_active() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -2816,6 +2897,20 @@ mod tests {
             .unwrap();
         assert_eq!(frames.recv().await.unwrap(), "recovered-control");
         assert!(frames.try_recv().is_err());
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        raw_tx
+            .send(Message::Text(
+                json!({"id":"17", "op":"cancel-order", "code":"50124", "msg":"Refused", "data":[]})
+                    .to_string()
+                    .into(),
+            ))
+            .unwrap();
+        let response = handler.next().await.unwrap();
+        assert!(matches!(response, OKXWsMessage::OrderResponse {
+            op: OKXWsOperation::CancelOrder, client_order_ids, ..
+        } if client_order_ids == vec![ClientOrderId::from("OQUEUED17")]));
+        assert!(handler.sent_requests.is_empty());
         client.disconnect().await;
         server.abort();
     }
@@ -2925,5 +3020,349 @@ mod tests {
             op: Some(OKXWsOperation::CancelOrder),
             attempted: false,
         }
+    }
+
+    #[rstest]
+    #[case::submit_rejected(OKXWsOperation::Order, "50124", true)]
+    #[case::batch_submit_rejected(OKXWsOperation::BatchOrders, "50124", true)]
+    #[case::cancel_rejected(OKXWsOperation::CancelOrder, "50124", true)]
+    #[case::batch_cancel_rejected(OKXWsOperation::BatchCancelOrders, "50124", true)]
+    #[case::amend_rejected(OKXWsOperation::AmendOrder, "50124", true)]
+    #[case::batch_amend_rejected(OKXWsOperation::BatchAmendOrders, "50124", true)]
+    #[case::submit_timeout(OKXWsOperation::Order, "50004", false)]
+    #[case::cancel_timeout(OKXWsOperation::CancelOrder, "50004", false)]
+    #[case::amend_timeout(OKXWsOperation::AmendOrder, "50004", false)]
+    #[case::system_busy(OKXWsOperation::Order, "50013", false)]
+    #[case::success(OKXWsOperation::Order, "0", false)]
+    #[case::all_failed_without_details(OKXWsOperation::BatchOrders, "1", false)]
+    #[case::partially_succeeded_without_details(OKXWsOperation::BatchOrders, "2", false)]
+    #[tokio::test]
+    async fn empty_order_response_preserves_command_outcome(
+        #[case] op: OKXWsOperation,
+        #[case] code: &str,
+        #[case] rejected: bool,
+        #[values(false, true)] omit_data: bool,
+    ) {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        let mut pending = order_send("request-17".to_string(), 17);
+        pending.op = Some(op.clone());
+        if matches!(
+            op,
+            OKXWsOperation::BatchOrders
+                | OKXWsOperation::BatchCancelOrders
+                | OKXWsOperation::BatchAmendOrders
+        ) {
+            pending
+                .client_order_ids
+                .push(ClientOrderId::from("OQUEUED18"));
+        }
+        let client_order_ids = pending.client_order_ids.clone();
+        peer.handler.pending_sends.push_back(pending);
+        peer.handler.send_pending().await;
+        assert_eq!(peer.frames.recv().await.unwrap(), "request-17");
+
+        let mut response =
+            json!({"id":"17", "op":op, "code":code, "msg":"Venue reason", "data":[]});
+        if omit_data {
+            response.as_object_mut().unwrap().remove("data");
+        }
+        raw_tx
+            .send(Message::Text(response.to_string().into()))
+            .unwrap();
+        let response = peer.handler.next().await.unwrap();
+        let unrelated = ClientOrderId::from("OUNRELATED");
+        let mut tracked_ids = client_order_ids.clone();
+        tracked_ids.push(unrelated);
+        let (events, state) = dispatch_response(response, &tracked_ids);
+
+        assert_eq!(
+            events.len(),
+            if rejected { client_order_ids.len() } else { 0 }
+        );
+        assert!(state.order_identity(unrelated).is_some());
+        assert!(state.pending_orders.contains_key(unrelated.as_str()));
+        assert!(state.pending_cancels.contains_key(unrelated.as_str()));
+        assert!(state.pending_amends.contains_key(unrelated.as_str()));
+        let submit = matches!(op, OKXWsOperation::Order | OKXWsOperation::BatchOrders);
+
+        for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+            assert_eq!(
+                state.order_identity(client_order_id).is_some(),
+                !(submit && rejected)
+            );
+            assert_eq!(
+                state.pending_orders.contains_key(client_order_id.as_str()),
+                !(submit && rejected)
+            );
+            assert_eq!(
+                state.pending_cancels.contains_key(client_order_id.as_str()),
+                !(!submit
+                    && rejected
+                    && matches!(
+                        op,
+                        OKXWsOperation::CancelOrder | OKXWsOperation::BatchCancelOrders
+                    ))
+            );
+            assert_eq!(
+                state.pending_amends.contains_key(client_order_id.as_str()),
+                !(!submit
+                    && rejected
+                    && matches!(
+                        op,
+                        OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders
+                    ))
+            );
+
+            if rejected {
+                let reason = "OKX error 50124: Venue reason";
+
+                match &events[index] {
+                    ExecutionEvent::Order(OrderEventAny::Rejected(event)) if submit => {
+                        assert_eq!(event.client_order_id, client_order_id);
+                        assert_eq!(event.reason.as_str(), reason);
+                    }
+                    ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                        if matches!(
+                            op,
+                            OKXWsOperation::CancelOrder | OKXWsOperation::BatchCancelOrders
+                        ) =>
+                    {
+                        assert_eq!(event.client_order_id, client_order_id);
+                        assert_eq!(event.reason.as_str(), reason);
+                    }
+                    ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                        if matches!(
+                            op,
+                            OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders
+                        ) =>
+                    {
+                        assert_eq!(event.client_order_id, client_order_id);
+                        assert_eq!(event.reason.as_str(), reason);
+                    }
+                    event => panic!("Unexpected event: {event:?}"),
+                }
+            }
+        }
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn order_response_correlates_only_once_with_matching_request() {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        for index in [17, 29] {
+            peer.handler
+                .pending_sends
+                .push_back(order_send(format!("request-{index}"), index));
+            peer.handler.send_pending().await;
+            peer.frames.recv().await.unwrap();
+        }
+
+        let mut correlated = Vec::new();
+
+        for (id, op) in [
+            (Some("unknown"), OKXWsOperation::CancelOrder),
+            (None, OKXWsOperation::CancelOrder),
+            (Some("17"), OKXWsOperation::Order),
+            (Some("29"), OKXWsOperation::CancelOrder),
+            (Some("29"), OKXWsOperation::CancelOrder),
+            (Some("17"), OKXWsOperation::CancelOrder),
+        ] {
+            raw_tx
+                .send(Message::Text(
+                    json!({"id":id, "op":op, "code":"50124", "msg":"Refused", "data":[]})
+                        .to_string()
+                        .into(),
+                ))
+                .unwrap();
+            let response = peer.handler.next().await.unwrap();
+            let OKXWsMessage::OrderResponse {
+                client_order_ids, ..
+            } = &response
+            else {
+                panic!("Expected order response");
+            };
+            correlated.push(client_order_ids.clone());
+        }
+
+        assert_eq!(
+            correlated,
+            vec![
+                vec![],
+                vec![],
+                vec![],
+                vec![ClientOrderId::from("OQUEUED29")],
+                vec![],
+                vec![ClientOrderId::from("OQUEUED17")]
+            ]
+        );
+        assert!(peer.handler.sent_requests.is_empty());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn nonempty_batch_response_keeps_per_item_outcomes(#[case] reverse: bool) {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        let ids = [
+            ClientOrderId::from("OSUCCESS"),
+            ClientOrderId::from("OREJECTED"),
+            ClientOrderId::from("OTIMEOUT"),
+        ];
+        let mut pending = order_send("request-17".to_string(), 17);
+        pending.op = Some(OKXWsOperation::BatchOrders);
+        pending.client_order_ids = ids.to_vec();
+        peer.handler.pending_sends.push_back(pending);
+        peer.handler.send_pending().await;
+        peer.frames.recv().await.unwrap();
+        let mut data = vec![
+            json!({"clOrdId":"OSUCCESS", "sCode":"0", "sMsg":"", "ordId":"771"}),
+            json!({"clOrdId":"OREJECTED", "sCode":"51000", "sMsg":"Invalid size"}),
+            json!({"clOrdId":"OTIMEOUT", "sCode":"50004", "sMsg":"Timeout"}),
+        ];
+
+        if reverse {
+            data.reverse();
+        }
+        raw_tx.send(Message::Text(json!({"id":"17", "op":"batch-orders", "code":"2", "msg":"Partial failure", "data":data}).to_string().into())).unwrap();
+        let response = peer.handler.next().await.unwrap();
+        let (events, state) = dispatch_response(response, &ids);
+        raw_tx.send(Message::Text(json!({"id":"17", "op":"batch-orders", "code":"50124", "msg":"Late reply", "data":[]}).to_string().into())).unwrap();
+        let duplicate = peer.handler.next().await.unwrap();
+        let OKXWsMessage::OrderResponse {
+            client_order_ids, ..
+        } = duplicate
+        else {
+            panic!("Expected order response");
+        };
+
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], ExecutionEvent::Order(OrderEventAny::Rejected(event)) if event.client_order_id == ids[1] && event.reason.as_str() == "OKX error 51000: Invalid size")
+        );
+        assert!(state.order_identity(ids[0]).is_some());
+        assert!(!state.pending_orders.contains_key(ids[0].as_str()));
+        assert!(state.order_identity(ids[1]).is_none());
+        assert!(state.order_identity(ids[2]).is_some());
+        assert!(state.pending_orders.contains_key(ids[2].as_str()));
+        assert!(client_order_ids.is_empty());
+        assert!(peer.handler.sent_requests.is_empty());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn order_response_correlation_is_bounded_and_expires() {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        for index in 0..=PENDING_SENDS_CAPACITY {
+            peer.handler
+                .pending_sends
+                .push_back(order_send(format!("request-{index}"), index));
+            peer.handler.send_pending().await;
+            peer.frames.recv().await.unwrap();
+        }
+        assert_eq!(peer.handler.sent_requests.len(), PENDING_SENDS_CAPACITY);
+        assert!(!peer.handler.sent_requests.contains_key(&"0".to_string()));
+
+        tokio::time::pause();
+        tokio::time::advance(ORDER_RESPONSE_TTL).await;
+        raw_tx
+            .send(Message::Text(
+                json!({"id":"1", "op":"cancel-order", "code":"50124", "msg":"Too late", "data":[]})
+                    .to_string()
+                    .into(),
+            ))
+            .unwrap();
+        let response = peer.handler.next().await.unwrap();
+        tokio::time::resume();
+        let OKXWsMessage::OrderResponse {
+            client_order_ids, ..
+        } = response
+        else {
+            panic!("Expected order response");
+        };
+
+        assert!(client_order_ids.is_empty());
+        assert!(!peer.handler.sent_requests.contains_key(&"1".to_string()));
+        peer.commands.send(HandlerCommand::Disconnect).unwrap();
+        assert!(peer.handler.next().await.is_none());
+        assert!(peer.handler.sent_requests.is_empty());
+        peer.server.abort();
+    }
+
+    fn dispatch_response(
+        response: OKXWsMessage,
+        client_order_ids: &[ClientOrderId],
+    ) -> (Vec<ExecutionEvent>, WsDispatchState) {
+        let state = WsDispatchState::default();
+        let strategy_id = StrategyId::from("PROBE-007");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+        for &client_order_id in client_order_ids {
+            state.order_identities.insert(
+                client_order_id,
+                OrderIdentity {
+                    client_order_id,
+                    strategy_id,
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Limit,
+                },
+            );
+
+            for pending in [
+                &state.pending_orders,
+                &state.pending_cancels,
+                &state.pending_amends,
+            ] {
+                pending.insert(
+                    client_order_id.to_string(),
+                    PendingOrderInfo {
+                        trader_id: TraderId::from("TRADER-009"),
+                        strategy_id,
+                        instrument_id,
+                    },
+                );
+            }
+        }
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("OKX-009");
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-009"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        dispatch_ws_message(
+            response,
+            &emitter,
+            &state,
+            account_id,
+            AccountType::Margin,
+            &AtomicMap::new(),
+            &mut FeeCache::new(),
+            &mut FilledQtyCache::new(),
+            &mut AHashMap::new(),
+            clock,
+        );
+        let mut events = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            events.push(event);
+        }
+        (events, state)
     }
 }

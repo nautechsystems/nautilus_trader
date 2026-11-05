@@ -727,6 +727,7 @@ fn dispatch_venue_code_response(
             op,
             code: "1".to_string(),
             msg: "All operations failed".to_string(),
+            client_order_ids: Vec::new(),
             data: vec![json!({
                 "sCode": s_code,
                 "sMsg": s_msg,

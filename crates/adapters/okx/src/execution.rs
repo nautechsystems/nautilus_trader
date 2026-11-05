@@ -8225,6 +8225,7 @@ mod tests {
             op: operation,
             code: overall_code.into(),
             msg: String::new(),
+            client_order_ids: Vec::new(),
             data: vec![serde_json::json!({
                 "clOrdId": "OSPOTUNITS", "ordId": "98765",
                 "sCode": response_code, "sMsg": "Parameter tdMode error",
