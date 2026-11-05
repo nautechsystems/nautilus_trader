@@ -801,9 +801,20 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_order_status_reports_checked(account_id, cmd.instrument_id, None, None, false)
             .await?;
+
+        // A withheld report answers for nothing, but it still shows which venue order echoes the
+        // queried client order ID.
+        reports.extend_from_slice(coverage.withheld());
         name_reports_by_cached_order(&self.core.cache(), &mut reports);
 
-        let matched = queried.find_report(&self.core.cache(), &reports)?;
+        let matched = queried
+            .find_report(&self.core.cache(), &reports)?
+            .filter(|report| {
+                !coverage
+                    .withheld()
+                    .iter()
+                    .any(|withheld| withheld.venue_order_id == report.venue_order_id)
+            });
         let mut stray_rows = queried.has_stray_report(&self.core.cache(), &reports);
 
         if let Some(mut report) = matched {
@@ -1076,12 +1087,16 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // venue can refuse the history page, since every `/history` endpoint draws on one token
         // pool; a refusal degrades startup to the open-only read and marks the set incomplete.
         // Any other failure fails the mass status, as a failed open-order read does.
-        let (mut order_reports, orders_complete) = match self
+        let (mut order_reports, orders_complete, skipped_orders) = match self
             .http
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await
         {
-            Ok((reports, coverage)) => (reports, coverage.is_complete()),
+            Ok((reports, coverage)) => {
+                let complete = coverage.is_complete();
+                let skipped: Vec<VenueOrderId> = coverage.skipped().iter().copied().collect();
+                (reports, complete, skipped)
+            }
             Err(e) if is_refused_history_read(&e) => {
                 log::warn!(
                     "Order history read refused for mass status, reading open orders only and \
@@ -1091,7 +1106,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                     .http
                     .request_order_status_reports_checked(account_id, None, start, None, true)
                     .await?;
-                (reports, false)
+                (reports, false, Vec::new())
             }
             Err(e) => return Err(e),
         };
@@ -1163,7 +1178,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // its report. With no order, and no venue position ID on a Kraken fill, the engine drops
         // them, but on an instrument with a position report its partial-window adjustment first
         // counts every fill there when sizing a synthetic opening, so they would skew that
-        // opening without ever being applied.
+        // opening without ever being applied. The same goes for an order the read itself left
+        // without a report because a skipped row names it, unless a fill echoes a cached order
+        // the venue order ID does not index yet, which the engine applies it to.
         let mut withheld = false;
         let mut withheld_fills: HashSet<VenueOrderId> = HashSet::new();
         {
@@ -1202,6 +1219,32 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             });
         }
         fill_reports.retain(|fill| !withheld_fills.contains(&fill.venue_order_id));
+        {
+            let cache = self.core.cache();
+            let mut dropped: HashMap<VenueOrderId, usize> = HashMap::new();
+            fill_reports.retain(|fill| {
+                let drop = skipped_orders.contains(&fill.venue_order_id)
+                    && cache.client_order_id(&fill.venue_order_id).is_none()
+                    && !fill
+                        .client_order_id
+                        .is_some_and(|id| cache.order_exists(&id))
+                    && !order_reports
+                        .iter()
+                        .any(|report| report.venue_order_id == fill.venue_order_id);
+
+                if drop {
+                    *dropped.entry(fill.venue_order_id).or_default() += 1;
+                }
+                !drop
+            });
+
+            for (venue_order_id, count) in &dropped {
+                log::warn!(
+                    "Withholding {count} page fill(s) of uncached order {venue_order_id} from mass \
+                     status: a skipped history row left the order without a report"
+                );
+            }
+        }
         let orders_complete = orders_complete && !withheld;
 
         let position_reports = self
