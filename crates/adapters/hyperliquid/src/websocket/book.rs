@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Typed tracking of venue `l2Book` streams shared by deltas and depth uses.
+//! Typed tracking of venue book streams shared by deltas and depth uses.
 //!
-//! One venue `l2Book` subscription per coin serves both order book deltas and
+//! One venue book subscription per coin serves both order book deltas and
 //! depth snapshots. This registry records which logical uses are active and
 //! the precision options the stream was opened with, so that:
 //!
@@ -29,14 +29,14 @@ use std::sync::Arc;
 use dashmap::{DashMap, mapref::entry::Entry};
 use ustr::Ustr;
 
-/// A logical use of a venue `l2Book` stream.
+/// A logical use of a venue book stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BookStreamUse {
     Deltas,
     Depth,
 }
 
-/// Venue precision options for an `l2Book` subscription.
+/// Venue precision options for a book subscription.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BookStreamOptions {
     pub n_sig_figs: Option<u32>,
@@ -68,7 +68,7 @@ struct BookStreamEntry {
     depth: bool,
 }
 
-/// Registry of active venue `l2Book` streams keyed by coin, shared across
+/// Registry of active venue book streams keyed by coin, shared across
 /// client clones.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BookStreamRegistry {

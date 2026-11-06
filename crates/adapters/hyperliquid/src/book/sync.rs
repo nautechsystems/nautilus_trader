@@ -16,8 +16,8 @@
 //! Adapter-local order book synchronization state for Hyperliquid.
 //!
 //! [`BookSyncTracker`] keeps one shared [`BookSync`] per order book delta subscription and maps
-//! `l2Book` frames onto its lifecycle. Each frame replaces the whole book, so every frame is a
-//! snapshot: the tracker accepts it unless a subscription write gate blocks it.
+//! book frames onto its lifecycle. Every `l2Book` frame is a snapshot. For compact `l2`, only
+//! wire snapshots establish synchronization; updates advance an already synchronized book.
 //!
 //! A subscribed book is present in the tracker from its subscribe until its unsubscribe, so a
 //! frame for an absent book is suppressed. Claiming and accepting recovery stay under the tracker's
@@ -86,6 +86,27 @@ impl BookSyncTracker {
             .lock()
             .get_mut(&instrument_id)
             .is_some_and(|book| book.accept_snapshot((), now))
+    }
+
+    /// Accepts compact input without allowing an update to complete snapshot recovery.
+    /// Returns `None` when only native depth uses the physical stream.
+    pub(crate) fn record_compact(
+        &self,
+        instrument_id: InstrumentId,
+        is_snapshot: bool,
+        now: Instant,
+    ) -> Option<bool> {
+        self.books.lock().get_mut(&instrument_id).map(|book| {
+            if is_snapshot {
+                book.accept_snapshot((), now)
+            } else {
+                book.advance((), now)
+            }
+        })
+    }
+
+    pub(crate) fn is_subscribed(&self, instrument_id: InstrumentId) -> bool {
+        self.books.lock().contains_key(&instrument_id)
     }
 
     /// Restarts synchronization for every book after the connection reconnects.
@@ -218,6 +239,25 @@ mod tests {
 
         assert!(!accepted);
         assert_eq!(phase(&tracker, instrument_id()), None);
+    }
+
+    #[rstest]
+    fn compact_updates_cannot_establish_or_restore_synchronization() {
+        let tracker = BookSyncTracker::default();
+        let id = instrument_id();
+        let now = Instant::now();
+        assert_eq!(tracker.record_compact(id, false, now), None);
+        tracker.record_subscription(id, now, SnapshotGate::default());
+        assert_eq!(tracker.record_compact(id, false, now), Some(false));
+        assert_eq!(tracker.record_compact(id, true, now), Some(true));
+        assert_eq!(tracker.record_compact(id, false, now), Some(true));
+        let recovery = tracker.claim_recovery(id).unwrap();
+        assert!(recovery.begin_replacement());
+        recovery.gate.open();
+        assert_eq!(tracker.record_compact(id, false, now), Some(false));
+        assert!(recovery.is_running());
+        assert_eq!(tracker.record_compact(id, true, now), Some(true));
+        assert!(!recovery.is_running());
     }
 
     #[rstest]

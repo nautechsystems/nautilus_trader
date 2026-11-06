@@ -15,7 +15,7 @@
 
 //! Subscription and recovery tasks for Hyperliquid books.
 //!
-//! The tasks here write gated `l2Book` subscriptions, monitor snapshot deadlines, and supply
+//! The tasks here write gated book subscriptions, monitor snapshot deadlines, and supply
 //! Hyperliquid replacement operations and error classification to the shared [`BookRecovery`]
 //! runner. The runner owns snapshot waits, backoff, the retry budget, and the retry ceiling that
 //! follows it. A successful write alone does not complete recovery: the tracker must accept a
