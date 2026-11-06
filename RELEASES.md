@@ -122,6 +122,10 @@ Released on TBD (UTC).
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed FFI `synthetic_instrument_is_valid_formula` aborting on invalid component JSON
 - Fixed `StrikeRange` and option-chain subscriptions accepting invalid ranges or zero snapshot intervals
+- Fixed `Portfolio` reservations remaining locked after rejected LIT and trailing stop limit orders
+- Fixed `Portfolio` skipping restored-order reservations when instrument, account, or price data arrives after startup
+- Fixed `Portfolio` venue-wide margin equity reusing stale PnL after price or exchange rate changes
+- Fixed partial totals from `Portfolio` venue valuation queries and account snapshots on `Money` overflow
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
 - Fixed stale bundled execution reports incorrectly voiding newer fills
