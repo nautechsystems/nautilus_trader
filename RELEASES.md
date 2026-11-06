@@ -108,6 +108,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed stale bundled execution reports incorrectly voiding newer fills
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source

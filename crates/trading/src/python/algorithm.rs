@@ -1222,7 +1222,8 @@ impl PyExecutionAlgorithm {
         trigger_price: Option<Price>,
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
-        let mut order = pyobject_to_order_any(py, order)?;
+        let order = pyobject_to_order_any(py, order)?;
+        let mut order = self.resolve_order(order)?;
         ExecutionAlgorithm::modify_order(
             self,
             &mut order,
@@ -1244,7 +1245,8 @@ impl PyExecutionAlgorithm {
         price: Option<Price>,
         trigger_price: Option<Price>,
     ) -> PyResult<()> {
-        let mut order = pyobject_to_order_any(py, order)?;
+        let order = pyobject_to_order_any(py, order)?;
+        let mut order = self.resolve_order(order)?;
         ExecutionAlgorithm::modify_order_in_place(self, &mut order, quantity, price, trigger_price)
             .map_err(to_pyruntime_err)
     }
@@ -1257,7 +1259,8 @@ impl PyExecutionAlgorithm {
         order: Py<PyAny>,
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
-        let mut order = pyobject_to_order_any(py, order)?;
+        let order = pyobject_to_order_any(py, order)?;
+        let mut order = self.resolve_order(order)?;
         ExecutionAlgorithm::cancel_order(self, &mut order, client_id).map_err(to_pyruntime_err)
     }
 
@@ -1441,6 +1444,14 @@ impl PyExecutionAlgorithm {
         Ok(has_id)
     }
 
+    fn resolve_order(&self, order: OrderAny) -> PyResult<OrderAny> {
+        let cached = self
+            .try_cache_ref()
+            .map_err(to_pyruntime_err)?
+            .order_owned(&order.client_order_id());
+        Ok(cached.unwrap_or(order))
+    }
+
     fn ensure_registered_for_data(&self) -> PyResult<()> {
         if self.inner().core.actor.is_registered() {
             Ok(())
@@ -1618,24 +1629,29 @@ mod tests {
             arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
             take_shutdown_on_error_trigger,
         },
-        messages::system::{
-            QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+        messages::{
+            execution::TradingCommand,
+            system::{
+                QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+            },
         },
         msgbus::{
-            MessageBus, MessagingSwitchboard, get_message_bus, switchboard::get_signal_topic,
+            self, MessageBus, MessagingSwitchboard, get_message_bus,
+            stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+            switchboard::get_signal_topic,
         },
         runner::SystemChannel,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderType, TriggerType},
+        enums::{OrderSide, OrderStatus, OrderType, TriggerType},
         events::order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         identifiers::{
-            ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TraderId,
-            Venue,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TraderId, Venue, VenueOrderId,
         },
         instruments::{InstrumentAny, stubs::audusd_sim},
-        orders::OrderTestBuilder,
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Price, Quantity},
     };
@@ -1644,7 +1660,7 @@ mod tests {
         ffi::c_str,
         types::{PyList, PyWeakrefMethods, PyWeakrefReference},
     };
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
     use ustr::Ustr;
 
     use super::*;
@@ -2406,6 +2422,230 @@ class CallbackAlgorithm:
 
             assert!(result.is_none());
         });
+    }
+
+    #[rstest]
+    #[case("modify_order", true)]
+    #[case("modify_order", false)]
+    #[case("modify_order_in_place", true)]
+    #[case("cancel_order", true)]
+    #[case("cancel_order", false)]
+    fn test_order_commands_refresh_python_snapshot(
+        registered_algorithm: PyExecutionAlgorithm,
+        #[case] method: &str,
+        #[case] in_cache: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let cache = registered_algorithm.cache_rc();
+            let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(None);
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                handler.clone(),
+            );
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_queue_execute(),
+                handler,
+            );
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("S-REFRESH-001"))
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .client_order_id(ClientOrderId::from("O-REFRESH-001"))
+                .quantity(Quantity::from(123))
+                .price(Price::from("1.23456"))
+                .build();
+            let argument =
+                nautilus_model::python::orders::order_any_to_pyobject(py, order.clone()).unwrap();
+            let account_id = AccountId::from("SIM-009");
+            let venue_order_id = VenueOrderId::from("V-REFRESH-009");
+
+            let before = if in_cache {
+                let mut cache = cache.borrow_mut();
+                cache.add_order(order.clone(), None, None, true).unwrap();
+                let submitted = TestOrderEventStubs::submitted(&order, account_id);
+                cache.update_order(&submitted).unwrap();
+                let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+                cache.update_order(&accepted).unwrap()
+            } else {
+                order.clone()
+            };
+
+            let instance = Py::new(py, registered_algorithm).unwrap();
+            let new_qty = Quantity::from(234);
+
+            let result = if method == "cancel_order" {
+                instance.call_method1(py, method, (argument.clone_ref(py),))
+            } else {
+                instance.call_method1(py, method, (argument.clone_ref(py), new_qty))
+            };
+
+            let cached = cache.borrow().order_owned(&order.client_order_id());
+            let commands = messages.get_messages();
+
+            if method == "modify_order_in_place" {
+                let e = result.unwrap_err();
+                assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+                assert_eq!(
+                    e.to_string(),
+                    "RuntimeError: Cannot modify order in place: status is Accepted, expected INITIALIZED or RELEASED"
+                );
+                assert_eq!(
+                    serde_json::to_value(&cached).unwrap(),
+                    serde_json::to_value(&before).unwrap()
+                );
+                assert!(commands.is_empty());
+            } else {
+                result.unwrap();
+                assert_eq!(commands.len(), 1);
+
+                match &commands[0] {
+                    TradingCommand::ModifyOrder(command) if method == "modify_order" => {
+                        assert_eq!(command.trader_id, order.trader_id());
+                        assert_eq!(command.strategy_id, order.strategy_id());
+                        assert_eq!(command.instrument_id, order.instrument_id());
+                        assert_eq!(command.client_order_id, order.client_order_id());
+                        assert_eq!(command.venue_order_id, in_cache.then_some(venue_order_id));
+                        assert_eq!(command.quantity, Some(new_qty));
+                        assert_eq!(command.price, None);
+                        assert_eq!(command.trigger_price, None);
+                        assert_eq!(command.client_id, None);
+                        assert_eq!(command.params, None);
+                        assert_eq!(command.correlation_id, None);
+                        assert_eq!(command.causation_id, None);
+                        assert_eq!(command.ts_init, UnixNanos::default());
+                        assert_eq!(
+                            cached.as_ref().map(Order::status),
+                            in_cache.then_some(OrderStatus::PendingUpdate)
+                        );
+                    }
+                    TradingCommand::CancelOrder(command) if method == "cancel_order" => {
+                        assert_eq!(command.trader_id, order.trader_id());
+                        assert_eq!(command.strategy_id, order.strategy_id());
+                        assert_eq!(command.instrument_id, order.instrument_id());
+                        assert_eq!(command.client_order_id, order.client_order_id());
+                        assert_eq!(command.venue_order_id, in_cache.then_some(venue_order_id));
+                        assert_eq!(command.client_id, None);
+                        assert_eq!(command.params, None);
+                        assert_eq!(command.correlation_id, None);
+                        assert_eq!(command.causation_id, None);
+                        assert_eq!(command.ts_init, UnixNanos::default());
+                        assert_eq!(
+                            cached.as_ref().map(Order::status),
+                            in_cache.then_some(OrderStatus::PendingCancel)
+                        );
+                    }
+                    command => panic!("Unexpected command: {command:?}"),
+                }
+
+                if let Some(cached) = cached {
+                    assert_eq!(cached.quantity(), order.quantity());
+                    assert_eq!(cached.price(), order.price());
+                    assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+                    assert_eq!(cached.account_id(), Some(account_id));
+                    assert_eq!(cached.events().len(), before.events().len() + 1);
+                }
+            }
+
+            let retained = pyobject_to_order_any(py, argument).unwrap();
+            assert_eq!(
+                serde_json::to_value(&retained).unwrap(),
+                serde_json::to_value(&order).unwrap()
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_order_commands_respect_cached_status(
+        registered_algorithm: PyExecutionAlgorithm,
+        #[values("modify_order", "cancel_order")] method: &str,
+        #[values(OrderStatus::Canceled, OrderStatus::PendingCancel)] status: OrderStatus,
+    ) {
+        Python::attach(|py| {
+            let cache = registered_algorithm.cache_rc();
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("S-STATUS-001"))
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .client_order_id(ClientOrderId::from("O-STATUS-001"))
+                .quantity(Quantity::from(123))
+                .price(Price::from("1.23456"))
+                .build();
+            let argument =
+                nautilus_model::python::orders::order_any_to_pyobject(py, order.clone()).unwrap();
+            let account_id = AccountId::from("SIM-009");
+            let venue_order_id = VenueOrderId::from("V-STATUS-009");
+
+            let before = {
+                let mut cache = cache.borrow_mut();
+                cache.add_order(order.clone(), None, None, true).unwrap();
+                let submitted = TestOrderEventStubs::submitted(&order, account_id);
+                cache.update_order(&submitted).unwrap();
+                let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+                cache.update_order(&accepted).unwrap();
+
+                let event = if status == OrderStatus::Canceled {
+                    TestOrderEventStubs::canceled(&order, account_id, Some(venue_order_id))
+                } else {
+                    OrderEventAny::PendingCancel(OrderPendingCancel::new(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        Some(account_id),
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        UnixNanos::default(),
+                        false,
+                        Some(venue_order_id),
+                    ))
+                };
+
+                cache.update_order(&event).unwrap()
+            };
+
+            let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(None);
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                handler.clone(),
+            );
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_queue_execute(),
+                handler,
+            );
+            let instance = Py::new(py, registered_algorithm).unwrap();
+            let result = if method == "cancel_order" {
+                instance.call_method1(py, method, (argument,))
+            } else {
+                instance.call_method1(py, method, (argument, Quantity::from(234)))
+            };
+
+            let after = cache
+                .borrow()
+                .order_owned(&order.client_order_id())
+                .unwrap();
+
+            result.unwrap();
+            assert_eq!(after.status(), status);
+            assert_eq!(
+                serde_json::to_value(&after).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
+            assert!(messages.get_messages().is_empty());
+        });
+    }
+
+    #[fixture]
+    fn registered_algorithm() -> PyExecutionAlgorithm {
+        Python::initialize();
+        *get_message_bus().borrow_mut() = MessageBus::default();
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+        algorithm
     }
 
     #[rstest::rstest]
