@@ -1258,10 +1258,16 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<PositionId, Position>> {
         let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
+        let snapshot_pattern =
+            format!("{trader_key}{REDIS_DELIMITER}{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
-        let keys = Self::scan_keys(&mut con, pattern).await?;
+        let mut keys = Self::scan_keys(&mut con, pattern).await?;
+        // Operation-opened positions have no fill list; their replay snapshot is the only key.
+        keys.extend(Self::scan_keys(&mut con, snapshot_pattern).await?);
+        keys.sort();
+        keys.dedup();
 
         let futures: Vec<_> = keys
             .iter()

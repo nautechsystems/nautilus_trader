@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -45,10 +45,17 @@ pub struct PositionSnapshot {
     pub position_id: PositionId,
     /// The account ID associated with the position.
     pub account_id: AccountId,
-    /// The client order ID for the order which opened the position.
-    pub opening_order_id: ClientOrderId,
+    /// The client order ID for the order which opened the position, if any.
+    #[serde(default)]
+    pub opening_order_id: Option<ClientOrderId>,
+    /// The position operation which opened the position, if any.
+    #[serde(default)]
+    pub opening_operation_id: Option<UUID4>,
     /// The client order ID for the order which closed the position.
     pub closing_order_id: Option<ClientOrderId>,
+    /// The position operation which closed the position, if any.
+    #[serde(default)]
+    pub closing_operation_id: Option<UUID4>,
     /// The entry direction from open.
     pub entry: OrderSide,
     /// The position side.
@@ -102,7 +109,9 @@ impl PositionSnapshot {
             position_id: position.id,
             account_id: position.account_id,
             opening_order_id: position.opening_order_id,
+            opening_operation_id: position.opening_operation_id,
             closing_order_id: position.closing_order_id,
+            closing_operation_id: position.closing_operation_id,
             entry: position.entry,
             side: position.side,
             signed_qty: position.signed_qty,
@@ -161,8 +170,10 @@ mod tests {
             instrument_id: InstrumentId::from("EURUSD.SIM"),
             position_id: PositionId::from("P-001"),
             account_id: AccountId::from("SIM-001"),
-            opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
+            opening_order_id: Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            opening_operation_id: None,
             closing_order_id: Some(ClientOrderId::from("O-19700101-000000-001-001-2")),
+            closing_operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: dec!(100.0),

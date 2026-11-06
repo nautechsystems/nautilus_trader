@@ -17,9 +17,10 @@
 
 use std::sync::Arc;
 
+use alloy_primitives::U256;
 use nautilus_core::{env::get_or_env_var, python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_network::websocket::proxy::ProxyUrl;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyInt};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -304,6 +305,29 @@ impl PyPolymarketPositionClient {
         })
     }
 
+    /// Converts selected NO positions of a negative-risk CTF event.
+    ///
+    /// `index_set` is a non-negative integer bitmask where bit `i` selects question index `i`
+    /// as an input NO position. The adapter converts `amount` of each selected NO position
+    /// into the unselected YES positions and any net pUSD collateral.
+    fn convert_positions<'py>(
+        &self,
+        py: Python<'py>,
+        market_id: String,
+        #[pyo3(from_py_with = extract_index_set)] index_set: IndexSetBits,
+        #[pyo3(from_py_with = extract_amount)] amount: Decimal,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        let index_set = index_set.0;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let tx = inner
+                .convert_positions(&market_id, index_set, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(PyPolymarketPositionTransaction::from(tx))
+        })
+    }
+
     /// Redeems an explicit six-decimal share amount of V2 outcome index `0` or `1`.
     ///
     /// The index is the position ID's final byte, independent of CLOB token-array order.
@@ -351,6 +375,35 @@ fn extract_amount(value: &Bound<'_, PyAny>) -> PyResult<Decimal> {
     Ok(amount)
 }
 
+/// A 256-bit index-set bitmask exposed to Python as an arbitrary-precision `int`.
+#[derive(Clone, Copy)]
+struct IndexSetBits(U256);
+
+impl pyo3_stub_gen::PyStubType for IndexSetBits {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        pyo3_stub_gen::TypeInfo::builtin("int")
+    }
+}
+
+fn extract_index_set(value: &Bound<'_, PyAny>) -> PyResult<IndexSetBits> {
+    if !value.is_instance_of::<PyInt>() {
+        return Err(to_pyvalue_err(
+            "index_set must be a non-negative integer bitmask",
+        ));
+    }
+
+    let text = value.str()?.to_string();
+    if text.starts_with('-') {
+        return Err(to_pyvalue_err(
+            "index_set must be a non-negative integer bitmask",
+        ));
+    }
+
+    U256::from_str_radix(&text, 10)
+        .map(IndexSetBits)
+        .map_err(|_| to_pyvalue_err("index_set must fit in 256 bits"))
+}
+
 #[cfg(test)]
 mod tests {
     use pyo3::{exceptions::PyValueError, types::PyDict};
@@ -363,6 +416,7 @@ mod tests {
     #[case("split_position")]
     #[case("merge_positions")]
     #[case("redeem_position")]
+    #[case("convert_positions")]
     fn test_position_amount_rejects_rounding(#[case] method: &str) {
         Python::initialize();
         Python::attach(|py| {
@@ -397,11 +451,17 @@ mod tests {
                 .call1(("1.00000000000000000000000000001",))
                 .unwrap();
             let args = PyDict::new(py);
-            args.set_item(
-                "condition_id",
-                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            )
-            .unwrap();
+            if method == "convert_positions" {
+                args.set_item("market_id", format!("0x{}00", "cc".repeat(31)))
+                    .unwrap();
+                args.set_item("index_set", 1).unwrap();
+            } else {
+                args.set_item(
+                    "condition_id",
+                    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                )
+                .unwrap();
+            }
             args.set_item("amount", amount).unwrap();
             if method == "redeem_position" {
                 args.set_item("outcome_index", 1).unwrap();
@@ -433,6 +493,44 @@ mod tests {
                 .call1((input,))
                 .unwrap();
             assert_eq!(extract_amount(&amount).unwrap(), expected);
+        });
+    }
+
+    #[rstest]
+    #[case("5", U256::from(5u8))]
+    #[case("1", U256::ONE)]
+    fn test_extract_index_set_accepts_arbitrary_precision(
+        #[case] input: &str,
+        #[case] expected: U256,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let value = py
+                .import("builtins")
+                .unwrap()
+                .getattr("int")
+                .unwrap()
+                .call1((input,))
+                .unwrap();
+            assert_eq!(extract_index_set(&value).unwrap().0, expected);
+        });
+    }
+
+    #[rstest]
+    fn test_extract_index_set_rejects_invalid_values() {
+        Python::initialize();
+        Python::attach(|py| {
+            let builtins = py.import("builtins").unwrap();
+            for text in [
+                "-1",
+                "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+            ] {
+                let value = builtins.getattr("int").unwrap().call1((text,)).unwrap();
+                assert!(extract_index_set(&value).is_err());
+            }
+
+            let value = builtins.getattr("str").unwrap().call1(("5",)).unwrap();
+            assert!(extract_index_set(&value).is_err());
         });
     }
 }

@@ -121,6 +121,7 @@
 pub use serde as __serde;
 
 pub mod accounts;
+pub mod ctf;
 pub mod currencies;
 pub mod data;
 pub mod enums;
@@ -132,6 +133,7 @@ pub mod macros;
 pub mod orderbook;
 pub mod orders;
 pub mod position;
+pub mod position_operation;
 pub mod reports;
 pub mod types;
 pub mod venues;

@@ -34,7 +34,8 @@ use nautilus_common::messages::{
     execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        ModifyOrder, PositionOperationResult, QueryAccount, QueryOrder, QueryPositionOperation,
+        SubmitOrder, SubmitOrderList, SubmitPositionOperation,
     },
 };
 use nautilus_portfolio::config::PortfolioConfig;
@@ -91,6 +92,9 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BatchCancelOrders>()?;
     m.add_class::<QueryAccount>()?;
     m.add_class::<QueryOrder>()?;
+    m.add_class::<SubmitPositionOperation>()?;
+    m.add_class::<QueryPositionOperation>()?;
+    m.add_class::<PositionOperationResult>()?;
     m.add_class::<GenerateOrderStatusReport>()?;
     m.add_class::<GenerateOrderStatusReports>()?;
     m.add_class::<GenerateFillReports>()?;

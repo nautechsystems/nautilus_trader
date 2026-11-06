@@ -25,9 +25,10 @@ use nautilus_common::{
     cache::Cache,
     messages::execution::{
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReportsBuilder,
-        QueryAccount, QueryOrder, TradingCommand,
+        PositionOperationResult, PositionOperationStatus, QueryAccount, QueryOrder,
+        SubmitPositionOperation, TradingCommand,
     },
-    msgbus::{self, TypedHandler},
+    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, TypedHandler},
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
@@ -36,13 +37,15 @@ use nautilus_live::{
     testing::{ExecutionHarness, RoutedKind},
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AssetClass, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderRejected, OrderUpdated},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{BinaryOption, Instrument, InstrumentAny},
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
+    position_operation::{PositionOperationDirection, PositionOperationLeg, PositionOperationType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
@@ -54,6 +57,7 @@ use ustr::Ustr;
 use crate::{
     harness,
     mock_venue::{DEFAULT_ACCEPTED_ORDER_ID, load_json},
+    positions::TestServerState as PositionServerState,
 };
 
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -3748,4 +3752,237 @@ fn seed_partially_filled(execution: &ExecutionHarness, order: &OrderAny) {
         None,
         Some(account_id),
     ));
+}
+
+const POSITION_MARKET_ID: &str =
+    "0x2222222222222222222222222222222222222222222222222222222222222200";
+const POSITION_STRATEGY_ID: &str = "S-POSITION-001";
+
+fn position_market() -> Value {
+    json!({
+        "market_id": POSITION_MARKET_ID,
+        "fee_bips": 100,
+        "conditions": [
+            {
+                "question_index": 0,
+                "condition_id": format!("0x{}{:02x}", "11".repeat(31), 0),
+                "yes_token_id": "512",
+                "no_token_id": "256",
+            },
+            {
+                "question_index": 1,
+                "condition_id": format!("0x{}{:02x}", "11".repeat(31), 1),
+                "yes_token_id": "513",
+                "no_token_id": "257",
+            },
+        ],
+    })
+}
+
+fn position_instrument(condition: &str, token_id: u64, outcome: &str) -> InstrumentAny {
+    let market = position_market();
+    let info = serde_json::from_value(json!({
+        "market_version": "v1",
+        "condition_id": condition,
+        "token_id": token_id.to_string(),
+        "neg_risk": true,
+        "neg_risk_market": market,
+        "gamma_event": {"negRiskMarketID": POSITION_MARKET_ID},
+    }))
+    .unwrap();
+    let instrument = BinaryOption::builder()
+        .instrument_id(InstrumentId::from(
+            format!("TOKEN-{token_id}.POLYMARKET").as_str(),
+        ))
+        .raw_symbol(Symbol::new(format!("TOKEN-{token_id}")))
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::pUSD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(4_000_000_000_000_000_000u64))
+        .price_precision(4)
+        .size_precision(4)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.0001"))
+        .outcome(Ustr::from(outcome))
+        .info(info)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    InstrumentAny::BinaryOption(instrument)
+}
+
+fn seed_operation_position(
+    harness: &ExecutionHarness,
+    instrument: &InstrumentAny,
+    quantity: Quantity,
+    cost: Decimal,
+) {
+    let strategy_id = StrategyId::from(POSITION_STRATEGY_ID);
+    let account_id = harness.account_id();
+    let position_id =
+        nautilus_model::identifiers::PositionId::from(format!("{}-{strategy_id}", instrument.id()));
+    let leg = PositionOperationLeg {
+        operation_id: UUID4::new(),
+        operation: PositionOperationType::Convert,
+        direction: PositionOperationDirection::Open,
+        trader_id: harness.trader_id(),
+        strategy_id,
+        account_id,
+        instrument_id: instrument.id(),
+        position_id,
+        quantity,
+        cost,
+        income: None,
+        settled: false,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(2),
+    };
+    let position = Position::new_from_operation_checked(instrument, leg).unwrap();
+    harness
+        .cache()
+        .borrow_mut()
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn managed_convert_routes_to_position_cache_account_and_portfolio() {
+    let position_state = PositionServerState::default();
+    let no0 = position_instrument(&format!("0x{}{:02x}", "11".repeat(31), 0), 256, "No");
+    let no1 = position_instrument(&format!("0x{}{:02x}", "11".repeat(31), 1), 257, "No");
+    let (no0_id, no1_id) = (no0.id(), no1.id());
+
+    let (mut h, position_state) = Box::pin(harness::Harness::build_with_position_operations(
+        |h| {
+            h.cache().borrow_mut().add_instrument(no0.clone()).unwrap();
+            h.cache().borrow_mut().add_instrument(no1.clone()).unwrap();
+            seed_operation_position(h, &no0, Quantity::from("100.0000"), Decimal::from(50));
+            seed_operation_position(h, &no1, Quantity::from("100.0000"), Decimal::from(50));
+        },
+        position_state,
+    ))
+    .await;
+    position_state
+        .set_position_balances([200_000_000, 200_000_000])
+        .await;
+    position_state
+        .configure_convert_receipt(&[(256, 100_000_000), (257, 100_000_000)], &[], 99_000_000)
+        .await;
+    h.mock_state.balance_response.lock().await["balance"] = json!("1099000000");
+
+    let results = Rc::new(RefCell::new(Vec::<PositionOperationResult>::new()));
+    let captured = results.clone();
+    msgbus::subscribe_any(
+        nautilus_common::msgbus::switchboard::get_event_position_operation_topic(StrategyId::from(
+            POSITION_STRATEGY_ID,
+        ))
+        .into(),
+        ShareableMessageHandler::from_typed(move |result: &PositionOperationResult| {
+            captured.borrow_mut().push(result.clone());
+        }),
+        None,
+    );
+
+    let operation_id = UUID4::new();
+    let command = SubmitPositionOperation::new(
+        h.trader_id(),
+        Some(h.client_id()),
+        StrategyId::from(POSITION_STRATEGY_ID),
+        operation_id,
+        PositionOperationType::Convert,
+        vec![no0_id, no1_id],
+        Some(Quantity::from("100.0000")),
+        UnixNanos::default(),
+    );
+    msgbus::send_trading_command(
+        MessagingSwitchboard::risk_engine_execute(),
+        TradingCommand::SubmitPositionOperation(command),
+    );
+
+    let positions_closed = h
+        .pump_until(DEADLINE, |cache| {
+            let no0_closed = cache
+                .position(&nautilus_model::identifiers::PositionId::from(format!(
+                    "{no0_id}-{POSITION_STRATEGY_ID}"
+                )))
+                .is_some_and(|position| position.is_closed());
+            let no1_closed = cache
+                .position(&nautilus_model::identifiers::PositionId::from(format!(
+                    "{no1_id}-{POSITION_STRATEGY_ID}"
+                )))
+                .is_some_and(|position| position.is_closed());
+            no0_closed && no1_closed
+        })
+        .await;
+    assert!(positions_closed, "convert must close both NO positions");
+    h.pump_for(Duration::from_millis(200)).await;
+
+    let confirmed = results
+        .borrow()
+        .iter()
+        .find(|result| {
+            result.operation_id == operation_id
+                && result.status == PositionOperationStatus::Confirmed
+        })
+        .cloned()
+        .expect("strategy topic must receive the confirmed operation");
+    let effects = confirmed
+        .effects
+        .expect("confirmed convert carries effects");
+    assert_eq!(effects.collateral_delta, "99");
+    assert_eq!(effects.spent.len(), 2);
+    assert_eq!(position_state.submit_count(), 1);
+    assert!(
+        !h.exec_engine()
+            .borrow()
+            .is_position_operation_barred(&no0_id)
+    );
+
+    let account = h
+        .cache()
+        .borrow()
+        .account(&h.account_id())
+        .expect("account state must be refreshed")
+        .clone();
+    assert_eq!(
+        account.balances()[&Currency::pUSD()].total.as_decimal(),
+        Decimal::from(1099)
+    );
+    {
+        let mut risk = h.risk_engine().borrow_mut();
+        let portfolio = risk.portfolio_mut();
+        assert_eq!(portfolio.net_position(&no0_id), Decimal::ZERO);
+        assert_eq!(portfolio.net_position(&no1_id), Decimal::ZERO);
+        assert_eq!(
+            portfolio.realized_pnl(&no0_id),
+            Some(Money::new(-0.5, Currency::pUSD()))
+        );
+        assert_eq!(
+            portfolio.realized_pnl(&no1_id),
+            Some(Money::new(-0.5, Currency::pUSD()))
+        );
+    }
+
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::QueryPositionOperation(
+            nautilus_common::messages::execution::QueryPositionOperation::new(
+                h.trader_id(),
+                Some(h.client_id()),
+                StrategyId::from(POSITION_STRATEGY_ID),
+                operation_id,
+                UnixNanos::default(),
+            ),
+        ),
+    );
+    h.pump_for(Duration::from_millis(200)).await;
+    assert!(
+        results.borrow().iter().any(|result| {
+            result.operation_id == operation_id && result.status == PositionOperationStatus::Applied
+        }),
+        "query must report the applied operation"
+    );
 }

@@ -102,7 +102,7 @@ use nautilus_common::{
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
         data::DataCommand,
-        execution::TradingCommand,
+        execution::{PositionOperationControlRequest, PositionOperationStatus, TradingCommand},
         system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
@@ -532,6 +532,8 @@ impl LiveNode {
             }
         }
 
+        self.prepare_position_operation_recovery().await;
+
         if let Err(e) = self.perform_startup_reconciliation().await {
             if let Err(finalize_err) = self.abort_startup("Startup reconciliation failed").await {
                 anyhow::bail!(
@@ -902,6 +904,23 @@ impl LiveNode {
             self.kernel.data_engine().check_connected(),
             self.kernel.exec_engine().borrow().check_connected(),
         );
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "startup recovery is serialized before startup reconciliation"
+    )]
+    async fn prepare_position_operation_recovery(&self) {
+        let exec_engine = self.kernel.exec_engine();
+        {
+            let mut engine = exec_engine.borrow_mut();
+            if let Err(e) = engine.prepare_startup_position_operation_recovery().await {
+                log::error!("Failed to prepare position operation recovery: {e}");
+            }
+        }
+        exec_engine
+            .borrow_mut()
+            .apply_startup_position_operation_recovery();
     }
 
     /// Performs startup reconciliation to align internal state with venue state.
@@ -1333,6 +1352,8 @@ impl LiveNode {
         debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
 
         // Run reconciliation now that instruments are in cache and start trader
+        self.prepare_position_operation_recovery().await;
+
         if let Err(e) = self.perform_startup_reconciliation().await {
             let result = self.abort_startup("Startup reconciliation failed").await;
             Self::drain_channels(
@@ -2685,6 +2706,36 @@ impl LiveNode {
                     order_ids.push(canceled.client_order_id);
                 }
             }
+            ExecutionEvent::PositionOperation(result) => {
+                log::debug!("Position operation result before dispatch: {result}");
+                let changes_positions = result.effects.is_some()
+                    || matches!(
+                        result.status,
+                        PositionOperationStatus::Rejected
+                            | PositionOperationStatus::Failed
+                            | PositionOperationStatus::Unknown
+                    );
+                if changes_positions {
+                    for instrument_id in &result.instrument_ids {
+                        self.exec_manager
+                            .record_position_activity(*instrument_id, result.account_id);
+                    }
+                }
+            }
+            ExecutionEvent::PositionOperationControl(request) => {
+                log::debug!("Position operation control before dispatch: {request}");
+                if let PositionOperationControlRequest::Barrier {
+                    instrument_ids,
+                    account_id,
+                    ..
+                } = request
+                {
+                    for instrument_id in instrument_ids {
+                        self.exec_manager
+                            .record_position_activity(*instrument_id, *account_id);
+                    }
+                }
+            }
             ExecutionEvent::Report(report) => {
                 if let ExecutionReport::Fill(fill_report) = report
                     && self.exec_manager.is_fill_recently_processed(
@@ -3491,6 +3542,14 @@ impl PendingEvents {
                         self.order_evts.push(order(OrderEventAny::Canceled(event)));
                     }
                 }
+                ExecutionEvent::PositionOperation(result) => {
+                    // The managed application path consumes this result once the operation
+                    // record and effects are available.
+                    log::debug!("Position operation result: {result}");
+                }
+                ExecutionEvent::PositionOperationControl(request) => {
+                    log::debug!("Position operation control: {request}");
+                }
             }
         });
     }
@@ -3563,8 +3622,9 @@ mod tests {
             data::{SubscribeCommand, SubscribeQuotes},
             execution::{
                 GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
-                GeneratePositionStatusReports, QueryAccount, SubmitOrder, SubmitOrderList,
-                TradingCommand,
+                GeneratePositionStatusReports, PositionOperationEffects, PositionOperationResult,
+                PositionOperationStatus, PositionOperationTokenAmount, QueryAccount, SubmitOrder,
+                SubmitOrderList, TradingCommand,
             },
             system::{
                 QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
@@ -3611,6 +3671,7 @@ mod tests {
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
         },
         position::PositionReplayEvent,
+        position_operation::PositionOperationType,
         reports::{FillReport, PositionStatusReport},
         types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
@@ -5668,6 +5729,71 @@ mod tests {
         assert_eq!(
             node.exec_manager.position_recon_retry_count(&deferred_key),
             0
+        );
+    }
+
+    #[rstest]
+    fn test_stale_position_report_after_completed_operation_is_rejected() {
+        let (mut node, venue_report, _) =
+            position_fill_test_fixture("StaleOperationReportNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(&node, venue_report);
+        let prepared_revision = position_result.check.activity_revisions[&key];
+
+        close_position_in_node(&node, key.0, key.1, TradeId::from("T-OPERATION-CLOSE"));
+        let operation_id = UUID4::new();
+        let result = PositionOperationResult::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            ClientId::from("POSITION-FILLS"),
+            key.1,
+            operation_id,
+            PositionOperationType::Convert,
+            PositionOperationStatus::Confirmed,
+            vec![key.0],
+            None,
+            None,
+            None,
+            Some(PositionOperationEffects {
+                received: Vec::new(),
+                spent: vec![PositionOperationTokenAmount {
+                    token_id: "TOKEN".to_string(),
+                    quantity: "1.0".to_string(),
+                }],
+                collateral_delta: "1.0".to_string(),
+                payouts: Vec::new(),
+            }),
+            UUID4::new(),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        node.observe_exec_event_before_dispatch(&ExecutionEvent::PositionOperation(result));
+
+        assert!(
+            node.exec_manager.position_activity_revision(&key) > prepared_revision,
+            "a position operation result must invalidate reports prepared before it",
+        );
+        assert!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .position_operation_barred_instruments()
+                .is_empty(),
+            "the operation barrier must already be released for this stale response",
+        );
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, Vec::new())]),
+        });
+
+        assert!(
+            node.kernel
+                .cache
+                .borrow()
+                .positions_open(None, Some(&key.0), None, Some(&key.1), None)
+                .is_empty(),
+            "the stale report must not rebuild inventory consumed by the operation",
         );
     }
 
@@ -9031,6 +9157,54 @@ mod tests {
             queried_clients: IndexSet::from([client_id]),
             failed_clients: IndexSet::new(),
         }
+    }
+
+    fn close_position_in_node(
+        node: &LiveNode,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        trade_id: TradeId,
+    ) {
+        let (mut position, instrument) = {
+            let cache = node.kernel.cache.borrow();
+            let position = cache
+                .positions_open(None, Some(&instrument_id), None, Some(&account_id), None)
+                .into_iter()
+                .next()
+                .expect("open position must exist")
+                .cloned();
+            let instrument = cache
+                .instrument(&instrument_id)
+                .expect("instrument must exist")
+                .clone();
+            (position, instrument)
+        };
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(position.quantity)
+            .build();
+        let event = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(trade_id),
+            Some(position.id),
+            Some(Price::from("100.0")),
+            Some(position.quantity),
+            None,
+            None,
+            None,
+            Some(account_id),
+        );
+        let OrderEventAny::Filled(fill) = event else {
+            panic!("expected a filled event");
+        };
+        position.apply(&fill);
+        node.kernel
+            .cache
+            .borrow_mut()
+            .update_position(&position)
+            .unwrap();
     }
 
     fn position_quantity_after_check(

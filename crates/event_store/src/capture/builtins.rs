@@ -95,6 +95,10 @@ pub const PAYLOAD_TYPE_BATCH_CANCEL_ORDERS: &str = "BatchCancelOrders";
 pub const PAYLOAD_TYPE_QUERY_ORDER: &str = "QueryOrder";
 /// The canonical `payload_type` tag for [`QueryAccount`].
 pub const PAYLOAD_TYPE_QUERY_ACCOUNT: &str = "QueryAccount";
+/// The canonical `payload_type` tag for [`SubmitPositionOperation`].
+pub const PAYLOAD_TYPE_SUBMIT_POSITION_OPERATION: &str = "SubmitPositionOperation";
+/// The canonical `payload_type` tag for [`QueryPositionOperation`].
+pub const PAYLOAD_TYPE_QUERY_POSITION_OPERATION: &str = "QueryPositionOperation";
 
 /// The canonical `payload_type` tag for [`OrderInitialized`].
 pub const PAYLOAD_TYPE_ORDER_INITIALIZED: &str = "OrderInitialized";
@@ -430,6 +434,8 @@ fn extract_trading_command_identity(command: &TradingCommand) -> UUID4 {
         TradingCommand::CancelAllOrders(c) => c.command_id,
         TradingCommand::QueryOrder(c) => c.command_id,
         TradingCommand::QueryAccount(c) => c.command_id,
+        TradingCommand::SubmitPositionOperation(c) => c.operation_id,
+        TradingCommand::QueryPositionOperation(c) => c.operation_id,
     }
 }
 
@@ -514,6 +520,9 @@ fn extract_trading_command_headers(command: &TradingCommand) -> Headers {
         TradingCommand::CancelAllOrders(cmd) => extract_cancel_all_orders_headers(cmd),
         TradingCommand::QueryOrder(cmd) => extract_query_order_headers(cmd),
         TradingCommand::QueryAccount(cmd) => extract_query_account_headers(cmd),
+        TradingCommand::SubmitPositionOperation(_) | TradingCommand::QueryPositionOperation(_) => {
+            Headers::empty()
+        }
     }
 }
 
@@ -610,6 +619,16 @@ pub fn encode_trading_command(command: &TradingCommand) -> Result<EncodedPayload
         TradingCommand::CancelAllOrders(cmd) => encode_cancel_all_orders(cmd),
         TradingCommand::QueryOrder(cmd) => encode_query_order(cmd),
         TradingCommand::QueryAccount(cmd) => encode_query_account(cmd),
+        TradingCommand::SubmitPositionOperation(cmd) => Ok(EncodedPayload::with_payload_type(
+            payload_type(PAYLOAD_TYPE_SUBMIT_POSITION_OPERATION),
+            encode_serde(cmd)?,
+            Vec::new(),
+        )),
+        TradingCommand::QueryPositionOperation(cmd) => Ok(EncodedPayload::with_payload_type(
+            payload_type(PAYLOAD_TYPE_QUERY_POSITION_OPERATION),
+            encode_serde(cmd)?,
+            Vec::new(),
+        )),
     }
 }
 
@@ -870,10 +889,10 @@ pub fn encode_position_event(event: &PositionEvent) -> Result<EncodedPayload, En
 
 fn encode_position_opened(event: &PositionOpened) -> Result<EncodedPayload, EncodeError> {
     let payload = encode_serde(event)?;
-    let index_keys = vec![IndexKey::new(
-        IndexKind::ClientOrderId,
-        event.opening_order_id.to_string(),
-    )];
+    let index_keys = event
+        .opening_order_id
+        .map(|id| vec![IndexKey::new(IndexKind::ClientOrderId, id.to_string())])
+        .unwrap_or_default();
     Ok(EncodedPayload::with_payload_type(
         payload_type(PAYLOAD_TYPE_POSITION_OPENED),
         payload,
@@ -883,10 +902,10 @@ fn encode_position_opened(event: &PositionOpened) -> Result<EncodedPayload, Enco
 
 fn encode_position_changed(event: &PositionChanged) -> Result<EncodedPayload, EncodeError> {
     let payload = encode_serde(event)?;
-    let index_keys = vec![IndexKey::new(
-        IndexKind::ClientOrderId,
-        event.opening_order_id.to_string(),
-    )];
+    let index_keys = event
+        .opening_order_id
+        .map(|id| vec![IndexKey::new(IndexKind::ClientOrderId, id.to_string())])
+        .unwrap_or_default();
     Ok(EncodedPayload::with_payload_type(
         payload_type(PAYLOAD_TYPE_POSITION_CHANGED),
         payload,
@@ -899,12 +918,14 @@ fn encode_position_closed(event: &PositionClosed) -> Result<EncodedPayload, Enco
     let mut index_keys = Vec::new();
     let mut seen = HashSet::new();
 
-    push_unique_index_key(
-        &mut index_keys,
-        &mut seen,
-        IndexKind::ClientOrderId,
-        event.opening_order_id.to_string(),
-    );
+    if let Some(opening_order_id) = &event.opening_order_id {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::ClientOrderId,
+            opening_order_id.to_string(),
+        );
+    }
 
     // Opening and closing client_order_ids are distinct in normal operation; dedup
     // guards the rare case where a single order both opens and closes the position.
@@ -2903,13 +2924,15 @@ mod tests {
             instrument_id: instrument_id(),
             position_id: position_id(),
             account_id: AccountId::from("BINANCE-001"),
-            opening_order_id: opening_order_id(),
+            opening_order_id: Some(opening_order_id()),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 1.into(),
             quantity: Quantity::from("1"),
-            last_qty: Quantity::from("1"),
-            last_px: Price::from("100.00"),
+            last_qty: Some(Quantity::from("1")),
+            last_px: Some(Price::from("100.00")),
             currency: Currency::USDT(),
             avg_px_open: 100.into(),
             realized_pnl: Some(Money::new(-0.1, Currency::USDT())),
@@ -2926,14 +2949,16 @@ mod tests {
             instrument_id: instrument_id(),
             position_id: position_id(),
             account_id: AccountId::from("BINANCE-001"),
-            opening_order_id: opening_order_id(),
+            opening_order_id: Some(opening_order_id()),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 2.into(),
             quantity: Quantity::from("2"),
             peak_quantity: Quantity::from("2"),
-            last_qty: Quantity::from("1"),
-            last_px: Price::from("101.00"),
+            last_qty: Some(Quantity::from("1")),
+            last_px: Some(Price::from("101.00")),
             currency: Currency::USDT(),
             avg_px_open: "100.5".parse().unwrap(),
             avg_px_close: None,
@@ -2954,15 +2979,18 @@ mod tests {
             instrument_id: instrument_id(),
             position_id: position_id(),
             account_id: AccountId::from("BINANCE-001"),
-            opening_order_id: opening_order_id(),
+            opening_order_id: Some(opening_order_id()),
+            opening_operation_id: None,
+            operation_id: None,
             closing_order_id: Some(closing_order_id()),
+            closing_operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
             signed_qty: 0.into(),
             quantity: Quantity::from("0"),
             peak_quantity: Quantity::from("2"),
-            last_qty: Quantity::from("2"),
-            last_px: Price::from("102.00"),
+            last_qty: Some(Quantity::from("2")),
+            last_px: Some(Price::from("102.00")),
             currency: Currency::USDT(),
             avg_px_open: "100.5".parse().unwrap(),
             avg_px_close: Some(102.into()),
@@ -3009,7 +3037,7 @@ mod tests {
         assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
         assert_eq!(
             encoded.index_keys[0].key,
-            opened.opening_order_id.to_string(),
+            opened.opening_order_id.expect("set").to_string(),
         );
 
         let decoded: PositionOpened = rmp_serde::from_slice(&encoded.payload).expect("decode");
@@ -3030,7 +3058,7 @@ mod tests {
         assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
         assert_eq!(
             encoded.index_keys[0].key,
-            changed.opening_order_id.to_string(),
+            changed.opening_order_id.expect("set").to_string(),
         );
 
         let decoded: PositionChanged = rmp_serde::from_slice(&encoded.payload).expect("decode");
@@ -3051,7 +3079,7 @@ mod tests {
         assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
         assert_eq!(
             encoded.index_keys[0].key,
-            closed.opening_order_id.to_string(),
+            closed.opening_order_id.expect("set").to_string(),
         );
         assert_eq!(encoded.index_keys[1].kind, IndexKind::ClientOrderId);
         assert_eq!(
@@ -3081,7 +3109,7 @@ mod tests {
         // reduce-only fills against a stale position). The dispatcher must dedupe
         // rather than insert the same (kind, key) twice.
         let mut closed = make_position_closed();
-        closed.closing_order_id = Some(closed.opening_order_id);
+        closed.closing_order_id = closed.opening_order_id;
         let envelope = PositionEvent::PositionClosed(closed);
         let encoded = encode_position_event(&envelope).expect("encode");
 

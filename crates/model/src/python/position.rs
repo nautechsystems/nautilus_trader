@@ -13,10 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{
-    IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
-    serialization::{from_dict_pyo3, to_dict_pyo3},
-    to_pyvalue_err,
+use nautilus_core::{
+    UUID4,
+    python::{
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
+        serialization::{from_dict_pyo3, to_dict_pyo3},
+        to_pyvalue_err,
+    },
 };
 use pyo3::{
     basic::CompareOp,
@@ -128,8 +131,20 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "opening_order_id")]
-    fn py_opening_order_id(&self) -> ClientOrderId {
+    fn py_opening_order_id(&self) -> Option<ClientOrderId> {
         self.opening_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "opening_operation_id")]
+    fn py_opening_operation_id(&self) -> Option<UUID4> {
+        self.opening_operation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "closing_operation_id")]
+    fn py_closing_operation_id(&self) -> Option<UUID4> {
+        self.closing_operation_id
     }
 
     #[getter]

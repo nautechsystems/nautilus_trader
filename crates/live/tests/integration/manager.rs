@@ -13863,7 +13863,10 @@ async fn test_replayed_fill_does_not_reopen_reconciled_position(
     assert_eq!(replay_order.status(), OrderStatus::Filled);
     assert_eq!(replay_order.filled_qty(), Quantity::from("5.0"));
     assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].opening_order_id, synthetic_client_order_id);
+    assert_eq!(
+        positions[0].opening_order_id,
+        Some(synthetic_client_order_id)
+    );
     assert_eq!(positions[0].signed_decimal_qty(), dec!(5.0));
     assert!(!positions[0].trade_ids.contains(&replay_trade_id));
 }

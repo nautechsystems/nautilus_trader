@@ -128,6 +128,8 @@ impl PythonLatencyModel {
                 TradingCommand::CancelAllOrders(cmd) => cmd.clone().into_py_any(py)?,
                 TradingCommand::QueryOrder(cmd) => cmd.clone().into_py_any(py)?,
                 TradingCommand::QueryAccount(cmd) => cmd.clone().into_py_any(py)?,
+                TradingCommand::SubmitPositionOperation(cmd) => cmd.clone().into_py_any(py)?,
+                TradingCommand::QueryPositionOperation(cmd) => cmd.clone().into_py_any(py)?,
             };
 
             let latency = self

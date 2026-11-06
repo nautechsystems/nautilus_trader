@@ -20,7 +20,7 @@ use std::{fmt::Debug, future::Future, pin::Pin};
 use anyhow::Context;
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -29,6 +29,7 @@ use nautilus_model::{
     },
     instruments::InstrumentAny,
     orders::OrderAny,
+    position_operation::PositionOperationLeg,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -39,8 +40,9 @@ use crate::messages::execution::{
     BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
     GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
     GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-    GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-    SubmitOrderList,
+    GeneratePositionStatusReportsBuilder, ModifyOrder, PositionOperationStartupRecovery,
+    PositionOperationStatus, QueryAccount, QueryOrder, QueryPositionOperation, SubmitOrder,
+    SubmitOrderList, SubmitPositionOperation,
 };
 
 /// Default maximum absolute position difference tolerated during reconciliation.
@@ -348,6 +350,89 @@ pub trait ExecutionClient {
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log_not_implemented(self.client_id(), &cmd);
         Ok(())
+    }
+
+    /// Submits a managed position operation.
+    ///
+    /// Clients that do not support position operations must return an explicit error; the
+    /// command must never be silently ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client does not support position operations or submission fails.
+    fn submit_position_operation(&self, cmd: SubmitPositionOperation) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "{} does not support position operations: {cmd}",
+            self.client_id()
+        )
+    }
+
+    /// Queries the known state of a managed position operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client does not support position operations or the query fails.
+    fn query_position_operation(&self, cmd: QueryPositionOperation) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "{} does not support position operations: {cmd}",
+            self.client_id()
+        )
+    }
+
+    /// Receives the position legs the core applied for a confirmed operation.
+    ///
+    /// Clients may use this to update their durable operation record after the core commits the
+    /// position and cache changes. The default does nothing.
+    fn on_position_operation_applied(
+        &self,
+        _operation_id: UUID4,
+        _legs: &[PositionOperationLeg],
+        _transaction_hash: Option<&str>,
+    ) {
+    }
+
+    /// Prepares startup position operation recovery evidence without changing core state.
+    ///
+    /// The default does nothing. Implementations may query venue state and retain prepared
+    /// recovery actions for [`Self::take_startup_recovery`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if recovery evidence cannot be prepared.
+    async fn prepare_startup_recovery(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Takes the prepared startup recovery actions for core reconciliation.
+    ///
+    /// The default returns no actions.
+    fn take_startup_recovery(&mut self) -> Vec<PositionOperationStartupRecovery> {
+        Vec::new()
+    }
+
+    /// Receives a startup recovery result that remains unresolved and blocking.
+    ///
+    /// The default does nothing.
+    fn on_position_operation_recovery_unresolved(
+        &self,
+        _operation_id: UUID4,
+        _venue_status: PositionOperationStatus,
+        _transaction_id: Option<&str>,
+        _transaction_hash: Option<&str>,
+        _message: &str,
+    ) {
+    }
+
+    /// Receives a definitive startup recovery failure that no longer blocks the account.
+    ///
+    /// The default does nothing.
+    fn on_position_operation_recovery_failed(
+        &self,
+        _operation_id: UUID4,
+        _transaction_id: Option<&str>,
+        _transaction_hash: Option<&str>,
+        _message: &str,
+    ) {
     }
 
     /// Prepares worker-safe single-order collection, or uses inline collection.

@@ -39,11 +39,13 @@ use nautilus_common::{
     },
     enums::{ComponentState, ComponentTrigger, Environment},
     logging::RECV,
-    messages::execution::TradingCommand,
+    messages::execution::{PositionOperationResult, TradingCommand},
     msgbus,
     msgbus::{
         ShareableMessageHandler, TypedHandler, get_message_bus,
-        switchboard::{get_event_order_topic, get_event_position_topic},
+        switchboard::{
+            get_event_order_topic, get_event_position_operation_topic, get_event_position_topic,
+        },
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -129,6 +131,8 @@ pub struct Trader {
     strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
     /// Msgbus handler IDs for strategy event subscriptions (order, position).
     strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr)>,
+    /// Handler for managed position operation results routed to the strategy topic.
+    strategy_position_operation_handlers: AHashMap<StrategyId, ShareableMessageHandler>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     pub(crate) exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Restores strategy event subscriptions for concrete execution algorithms.
@@ -179,6 +183,7 @@ impl Trader {
             strategy_state_callbacks: AHashMap::new(),
             strategy_stop_fns: AHashMap::new(),
             strategy_handler_ids: AHashMap::new(),
+            strategy_position_operation_handlers: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
             exec_algorithm_restore_fns: AHashMap::new(),
             exec_algorithm_cleanup_fns: AHashMap::new(),
@@ -432,6 +437,25 @@ impl Trader {
         Ok(())
     }
 
+    fn subscribe_position_operation<T>(&mut self, strategy_id: StrategyId)
+    where
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
+    {
+        let actor_id = strategy_id.inner();
+        let operation_topic = get_event_position_operation_topic(strategy_id);
+        let operation_handler =
+            ShareableMessageHandler::from_typed(move |result: &PositionOperationResult| {
+                if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
+                    strategy.handle_position_operation(result.clone());
+                } else {
+                    log::error!("Strategy {actor_id} not found for position operation handling");
+                }
+            });
+        msgbus::subscribe_any(operation_topic.into(), operation_handler.clone(), None);
+        self.strategy_position_operation_handlers
+            .insert(strategy_id, operation_handler);
+    }
+
     /// Adds an externally-registered strategy to the trader for lifecycle management
     /// and installs its order/position event subscriptions, stop hook, and control endpoint.
     ///
@@ -483,6 +507,8 @@ impl Trader {
         });
         let position_handler_id = position_handler.id();
         msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
+
+        self.subscribe_position_operation::<T>(strategy_id);
 
         let control_actor_id = actor_id;
         let control_handler = TypedHandler::from(move |command: &StrategyCommand| {
@@ -670,6 +696,8 @@ impl Trader {
         });
         let position_handler_id = position_handler.id();
         msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
+
+        self.subscribe_position_operation::<T>(strategy_id);
 
         let control_actor_id = actor_id;
         let control_handler = TypedHandler::from(move |command: &StrategyCommand| {
@@ -1531,6 +1559,16 @@ impl Trader {
             let position_topic = get_event_position_topic(strategy_id);
             msgbus::remove_order_event_handler(order_topic.into(), order_handler_id);
             msgbus::remove_position_event_handler(position_topic.into(), position_handler_id);
+        }
+
+        if let Some(handler) = self
+            .strategy_position_operation_handlers
+            .remove(&strategy_id)
+        {
+            msgbus::unsubscribe_any(
+                get_event_position_operation_topic(strategy_id).into(),
+                &handler,
+            );
         }
 
         get_message_bus()

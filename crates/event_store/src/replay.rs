@@ -684,10 +684,10 @@ impl CacheReplayContext {
                     && fill.strategy_id == opened.strategy_id
                     && fill.instrument_id == opened.instrument_id
                     && fill.account_id == opened.account_id
-                    && fill.client_order_id == opened.opening_order_id
+                    && Some(fill.client_order_id) == opened.opening_order_id
                     && fill.order_side == opened.entry
-                    && fill.last_qty == opened.last_qty
-                    && fill.last_px == opened.last_px
+                    && opened.last_qty == Some(fill.last_qty)
+                    && opened.last_px == Some(fill.last_px)
                     && fill.currency == opened.currency)
                     .then_some(index)
             })
@@ -1937,7 +1937,9 @@ fn apply_position_opened(
     position.id = opened.position_id;
     position.account_id = opened.account_id;
     position.opening_order_id = opened.opening_order_id;
+    position.opening_operation_id = opened.opening_operation_id;
     position.closing_order_id = None;
+    position.closing_operation_id = None;
     position.ts_opened = opened.ts_event;
     position.ts_last = opened.ts_event;
     position.ts_closed = None;
@@ -2038,6 +2040,7 @@ fn apply_position_changed(
     position.id = changed.position_id;
     position.account_id = changed.account_id;
     position.opening_order_id = changed.opening_order_id;
+    position.opening_operation_id = changed.opening_operation_id;
     position.ts_opened = changed.ts_opened;
     position.ts_last = changed.ts_event;
     position.ts_closed = None;
@@ -2098,7 +2101,9 @@ fn apply_position_closed(
     position.id = closed.position_id;
     position.account_id = closed.account_id;
     position.opening_order_id = closed.opening_order_id;
+    position.opening_operation_id = closed.opening_operation_id;
     position.closing_order_id = closed.closing_order_id;
+    position.closing_operation_id = closed.closing_operation_id;
     position.ts_opened = closed.ts_opened;
     position.ts_last = closed.ts_event;
     position.ts_closed = closed.ts_closed;
@@ -4819,7 +4824,7 @@ mod tests {
         assert_eq!(position.side, PositionSide::Short);
         assert_eq!(position.entry, OrderSide::Sell);
         assert_eq!(position.quantity, Quantity::from(1));
-        assert_eq!(position.opening_order_id, client_order_id);
+        assert_eq!(position.opening_order_id, Some(client_order_id));
         assert_eq!(position.closing_order_id, None);
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.trade_ids(), vec![reopening_fill.trade_id]);

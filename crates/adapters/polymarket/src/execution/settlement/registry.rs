@@ -853,6 +853,23 @@ impl SettlementRegistry {
         )
     }
 
+    /// Fails position operation preparation unless every record in scope has terminal evidence.
+    ///
+    /// This is stricter than [`Self::ensure_resolved`]: an already applied provisional fill is
+    /// still not confirmed inventory for a managed position operation.
+    pub(crate) fn ensure_operation_inputs_terminal(
+        &self,
+        instrument_id: Option<InstrumentId>,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        self.ensure_no_blockers(
+            label,
+            |leg| instrument_id.is_none_or(|id| leg.instrument_id == id),
+            |_, order| instrument_id.is_none_or(|id| order.instrument_id == id),
+            |record| !record.is_operation_input_ready(),
+        )
+    }
+
     /// Fails an order-status report while the registry is hydrating, or while a hard fault, a
     /// quarantine, an owed targeted REST read, an unknown submit, or a post-reconnect trade
     /// read would report fills incorrectly.
@@ -3733,6 +3750,31 @@ pub(crate) mod tests {
             } else {
                 SettlementState::StreamConfirmed
             })
+        );
+    }
+
+    #[rstest]
+    fn test_operation_inputs_require_terminal_settlement() {
+        let registry = live_registry();
+        let leg = taker_leg();
+        registry.note_order_submitted(leg.venue_order_id);
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![leg.clone()]));
+        registry.note_leg_enqueued(&leg.trade_id);
+        registry.observe_fill_applied(&applied_fill(&leg, Some(TRADE)));
+
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+        assert!(
+            registry
+                .ensure_operation_inputs_terminal(None, "position operation")
+                .is_err()
+        );
+
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg]));
+
+        assert!(
+            registry
+                .ensure_operation_inputs_terminal(None, "position operation")
+                .is_ok()
         );
     }
 

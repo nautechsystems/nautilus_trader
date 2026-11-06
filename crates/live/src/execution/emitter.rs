@@ -35,7 +35,9 @@ use arc_swap::ArcSwapOption;
 use nautilus_common::{
     factories::OrderEventFactory,
     live::sender::EventSender,
-    messages::{ExecutionEvent, ExecutionReport},
+    messages::{
+        ExecutionEvent, ExecutionReport, PositionOperationControlRequest, PositionOperationResult,
+    },
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
@@ -598,6 +600,26 @@ impl ExecutionEventEmitter {
     /// Emits an account state event.
     pub fn send_account_state(&self, state: AccountState) {
         if let Err(e) = self.try_send_account_state(state) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Emits a managed position operation result.
+    pub fn send_position_operation_result(&self, result: PositionOperationResult) {
+        if let Err(e) = self.try_send(
+            ExecutionEvent::PositionOperation(result),
+            "position operation result",
+        ) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Emits an internal adapter-to-core position operation control request.
+    pub fn send_position_operation_control(&self, request: PositionOperationControlRequest) {
+        if let Err(e) = self.try_send(
+            ExecutionEvent::PositionOperationControl(request),
+            "position operation control",
+        ) {
             log::warn!("{e}");
         }
     }

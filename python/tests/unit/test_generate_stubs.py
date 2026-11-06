@@ -1920,6 +1920,7 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "password",
     "passphrase",
     "private_key",
+    "relayer_api_key",
     "session_key",
     "tardis_http_url",
     "tardis_ws_url",

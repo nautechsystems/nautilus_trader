@@ -36,6 +36,8 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            PositionOperationControlReply, PositionOperationControlRequest,
+            PositionOperationResult, PositionOperationStatus, PositionOperationTokenAmount,
             QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
@@ -748,8 +750,8 @@ fn test_instrument_close_settles_open_binary_positions(
         assert_eq!(closed.signed_qty, Decimal::ZERO);
         assert_eq!(closed.quantity, Quantity::from("0.00"));
         assert_eq!(closed.peak_quantity, Quantity::from(last_qty));
-        assert_eq!(closed.last_qty, Quantity::from(last_qty));
-        assert_eq!(closed.last_px, close.close_price);
+        assert_eq!(closed.last_qty, Some(Quantity::from(last_qty)));
+        assert_eq!(closed.last_px, Some(close.close_price));
         assert_eq!(closed.currency, Currency::USDC());
         assert_eq!(closed.avg_px_open, Decimal::try_from(avg_px_open).unwrap());
         assert_eq!(closed.avg_px_close, Some(close.close_price.as_decimal()));
@@ -850,7 +852,7 @@ fn test_instrument_close_settles_open_position_at_cached_close() {
         panic!("expected position closed event, was {:?}", received[0]);
     };
 
-    assert_eq!(closed.last_px, first_close.close_price);
+    assert_eq!(closed.last_px, Some(first_close.close_price));
     assert_eq!(closed.ts_event, first_close.ts_event);
     assert!(position.is_settled());
     assert_eq!(position.realized_pnl, Some(Money::from("5.90 USDC")));
@@ -3891,7 +3893,7 @@ fn test_fill_void_updates_order_and_position_before_publication(
     };
     assert_eq!(position_changed.position_id, position_id);
     assert_eq!(position_changed.quantity, Quantity::from(50_000));
-    assert_eq!(position_changed.last_qty, Quantity::from(50_000));
+    assert_eq!(position_changed.last_qty, Some(Quantity::from(50_000)));
     assert_eq!(
         observed.borrow().as_slice(),
         &[(
@@ -4635,7 +4637,7 @@ fn test_process_leg_fill_without_order_updates_position_and_publishes_order_befo
         PositionEvent::PositionOpened(_)
     ));
     assert_eq!(position.id, expected_position_id);
-    assert_eq!(position.opening_order_id, client_order_id);
+    assert_eq!(position.opening_order_id, Some(client_order_id));
     assert_eq!(position.quantity, Quantity::from(1));
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.position_id(&client_order_id), None);
@@ -4777,7 +4779,7 @@ fn test_hedging_leg_fill_without_order_reuses_position_for_same_synthetic_leg(
         );
 
         assert_eq!(positions.len(), 1);
-        assert_eq!(positions[0].opening_order_id, client_order_id);
+        assert_eq!(positions[0].opening_order_id, Some(client_order_id));
         assert_eq!(positions[0].quantity, Quantity::from(1));
         assert!(!cache.order_exists(&client_order_id));
         assert_eq!(cache.position_id(&client_order_id), None);
@@ -4800,7 +4802,7 @@ fn test_hedging_leg_fill_without_order_reuses_position_for_same_synthetic_leg(
         assert_eq!(position.event_count(), 2);
         assert!(position.trade_ids.contains(&fill.trade_id));
         assert!(position.trade_ids.contains(&second_fill.trade_id));
-        assert_eq!(position.opening_order_id, client_order_id);
+        assert_eq!(position.opening_order_id, Some(client_order_id));
     }
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.position_id(&client_order_id), None);
@@ -4881,8 +4883,8 @@ fn test_hedging_leg_fill_without_order_reuses_open_position_after_flip(
 
         assert_eq!(open_positions.len(), 1);
         assert_eq!(closed_positions.len(), 1);
-        assert_eq!(open_positions[0].opening_order_id, client_order_id);
-        assert_eq!(closed_positions[0].opening_order_id, client_order_id);
+        assert_eq!(open_positions[0].opening_order_id, Some(client_order_id));
+        assert_eq!(closed_positions[0].opening_order_id, Some(client_order_id));
         assert_eq!(open_positions[0].side, PositionSide::Short);
         assert_eq!(open_positions[0].quantity, Quantity::from(1));
         open_positions[0].id
@@ -11926,7 +11928,7 @@ fn test_reduce_only_netting_fill_reduces_external_position(
                 event.quantity.as_decimal(),
                 Decimal::from(expected_qty.abs())
             );
-            assert_eq!(event.last_qty, Quantity::from(reducing_qty));
+            assert_eq!(event.last_qty, Some(Quantity::from(reducing_qty)));
         }
         PositionEvent::PositionClosed(event) => {
             assert_eq!(expected_qty, 0);
@@ -11934,7 +11936,7 @@ fn test_reduce_only_netting_fill_reduces_external_position(
             assert_eq!(event.strategy_id, external_strategy_id);
             assert_eq!(event.account_id, account_id);
             assert_eq!(event.quantity, Quantity::zero(0));
-            assert_eq!(event.last_qty, Quantity::from(reducing_qty));
+            assert_eq!(event.last_qty, Some(Quantity::from(reducing_qty)));
         }
         event => panic!("Unexpected position event {event:?}"),
     }
@@ -17020,7 +17022,7 @@ fn test_hedging_flip_remainders_require_matching_orders(
 
         if ClientOrderId::from(opening_order_id) != reversal_order.client_order_id() {
             let mut position = cache.position_mut(&flipped_position_id).unwrap();
-            position.opening_order_id = ClientOrderId::from(opening_order_id);
+            position.opening_order_id = Some(ClientOrderId::from(opening_order_id));
 
             let PositionReplayEvent::Filled(fill) = position.replay_events.last_mut().unwrap()
             else {
@@ -17105,7 +17107,7 @@ fn test_hedging_flip_remainders_require_matching_orders(
     assert_ne!(flipped_position_id, position_id);
     assert_eq!(
         positions[0].opening_order_id,
-        ClientOrderId::from(opening_order_id)
+        Some(ClientOrderId::from(opening_order_id))
     );
     assert_eq!(positions[0].side, PositionSide::Short);
     assert_eq!(positions[0].quantity, Quantity::from(expected_position_qty));
@@ -19250,7 +19252,7 @@ fn test_reconcile_fill_report_does_not_reopen_snapshot_reconciled_position(
     assert_eq!(replay_order.status(), OrderStatus::Filled);
     assert_eq!(replay_order.filled_qty(), Quantity::from(100_000));
     assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].opening_order_id, opening_client_order_id);
+    assert_eq!(positions[0].opening_order_id, Some(opening_client_order_id));
     assert_eq!(positions[0].signed_decimal_qty(), expected_qty);
     assert_eq!(
         positions[0].trade_ids.contains(&replay_trade_id),
@@ -19322,11 +19324,11 @@ fn test_reconcile_fill_report_applies_earlier_fill_outside_reconciled_position(
     let positions = cache.positions_open(None, None, None, None, None);
     let reconciled = positions
         .iter()
-        .find(|position| position.opening_order_id == reconciled_client_order_id)
+        .find(|position| position.opening_order_id == Some(reconciled_client_order_id))
         .unwrap();
     let applied = positions
         .iter()
-        .find(|position| position.opening_order_id == client_order_id)
+        .find(|position| position.opening_order_id == Some(client_order_id))
         .unwrap();
 
     assert_eq!(order.status(), OrderStatus::Filled);
@@ -24873,7 +24875,7 @@ fn test_closed_netting_position_ignores_duplicate_from_prior_cycle() {
     assert_eq!(position.quantity, Quantity::from(100_000));
     assert_eq!(
         position.opening_order_id,
-        ClientOrderId::from("O-REPLAY-REOPEN-3"),
+        Some(ClientOrderId::from("O-REPLAY-REOPEN-3")),
     );
     assert_eq!(position.events.len(), 1);
     assert_eq!(position.replay_events.len(), 4);
@@ -25549,4 +25551,217 @@ fn test_execution_command_logging(
 
     assert_eq!(take_reconciliation_logs(), expected);
     assert_eq!(*calls.borrow(), vec![(client_id, operation)]);
+}
+
+#[test]
+fn test_settled_consumption_persistence_failure_does_not_double_count() {
+    use std::sync::Arc;
+
+    use nautilus_common::messages::execution::PositionOperationEffects;
+    use nautilus_execution::engine::ExecutionEngine;
+    use nautilus_model::{
+        data::InstrumentClose,
+        enums::InstrumentCloseType,
+        position_operation::{
+            PositionOperationDirection, PositionOperationLeg, PositionOperationType,
+        },
+        types::Currency,
+    };
+
+    let (database, control) = crate::cache_database::FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut binary = binary_option();
+    binary.id = InstrumentId::from("TOKEN.POLYMARKET");
+    binary.raw_symbol = Symbol::from("TOKEN");
+    binary.currency = Currency::pUSD();
+    binary.outcome = Some(ustr::Ustr::from("Yes"));
+    binary.size_precision = 6;
+    binary.price_precision = 2;
+    binary.activation_ns = UnixNanos::default();
+    binary.expiration_ns = UnixNanos::from(1_000_000_000);
+    binary.info = Some(Params::new(
+        [
+            (
+                "token_id".to_string(),
+                serde_json::Value::String("TOKEN".to_string()),
+            ),
+            (
+                "condition_id".to_string(),
+                serde_json::Value::String("0xcondition".to_string()),
+            ),
+        ]
+        .into(),
+    ));
+    let instrument = InstrumentAny::BinaryOption(binary);
+
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let account_id = AccountId::test_default();
+    let position_id = PositionId::from(format!("{}-{strategy_id}", instrument.id()));
+    let leg = PositionOperationLeg {
+        operation_id: UUID4::new(),
+        operation: PositionOperationType::Convert,
+        direction: PositionOperationDirection::Open,
+        trader_id,
+        strategy_id,
+        account_id,
+        instrument_id: instrument.id(),
+        position_id,
+        quantity: Quantity::from("100"),
+        cost: Decimal::from(40),
+        income: None,
+        settled: false,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(2),
+    };
+    let mut position = Position::new_from_operation_checked(&instrument, leg).unwrap();
+    position
+        .apply_instrument_close(InstrumentClose::new(
+            instrument.id(),
+            Price::from("1.00"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(3),
+            UnixNanos::from(3),
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+
+    let operation_id = UUID4::new();
+    let effects = PositionOperationEffects {
+        received: Vec::new(),
+        spent: vec![PositionOperationTokenAmount {
+            token_id: "TOKEN".to_string(),
+            quantity: "80".to_string(),
+        }],
+        collateral_delta: "80".to_string(),
+        payouts: Vec::new(),
+    };
+    let result = PositionOperationResult::new(
+        trader_id,
+        strategy_id,
+        ClientId::from("MANAGED"),
+        account_id,
+        operation_id,
+        PositionOperationType::Redeem,
+        PositionOperationStatus::Confirmed,
+        vec![instrument.id()],
+        None,
+        None,
+        None,
+        Some(effects),
+        UUID4::new(),
+        UnixNanos::from(4),
+        UnixNanos::from(4),
+    );
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let engine = Rc::new(RefCell::new(ExecutionEngine::new(
+        clock.clone(),
+        cache.clone(),
+        None,
+    )));
+    ExecutionEngine::register_msgbus_handlers(&engine);
+    let client = StubExecutionClient::new(
+        ClientId::from("MANAGED"),
+        account_id,
+        instrument.id().venue,
+        OmsType::Netting,
+        Some(clock),
+    );
+    engine
+        .borrow_mut()
+        .register_client(Box::new(client.clone()))
+        .unwrap();
+
+    let reply: PositionOperationControlReply = Arc::new(|_| {});
+    let barrier = PositionOperationControlRequest::Barrier {
+        operation_id,
+        operation: PositionOperationType::Redeem,
+        instrument_ids: vec![instrument.id()],
+        strategy_id,
+        account_id,
+        quantity: Some(Quantity::from("80")),
+        input_instrument_ids: vec![instrument.id()],
+        reply,
+    };
+    msgbus::send_any_value(
+        MessagingSwitchboard::exec_engine_position_operation_control(),
+        &barrier,
+    );
+    assert!(
+        engine
+            .borrow()
+            .is_position_operation_barred(&instrument.id())
+    );
+
+    control.set_fail_general_add_on(Some(1));
+    msgbus::send_any_value(
+        MessagingSwitchboard::exec_engine_position_operation(),
+        &result,
+    );
+
+    assert_eq!(
+        *client.applied_position_operations().borrow(),
+        vec![operation_id],
+        "the core must confirm the in-memory application exactly once",
+    );
+    assert_eq!(
+        client.queried_account_ids().borrow().as_slice(),
+        &[account_id],
+        "the applied operation must refresh the account once",
+    );
+    assert!(
+        !engine
+            .borrow()
+            .is_position_operation_barred(&instrument.id()),
+        "the applied operation must release its barrier despite the persistence error",
+    );
+    let entries = cache
+        .borrow()
+        .general_entries_with_prefix("position-operation-settled:");
+    let values = entries
+        .into_iter()
+        .map(|(_, bytes)| String::from_utf8(bytes.to_vec()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        values.len(),
+        2,
+        "consumption and operation marker must both exist"
+    );
+    assert_eq!(values, vec!["80".to_string(), "80".to_string()]);
+
+    msgbus::send_any_value(
+        MessagingSwitchboard::exec_engine_position_operation(),
+        &result,
+    );
+    assert_eq!(
+        *client.applied_position_operations().borrow(),
+        vec![operation_id],
+        "a duplicate result must not reapply or reconfirm",
+    );
+    assert_eq!(
+        client.queried_account_ids().borrow().as_slice(),
+        &[account_id],
+        "a duplicate result must not refresh the account again",
+    );
+    let entries = cache
+        .borrow()
+        .general_entries_with_prefix("position-operation-settled:");
+    let values = entries
+        .into_iter()
+        .map(|(_, bytes)| String::from_utf8(bytes.to_vec()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(values, vec!["80".to_string(), "80".to_string()]);
+    let position = cache.borrow().position(&position_id).unwrap().cloned();
+    assert!(position.is_closed());
 }

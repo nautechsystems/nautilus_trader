@@ -2192,6 +2192,7 @@ impl BacktestEngine {
     fn drain_exec_client_events(&self) {
         for client in &self.exec_clients {
             client.drain_queued_events();
+            client.drain_queued_position_operation_results();
         }
     }
 

@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::PositionSnapshot,
@@ -46,12 +46,28 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             .map(InstrumentId::from)?;
         let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
         let opening_order_id = row
-            .try_get::<&str, _>("opening_order_id")
-            .map(ClientOrderId::from)?;
+            .try_get::<Option<&str>, _>("opening_order_id")?
+            .map(ClientOrderId::from);
+        let opening_operation_id = row
+            .try_get::<Option<&str>, _>("opening_operation_id")?
+            .map(|value| {
+                value
+                    .parse::<UUID4>()
+                    .map_err(|e| decode_error("opening_operation_id", value, e))
+            })
+            .transpose()?;
         let closing_order_id = row
             .try_get::<Option<&str>, _>("closing_order_id")
             .ok()
             .and_then(|x| x.map(ClientOrderId::from));
+        let closing_operation_id = row
+            .try_get::<Option<&str>, _>("closing_operation_id")?
+            .map(|value| {
+                value
+                    .parse::<UUID4>()
+                    .map_err(|e| decode_error("closing_operation_id", value, e))
+            })
+            .transpose()?;
         let entry = row
             .try_get::<&str, _>("entry")
             .map(OrderSide::from_str)?
@@ -117,7 +133,9 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             position_id: id,
             account_id,
             opening_order_id,
+            opening_operation_id,
             closing_order_id,
+            closing_operation_id,
             entry,
             side,
             signed_qty,

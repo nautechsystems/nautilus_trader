@@ -204,6 +204,8 @@ pub(super) struct TestServerState {
     pub(super) trades_response_by_id: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
     pub(super) trades_filter_after: Arc<AtomicBool>,
     pub(super) positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) positions_get_count: Arc<AtomicUsize>,
+    pub(super) positions_request_gate: Arc<RequestGate>,
     pub(super) user_frames: tokio::sync::broadcast::Sender<String>,
     pub(super) user_socket_count: Arc<AtomicUsize>,
     pub(super) user_upgrade_gate: Arc<RequestGate>,
@@ -291,6 +293,8 @@ impl Default for TestServerState {
             trades_response_by_id: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             trades_filter_after: Arc::new(AtomicBool::new(false)),
             positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            positions_get_count: Arc::new(AtomicUsize::new(0)),
+            positions_request_gate: Arc::new(RequestGate::default()),
             book_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
@@ -913,6 +917,8 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_get_positions(State(state): State<TestServerState>) -> impl IntoResponse {
+    state.positions_get_count.fetch_add(1, Ordering::AcqRel);
+    state.positions_request_gate.wait().await;
     // Overrides carry the page's rows; the envelope is the v2 response shape.
     Json(json!({
         "data": state

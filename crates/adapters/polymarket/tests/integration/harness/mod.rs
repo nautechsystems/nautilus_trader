@@ -35,14 +35,23 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_polymarket::{
-    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
+    common::{
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
+        enums::PolymarketSignatureType,
+    },
     execution::PolymarketExecutionClient,
 };
 use serde_json::json;
 use ustr::Ustr;
 
-use crate::mock_venue::{
-    TEST_CONDITION_ID, TEST_TOKEN_ID, TestServerState, execution_config, start_mock_server,
+use crate::{
+    mock_venue::{
+        TEST_CONDITION_ID, TEST_TOKEN_ID, TestServerState, execution_config, start_mock_server,
+    },
+    positions::{
+        TEST_PRIVATE_KEY as POSITION_PRIVATE_KEY, TEST_SIGNER as POSITION_SIGNER,
+        TestServerState as PositionServerState, start_mock_server as start_position_mock_server,
+    },
 };
 
 pub(crate) const ACCOUNT_ID: &str = "POLYMARKET-001";
@@ -108,6 +117,73 @@ impl Harness {
             mock_state,
             sockets,
         }
+    }
+
+    pub(crate) async fn build_with_position_operations(
+        seed: impl FnOnce(&ExecutionHarness),
+        position_state: PositionServerState,
+    ) -> (Self, PositionServerState) {
+        let trader_id = TraderId::from(TRADER_ID);
+        let account_id = AccountId::from(ACCOUNT_ID);
+        let instrument = instrument();
+        let execution =
+            ExecutionHarness::new(trader_id, *POLYMARKET_CLIENT_ID, account_id, instrument);
+        add_account(&execution, account_id);
+        seed(&execution);
+
+        let mock_state = TestServerState::default();
+        mock_state.configure_default_order_success().await;
+        let addr = start_mock_server(mock_state.clone()).await;
+
+        let position_addr = start_position_mock_server(position_state.clone()).await;
+        let funder = position_state.wallet().await;
+        let mut config = execution_config(addr);
+        config.private_key = Some(POSITION_PRIVATE_KEY.into());
+        config.funder = Some(funder);
+        config.signature_type = PolymarketSignatureType::PolyGnosisSafe;
+        config.relayer_api_key = Some("relayer-key".into());
+        config.relayer_api_key_address = Some(POSITION_SIGNER.into());
+        config.base_url_relayer = Some(format!("http://{position_addr}"));
+        config.base_url_rpc = Some(format!("http://{position_addr}/"));
+
+        let core = ExecutionClientCore::new(
+            trader_id,
+            *POLYMARKET_CLIENT_ID,
+            *POLYMARKET_VENUE,
+            OmsType::Netting,
+            account_id,
+            AccountType::Cash,
+            None,
+            execution.cache().clone(),
+        );
+        let sockets = SocketReconnectRegistry::default();
+        let mut client = sockets
+            .scope(|| PolymarketExecutionClient::new(core, config))
+            .unwrap();
+        let cached_instrument = execution
+            .cache()
+            .borrow()
+            .instrument(&execution.instrument_id())
+            .unwrap()
+            .clone();
+        client.on_instrument(cached_instrument);
+        client.start().unwrap();
+        client.connect().await.unwrap();
+        nautilus_common::testing::wait_until_async(
+            || async { client.is_connected() },
+            Duration::from_secs(2),
+        )
+        .await;
+        execution.register_client(Box::new(client)).unwrap();
+
+        (
+            Self {
+                execution,
+                mock_state,
+                sockets,
+            },
+            position_state,
+        )
     }
 }
 

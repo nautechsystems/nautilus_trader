@@ -1115,7 +1115,10 @@ mod tests {
             instrument_id: instrument_id_aud_usd_sim(),
             id: PositionId::new(id),
             account_id: AccountId::new("test-account"),
-            opening_order_id: ClientOrderId::test_default(),
+            opening_order_id: Some(ClientOrderId::test_default()),
+            opening_operation_id: None,
+
+            closing_operation_id: None,
             closing_order_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Flat,

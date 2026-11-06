@@ -43,8 +43,10 @@ from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
+from nautilus_trader.model import AssetClass
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BinaryOption
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
@@ -2930,3 +2932,306 @@ def _make_order_filled_event(
         position_id=PositionId(position_id) if position_id is not None else None,
         commission=Money.from_str("2.00 USD"),
     )
+
+
+class ConvertProbeStrategy(Strategy):
+    """
+    Drive a convert through real backtest fills and exercise the strategy callbacks.
+    """
+
+    def __init__(self, config: StrategyConfig) -> None:
+        """
+        Initialize the instance.
+        """
+        super().__init__(config)
+        self.inputs: list[InstrumentId] = []
+        self.output_instrument_id: InstrumentId | None = None
+        self.quote_counts: dict[InstrumentId, int] = {}
+        self.filled: set[InstrumentId] = set()
+        self.operation_id = None
+        self.statuses: list[str] = []
+        self.opened: list[object] = []
+        self.queried = False
+
+    def on_start(self) -> None:
+        """
+        Subscribe to the NO instruments needed for the conversion.
+        """
+        for instrument_id in self.inputs:
+            self.subscribe_quotes(instrument_id)
+
+    def on_quote(self, quote: object) -> None:
+        """
+        Enter each NO position, then query the conversion after later quotes.
+        """
+        count = self.quote_counts.get(quote.instrument_id, 0) + 1
+        self.quote_counts[quote.instrument_id] = count
+        if count == 3 and self.operation_id is not None and not self.queried:
+            self.queried = True
+            self.query_position_operation(self.operation_id, ClientId("POLYMARKET"))
+            return
+        if count != 2:
+            return
+        self.submit_order(
+            self.order_factory.market(
+                quote.instrument_id,
+                OrderSide.BUY,
+                Quantity.from_str("100.0000"),
+            ),
+        )
+
+    def on_order_filled(self, event: object) -> None:
+        """
+        Submit the conversion once all NO positions are open.
+        """
+        self.filled.add(event.instrument_id)
+        if set(self.inputs).issubset(self.filled) and self.operation_id is None:
+            self.operation_id = self.submit_position_operation(
+                "convert",
+                self.inputs,
+                Quantity.from_str("100.0000"),
+            )
+
+    def on_position_opened(self, event: object) -> None:
+        """
+        Capture operation-created output positions.
+        """
+        if event.instrument_id == self.output_instrument_id:
+            self.opened.append(event)
+
+    def on_position_operation(self, result: object) -> None:
+        """
+        Record operation result statuses.
+        """
+        self.statuses.append(result.status)
+
+
+def _neg_risk_python_instrument(
+    condition_id: str,
+    token_id: str,
+    outcome: str,
+    market: dict,
+) -> BinaryOption:
+    """
+    Create a BinaryOption instrument carrying negative-risk conversion metadata.
+    """
+    return BinaryOption(
+        instrument_id=InstrumentId.from_str(f"TOKEN-{token_id}.POLYMARKET"),
+        raw_symbol=Symbol(f"TOKEN-{token_id}"),
+        asset_class=AssetClass.ALTERNATIVE,
+        currency=Currency.from_str("pUSD"),
+        activation_ns=0,
+        expiration_ns=4_000_000_000_000_000_000,
+        price_precision=4,
+        size_precision=4,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("0.0001"),
+        ts_event=0,
+        ts_init=0,
+        outcome=outcome,
+        info={
+            "market_version": "v1",
+            "condition_id": condition_id,
+            "token_id": token_id,
+            "neg_risk": True,
+            "neg_risk_market": market,
+        },
+    )
+
+
+def test_strategy_position_operation_submit_callback_and_query() -> None:
+    """
+    Test the registered Python strategy success path through a real backtest engine.
+    """
+    venue = Venue("POLYMARKET")
+    p_usd = Currency.from_str("pUSD")
+    market = {
+        "market_id": "0x" + "22" * 31 + "00",
+        "fee_bips": 100,
+        "conditions": [
+            {
+                "question_index": 0,
+                "condition_id": "0x" + "11" * 31 + "00",
+                "yes_token_id": "512",
+                "no_token_id": "256",
+            },
+            {
+                "question_index": 1,
+                "condition_id": "0x" + "11" * 31 + "01",
+                "yes_token_id": "513",
+                "no_token_id": "257",
+            },
+        ],
+    }
+    no0 = _neg_risk_python_instrument("0x" + "11" * 31 + "00", "256", "No", market)
+    no1 = _neg_risk_python_instrument("0x" + "11" * 31 + "01", "257", "No", market)
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(1_000.0, p_usd)],
+        base_currency=p_usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    engine.add_instrument(no0)
+    engine.add_instrument(no1)
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.4900"),
+                ask_price=Price.from_str("0.5000"),
+                bid_size=Quantity.from_str("1000.0000"),
+                ask_size=Quantity.from_str("1000.0000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            for instrument in (no0, no1)
+            for ts in (
+                1_000_000_000,
+                2_000_000_000,
+                3_000_000_000,
+                4_000_000_000,
+            )
+        ],
+    )
+
+    strategy = ConvertProbeStrategy(
+        StrategyConfig(strategy_id=StrategyId("S-CONVERT-001")),
+    )
+    strategy.inputs = [no0.id, no1.id]
+    engine.add_strategy(strategy)
+
+    try:
+        engine.run()
+        assert strategy.operation_id is not None
+        assert strategy.statuses[0] == "confirmed"
+        assert "applied" in strategy.statuses
+        assert strategy.queried
+        assert engine.cache.positions_open(instrument_id=no0.id) == []
+        assert engine.cache.positions_open(instrument_id=no1.id) == []
+
+        account = engine.cache.account_for_venue(venue)
+        assert account is not None
+        assert account.balances()[p_usd].total == Money.from_str("999 pUSD")
+        assert engine.portfolio.net_position(no0.id) == Decimal(0)
+        assert engine.portfolio.net_position(no1.id) == Decimal(0)
+        assert engine.portfolio.realized_pnl(no0.id) == Money.from_str("-0.5 pUSD")
+        assert engine.portfolio.realized_pnl(no1.id) == Money.from_str("-0.5 pUSD")
+    finally:
+        engine.dispose()
+
+
+def test_python_strategy_convert_operation_source_projection() -> None:
+    """
+    Test operation-created YES positions project their source and nullable fields.
+    """
+    venue = Venue("POLYMARKET")
+    p_usd = Currency.from_str("pUSD")
+    market = {
+        "market_id": "0x" + "22" * 31 + "00",
+        "fee_bips": 100,
+        "conditions": [
+            {
+                "question_index": 0,
+                "condition_id": "0x" + "11" * 31 + "00",
+                "yes_token_id": "512",
+                "no_token_id": "256",
+            },
+            {
+                "question_index": 1,
+                "condition_id": "0x" + "11" * 31 + "01",
+                "yes_token_id": "513",
+                "no_token_id": "257",
+            },
+        ],
+    }
+    no0 = _neg_risk_python_instrument("0x" + "11" * 31 + "00", "256", "No", market)
+    yes1 = _neg_risk_python_instrument("0x" + "11" * 31 + "01", "513", "Yes", market)
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(1_000.0, p_usd)],
+        base_currency=p_usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    engine.add_instrument(no0)
+    engine.add_instrument(yes1)
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=no0.id,
+                bid_price=Price.from_str("0.4900"),
+                ask_price=Price.from_str("0.5000"),
+                bid_size=Quantity.from_str("1000.0000"),
+                ask_size=Quantity.from_str("1000.0000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            for ts in (
+                1_000_000_000,
+                2_000_000_000,
+                3_000_000_000,
+                4_000_000_000,
+            )
+        ],
+    )
+
+    strategy = ConvertProbeStrategy(
+        StrategyConfig(strategy_id=StrategyId("S-CONVERT-002")),
+    )
+    strategy.inputs = [no0.id]
+    strategy.output_instrument_id = yes1.id
+    engine.add_strategy(strategy)
+
+    try:
+        engine.run()
+
+        assert strategy.operation_id is not None
+        assert strategy.statuses[0] == "confirmed"
+        assert "applied" in strategy.statuses
+        assert strategy.queried
+        assert len(strategy.opened) == 1
+        opened = strategy.opened[0]
+        assert opened.instrument_id == yes1.id
+        assert opened.opening_order_id is None
+        assert opened.opening_operation_id == strategy.operation_id
+        assert opened.last_px is None
+
+        yes_position = engine.cache.positions_open(instrument_id=yes1.id)[0]
+        assert yes_position.quantity == Quantity.from_str("99.0000")
+        assert engine.cache.positions_open(instrument_id=no0.id) == []
+
+        account = engine.cache.account_for_venue(venue)
+        assert account is not None
+        assert account.balances()[p_usd].total == Money.from_str("950 pUSD")
+        assert engine.portfolio.net_position(no0.id) == Decimal(0)
+        assert engine.portfolio.net_position(yes1.id) == Quantity.from_str("99.0000").as_decimal()
+    finally:
+        engine.dispose()
+
+
+def test_strategy_position_operation_api_requires_registration(strategy: object) -> None:
+    """
+    Test strategy position operation API requires registration.
+    """
+    with pytest.raises(RuntimeError, match="Strategy not registered"):
+        strategy.submit_position_operation(
+            "convert",
+            [InstrumentId.from_str("TOKEN.POLYMARKET")],
+            Quantity.from_str("1"),
+        )
+
+    with pytest.raises(RuntimeError, match="Strategy not registered"):
+        strategy.query_position_operation(UUID4())

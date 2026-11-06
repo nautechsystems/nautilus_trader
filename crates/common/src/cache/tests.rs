@@ -2308,6 +2308,24 @@ fn test_cache_general_when_no_database(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_general_entries_with_prefix_returns_sorted_matching_entries(mut cache: Cache) {
+    cache
+        .add("position-operation:b", Bytes::from_static(b"2"))
+        .unwrap();
+    cache
+        .add("position-operation:a", Bytes::from_static(b"1"))
+        .unwrap();
+    cache.add("other", Bytes::from_static(b"3")).unwrap();
+
+    let entries = cache.general_entries_with_prefix("position-operation:");
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].0, "position-operation:a");
+    assert_eq!(entries[1].0, "position-operation:b");
+    assert_eq!(entries[0].1, Bytes::from_static(b"1"));
+}
+
+#[rstest]
 fn test_has_backing_reflects_injected_adapter() {
     let without = Cache::new(None, None);
     assert!(!without.has_backing());
@@ -13172,7 +13190,7 @@ fn test_add_position_commits_memory_when_database_index_fails(audusd_sim: Curren
     drop(cached);
     // The opening-order relationship in both directions.
     assert_eq!(
-        cache.position_id(&position.opening_order_id),
+        cache.position_id(&position.opening_order_id.unwrap()),
         Some(&position_id),
     );
     assert!(
@@ -13181,7 +13199,7 @@ fn test_add_position_commits_memory_when_database_index_fails(audusd_sim: Curren
             .position_orders
             .get(&position_id)
             .unwrap()
-            .contains(&position.opening_order_id)
+            .contains(&position.opening_order_id.unwrap())
     );
     assert_eq!(
         cache.index.position_strategy.get(&position_id),

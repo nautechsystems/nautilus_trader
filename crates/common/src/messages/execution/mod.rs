@@ -17,6 +17,7 @@
 
 pub mod cancel;
 pub mod modify;
+pub mod position;
 pub mod query;
 pub mod report;
 pub mod submit;
@@ -34,6 +35,14 @@ use strum::Display as StrumDisplay;
 pub use self::{
     cancel::{BatchCancelOrders, CancelAllOrders, CancelOrder},
     modify::{BatchModifyOrders, ModifyOrder},
+    position::{
+        PositionOperationControlReply, PositionOperationControlRequest, PositionOperationEffects,
+        PositionOperationRecovery, PositionOperationRecoveryFailed, PositionOperationRecoveryLeg,
+        PositionOperationRecoveryOutcome, PositionOperationRecoveryReply,
+        PositionOperationRecoveryUnresolved, PositionOperationResult,
+        PositionOperationStartupRecovery, PositionOperationStatus, PositionOperationTokenAmount,
+        PositionOperationTokenPayout, QueryPositionOperation, SubmitPositionOperation,
+    },
     query::{QueryAccount, QueryOrder},
     report::{
         GenerateExecutionMassStatus, GenerateExecutionMassStatusBuilder, GenerateFillReports,
@@ -104,6 +113,10 @@ pub enum TradingCommand {
     QueryOrder(QueryOrder),
     #[strum(transparent)]
     QueryAccount(QueryAccount),
+    #[strum(transparent)]
+    SubmitPositionOperation(SubmitPositionOperation),
+    #[strum(transparent)]
+    QueryPositionOperation(QueryPositionOperation),
 }
 
 #[derive(Deserialize)]
@@ -117,6 +130,8 @@ enum TradingCommandType {
     CancelAllOrders,
     QueryOrder,
     QueryAccount,
+    SubmitPositionOperation,
+    QueryPositionOperation,
 }
 
 #[derive(Deserialize)]
@@ -163,6 +178,12 @@ impl<'de> Deserialize<'de> for TradingCommand {
             TradingCommandType::QueryAccount => serde_json::from_value(value)
                 .map(Self::QueryAccount)
                 .map_err(D::Error::custom),
+            TradingCommandType::SubmitPositionOperation => serde_json::from_value(value)
+                .map(Self::SubmitPositionOperation)
+                .map_err(D::Error::custom),
+            TradingCommandType::QueryPositionOperation => serde_json::from_value(value)
+                .map(Self::QueryPositionOperation)
+                .map_err(D::Error::custom),
         }
     }
 }
@@ -180,6 +201,8 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.client_id,
             Self::QueryOrder(command) => command.client_id,
             Self::QueryAccount(command) => command.client_id,
+            Self::SubmitPositionOperation(command) => command.client_id,
+            Self::QueryPositionOperation(command) => command.client_id,
         }
     }
 
@@ -187,7 +210,8 @@ impl TradingCommand {
     ///
     /// # Panics
     ///
-    /// Panics if the command is `QueryAccount` which does not have an instrument ID.
+    /// Panics if the command is `QueryAccount`, `SubmitPositionOperation`, or
+    /// `QueryPositionOperation`, which do not have a single instrument ID.
     #[must_use]
     pub const fn instrument_id(&self) -> InstrumentId {
         match self {
@@ -199,7 +223,9 @@ impl TradingCommand {
             Self::CancelOrders(command) => command.instrument_id,
             Self::CancelAllOrders(command) => command.instrument_id,
             Self::QueryOrder(command) => command.instrument_id,
-            Self::QueryAccount(_) => panic!("No instrument ID for command"),
+            Self::QueryAccount(_)
+            | Self::SubmitPositionOperation(_)
+            | Self::QueryPositionOperation(_) => panic!("No instrument ID for command"),
         }
     }
 
@@ -215,6 +241,8 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.ts_init,
             Self::QueryOrder(command) => command.ts_init,
             Self::QueryAccount(command) => command.ts_init,
+            Self::SubmitPositionOperation(command) => command.ts_init,
+            Self::QueryPositionOperation(command) => command.ts_init,
         }
     }
 
@@ -230,6 +258,8 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => Some(command.strategy_id),
             Self::QueryOrder(command) => Some(command.strategy_id),
             Self::QueryAccount(_) => None,
+            Self::SubmitPositionOperation(command) => Some(command.strategy_id),
+            Self::QueryPositionOperation(command) => Some(command.strategy_id),
         }
     }
 
@@ -245,6 +275,7 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.params.as_ref(),
             Self::QueryOrder(command) => command.params.as_ref(),
             Self::QueryAccount(command) => command.params.as_ref(),
+            Self::SubmitPositionOperation(_) | Self::QueryPositionOperation(_) => None,
         }
     }
 }
@@ -257,6 +288,7 @@ mod tests {
         events::OrderInitialized,
         identifiers::{AccountId, OrderListId, TradeId, TraderId, VenueOrderId},
         orders::OrderList,
+        position_operation::PositionOperationType,
         reports::{FillReport, OrderStatusReport},
         types::{Currency, Money, Price, Quantity},
     };
@@ -393,6 +425,23 @@ mod tests {
                 None,
                 None,
             )),
+            TradingCommand::SubmitPositionOperation(SubmitPositionOperation::new(
+                trader_id,
+                client_id,
+                strategy_id,
+                UUID4::from("00000000-0000-4000-8000-000000000010"),
+                PositionOperationType::Split,
+                vec![instrument_id, InstrumentId::from("AUD/USD-OTHER.SIM")],
+                Some(Quantity::from("100")),
+                ts_init,
+            )),
+            TradingCommand::QueryPositionOperation(QueryPositionOperation::new(
+                trader_id,
+                client_id,
+                strategy_id,
+                UUID4::from("00000000-0000-4000-8000-000000000011"),
+                ts_init,
+            )),
         ]
     }
 
@@ -463,6 +512,8 @@ mod tests {
                 TradingCommand::CancelAllOrders(command) => command.to_string(),
                 TradingCommand::QueryOrder(command) => command.to_string(),
                 TradingCommand::QueryAccount(command) => command.to_string(),
+                TradingCommand::SubmitPositionOperation(command) => command.to_string(),
+                TradingCommand::QueryPositionOperation(command) => command.to_string(),
             };
 
             assert_eq!(command.to_string(), expected);
@@ -496,7 +547,8 @@ mod tests {
             error.to_string(),
             "unknown variant `UnknownCommand`, expected one of `SubmitOrder`, `SubmitOrderList`, \
              `ModifyOrder`, `BatchModifyOrders`, `CancelOrder`, `BatchCancelOrders`, \
-             `CancelAllOrders`, `QueryOrder`, `QueryAccount`",
+             `CancelAllOrders`, `QueryOrder`, `QueryAccount`, `SubmitPositionOperation`, \
+             `QueryPositionOperation`",
         );
     }
 
@@ -515,6 +567,14 @@ mod tests {
                 assert_eq!(command.strategy_id(), None);
             } else {
                 assert_eq!(command.strategy_id(), Some(strategy_id));
+            }
+
+            if !matches!(
+                command,
+                TradingCommand::QueryAccount(_)
+                    | TradingCommand::SubmitPositionOperation(_)
+                    | TradingCommand::QueryPositionOperation(_)
+            ) {
                 assert_eq!(command.instrument_id(), instrument_id);
             }
         }
@@ -541,12 +601,30 @@ mod tests {
     }
 
     #[rstest]
+    #[rstest]
     #[should_panic(expected = "No instrument ID for command")]
     fn trading_command_instrument_id_panics_for_query_account() {
         let command = trading_commands()
             .into_iter()
             .find(|command| matches!(command, TradingCommand::QueryAccount(_)))
             .expect("query account command must be present");
+
+        let _ = command.instrument_id();
+    }
+
+    #[rstest]
+    #[case::submit_position_operation(true)]
+    #[case::query_position_operation(false)]
+    #[should_panic(expected = "No instrument ID for command")]
+    fn trading_command_instrument_id_panics_for_position_operations(#[case] submit: bool) {
+        let command = trading_commands()
+            .into_iter()
+            .find(|command| match command {
+                TradingCommand::SubmitPositionOperation(_) => submit,
+                TradingCommand::QueryPositionOperation(_) => !submit,
+                _ => false,
+            })
+            .expect("position operation command must be present");
 
         let _ = command.instrument_id();
     }

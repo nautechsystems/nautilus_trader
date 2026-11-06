@@ -290,15 +290,17 @@ pub fn decode_batch_with_metadata_fields<T: DeserializeOwned>(
     }
 
     let schema = record_batch.schema();
-    let columns: Result<Vec<_>, EncodingError> = fields
-        .iter()
-        .enumerate()
-        .map(|(expected_index, field)| {
-            let index = column_index(&schema, field.name, expected_index)?;
-            decode_column_ref(record_batch.columns(), *field, index)
-        })
-        .collect();
-    let columns = columns?;
+    let mut columns = Vec::with_capacity(fields.len());
+    for (expected_index, field) in fields.iter().enumerate() {
+        match column_index(&schema, field.name, expected_index) {
+            Ok(index) => {
+                columns.push(decode_column_ref(record_batch.columns(), *field, index)?);
+            }
+            // A nullable field absent from an older schema keeps its serde default.
+            Err(EncodingError::MissingColumn(_, _)) if field.nullable => {}
+            Err(e) => return Err(e),
+        }
+    }
 
     let metadata_values = metadata_fields
         .iter()

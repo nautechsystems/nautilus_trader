@@ -35,6 +35,12 @@ use axum::{
 };
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::testing::wait_until_async;
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
+    position_operation::PositionOperationType,
+    types::Quantity,
+};
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::credential::{EvmPrivateKey, RelayerApiKey},
@@ -42,9 +48,12 @@ use nautilus_polymarket::{
         error::Error,
         relayer::{PolymarketRelayerHttpClient, RelayerWalletSubmit},
     },
-    positions::{PolymarketPositionClient, PolymarketPositionOutcome},
+    positions::{
+        ManagedPositionOperationRequest, PolymarketPositionClient, PolymarketPositionOutcome,
+        record::{ManagedOperationIntent, PositionOperationRecord, PositionOperationRecorder},
+    },
     signing::eip712::{
-        CTF_COLLATERAL_ADAPTER, DEPOSIT_WALLET_FACTORY, EXCHANGE_V3,
+        CONDITIONAL_TOKENS, CTF_COLLATERAL_ADAPTER, DEPOSIT_WALLET_FACTORY, EXCHANGE_V3,
         NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
     },
 };
@@ -52,13 +61,14 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
-const TEST_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const TEST_SIGNER: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+pub(super) const TEST_PRIVATE_KEY: &str =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+pub(super) const TEST_SIGNER: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
 const TEST_DEPOSIT_WALLET: &str = "0x1111111111111111111111111111111111111111";
 const CONDITION_ID: &str = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
 #[derive(Clone)]
-struct TestServerState {
+pub(super) struct TestServerState {
     wallet: Arc<tokio::sync::Mutex<String>>,
     owner: Arc<tokio::sync::Mutex<String>>,
     market: Arc<tokio::sync::Mutex<Value>>,
@@ -68,6 +78,7 @@ struct TestServerState {
     submit_body: Arc<tokio::sync::Mutex<Value>>,
     submit_delay: Arc<tokio::sync::Mutex<Duration>>,
     submit_count: Arc<AtomicUsize>,
+    transaction_get_count: Arc<AtomicUsize>,
     rpc_code: Arc<tokio::sync::Mutex<String>>,
     rpc_error: Arc<tokio::sync::Mutex<bool>>,
     rpc_identity: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -84,6 +95,7 @@ struct TestServerState {
     router_operator: Arc<tokio::sync::Mutex<bool>>,
     position_balances: Arc<tokio::sync::Mutex<[u64; 2]>>,
     payout: Arc<tokio::sync::Mutex<Option<u64>>>,
+    receipt: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -103,6 +115,7 @@ impl Default for TestServerState {
             }))),
             submit_delay: Arc::new(tokio::sync::Mutex::new(Duration::ZERO)),
             submit_count: Arc::new(AtomicUsize::new(0)),
+            transaction_get_count: Arc::new(AtomicUsize::new(0)),
             rpc_code: Arc::new(tokio::sync::Mutex::new("0x1234".into())),
             rpc_error: Arc::new(tokio::sync::Mutex::new(false)),
             rpc_identity: Arc::new(tokio::sync::Mutex::new(None)),
@@ -124,7 +137,88 @@ impl Default for TestServerState {
             router_operator: Arc::new(tokio::sync::Mutex::new(true)),
             position_balances: Arc::new(tokio::sync::Mutex::new([2_000_003, 1_000_004])),
             payout: Arc::new(tokio::sync::Mutex::new(Some(750_005))),
+            receipt: Arc::new(tokio::sync::Mutex::new(None)),
         }
+    }
+}
+
+#[allow(dead_code, reason = "shared with live and node integration tests")]
+impl TestServerState {
+    pub(super) async fn wallet(&self) -> String {
+        self.wallet.lock().await.clone()
+    }
+
+    pub(super) fn submit_count(&self) -> usize {
+        self.submit_count.load(Ordering::Acquire)
+    }
+
+    pub(super) fn transaction_get_count(&self) -> usize {
+        self.transaction_get_count.load(Ordering::Acquire)
+    }
+
+    pub(super) async fn set_position_balances(&self, balances: [u64; 2]) {
+        *self.position_balances.lock().await = balances;
+    }
+
+    pub(super) async fn configure_convert_receipt(
+        &self,
+        spent: &[(u64, u64)],
+        received: &[(u64, u64)],
+        collateral: u64,
+    ) {
+        let wallet = self.wallet.lock().await.clone();
+        let operator = format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}");
+        let transfer_single =
+            alloy_primitives::keccak256(b"TransferSingle(address,address,address,uint256,uint256)");
+        let transfer = alloy_primitives::keccak256(b"Transfer(address,address,uint256)");
+        let topic = |address: &str| format!("0x{}{}", "0".repeat(24), &address[2..]);
+        let mut log_index = 0u64;
+        let mut logs = Vec::new();
+        let mut push_transfer_single = |from: &str, to: &str, token_id: u64, value: u64| {
+            logs.push(json!({
+                "address": format!("{CONDITIONAL_TOKENS:#x}"),
+                "topics": [
+                    format!("0x{}", alloy_primitives::hex::encode(transfer_single)),
+                    topic(&operator),
+                    topic(from),
+                    topic(to),
+                ],
+                "data": format!("0x{token_id:064x}{value:064x}"),
+                "logIndex": format!("0x{log_index:x}"),
+            }));
+            log_index += 1;
+        };
+
+        for (token_id, value) in spent {
+            push_transfer_single(&wallet, &operator, *token_id, *value);
+        }
+        for (token_id, value) in received {
+            push_transfer_single(&operator, &wallet, *token_id, *value);
+        }
+        logs.push(json!({
+            "address": format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),
+            "topics": [
+                format!("0x{}", alloy_primitives::hex::encode(transfer)),
+                topic(&operator),
+                topic(&wallet),
+            ],
+            "data": format!("0x{collateral:064x}"),
+            "logIndex": format!("0x{log_index:x}"),
+        }));
+
+        let transaction_hash = format!("0x{}", "ab".repeat(32));
+        *self.poll_pages.lock().await = VecDeque::from([json!({
+            "transaction_id": "tx-1",
+            "transaction_hash": transaction_hash,
+            "state": "STATE_CONFIRMED",
+            "error_msg": null,
+        })]);
+        *self.receipt.lock().await = Some(json!({
+            "transactionHash": transaction_hash,
+            "blockNumber": "0x10",
+            "status": "0x1",
+            "logs": logs,
+        }));
     }
 }
 
@@ -193,6 +287,7 @@ async fn handle_transaction(
     State(state): State<TestServerState>,
     Path(_id): Path<String>,
 ) -> Response {
+    state.transaction_get_count.fetch_add(1, Ordering::AcqRel);
     let status = state
         .poll_statuses
         .lock()
@@ -206,7 +301,7 @@ async fn handle_transaction(
     (status, Json(body)).into_response()
 }
 
-async fn start_mock_server(state: TestServerState) -> SocketAddr {
+pub(super) async fn start_mock_server(state: TestServerState) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     *state.wallet.lock().await = wallet_address(&addr);
@@ -252,6 +347,69 @@ fn position_client(addr: &SocketAddr) -> PolymarketPositionClient {
     .with_deadline_secs(60)
     .with_wait_timeout(Duration::from_millis(400))
     .with_poll_interval(Duration::from_millis(10))
+}
+
+#[derive(Debug, Default)]
+struct RecordingOperationRecorder {
+    prepared: std::sync::Mutex<Vec<PositionOperationRecord>>,
+    prepared_submit_counts: std::sync::Mutex<Vec<usize>>,
+    submitted: std::sync::Mutex<Vec<(String, String)>>,
+    failures: std::sync::Mutex<Vec<(String, bool)>>,
+    fail_prepare: bool,
+    submit_count: Option<Arc<AtomicUsize>>,
+}
+
+impl PositionOperationRecorder for RecordingOperationRecorder {
+    fn on_prepared(&self, record: &PositionOperationRecord) -> anyhow::Result<()> {
+        if self.fail_prepare {
+            anyhow::bail!("record store unavailable");
+        }
+        self.prepared.lock().unwrap().push(record.clone());
+
+        if let Some(submit_count) = &self.submit_count {
+            self.prepared_submit_counts
+                .lock()
+                .unwrap()
+                .push(submit_count.load(Ordering::Acquire));
+        }
+        Ok(())
+    }
+
+    fn on_submitted(&self, operation_id: UUID4, transaction_id: &str, _ts: UnixNanos) {
+        self.submitted
+            .lock()
+            .unwrap()
+            .push((operation_id.to_string(), transaction_id.to_string()));
+    }
+
+    fn on_submission_failed(
+        &self,
+        operation_id: UUID4,
+        error: &str,
+        ambiguous: bool,
+        _ts: UnixNanos,
+    ) {
+        self.failures
+            .lock()
+            .unwrap()
+            .push((format!("{operation_id}: {error}"), ambiguous));
+    }
+}
+
+fn managed_convert_intent(operation_id: UUID4, market_id: &str) -> ManagedOperationIntent {
+    ManagedOperationIntent {
+        operation_id,
+        trader_id: TraderId::from("TRADER-001"),
+        strategy_id: StrategyId::from("STRATEGY-001"),
+        account_id: AccountId::from("POLYMARKET-001"),
+        operation: PositionOperationType::Convert,
+        instrument_ids: vec![InstrumentId::from("111.POLYMARKET")],
+        barrier_instrument_ids: vec![InstrumentId::from("111.POLYMARKET")],
+        quantity: Some(Quantity::from("1")),
+        condition_id: None,
+        market_id: Some(market_id.to_string()),
+        index_set: Some("3".into()),
+    }
 }
 
 #[rstest]
@@ -347,6 +505,223 @@ async fn test_merge_positions_targets_neg_risk_adapter() {
     assert_eq!(
         submit["depositWalletParams"]["calls"][0]["target"],
         format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_convert_positions_targets_neg_risk_wrapper() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let market_id = format!("0x{}00", "cc".repeat(31));
+
+    let tx = client
+        .convert_positions(&market_id, alloy_primitives::U256::from(0b11u8), dec!(1))
+        .await
+        .unwrap();
+
+    assert_eq!(tx.transaction_id(), "tx-1");
+    let submit = state.last_submit.lock().await.clone().unwrap();
+    assert_eq!(submit["metadata"], "Convert positions");
+    assert_eq!(
+        submit["depositWalletParams"]["calls"][0]["target"],
+        format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}")
+    );
+
+    let selector = alloy_primitives::keccak256(b"convertPositions(bytes32,uint256,uint256)");
+    let selector_hex = alloy_primitives::hex::encode(&selector[..4]);
+    let market_hex = format!("{}{}", "cc".repeat(31), "00");
+    let index_set_hex = format!("{:064x}", 3u8);
+    let amount_hex = format!("{:064x}", 1_000_000u64);
+    let expected = format!("0x{selector_hex}{market_hex}{index_set_hex}{amount_hex}");
+    assert_eq!(submit["depositWalletParams"]["calls"][0]["data"], expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_convert_positions_rejects_index_outside_event() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let market_id = format!("0x{}00", "cc".repeat(31));
+
+    let err = client
+        .convert_positions(&market_id, alloy_primitives::U256::from(0b100u8), dec!(1))
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("outside question count 2"));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_convert_positions_rejects_non_canonical_market_id() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let market_id = format!("0x{}01", "cc".repeat(31));
+
+    let err = client
+        .convert_positions(&market_id, alloy_primitives::U256::ONE, dec!(1))
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("zero final byte"));
+    assert!(state.rpc_reads.lock().await.is_empty());
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_managed_convert_records_before_submit() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let recorder = Arc::new(RecordingOperationRecorder {
+        submit_count: Some(state.submit_count.clone()),
+        ..RecordingOperationRecorder::default()
+    });
+    let client = position_client(&addr).with_recorder(recorder.clone());
+    let market_id = format!("0x{}00", "cc".repeat(31));
+    let operation_id = UUID4::from("00000000-0000-4000-8000-000000000123");
+
+    let tx = client
+        .submit_managed_position_operation(
+            managed_convert_intent(operation_id, &market_id),
+            ManagedPositionOperationRequest::Convert {
+                market_id: market_id.clone(),
+                index_set: alloy_primitives::U256::from(0b11u8),
+                amount: dec!(1),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(tx.transaction_id(), "tx-1");
+    let prepared = recorder.prepared.lock().unwrap();
+    assert_eq!(prepared.len(), 1);
+    assert_eq!(prepared[0].operation_id, operation_id);
+    assert_eq!(prepared[0].unsigned_nonce.as_deref(), Some("7"));
+    assert!(prepared[0].unsigned_deadline.is_some());
+    assert_eq!(prepared[0].unsigned_calls.len(), 1);
+    assert_eq!(
+        recorder.prepared_submit_counts.lock().unwrap().as_slice(),
+        &[0],
+        "record confirmation must precede Relayer submission"
+    );
+    assert_eq!(
+        prepared[0].unsigned_calls[0].target,
+        format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}")
+    );
+    let selector = alloy_primitives::keccak256(b"convertPositions(bytes32,uint256,uint256)");
+    assert!(prepared[0].unsigned_calls[0].data.starts_with(&format!(
+        "0x{}",
+        alloy_primitives::hex::encode(&selector[..4])
+    )));
+    drop(prepared);
+
+    let submitted = recorder.submitted.lock().unwrap();
+    assert_eq!(submitted.len(), 1);
+    assert_eq!(submitted[0].1, "tx-1");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_managed_operation_aborts_when_record_fails() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let recorder = Arc::new(RecordingOperationRecorder {
+        fail_prepare: true,
+        ..RecordingOperationRecorder::default()
+    });
+    let client = position_client(&addr).with_recorder(recorder);
+    let market_id = format!("0x{}00", "cc".repeat(31));
+
+    let err = client
+        .submit_managed_position_operation(
+            managed_convert_intent(UUID4::new(), &market_id),
+            ManagedPositionOperationRequest::Convert {
+                market_id,
+                index_set: alloy_primitives::U256::from(0b11u8),
+                amount: dec!(1),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("submission aborted"));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_transaction_effects_normalizes_convert_receipt() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let wallet = wallet_address(&addr);
+
+    let transfer_single =
+        alloy_primitives::keccak256(b"TransferSingle(address,address,address,uint256,uint256)");
+    let transfer = alloy_primitives::keccak256(b"Transfer(address,address,uint256)");
+    let topic = |address: &str| format!("0x{}{}", "0".repeat(24), &address[2..]);
+    let transfer_single_log = |from: &str, to: &str, token_id: u64, value: u64| {
+        json!({
+            "address": format!("{CONDITIONAL_TOKENS:#x}"),
+            "topics": [
+                format!("0x{}", alloy_primitives::hex::encode(transfer_single)),
+                topic(&format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}")),
+                topic(from),
+                topic(to),
+            ],
+            "data": format!("0x{token_id:064x}{value:064x}"),
+            "logIndex": "0x0",
+        })
+    };
+
+    *state.receipt.lock().await = Some(json!({
+        "transactionHash": format!("0x{}", "ab".repeat(32)),
+        "blockNumber": "0x10",
+        "status": "0x1",
+        "logs": [
+            transfer_single_log(&wallet, &format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}"), 20, 1_000_000),
+            transfer_single_log(&format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}"), &wallet, 30, 990_000),
+            json!({
+                "address": format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),
+                "topics": [
+                    format!("0x{}", alloy_primitives::hex::encode(transfer)),
+                    topic("0x0000000000000000000000000000000000000000"),
+                    topic(&wallet),
+                ],
+                "data": format!("0x{:064x}", 990_000u64),
+                "logIndex": "0x2",
+            }),
+        ],
+    }));
+
+    let effects = client
+        .transaction_effects(&format!("0x{}", "ab".repeat(32)))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        effects.spent,
+        vec![nautilus_polymarket::positions::effects::TokenAmount {
+            token_id: alloy_primitives::U256::from(20u8),
+            quantity: alloy_primitives::U256::from(1_000_000u64),
+        }]
+    );
+    assert_eq!(
+        effects.received,
+        vec![nautilus_polymarket::positions::effects::TokenAmount {
+            token_id: alloy_primitives::U256::from(30u8),
+            quantity: alloy_primitives::U256::from(990_000u64),
+        }]
+    );
+    assert_eq!(
+        effects.collateral_delta,
+        alloy_primitives::I256::try_from(990_000u64).unwrap()
     );
 }
 
@@ -791,7 +1166,10 @@ async fn handle_rpc(State(state): State<TestServerState>, Json(body): Json<Value
         );
     }
 
-    let result = if body["method"] == "eth_getCode" {
+    let result = if body["method"] == "eth_getTransactionReceipt" {
+        let result = state.receipt.lock().await.clone().unwrap_or(Value::Null);
+        return Json(json!({"jsonrpc": "2.0", "id": 1, "result": result}));
+    } else if body["method"] == "eth_getCode" {
         state.rpc_code.lock().await.clone()
     } else {
         let data = body["params"][0]["data"].as_str().unwrap();
@@ -881,6 +1259,63 @@ async fn position_rpc_response(state: &TestServerState, data: &str) -> Option<Va
                 json!({"jsonrpc":"2.0", "id":1, "error":{"code":3,"message":"execution reverted"}})
             }
         });
+    }
+
+    let question_count_selector = alloy_primitives::keccak256(b"getQuestionCount(bytes32)");
+
+    if call_selector
+        == format!(
+            "0x{}",
+            alloy_primitives::hex::encode(&question_count_selector[..4])
+        )
+    {
+        return Some(json!({"jsonrpc":"2.0", "id":1, "result":format!("0x{:064x}", 2u64)}));
+    }
+
+    let fee_bips_selector = alloy_primitives::keccak256(b"getFeeBips(bytes32)");
+
+    if call_selector
+        == format!(
+            "0x{}",
+            alloy_primitives::hex::encode(&fee_bips_selector[..4])
+        )
+    {
+        return Some(json!({"jsonrpc":"2.0", "id":1, "result":format!("0x{:064x}", 100u64)}));
+    }
+
+    let question_index = || u8::from_str_radix(&data[72..74], 16).unwrap();
+    let condition_selector = alloy_primitives::keccak256(b"getConditionId(bytes32)");
+
+    if call_selector
+        == format!(
+            "0x{}",
+            alloy_primitives::hex::encode(&condition_selector[..4])
+        )
+    {
+        return Some(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": format!("0x{}{:02x}", "11".repeat(31), question_index()),
+        }));
+    }
+
+    let position_selector = alloy_primitives::keccak256(b"getPositionId(bytes32,bool)");
+
+    if call_selector
+        == format!(
+            "0x{}",
+            alloy_primitives::hex::encode(&position_selector[..4])
+        )
+    {
+        let is_yes = &data[136..138] == "01";
+        // Keep the NO YES prefixes distinguishable while the final byte carries the question
+        // index, matching the balance mock's last-byte lookup.
+        let token_id = u64::from(question_index()) + if is_yes { 0x200 } else { 0x100 };
+        return Some(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": format!("0x{token_id:064x}"),
+        }));
     }
 
     None

@@ -52,6 +52,7 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
+bytes = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
@@ -60,6 +61,7 @@ rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 smallvec = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
@@ -71,12 +73,10 @@ pyo3-stub-gen = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }
 
-bytes = { workspace = true }
 criterion = { workspace = true }
 parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
-serde_json = { workspace = true }
 
 [[bench]]
 name = "matching"

@@ -246,7 +246,7 @@ impl PolymarketExecutionClientConfig {
     /// Configuration for the Polymarket execution client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None, instrument_config=None, signer_type=None))]
+    #[pyo3(signature = (account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None, instrument_config=None, signer_type=None, relayer_api_key=None, relayer_api_key_address=None, base_url_relayer=None, base_url_rpc=None))]
     fn py_new(
         account_id: Option<String>,
         private_key: Option<String>,
@@ -267,6 +267,10 @@ impl PolymarketExecutionClientConfig {
         proxy_url: Option<String>,
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
         signer_type: Option<PolymarketSignerType>,
+        relayer_api_key: Option<String>,
+        relayer_api_key_address: Option<String>,
+        base_url_relayer: Option<String>,
+        base_url_rpc: Option<String>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let config = Self {
@@ -281,6 +285,10 @@ impl PolymarketExecutionClientConfig {
             base_url_http,
             base_url_ws,
             base_url_data_api,
+            relayer_api_key: relayer_api_key.map(SecretString::from),
+            relayer_api_key_address,
+            base_url_relayer,
+            base_url_rpc,
             proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),

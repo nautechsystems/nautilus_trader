@@ -22,6 +22,7 @@ use crate::{
     events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     position::Position,
+    position_operation::PositionOperationLeg,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -47,8 +48,15 @@ pub struct PositionChanged {
     pub position_id: PositionId,
     /// The account ID associated with the position.
     pub account_id: AccountId,
-    /// The client order ID for the order which opened the position.
-    pub opening_order_id: ClientOrderId,
+    /// The client order ID for the order which opened the position, if any.
+    #[serde(default)]
+    pub opening_order_id: Option<ClientOrderId>,
+    /// The position operation which opened the position, if any.
+    #[serde(default)]
+    pub opening_operation_id: Option<UUID4>,
+    /// The position operation which triggered this event, if any.
+    #[serde(default)]
+    pub operation_id: Option<UUID4>,
     /// The position entry order side.
     pub entry: OrderSide,
     /// The position side.
@@ -59,10 +67,12 @@ pub struct PositionChanged {
     pub quantity: Quantity,
     /// The peak directional quantity reached by the position.
     pub peak_quantity: Quantity,
-    /// The last fill quantity for the position.
-    pub last_qty: Quantity,
-    /// The last fill price for the position.
-    pub last_px: Price,
+    /// The last fill or operation quantity for the position.
+    #[serde(default)]
+    pub last_qty: Option<Quantity>,
+    /// The last fill price for the position, if the event came from a fill.
+    #[serde(default)]
+    pub last_px: Option<Price>,
     /// The position quote currency.
     pub currency: Currency,
     /// The average open price.
@@ -100,13 +110,15 @@ impl PositionChanged {
             position_id: position.id,
             account_id: position.account_id,
             opening_order_id: position.opening_order_id,
+            opening_operation_id: position.opening_operation_id,
+            operation_id: None,
             entry: position.entry,
             side: position.side,
             signed_qty: position.signed_qty,
             quantity: position.quantity,
             peak_quantity: position.peak_qty,
-            last_qty: fill.last_qty,
-            last_px: fill.last_px,
+            last_qty: Some(fill.last_qty),
+            last_px: Some(fill.last_px),
             currency: position.quote_currency,
             avg_px_open: position.avg_px_open,
             avg_px_close: position.avg_px_close,
@@ -116,6 +128,43 @@ impl PositionChanged {
             event_id,
             ts_opened: position.ts_opened,
             ts_event: fill.ts_event,
+            ts_init,
+        }
+    }
+
+    /// Creates a position changed event from a managed operation leg.
+    #[must_use]
+    pub fn create_from_operation(
+        position: &Position,
+        leg: &PositionOperationLeg,
+        event_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            opening_operation_id: position.opening_operation_id,
+            operation_id: Some(leg.operation_id),
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            peak_quantity: position.peak_qty,
+            last_qty: Some(leg.quantity),
+            last_px: None,
+            currency: position.quote_currency,
+            avg_px_open: position.avg_px_open,
+            avg_px_close: position.avg_px_close,
+            realized_return: position.realized_return,
+            realized_pnl: position.realized_pnl,
+            unrealized_pnl: Money::zero(position.quote_currency),
+            event_id,
+            ts_opened: position.ts_opened,
+            ts_event: leg.ts_event,
             ts_init,
         }
     }
@@ -147,14 +196,16 @@ mod tests {
             instrument_id: InstrumentId::from("EURUSD.SIM"),
             position_id: PositionId::from("P-001"),
             account_id: AccountId::from("SIM-001"),
-            opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
+            opening_order_id: Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: dec!(150.0),
             quantity: Quantity::from("150"),
             peak_quantity: Quantity::from("150"),
-            last_qty: Quantity::from("50"),
-            last_px: Price::from("1.0550"),
+            last_qty: Some(Quantity::from("50")),
+            last_px: Some(Price::from("1.0550")),
             currency: Currency::USD(),
             avg_px_open: dec!(1.0525),
             avg_px_close: None,
@@ -219,8 +270,8 @@ mod tests {
         assert_eq!(position_changed.signed_qty, position.signed_qty);
         assert_eq!(position_changed.quantity, position.quantity);
         assert_eq!(position_changed.peak_quantity, position.peak_qty);
-        assert_eq!(position_changed.last_qty, change_fill.last_qty);
-        assert_eq!(position_changed.last_px, change_fill.last_px);
+        assert_eq!(position_changed.last_qty, Some(change_fill.last_qty));
+        assert_eq!(position_changed.last_px, Some(change_fill.last_px));
         assert_eq!(position_changed.currency, position.quote_currency);
         assert_eq!(position_changed.avg_px_open, position.avg_px_open);
         assert_eq!(position_changed.avg_px_close, position.avg_px_close);

@@ -1283,28 +1283,35 @@ impl DatabaseQueries {
 
         sqlx::query(r#"
             INSERT INTO "position" (
-                id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, closing_order_id, entry, side, signed_qty, quantity, peak_qty,
-                quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return, realized_pnl, unrealized_pnl, commissions,
-                duration_ns, ts_opened, ts_closed, ts_init, ts_last, replay_state, created_at, updated_at
+                id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, opening_operation_id,
+                closing_order_id, closing_operation_id, entry, side, signed_qty, quantity, peak_qty,
+                quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return,
+                realized_pnl, unrealized_pnl, commissions, duration_ns, ts_opened, ts_closed, ts_init, ts_last,
+                replay_state, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (trader_id, id)
             DO UPDATE
             SET
-                strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
-                peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
-                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_init = $25, ts_last = $26,
-                replay_state = $27, updated_at = CURRENT_TIMESTAMP
+                strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6,
+                opening_operation_id = $7, closing_order_id = $8, closing_operation_id = $9, entry = $10,
+                side = $11, signed_qty = $12, quantity = $13, peak_qty = $14, quote_currency = $15,
+                base_currency = $16, settlement_currency = $17, avg_px_open = $18, avg_px_close = $19,
+                realized_return = $20, realized_pnl = $21, unrealized_pnl = $22, commissions = $23,
+                duration_ns = $24, ts_opened = $25, ts_closed = $26, ts_init = $27, ts_last = $28,
+                replay_state = $29, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(snapshot.position_id.to_string())
             .bind(snapshot.trader_id.to_string())
             .bind(snapshot.strategy_id.to_string())
             .bind(snapshot.instrument_id.to_string())
             .bind(snapshot.account_id.to_string())
-            .bind(snapshot.opening_order_id.to_string())
+            .bind(snapshot.opening_order_id.map(|x| x.to_string()))
+            .bind(snapshot.opening_operation_id.map(|x| x.to_string()))
             .bind(snapshot.closing_order_id.map(|x| x.to_string()))
+            .bind(snapshot.closing_operation_id.map(|x| x.to_string()))
             .bind(snapshot.entry.to_string())
             .bind(snapshot.side.to_string())
             .bind(snapshot.signed_qty)
@@ -1814,10 +1821,14 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Vec<Position>> {
         let position_ids: Vec<PositionId> = sqlx::query(
             r#"
-            SELECT DISTINCT position_id
+            SELECT id
+            FROM "position"
+            WHERE trader_id = $1
+            UNION
+            SELECT position_id AS id
             FROM "position_event"
             WHERE trader_id = $1
-            ORDER BY position_id ASC
+            ORDER BY id ASC
         "#,
         )
         .bind(trader_id.to_string())

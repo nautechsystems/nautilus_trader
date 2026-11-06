@@ -1342,6 +1342,16 @@ impl ExecutionManager {
                     continue;
                 }
 
+                if exec_engine
+                    .borrow()
+                    .is_position_operation_barred(&instrument_id)
+                {
+                    log::warn!(
+                        "Skipping position reports for {instrument_id}: a position operation remains unresolved"
+                    );
+                    continue;
+                }
+
                 for report in reports {
                     if report.venue_position_id.is_some_and(|venue_position_id| {
                         unapplied_fill_position_ids.contains(&venue_position_id)
@@ -2754,6 +2764,7 @@ impl ExecutionManager {
             command,
             client_coverage,
             activity_revisions,
+            barred_instruments: IndexSet::new(),
         }
     }
 
@@ -2781,6 +2792,7 @@ impl ExecutionManager {
                     .any(|report| report.signed_decimal_qty != Decimal::ZERO)
                     .then_some(*key)
             }))
+            .filter(|key| !check.barred_instruments.contains(&key.0))
             .collect::<IndexSet<_>>();
 
         let query_end = self.timestamp_ns();
@@ -3120,6 +3132,8 @@ impl ExecutionManager {
 
     /// Reconciles cached positions against venue position reports.
     ///
+    /// Keys listed in [`PositionReportCheck::barred_instruments`] are left untouched because an
+    /// unresolved managed position operation owns their local and venue quantities.
     /// Callers may supply a filtered check and reports without pruning retry state for other positions.
     /// Global pruning is handled by [`Self::plan_position_fill_reports`] and
     /// [`Self::check_positions_consistency`].
@@ -3137,6 +3151,15 @@ impl ExecutionManager {
         let mut events = Vec::new();
 
         for (key, coverage) in &check.client_coverage {
+            if check.barred_instruments.contains(&key.0) {
+                log::debug!(
+                    "Skipping position reconciliation for {}/{}: a managed position operation bars the instrument",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
             let prepared_revision = check
                 .activity_revisions
                 .get(key)
@@ -3221,6 +3244,15 @@ impl ExecutionManager {
         let current_position_keys = self.open_position_keys_for_reconciliation();
 
         for (key, venue_reports) in &venue_positions {
+            if check.barred_instruments.contains(&key.0) {
+                log::debug!(
+                    "Skipping position reconciliation for {}/{}: a managed position operation bars the instrument",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
             if check.client_coverage.contains_key(key)
                 || venue_reports
                     .iter()
@@ -7525,6 +7557,52 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, OrderEventAny::Filled(_))),
             "a failed bulk query must not generate a synthetic closing fill",
+        );
+        let cached_position = cache.borrow().position(&position.id).unwrap().clone();
+        assert!(cached_position.is_open());
+        assert_eq!(cached_position.quantity, Quantity::from("5.0"));
+    }
+
+    #[rstest]
+    fn test_position_reconciliation_skips_instruments_barred_by_operation() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
+        let instrument = test_bybit_spot_instrument();
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-SPOT-BARRED"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let key = (position.instrument_id, position.account_id);
+        let client_id = ClientId::from("BYBIT");
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.insert(
+            key,
+            ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+        );
+        check.barred_instruments.insert(instrument.id());
+        let queried_clients = IndexSet::from([client_id]);
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            Vec::new(),
+            &queried_clients,
+            &IndexSet::new(),
+        );
+
+        assert!(
+            events.is_empty(),
+            "a barred instrument must not generate synthetic reconciliation events",
         );
         let cached_position = cache.borrow().position(&position.id).unwrap().clone();
         assert!(cached_position.is_open());

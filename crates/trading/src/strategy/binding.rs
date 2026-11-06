@@ -28,13 +28,15 @@
     reason = "errors and panics are documented on the canonical facade methods"
 )]
 
-use nautilus_core::Params;
+use nautilus_core::{Params, UUID4};
 use nautilus_model::{
-    identifiers::{ClientId, PositionId},
+    identifiers::{ClientId, InstrumentId, PositionId},
     orders::OrderAny,
+    position_operation::PositionOperationType,
+    types::Quantity,
 };
 
-use super::{Strategy, StrategyNative, submit_order_native};
+use super::{Strategy, StrategyNative, submit_order_native, submit_position_operation_native};
 
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
@@ -48,6 +50,14 @@ pub trait StrategyBinding {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()>;
+
+    fn binding_submit_position_operation(
+        &mut self,
+        operation: PositionOperationType,
+        instrument_ids: Vec<InstrumentId>,
+        quantity: Option<Quantity>,
+        client_id: Option<ClientId>,
+    ) -> anyhow::Result<UUID4>;
 }
 
 impl<T> StrategyBinding for T
@@ -62,6 +72,16 @@ where
         params: Option<Params>,
     ) -> anyhow::Result<()> {
         submit_order_native(self, &order, position_id, client_id, params)
+    }
+
+    fn binding_submit_position_operation(
+        &mut self,
+        operation: PositionOperationType,
+        instrument_ids: Vec<InstrumentId>,
+        quantity: Option<Quantity>,
+        client_id: Option<ClientId>,
+    ) -> anyhow::Result<UUID4> {
+        submit_position_operation_native(self, operation, instrument_ids, quantity, client_id)
     }
 }
 
@@ -89,7 +109,17 @@ mod tests {
         let _: fn(&T) -> ClockApi<'_> = T::binding_clock;
         let _: SubmitOrder<T> = T::submit_order;
         let _: SubmitOrder<T> = T::binding_submit_order;
+        let _: SubmitPositionOperation<T> = T::submit_position_operation;
+        let _: SubmitPositionOperation<T> = T::binding_submit_position_operation;
     }
+
+    type SubmitPositionOperation<T> = fn(
+        &mut T,
+        PositionOperationType,
+        Vec<InstrumentId>,
+        Option<Quantity>,
+        Option<ClientId>,
+    ) -> anyhow::Result<UUID4>;
 
     type SubmitOrder<T> = fn(
         &mut T,

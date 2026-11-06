@@ -243,6 +243,22 @@ impl SettlementRecord {
             })
     }
 
+    /// Returns `true` when a managed position operation may rely on this record's inventory.
+    ///
+    /// Applied provisional fills are not confirmed inventory: the record must have terminal REST
+    /// settlement and no leg still awaiting application.
+    pub(crate) fn is_operation_input_ready(&self) -> bool {
+        self.hard_fault.is_none()
+            && !self.awaits_resolution()
+            && self.settlement.is_rest_terminal()
+            && !self.legs.iter().any(|leg| {
+                matches!(
+                    leg.application,
+                    LegApplication::FillPending | LegApplication::VoidPending
+                )
+            })
+    }
+
     /// Returns `true` when an order-status report must not treat this record's fills as covered.
     ///
     /// A leg that only awaits application does not block. A hard fault, quarantine, or owed

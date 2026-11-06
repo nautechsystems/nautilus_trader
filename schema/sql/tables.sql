@@ -300,8 +300,10 @@ CREATE TABLE IF NOT EXISTS "position"(
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     account_id TEXT NOT NULL,
-    opening_order_id TEXT NOT NULL,
+    opening_order_id TEXT,  -- NULL when a position operation opened the cycle
+    opening_operation_id TEXT,
     closing_order_id TEXT,  -- REFERENCES TBD
+    closing_operation_id TEXT,
     entry TEXT NOT NULL,
     side TEXT NOT NULL,
     signed_qty NUMERIC NOT NULL,

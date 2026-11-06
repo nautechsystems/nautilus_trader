@@ -28,11 +28,15 @@ use nautilus_core::{
 use nautilus_execution::reconciliation::process_mass_status_for_reconciliation;
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{
+        AvgPxReconciliation, InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::{OrderEventAny, OrderFillVoided},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
+    position::PositionReplayEvent,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Price, Quantity},
 };
@@ -1206,6 +1210,7 @@ fn build_position_report_from_reportable_position(
     position: &DataApiPosition,
     account_id: AccountId,
     ts_init: UnixNanos,
+    operation_basis: &AHashSet<InstrumentId>,
 ) -> Option<PositionStatusReport> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
     let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
@@ -1222,20 +1227,24 @@ fn build_position_report_from_reportable_position(
     };
 
     // The Data API reports average cost to four decimal places
-    Some(
-        PositionStatusReport::new(
-            account_id,
-            instrument_id,
-            PositionSide::Long,
-            quantity,
-            ts_init,
-            ts_init,
-            None,
-            None,
-            position.avg_price,
-        )
-        .with_avg_px_open_precision(4),
+    let report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSide::Long,
+        quantity,
+        ts_init,
+        ts_init,
+        None,
+        None,
+        position.avg_price,
     )
+    .with_avg_px_open_precision(4);
+
+    Some(if operation_basis.contains(&instrument_id) {
+        report.with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)
+    } else {
+        report
+    })
 }
 
 /// Cached execution state that decides which resolved Data API balances to omit.
@@ -1287,6 +1296,31 @@ impl ResolvedBalanceScope {
     }
 }
 
+/// Returns instruments whose local cost basis came from a managed operation.
+pub(crate) fn operation_basis_instruments(
+    cache: &Cache,
+    venue: Venue,
+    account_id: AccountId,
+) -> AHashSet<InstrumentId> {
+    cache
+        .positions(Some(&venue), None, None, Some(&account_id), None)
+        .into_iter()
+        .filter(|position| {
+            position.opening_operation_id.is_some()
+                || position.closing_operation_id.is_some()
+                || position
+                    .replay_events
+                    .iter()
+                    .any(|event| matches!(event, PositionReplayEvent::Operation(_)))
+        })
+        .map(|position| position.instrument_id)
+        .collect()
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report fields mirror venue evidence and local cost-basis context"
+)]
 pub(crate) fn build_reconciliation_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
@@ -1295,6 +1329,7 @@ pub(crate) fn build_reconciliation_position_reports(
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
+    operation_basis: &AHashSet<InstrumentId>,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
     let mut reports = Vec::with_capacity(positions.len());
@@ -1308,6 +1343,7 @@ pub(crate) fn build_reconciliation_position_reports(
             instrument_filter,
             collection_load_ids,
             resolved_balances,
+            operation_basis,
         )? {
             reports.push(report);
         }
@@ -1316,6 +1352,10 @@ pub(crate) fn build_reconciliation_position_reports(
     Ok(reports)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report fields mirror venue evidence and local cost-basis context"
+)]
 fn build_reconciliation_position_report(
     position: &DataApiPosition,
     account_id: AccountId,
@@ -1324,6 +1364,7 @@ fn build_reconciliation_position_report(
     instrument_filter: Option<InstrumentId>,
     collection_load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
+    operation_basis: &AHashSet<InstrumentId>,
 ) -> anyhow::Result<Option<PositionStatusReport>> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
 
@@ -1367,7 +1408,10 @@ fn build_reconciliation_position_report(
     )?;
 
     Ok(build_position_report_from_reportable_position(
-        position, account_id, ts_init,
+        position,
+        account_id,
+        ts_init,
+        operation_basis,
     ))
 }
 
@@ -1477,6 +1521,10 @@ pub(crate) async fn generate_mass_status(
     let mut position_reports = if ctx.signer_type == PolymarketSignerType::Session {
         Vec::new()
     } else {
+        let operation_basis = {
+            let cache = core.cache();
+            operation_basis_instruments(&cache, core.venue, ctx.account_id)
+        };
         build_reconciliation_position_reports(
             &positions,
             ctx.account_id,
@@ -1485,6 +1533,7 @@ pub(crate) async fn generate_mass_status(
             None,
             load_ids,
             resolved_balances,
+            &operation_basis,
         )?
     };
 
@@ -2681,6 +2730,77 @@ mod tests {
     }
 
     #[rstest]
+    fn test_operation_basis_marks_position_report_opening_only() {
+        use nautilus_core::UUID4;
+        use nautilus_model::{
+            identifiers::{PositionId, StrategyId, TraderId},
+            position::Position,
+            position_operation::{
+                PositionOperationDirection, PositionOperationLeg, PositionOperationType,
+            },
+        };
+
+        let instrument = test_instrument();
+        let account = AccountId::from("POLY-001");
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.clone()).unwrap();
+
+        let leg = PositionOperationLeg {
+            operation_id: UUID4::new(),
+            operation: PositionOperationType::Split,
+            direction: PositionOperationDirection::Open,
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            account_id: account,
+            instrument_id: instrument.id(),
+            position_id: PositionId::from("P-OPERATION"),
+            quantity: Quantity::from("10"),
+            cost: dec!(4),
+            income: None,
+            settled: false,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        };
+        let position = Position::new_from_operation_checked(&instrument, leg).unwrap();
+        cache
+            .add_position_without_order(&position, OmsType::Netting)
+            .unwrap();
+
+        let basis = operation_basis_instruments(&cache, instrument.id().venue, account);
+        assert!(basis.contains(&instrument.id()));
+
+        let data_api = DataApiPosition {
+            asset: TEST_TOKEN_ID.to_string(),
+            condition_id: TEST_CONDITION_ID.to_string(),
+            size: dec!(10),
+            avg_price: Some(dec!(0.4)),
+            redeemable: false,
+        };
+
+        let report = build_position_report_from_reportable_position(
+            &data_api,
+            account,
+            UnixNanos::from(1),
+            &basis,
+        )
+        .unwrap();
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::OpeningOnly
+        );
+
+        let plain = build_position_report_from_reportable_position(
+            &data_api,
+            account,
+            UnixNanos::from(1),
+            &AHashSet::new(),
+        )
+        .unwrap();
+        assert_eq!(plain.avg_px_open_reconciliation, AvgPxReconciliation::Match);
+    }
+
+    #[rstest]
     #[case(None)]
     #[case(Some("unknown"))]
     fn test_cached_protocol_refuses_execution_evidence(#[case] version: Option<&str>) {
@@ -2999,8 +3119,13 @@ mod tests {
         .unwrap();
         let ts = UnixNanos::from(123_456_789u64);
         let account_id = AccountId::from("POLYMARKET-001");
-        let report =
-            build_position_report_from_reportable_position(&position, account_id, ts).unwrap();
+        let report = build_position_report_from_reportable_position(
+            &position,
+            account_id,
+            ts,
+            &AHashSet::new(),
+        )
+        .unwrap();
         assert_eq!(report.account_id, account_id);
         assert_eq!(
             report.instrument_id,
@@ -3032,6 +3157,7 @@ mod tests {
             &positions[position_index],
             AccountId::from("POLYMARKET-001"),
             UnixNanos::from(1_000_000_000u64),
+            &AHashSet::new(),
         )
         .expect("fixture position is reportable");
 
@@ -3050,6 +3176,7 @@ mod tests {
             &position,
             AccountId::from("POLYMARKET-001"),
             UnixNanos::from(1_000_000_000u64),
+            &AHashSet::new(),
         )
         .expect("fixture position is reportable");
 
@@ -3103,6 +3230,7 @@ mod tests {
             None,
             None,
             &resolved_balances,
+            &AHashSet::new(),
         )
         .unwrap();
 
@@ -3163,6 +3291,7 @@ mod tests {
             None,
             None,
             &resolved_balances,
+            &AHashSet::new(),
         );
 
         match expected_error {

@@ -3795,12 +3795,17 @@ impl Cache {
         self.index.strategy_orders.entry(strategy_id).or_default();
 
         if index_order {
-            self.index_position_id_in_memory(
-                &position_id,
-                &instrument_id.venue,
-                &opening_order_id,
-                &strategy_id,
-            );
+            if let Some(opening_order_id) = opening_order_id {
+                self.index_position_id_in_memory(
+                    &position_id,
+                    &instrument_id.venue,
+                    &opening_order_id,
+                    &strategy_id,
+                );
+            } else {
+                // Operation-opened positions have no order to index.
+                self.index_position(&position_id, &instrument_id.venue, &strategy_id);
+            }
         } else {
             self.index_position(&position_id, &instrument_id.venue, &strategy_id);
         }
@@ -3827,7 +3832,7 @@ impl Cache {
         log::debug!("Adding general {key}");
         self.general.insert(key.clone(), value.clone());
 
-        if index_order {
+        if index_order && let Some(opening_order_id) = opening_order_id {
             self.persist_position_id(&position_id, &opening_order_id)?;
         }
 
@@ -3844,6 +3849,24 @@ impl Cache {
             database.add(key, value)?;
         }
 
+        Ok(())
+    }
+
+    /// Validates a position update without changing cache state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position key, OMS type, or serialized payload is invalid.
+    pub fn validate_position_update(
+        &self,
+        position: &Position,
+        oms_type: OmsType,
+    ) -> anyhow::Result<()> {
+        let oms_type = resolve_position_oms(position, oms_type);
+        let key = position_oms_key(position.id);
+        check_valid_string_utf8(&key, stringify!(key))?;
+        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
+        check_predicate_false(value.is_empty(), stringify!(value))?;
         Ok(())
     }
 
@@ -6655,6 +6678,19 @@ impl Cache {
         check_valid_string_utf8(key, stringify!(key))?;
 
         Ok(self.general.get(key))
+    }
+
+    /// Returns all general entries whose keys start with `prefix`, sorted by key.
+    #[must_use]
+    pub fn general_entries_with_prefix(&self, prefix: &str) -> Vec<(String, Bytes)> {
+        let mut entries: Vec<(String, Bytes)> = self
+            .general
+            .iter()
+            .filter(|(key, _)| key.starts_with(prefix))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+        entries
     }
 
     // -- DATA QUERIES ----------------------------------------------------------------------------

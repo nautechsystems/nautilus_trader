@@ -74,8 +74,9 @@ use crate::{
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
-            GenerateExecutionMassStatus, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-            SubmitOrderList, TradingCommand,
+            GenerateExecutionMassStatus, ModifyOrder, QueryAccount, QueryOrder,
+            QueryPositionOperation, SubmitOrder, SubmitOrderList, SubmitPositionOperation,
+            TradingCommand,
         },
     },
     msgbus::{
@@ -987,6 +988,8 @@ fn execution_concrete(name: &str, command: &TradingCommand, config: &Run<'_>) {
         TradingCommand::CancelAllOrders(value) => concrete!(value, CancelAllOrders),
         TradingCommand::QueryOrder(value) => concrete!(value, QueryOrder),
         TradingCommand::QueryAccount(value) => concrete!(value, QueryAccount),
+        TradingCommand::SubmitPositionOperation(value) => concrete!(value, SubmitPositionOperation),
+        TradingCommand::QueryPositionOperation(value) => concrete!(value, QueryPositionOperation),
     }
 }
 

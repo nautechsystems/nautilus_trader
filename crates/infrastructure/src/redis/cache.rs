@@ -1902,8 +1902,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let position_id = position.id;
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
 
-        let payload = self.serialize_position_event(position)?;
-        self.replace_list(key, payload)?;
+        // Operation-opened positions have no fills; their durable state is the replay snapshot.
+        if position.last_event().is_some() {
+            let payload = self.serialize_position_event(position)?;
+            self.replace_list(key, payload)?;
+        }
 
         if position.requires_replay_state() {
             self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;

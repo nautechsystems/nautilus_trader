@@ -28,7 +28,8 @@ use nautilus_common::{
     logging::{CMD, EVT, RECV},
     messages::{
         execution::{
-            BatchModifyOrders, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder, SubmitOrderList,
+            BatchModifyOrders, ModifyOrder, PARAMS_CLOSE_POSITION, PositionOperationResult,
+            PositionOperationStatus, SubmitOrder, SubmitOrderList, SubmitPositionOperation,
             TradingCommand,
         },
         system::trading::TradingStateChanged,
@@ -55,6 +56,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
+    position_operation::PositionOperationType,
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
@@ -575,10 +577,77 @@ impl RiskEngine {
             TradingCommand::QueryAccount(query_account) => {
                 Self::send_to_execution(TradingCommand::QueryAccount(query_account));
             }
+            TradingCommand::SubmitPositionOperation(command) => {
+                self.handle_submit_position_operation(command);
+            }
+            TradingCommand::QueryPositionOperation(command) => {
+                Self::send_to_execution(TradingCommand::QueryPositionOperation(command));
+            }
             _ => {
                 log::error!("Cannot handle command: {command}");
             }
         }
+    }
+
+    fn handle_submit_position_operation(&self, command: SubmitPositionOperation) {
+        if self.config.bypass {
+            Self::send_to_execution(TradingCommand::SubmitPositionOperation(command));
+            return;
+        }
+
+        let reason = match self.trading_state {
+            TradingState::Active => None,
+            TradingState::Halted => Some("trading is halted"),
+            TradingState::Reducing => match command.operation {
+                PositionOperationType::Merge | PositionOperationType::Redeem => None,
+                PositionOperationType::Split | PositionOperationType::Convert => {
+                    Some("trading state is reducing")
+                }
+            },
+        };
+
+        if let Some(reason) = reason {
+            log::warn!(
+                "Rejected position operation {}: {reason}",
+                command.operation_id
+            );
+            self.publish_position_operation_rejection(&command, reason);
+            return;
+        }
+
+        Self::send_to_execution(TradingCommand::SubmitPositionOperation(command));
+    }
+
+    fn publish_position_operation_rejection(
+        &self,
+        command: &SubmitPositionOperation,
+        reason: &str,
+    ) {
+        let client_id = command
+            .client_id
+            .unwrap_or_else(|| ClientId::from("UNKNOWN"));
+        let ts = self.clock.borrow().timestamp_ns();
+        let result = PositionOperationResult::new(
+            command.trader_id,
+            command.strategy_id,
+            client_id,
+            AccountId::from("UNKNOWN"),
+            command.operation_id,
+            command.operation,
+            PositionOperationStatus::Rejected,
+            command.instrument_ids.clone(),
+            None,
+            None,
+            Some(reason.to_string()),
+            None,
+            UUID4::new(),
+            ts,
+            ts,
+        );
+        let topic = nautilus_common::msgbus::switchboard::get_event_position_operation_topic(
+            command.strategy_id,
+        );
+        msgbus::publish_any(topic, &result);
     }
 
     fn handle_submit_order(&mut self, command: SubmitOrder) {

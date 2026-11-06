@@ -78,8 +78,20 @@ impl PositionChanged {
 
     #[getter]
     #[pyo3(name = "opening_order_id")]
-    fn py_opening_order_id(&self) -> ClientOrderId {
+    fn py_opening_order_id(&self) -> Option<ClientOrderId> {
         self.opening_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "opening_operation_id")]
+    fn py_opening_operation_id(&self) -> Option<UUID4> {
+        self.opening_operation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "operation_id")]
+    fn py_operation_id(&self) -> Option<UUID4> {
+        self.operation_id
     }
 
     #[getter]
@@ -120,13 +132,13 @@ impl PositionChanged {
 
     #[getter]
     #[pyo3(name = "last_qty")]
-    fn py_last_qty(&self) -> Quantity {
+    fn py_last_qty(&self) -> Option<Quantity> {
         self.last_qty
     }
 
     #[getter]
     #[pyo3(name = "last_px")]
-    fn py_last_px(&self) -> Price {
+    fn py_last_px(&self) -> Option<Price> {
         self.last_px
     }
 

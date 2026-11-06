@@ -631,6 +631,23 @@ impl AsyncRunner {
                     account,
                 );
             }
+            ExecutionEvent::PositionOperation(ref result) => {
+                msgbus::send_any_value(
+                    MessagingSwitchboard::exec_engine_position_operation(),
+                    result,
+                );
+                let topic =
+                    nautilus_common::msgbus::switchboard::get_event_position_operation_topic(
+                        result.strategy_id,
+                    );
+                msgbus::publish_any(topic, result);
+            }
+            ExecutionEvent::PositionOperationControl(request) => {
+                msgbus::send_any_value(
+                    MessagingSwitchboard::exec_engine_position_operation_control(),
+                    &request,
+                );
+            }
         }
     }
 

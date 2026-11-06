@@ -43,8 +43,10 @@ pub fn position_schema() -> Schema {
         utf8_field("instrument_id", false),
         utf8_field("position_id", false),
         utf8_field("account_id", false),
-        utf8_field("opening_order_id", false),
+        utf8_field("opening_order_id", true),
+        utf8_field("opening_operation_id", true),
         utf8_field("closing_order_id", true),
+        utf8_field("closing_operation_id", true),
         utf8_field("entry", false),
         utf8_field("side", false),
         float64_field("signed_qty", false),
@@ -115,7 +117,9 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
     let mut position_id = StringBuilder::new();
     let mut account_id = StringBuilder::new();
     let mut opening_order_id = StringBuilder::new();
+    let mut opening_operation_id = StringBuilder::new();
     let mut closing_order_id = StringBuilder::new();
+    let mut closing_operation_id = StringBuilder::new();
     let mut entry = StringBuilder::new();
     let mut side = StringBuilder::new();
     let mut signed_qty = Float64Builder::with_capacity(data.len());
@@ -157,8 +161,10 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
         instrument_id.append_value(position.instrument_id.to_string());
         position_id.append_value(position.id);
         account_id.append_value(position.account_id);
-        opening_order_id.append_value(position.opening_order_id);
+        opening_order_id.append_option(position.opening_order_id.map(|v| v.to_string()));
+        opening_operation_id.append_option(position.opening_operation_id.map(|v| v.to_string()));
         closing_order_id.append_option(position.closing_order_id.map(|v| v.to_string()));
+        closing_operation_id.append_option(position.closing_operation_id.map(|v| v.to_string()));
         entry.append_value(format!("{}", position.entry));
         side.append_value(format!("{}", position.side));
         signed_qty.append_value(position.signed_qty.as_f64());
@@ -200,7 +206,9 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
             Arc::new(position_id.finish()),
             Arc::new(account_id.finish()),
             Arc::new(opening_order_id.finish()),
+            Arc::new(opening_operation_id.finish()),
             Arc::new(closing_order_id.finish()),
+            Arc::new(closing_operation_id.finish()),
             Arc::new(entry.finish()),
             Arc::new(side.finish()),
             Arc::new(signed_qty.finish()),
@@ -327,7 +335,7 @@ mod tests {
     fn test_encode_positions_empty() {
         let batch = encode_positions(&[]).unwrap();
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.schema().fields().len(), 37);
+        assert_eq!(batch.schema().fields().len(), 39);
     }
 
     #[rstest]

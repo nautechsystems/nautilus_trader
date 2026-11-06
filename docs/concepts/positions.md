@@ -403,8 +403,12 @@ the calculation fails.
 - `account_id`: Account where position is held.
 - `trader_id`: The trader who owns the position.
 - `strategy_id`: The strategy managing the position.
-- `opening_order_id`: Client order ID that opened the position.
+- `opening_order_id`: Client order ID that opened the position, when a fill opened it.
+- `opening_operation_id`: Managed position operation that opened the position, when an operation
+  (for example a split or CTF convert) created it without a fill.
 - `closing_order_id`: Client order ID that closed the position, if a fill closed it.
+- `closing_operation_id`: Managed position operation that closed the position, if an operation
+  (for example a merge or redeem) closed it without a fill.
 
 ### Position state
 
@@ -431,6 +435,10 @@ the calculation fails.
 
 See [Reversal accounting](#reversal-accounting) for how price averages and returns reset while realized PnL
 stays cumulative when an unsplit fill reverses one position.
+
+Positions opened or closed by a managed venue operation may have no opening or closing order ID and
+no fill price. Their replay history records the operation legs, and consumers should use the operation
+references and position events rather than assuming a fill exists.
 
 ### Instrument specifications
 

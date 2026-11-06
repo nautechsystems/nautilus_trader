@@ -48,6 +48,8 @@ struct FailNthAddOrderState {
     fail_add_position: bool,
     fail_index_order_position: bool,
     add_order_calls: usize,
+    fail_general_add_on: Option<usize>,
+    general_add_calls: usize,
     accounts: AHashMap<AccountId, AccountAny>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     instrument_loads: Vec<InstrumentId>,
@@ -78,6 +80,12 @@ impl FailNthAddOrderDatabaseControl {
 
     pub(super) fn set_fail_add_position(&self, fail: bool) {
         self.state.lock().fail_add_position = fail;
+    }
+
+    pub(super) fn set_fail_general_add_on(&self, call: Option<usize>) {
+        let mut state = self.state.lock();
+        state.fail_general_add_on = call;
+        state.general_add_calls = 0;
     }
 
     pub(super) fn set_accounts(&self, accounts: impl IntoIterator<Item = AccountAny>) {
@@ -307,6 +315,11 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     fn add(&self, _key: String, _value: Bytes) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock();
+        state.general_add_calls += 1;
+        if state.fail_general_add_on == Some(state.general_add_calls) {
+            anyhow::bail!("injected general cache add failure");
+        }
         Ok(())
     }
 

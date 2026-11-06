@@ -35,7 +35,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
-        credential::{Credential, credential_env_vars, validate_env_override},
+        credential::{
+            Credential, credential_env_vars, relayer_credential_env_vars, validate_env_override,
+        },
         enums::{PolymarketSignatureType, PolymarketSignerType},
         retry::AUTO_LOAD_RETRY_JITTER_FRACTION,
         urls,
@@ -694,6 +696,18 @@ pub struct PolymarketExecutionClientConfig {
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_data_api: Option<String>,
+    /// Relayer API key for managed position operations.
+    ///
+    /// Falls back to `POLYMARKET_RELAYER_API_KEY` when enabled.
+    pub relayer_api_key: Option<SecretString>,
+    /// Relayer API key signer address.
+    ///
+    /// Falls back to `POLYMARKET_RELAYER_SIGNER_ADDRESS`.
+    pub relayer_api_key_address: Option<String>,
+    /// Optional Relayer base URL for managed position operations.
+    pub base_url_relayer: Option<String>,
+    /// Optional Polygon RPC URL used for wallet verification and effect reads.
+    pub base_url_rpc: Option<String>,
     /// Optional HTTP or HTTPS proxy URL for all HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     #[builder(default = 60)]
@@ -728,6 +742,9 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketExecutionClientConfig {
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
     base_url_data_api: Option<String>,
+    relayer_api_key_address: Option<String>,
+    base_url_relayer: Option<String>,
+    base_url_rpc: Option<String>,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,
@@ -764,6 +781,20 @@ impl PolymarketExecutionClientConfig {
             private_key_var,
         )?;
         validate_env_override(self.funder.as_deref(), "funder", funder_var)?;
+
+        let (relayer_key_var, relayer_address_var) = relayer_credential_env_vars();
+        validate_env_override(
+            self.relayer_api_key
+                .as_ref()
+                .map(SecretString::expose_secret),
+            "relayer_api_key",
+            relayer_key_var,
+        )?;
+        validate_env_override(
+            self.relayer_api_key_address.as_deref(),
+            "relayer_api_key_address",
+            relayer_address_var,
+        )?;
 
         if let Some(config) = &self.instrument_config {
             config.validate()?;

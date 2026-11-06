@@ -33,7 +33,8 @@ use nautilus_common::{
     logging::{CMD, EVT, RECV, SEND},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        PositionOperationResult, QueryAccount, QueryOrder, QueryPositionOperation, SubmitOrder,
+        SubmitOrderList, SubmitPositionOperation, TradingCommand,
     },
     msgbus::{self, MessagingSwitchboard},
     timer::TimeEvent,
@@ -58,6 +59,7 @@ use nautilus_model::{
         LIMIT_ORDER_TYPES, Order, OrderAny, OrderCore, OrderError, OrderList, STOP_ORDER_TYPES,
     },
     position::Position,
+    position_operation::PositionOperationType,
     types::{Price, Quantity},
 };
 use ustr::Ustr;
@@ -184,6 +186,24 @@ pub trait Strategy: DataActor {
         Self: StrategyBinding,
     {
         self.binding_submit_order(order, position_id, client_id, params)
+    }
+
+    /// Submits a managed position operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered or the command cannot be sent.
+    fn submit_position_operation(
+        &mut self,
+        operation: PositionOperationType,
+        instrument_ids: Vec<InstrumentId>,
+        quantity: Option<Quantity>,
+        client_id: Option<ClientId>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: StrategyBinding,
+    {
+        self.binding_submit_position_operation(operation, instrument_ids, quantity, client_id)
     }
 
     /// Submits an order list.
@@ -1370,6 +1390,32 @@ pub trait Strategy: DataActor {
         Ok(())
     }
 
+    /// Creates a [`QueryPositionOperation`] command and sends it to the execution engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered.
+    fn query_position_operation(
+        &mut self,
+        operation_id: UUID4,
+        client_id: Option<ClientId>,
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
+
+        let trader_id = registered_trader_id(core)?;
+        let strategy_id = registered_strategy_id(core)?;
+        let ts_init = core.clock_mut().timestamp_ns();
+
+        let command =
+            QueryPositionOperation::new(trader_id, client_id, strategy_id, operation_id, ts_init);
+
+        send_exec_command(TradingCommand::QueryPositionOperation(command));
+        Ok(())
+    }
+
     /// Handles an order event, dispatching to the appropriate handler.
     fn handle_order_event(&mut self, event: OrderEventAny)
     where
@@ -1509,6 +1555,32 @@ pub trait Strategy: DataActor {
                 }
             }
         }
+    }
+
+    /// Handles a managed position operation result.
+    ///
+    /// Results are delivered for submitted, confirmed, applied, rejected, failed, and unknown
+    /// operation states so a strategy can correlate them with the returned operation identity.
+    fn handle_position_operation(&mut self, result: PositionOperationResult)
+    where
+        Self: StrategyNative,
+    {
+        let state = {
+            let core = StrategyNative::strategy_core_mut(self);
+
+            if core.actor.config.log_events {
+                let id = &core.actor.actor_id;
+                log::info!("{id} {RECV}{EVT} {result:?}");
+            }
+
+            core.actor.state()
+        };
+
+        if state != ComponentState::Running {
+            return;
+        }
+
+        self.on_position_operation(result);
     }
 
     /// Handles a position event, dispatching to the appropriate handler.
@@ -1711,6 +1783,10 @@ pub trait Strategy: DataActor {
     /// Override this method to implement custom logic for all position events.
     #[allow(unused_variables)]
     fn on_position_event(&mut self, event: PositionEvent) {}
+
+    /// Called when a managed position operation result is received.
+    #[allow(unused_variables)]
+    fn on_position_operation(&mut self, result: PositionOperationResult) {}
 
     /// Called when a position is changed (quantity or price updated).
     ///
@@ -2456,6 +2532,37 @@ where
 
     strategy.set_gtd_expiry(order)?;
     Ok(())
+}
+
+/// Submits a managed position operation through the risk engine.
+pub(super) fn submit_position_operation_native<T>(
+    strategy: &mut T,
+    operation: PositionOperationType,
+    instrument_ids: Vec<InstrumentId>,
+    quantity: Option<Quantity>,
+    client_id: Option<ClientId>,
+) -> anyhow::Result<UUID4>
+where
+    T: Strategy + StrategyNative + ?Sized,
+{
+    let core = StrategyNative::strategy_core_mut(strategy);
+    let trader_id = registered_trader_id(core)?;
+    let strategy_id = registered_strategy_id(core)?;
+    let ts_init = core.clock_mut().timestamp_ns();
+    let operation_id = UUID4::new();
+
+    let command = SubmitPositionOperation::new(
+        trader_id,
+        client_id,
+        strategy_id,
+        operation_id,
+        operation,
+        instrument_ids,
+        quantity,
+        ts_init,
+    );
+    send_risk_command(TradingCommand::SubmitPositionOperation(command));
+    Ok(operation_id)
 }
 
 fn restore_gtd_timer<T: Strategy + StrategyNative + ?Sized>(
@@ -3227,13 +3334,15 @@ mod tests {
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::test_default(),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 1.into(),
             quantity: Quantity::default(),
-            last_qty: Quantity::default(),
-            last_px: Price::default(),
+            last_qty: Some(Quantity::default()),
+            last_px: Some(Price::default()),
             currency: Currency::from("USD"),
             avg_px_open: 0.into(),
             realized_pnl: None,
@@ -3251,14 +3360,16 @@ mod tests {
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::test_default(),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 2.into(),
             quantity: Quantity::default(),
             peak_quantity: Quantity::default(),
-            last_qty: Quantity::default(),
-            last_px: Price::default(),
+            last_qty: Some(Quantity::default()),
+            last_px: Some(Price::default()),
             currency,
             avg_px_open: 0.into(),
             avg_px_close: None,
@@ -3280,15 +3391,18 @@ mod tests {
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::test_default(),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             closing_order_id: Some(ClientOrderId::from("O-002")),
+            closing_operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
             signed_qty: 0.into(),
             quantity: Quantity::default(),
             peak_quantity: Quantity::default(),
-            last_qty: Quantity::default(),
-            last_px: Price::default(),
+            last_qty: Some(Quantity::default()),
+            last_px: Some(Price::default()),
             currency,
             avg_px_open: 0.into(),
             avg_px_close: None,

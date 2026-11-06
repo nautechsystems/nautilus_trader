@@ -28,7 +28,7 @@ use nautilus_common::{
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
@@ -37,6 +37,7 @@ use nautilus_model::{
     },
     instruments::InstrumentAny,
     orders::OrderAny,
+    position_operation::PositionOperationLeg,
     reports::FillReport,
     types::{AccountBalance, MarginBalance},
 };
@@ -64,6 +65,7 @@ pub struct StubExecutionClient {
     modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     cancel_all_commands: Rc<RefCell<Vec<CancelAllOrders>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
+    applied_position_operations: Rc<RefCell<Vec<UUID4>>>,
     registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
     settles_contract_expirations: bool,
@@ -99,6 +101,7 @@ impl StubExecutionClient {
             modified_order_ids: Rc::new(RefCell::new(Vec::new())),
             cancel_all_commands: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
+            applied_position_operations: Rc::new(RefCell::new(Vec::new())),
             registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
             settles_contract_expirations: false,
@@ -178,6 +181,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn queried_account_ids(&self) -> Rc<RefCell<Vec<AccountId>>> {
         self.queried_account_ids.clone()
+    }
+
+    /// Returns a shared handle to the applied position operation IDs.
+    #[must_use]
+    pub fn applied_position_operations(&self) -> Rc<RefCell<Vec<UUID4>>> {
+        self.applied_position_operations.clone()
     }
 
     /// Returns the number of times [`ExecutionClient::start`] was invoked.
@@ -335,6 +344,17 @@ impl ExecutionClient for StubExecutionClient {
         self.queried_account_ids.borrow_mut().push(cmd.account_id);
 
         Ok(()) // Stub implementation always succeeds
+    }
+
+    fn on_position_operation_applied(
+        &self,
+        operation_id: UUID4,
+        _legs: &[PositionOperationLeg],
+        _transaction_hash: Option<&str>,
+    ) {
+        self.applied_position_operations
+            .borrow_mut()
+            .push(operation_id);
     }
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {

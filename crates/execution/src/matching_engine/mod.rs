@@ -6094,7 +6094,9 @@ impl OrderMatchingEngine {
                     .any(|snapshot| snapshot.trade_ids.contains(trade_id))
                     || cash_cache
                         .and_then(|cache| cache.order(&fill.client_order_id))
-                        .filter(|order| position.opening_order_id == order.client_order_id())
+                        .filter(|order| {
+                            position.opening_order_id == Some(order.client_order_id())
+                        })
                         .is_some_and(|order| {
                             order
                                 .trade_ids()

@@ -176,6 +176,8 @@ pub struct PositionReportCheck {
     pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
     /// Activity revisions captured before the query.
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
+    /// Instruments excluded because an unresolved managed position operation bars them.
+    pub barred_instruments: IndexSet<InstrumentId>,
 }
 
 /// Fill report request for one instrument, account, and execution client.

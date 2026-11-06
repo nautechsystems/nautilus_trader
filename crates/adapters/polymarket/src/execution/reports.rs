@@ -47,9 +47,9 @@ use super::{
         apply_fill_time_filters, apply_logical_order_quantity, build_fill_reports_from_trades,
         build_reconciliation_position_reports, build_target_order_report,
         cap_order_report_filled_qty, filter_unsupported_orders, filter_unsupported_positions,
-        normalize_terminal_order_report_quantity, order_status_recovery_status,
-        order_status_scope_awaits_application, venue_leg_filled_before_and_quantity,
-        without_order_status_pending_trades,
+        normalize_terminal_order_report_quantity, operation_basis_instruments,
+        order_status_recovery_status, order_status_scope_awaits_application,
+        venue_leg_filled_before_and_quantity, without_order_status_pending_trades,
     },
     responses::confirm_modify_replacement,
     settlement::SettlementRegistry,
@@ -1149,6 +1149,10 @@ impl PolymarketExecutionClient {
             &resolved_balances,
         )
         .await?;
+        let operation_basis = {
+            let cache = self.core.cache();
+            operation_basis_instruments(&cache, self.core.venue, self.core.account_id)
+        };
         let reports = build_reconciliation_position_reports(
             &positions,
             self.core.account_id,
@@ -1157,6 +1161,7 @@ impl PolymarketExecutionClient {
             cmd.instrument_id,
             self.config.reconciliation_load_ids(),
             &resolved_balances,
+            &operation_basis,
         )?;
 
         log::debug!("Generated {} position status reports", reports.len());

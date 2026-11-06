@@ -55,8 +55,9 @@ use crate::{
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
             GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            GeneratePositionStatusReports, ModifyOrder, PositionOperationResult, QueryAccount,
+            QueryOrder, QueryPositionOperation, SubmitOrder, SubmitOrderList,
+            SubmitPositionOperation,
         },
     },
 };
@@ -2051,6 +2052,183 @@ impl QueryAccount {
     #[pyo3(name = "account_id")]
     fn py_account_id(&self) -> AccountId {
         self.account_id
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl SubmitPositionOperation {
+    #[getter]
+    #[pyo3(name = "operation_id")]
+    fn py_operation_id(&self) -> UUID4 {
+        self.operation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    /// Operation type: `split`, `merge`, `redeem`, or `convert`.
+    #[getter]
+    #[pyo3(name = "operation")]
+    fn py_operation(&self) -> &'static str {
+        self.operation.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "quantity")]
+    fn py_quantity(&self) -> Option<Quantity> {
+        self.quantity
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl QueryPositionOperation {
+    #[getter]
+    #[pyo3(name = "operation_id")]
+    fn py_operation_id(&self) -> UUID4 {
+        self.operation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PositionOperationResult {
+    #[getter]
+    #[pyo3(name = "operation_id")]
+    fn py_operation_id(&self) -> UUID4 {
+        self.operation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    fn py_client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    /// Operation type: `split`, `merge`, `redeem`, or `convert`.
+    #[getter]
+    #[pyo3(name = "operation")]
+    fn py_operation(&self) -> &'static str {
+        self.operation.as_str()
+    }
+
+    /// Operation status: `submitted`, `confirmed`, `applied`, `rejected`, `failed`, or `unknown`.
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> &'static str {
+        self.status.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "venue_transaction_id")]
+    fn py_venue_transaction_id(&self) -> Option<&str> {
+        self.venue_transaction_id.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "transaction_hash")]
+    fn py_transaction_hash(&self) -> Option<&str> {
+        self.transaction_hash.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "message")]
+    fn py_message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }
 

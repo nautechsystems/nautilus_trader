@@ -1007,6 +1007,10 @@ impl ClientOutput {
                     mass_status_matches(report, state.client_id, account_id, state.venue)
                 }
             },
+            ExecutionEvent::PositionOperation(result) => {
+                result.trader_id == trader_id && result.account_id == account_id
+            }
+            ExecutionEvent::PositionOperationControl(_) => true,
         };
 
         if !valid {

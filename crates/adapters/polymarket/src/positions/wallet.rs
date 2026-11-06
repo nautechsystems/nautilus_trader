@@ -18,7 +18,7 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use alloy::{sol, sol_types::SolCall};
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
@@ -27,10 +27,16 @@ use nautilus_network::{
 use serde::Deserialize;
 use serde_json::json;
 
+use super::{
+    convert::{ConvertIndexSet, MAX_CONVERT_QUESTIONS},
+    effects::TransactionReceipt,
+    metadata::{NegRiskCondition, NegRiskMarket, question_id},
+};
 use crate::{
     http::error::{Error, Result},
     signing::eip712::{
-        DEPOSIT_WALLET_FACTORY, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
+        CONDITIONAL_TOKENS, DEPOSIT_WALLET_FACTORY, LEGACY_NEG_RISK_ADAPTER,
+        NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
     },
 };
 
@@ -49,6 +55,12 @@ sol! {
         function balanceOf(address owner, uint256 id) external view returns (uint256);
     }
     function getPayout(uint256 positionId, uint256 amount) external view returns (uint256);
+    function getQuestionCount(bytes32 marketId) external view returns (uint256);
+    function getFeeBips(bytes32 marketId) external view returns (uint256);
+    function getConditionId(bytes32 questionId) external view returns (bytes32);
+    function getPositionId(bytes32 questionId, bool outcome) external view returns (uint256);
+    function payoutNumerators(bytes32 conditionId, uint256 index) external view returns (uint256);
+    function payoutDenominator(bytes32 conditionId) external view returns (uint256);
 }
 
 pub(super) struct WalletVerifier {
@@ -217,6 +229,196 @@ impl WalletVerifier {
         .await
     }
 
+    /// Loads and verifies the on-chain metadata for a negative-risk market.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the market is unknown, its metadata is inconsistent, or a Polygon
+    /// RPC read fails.
+    pub(super) async fn neg_risk_market(&self, market_id: B256) -> Result<NegRiskMarket> {
+        let question_count = self
+            .read(
+                LEGACY_NEG_RISK_ADAPTER,
+                getQuestionCountCall {
+                    marketId: market_id,
+                },
+            )
+            .await?;
+        let question_count = u16::try_from(question_count).map_err(|_| {
+            Error::bad_request(format!(
+                "neg-risk market question count is invalid: {question_count}"
+            ))
+        })?;
+
+        if question_count == 0 || question_count > MAX_CONVERT_QUESTIONS {
+            return Err(Error::bad_request(format!(
+                "neg-risk market {market_id:#x} has invalid question count {question_count}"
+            )));
+        }
+
+        let fee_bips = self
+            .read(
+                LEGACY_NEG_RISK_ADAPTER,
+                getFeeBipsCall {
+                    marketId: market_id,
+                },
+            )
+            .await?;
+        let fee_bips = u16::try_from(fee_bips).map_err(|_| {
+            Error::bad_request(format!("neg-risk market fee is invalid: {fee_bips}"))
+        })?;
+
+        let mut conditions = Vec::with_capacity(usize::from(question_count));
+        for index in 0..question_count {
+            let index = u8::try_from(index)
+                .map_err(|_| Error::bad_request("neg-risk question index exceeds uint8"))?;
+            let question_id = question_id(market_id, index)?;
+            let condition_id = self
+                .read(
+                    LEGACY_NEG_RISK_ADAPTER,
+                    getConditionIdCall {
+                        questionId: question_id,
+                    },
+                )
+                .await?;
+            let yes_token_id = self
+                .read(
+                    LEGACY_NEG_RISK_ADAPTER,
+                    getPositionIdCall {
+                        questionId: question_id,
+                        outcome: true,
+                    },
+                )
+                .await?;
+            let no_token_id = self
+                .read(
+                    LEGACY_NEG_RISK_ADAPTER,
+                    getPositionIdCall {
+                        questionId: question_id,
+                        outcome: false,
+                    },
+                )
+                .await?;
+
+            conditions.push(NegRiskCondition {
+                index,
+                question_id,
+                condition_id,
+                yes_token_id,
+                no_token_id,
+            });
+        }
+
+        NegRiskMarket::new(market_id, question_count, fee_bips, conditions)
+    }
+
+    /// Verifies the Deposit Wallet approvals and NO balances required by a conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the neg-risk adapter is not a Conditional Tokens operator or any
+    /// selected NO position is below `amount`.
+    pub(super) async fn verify_convert(
+        &self,
+        owner: Address,
+        market: &NegRiskMarket,
+        index_set: ConvertIndexSet,
+        amount: U256,
+    ) -> Result<()> {
+        let approved = self
+            .read(
+                CONDITIONAL_TOKENS,
+                isApprovedForAllCall {
+                    owner,
+                    operator: NEG_RISK_CTF_COLLATERAL_ADAPTER,
+                },
+            )
+            .await?;
+
+        if !approved {
+            return Err(Error::bad_request(
+                "Deposit Wallet must approve the neg-risk CTF collateral adapter as a Conditional Tokens operator",
+            ));
+        }
+
+        for index in index_set.indices() {
+            let condition = market.condition(index).ok_or_else(|| {
+                Error::bad_request(format!("neg-risk market is missing question {index}"))
+            })?;
+            let balance = self
+                .read(
+                    CONDITIONAL_TOKENS,
+                    PositionLedger::balanceOfCall {
+                        owner,
+                        id: condition.no_token_id,
+                    },
+                )
+                .await?;
+
+            if balance < amount {
+                return Err(Error::bad_request(format!(
+                    "Deposit Wallet has insufficient NO balance for neg-risk question {index}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fetches a confirmed on-chain transaction receipt.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transaction is not yet mined, the receipt is malformed, or a
+    /// Polygon RPC read fails.
+    pub(super) async fn transaction_receipt(
+        &self,
+        transaction_hash: B256,
+    ) -> Result<TransactionReceipt> {
+        let result = self
+            .rpc_value(
+                "eth_getTransactionReceipt",
+                json!([format!("{transaction_hash:#x}")]),
+            )
+            .await?;
+        TransactionReceipt::from_rpc(&result)
+    }
+
+    /// Fetches the verified CTF payout denominator for a condition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC read fails.
+    pub(super) async fn ctf_payout_denominator(&self, condition_id: B256) -> Result<U256> {
+        self.read(
+            CONDITIONAL_TOKENS,
+            payoutDenominatorCall {
+                conditionId: condition_id,
+            },
+        )
+        .await
+    }
+
+    /// Fetches the verified CTF payout numerator for one outcome index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC read fails.
+    pub(super) async fn ctf_payout_numerator(
+        &self,
+        condition_id: B256,
+        index: U256,
+    ) -> Result<U256> {
+        self.read(
+            CONDITIONAL_TOKENS,
+            payoutNumeratorsCall {
+                conditionId: condition_id,
+                index,
+            },
+        )
+        .await
+    }
+
     async fn read<C: SolCall>(&self, target: Address, call: C) -> Result<C::Return> {
         let response = self.call(target, call.abi_encode()).await?;
         C::abi_decode_returns_validate(&response)
@@ -237,6 +439,16 @@ impl WalletVerifier {
     }
 
     async fn rpc(&self, method: &str, params: serde_json::Value) -> Result<Bytes> {
+        let result = self.rpc_value(method, params).await?;
+        serde_json::from_value(result)
+            .map_err(|_| Error::decode(format!("Polygon RPC {method} returned an invalid result")))
+    }
+
+    async fn rpc_value(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         let body = serde_json::to_vec(
             &json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}),
         )?;
@@ -294,7 +506,7 @@ impl Debug for WalletVerifier {
 struct RpcResponse {
     jsonrpc: String,
     id: u64,
-    result: Option<Bytes>,
+    result: Option<serde_json::Value>,
     error: Option<serde_json::Value>,
 }
 

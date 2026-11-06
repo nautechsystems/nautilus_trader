@@ -500,8 +500,9 @@ pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillRe
         .any(|position| {
             report.ts_event < position.ts_opened
                 && !position.trade_ids.contains(&report.trade_id)
-                && cache
-                    .order(&position.opening_order_id)
+                && position
+                    .opening_order_id
+                    .and_then(|id| cache.order(&id))
                     .is_some_and(|order| {
                         order.tags().is_some_and(|tags| {
                             tags.iter()

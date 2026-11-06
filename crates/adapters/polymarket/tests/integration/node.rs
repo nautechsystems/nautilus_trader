@@ -30,6 +30,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, stubs::get_any_saving_handler},
     testing::wait_until_async,
 };
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
@@ -37,17 +38,25 @@ use nautilus_live::{
     node::{LiveNode, NodeState},
 };
 use nautilus_model::{
-    enums::OrderStatus,
+    enums::{AssetClass, OmsType, OrderStatus},
     events::{OrderAccepted, OrderCanceled, OrderFillVoided, OrderFilled, OrderRejected},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    instruments::Instrument,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TraderId,
+    },
+    instruments::{BinaryOption, Instrument, InstrumentAny},
     orders::Order,
-    types::Quantity,
+    position::Position,
+    position_operation::{PositionOperationDirection, PositionOperationLeg, PositionOperationType},
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_polymarket::{
-    common::consts::POLYMARKET,
-    config::{PolymarketDataClientConfig, PolymarketInstrumentProviderConfig},
+    common::{consts::POLYMARKET, enums::PolymarketSignatureType},
+    config::{
+        PolymarketDataClientConfig, PolymarketExecutionClientConfig,
+        PolymarketInstrumentProviderConfig,
+    },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    positions::record::{ManagedOperationIntent, PositionOperationRecord},
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -60,6 +69,10 @@ use serde_json::json;
 use crate::{
     harness,
     mock_venue::{TestServerState, execution_config, load_json, start_mock_server},
+    positions::{
+        TEST_PRIVATE_KEY as POSITION_PRIVATE_KEY, TEST_SIGNER as POSITION_SIGNER,
+        TestServerState as PositionServerState, start_mock_server as start_position_mock_server,
+    },
 };
 
 const CLIENT_ORDER_ID: &str = "O-1";
@@ -745,5 +758,339 @@ async fn failed_fill_routes_void_through_node_execution_manager() {
             )
             .is_empty(),
         "voided fill left an open position",
+    );
+}
+
+const POSITION_MARKET_ID: &str =
+    "0x2222222222222222222222222222222222222222222222222222222222222200";
+const POSITION_STRATEGY_ID: &str = "S-POSITION-RESTART";
+
+fn position_market() -> serde_json::Value {
+    json!({
+        "market_id": POSITION_MARKET_ID,
+        "fee_bips": 100,
+        "conditions": [
+            {
+                "question_index": 0,
+                "condition_id": format!("0x{}{:02x}", "11".repeat(31), 0),
+                "yes_token_id": "512",
+                "no_token_id": "256",
+            },
+            {
+                "question_index": 1,
+                "condition_id": format!("0x{}{:02x}", "11".repeat(31), 1),
+                "yes_token_id": "513",
+                "no_token_id": "257",
+            },
+        ],
+    })
+}
+
+fn position_instrument(condition: &str, token_id: u64, outcome: &str) -> InstrumentAny {
+    let market = position_market();
+    let info = serde_json::from_value(json!({
+        "market_version": "v1",
+        "condition_id": condition,
+        "token_id": token_id.to_string(),
+        "neg_risk": true,
+        "neg_risk_market": market,
+        "gamma_event": {"negRiskMarketID": POSITION_MARKET_ID},
+    }))
+    .unwrap();
+    let instrument = BinaryOption::builder()
+        .instrument_id(InstrumentId::from(
+            format!("TOKEN-{token_id}.POLYMARKET").as_str(),
+        ))
+        .raw_symbol(Symbol::new(format!("TOKEN-{token_id}")))
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::pUSD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(4_000_000_000_000_000_000u64))
+        .price_precision(4)
+        .size_precision(4)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.0001"))
+        .outcome(ustr::Ustr::from(outcome))
+        .info(info)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    InstrumentAny::BinaryOption(instrument)
+}
+
+fn seed_operation_position(
+    node: &LiveNode,
+    instrument: &InstrumentAny,
+    quantity: Quantity,
+    cost: Decimal,
+) {
+    let strategy_id = StrategyId::from(POSITION_STRATEGY_ID);
+    let account_id = AccountId::from(harness::ACCOUNT_ID);
+    let position_id = PositionId::from(format!("{}-{strategy_id}", instrument.id()));
+    let leg = PositionOperationLeg {
+        operation_id: UUID4::new(),
+        operation: PositionOperationType::Convert,
+        direction: PositionOperationDirection::Open,
+        trader_id: TraderId::from(harness::TRADER_ID),
+        strategy_id,
+        account_id,
+        instrument_id: instrument.id(),
+        position_id,
+        quantity,
+        cost,
+        income: None,
+        settled: false,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(2),
+    };
+    let position = Position::new_from_operation_checked(instrument, leg).unwrap();
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+}
+
+fn build_node_with_position_operations(
+    name: &str,
+    clob_addr: SocketAddr,
+    position_addr: SocketAddr,
+    funder: String,
+) -> LiveNode {
+    let config = LiveNodeConfig {
+        environment: Environment::Live,
+        trader_id: TraderId::from(harness::TRADER_ID),
+        exec_engine: LiveExecutionEngineConfig {
+            reconciliation: true,
+            ..Default::default()
+        },
+        delay_post_stop: Duration::from_millis(50),
+        ..Default::default()
+    };
+    let mut exec_config: PolymarketExecutionClientConfig = execution_config(clob_addr);
+    exec_config.private_key = Some(POSITION_PRIVATE_KEY.into());
+    exec_config.funder = Some(funder);
+    exec_config.signature_type = PolymarketSignatureType::PolyGnosisSafe;
+    exec_config.relayer_api_key = Some("relayer-key".into());
+    exec_config.relayer_api_key_address = Some(POSITION_SIGNER.into());
+    exec_config.base_url_relayer = Some(format!("http://{position_addr}"));
+    exec_config.base_url_rpc = Some(format!("http://{position_addr}/"));
+
+    LiveNodeBuilder::from_config(config)
+        .unwrap()
+        .with_name(name)
+        .add_exec_client(
+            None,
+            Box::new(PolymarketExecutionClientFactory),
+            Box::new(exec_config),
+        )
+        .unwrap()
+        .build()
+        .unwrap()
+}
+
+#[rstest]
+#[tokio::test]
+async fn seeded_position_operation_recovery_applies_before_clob_reconciliation() {
+    let mock_state = TestServerState::default();
+    mock_state.configure_default_order_success().await;
+    mock_state.positions_request_gate.enable();
+    mock_state.balance_response.lock().await["balance"] = json!("1099000000");
+    *mock_state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let observed_state = mock_state.clone();
+    let clob_addr = start_mock_server(mock_state).await;
+
+    let position_state = PositionServerState::default();
+    let position_addr = start_position_mock_server(position_state.clone()).await;
+    position_state
+        .set_position_balances([200_000_000, 200_000_000])
+        .await;
+    position_state
+        .configure_convert_receipt(&[(256, 100_000_000), (257, 100_000_000)], &[], 99_000_000)
+        .await;
+
+    let wallet = position_state.wallet().await;
+    let mut node = build_node_with_position_operations(
+        "SeededPositionOperationRestart",
+        clob_addr,
+        position_addr,
+        wallet.clone(),
+    );
+
+    let default_instrument = harness::instrument();
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add_instrument(default_instrument.clone())
+        .unwrap();
+    node.kernel()
+        .exec_engine
+        .borrow_mut()
+        .get_client_adapter_mut(&ClientId::from(POLYMARKET))
+        .expect("Polymarket execution client")
+        .on_instrument(default_instrument);
+
+    let no0 = position_instrument(&format!("0x{}{:02x}", "11".repeat(31), 0), 256, "No");
+    let no1 = position_instrument(&format!("0x{}{:02x}", "11".repeat(31), 1), 257, "No");
+    let (no0_id, no1_id) = (no0.id(), no1.id());
+    for instrument in [&no0, &no1] {
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .get_client_adapter_mut(&ClientId::from(POLYMARKET))
+            .expect("Polymarket execution client")
+            .on_instrument(instrument.clone());
+        seed_operation_position(
+            &node,
+            instrument,
+            Quantity::from("100.0000"),
+            Decimal::from(50),
+        );
+    }
+
+    let operation_id = UUID4::new();
+    let intent = ManagedOperationIntent {
+        operation_id,
+        trader_id: TraderId::from(harness::TRADER_ID),
+        strategy_id: StrategyId::from(POSITION_STRATEGY_ID),
+        account_id: AccountId::from(harness::ACCOUNT_ID),
+        operation: PositionOperationType::Convert,
+        instrument_ids: vec![no0_id, no1_id],
+        barrier_instrument_ids: vec![no0_id, no1_id],
+        quantity: Some(Quantity::from("100.0000")),
+        condition_id: None,
+        market_id: Some(POSITION_MARKET_ID.to_string()),
+        index_set: Some("3".to_string()),
+    };
+    let mut record = PositionOperationRecord::prepared(
+        &intent,
+        &wallet,
+        "7",
+        "1700000000",
+        Vec::new(),
+        UnixNanos::from(1),
+    );
+    record.mark_submitted("tx-1".to_string(), UnixNanos::from(2));
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add(
+            &PositionOperationRecord::key(&operation_id),
+            serde_json::to_vec(&record).unwrap().into(),
+        )
+        .unwrap();
+
+    let cache_at_request = node.kernel().cache.clone();
+    let handle = node.handle();
+    let driver = async move {
+        let requested = tokio::time::timeout(DEADLINE, async {
+            loop {
+                if observed_state.positions_request_gate.started() > 0 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .is_ok();
+        let applied_at_request = {
+            let cache = cache_at_request.borrow();
+            [no0_id, no1_id].into_iter().all(|instrument_id| {
+                cache
+                    .position(&PositionId::from(format!(
+                        "{instrument_id}-{POSITION_STRATEGY_ID}"
+                    )))
+                    .is_some_and(|position| position.is_closed())
+            })
+        };
+        observed_state.positions_request_gate.release();
+        assert!(
+            requested,
+            "startup CLOB position reconciliation was not requested"
+        );
+        assert!(
+            applied_at_request,
+            "operation effects must be applied before the first CLOB position reconciliation request",
+        );
+
+        wait_until_async(
+            || async { matches!(handle.state(), NodeState::Running | NodeState::Stopped) },
+            DEADLINE,
+        )
+        .await;
+        let running = handle.state();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        handle.stop();
+        running
+    };
+    let (result, running) =
+        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
+            .await
+            .unwrap();
+    result.expect("node run");
+    assert_eq!(running, NodeState::Running);
+
+    let cache = node.kernel().cache.borrow();
+    for instrument_id in [no0_id, no1_id] {
+        let position = cache
+            .position(&PositionId::from(format!(
+                "{instrument_id}-{POSITION_STRATEGY_ID}"
+            )))
+            .expect("position must exist")
+            .clone();
+        assert!(position.is_closed());
+        assert_eq!(
+            position.realized_pnl,
+            Some(Money::new(-0.5, Currency::pUSD())),
+            "CLOB reconciliation must not close {instrument_id} before recovery",
+        );
+    }
+    let record_value: serde_json::Value = serde_json::from_slice(
+        cache
+            .get(&PositionOperationRecord::key(&operation_id))
+            .unwrap()
+            .expect("operation record must exist"),
+    )
+    .unwrap();
+    assert_eq!(record_value["application_status"], "Applied");
+    let account = cache
+        .account(&AccountId::from(harness::ACCOUNT_ID))
+        .expect("account state must be refreshed")
+        .clone();
+    assert_eq!(
+        account.balances()[&Currency::pUSD()].total.as_decimal(),
+        Decimal::from(1099)
+    );
+    drop(cache);
+
+    assert!(
+        !node
+            .kernel()
+            .exec_engine
+            .borrow()
+            .is_position_operation_barred(&no0_id)
+    );
+    assert_eq!(
+        position_state.submit_count(),
+        0,
+        "recovery must not resubmit"
+    );
+    assert!(
+        position_state.transaction_get_count() > 0,
+        "recovery must query the original Relayer transaction",
+    );
+    assert_eq!(
+        node.kernel().portfolio().net_position(&no0_id),
+        Decimal::ZERO
     );
 }

@@ -79,6 +79,12 @@ pub const CTF_COLLATERAL_ADAPTER: Address = address!("0xAdA100Db00Ca000738118206
 pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
     address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
 
+/// Legacy Neg Risk adapter address on Polygon mainnet.
+///
+/// This contract owns the neg-risk market metadata and executes conversions for
+/// [`NEG_RISK_CTF_COLLATERAL_ADAPTER`].
+pub const LEGACY_NEG_RISK_ADAPTER: Address = address!("0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296");
+
 /// Deposit Wallet factory address on Polygon mainnet.
 pub const DEPOSIT_WALLET_FACTORY: Address = address!("0x00000000000Fb5C9ADea0298D729A0CB3823Cc07");
 

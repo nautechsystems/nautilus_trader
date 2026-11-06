@@ -36,7 +36,14 @@ pub mod defi;
 
 // Re-exports
 pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
-pub use execution::ExecutionReport;
+pub use execution::{
+    ExecutionReport, PositionOperationControlReply, PositionOperationControlRequest,
+    PositionOperationEffects, PositionOperationRecovery, PositionOperationRecoveryFailed,
+    PositionOperationRecoveryLeg, PositionOperationRecoveryOutcome, PositionOperationRecoveryReply,
+    PositionOperationRecoveryUnresolved, PositionOperationResult, PositionOperationStartupRecovery,
+    PositionOperationStatus, PositionOperationTokenAmount, PositionOperationTokenPayout,
+    QueryPositionOperation, SubmitPositionOperation,
+};
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(
@@ -86,6 +93,10 @@ pub enum ExecutionEvent {
     Report(ExecutionReport),
     #[strum(transparent)]
     Account(AccountState),
+    #[strum(transparent)]
+    PositionOperation(PositionOperationResult),
+    #[strum(transparent)]
+    PositionOperationControl(PositionOperationControlRequest),
 }
 
 #[cfg(test)]
@@ -94,7 +105,8 @@ mod tests {
     use nautilus_model::{
         enums::AccountType,
         events::OrderInitialized,
-        identifiers::{AccountId, ClientId, TraderId, Venue},
+        identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
+        position_operation::PositionOperationType,
         reports::ExecutionMassStatus,
     };
     use rstest::rstest;
@@ -102,6 +114,26 @@ mod tests {
 
     use super::*;
     use crate::messages::system::{ReconnectSocket, SocketState, SocketStateChange};
+
+    fn position_operation_result() -> PositionOperationResult {
+        PositionOperationResult::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            ClientId::from("BINANCE"),
+            AccountId::from("BINANCE-001"),
+            UUID4::from("00000000-0000-4000-8000-000000000003"),
+            PositionOperationType::Convert,
+            PositionOperationStatus::Applied,
+            vec![InstrumentId::from("TOKEN.BINANCE")],
+            Some("tx-1".into()),
+            Some("0xabc".into()),
+            None,
+            None,
+            UUID4::from("00000000-0000-4000-8000-000000000004"),
+            UnixNanos::from(5),
+            UnixNanos::from(6),
+        )
+    }
 
     #[rstest]
     fn system_messages_delegate_display_to_inner() {
@@ -169,6 +201,10 @@ mod tests {
             (
                 ExecutionEvent::Account(account.clone()),
                 account.to_string(),
+            ),
+            (
+                ExecutionEvent::PositionOperation(position_operation_result()),
+                position_operation_result().to_string(),
             ),
         ];
 

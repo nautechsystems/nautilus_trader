@@ -1201,11 +1201,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        let event = position_last_event(position)?;
-        let query = DatabaseQuery::AddPosition(position.id, event);
-        self.tx.send(query).map_err(|e| {
-            anyhow::anyhow!("Failed to send query add_position to database message handler: {e}")
-        })?;
+        // Operation-opened positions have no fills; their durable state is the replay snapshot.
+        if let Some(event) = position.last_event() {
+            let query = DatabaseQuery::AddPosition(position.id, event);
+            self.tx.send(query).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to send query add_position to database message handler: {e}"
+                )
+            })?;
+        }
 
         if position.requires_replay_state() {
             self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;

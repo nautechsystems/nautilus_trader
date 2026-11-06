@@ -63,6 +63,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
+    position_operation::{PositionOperationDirection, PositionOperationLeg, PositionOperationType},
     stubs::TestDefault,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
@@ -487,12 +488,14 @@ fn get_open_position(position: &Position) -> PositionOpened {
         position_id: position.id,
         account_id: position.account_id,
         opening_order_id: position.opening_order_id,
+        opening_operation_id: position.opening_operation_id,
+        operation_id: None,
         entry: position.entry,
         side: position.side,
         signed_qty: position.signed_qty,
         quantity: position.quantity,
-        last_qty: position.quantity,
-        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
+        last_qty: Some(position.quantity),
+        last_px: Some(Price::from_decimal_dp(position.avg_px_open, 0).unwrap()),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         realized_pnl: position.realized_pnl,
@@ -510,14 +513,17 @@ fn get_closed_position(position: &Position) -> PositionClosed {
         position_id: position.id,
         account_id: position.account_id,
         opening_order_id: position.opening_order_id,
+        opening_operation_id: position.opening_operation_id,
+        operation_id: None,
         closing_order_id: None,
+        closing_operation_id: position.closing_operation_id,
         entry: position.entry,
         side: PositionSide::Flat,
         signed_qty: 0.into(),
         quantity: Quantity::from("0"),
         peak_quantity: position.quantity,
-        last_qty: position.quantity,
-        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
+        last_qty: Some(position.quantity),
+        last_px: Some(Price::from_decimal_dp(position.avg_px_open, 0).unwrap()),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         avg_px_close: Some(position.avg_px_open),
@@ -541,12 +547,14 @@ fn get_changed_position(position: &Position) -> PositionChanged {
         position_id: position.id,
         account_id: position.account_id,
         opening_order_id: position.opening_order_id,
+        opening_operation_id: position.opening_operation_id,
+        operation_id: None,
         entry: position.entry,
         side: position.side,
         signed_qty: position.signed_qty,
         quantity: position.quantity,
-        last_qty: position.quantity,
-        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
+        last_qty: Some(position.quantity),
+        last_px: Some(Price::from_decimal_dp(position.avg_px_open, 0).unwrap()),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         ts_event: 0.into(),
@@ -569,12 +577,14 @@ fn get_close_position(position: &Position) -> PositionClosed {
         position_id: position.id,
         account_id: position.account_id,
         opening_order_id: position.opening_order_id,
+        opening_operation_id: position.opening_operation_id,
+        operation_id: None,
         entry: position.entry,
         side: position.side,
         signed_qty: position.signed_qty,
         quantity: position.quantity,
-        last_qty: position.quantity,
-        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
+        last_qty: Some(position.quantity),
+        last_px: Some(Price::from_decimal_dp(position.avg_px_open, 0).unwrap()),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         ts_event: 0.into(),
@@ -585,6 +595,7 @@ fn get_close_position(position: &Position) -> PositionClosed {
         realized_pnl: Some(Money::new(10.0, Currency::USD())),
         unrealized_pnl: Money::new(10.0, Currency::USD()),
         closing_order_id: Some(ClientOrderId::new("SSD")),
+        closing_operation_id: position.closing_operation_id,
         duration: DurationNanos::default(),
         event_id: UUID4::new(),
         ts_opened: 0.into(),
@@ -1657,6 +1668,88 @@ fn test_equity_resolves_when_broker_routed_position_is_flat(
     assert!(
         !equity.is_empty(),
         "equity should resolve via the account that traded the now-flat venue",
+    );
+}
+
+#[rstest]
+fn test_operation_opened_and_closed_position_records_realized_pnl(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::test_default();
+    portfolio.update_account(&cash_account_state());
+    let strategy_id = StrategyId::test_default();
+    let trader_id = TraderId::test_default();
+    let position_id = PositionId::from("P-OPERATION-PORTFOLIO");
+    let open_leg = PositionOperationLeg {
+        operation_id: UUID4::new(),
+        operation: PositionOperationType::Split,
+        direction: PositionOperationDirection::Open,
+        trader_id,
+        strategy_id,
+        account_id,
+        instrument_id: instrument_audusd.id(),
+        position_id,
+        quantity: Quantity::from("100"),
+        cost: dec!(50),
+        income: None,
+        settled: false,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(2),
+    };
+    let position =
+        Position::new_from_operation_checked(&instrument_audusd, open_leg.clone()).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(
+        PositionOpened::create_from_operation(
+            &position,
+            &open_leg,
+            UUID4::new(),
+            UnixNanos::from(2),
+        ),
+    ));
+
+    let close_leg = PositionOperationLeg {
+        operation_id: UUID4::new(),
+        operation: PositionOperationType::Merge,
+        direction: PositionOperationDirection::Close,
+        trader_id,
+        strategy_id,
+        account_id,
+        instrument_id: instrument_audusd.id(),
+        position_id,
+        quantity: Quantity::from("100"),
+        cost: dec!(50),
+        income: Some(dec!(60)),
+        settled: false,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(3),
+        ts_init: UnixNanos::from(4),
+    };
+    let mut closed = position;
+    closed.apply_operation_leg(close_leg.clone()).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .replace_position(&closed, OmsType::Netting, false, false)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(
+        PositionClosed::create_from_operation(
+            &closed,
+            &close_leg,
+            UUID4::new(),
+            UnixNanos::from(4),
+        ),
+    ));
+
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(Money::new(10.0, Currency::USD()))
     );
 }
 

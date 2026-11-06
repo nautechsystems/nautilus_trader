@@ -57,6 +57,8 @@ sol! {
         bytes32 conditionId,
         uint256[] indexSets
     );
+
+    function convertPositions(bytes32 marketId, uint256 indexSet, uint256 amount);
 }
 
 const PARENT_COLLECTION_ID: B256 = B256::ZERO;
@@ -254,6 +256,38 @@ pub fn encode_redeem_position_v2(
     })
 }
 
+/// Encodes a neg-risk CTF conversion of `index_set` NO positions for `amount` each.
+///
+/// # Errors
+///
+/// Returns an error if `market_id` is not a 32-byte hex value with a zero final byte, the index
+/// set is empty, or `amount` is not an exact positive six-decimal quantity.
+pub fn encode_convert_positions(
+    market_id: &str,
+    index_set: U256,
+    amount: Decimal,
+) -> Result<PositionCall> {
+    let market_id = parse_neg_risk_market_id(market_id)?;
+
+    if index_set.is_zero() {
+        return Err(Error::bad_request(
+            "neg-risk conversion index set must not be empty",
+        ));
+    }
+    let amount = pusd_to_base_units(amount)?;
+    Ok(PositionCall {
+        target: NEG_RISK_CTF_COLLATERAL_ADAPTER,
+        data: Bytes::from(
+            convertPositionsCall {
+                marketId: market_id,
+                indexSet: index_set,
+                amount,
+            }
+            .abi_encode(),
+        ),
+    })
+}
+
 pub(super) fn parse_condition_id_v2(condition_id: &str) -> Result<FixedBytes<31>> {
     let value = condition_id
         .strip_prefix("0x")
@@ -284,6 +318,16 @@ pub(super) fn parse_condition_id_v2(condition_id: &str) -> Result<FixedBytes<31>
 
 fn parse_condition_id(condition_id: &str) -> Result<B256> {
     parse_bytes32(condition_id, "condition_id")
+}
+
+fn parse_neg_risk_market_id(market_id: &str) -> Result<B256> {
+    let market_id = parse_bytes32(market_id, "market_id")?;
+    if market_id.as_slice()[31] != 0 {
+        return Err(Error::bad_request(
+            "neg-risk market_id must have a zero final byte",
+        ));
+    }
+    Ok(market_id)
 }
 
 #[cfg(test)]
@@ -465,5 +509,39 @@ mod tests {
                 .to_string(),
             "bad request: V2 outcome_index must be 0 or 1"
         );
+    }
+
+    #[rstest]
+    fn test_encode_convert_positions_fixture() {
+        let market_id = format!("0x{}00", "11".repeat(31));
+        let call = encode_convert_positions(&market_id, U256::from(0b101u8), dec!(1.5)).unwrap();
+
+        assert_eq!(call.target, NEG_RISK_CTF_COLLATERAL_ADAPTER);
+        assert_eq!(
+            &call.data[..4],
+            selector("convertPositions(bytes32,uint256,uint256)")
+        );
+        let selector_hex = hex::encode(selector("convertPositions(bytes32,uint256,uint256)"));
+        let market_hex = format!("{}{}", "11".repeat(31), "00");
+        let index_set_hex = format!("{:064x}", 5u8);
+        let amount_hex = format!("{:064x}", 1_500_000u64);
+        let expected = format!("0x{selector_hex}{market_hex}{index_set_hex}{amount_hex}");
+        assert_eq!(format!("0x{}", hex::encode(&call.data)), expected);
+    }
+
+    #[rstest]
+    #[case("0x1111111111111111111111111111111111111111111111111111111111111111")]
+    #[case("0x11111111111111111111111111111111111111111111111111111111111111")]
+    #[case("not-a-market")]
+    fn test_encode_convert_positions_rejects_invalid_market_id(#[case] market_id: &str) {
+        assert!(encode_convert_positions(market_id, U256::ONE, dec!(1)).is_err());
+    }
+
+    #[rstest]
+    fn test_encode_convert_positions_rejects_empty_index_set_or_invalid_amount() {
+        let market_id = format!("0x{}00", "11".repeat(31));
+        assert!(encode_convert_positions(&market_id, U256::ZERO, dec!(1)).is_err());
+        assert!(encode_convert_positions(&market_id, U256::ONE, dec!(0)).is_err());
+        assert!(encode_convert_positions(&market_id, U256::ONE, dec!(1.0000001)).is_err());
     }
 }

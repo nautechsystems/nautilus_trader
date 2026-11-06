@@ -241,9 +241,14 @@ impl LiveNode {
             .iter()
             .map(|client| client as &dyn ExecutionClient)
             .collect::<Vec<_>>();
-        let check = self
+        let mut check = self
             .exec_manager
             .prepare_position_report_check(UUID4::new(), &client_refs);
+        check.barred_instruments = self
+            .kernel
+            .exec_engine
+            .borrow()
+            .position_operation_barred_instruments();
         let clients = self.exec_clients.clone();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
@@ -280,6 +285,12 @@ impl LiveNode {
         &mut self,
         mut result: PositionReportResult,
     ) -> Option<PositionReportTask> {
+        result.check.barred_instruments.extend(
+            self.kernel
+                .exec_engine
+                .borrow()
+                .position_operation_barred_instruments(),
+        );
         let client_refs = self
             .exec_clients
             .iter()
@@ -312,6 +323,12 @@ impl LiveNode {
             mut position_result,
             reports,
         } = result;
+        position_result.check.barred_instruments.extend(
+            self.kernel
+                .exec_engine
+                .borrow()
+                .position_operation_barred_instruments(),
+        );
         let mut venue_reports = IndexMap::new();
 
         for report in &position_result.reports {
@@ -325,6 +342,15 @@ impl LiveNode {
         let mut dispatches = 0;
 
         for (key, reports) in reports {
+            if position_result.check.barred_instruments.contains(&key.0) {
+                log::debug!(
+                    "Deferring position reconciliation for {}/{}: a managed position operation bars the instrument",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
             if !self
                 .exec_manager
                 .position_report_check_is_current(&position_result.check, &key)

@@ -42,6 +42,7 @@ use nautilus_common::{
             DataResponseEnvelope, ensure_routable_bar_types, ensure_routable_instrument_ids,
             ensure_subscription_routes, quote_routing,
         },
+        execution::PositionOperationResult,
         system::{QueueStateChanged, SocketStateChanged},
     },
     msgbus::TypedHandler,
@@ -61,7 +62,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    Params, UUID4, UnixNanos,
     correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
     from_pydict,
     python::{to_pyruntime_err, to_pyvalue_err, upgrade_py_weakref},
@@ -89,6 +90,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
+    position_operation::PositionOperationType,
     python::{
         data::option_chain::PyStrikeRange, events::order::order_event_to_pyobject,
         instruments::instrument_any_to_pyobject, orders::pyobject_to_order_any,
@@ -648,6 +650,15 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_position_operation(&self, result: PositionOperationResult) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_position_operation", (result.into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_position_changed(&self, event: PositionChanged) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
@@ -1127,6 +1138,13 @@ impl Strategy for PyStrategyInner {
     fn on_position_event(&mut self, event: PositionEvent) {
         self.logger
             .log_callback_error("on_position_event", self.dispatch_on_position_event(event));
+    }
+
+    fn on_position_operation(&mut self, result: PositionOperationResult) {
+        self.logger.log_callback_error(
+            "on_position_operation",
+            self.dispatch_on_position_operation(result),
+        );
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
@@ -2070,6 +2088,48 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "submit_position_operation")]
+    #[pyo3(signature = (operation, instrument_ids, quantity=None, client_id=None))]
+    fn py_submit_position_operation(
+        &mut self,
+        operation: &str,
+        instrument_ids: Vec<InstrumentId>,
+        quantity: Option<Quantity>,
+        client_id: Option<ClientId>,
+    ) -> PyResult<UUID4> {
+        let operation = match operation.to_ascii_lowercase().as_str() {
+            "split" => PositionOperationType::Split,
+            "merge" => PositionOperationType::Merge,
+            "redeem" => PositionOperationType::Redeem,
+            "convert" => PositionOperationType::Convert,
+            _ => {
+                return Err(to_pyvalue_err(format!(
+                    "unsupported position operation: {operation}"
+                )));
+            }
+        };
+
+        Strategy::submit_position_operation(
+            self.inner_mut(),
+            operation,
+            instrument_ids,
+            quantity,
+            client_id,
+        )
+        .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "query_position_operation")]
+    #[pyo3(signature = (operation_id, client_id=None))]
+    fn py_query_position_operation(
+        &mut self,
+        operation_id: UUID4,
+        client_id: Option<ClientId>,
+    ) -> PyResult<()> {
+        Strategy::query_position_operation(self.inner_mut(), operation_id, client_id)
+            .map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "submit_order_list")]
     #[pyo3(signature = (order_list, position_id=None, client_id=None, params=None))]
     #[expect(
@@ -2525,6 +2585,10 @@ impl PyStrategy {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_event")]
     fn py_on_position_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_position_operation")]
+    fn py_on_position_operation(_slf: &Bound<'_, Self>, result: PositionOperationResult) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_changed")]
@@ -4788,13 +4852,15 @@ class IndicatorEventStrategy:
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::from("P-001"),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 1.into(),
             quantity: Quantity::from(1),
-            last_qty: Quantity::from(1),
-            last_px: Price::from("1.00000"),
+            last_qty: Some(Quantity::from(1)),
+            last_px: Some(Price::from("1.00000")),
             currency: Currency::from("USD"),
             avg_px_open: 1.into(),
             realized_pnl: None,
@@ -4811,14 +4877,16 @@ class IndicatorEventStrategy:
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::from("P-001"),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 2.into(),
             quantity: Quantity::from(2),
             peak_quantity: Quantity::from(2),
-            last_qty: Quantity::from(1),
-            last_px: Price::from("1.10000"),
+            last_qty: Some(Quantity::from(1)),
+            last_px: Some(Price::from("1.10000")),
             currency: Currency::from("USD"),
             avg_px_open: "1.05".parse().unwrap(),
             avg_px_close: None,
@@ -4839,15 +4907,18 @@ class IndicatorEventStrategy:
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             position_id: PositionId::from("P-001"),
             account_id: AccountId::from("ACC-001"),
-            opening_order_id: ClientOrderId::from("O-001"),
+            opening_order_id: Some(ClientOrderId::from("O-001")),
+            opening_operation_id: None,
+            operation_id: None,
             closing_order_id: Some(ClientOrderId::from("O-002")),
+            closing_operation_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
             signed_qty: 0.into(),
             quantity: Quantity::from(0),
             peak_quantity: Quantity::from(2),
-            last_qty: Quantity::from(2),
-            last_px: Price::from("1.20000"),
+            last_qty: Some(Quantity::from(2)),
+            last_px: Some(Price::from("1.20000")),
             currency: Currency::from("USD"),
             avg_px_open: "1.05".parse().unwrap(),
             avg_px_close: Some("1.20".parse().unwrap()),

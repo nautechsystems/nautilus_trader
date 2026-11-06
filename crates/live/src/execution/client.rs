@@ -49,10 +49,11 @@ use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        ModifyOrder, PositionOperationStartupRecovery, PositionOperationStatus, QueryAccount,
+        QueryOrder, QueryPositionOperation, SubmitOrder, SubmitOrderList, SubmitPositionOperation,
     },
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -61,6 +62,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orders::OrderAny,
+    position_operation::PositionOperationLeg,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -498,6 +500,71 @@ impl ExecutionClient for LiveExecutionClient {
     )]
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.client.borrow_mut().disconnect().await
+    }
+
+    fn submit_position_operation(&self, cmd: SubmitPositionOperation) -> anyhow::Result<()> {
+        self.client.borrow().submit_position_operation(cmd)
+    }
+
+    fn query_position_operation(&self, cmd: QueryPositionOperation) -> anyhow::Result<()> {
+        self.client.borrow().query_position_operation(cmd)
+    }
+
+    fn on_position_operation_applied(
+        &self,
+        operation_id: UUID4,
+        legs: &[PositionOperationLeg],
+        transaction_hash: Option<&str>,
+    ) {
+        self.client
+            .borrow()
+            .on_position_operation_applied(operation_id, legs, transaction_hash);
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "startup recovery is prepared on the single-threaded live runtime"
+    )]
+    async fn prepare_startup_recovery(&mut self) -> anyhow::Result<()> {
+        self.client.borrow_mut().prepare_startup_recovery().await
+    }
+
+    fn take_startup_recovery(&mut self) -> Vec<PositionOperationStartupRecovery> {
+        self.client.borrow_mut().take_startup_recovery()
+    }
+
+    fn on_position_operation_recovery_unresolved(
+        &self,
+        operation_id: UUID4,
+        venue_status: PositionOperationStatus,
+        transaction_id: Option<&str>,
+        transaction_hash: Option<&str>,
+        message: &str,
+    ) {
+        self.client
+            .borrow()
+            .on_position_operation_recovery_unresolved(
+                operation_id,
+                venue_status,
+                transaction_id,
+                transaction_hash,
+                message,
+            );
+    }
+
+    fn on_position_operation_recovery_failed(
+        &self,
+        operation_id: UUID4,
+        transaction_id: Option<&str>,
+        transaction_hash: Option<&str>,
+        message: &str,
+    ) {
+        self.client.borrow().on_position_operation_recovery_failed(
+            operation_id,
+            transaction_id,
+            transaction_hash,
+            message,
+        );
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {

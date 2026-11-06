@@ -635,6 +635,104 @@ Call `wait()` once to poll until a `PolymarketPositionOutcome` is available.
 A second `wait()` on the same Python handle raises. The
 handle retains its `transaction_id` after waiting starts, including after cancellation or an error.
 
+### Managed operations
+
+Strategies can route split, merge, redeem, and CTF convert through the execution engine instead of
+calling the position client directly. The engine applies position legs and cost basis exactly once
+per `operation_id` and does not synthesize fills.
+
+```rust tab="Rust"
+let operation_id = self.submit_position_operation(
+    PositionOperationType::Convert,
+    vec![no_instrument_id],
+    Some(Quantity::from("100")),
+    None,
+)?;
+```
+
+```python tab="Python"
+operation_id = self.submit_position_operation(
+    "convert",
+    [no_instrument_id],
+    Decimal("100"),
+)
+```
+
+`submit_position_operation` returns the stable operation identity. Override
+`on_position_operation(result)` (Python) or the Rust strategy method to receive status updates for
+that identity; `query_position_operation(operation_id)` remains available for explicit polling.
+
+- `split` takes the YES and NO instruments of one binary condition and a positive pUSD quantity.
+- `merge` takes the same pair and consumes equal complete sets.
+- `redeem` takes both outcome instruments for a CTF redeem; the wallet's balances determine the amount.
+- `convert` takes one or more NO instruments of a negative-risk event and a positive per-input quantity.
+
+The adapter resolves the complete affected scope before signing, including every YES output of a
+convert. While that scope is unresolved, order submission and modification for those instruments are
+rejected. Split allocates the spent pUSD equally across the two opened positions. Merge credits
+income equally across the two closed positions. CTF convert transfers cost from the spent NO
+positions to the received YES positions and recognizes the net pUSD return, using exact decimal
+arithmetic and a deterministic remainder allocation.
+
+Results arrive as `PositionOperationResult` events. `Confirmed` carries normalized token effects and
+the net pUSD delta; the core then applies the legs and reports `Applied` through
+`on_position_operation_applied`. A confirmed operation without complete effects, ownership, or CTF
+payout evidence remains unresolved and blocks new wallet operations. Query known state with
+`query_position_operation(operation_id)`.
+
+A CTF redeem is wallet-scoped: its payout is allocated across the known positions of each input
+outcome and each position keeps its own strategy and cost ownership. Shares already closed
+economically by `InstrumentClose` are recorded as physical payout consumption without reopening the
+position, changing its quantity or cost, or recognizing the same PnL twice. Prior verified payout
+consumption is retained so a later redeem does not allocate the same tokens again.
+
+Before signing, the adapter persists the operation intent, full barrier scope, and unsigned calls
+through Cache general bytes under `position-operation:<operation_id>`. On restart, unresolved
+records restore the full instrument barrier and the retained wallet nonce reservation. A recorded
+Relayer transaction identifier is queried to a terminal state; verified effects are reconciled
+against persisted position replay history before ordinary venue reconciliation. Legs already
+present are compared by stable identity, quantity, cost, and income, and are never applied twice.
+Missing legs are completed only when the original allocation is fully determined; conflicting or
+incomplete evidence leaves the operation unresolved and the affected scope blocked. Recovery uses
+only evidence already available from operation records, receipts, cache and position replay state,
+and recorded transaction identifiers; this release adds no wallet activity or log search source. A
+missing transaction identifier is never treated as proof that the signed transaction was not sent;
+without sufficient evidence the operation stays `UNKNOWN` with its barrier and nonce reservation,
+and recovery never re-signs or resubmits automatically.
+
+### Backtest and sandbox
+
+Backtest and sandbox support CTF convert only. Split, merge, redeem, and V2 convert return an
+explicit rejection in those environments. The simulated venue reuses its normal command queue,
+latency model, cash account, and reset behavior; it does not model gas, Relayer failures, or blocks.
+
+Provide negative-risk metadata through each instrument's `info` params. The `neg_risk_market` object
+lists every event question with its true on-chain index and both token identifiers:
+
+```json
+{
+  "neg_risk": true,
+  "token_id": "1001",
+  "condition_id": "0xc0",
+  "neg_risk_market": {
+    "market_id": "0xnegrisk",
+    "fee_bips": 100,
+    "conditions": [
+      {
+        "question_index": 0,
+        "condition_id": "0xc0",
+        "yes_token_id": "1000",
+        "no_token_id": "1001"
+      }
+    ]
+  }
+}
+```
+
+Question indices must be unique and contiguous from zero. Missing metadata, a non-contiguous index,
+different market identifiers across inputs, an inactive instrument, or a missing YES output instrument
+reject the operation without changing cash or positions.
+
 ### Outcomes and errors
 
 | `PolymarketPositionOutcome.status` | Meaning                             |
@@ -1238,6 +1336,7 @@ settlement report gate.
 | -------------------- | -------------- | ------------------------------------------------------------------------------------------- |
 | Query positions      | ✓              | Data API user positions, excluding resolved balances.                                       |
 | Split, merge, redeem | ✓              | CTF (`v1`) and V2 through Deposit Wallets; see [Position operations](#position-operations). |
+| CTF convert          | ✓              | Negative-risk events only; managed path recommended. Backtest and sandbox support simulation. |
 | Position mode        | -              | Binary outcome positions only.                                                              |
 | Leverage control     | -              | No leverage available.                                                                      |
 | Margin mode          | -              | No margin trading.                                                                          |

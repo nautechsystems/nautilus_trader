@@ -57,10 +57,13 @@ mod serial_tests {
         },
         instruments::{
             Instrument, InstrumentAny,
-            stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
+            stubs::{binary_option, crypto_perpetual_ethusdt, currency_pair_ethusdt},
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::Position,
+        position::{Position, PositionReplayEvent},
+        position_operation::{
+            PositionOperationDirection, PositionOperationLeg, PositionOperationType,
+        },
         types::{Currency, Money, Price, Quantity},
     };
     use sqlx::PgPool;
@@ -331,6 +334,89 @@ mod serial_tests {
             position.events.as_slice()
         );
         assert_eq!(cached_position.quantity, position.quantity);
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_operation_opened_position_without_fill_round_trips() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+        database.add_currency(&Currency::USDC()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+
+        let leg = PositionOperationLeg {
+            operation_id: UUID4::new(),
+            operation: PositionOperationType::Split,
+            direction: PositionOperationDirection::Open,
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            account_id: AccountId::from("ACCOUNT-001"),
+            instrument_id: instrument.id(),
+            position_id: PositionId::from("P-PG-OPERATION"),
+            quantity: Quantity::from("100"),
+            cost: rust_decimal::Decimal::new(50, 0),
+            income: None,
+            settled: false,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(2),
+        };
+        let position = Position::new_from_operation_checked(&instrument, leg).unwrap();
+        database.add_position(&position).unwrap();
+
+        wait_until_async(
+            || async {
+                database
+                    .load_position(&position.id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| {
+                        loaded.quantity == position.quantity
+                            && loaded.cost_open == position.cost_open
+                            && loaded
+                                .replay_events
+                                .iter()
+                                .any(|event| matches!(event, PositionReplayEvent::Operation(_)))
+                    })
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        let loaded = database
+            .load_position(&position.id)
+            .await
+            .unwrap()
+            .expect("operation-opened position must load");
+        assert_eq!(loaded.quantity, Quantity::from("100"));
+        assert_eq!(loaded.cost_open, rust_decimal::Decimal::new(50, 0));
+        assert!(loaded.opening_order_id.is_none());
+        assert_eq!(loaded.opening_operation_id, position.opening_operation_id);
+
+        let mut cache = get_cache(Some(Box::new(get_test_pg_cache_database().await.unwrap())));
+        cache.cache_positions().await.unwrap();
+        cache.build_index();
+        let indexed = cache
+            .position(&position.id)
+            .expect("batch load must discover an operation-only position");
+        assert_eq!(indexed.quantity, Quantity::from("100"));
+        assert_eq!(indexed.opening_operation_id, position.opening_operation_id);
+        assert!(
+            cache
+                .positions_open(
+                    None,
+                    Some(&instrument.id()),
+                    Some(&StrategyId::from("STRATEGY-001")),
+                    Some(&AccountId::from("ACCOUNT-001")),
+                    None,
+                )
+                .iter()
+                .any(|cached| cached.id == position.id)
+        );
 
         reset_test_database(&database).await;
         database.close().unwrap();

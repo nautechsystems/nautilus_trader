@@ -25,11 +25,12 @@ use nautilus_common::{
     factories::OrderEventFactory,
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        PositionOperationResult, QueryAccount, QueryOrder, QueryPositionOperation, SubmitOrder,
+        SubmitOrderList, SubmitPositionOperation, TradingCommand,
     },
-    msgbus::{self, MessagingSwitchboard},
+    msgbus::{self, MessagingSwitchboard, switchboard},
 };
-use nautilus_core::{Params, UnixNanos, WeakCell};
+use nautilus_core::{Params, UUID4, UnixNanos, WeakCell};
 use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
@@ -37,6 +38,7 @@ use nautilus_model::{
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
     orders::OrderAny,
+    position_operation::PositionOperationLeg,
     types::{AccountBalance, MarginBalance},
 };
 
@@ -62,6 +64,12 @@ pub struct BacktestExecutionClient {
     /// borrow via its `execute` handler. Instead, events are buffered here
     /// and drained by the engine after the execute borrow is released.
     queued_events: Rc<RefCell<Vec<OrderEventAny>>>,
+    /// Position operation results buffered until the exchange borrow is released.
+    ///
+    /// The simulated exchange reports a confirmed operation from inside its own mutable borrow.
+    /// Delivering the result synchronously would re-enter the exchange through the core's applied
+    /// callback, so results are buffered alongside order events and drained by the engine.
+    queued_position_operation_results: Rc<RefCell<Vec<PositionOperationResult>>>,
     routing: bool,
     _frozen_account: bool,
 }
@@ -89,15 +97,22 @@ impl BacktestExecutionClient {
     ) -> Self {
         let routing = routing.unwrap_or(false);
         let frozen_account = frozen_account.unwrap_or(false);
-        let exchange_id = exchange.borrow().id;
-        let account_type = exchange.borrow().account_type;
-        let base_currency = exchange.borrow().base_currency;
+        let (exchange_id, account_type, base_currency, oms_type, queued_position_operation_results) = {
+            let exchange = exchange.borrow();
+            (
+                exchange.id,
+                exchange.account_type,
+                exchange.base_currency,
+                exchange.oms_type,
+                exchange.position_operation_result_queue(),
+            )
+        };
 
         let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from(exchange_id.as_str()),
             Venue::from(exchange_id.as_str()),
-            exchange.borrow().oms_type,
+            oms_type,
             account_id,
             account_type,
             base_currency,
@@ -113,6 +128,7 @@ impl BacktestExecutionClient {
             cache,
             clock,
             queued_events: Rc::new(RefCell::new(Vec::new())),
+            queued_position_operation_results,
             routing,
             _frozen_account: frozen_account,
         }
@@ -128,6 +144,23 @@ impl BacktestExecutionClient {
         let endpoint = MessagingSwitchboard::exec_engine_process();
         for event in events {
             msgbus::send_order_event(endpoint, event);
+        }
+    }
+
+    /// Drain buffered position operation results, sending each to the exec engine.
+    pub fn drain_queued_position_operation_results(&self) {
+        let results: Vec<PositionOperationResult> = self
+            .queued_position_operation_results
+            .borrow_mut()
+            .drain(..)
+            .collect();
+        let endpoint = MessagingSwitchboard::exec_engine_position_operation();
+        for result in results {
+            msgbus::send_any_value(endpoint, &result);
+            msgbus::publish_any(
+                switchboard::get_event_position_operation_topic(result.strategy_id),
+                &result,
+            );
         }
     }
 
@@ -194,6 +227,7 @@ impl ExecutionClient for BacktestExecutionClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         self.queued_events.borrow_mut().clear();
+        self.queued_position_operation_results.borrow_mut().clear();
         Ok(())
     }
 
@@ -236,6 +270,45 @@ impl ExecutionClient for BacktestExecutionClient {
                 .send(TradingCommand::SubmitOrderList(cmd));
         } else {
             log::error!("submit_order_list: SimulatedExchange has been dropped");
+        }
+        Ok(())
+    }
+
+    fn on_position_operation_applied(
+        &self,
+        operation_id: UUID4,
+        _legs: &[PositionOperationLeg],
+        _transaction_hash: Option<&str>,
+    ) {
+        if let Some(exchange) = self.exchange.upgrade() {
+            let mut exchange = exchange.borrow_mut();
+            exchange.mark_position_operation_applied(operation_id);
+            if let Err(e) = exchange.apply_pending_position_operation_cash(operation_id) {
+                log::error!(
+                    "Failed to apply simulated cash for position operation {operation_id}: {e}"
+                );
+            }
+        }
+    }
+
+    fn submit_position_operation(&self, cmd: SubmitPositionOperation) -> anyhow::Result<()> {
+        if let Some(exchange) = self.exchange.upgrade() {
+            exchange
+                .borrow_mut()
+                .send(TradingCommand::SubmitPositionOperation(cmd));
+        } else {
+            log::error!("submit_position_operation: SimulatedExchange has been dropped");
+        }
+        Ok(())
+    }
+
+    fn query_position_operation(&self, cmd: QueryPositionOperation) -> anyhow::Result<()> {
+        if let Some(exchange) = self.exchange.upgrade() {
+            exchange
+                .borrow_mut()
+                .send(TradingCommand::QueryPositionOperation(cmd));
+        } else {
+            log::error!("query_position_operation: SimulatedExchange has been dropped");
         }
         Ok(())
     }
