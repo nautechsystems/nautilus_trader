@@ -49,7 +49,10 @@ use pyo3::{
     types::{PyDict, PyModule},
 };
 
-use crate::{registration::ensure_unique_order_id_tag, trader::Trader};
+use crate::{
+    registration::{ensure_unique_order_id_tag, next_order_id_tag},
+    trader::Trader,
+};
 
 impl Trader {
     /// Adds an importable Python actor to the trader.
@@ -218,14 +221,14 @@ impl Trader {
             }
 
             // Mirrors the native path: a configured ID is kept, otherwise the runtime class name
-            // takes the configured order ID tag, or the next positional tag
+            // takes the configured order ID tag, or the next unused numeric tag
             let runtime_order_id_tag = py_strategy_ref.order_id_tag();
             let strategy_id = if let Some(strategy_id) = py_strategy_ref.configured_strategy_id() {
                 strategy_id
             } else {
                 let order_id_tag = normalize_order_id_tag(runtime_order_id_tag.as_deref())
                     .map_or_else(
-                        || format!("{:03}", existing_order_id_tags.len()),
+                        || next_order_id_tag(&existing_order_id_tags),
                         str::to_string,
                     );
                 StrategyId::new_checked(format!("{class_name}-{order_id_tag}"))?
@@ -451,36 +454,6 @@ impl Trader {
             py_data_actor_ref.borrow().register_in_global_registries()?;
             Ok(())
         })
-    }
-
-    /// Rejects a component ID this trader already tracks, whatever kind registered it.
-    ///
-    /// Duplicate adds are otherwise checked only within a kind, so an actor sharing an ID with a
-    /// live strategy would overwrite that strategy's clock, registry entries, and wrapper, and a
-    /// rollback would then remove state the attempt did not create. The lifecycle collections are
-    /// checked alongside the clocks because a component registered externally and tracked through
-    /// `add_*_id_for_lifecycle` has no trader-owned clock.
-    fn ensure_component_id_available(&self, component_id: ComponentId) -> anyhow::Result<()> {
-        let id = component_id.inner();
-        let tracked = self.clocks.contains_key(&component_id)
-            || self.actor_ids.iter().any(|actor_id| actor_id.inner() == id)
-            || self
-                .strategy_ids
-                .iter()
-                .any(|strategy_id| strategy_id.inner() == id)
-            || self
-                .exec_algorithm_ids
-                .iter()
-                .any(|exec_algorithm_id| exec_algorithm_id.inner() == id);
-
-        if tracked {
-            anyhow::bail!(
-                "Component {component_id} is already registered with trader {}",
-                self.trader_id
-            );
-        }
-
-        Ok(())
     }
 }
 

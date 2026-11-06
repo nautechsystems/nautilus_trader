@@ -112,6 +112,10 @@ Released on TBD (UTC).
 - Fixed stale bundled execution reports incorrectly voiding newer fills
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution
+- Fixed `Trader` shutdown skipping later components after stop errors and leaving degraded components active
+- Fixed dynamically added backtest components starting at epoch time and missing timer deadlines
+- Fixed native component registration overwriting another component kind with the same ID
+- Fixed automatic strategy order ID tags colliding after removals or with explicit tags
 - Fixed `Strategy::market_exit` skipping emulated and active-local orders during cancellation and completion
 - Fixed bounded reconciliation leaving retained positions open after explicit closing fills
 - Fixed Arrow trade tick decoding panicking on malformed trade IDs
