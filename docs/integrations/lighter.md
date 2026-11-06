@@ -600,6 +600,11 @@ The adapter sends both defaults explicitly. Each native group uses one pair for 
 Unknown names, non-string values, and `reduce` with `master_account_index` deny the order before
 submission. Non-default modes require zero integrator fees, which the adapter uses.
 
+Robinhood Mainnet can still reject non-default modes with `21159` (nonzero fees), even with zero integrator
+fees. Use the default modes unless the venue permits the requested settings for the account.
+Rejections without a transaction hash can leave concurrent or batched submissions unresolved. Restart
+and reconcile venue state before managing affected orders again.
+
 **Reduction**: `reduce` nets overlapping quantities without a fill. Working-order quantities and
 reports show the remainder plus actual fills; price-only amendments preserve this quantity.
 

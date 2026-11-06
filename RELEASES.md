@@ -163,6 +163,7 @@ Released on TBD (UTC).
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
 - Fixed false WebSocket heartbeat timeouts while receiving fragmented messages
 - Fixed startup reconciliation failing when execution clients publish recovered instruments
+- Fixed reconciliation double-counting order-report fills already covered by venue positions
 - Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
 - Fixed Architect AX order history and fill report requests panicking on timestamps beyond `i64::MAX` nanoseconds
 - Fixed Binance Futures initial margin underestimation (#5531), thanks for reporting @wangzengzhi

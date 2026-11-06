@@ -96,9 +96,9 @@ use rust_decimal::Decimal;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, fill_precedes_snapshot_reconciled_position,
-        generate_external_order_status_events, generate_reconciliation_order_events,
-        generate_reconciliation_order_pre_fill_events,
+        check_position_reconciliation, fill_precedes_reconciled_position,
+        fill_precedes_snapshot_reconciled_position, generate_external_order_status_events,
+        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
     },
 };
@@ -3030,7 +3030,63 @@ impl ExecutionEngine {
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
-        self.handle_event_with_position_application(event, true);
+        let covered = match event {
+            OrderEventAny::Filled(fill) if fill.reconciliation => {
+                self.fill_precedes_reconciliation_snapshot(fill)
+            }
+            _ => false,
+        };
+
+        self.handle_event_with_position_application(event, !covered);
+    }
+
+    fn fill_precedes_reconciliation_snapshot(&self, fill: &OrderFilled) -> bool {
+        let oms_type = self.determine_oms_type(fill);
+        let cache = self.cache.borrow();
+
+        if cache
+            .order(&fill.client_order_id)
+            .is_some_and(|order| is_fill_price_restatement(&order, fill))
+        {
+            return false;
+        }
+
+        let is_covered = |position: &Position| {
+            position.is_open()
+                && position.account_id == fill.account_id
+                && position.instrument_id == fill.instrument_id
+                && fill_precedes_reconciled_position(&cache, position, fill.trade_id, fill.ts_event)
+        };
+
+        if oms_type != OmsType::Hedging {
+            let positions = cache.positions_open(
+                None,
+                Some(&fill.instrument_id),
+                None,
+                Some(&fill.account_id),
+                None,
+            );
+            return positions.into_iter().any(|position| is_covered(&position));
+        }
+
+        let Ok(indexed) = self.cached_fill_position_id(fill, oms_type) else {
+            return false;
+        };
+
+        let Some(order) = cache.order(&fill.client_order_id) else {
+            return false;
+        };
+
+        let Some(position_id) = indexed
+            .or(fill.position_id)
+            .or_else(|| self.cached_hedging_position_id(fill, &order))
+        else {
+            return false;
+        };
+
+        cache
+            .position_ref(&position_id)
+            .is_some_and(|position| is_covered(&position))
     }
 
     fn handle_event_with_position_application(
@@ -3775,45 +3831,8 @@ impl ExecutionEngine {
             &cached_order
         };
 
-        // Check execution spawn orders
-        if let Some(spawn_id) = order.exec_spawn_id() {
-            let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
-            for spawned_order in spawn_orders {
-                if let Some(pos_id) = spawned_order.position_id() {
-                    if self.config.debug {
-                        log::debug!("Found spawned {} for {}", pos_id, fill.client_order_id());
-                    }
-                    return pos_id;
-                }
-            }
-        }
-
-        if order.is_reduce_only() {
-            let mut candidates = cache
-                .positions_open(
-                    None,
-                    Some(&fill.instrument_id),
-                    Some(&fill.strategy_id),
-                    Some(&fill.account_id),
-                    None,
-                )
-                .into_iter()
-                .filter(|position| position.is_opposite_side(fill.order_side));
-            let candidate = candidates.next();
-
-            if let Some(position) = candidate
-                && candidates.next().is_none()
-                && order.would_reduce_only(position.side, position.quantity)
-            {
-                if self.config.debug {
-                    log::debug!(
-                        "Assigned reduce-only fill {} to position {}",
-                        fill.client_order_id(),
-                        position.id
-                    );
-                }
-                return position.id;
-            }
+        if let Some(position_id) = self.cached_hedging_position_id(fill, order) {
+            return position_id;
         }
 
         // Generate new position ID
@@ -3823,6 +3842,45 @@ impl ExecutionEngine {
             log::debug!("Generated {} for {}", position_id, fill.client_order_id());
         }
         position_id
+    }
+
+    fn cached_hedging_position_id(
+        &self,
+        fill: &OrderFilled,
+        order: &OrderAny,
+    ) -> Option<PositionId> {
+        let cache = self.cache.borrow();
+
+        if let Some(position_id) = order.exec_spawn_id().and_then(|spawn_id| {
+            cache
+                .orders_for_exec_spawn(&spawn_id)
+                .into_iter()
+                .find_map(|order| order.position_id())
+        }) {
+            return Some(position_id);
+        }
+
+        if !order.is_reduce_only() {
+            return None;
+        }
+
+        let mut candidates = cache
+            .positions_open(
+                None,
+                Some(&fill.instrument_id),
+                Some(&fill.strategy_id),
+                Some(&fill.account_id),
+                None,
+            )
+            .into_iter()
+            .filter(|position| position.is_opposite_side(fill.order_side));
+        let position = candidates.next()?;
+        if candidates.next().is_some() || !order.would_reduce_only(position.side, position.quantity)
+        {
+            return None;
+        }
+
+        Some(position.id)
     }
 
     fn determine_netting_position_id(

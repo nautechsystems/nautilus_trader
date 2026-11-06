@@ -48,6 +48,32 @@ Feature: Startup reconciliation
         | short | start      | -5.000     |
         | short | run        | -5.000     |
 
+  Rule: A late report after restart must not count a recovered execution twice
+    A startup position snapshot can already include an execution whose Filled
+    order report arrives later. Even after the node is running, recovering that
+    order must leave the recovered position and portfolio exposure unchanged.
+
+    @netting @recovery @late_report
+    Scenario Outline: Receive an earlier execution report after recovering a <side> position at restart
+      Given the execution client uses NETTING accounting
+      And the venue reports a <side> position of 5.000 ETH
+      And the position report has no venue position ID
+      And its average opening price is 2500.25 USDT
+      And the execution in the delayed Filled order report is already included in the position snapshot
+      When the live node restarts and receives the delayed Filled order report after entering Running
+      Then startup succeeds
+      And the strategy observes a <side> position of 5.000 ETH at 2500.25 USDT when it starts
+      And the portfolio exposes <signed_qty> ETH when the strategy starts
+      And the delayed order is FILLED for 5.000 ETH at 2500.25 USDT
+      And the recovered position and portfolio exposure stay unchanged after the delayed report
+      And exactly one position is cached
+      And the actor and strategy each start once
+
+      Examples:
+        | side  | signed_qty |
+        | long  | 5.000      |
+        | short | -5.000     |
+
   Rule: Included position reports must be reconciled before actors and strategies start
 
     @recovery

@@ -28,9 +28,10 @@ use nautilus_model::{
         AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce,
     },
-    identifiers::{AccountId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
 };
@@ -428,17 +429,26 @@ pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillRe
         )
         .into_iter()
         .any(|position| {
-            report.ts_event < position.ts_opened
-                && !position.trade_ids.contains(&report.trade_id)
-                && cache
-                    .order(&position.opening_order_id)
-                    .is_some_and(|order| {
-                        order.tags().is_some_and(|tags| {
-                            tags.iter()
-                                .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
-                        })
-                    })
+            fill_precedes_reconciled_position(cache, &position, report.trade_id, report.ts_event)
         })
+}
+
+pub(crate) fn fill_precedes_reconciled_position(
+    cache: &Cache,
+    position: &Position,
+    trade_id: TradeId,
+    ts_event: UnixNanos,
+) -> bool {
+    ts_event < position.ts_opened
+        && !position.trade_ids.contains(&trade_id)
+        && cache
+            .order(&position.opening_order_id)
+            .is_some_and(|order| {
+                order.tags().is_some_and(|tags| {
+                    tags.iter()
+                        .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+                })
+            })
 }
 
 /// Caps a price at the instrument's maximum price.

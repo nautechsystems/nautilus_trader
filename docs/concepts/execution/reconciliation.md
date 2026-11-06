@@ -591,13 +591,24 @@ validation still checks the remaining difference against the account's quantity 
 
 #### Replayed fills
 
-Reconciliation can open a position from a venue position report. While that position stays open, a fill report
-for the same instrument and account with an earlier `ts_event` updates its order but no position. The report
-already includes those executions. Thus, a venue that resends them after a restart (such as Interactive
-Brokers TWS) does not double the position. Earlier fills still apply when no such position is open for the
-instrument and account.
+**Restart edge case**: a position recovered from a venue snapshot can already include an execution whose
+order or fill report arrives later.
 
-The protection has these known gaps:
+While that position stays open, reconciliation fills whose `ts_event` precedes the position's `ts_opened`
+**update the order only**, avoiding duplicate exposure. This also applies after startup.
+Price restatement events retain normal position handling.
+
+Coverage for the same instrument and account:
+
+| Fill source                              | NETTING scope  | HEDGING scope        |
+| ---------------------------------------- | -------------- | -------------------- |
+| Runtime standalone report                | All strategies | All strategies       |
+| Bundled or inferred from an order report | All strategies | Routed position only |
+
+Continuous position checks also keep earlier fill reports off open reconciliation positions for the
+same instrument and account.
+
+**Known gaps**:
 
 - **Reconciliation window**: the synthetic opening fill carries the reconciliation time rather than the report
   time. Thus, a real fill that lands between the position report query and reconciliation also stays off the
@@ -605,10 +616,8 @@ The protection has these known gaps:
 - **Opening order purge**: the protection needs the synthetic opening order in the cache. When
   closed-order purging is enabled, a `purge_closed_orders_buffer_mins` shorter than the venue's
   replay delay can remove it first.
-- **Bundled fills**: fills that arrive bundled with an order status report bypass the protection.
 
-A fill kept off the position stays on its order only, as in
-[order-only fill projection](#order-only-fill-projection), with these effects:
+**Order-only effects** (see [order-only fill projection](#order-only-fill-projection)):
 
 - **Event store restore**: restoring the cache from the event store applies the fill to a
   position, so the restored position can overstate the venue quantity.
