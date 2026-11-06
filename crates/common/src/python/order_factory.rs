@@ -708,7 +708,6 @@ impl PyOrderFactory {
         tp_limit_offset=None,
         tp_time_in_force=TimeInForce::Gtc,
         tp_post_only=true,
-        tp_reduce_only=true,
         tp_exec_algorithm_id=None,
         tp_exec_algorithm_params=None,
         tp_tags=None,
@@ -720,11 +719,12 @@ impl PyOrderFactory {
         sl_trailing_offset=None,
         sl_trailing_offset_type=TrailingOffsetType::Price,
         sl_time_in_force=TimeInForce::Gtc,
-        sl_reduce_only=true,
         sl_exec_algorithm_id=None,
         sl_exec_algorithm_params=None,
         sl_tags=None,
-        sl_client_order_id=None
+        sl_client_order_id=None,
+        tp_reduce_only=true,
+        sl_reduce_only=true
     ))]
     fn py_bracket(
         &mut self,
@@ -756,7 +756,6 @@ impl PyOrderFactory {
         tp_limit_offset: Option<Decimal>,
         tp_time_in_force: TimeInForce,
         tp_post_only: bool,
-        tp_reduce_only: bool,
         tp_exec_algorithm_id: Option<ExecAlgorithmId>,
         tp_exec_algorithm_params: Option<IndexMap<String, String>>,
         tp_tags: Option<Vec<String>>,
@@ -768,11 +767,12 @@ impl PyOrderFactory {
         sl_trailing_offset: Option<Decimal>,
         sl_trailing_offset_type: TrailingOffsetType,
         sl_time_in_force: TimeInForce,
-        sl_reduce_only: bool,
         sl_exec_algorithm_id: Option<ExecAlgorithmId>,
         sl_exec_algorithm_params: Option<IndexMap<String, String>>,
         sl_tags: Option<Vec<String>>,
         sl_client_order_id: Option<ClientOrderId>,
+        tp_reduce_only: bool,
+        sl_reduce_only: bool,
     ) -> PyResult<Py<PyList>> {
         let orders = py_orders_from_factory(|| {
             self.0

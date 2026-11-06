@@ -1597,7 +1597,6 @@ class OrderFactory:
         tp_limit_offset: decimal.Decimal | None = None,
         tp_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
         tp_post_only: bool = True,
-        tp_reduce_only: bool = True,
         tp_exec_algorithm_id: model.ExecAlgorithmId | None = None,
         tp_exec_algorithm_params: typing.Mapping[str, str] | None = None,
         tp_tags: typing.Sequence[str] | None = None,
@@ -1609,11 +1608,12 @@ class OrderFactory:
         sl_trailing_offset: decimal.Decimal | None = None,
         sl_trailing_offset_type: model.TrailingOffsetType = model.TrailingOffsetType.PRICE,
         sl_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
-        sl_reduce_only: bool = True,
         sl_exec_algorithm_id: model.ExecAlgorithmId | None = None,
         sl_exec_algorithm_params: typing.Mapping[str, str] | None = None,
         sl_tags: typing.Sequence[str] | None = None,
         sl_client_order_id: model.ClientOrderId | None = None,
+        tp_reduce_only: bool = True,
+        sl_reduce_only: bool = True,
     ) -> list: ...
 
 @typing.final
