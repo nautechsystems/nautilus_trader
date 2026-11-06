@@ -31,6 +31,10 @@ observes the new state.
 credits short positions. The adjustment changes realized PnL, and the matching account balance update records
 the cash movement.
 
+For a single-currency account whose base currency differs from the settlement currency, the balance update is
+converted to the base currency at the cached mid exchange rate, while `PositionAdjusted` keeps the settlement
+currency. A settlement without an exchange rate is handled like one without a settlement price.
+
 ## Accounts
 
 Each backtest venue uses one of three `account_type` values: `CASH`, `MARGIN`, or `BETTING`. The low-level API
