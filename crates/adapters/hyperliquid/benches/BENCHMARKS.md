@@ -165,31 +165,3 @@ fill against one state, so its measured steady state is duplicate-fill rejection
   payload sizes. The mutable-buffer requirement forces a per-call `to_vec()`, payloads are too small to amortize
   SIMD setup, and owned-`String` deserialization negates the borrowing advantage. This refresh does not
   repeat that experiment. Re-evaluate if payloads grow materially or a zero-copy borrowed-string path lands.
-
-## Execution product scope comparison
-
-Measured 2026-11-06 on Apple M3 Max (arm64), rustc 1.99.1, using the `bench` profile
-and `--no-default-features --features high-precision`. The same `micros` harness measured
-`65f22e0538` with the Vec scope and the scalar-mask implementation. Each case used 50 samples,
-a 1-second warmup, and a 2-second measurement period. Three before/after sessions alternated
-execution order, with no concurrent builds or tests. Values are medians of the three session means.
-
-| Component                              | Vec scope | Scalar mask |
-| -------------------------------------- | --------: | ----------: |
-| Allowed Perp instrument check          | 3.85 ns   | 3.47 ns     |
-| Excluded Spot instrument check         | 4.24 ns   | 3.08 ns     |
-| HTTP client clone without account      | 34.35 ns  | 19.25 ns    |
-| HTTP client clone with account address | 73.55 ns  | 40.66 ns    |
-
-These are component measurements, including clone drop, rather than end-to-end order latency.
-The scope no longer allocates during cloning; the existing account-address String still clones.
-The unoptimized clone without an account had session means from 34.32 to 40.61 ns, so the
-absolute timings should be treated as local measurements rather than latency guarantees.
-
-Run the cases with:
-
-```bash
-bash scripts/strip-adapter-env.bash cargo bench -p nautilus-hyperliquid --bench micros \
-    --no-default-features --features high-precision -- execution_product_scope \
-    --warm-up-time 1 --measurement-time 2 --sample-size 50
-```
