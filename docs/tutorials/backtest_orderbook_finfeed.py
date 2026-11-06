@@ -484,7 +484,7 @@ finally:
 #
 # ```bash
 # uv run --project python --no-sync --with pandas --with plotly --with kaleido \
-#     python docs/tutorials/render_finfeed_panels.py
+#     python docs/tutorials/assets/backtest_orderbook_finfeed/render_panels.py
 # ```
 #
 # If Kaleido reports that Chrome is missing, install its browser once with:

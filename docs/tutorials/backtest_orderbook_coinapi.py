@@ -427,7 +427,8 @@ node.dispose()
 #
 # ```bash
 # uv run --project python --no-sync --with boto3 --with pandas \
-#     --with plotly --with kaleido python docs/tutorials/render_coinapi_panels.py
+#     --with plotly --with kaleido \
+#     python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 # ```
 #
 # If Kaleido reports that Chrome is missing, install its browser once with:

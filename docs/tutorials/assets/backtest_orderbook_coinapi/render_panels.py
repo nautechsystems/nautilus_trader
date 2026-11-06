@@ -4,7 +4,8 @@ Render the CoinAPI tutorial's panels from its pinned Lighter ANTHROPIC backtest.
 Run from the repository root with the tutorial and visualization dependencies installed:
 
     uv run --project python --no-sync --with boto3 --with pandas \
-        --with plotly --with kaleido python docs/tutorials/render_coinapi_panels.py
+        --with plotly --with kaleido \
+        python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 
 The tutorial reuses its cached export or performs its documented first download.
 The figures use the same native replay and reports as the tutorial.
@@ -20,8 +21,6 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from orderbook_panels import COLORS
-from orderbook_panels import apply_layout
 from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _hex_to_rgba
@@ -29,8 +28,14 @@ from nautilus_trader.analysis.tearsheet import _padded_range
 from nautilus_trader.analysis.tearsheet import _write_figure
 
 
-TUTORIAL_DIR = Path(__file__).resolve().parent
-OUT = TUTORIAL_DIR / "assets" / "backtest_orderbook_coinapi"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from orderbook_panels import COLORS
+from orderbook_panels import apply_layout
+
+
+TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+OUT = Path(__file__).resolve().parent
 NEGATIVE_FILL = _hex_to_rgba(COLORS["negative"], 0.14)
 
 

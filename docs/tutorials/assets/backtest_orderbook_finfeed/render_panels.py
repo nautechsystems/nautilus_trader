@@ -4,7 +4,7 @@ Render book, liquidity, position, and equity panels from the FinFeed tutorial.
 Run from the repository root with the tutorial dependencies and a Chrome-compatible browser:
 
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
-        python docs/tutorials/render_finfeed_panels.py
+        python docs/tutorials/assets/backtest_orderbook_finfeed/render_panels.py
 
 The tutorial reuses its cached catalog or performs its documented first collection.
 
@@ -19,15 +19,19 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from orderbook_panels import COLORS
-from orderbook_panels import apply_layout
 from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 
 
-TUTORIAL_DIR = Path(__file__).resolve().parent
-OUT = TUTORIAL_DIR / "assets" / "backtest_orderbook_finfeed"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from orderbook_panels import COLORS
+from orderbook_panels import apply_layout
+
+
+TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+OUT = Path(__file__).resolve().parent
 
 
 def main() -> None:
