@@ -24,7 +24,7 @@
 pub mod arrow;
 
 #[cfg(feature = "arrow")]
-use nautilus_model::data::greeks::YieldCurve;
+use nautilus_model::data::greeks::{GreeksData, PortfolioGreeks, YieldCurve};
 use pyo3::prelude::*;
 
 #[cfg(feature = "arrow")]
@@ -41,6 +41,8 @@ use crate::arrow::custom::ensure_custom_data_registered;
 pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "arrow")]
     {
+        ensure_custom_data_registered::<GreeksData>();
+        ensure_custom_data_registered::<PortfolioGreeks>();
         ensure_custom_data_registered::<YieldCurve>();
 
         m.add_function(wrap_pyfunction!(

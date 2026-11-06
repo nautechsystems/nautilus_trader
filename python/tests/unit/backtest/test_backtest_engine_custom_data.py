@@ -22,6 +22,8 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import GreeksCalculator
@@ -32,6 +34,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import Equity
+from nautilus_trader.model import GreeksData
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
@@ -74,6 +77,12 @@ class _YieldCurveStrategy(_CustomDataStrategy):
         """
         self.cache.add_yield_curve(data.data)
         super().on_data(data)
+
+
+class _CustomDataForwardingStrategy(_CustomDataStrategy):
+    def on_data(self, data: CustomData) -> None:
+        super().on_data(data)
+        self.publish_data(self.output_type, CustomData(self.output_type, data.data))
 
 
 class _YieldCurveGreeksStrategy(_YieldCurveStrategy):
@@ -210,6 +219,66 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
         assert [item.data.interest_rates for item in strategy.received] == [[0.04], [0.05]]
         assert [item.ts_event for item in strategy.received] == [2, 1]
         assert [item.ts_init for item in strategy.received] == [3, 4]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("kind", ["GreeksData", "PortfolioGreeks", "YieldCurve"])
+def test_catalog_greeks_custom_data_replays_and_reaches_another_actor(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """
+    Replay native Greeks custom data in time order and forward it to another actor.
+    """
+    if kind == "YieldCurve":
+        values = [
+            YieldCurve("USD", [0.0], [0.04], 9, 11),
+            YieldCurve("USD", [0.0], [0.05], 19, 23),
+        ]
+    else:
+        values = [
+            GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11),
+            GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 2.5, 8.0, 23),
+        ]
+
+        if kind == "PortfolioGreeks":
+            values = [value.to_portfolio_greeks() for value in values]
+
+    data_type = DataType(kind, {"source": "catalog"}, "GREEKS-INPUT")
+    output_type = DataType(kind, {"source": "actor"}, "GREEKS-OUTPUT")
+    originals = [CustomData(data_type, value) for value in values]
+    expected_payloads = [json.loads(item.to_json_bytes())["payload"] for item in originals]
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    catalog.write_custom_data(originals)
+    loaded = catalog.query_custom_data(NautilusDataType.Custom(kind))
+    sender = _CustomDataForwardingStrategy(StrategyConfig(strategy_id=StrategyId("SENDER-001")))
+    sender.data_type = data_type
+    sender.output_type = output_type
+    sender.received = []
+    receiver = _CustomDataStrategy(StrategyConfig(strategy_id=StrategyId("RECEIVER-002")))
+    receiver.data_type = output_type
+    receiver.received = []
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_strategy(sender)
+    engine.add_strategy(receiver)
+
+    try:
+        engine.add_data(list(reversed(loaded)), validate=True, sort=True)
+        engine.run()
+
+        assert engine.get_result().iterations == 2
+
+        for actor, expected_type in ((sender, data_type), (receiver, output_type)):
+            assert [item.data_type for item in actor.received] == [expected_type] * 2
+            assert [custom_data_backend_kind(item) for item in actor.received] == ["native"] * 2
+            assert [type(item.data).__name__ for item in actor.received] == [kind] * 2
+            assert [item.ts_init for item in actor.received] == [11, 23]
+            assert [
+                json.loads(item.to_json_bytes())["payload"] for item in actor.received
+            ] == expected_payloads
     finally:
         engine.dispose()
 

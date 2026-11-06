@@ -769,7 +769,7 @@ impl HasTsInit for GreeksData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
@@ -1008,45 +1008,52 @@ impl HasTsInit for YieldCurve {
     }
 }
 
-impl CustomDataTrait for YieldCurve {
-    fn type_name(&self) -> &'static str {
-        Self::type_name_static()
-    }
+macro_rules! impl_greeks_custom_data {
+    ($($type:ident),+ $(,)?) => {
+        $(
+            impl CustomDataTrait for $type {
+                fn type_name(&self) -> &'static str {
+                    Self::type_name_static()
+                }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+                fn as_any(&self) -> &dyn Any {
+                    self
+                }
 
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
+                fn ts_event(&self) -> UnixNanos {
+                    self.ts_event
+                }
 
-    fn to_json(&self) -> anyhow::Result<String> {
-        Ok(serde_json::to_string(self)?)
-    }
+                fn to_json(&self) -> anyhow::Result<String> {
+                    Ok(serde_json::to_string(self)?)
+                }
 
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
+                fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+                    Arc::new(self.clone())
+                }
 
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        other.as_any().downcast_ref::<Self>() == Some(self)
-    }
+                fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+                    other.as_any().downcast_ref::<Self>() == Some(self)
+                }
 
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        crate::data::custom::clone_pyclass_to_pyobject(self, py)
-    }
+                #[cfg(feature = "python")]
+                fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+                    crate::data::custom::clone_pyclass_to_pyobject(self, py)
+                }
 
-    fn type_name_static() -> &'static str {
-        "YieldCurve"
-    }
+                fn type_name_static() -> &'static str {
+                    stringify!($type)
+                }
 
-    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
-        let parsed: Self = serde_json::from_value(value)?;
-        Ok(Arc::new(parsed))
-    }
+                fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
+                    let parsed: Self = serde_json::from_value(value)?;
+                    Ok(Arc::new(parsed))
+                }
+            }
+        )+
+    };
 }
+impl_greeks_custom_data!(GreeksData, PortfolioGreeks, YieldCurve);
 
 impl Default for YieldCurve {
     fn default() -> Self {
@@ -1065,7 +1072,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::identifiers::InstrumentId;
+    use crate::{
+        data::{CustomData, ensure_custom_data_json_registered},
+        identifiers::InstrumentId,
+    };
+
+    const JSON_ROUND_TRIP_VALUE: f64 = 51.248_178_375_505_404;
 
     fn create_test_greeks_data() -> GreeksData {
         GreeksData::new(
@@ -1741,6 +1753,38 @@ mod tests {
         assert!(restored.eq_arc(&curve));
         assert!(!restored.eq_arc(&other));
         assert_eq!(restored.as_any().downcast_ref::<YieldCurve>(), Some(&curve));
+    }
+
+    #[rstest]
+    #[case::instrument(Arc::new(create_test_greeks_data()))]
+    #[case::portfolio(Arc::new(create_test_portfolio_greeks()))]
+    #[case::yield_curve(Arc::new(create_test_yield_curve()))]
+    #[case::instrument_precision(Arc::new(GreeksData {
+        price: JSON_ROUND_TRIP_VALUE,
+        ..create_test_greeks_data()
+    }))]
+    #[case::portfolio_precision(Arc::new(PortfolioGreeks {
+        pnl: JSON_ROUND_TRIP_VALUE,
+        ..create_test_portfolio_greeks()
+    }))]
+    #[case::yield_curve_precision(Arc::new(YieldCurve {
+        interest_rates: vec![JSON_ROUND_TRIP_VALUE],
+        tenors: vec![1.0],
+        ..create_test_yield_curve()
+    }))]
+    fn test_greeks_custom_data_envelope_round_trip(#[case] data: Arc<dyn CustomDataTrait>) {
+        ensure_custom_data_json_registered::<GreeksData>().unwrap();
+        ensure_custom_data_json_registered::<PortfolioGreeks>().unwrap();
+        ensure_custom_data_json_registered::<YieldCurve>().unwrap();
+        let original = CustomData::from_arc(data);
+        let encoded = serde_json::to_vec(&original).unwrap();
+        let restored = CustomData::from_json_bytes(&encoded).unwrap();
+
+        assert_eq!(restored, original);
+        assert_eq!(restored.data.ts_event(), original.data.ts_event());
+        assert_eq!(restored.ts_init(), original.ts_init());
+        assert!(restored.data.clone_arc().eq_arc(original.data.as_ref()));
+        assert!(!restored.data.eq_arc(&YieldCurve::default()));
     }
 
     #[rstest]

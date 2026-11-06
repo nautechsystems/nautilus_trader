@@ -43,7 +43,8 @@ pub mod defi;
 use crate::{
     data::{
         CustomDataTrait, ensure_py_extractor_registered, ensure_rust_extractor_registered,
-        get_rust_extractor, greeks::YieldCurve,
+        get_rust_extractor,
+        greeks::{GreeksData, PortfolioGreeks, YieldCurve},
     },
     identifiers::{InstrumentIdError, OptionSeriesIdError},
     types::CurrencyLookupError,
@@ -86,10 +87,18 @@ pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
 /// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let _result = ensure_rust_extractor_registered::<GreeksData>();
+    let _result = ensure_rust_extractor_registered::<PortfolioGreeks>();
     let _result = ensure_rust_extractor_registered::<YieldCurve>();
-    let type_name = YieldCurve::type_name_static();
-    if let Some(extractor) = get_rust_extractor(type_name) {
-        let _result = ensure_py_extractor_registered(type_name, extractor);
+
+    for type_name in [
+        GreeksData::type_name_static(),
+        PortfolioGreeks::type_name_static(),
+        YieldCurve::type_name_static(),
+    ] {
+        if let Some(extractor) = get_rust_extractor(type_name) {
+            let _result = ensure_py_extractor_registered(type_name, extractor);
+        }
     }
 
     // Types

@@ -46,6 +46,7 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
 from nautilus_trader.model import YieldCurve
+from nautilus_trader.model import custom_data_backend_kind
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import RustTestCustomData
@@ -1024,6 +1025,91 @@ def test_yield_curve_custom_data_round_trip(tmp_path: Path) -> None:
         assert value.ts_event == 23
         assert value.ts_init == 29
     assert not hasattr(NautilusRecordType, "YieldCurve")
+
+
+@pytest.mark.parametrize("portfolio", [False, True])
+def test_calculated_greeks_custom_data_round_trip(tmp_path: Path, portfolio: bool) -> None:
+    """
+    Preserve native calculated Greeks and their routing identity through custom data.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+    value = greeks.to_portfolio_greeks() if portfolio else greeks
+    name = type(value).__name__
+    identifier = "DELTA-HEDGE-001" if portfolio else str(greeks.instrument_id)
+    data_type = DataType(name, {"source": "calculator", "scenario": "base"}, identifier)
+    original = CustomData(data_type, value)
+    expected = json.loads(original.to_json_bytes())
+    catalog = _catalog(tmp_path, "parquet")
+
+    catalog.write_custom_data([original])
+    [loaded] = catalog.query_custom_data(
+        NautilusDataType.Custom(name),
+        identifiers=[identifier],
+    )
+    restored = CustomData.from_json_bytes(loaded.to_json_bytes())
+
+    assert custom_data_backend_kind(original) == "native"
+    for item in (loaded, restored):
+        assert custom_data_backend_kind(item) == "native"
+        assert type(item.data) is type(value)
+        assert item.data_type == data_type
+        assert json.loads(item.to_json_bytes()) == expected
+        assert item.ts_event == 11
+        assert item.ts_init == 11
+
+
+@pytest.mark.parametrize("kind", ["GreeksData", "PortfolioGreeks", "YieldCurve"])
+@pytest.mark.parametrize("identifier", [None, "GREEKS-INPUT"])
+def test_greeks_custom_stream_preserves_catalog_identifier(
+    tmp_path: Path,
+    kind: str,
+    identifier: str | None,
+) -> None:
+    """
+    Promote custom Greeks streams under their explicit catalog identity.
+    """
+    greeks = [
+        GreeksData.from_delta(InstrumentId.from_str(instrument), delta, 8.0, timestamp)
+        for instrument, delta, timestamp in [
+            ("ES.GLBX", 1.25, 11),
+            ("NQ.GLBX", 2.5, 21),
+            ("ES.GLBX", 3.75, 31),
+            ("NQ.GLBX", 5.0, 41),
+        ]
+    ]
+    values = {
+        "GreeksData": greeks,
+        "PortfolioGreeks": [value.to_portfolio_greeks() for value in greeks],
+        "YieldCurve": [
+            YieldCurve("USD", [0.0], [rate], timestamp - 1, timestamp)
+            for rate, timestamp in [(0.04, 11), (0.05, 21), (0.06, 31), (0.07, 41)]
+        ],
+    }[kind]
+    data_type = DataType(kind, {"source": "stream", "scenario": "base"}, identifier)
+    originals = [CustomData(data_type, value) for value in values]
+    expected = [json.loads(item.to_json_bytes()) for item in originals]
+    staging = tmp_path / "backtest" / "greeks-run"
+    staging.mkdir(parents=True)
+    writer = StreamingFeatherWriter(str(staging), cache=Cache(), clock=Clock.new_test())
+    for item in originals:
+        writer.write(item)
+    writer.close()
+    catalog = ParquetDataCatalog(str(tmp_path))
+
+    catalog.convert_stream_to_data("greeks-run", NautilusDataType.Custom(kind))
+    loaded = catalog.query_custom_data(
+        NautilusDataType.Custom(kind),
+        identifiers=[identifier] if identifier is not None else None,
+    )
+    expected_directory = tmp_path / "data" / "custom" / kind
+    if identifier is not None:
+        expected_directory /= identifier
+
+    assert [path.parent for path in tmp_path.rglob("*.parquet")] == [expected_directory]
+    assert len(loaded) == 4
+    assert [custom_data_backend_kind(item) for item in loaded] == ["native"] * 4
+    assert [item.data_type for item in loaded] == [data_type] * 4
+    assert [json.loads(item.to_json_bytes()) for item in loaded] == expected
 
 
 def test_cache_rejects_yield_curve_decoded_without_points() -> None:
