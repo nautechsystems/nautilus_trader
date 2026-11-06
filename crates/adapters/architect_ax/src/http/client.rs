@@ -2267,6 +2267,7 @@ impl AxHttpClient {
     /// - The HTTP request or pagination contract fails.
     /// - An order or fill's instrument cannot be fetched or parsed.
     /// - An order or fill cannot be mapped to a complete report.
+    /// - A `start` or `end` timestamp exceeds `i64::MAX` nanoseconds.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2303,8 +2304,14 @@ impl AxHttpClient {
         F: Fn(u64) -> Option<ClientOrderId>,
     {
         let params = GetOrdersParams {
-            start_timestamp_ns: start.map(|timestamp| timestamp.as_i64()),
-            end_timestamp_ns: end.map(|timestamp| timestamp.as_i64()),
+            start_timestamp_ns: start
+                .map(|timestamp| i64::try_from(timestamp.as_u64()))
+                .transpose()
+                .context("start timestamp exceeds the signed nanosecond range")?,
+            end_timestamp_ns: end
+                .map(|timestamp| i64::try_from(timestamp.as_u64()))
+                .transpose()
+                .context("end timestamp exceeds the signed nanosecond range")?,
             ..Default::default()
         };
 
@@ -2441,6 +2448,7 @@ impl AxHttpClient {
     /// - The HTTP request fails.
     /// - A fill's instrument cannot be fetched or parsed.
     /// - Fill parsing fails.
+    /// - A `start` or `end` timestamp exceeds `i64::MAX` nanoseconds.
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -2451,9 +2459,15 @@ impl AxHttpClient {
 
         // The AX `/fills` endpoint requires a bounded time range and caps the span at 7 days
         let max_span_ns = AX_FILLS_MAX_LOOKBACK_DAYS * 24 * 60 * 60 * 1_000_000_000;
-        let end_ns = end.map_or_else(|| self.generate_ts_init().as_i64(), |e| e.as_i64());
+        let end_ns = i64::try_from(end.unwrap_or_else(|| self.generate_ts_init()).as_u64())
+            .context("end timestamp exceeds the signed nanosecond range")?;
         let floor_ns = end_ns - max_span_ns;
-        let start_ns = start.map_or(floor_ns, |s| s.as_i64().max(floor_ns));
+        let start_ns = start
+            .map(|timestamp| i64::try_from(timestamp.as_u64()))
+            .transpose()
+            .context("start timestamp exceeds the signed nanosecond range")?
+            .unwrap_or(floor_ns)
+            .max(floor_ns);
         let mut params = GetFillsParams::new(start_ns, end_ns);
         params.limit = Some(PAGE_SIZE);
         params.sort_ts = Some("desc".to_string());

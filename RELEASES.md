@@ -49,6 +49,8 @@ Released on TBD (UTC).
 - Changed raw `Price` and `Quantity` construction and decoding to reject digits beyond precision; rescale or round first
 - Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
 - Changed `protection_price_calculate` to return `ProtectionPriceError`; update explicit error types
+- Changed `precision_from_str` to return `CorrectnessResult<u8>`; propagate malformed-exponent errors
+- Changed `bytes_to_string_vec` and `optional_bytes_to_*` to return `Result`; handle JSON decoding errors
 - Changed `trailing_stop_calculate*` to return `TrailingStopError`; use `MissingLast` for missing last/mark prices
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
@@ -111,6 +113,7 @@ Released on TBD (UTC).
 
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
+- Fixed FFI `synthetic_instrument_is_valid_formula` aborting on invalid component JSON
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
 - Fixed stale bundled execution reports incorrectly voiding newer fills
@@ -161,6 +164,7 @@ Released on TBD (UTC).
 - Fixed false WebSocket heartbeat timeouts while receiving fragmented messages
 - Fixed startup reconciliation failing when execution clients publish recovered instruments
 - Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
+- Fixed Architect AX order history and fill report requests panicking on timestamps beyond `i64::MAX` nanoseconds
 - Fixed Binance Futures initial margin underestimation (#5531), thanks for reporting @wangzengzhi
 - Fixed Binance startup reconciliation omitting closed orders from selected instruments
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero

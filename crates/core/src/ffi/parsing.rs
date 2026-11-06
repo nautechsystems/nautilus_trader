@@ -21,8 +21,7 @@
 //! - JSON is used as the interchange format for complex structures.
 //! - `ustr::Ustr` is preferred over `String` where possible for its performance benefits.
 //!
-//! All functions are `#[must_use]` and, unless otherwise noted, **assume** that the input pointer
-//! is non-null and points to a valid, *null-terminated* UTF-8 string.
+//! Unless otherwise noted, input pointers must reference valid, null-terminated C strings.
 
 use std::{
     collections::HashMap,
@@ -44,34 +43,23 @@ use crate::{
 ///
 /// Assumes `ptr` is a valid C string pointer.
 ///
+/// # Errors
+///
+/// Returns an error if the string contains invalid UTF-8 or JSON, or is not an array of strings.
+///
 /// # Panics
 ///
-/// Panics if `ptr` is null, contains invalid UTF-8/JSON, or the JSON value
-/// is not an array of strings.
-#[must_use]
-pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
+/// Panics if `ptr` is null.
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "a null pointer violates the unsafe caller contract"
+)]
+pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> serde_json::Result<Vec<String>> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
 
     // SAFETY: Caller guarantees ptr is valid per function contract
     let c_str = unsafe { CStr::from_ptr(ptr) };
-    let bytes = c_str.to_bytes();
-
-    let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
-    let value: serde_json::Value =
-        serde_json::from_str(json_string).expect("C string contains invalid JSON");
-
-    let arr = value
-        .as_array()
-        .expect("C string JSON must be an array of strings");
-
-    arr.iter()
-        .map(|value| {
-            value
-                .as_str()
-                .expect("C string JSON array must contain only strings")
-                .to_owned()
-        })
-        .collect()
+    serde_json::from_slice(c_str.to_bytes())
 }
 
 /// Convert a slice of `String` into a C string pointer (JSON encoded).
@@ -91,13 +79,14 @@ pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
 ///
 /// # Safety
 ///
-/// Assumes `ptr` is a valid C string pointer.
+/// A non-null `ptr` must reference a valid C string.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
-#[must_use]
-pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
+/// Returns an error if a non-null string contains invalid UTF-8 or JSON, or is not an object.
+pub unsafe fn optional_bytes_to_json(
+    ptr: *const c_char,
+) -> serde_json::Result<Option<HashMap<String, Value>>> {
     // SAFETY: A non-null pointer is valid under the caller's contract
     unsafe { optional_json_from_cstr(ptr) }
 }
@@ -106,13 +95,15 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 ///
 /// # Safety
 ///
-/// Assumes `ptr` is a valid C string pointer.
+/// A non-null `ptr` must reference a valid C string.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
-#[must_use]
-pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
+/// Returns an error if a non-null string contains invalid UTF-8 or JSON, or is not a
+/// string-valued object.
+pub unsafe fn optional_bytes_to_str_map(
+    ptr: *const c_char,
+) -> serde_json::Result<Option<HashMap<Ustr, Ustr>>> {
     // SAFETY: A non-null pointer is valid under the caller's contract
     unsafe { optional_json_from_cstr(ptr) }
 }
@@ -121,33 +112,34 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
 ///
 /// # Safety
 ///
-/// Assumes `ptr` is a valid C string pointer.
+/// A non-null `ptr` must reference a valid C string.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
-#[must_use]
-pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
+/// Returns an error if a non-null string contains invalid UTF-8 or JSON, or is not an array of
+/// strings.
+pub unsafe fn optional_bytes_to_str_vec(
+    ptr: *const c_char,
+) -> serde_json::Result<Option<Vec<String>>> {
     // SAFETY: A non-null pointer is valid under the caller's contract
     unsafe { optional_json_from_cstr(ptr) }
 }
 
 /// # Safety
 ///
-/// If `ptr` is non-null, it must reference a valid, null-terminated UTF-8 C string that remains
+/// If `ptr` is non-null, it must reference a valid, null-terminated C string that remains
 /// unchanged for the duration of this call.
-unsafe fn optional_json_from_cstr<T>(ptr: *const c_char) -> Option<T>
+unsafe fn optional_json_from_cstr<T>(ptr: *const c_char) -> serde_json::Result<Option<T>>
 where
     T: DeserializeOwned,
 {
     if ptr.is_null() {
-        return None;
+        return Ok(None);
     }
 
     // SAFETY: A non-null pointer is valid under the caller's contract
-    let json = unsafe { cstr_as_str(ptr) };
-    let result = serde_json::from_str(json).expect("C string contains invalid JSON");
-    Some(result)
+    let json = unsafe { CStr::from_ptr(ptr) };
+    serde_json::from_slice(json.to_bytes()).map(Some)
 }
 
 /// Return the decimal precision inferred from the given C string.
@@ -158,7 +150,7 @@ where
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is null.
+/// Panics if `ptr` is null, contains invalid UTF-8, or has a missing or non-numeric `e-` exponent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     abort_on_panic(|| {
@@ -177,7 +169,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is null.
+/// Panics if `ptr` is null or contains invalid UTF-8.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {
     abort_on_panic(|| {
@@ -236,16 +228,22 @@ mod tests {
     #[rstest]
     fn test_optional_bytes_to_json_null() {
         let ptr = std::ptr::null();
-        let result = unsafe { optional_bytes_to_json(ptr) };
+        let result = unsafe { optional_bytes_to_json(ptr) }.unwrap();
         assert_eq!(result, None);
+        assert_eq!(unsafe { optional_bytes_to_str_map(ptr) }.unwrap(), None);
+        assert_eq!(unsafe { optional_bytes_to_str_vec(ptr) }.unwrap(), None);
     }
 
     #[rstest]
     fn test_optional_bytes_to_json_empty() {
         let json_str = CString::new("{}").unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { optional_bytes_to_json(ptr) };
+        let result = unsafe { optional_bytes_to_json(ptr) }.unwrap();
         assert_eq!(result, Some(HashMap::new()));
+        assert_eq!(
+            unsafe { optional_bytes_to_str_map(ptr) }.unwrap(),
+            Some(HashMap::new())
+        );
     }
 
     #[rstest]
@@ -257,7 +255,7 @@ mod tests {
 
         let ptr = string_vec_to_bytes(&strings);
 
-        let result = unsafe { bytes_to_string_vec(ptr) };
+        let result = unsafe { bytes_to_string_vec(ptr) }.unwrap();
         assert_eq!(result, strings);
     }
 
@@ -266,15 +264,19 @@ mod tests {
         let strings = Vec::new();
         let ptr = string_vec_to_bytes(&strings);
 
-        let result = unsafe { bytes_to_string_vec(ptr) };
+        let result = unsafe { bytes_to_string_vec(ptr) }.unwrap();
         assert_eq!(result, strings);
+        assert_eq!(
+            unsafe { optional_bytes_to_str_vec(ptr) }.unwrap(),
+            Some(Vec::new())
+        );
     }
 
     #[rstest]
     fn test_bytes_to_string_vec_valid() {
         let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { bytes_to_string_vec(ptr) };
+        let result = unsafe { bytes_to_string_vec(ptr) }.unwrap();
 
         let expected_vec = vec!["value1", "value2", "value3"]
             .into_iter()
@@ -285,18 +287,82 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "array must contain only strings")]
     fn test_bytes_to_string_vec_invalid() {
         let json_str = CString::new(r#"["value1", 42, "value3"]"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let _ = unsafe { bytes_to_string_vec(ptr) };
+        let error = unsafe { bytes_to_string_vec(ptr) }.unwrap_err();
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+    }
+
+    #[rstest]
+    #[case::empty(Vec::new(), serde_json::error::Category::Eof, 0)]
+    #[case::invalid_utf8(vec![0xff], serde_json::error::Category::Syntax, 1)]
+    fn test_json_decoders_reject_invalid_bytes(
+        #[case] bytes: Vec<u8>,
+        #[case] category: serde_json::error::Category,
+        #[case] column: usize,
+    ) {
+        let input = CString::new(bytes).unwrap();
+        let ptr = input.as_ptr();
+
+        let errors = [
+            // SAFETY: `ptr` references `input`, which remains alive and unchanged
+            unsafe { bytes_to_string_vec(ptr) }.unwrap_err(),
+            // SAFETY: `ptr` references `input`, which remains alive and unchanged
+            unsafe { optional_bytes_to_json(ptr) }.unwrap_err(),
+            // SAFETY: `ptr` references `input`, which remains alive and unchanged
+            unsafe { optional_bytes_to_str_map(ptr) }.unwrap_err(),
+            // SAFETY: `ptr` references `input`, which remains alive and unchanged
+            unsafe { optional_bytes_to_str_vec(ptr) }.unwrap_err(),
+        ];
+
+        for error in errors {
+            assert_eq!(error.classify(), category);
+            assert_eq!(error.line(), 1);
+            assert_eq!(error.column(), column);
+        }
+    }
+
+    #[rstest]
+    fn test_json_decoders_reject_invalid_utf8_strings() {
+        let array = CString::new([b'[', b'"', 0xff, b'"', b']']).unwrap();
+        let object = CString::new([b'{', b'"', b'k', b'"', b':', b'"', 0xff, b'"', b'}']).unwrap();
+
+        let errors = [
+            // SAFETY: `array` remains alive and unchanged during the call
+            (
+                unsafe { bytes_to_string_vec(array.as_ptr()) }.unwrap_err(),
+                3,
+            ),
+            // SAFETY: `array` remains alive and unchanged during the call
+            (
+                unsafe { optional_bytes_to_str_vec(array.as_ptr()) }.unwrap_err(),
+                3,
+            ),
+            // SAFETY: `object` remains alive and unchanged during the call
+            (
+                unsafe { optional_bytes_to_json(object.as_ptr()) }.unwrap_err(),
+                7,
+            ),
+            // SAFETY: `object` remains alive and unchanged during the call
+            (
+                unsafe { optional_bytes_to_str_map(object.as_ptr()) }.unwrap_err(),
+                7,
+            ),
+        ];
+
+        for (error, column) in errors {
+            assert_eq!(error.classify(), serde_json::error::Category::Syntax);
+            assert_eq!(error.line(), 1);
+            assert_eq!(error.column(), column);
+        }
     }
 
     #[rstest]
     fn test_optional_bytes_to_json_valid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": 2}"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { optional_bytes_to_json(ptr) };
+        let result = unsafe { optional_bytes_to_json(ptr) }.unwrap();
         let mut expected_map = HashMap::new();
         expected_map.insert("key1".to_owned(), Value::String("value1".to_owned()));
         expected_map.insert(
@@ -310,7 +376,7 @@ mod tests {
     fn test_optional_bytes_to_str_map_valid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": "value2"}"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { optional_bytes_to_str_map(ptr) };
+        let result = unsafe { optional_bytes_to_str_map(ptr) }.unwrap();
         let expected_map = HashMap::from([
             (Ustr::from("key1"), Ustr::from("value1")),
             (Ustr::from("key2"), Ustr::from("value2")),
@@ -322,7 +388,7 @@ mod tests {
     fn test_optional_bytes_to_str_vec_valid() {
         let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { optional_bytes_to_str_vec(ptr) };
+        let result = unsafe { optional_bytes_to_str_vec(ptr) }.unwrap();
         let expected_vec = vec![
             "value1".to_string(),
             "value2".to_string(),
@@ -332,11 +398,11 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "C string contains invalid JSON")]
     fn test_optional_bytes_to_json_invalid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let _result = unsafe { optional_bytes_to_json(ptr) };
+        let error = unsafe { optional_bytes_to_json(ptr) }.unwrap_err();
+        assert_eq!(error.classify(), serde_json::error::Category::Syntax);
     }
 
     #[rstest]

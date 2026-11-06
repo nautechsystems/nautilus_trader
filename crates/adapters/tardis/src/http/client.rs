@@ -249,9 +249,11 @@ impl TardisHttpClient {
     /// decides how to use each half: `data.rs` emits instruments via the data
     /// sender; `replay.rs` only needs the map.
     ///
+    /// Logs and skips exchanges whose instrument metadata cannot be fetched.
+    ///
     /// # Errors
     ///
-    /// Returns an error if fetching instrument info for any exchange fails.
+    /// Returns an error if instrument increment precision parsing fails.
     pub async fn bootstrap_instruments(
         &self,
         exchanges: &AHashSet<TardisExchange>,
@@ -281,8 +283,10 @@ impl TardisHttpClient {
 
             for inst in &instruments_info {
                 let instrument_type = inst.instrument_type;
-                let price_precision = precision_from_str(&inst.price_increment.to_string());
-                let size_precision = precision_from_str(&inst.amount_increment.to_string());
+                let price_precision = precision_from_str(&inst.price_increment.to_string())
+                    .map_err(|e| Error::ResponseParse(e.to_string()))?;
+                let size_precision = precision_from_str(&inst.amount_increment.to_string())
+                    .map_err(|e| Error::ResponseParse(e.to_string()))?;
 
                 let instrument_id = if self.normalize_symbols {
                     normalize_instrument_id(exchange, inst.id, &instrument_type, inst.inverse)

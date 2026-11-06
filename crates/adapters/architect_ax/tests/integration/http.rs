@@ -1185,6 +1185,106 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
 }
 
 #[rstest]
+#[case::start_overflow(Some(i64::MAX as u64 + 1), None, "start")]
+#[case::start_max(Some(u64::MAX), None, "start")]
+#[case::end_overflow(None, Some(i64::MAX as u64 + 1), "end")]
+#[case::end_max(None, Some(u64::MAX), "end")]
+#[tokio::test]
+async fn test_domain_http_reports_reject_out_of_range_timestamps(
+    #[values(ReportFamily::HistoricalOrders, ReportFamily::Fills)] family: ReportFamily,
+    #[case] start: Option<u64>,
+    #[case] end: Option<u64>,
+    #[case] bound: &str,
+) {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".into());
+    let account_id = AccountId::from("AX-001");
+    let start = start.map(UnixNanos::from);
+    let end = end.map(UnixNanos::from);
+
+    let error = match family {
+        ReportFamily::HistoricalOrders => client
+            .request_historical_order_status_reports(
+                account_id,
+                start,
+                end,
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap_err(),
+        ReportFamily::Fills => client
+            .request_fill_reports(account_id, start, end)
+            .await
+            .unwrap_err(),
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        error.to_string(),
+        format!("{bound} timestamp exceeds the signed nanosecond range")
+    );
+    assert_eq!(state.orders_queries.lock().await.len(), 0);
+    assert_eq!(state.fills_queries.lock().await.len(), 0);
+}
+
+#[rstest]
+#[case::orders(ReportFamily::HistoricalOrders)]
+#[case::fills(ReportFamily::Fills)]
+#[tokio::test]
+async fn test_domain_http_reports_accept_signed_timestamp_limit(#[case] family: ReportFamily) {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    let mut orders = load_test_data("http_get_orders.json");
+    orders["orders"].as_array_mut().unwrap().clear();
+    *state.orders_payload.lock().await = Some(orders);
+    let mut fills = load_test_data("http_get_fills.json");
+    fills["fills"].as_array_mut().unwrap().clear();
+    *state.fills_payload.lock().await = Some(fills);
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".into());
+    let account_id = AccountId::from("AX-001");
+    let start = Some(UnixNanos::from(i64::MAX as u64 - 1));
+    let end = Some(UnixNanos::from(i64::MAX as u64));
+
+    match family {
+        ReportFamily::HistoricalOrders => {
+            let reports = client
+                .request_historical_order_status_reports(
+                    account_id,
+                    start,
+                    end,
+                    None::<fn(u64) -> Option<ClientOrderId>>,
+                )
+                .await
+                .unwrap();
+            let queries = state.orders_queries.lock().await;
+
+            assert_eq!(reports, Vec::new());
+            assert_eq!(queries.len(), 1);
+            assert_eq!(queries[0].start_timestamp_ns, Some(i64::MAX - 1));
+            assert_eq!(queries[0].end_timestamp_ns, Some(i64::MAX));
+        }
+        ReportFamily::Fills => {
+            let reports = client
+                .request_fill_reports(account_id, start, end)
+                .await
+                .unwrap();
+            let queries = state.fills_queries.lock().await;
+
+            assert_eq!(reports, Vec::new());
+            assert_eq!(queries.len(), 1);
+            assert_eq!(queries[0].start_timestamp_ns, i64::MAX - 1);
+            assert_eq!(queries[0].end_timestamp_ns, i64::MAX);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[rstest]
 #[case::with_fills(
     100,
     false,
