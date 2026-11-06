@@ -2705,8 +2705,13 @@ impl DataClient for OKXDataClient {
                 };
 
                 if families.is_empty() {
-                    match http.request_instruments(inst_type, None).await {
-                        Ok((instruments, _inst_id_codes)) => {
+                    match http
+                        .request_instruments_with_parse_failures(inst_type, None)
+                        .await
+                    {
+                        Ok((instruments, _inst_id_codes, parse_failures)) => {
+                            failures.extend(parse_failures);
+
                             for instrument in instruments {
                                 if !contract_filter_with_config_types(
                                     contract_types.as_ref(),
@@ -2727,10 +2732,15 @@ impl DataClient for OKXDataClient {
                 } else {
                     for family in families {
                         match http
-                            .request_instruments(inst_type, Some(family.clone()))
+                            .request_instruments_with_parse_failures(
+                                inst_type,
+                                Some(family.clone()),
+                            )
                             .await
                         {
-                            Ok((instruments, _inst_id_codes)) => {
+                            Ok((instruments, _inst_id_codes, parse_failures)) => {
+                                failures.extend(parse_failures);
+
                                 for instrument in instruments {
                                     if !contract_filter_with_config_types(
                                         contract_types.as_ref(),
@@ -2754,13 +2764,15 @@ impl DataClient for OKXDataClient {
 
             if load_spreads {
                 match http
-                    .request_spread_instruments(GetSpreadsParams {
+                    .request_spread_instruments_with_parse_failures(GetSpreadsParams {
                         state: Some("live".to_string()),
                         ..Default::default()
                     })
                     .await
                 {
-                    Ok(instruments) => {
+                    Ok((instruments, parse_failures)) => {
+                        failures.extend(parse_failures);
+
                         for instrument in instruments {
                             if !contract_filter_with_config_types(
                                 contract_types.as_ref(),

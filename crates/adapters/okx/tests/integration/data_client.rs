@@ -85,6 +85,7 @@ struct TestServerState {
     fail_instruments: bool,
     fail_rpi_book: bool,
     instrument_response: Option<Value>,
+    spread_response: Option<Value>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -183,7 +184,10 @@ fn create_router(state: TestServerState) -> Router {
                             .into_response();
                     }
 
-                    Json(spread_response(&params)).into_response()
+                    let response = state
+                        .spread_response
+                        .unwrap_or_else(|| spread_response(&params));
+                    Json(response).into_response()
                 }
             }),
         )
@@ -521,6 +525,85 @@ async fn test_request_instruments_fails_with_the_rows_when_spread_endpoint_fails
     assert_eq!(spread_count, 0);
     assert_eq!(spot_count, 5);
     assert_eq!(spread_queries.len(), 1);
+}
+
+#[rstest]
+#[case::instrument(
+    TestServerState {
+        instrument_response: Some(with_unparsable_first_definition(
+            "http_get_instruments_spot.json",
+        )),
+        ..TestServerState::default()
+    },
+    "BTC-USD",
+    &[
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "ETH-USD-SWAP_ETH-USD-231229.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[case::spread(
+    TestServerState {
+        spread_response: Some(with_unparsable_first_definition("http_get_spreads.json")),
+        ..TestServerState::default()
+    },
+    "ETH-USD-SWAP_ETH-USD-231229",
+    &[
+        "BTC-USD.OKX",
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[tokio::test]
+async fn test_request_instruments_fails_with_the_rows_when_a_definition_fails_to_parse(
+    #[case] state: TestServerState,
+    #[case] unparsable: &str,
+    #[case] expected_ids: &[&str],
+) {
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, true);
+
+    let request = request_instruments();
+    let request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the usable instruments, received {failure:?}");
+    };
+
+    let ids = response
+        .data
+        .iter()
+        .map(|instrument| instrument.id().to_string())
+        .collect::<Vec<_>>();
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains(unparsable), "{}", failure.reason);
+    assert_eq!(ids, expected_ids);
+}
+
+// Synthetic malformed input: blanks the tick size of a fixture definition
+fn with_unparsable_first_definition(filename: &str) -> Value {
+    let mut payload = load_test_data(filename);
+    payload["data"][0]["tickSz"] = json!("");
+    payload
 }
 
 #[rstest]
