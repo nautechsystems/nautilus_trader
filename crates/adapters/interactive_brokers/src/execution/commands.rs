@@ -619,7 +619,8 @@ impl InteractiveBrokersExecutionClient {
                 }
 
                 Self::cancel_untransmitted_order_list_predecessors(
-                    &orders[..index],
+                    orders,
+                    index,
                     ib_order_ids,
                     client,
                     order_tracker,
@@ -781,6 +782,7 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
     ) -> anyhow::Result<Vec<(ibapi::contracts::Contract, ibapi::orders::Order)>> {
         let num_orders = orders.len();
+        let group_last_indices = Self::order_list_group_last_indices(orders);
         let mut prepared = Vec::with_capacity(num_orders);
 
         for (index, order) in orders.iter().enumerate() {
@@ -796,7 +798,7 @@ impl InteractiveBrokersExecutionClient {
                 nautilus_order_to_ib_order(order, instrument_provider, ib_order_id, &order_ref)
                     .context("Failed to transform order")?;
             Self::assign_ib_account(&mut ib_order, ib_account);
-            ib_order.transmit = index == num_orders - 1;
+            ib_order.transmit = group_last_indices[index] == index;
 
             if let Some(parent_order_id) = order.parent_order_id() {
                 let parent_ib_order_id = match ib_order_ids.get(&parent_order_id) {
@@ -822,9 +824,53 @@ impl InteractiveBrokersExecutionClient {
         Ok(prepared)
     }
 
+    fn order_list_group_last_indices(orders: &[OrderAny]) -> Vec<usize> {
+        let parent_by_id: AHashMap<ClientOrderId, ClientOrderId> = orders
+            .iter()
+            .filter_map(|order| Some((order.client_order_id(), order.parent_order_id()?)))
+            .collect();
+        let group_roots: Vec<ClientOrderId> = orders
+            .iter()
+            .map(|order| {
+                let mut root = order
+                    .parent_order_id()
+                    .unwrap_or_else(|| order.client_order_id());
+
+                for _ in 0..orders.len() {
+                    let Some(&parent) = parent_by_id.get(&root) else {
+                        break;
+                    };
+                    root = parent;
+                }
+                root
+            })
+            .collect();
+        let mut last_in_group = AHashMap::with_capacity(orders.len());
+
+        for (index, root) in group_roots.iter().enumerate() {
+            last_in_group.insert(*root, index);
+        }
+
+        group_roots.iter().map(|root| last_in_group[root]).collect()
+    }
+
+    fn untransmitted_order_list_predecessors(
+        orders: &[OrderAny],
+        failed_index: usize,
+    ) -> impl Iterator<Item = &OrderAny> {
+        let group_last_indices = Self::order_list_group_last_indices(orders);
+        orders[..failed_index]
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, order)| {
+                (group_last_indices[index] >= failed_index).then_some(order)
+            })
+    }
+
     #[allow(clippy::too_many_arguments)] // Failure resolution shares the submit context.
     async fn cancel_untransmitted_order_list_predecessors(
-        predecessors: &[OrderAny],
+        orders: &[OrderAny],
+        failed_index: usize,
         ib_order_ids: &AHashMap<ClientOrderId, i32>,
         client: &Arc<Client>,
         order_tracker: &OrderTracker,
@@ -833,12 +879,13 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
     ) {
-        // Predecessors were parked at IB with `transmit=false` and can no longer be
-        // activated once a later sibling failed, so cancel them at the venue and give
-        // each a definite terminal state.
+        // Predecessors whose parent group was still waiting on its final member were
+        // parked at IB with `transmit=false` and can no longer be activated once that
+        // sibling failed, so cancel them at the venue and give each a definite terminal
+        // state.
         let mut failed_cancels: AHashSet<ClientOrderId> = AHashSet::new();
 
-        for order in predecessors {
+        for order in Self::untransmitted_order_list_predecessors(orders, failed_index) {
             let client_order_id = order.client_order_id();
 
             let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
@@ -856,7 +903,8 @@ impl InteractiveBrokersExecutionClient {
         }
 
         if let Err(e) = Self::resolve_failed_order_list_predecessors(
-            predecessors,
+            orders,
+            failed_index,
             ib_order_ids,
             &failed_cancels,
             order_tracker,
@@ -878,7 +926,8 @@ impl InteractiveBrokersExecutionClient {
 
     #[allow(clippy::too_many_arguments)] // Failure resolution shares the submit context.
     pub(super) fn resolve_failed_order_list_predecessors(
-        predecessors: &[OrderAny],
+        orders: &[OrderAny],
+        failed_index: usize,
         ib_order_ids: &AHashMap<ClientOrderId, i32>,
         failed_cancels: &AHashSet<ClientOrderId>,
         order_tracker: &OrderTracker,
@@ -887,7 +936,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<()> {
-        for order in predecessors {
+        for order in Self::untransmitted_order_list_predecessors(orders, failed_index) {
             let client_order_id = order.client_order_id();
 
             let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {

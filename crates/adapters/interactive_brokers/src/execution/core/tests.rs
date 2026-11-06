@@ -29,7 +29,9 @@ use nautilus_common::{
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide},
+    enums::{
+        AccountType, AssetClass, ContingencyType, OmsType, OrderSide, OrderType, PositionSide,
+    },
     events::{OrderDeniedReason, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -1420,12 +1422,30 @@ fn resolve_failed_order_list_predecessors_cancels_and_clears_tracking() {
     let second_id = 7302;
     let first_client_id = ClientOrderId::from("O-PRED-FIRST");
     let second_client_id = ClientOrderId::from("O-PRED-SECOND");
+    let third_client_id = ClientOrderId::from("O-PRED-THIRD");
     let strategy_id = StrategyId::from("STRATEGY-PRED-001");
     let account_id = AccountId::from("IB-001");
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let first_order = create_test_limit_order(first_client_id);
-    let second_order = create_test_limit_order(second_client_id);
+    let second_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(second_client_id)
+        .parent_order_id(first_client_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    let third_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(third_client_id)
+        .parent_order_id(first_client_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
     let mut ib_order_ids = AHashMap::new();
     ib_order_ids.insert(first_client_id, first_id);
     ib_order_ids.insert(second_client_id, second_id);
@@ -1440,7 +1460,8 @@ fn resolve_failed_order_list_predecessors_cancels_and_clears_tracking() {
     }
 
     InteractiveBrokersExecutionClient::resolve_failed_order_list_predecessors(
-        &[first_order, second_order],
+        &[first_order, second_order, third_order],
+        2,
         &ib_order_ids,
         &AHashSet::new(),
         &state.0,
@@ -1477,12 +1498,30 @@ fn resolve_failed_order_list_predecessors_skips_failed_cancels() {
     let second_id = 7312;
     let first_client_id = ClientOrderId::from("O-PRED-PARKED");
     let second_client_id = ClientOrderId::from("O-PRED-CANCELLED");
+    let third_client_id = ClientOrderId::from("O-PRED-FAILED");
     let strategy_id = StrategyId::from("STRATEGY-PRED-002");
     let account_id = AccountId::from("IB-001");
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let first_order = create_test_limit_order(first_client_id);
-    let second_order = create_test_limit_order(second_client_id);
+    let second_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(second_client_id)
+        .parent_order_id(first_client_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    let third_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(third_client_id)
+        .parent_order_id(first_client_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
     let mut ib_order_ids = AHashMap::new();
     ib_order_ids.insert(first_client_id, first_id);
     ib_order_ids.insert(second_client_id, second_id);
@@ -1500,7 +1539,8 @@ fn resolve_failed_order_list_predecessors_skips_failed_cancels() {
     failed_cancels.insert(first_client_id);
 
     InteractiveBrokersExecutionClient::resolve_failed_order_list_predecessors(
-        &[first_order, second_order],
+        &[first_order, second_order, third_order],
+        2,
         &ib_order_ids,
         &failed_cancels,
         &state.0,
@@ -1524,6 +1564,104 @@ fn resolve_failed_order_list_predecessors_skips_failed_cancels() {
     assert!(tracker.active_orders.contains_key(&first_id));
     assert_eq!(tracker.order_id_map.get(&first_client_id), Some(&first_id));
     assert!(!tracker.active_orders.contains_key(&second_id));
+}
+
+#[rstest]
+fn resolve_failed_order_list_predecessors_skips_already_transmitted_members() {
+    let state = SubmitTrackingState::new();
+    let transmitted_id = 7321;
+    let completed_parent_id = 7322;
+    let completed_child_id = 7323;
+    let parked_parent_id = 7324;
+    let transmitted_client_id = ClientOrderId::from("O-PRED-TRANSMITTED");
+    let completed_parent_client_id = ClientOrderId::from("O-PRED-COMPLETED-PARENT");
+    let completed_child_client_id = ClientOrderId::from("O-PRED-COMPLETED-CHILD");
+    let parked_parent_client_id = ClientOrderId::from("O-PRED-PARKED-PARENT");
+    let failed_child_client_id = ClientOrderId::from("O-PRED-FAILED-CHILD");
+    let strategy_id = StrategyId::from("STRATEGY-PRED-003");
+    let account_id = AccountId::from("IB-001");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+    let transmitted_order = create_test_limit_order(transmitted_client_id);
+    let completed_parent = create_test_limit_order(completed_parent_client_id);
+    let completed_child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(completed_child_client_id)
+        .parent_order_id(completed_parent_client_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    let parked_parent = create_test_limit_order(parked_parent_client_id);
+    let failed_child = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(failed_child_client_id)
+        .parent_order_id(parked_parent_client_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+
+    let ib_order_ids = AHashMap::from([
+        (transmitted_client_id, transmitted_id),
+        (completed_parent_client_id, completed_parent_id),
+        (completed_child_client_id, completed_child_id),
+        (parked_parent_client_id, parked_parent_id),
+    ]);
+
+    for (order, order_id) in [
+        (&transmitted_order, transmitted_id),
+        (&completed_parent, completed_parent_id),
+        (&completed_child, completed_child_id),
+        (&parked_parent, parked_parent_id),
+    ] {
+        state.cache(
+            order_id,
+            order.client_order_id(),
+            order.instrument_id(),
+            order.trader_id(),
+            strategy_id,
+        );
+    }
+
+    InteractiveBrokersExecutionClient::resolve_failed_order_list_predecessors(
+        &[
+            transmitted_order,
+            completed_parent,
+            completed_child,
+            parked_parent,
+            failed_child,
+        ],
+        4,
+        &ib_order_ids,
+        &AHashSet::new(),
+        &state.0,
+        strategy_id,
+        account_id,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+    )
+    .unwrap();
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+            assert_eq!(event.client_order_id, parked_parent_client_id);
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.account_id, Some(account_id));
+        }
+        event => panic!("Expected canceled order event for parked parent, was {event:?}"),
+    }
+
+    assert!(exec_receiver.try_recv().is_err());
+
+    let tracker = state.0.lock().unwrap();
+    assert!(tracker.active_orders.contains_key(&transmitted_id));
+    assert!(tracker.active_orders.contains_key(&completed_parent_id));
+    assert!(tracker.active_orders.contains_key(&completed_child_id));
+    assert!(!tracker.active_orders.contains_key(&parked_parent_id));
+    assert!(!tracker.order_id_map.contains_key(&parked_parent_client_id));
 }
 
 #[rstest]
@@ -2482,6 +2620,180 @@ fn prepare_order_list_fails_before_submission_on_a_child_tagged_with_the_other_s
     assert_eq!(
         format!("{error:#}"),
         "Failed to transform order: IBOrderTags action BUY conflicts with the SELL order side"
+    );
+}
+
+#[rstest]
+fn prepare_order_list_sets_transmit_per_parent_group() {
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let instrument_provider = create_test_instrument_provider();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+
+    let entry = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-BRACKET-ENTRY"))
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    let stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-BRACKET-STOP"))
+        .parent_order_id(entry.client_order_id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    let target = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-BRACKET-TARGET"))
+        .parent_order_id(entry.client_order_id())
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .build();
+
+    let ouo_stop_id = ClientOrderId::from("O-LIST-OUO-STOP");
+    let ouo_limit_id = ClientOrderId::from("O-LIST-OUO-LIMIT");
+    let ouo_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .client_order_id(ouo_stop_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![ouo_limit_id])
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    let ouo_limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ouo_limit_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![ouo_stop_id])
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .build();
+
+    let independent_first = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-INDEP-1"))
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    let independent_second = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-INDEP-2"))
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from(1))
+        .build();
+
+    let tracked_parent_id = ClientOrderId::from("O-LIST-EXTERNAL-PARENT");
+    let external_child_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-EXTERNAL-STOP"))
+        .parent_order_id(tracked_parent_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("95.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    let external_child_target = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-EXTERNAL-TARGET"))
+        .parent_order_id(tracked_parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("105.00"))
+        .quantity(Quantity::from(1))
+        .build();
+
+    let tracker = OrderTracker::new(NATIVE_CLIENT_ID);
+    insert_tracked_order(
+        &tracker,
+        7400,
+        create_tracked_order_context(tracked_parent_id, instrument_id),
+    );
+
+    let strategy_id = entry.strategy_id();
+    let prepare = |orders: &[OrderAny]| -> Vec<(bool, i32)> {
+        let cmd = SubmitOrderList::new(
+            TraderId::from("TRADER-001"),
+            Some(*IB_CLIENT_ID),
+            strategy_id,
+            OrderList::new(
+                OrderListId::from("OL-IB-TRANSMIT"),
+                instrument_id,
+                strategy_id,
+                orders.iter().map(OrderAny::client_order_id).collect(),
+                UnixNanos::default(),
+            ),
+            orders.iter().map(OrderInitialized::from).collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        let ib_order_ids: AHashMap<ClientOrderId, i32> = orders
+            .iter()
+            .enumerate()
+            .map(|(index, order)| (order.client_order_id(), 7401 + index as i32))
+            .collect();
+
+        InteractiveBrokersExecutionClient::prepare_order_list(
+            &cmd,
+            orders,
+            &ib_order_ids,
+            &tracker,
+            &instrument_provider,
+            Ustr::from("DU001"),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|(_, ib_order)| (ib_order.transmit, ib_order.parent_id))
+        .collect()
+    };
+
+    // (a) Bracket: only the final child transmits the group
+    assert_eq!(
+        prepare(&[entry.clone(), stop.clone(), target.clone()]),
+        vec![(false, 0), (false, 7401), (true, 7401)]
+    );
+
+    // (b) Parentless OUO pair: each member transmits immediately
+    assert_eq!(prepare(&[ouo_stop, ouo_limit]), vec![(true, 0), (true, 0)]);
+
+    // (c) Independent orders: each member transmits immediately
+    assert_eq!(
+        prepare(&[independent_first.clone(), independent_second]),
+        vec![(true, 0), (true, 0)]
+    );
+
+    // (d) Mixed list (bracket + independent order, in either order)
+    assert_eq!(
+        prepare(&[
+            independent_first.clone(),
+            entry.clone(),
+            stop.clone(),
+            target.clone()
+        ]),
+        vec![(true, 0), (false, 0), (false, 7402), (true, 7402)]
+    );
+    assert_eq!(
+        prepare(&[entry, stop, target, independent_first]),
+        vec![(false, 0), (false, 7401), (true, 7401), (true, 0)]
+    );
+
+    // (e) Children whose parent is tracked outside the list
+    assert_eq!(
+        prepare(std::slice::from_ref(&external_child_stop)),
+        vec![(true, 7400)]
+    );
+    assert_eq!(
+        prepare(&[external_child_stop, external_child_target]),
+        vec![(false, 7400), (true, 7400)]
     );
 }
 
