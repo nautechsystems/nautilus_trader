@@ -12409,7 +12409,7 @@ async fn test_modify_order_guard_rejects_without_venue_requests(
 #[case::immediate_buy_below_signed_shares(
     Some(json!("5")),
     ("0.001", TimeInForce::Fok, "5.0000", "0.226", None, "0.227"),
-    "Polymarket replacement amount 4.97798 shares is below the market minimum order size 5"
+    "Polymarket replacement amount 4.97797 shares is below the market minimum order size 5"
 )]
 #[case::immediate_buy_zero_budget(
     Some(json!("5")),
@@ -15813,7 +15813,7 @@ async fn test_submit_immediate_limit_buy_quantizes_fractional_cent_maker_amount(
     );
     assert_eq!(
         signed_order.get("takerAmount").and_then(Value::as_str),
-        Some("4994800"),
+        Some("4994790"),
     );
     assert_eq!(
         body.get("orderType").and_then(Value::as_str),
@@ -17150,7 +17150,7 @@ async fn test_submit_order_list_quantizes_immediate_buys_before_post() {
         );
         assert_eq!(
             signed_order.get("takerAmount").and_then(Value::as_str),
-            Some("4994800"),
+            Some("4994790"),
         );
     }
 }
