@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
 - Added `OrderModifyDenied` and `OrderCancelDenied` events and strategy and execution algorithm callbacks
 - Added `OrderPriorityResetPolicy` for sandbox and backtests (#5503), thanks for reporting @todorkolev
+- Added `FromStr` parsing for model identifiers with checked constructor validation
 - Added Python `ParquetDataCatalog.query_instrument_statuses` and `query_instrument_closes`
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`

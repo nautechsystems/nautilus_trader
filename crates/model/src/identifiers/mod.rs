@@ -25,6 +25,9 @@
 //! - A deeper storage redesign is deferred until the C ABI can move to
 //!   conversion-based bindings instead of layout sharing.
 
+use std::str::FromStr;
+
+use nautilus_core::correctness::CorrectnessError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[macro_use]
