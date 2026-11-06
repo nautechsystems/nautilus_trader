@@ -104,7 +104,8 @@ mod macros;
 
 #[doc(hidden)]
 pub mod _macro_reexports {
-    pub use nautilus_common::actor::{DataActorCore, DataActorNative};
+    pub use anyhow;
+    pub use nautilus_common::actor::{DataActor, DataActorCore, DataActorNative};
 }
 
 pub mod algorithm;

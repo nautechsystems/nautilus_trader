@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Changed `BacktestEngine::reset` to return trader reset errors; run the engine before resetting
 - Changed local modify/cancel refusals to denied events; handle `on_order_modify_denied` and `on_order_cancel_denied`
 - Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`
+- Changed native strategy startup to call `Strategy::on_start`; remove explicit calls from `DataActor::on_start`
 - Changed `Strategy::mark_order_pending_update` and `mark_order_pending_cancel` to take the command's UUID
 - Changed `Strategy::generate_order_pending_update` and `generate_order_pending_cancel` to take the command's UUID
 - Changed SBE to require matching precision modes and reject version 0; upgrade readers and writers together
@@ -107,6 +108,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed stale bundled execution reports incorrectly voiding newer fills
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution

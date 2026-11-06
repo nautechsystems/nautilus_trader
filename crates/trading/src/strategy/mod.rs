@@ -2686,6 +2686,7 @@ mod tests {
     #[derive(Debug)]
     struct TestStrategy {
         core: StrategyCore,
+        start_calls: usize,
         on_order_rejected_called: bool,
         on_order_event_called: bool,
         on_order_accepted_called: bool,
@@ -2778,6 +2779,7 @@ mod tests {
         fn new(config: StrategyConfig) -> Self {
             Self {
                 core: StrategyCore::new(config),
+                start_calls: 0,
                 on_order_rejected_called: false,
                 on_order_event_called: false,
                 on_order_accepted_called: false,
@@ -2794,7 +2796,12 @@ mod tests {
         }
     }
 
-    impl DataActor for TestStrategy {}
+    impl DataActor for TestStrategy {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.start_calls += 1;
+            Ok(())
+        }
+    }
 
     nautilus_strategy!(TestStrategy, {
         fn on_order_canceled(&mut self, _event: &OrderCanceled) {
@@ -7039,6 +7046,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::enabled(true)]
+    #[case::disabled(false)]
+    fn test_component_start_reactivates_cached_gtd_orders(#[case] enabled: bool) {
+        let mut strategy = create_gtd_managed_strategy();
+        strategy.core.config.manage_gtd_expiry = enabled;
+        let clock = register_gtd_strategy(&mut strategy);
+        clock.borrow_mut().set_time(UnixNanos::from(2_000_000_000));
+        let future = make_accepted_gtd_limit_order("O-FUTURE", UnixNanos::from(3_000_000_000));
+        let expired = make_accepted_gtd_limit_order("O-EXPIRED", UnixNanos::from(1_000_000_000));
+        add_order_to_cache(&strategy, &future);
+        add_order_to_cache(&strategy, &expired);
+        strategy.core.cache_rc().borrow_mut().build_index();
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        Component::start(&mut strategy).unwrap();
+
+        assert_eq!(strategy.state(), ComponentState::Running);
+        assert_eq!(strategy.start_calls, 1);
+        assert_eq!(
+            strategy.has_gtd_expiry_timer(&future.client_order_id()),
+            enabled
+        );
+        assert!(!strategy.has_gtd_expiry_timer(&expired.client_order_id()));
+        assert_eq!(
+            clock.borrow().timer_names(),
+            if enabled {
+                vec!["GTD-EXPIRY:O-FUTURE"]
+            } else {
+                vec![]
+            }
+        );
+        let commands = exec_messages.get_messages();
+
+        if enabled {
+            assert!(
+                matches!(commands.as_slice(), [TradingCommand::CancelOrder(command)]
+                if command.client_order_id == expired.client_order_id())
+            );
+            assert_eq!(
+                strategy
+                    .core
+                    .cache_ref()
+                    .order(&expired.client_order_id())
+                    .unwrap()
+                    .status(),
+                OrderStatus::PendingCancel
+            );
+        } else {
+            assert!(commands.is_empty());
+            assert_eq!(
+                strategy
+                    .core
+                    .cache_ref()
+                    .order(&expired.client_order_id())
+                    .unwrap()
+                    .status(),
+                OrderStatus::Accepted
+            );
+        }
+    }
+
+    #[rstest]
     fn test_on_start_calls_reactivate_gtd_timers_when_enabled() {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("TEST-001")),
@@ -8508,13 +8582,51 @@ mod tests {
     #[derive(Debug)]
     struct MacroTestWithHooks {
         core: StrategyCore,
+        start_trace: Vec<&'static str>,
+        start_fails: bool,
     }
 
     nautilus_strategy!(MacroTestWithHooks, {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.start_trace.push("strategy");
+            anyhow::ensure!(!self.start_fails, "Strategy start failed");
+            Ok(())
+        }
+
         fn on_order_rejected(&mut self, _event: OrderRejected) {}
     });
 
-    impl DataActor for MacroTestWithHooks {}
+    impl DataActor for MacroTestWithHooks {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.start_trace.push("actor");
+            Ok(())
+        }
+    }
+
+    #[rstest]
+    #[case::success(false)]
+    #[case::failure(true)]
+    fn test_component_start_dispatches_strategy_before_actor(#[case] start_fails: bool) {
+        let mut strategy = MacroTestWithHooks {
+            core: create_test_strategy().core,
+            start_trace: Vec::new(),
+            start_fails,
+        };
+
+        strategy.initialize().unwrap();
+
+        let result = Component::start(&mut strategy);
+
+        if start_fails {
+            assert_eq!(result.unwrap_err().to_string(), "Strategy start failed");
+            assert_eq!(strategy.state(), ComponentState::Starting);
+            assert_eq!(strategy.start_trace, vec!["strategy"]);
+        } else {
+            result.unwrap();
+            assert_eq!(strategy.state(), ComponentState::Running);
+            assert_eq!(strategy.start_trace, vec!["strategy", "actor"]);
+        }
+    }
 
     #[derive(Debug)]
     struct MacroTestCustomField {
@@ -8558,6 +8670,8 @@ mod tests {
 
         let hooks = MacroTestWithHooks {
             core: StrategyCore::new(config.clone()),
+            start_trace: Vec::new(),
+            start_fails: false,
         };
         assert_eq!(hooks.strategy_id(), config.strategy_id);
         assert_eq!(hooks.config().order_id_tag, config.order_id_tag);

@@ -182,6 +182,21 @@ pub trait DataActorNative {
     /// Returns the mutable actor core.
     fn core_mut(&mut self) -> &mut DataActorCore;
 
+    /// Dispatches framework startup and the user-facing start callback.
+    ///
+    /// Overrides call [`DataActor::on_start`] once after successful framework startup.
+    /// The default implementation only calls [`DataActor::on_start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if framework startup or the user callback fails.
+    fn dispatch_start(&mut self) -> anyhow::Result<()>
+    where
+        Self: DataActor,
+    {
+        DataActor::on_start(self)
+    }
+
     /// Returns the mutable clock borrow for the actor.
     ///
     /// # Panics
@@ -3336,7 +3351,7 @@ where
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
-        DataActor::on_start(self)
+        DataActorNative::dispatch_start(self)
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {

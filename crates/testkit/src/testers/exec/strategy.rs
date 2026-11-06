@@ -191,8 +191,6 @@ nautilus_strategy!(ExecTester, {
 
 impl DataActor for ExecTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        Strategy::on_start(self)?;
-
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
 
