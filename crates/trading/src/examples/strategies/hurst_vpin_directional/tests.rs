@@ -42,10 +42,9 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-use super::{
-    HurstVpinDirectional, HurstVpinDirectionalConfig, cache_database::FailNthAddOrderDatabase,
-};
+use super::{HurstVpinDirectional, HurstVpinDirectionalConfig};
 use crate::{
+    cache_database::FailNthAddOrderDatabase,
     examples::strategies::hurst_vpin_directional::config::MAX_HURST_VPIN_WINDOW,
     strategy::StrategyConfig,
 };

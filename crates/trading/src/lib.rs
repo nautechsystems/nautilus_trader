@@ -116,6 +116,9 @@ pub mod strategy;
 #[cfg(feature = "examples")]
 pub mod examples;
 
+#[cfg(test)]
+mod cache_database;
+
 pub use algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
     ImportableExecutionAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,

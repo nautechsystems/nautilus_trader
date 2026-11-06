@@ -48,12 +48,12 @@ struct FailNthAddOrderState {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct FailNthAddOrderDatabaseControl {
+pub(crate) struct FailNthAddOrderDatabaseControl {
     state: Arc<Mutex<FailNthAddOrderState>>,
 }
 
 impl FailNthAddOrderDatabaseControl {
-    pub(super) fn set_fail_add_order_on(&self, call: Option<usize>) {
+    pub(crate) fn set_fail_add_order_on(&self, call: Option<usize>) {
         let mut state = self.state.lock().unwrap();
         state.fail_add_order_on = call;
         state.add_order_calls = 0;
@@ -61,13 +61,14 @@ impl FailNthAddOrderDatabaseControl {
 }
 
 #[derive(Debug)]
-pub(super) struct FailNthAddOrderDatabase {
+pub(crate) struct FailNthAddOrderDatabase {
     control: FailNthAddOrderDatabaseControl,
 }
 
 impl FailNthAddOrderDatabase {
-    pub(super) fn create() -> (Self, FailNthAddOrderDatabaseControl) {
+    pub(crate) fn create() -> (Self, FailNthAddOrderDatabaseControl) {
         let control = FailNthAddOrderDatabaseControl::default();
+
         (
             Self {
                 control: control.clone(),

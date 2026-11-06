@@ -117,6 +117,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed TWAP slice persistence failures skipping quantity or leaving execution unable to retry
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed FFI `synthetic_instrument_is_valid_formula` aborting on invalid component JSON
