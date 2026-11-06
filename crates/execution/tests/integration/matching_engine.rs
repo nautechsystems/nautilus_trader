@@ -1088,6 +1088,266 @@ fn test_market_status_pause_blocks_matching_until_trading_resumes(
 }
 
 #[rstest]
+#[case::close(MarketStatusAction::Close, false)]
+#[case::halt(MarketStatusAction::Halt, false)]
+#[case::pause(MarketStatusAction::Pause, false)]
+#[case::suspend(MarketStatusAction::Suspend, false)]
+#[case::trading(MarketStatusAction::Trading, true)]
+fn test_trailing_stop_does_not_trail_while_market_not_open(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] action: MarketStatusAction,
+    #[case] is_open: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+    let quote = |bid: &str, ask: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_quote_tick(&quote("1000.00", "1000.25", 1));
+
+    let trailing_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::BidAsk)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(trailing_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut trailing, account_id);
+
+    let gtd_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut gtd_limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("990.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(2))
+        .client_order_id(gtd_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut gtd_limit, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // A higher bid while the market is not open, then command-settlement iterate on reopen
+    engine.process_status(action);
+    engine.process_quote_tick(&quote("1001.25", "1001.50", 2));
+
+    // GTD expiry still runs while the market is not open
+    let pre_reopen_events = get_order_event_handler_messages(&handler);
+    assert!(
+        pre_reopen_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Expired(e) if e.client_order_id == gtd_id))
+    );
+
+    engine.process_status(MarketStatusAction::Trading);
+    engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
+    engine.process_quote_tick(&quote("1000.50", "1000.75", 3));
+
+    let events = get_order_event_handler_messages(&handler);
+    let triggers: Vec<Price> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(e) if e.client_order_id == trailing_id => e.trigger_price,
+            _ => None,
+        })
+        .collect();
+    let fills: Vec<Price> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(e) if e.client_order_id == trailing_id => Some(e.last_px),
+            _ => None,
+        })
+        .collect();
+
+    if is_open {
+        // Trails up to 1001.25 - 0.50 and the reopen bid triggers it
+        assert_eq!(triggers, vec![Price::from("1000.75")]);
+        assert_eq!(fills, vec![Price::from("1000.50")]);
+    } else {
+        // Trails from the reopen bid only: 1000.50 - 0.50, above the initial 999.50
+        assert_eq!(triggers, vec![Price::from("1000.00")]);
+        assert!(fills.is_empty(), "trailing stop filled: {fills:?}");
+    }
+}
+
+#[rstest]
+fn test_trailing_stop_reopen_requires_fresh_channel_data(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let config = OrderMatchingEngineConfig {
+        trade_execution: false,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(Rc::clone(&cache)),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+    let quote = |bid: &str, ask: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let trade = |price: &str, ts: u64| {
+        TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(price),
+            Quantity::from("1.000"),
+            AggressorSide::Buy,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mark = |price: &str, ts: u64| {
+        MarkPriceUpdate::new(
+            instrument_eth_usdt.id(),
+            Price::from(price),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_quote_tick(&quote("1000.00", "1000.25", 1));
+    engine.process_trade_tick(&trade("1000.00", 1));
+    engine.process_mark_price(&mark("1000.00", 1));
+
+    // Unactivated BidAsk order with activation_price touched only while closed
+    let bid_ask_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut bid_ask_order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .activation_price(Price::from("1001.00"))
+        .trigger_type(TriggerType::BidAsk)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(bid_ask_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut bid_ask_order, account_id);
+
+    // Activated LastPrice and MarkPrice trailing stops
+    let last_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut last_order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::LastPrice)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(last_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut last_order, account_id);
+
+    let mark_id = ClientOrderId::from("O-19700101-000000-001-001-3");
+    let mut mark_order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::MarkPrice)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(mark_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut mark_order, account_id);
+
+    let last_or_bid_ask_id = ClientOrderId::from("O-19700101-000000-001-001-4");
+    let mut last_or_bid_ask_order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::LastOrBidAsk)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(last_or_bid_ask_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut last_or_bid_ask_order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Closure updates all three channels above open levels
+    engine.process_status(MarketStatusAction::Close);
+    engine.process_quote_tick(&quote("1001.25", "1001.50", 2));
+    engine.process_trade_tick(&trade("1001.25", 2));
+    engine.process_mark_price(&mark("1001.25", 2));
+
+    // Reopen + iterate + unrelated channel updates must not activate or trail from closure prices
+    engine.process_status(MarketStatusAction::Trading);
+    engine.iterate(UnixNanos::from(3), AggressorSide::NoAggressor);
+    engine.process_mark_price(&mark("1000.50", 4));
+
+    let events = get_order_event_handler_messages(&handler);
+    let updated_ids: Vec<(ClientOrderId, Option<Price>)> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(e) => Some((e.client_order_id, e.trigger_price)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(updated_ids, vec![(mark_id, Some(Price::from("1000.00")))]);
+
+    // Quote update refreshes BidAsk and LastOrBidAsk (not LastPrice), trailing from 1001.00
+    clear_order_event_handler_messages(&handler);
+    engine.process_quote_tick(&quote("1001.00", "1001.25", 5));
+
+    let events = get_order_event_handler_messages(&handler);
+    let updated_ids: Vec<(ClientOrderId, Option<Price>)> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(e) => Some((e.client_order_id, e.trigger_price)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        updated_ids,
+        vec![
+            (last_or_bid_ask_id, Some(Price::from("1000.50"))),
+            (bid_ask_id, Some(Price::from("1000.50"))),
+        ]
+    );
+}
+
+#[rstest]
 fn test_process_order_when_invalid_contingent_orders(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,

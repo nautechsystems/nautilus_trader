@@ -156,6 +156,10 @@ pub struct OrderMatchingEngine {
     tob_initialized: bool,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
+    trailing_bid_fresh: bool,
+    trailing_ask_fresh: bool,
+    trailing_last_fresh: bool,
+    trailing_mark_fresh: bool,
     precision_mismatch_streak: u32,
     instrument_close: Option<InstrumentClose>,
 
@@ -255,6 +259,10 @@ impl OrderMatchingEngine {
             tob_initialized: false,
             last_quote_bid: None,
             last_quote_ask: None,
+            trailing_bid_fresh: true,
+            trailing_ask_fresh: true,
+            trailing_last_fresh: true,
+            trailing_mark_fresh: true,
             precision_mismatch_streak: 0,
             instrument_close: None,
             pending_resolution: None,
@@ -334,6 +342,10 @@ impl OrderMatchingEngine {
         self.tob_initialized = false;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
+        self.trailing_bid_fresh = true;
+        self.trailing_ask_fresh = true;
+        self.trailing_last_fresh = true;
+        self.trailing_mark_fresh = true;
         self.last_bar_bid = None;
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
@@ -1441,6 +1453,9 @@ impl OrderMatchingEngine {
             && let Some(status) = self.pending_resolution.take()
         {
             self.market_status = status;
+            if self.market_status != MarketStatus::Open {
+                self.clear_trailing_price_freshness();
+            }
         }
 
         let changed = instrument.price_increment() != self.instrument.price_increment()
@@ -1474,6 +1489,10 @@ impl OrderMatchingEngine {
             self.core.bid = None;
             self.core.ask = None;
             self.core.last = None;
+            let is_open = self.market_status == MarketStatus::Open;
+            self.trailing_bid_fresh = is_open;
+            self.trailing_ask_fresh = is_open;
+            self.trailing_last_fresh = is_open;
             log::info!(
                 "Updated instrument {} (price_precision={} size_precision={})",
                 instrument.id(),
@@ -1660,6 +1679,7 @@ impl OrderMatchingEngine {
         }
 
         self.book.apply_delta(delta)?;
+        self.update_trailing_freshness_for_delta(delta);
 
         let is_snapshot = RecordFlag::F_SNAPSHOT.matches(delta.flags);
         let is_last = RecordFlag::F_LAST.matches(delta.flags);
@@ -1717,6 +1737,9 @@ impl OrderMatchingEngine {
         }
 
         self.book.apply_deltas(deltas)?;
+        for delta in &deltas.deltas {
+            self.update_trailing_freshness_for_delta(delta);
+        }
 
         let mut has_snapshot_or_clear = false;
 
@@ -1796,6 +1819,10 @@ impl OrderMatchingEngine {
             self.book.apply_depth(depth)?;
         }
 
+        let is_open = self.market_status == MarketStatus::Open;
+        self.trailing_bid_fresh = is_open && top_bid.is_some();
+        self.trailing_ask_fresh = is_open && top_ask.is_some();
+
         // Depth always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
             self.rebase_queue_positions();
@@ -1840,6 +1867,7 @@ impl OrderMatchingEngine {
     /// The latest mark remains valid until replaced or the engine is reset.
     pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) {
         self.core.mark = Some(mark.value);
+        self.trailing_mark_fresh = self.market_status == MarketStatus::Open;
         self.iterate_with_mode(
             mark.ts_init,
             AggressorSide::NoAggressor,
@@ -1904,6 +1932,9 @@ impl OrderMatchingEngine {
 
             self.last_quote_bid = Some(quote.bid_price);
             self.last_quote_ask = Some(quote.ask_price);
+            let is_open = self.market_status == MarketStatus::Open;
+            self.trailing_bid_fresh = is_open;
+            self.trailing_ask_fresh = is_open;
         }
 
         self.iterate(quote.ts_init, AggressorSide::NoAggressor);
@@ -2134,6 +2165,7 @@ impl OrderMatchingEngine {
 
         if size.is_zero() {
             self.core.set_last_raw(price);
+            self.trailing_last_fresh = self.market_status == MarketStatus::Open;
             return true;
         }
 
@@ -2144,6 +2176,7 @@ impl OrderMatchingEngine {
             }
             self.last_bar_trade = Some((price, size, aggressor_side));
             self.core.set_last_raw(price);
+            self.trailing_last_fresh = self.market_status == MarketStatus::Open;
             return true;
         }
 
@@ -2160,6 +2193,11 @@ impl OrderMatchingEngine {
         if !self.update_trade_tick_or_skip(&trade_tick, context) {
             return false;
         }
+
+        let is_open = self.market_status == MarketStatus::Open;
+        self.trailing_bid_fresh = is_open;
+        self.trailing_ask_fresh = is_open;
+        self.trailing_last_fresh = is_open;
 
         // Set last before matching so last-price triggers see this leg, as for trade ticks
         self.core.set_last_raw(price);
@@ -2347,6 +2385,15 @@ impl OrderMatchingEngine {
             return true;
         }
 
+        let is_open = self.market_status == MarketStatus::Open;
+        if has_bid_size || bid_cleared {
+            self.trailing_bid_fresh = is_open && has_bid_size;
+        }
+
+        if has_ask_size || ask_cleared {
+            self.trailing_ask_fresh = is_open && has_ask_size;
+        }
+
         self.reset_trade_liquidity(quote.ts_event);
 
         self.iterate(quote.ts_init, AggressorSide::NoAggressor);
@@ -2434,7 +2481,9 @@ impl OrderMatchingEngine {
             }
         }
 
+        let is_open = self.market_status == MarketStatus::Open;
         self.core.set_last_raw(trade.price);
+        self.trailing_last_fresh = is_open;
 
         if !self.config.trade_execution {
             if self.book_type == BookType::L1_MBP {
@@ -2444,6 +2493,11 @@ impl OrderMatchingEngine {
 
                 if let Some(ask) = self.book.best_ask_price() {
                     self.core.set_ask_raw(ask);
+                }
+
+                if !is_open {
+                    self.trailing_bid_fresh = false;
+                    self.trailing_ask_fresh = false;
                 }
             } else {
                 self.iterate_with_mode(
@@ -2513,6 +2567,20 @@ impl OrderMatchingEngine {
                 self.core.set_bid_raw(trade.price);
                 self.core.set_ask_raw(trade.price);
             }
+        }
+
+        if !is_open {
+            self.trailing_bid_fresh = false;
+            self.trailing_ask_fresh = false;
+        } else if (self.book_type == BookType::L1_MBP
+            && self.last_quote_bid.is_none()
+            && self.last_quote_ask.is_none())
+            || (self.book_type != BookType::L1_MBP
+                && self.book.best_bid_price().is_none()
+                && self.book.best_ask_price().is_none())
+        {
+            self.trailing_bid_fresh = self.core.bid == Some(trade.price);
+            self.trailing_ask_fresh = self.core.ask == Some(trade.price);
         }
 
         self.start_trade_iteration(trade.size);
@@ -2650,6 +2718,54 @@ impl OrderMatchingEngine {
             }
             _ => {}
         }
+
+        if self.market_status != MarketStatus::Open {
+            self.clear_trailing_price_freshness();
+        }
+    }
+
+    fn clear_trailing_price_freshness(&mut self) {
+        self.trailing_bid_fresh = false;
+        self.trailing_ask_fresh = false;
+        self.trailing_last_fresh = false;
+        self.trailing_mark_fresh = false;
+    }
+
+    fn update_trailing_freshness_for_delta(&mut self, delta: &OrderBookDelta) {
+        if self.market_status != MarketStatus::Open {
+            self.trailing_bid_fresh = false;
+            self.trailing_ask_fresh = false;
+            return;
+        }
+
+        match delta.action {
+            BookAction::Clear => {
+                self.trailing_bid_fresh = false;
+                self.trailing_ask_fresh = false;
+            }
+            BookAction::Add | BookAction::Update => {
+                if delta.order.side != Some(OrderSide::Sell)
+                    && self.book.best_bid_price() == Some(delta.order.price)
+                {
+                    self.trailing_bid_fresh = true;
+                }
+
+                if delta.order.side != Some(OrderSide::Buy)
+                    && self.book.best_ask_price() == Some(delta.order.price)
+                {
+                    self.trailing_ask_fresh = true;
+                }
+            }
+            BookAction::Delete => {
+                if self.book.best_bid_price().is_none() {
+                    self.trailing_bid_fresh = false;
+                }
+
+                if self.book.best_ask_price().is_none() {
+                    self.trailing_ask_fresh = false;
+                }
+            }
+        }
     }
 
     /// Processes an instrument close event.
@@ -2736,6 +2852,7 @@ impl OrderMatchingEngine {
 
         self.pending_resolution = Some(self.market_status);
         self.market_status = MarketStatus::Closed;
+        self.clear_trailing_price_freshness();
         self.cancel_open_orders_for_expiration(excluded);
         log::info!(
             "{} expired and is now pending resolution; open orders canceled and new orders blocked",
@@ -4458,27 +4575,7 @@ impl OrderMatchingEngine {
     /// Returns whether a trailing stop activates at the current market: its activation price is
     /// touched, or it has none and a market price to activate at is available.
     fn trailing_stop_activates_now(&self, order: &OrderAny) -> bool {
-        let side = order.order_side();
-        match order.activation_price() {
-            Some(activation_price) => self.core.is_touch_triggered_with_trigger_type(
-                side,
-                activation_price,
-                if order.trigger_type() == Some(TriggerType::MarkPrice) {
-                    TriggerType::MarkPrice
-                } else {
-                    TriggerType::BidAsk
-                },
-            ),
-            None => self
-                .get_trailing_activation_price(
-                    order.trigger_type().unwrap_or(TriggerType::Default),
-                    side,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                )
-                .is_some(),
-        }
+        self.trailing_stop_activation_price(order).is_some()
     }
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -4560,6 +4657,8 @@ impl OrderMatchingEngine {
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
                 }
             }
+        } else {
+            self.clear_trailing_price_freshness();
         }
 
         let order_ids: Vec<ClientOrderId> = if matched_order {
@@ -4612,12 +4711,11 @@ impl OrderMatchingEngine {
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
-                    if self.maybe_activate_trailing_stop(
-                        &mut order,
-                        self.core.bid,
-                        self.core.ask,
-                        self.core.last,
-                    ) {
+                    // Like matching, trailing stops follow the market only while it
+                    // is open; they resume from the first price after it reopens
+                    if self.market_status == MarketStatus::Open
+                        && self.maybe_activate_trailing_stop(&mut order)
+                    {
                         self.update_trailing_stop_order(&order);
                         self.resync_core_entry(client_order_id);
                     }
@@ -4755,37 +4853,65 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn get_trailing_activation_price(
+    fn trailing_market_prices(
         &self,
-        trigger_type: TriggerType,
         order_side: OrderSide,
-        bid: Option<Price>,
-        ask: Option<Price>,
-        last: Option<Price>,
-    ) -> Option<Price> {
-        match trigger_type {
-            TriggerType::LastPrice => last,
-            TriggerType::MarkPrice => self.core.mark,
-            TriggerType::LastOrBidAsk => last.or(match order_side {
-                OrderSide::Buy => ask,
-                OrderSide::Sell => bid,
-            }),
+    ) -> (Option<Price>, Option<Price>, Option<Price>, Option<Price>) {
+        if self.market_status != MarketStatus::Open {
+            return (None, None, None, None);
+        }
 
-            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice
-            _ => match order_side {
-                OrderSide::Buy => ask,
-                OrderSide::Sell => bid,
+        let (bid, ask) = match order_side {
+            OrderSide::Buy if self.trailing_ask_fresh => (self.core.bid, self.core.ask),
+            OrderSide::Sell if self.trailing_bid_fresh => (self.core.bid, self.core.ask),
+            _ => (None, None),
+        };
+        let last = self
+            .core
+            .last
+            .filter(|_| self.trailing_last_fresh || self.target_last.is_some());
+        let mark = self.core.mark.filter(|_| self.trailing_mark_fresh);
+
+        (bid, ask, last, mark)
+    }
+
+    fn trailing_stop_activation_price(&self, order: &OrderAny) -> Option<Price> {
+        let side = order.order_side();
+        let trigger_type = order.trigger_type().unwrap_or(TriggerType::Default);
+        let (bid, ask, last, mark) = self.trailing_market_prices(side);
+        let (bid, ask) = if trigger_type == TriggerType::MarkPrice {
+            (mark, mark)
+        } else {
+            (bid, ask)
+        };
+
+        match order.activation_price() {
+            Some(price) => {
+                let hit = match side {
+                    OrderSide::Buy => ask.is_some_and(|ask| ask <= price),
+                    OrderSide::Sell => bid.is_some_and(|bid| bid >= price),
+                };
+
+                hit.then_some(price)
+            }
+            None => match trigger_type {
+                TriggerType::LastPrice => last,
+                TriggerType::MarkPrice => mark,
+                TriggerType::LastOrBidAsk => last.or(match side {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                }),
+
+                // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice
+                _ => match side {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                },
             },
         }
     }
 
-    fn maybe_activate_trailing_stop(
-        &self,
-        order: &mut OrderAny,
-        bid: Option<Price>,
-        ask: Option<Price>,
-        last: Option<Price>,
-    ) -> bool {
+    fn maybe_activate_trailing_stop(&self, order: &mut OrderAny) -> bool {
         let is_activated = match order {
             OrderAny::TrailingStopMarket(inner) => inner.is_activated,
             OrderAny::TrailingStopLimit(inner) => inner.is_activated,
@@ -4796,33 +4922,7 @@ impl OrderMatchingEngine {
             return true;
         }
 
-        let (bid, ask) = if order.trigger_type() == Some(TriggerType::MarkPrice) {
-            (self.core.mark, self.core.mark)
-        } else {
-            (bid, ask)
-        };
-
-        let activation_price = match order.activation_price() {
-            Some(price) => {
-                let hit = match order.order_side() {
-                    OrderSide::Buy => ask.is_some_and(|ask| ask <= price),
-                    OrderSide::Sell => bid.is_some_and(|bid| bid >= price),
-                };
-
-                hit.then_some(price)
-            }
-            None => self.get_trailing_activation_price(
-                order
-                    .trigger_type()
-                    .expect("Trailing order has a trigger type"),
-                order.order_side(),
-                bid,
-                ask,
-                last,
-            ),
-        };
-
-        let Some(activation_price) = activation_price else {
+        let Some(activation_price) = self.trailing_stop_activation_price(order) else {
             return false;
         };
 
@@ -7039,16 +7139,34 @@ impl OrderMatchingEngine {
     }
 
     fn update_trailing_stop_order(&self, order: &OrderAny) {
+        let (bid, ask, last, mark) = self.trailing_market_prices(order.order_side());
+        let (bid, ask, last) = if order.trigger_type() == Some(TriggerType::LastOrBidAsk)
+            && self.core.bid.is_some()
+            && self.core.ask.is_some()
+            && self.core.last.is_some()
+        {
+            (
+                bid.or(last),
+                ask.or(last),
+                last.or(match order.order_side() {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                }),
+            )
+        } else {
+            (bid, ask, last)
+        };
+
         let (new_trigger_price, new_price) = match trailing_stop_calculate(
             self.instrument.price_increment(),
             order.trigger_price(),
             order,
-            self.core.bid,
-            self.core.ask,
+            bid,
+            ask,
             if order.trigger_type() == Some(TriggerType::MarkPrice) {
-                self.core.mark
+                mark
             } else {
-                self.core.last
+                last
             },
         ) {
             Ok(prices) => prices,
@@ -7100,12 +7218,7 @@ impl OrderMatchingEngine {
                 order.order_type(),
                 OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
             ) && order.trigger_price().is_none()
-                && self.maybe_activate_trailing_stop(
-                    order,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                )
+                && self.maybe_activate_trailing_stop(order)
             {
                 self.update_trailing_stop_order(order);
             }
