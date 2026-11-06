@@ -399,8 +399,14 @@ impl ParquetDataCatalog {
 
     /// Recursively lists all objects under `{dir}/` in the object store.
     pub(super) fn list_objects(&self, dir: &str) -> anyhow::Result<Vec<ObjectMeta>> {
+        let dir_path = self.object_store_path(dir)?;
+        let prefix = if dir_path.is_empty() {
+            ObjectPath::from("/")
+        } else {
+            ObjectPath::from(format!("{dir_path}/"))
+        };
+
         self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("{dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut objects = Vec::new();
             while let Some(object) = stream.next().await {
