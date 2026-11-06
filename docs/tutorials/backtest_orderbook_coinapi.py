@@ -390,7 +390,8 @@ node.dispose()
 # and native reports as the backtest above. Lines show successive states
 # as steps; fill markers show individual executions.
 #
-# ![ANTHROPIC best bid and ask with FOK and closing market fills][panel_book]
+# ![ANTHROPIC best bid and ask with FOK and closing market fills](
+# ./assets/backtest_orderbook_coinapi/panel_a_top_book.png)
 #
 # **Figure 1.** The FOK sells build the short position. One FOK buy reduces
 # it, and the final market buy closes it through six fills at the same
@@ -399,7 +400,8 @@ node.dispose()
 # include intermediate states lasting microseconds between recorded level
 # updates. This zero-latency strategy can fill at these prices.
 #
-# ![Full-hour spread and best-quote sizes on a logarithmic depth axis][panel_liquidity]
+# ![Full-hour spread and best-quote sizes on a logarithmic depth axis](
+# ./assets/backtest_orderbook_coinapi/panel_b_liquidity.png)
 #
 # **Figure 2.** Across all states, the spread is in `[0.1, 2.1]` USDC.
 # For states lasting at least one millisecond, it is in `[0.1, 0.9]` USDC.
@@ -408,12 +410,14 @@ node.dispose()
 # sizes vary across several orders of magnitude, so depth uses a
 # logarithmic axis. Sizes are contract units, not company shares.
 #
-# ![Net short position reaching 2.30689 units before closing flat][panel_position]
+# ![Net short position reaching 2.30689 units before closing flat](
+# ./assets/backtest_orderbook_coinapi/panel_c_position.png)
 #
 # **Figure 3.** Cumulative signed execution quantities show the short
 # reaching 2.30689 units. The final market order returns exposure to zero.
 #
-# ![Realized loss of 1.157298 USDC and final account balance][panel_pnl]
+# ![Realized loss of 1.157298 USDC and final account balance](
+# ./assets/backtest_orderbook_coinapi/panel_d_pnl.png)
 #
 # **Figure 4.** The account's total balance change gives realized PnL for
 # this zero-fee run. The final drop books the loss accumulated while
@@ -440,11 +444,6 @@ node.dispose()
 # The renderer runs this tutorial and writes PNGs to
 # `docs/tutorials/assets/backtest_orderbook_coinapi/`. It reuses the cached
 # export or follows the first-download procedure above.
-#
-# [panel_book]: ./assets/backtest_orderbook_coinapi/panel_a_top_book.png
-# [panel_liquidity]: ./assets/backtest_orderbook_coinapi/panel_b_liquidity.png
-# [panel_position]: ./assets/backtest_orderbook_coinapi/panel_c_position.png
-# [panel_pnl]: ./assets/backtest_orderbook_coinapi/panel_d_pnl.png
 
 # %% [markdown]
 # To test another hour, list its available objects and select the ANTHROPIC file

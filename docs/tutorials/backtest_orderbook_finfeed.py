@@ -453,24 +453,28 @@ finally:
 # reports as the backtest above. Lines show successive states as steps;
 # fill markers show individual executions.
 #
-# ![Best bid and ask with the one-share buy and sell fills][panel_book]
+# ![Best bid and ask with the one-share buy and sell fills](
+# ./assets/backtest_orderbook_finfeed/panel_a_top_book.png)
 #
 # **Figure 1.** The strategy buys at the ask and sells at the bid about
 # four seconds later. Both executions use the reconstructed book.
 #
-# ![Spread, best-quote sizes, and signed size imbalance over the replay][panel_liquidity]
+# ![Spread, best-quote sizes, and signed size imbalance over the replay](
+# ./assets/backtest_orderbook_finfeed/panel_b_liquidity.png)
 #
 # **Figure 2.** Large ask sizes often favor a sell signal, but this cash
 # account can only sell shares it holds. The plotted signed imbalance is
 # `(bid_size - ask_size) / (bid_size + ask_size)`; the strategy compares
 # the smaller size with the larger size instead.
 #
-# ![Yes-share inventory rises to one share and returns to zero][panel_position]
+# ![Yes-share inventory rises to one share and returns to zero](
+# ./assets/backtest_orderbook_finfeed/panel_c_position.png)
 #
 # **Figure 3.** The position holds one Yes share for about four seconds
 # and stays flat for the rest of the replay.
 #
-# ![Equity marked at the midpoint ends at a loss of 0.018000 pUSD][panel_pnl]
+# ![Equity marked at the midpoint ends at a loss of 0.018000 pUSD](
+# ./assets/backtest_orderbook_finfeed/panel_d_pnl.png)
 #
 # **Figure 4.** The equity panel adds cash to the shares held at the
 # current midpoint. Cash changes from buying shares are not
@@ -497,8 +501,3 @@ finally:
 # `docs/tutorials/assets/backtest_orderbook_finfeed/`. It reuses the cache
 # or follows the first-collection procedure above. All calculations use
 # exact decimals until conversion to plotting coordinates.
-#
-# [panel_book]: ./assets/backtest_orderbook_finfeed/panel_a_top_book.png
-# [panel_liquidity]: ./assets/backtest_orderbook_finfeed/panel_b_liquidity.png
-# [panel_position]: ./assets/backtest_orderbook_finfeed/panel_c_position.png
-# [panel_pnl]: ./assets/backtest_orderbook_finfeed/panel_d_pnl.png
