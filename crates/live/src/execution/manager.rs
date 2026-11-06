@@ -3936,10 +3936,56 @@ impl ExecutionManager {
             .and_then(|report| report.venue_position_id);
         let venue_ts_last = venue_report.as_ref().map_or(ts_now, |r| r.ts_last);
 
+        // Handle venue expiry settlement (e.g. Deribit dated options #5332) where venue drops
+        // the expired instrument from position reports and settles cash adjustment without trade fills.
+        let is_expired_settled = instrument
+            .expiration_ns()
+            .is_some_and(|exp| ts_now >= exp)
+            && venue_signed_qty == Decimal::ZERO
+            && cached_signed_qty != Decimal::ZERO;
+
         let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
             || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
 
-        let result = if crosses_zero {
+        let result = if is_expired_settled {
+            let close_qty = cached_signed_qty.abs();
+            let close_side = if cached_signed_qty < Decimal::ZERO {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            };
+            let close_px = cached_avg_px.unwrap_or(venue_avg_px.unwrap_or(Decimal::ZERO));
+
+            log::info!(
+                color = LogColor::Blue as u8;
+                "Reconciling expired instrument position for {instrument_id}: contract expired and omitted by venue, closing cached {cached_signed_qty} @ {close_px}",
+            );
+
+            let quantity = Quantity::from_decimal_dp(close_qty, instrument.size_precision()).ok();
+            quantity.and_then(|qty| {
+                let close_report = create_position_reconciliation_report(
+                    &instrument,
+                    account_id,
+                    close_side,
+                    qty,
+                    close_px,
+                    venue_position_id,
+                    Some("EXPIRY"),
+                    ts_now,
+                    venue_ts_last,
+                );
+                let (events, _) = self.handle_external_order(
+                    &close_report,
+                    account_id,
+                    &instrument,
+                    &[],
+                    true,
+                    None,
+                    None,
+                );
+                Some(events)
+            })
+        } else if crosses_zero {
             let position_ids = match venue_position_id {
                 Some(open_position_id) => match cached_positions.as_slice() {
                     [position] => Some((Some(position.id), Some(open_position_id))),
