@@ -1056,6 +1056,18 @@ The adapter emits merged `account_all_assets` and `user_stats` state only after 
 Construction allows missing credentials, but `connect()` requires `private_key`, `account_index`, and
 `api_key_index`. Private streams and nonce refresh are mandatory.
 
+### Account balances
+
+Each asset's `total` is `balance + margin_balance`. Settlement-currency free balance is the lesser of
+`total - locked_balance` and `max(user_stats.available_balance, 0)`. The remainder is `locked`, including
+margin in use and any funds outside the venue's reported availability.
+
+An account-wide `MarginBalance` reports `initial = max(collateral - available_balance, 0)`. See
+[margin accounts](../concepts/accounting.md#margin-accounts) for initialization and risk checks.
+
+Classic mode keeps spot and perpetual funds separate. Risk checks for both products use this single free
+balance, so a Classic spot order can be denied even when separate spot funds would cover it.
+
 ### Position snapshots and updates
 
 Perpetuals use one net position per market. Spot balances use account asset state. The authoritative

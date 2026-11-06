@@ -97,7 +97,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
     types::{
-        AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity,
+        AccountBalance, Currency, MONEY_MAX, MarginBalance, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, check_fixed_precision},
         money::MONEY_RAW_MAX,
     },
@@ -12894,6 +12894,163 @@ fn test_submit_order_margin_account_within_free_balance(
     let saved_execute_messages =
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1); // Passed through
+}
+
+#[rstest]
+#[case::within_available("1000.0", None)]
+#[case::at_available("5000.0", None)]
+#[case::above_available("6000.0", Some("300 USDG"))]
+fn test_submit_order_after_reported_margin_initialization(
+    #[case] price: &str,
+    #[case] denied_margin: Option<&str>,
+    strategy_id_ema_cross: StrategyId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let currency = Currency::USDG();
+    let account_id = AccountId::new("LIGHTER_ROBINHOOD-001");
+    let mut perp = btcusd_bybit();
+    perp.id = InstrumentId::from("BTC-PERP.LIGHTER_ROBINHOOD");
+    perp.quote_currency = currency;
+    perp.settlement_currency = currency;
+    perp.is_inverse = false;
+    perp.margin_init = dec!(0.05);
+    perp.margin_maint = dec!(0.03);
+    let instrument = InstrumentAny::CryptoPerpetual(perp);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("10000.0"),
+        Price::from("10001.0"),
+        Quantity::from("2"),
+        Quantity::from("3"),
+        0.into(),
+        0.into(),
+    );
+
+    cache.borrow_mut().add_quote(quote).unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut portfolio = Portfolio::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        None,
+    );
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000 USDG"),
+            Money::from("750 USDG"),
+            Money::from("250 USDG"),
+        )],
+        vec![MarginBalance::new(
+            Money::from("750 USDG"),
+            Money::from("0 USDG"),
+            None,
+        )],
+        true,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        None,
+    );
+
+    portfolio.update_account(&state);
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .account_id(account_id)
+        .order_side(OrderSide::Buy)
+        .last_qty(Quantity::from("1"))
+        .last_px(Price::from("10000.0"))
+        .currency(currency)
+        .position_id(PositionId::new("P-5578"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    portfolio.initialize_orders();
+    portfolio.initialize_positions();
+
+    let mut risk_engine = RiskEngine::new(
+        RiskEngineConfig::default(),
+        portfolio,
+        clock,
+        Rc::clone(&cache),
+    );
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from(price))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submit = SubmitOrder::new(
+        trader_id,
+        None,
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit));
+    let process = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(
+        cache
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .balance_free(Some(currency)),
+        Some(Money::from("250 USDG"))
+    );
+
+    if let Some(margin) = denied_margin {
+        assert_eq!(process.len(), 1);
+        assert_eq!(process[0].event_type(), OrderEventType::Denied);
+        assert_eq!(
+            process[0].message().unwrap(),
+            Ustr::from(
+                &OrderDeniedReason::InitialMarginExceedsFreeBalance {
+                    free_balance: Money::from("250 USDG"),
+                    initial_margin: Money::from(margin),
+                }
+                .to_string()
+            )
+        );
+        assert_eq!(execute.len(), 0);
+    } else {
+        assert_eq!(process.len(), 0);
+        assert_eq!(execute.len(), 1);
+        assert_eq!(execute[0].instrument_id(), instrument.id());
+
+        let TradingCommand::SubmitOrder(submit) = &execute[0] else {
+            panic!("expected order submission");
+        };
+
+        assert_eq!(submit.client_order_id, order.client_order_id());
+    }
 }
 
 #[rstest]

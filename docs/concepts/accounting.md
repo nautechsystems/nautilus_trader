@@ -76,6 +76,10 @@ Margin accounts support instruments that require collateral, such as futures or 
 track account balances, reserve margin for open orders and positions, and apply a configurable leverage per
 instrument. Margin balances have two scopes. See [Margin scopes](#margin-scopes) below.
 
+With `calculate_account_state=False`, startup initialization and retries after missing prices or exchange
+rates preserve reported balances and margins. Net positions and PnL still initialize, and new-order risk
+checks use the reported free balance.
+
 **Terms**:
 
 - **Leverage**: amplifies exposure relative to account equity. Higher leverage

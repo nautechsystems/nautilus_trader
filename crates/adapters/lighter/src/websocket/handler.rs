@@ -3920,12 +3920,7 @@ mod tests {
 
     #[rstest]
     fn handle_frame_routes_account_assets_and_user_stats_to_unified_state() {
-        // Fixture is the captured production no-position payload (10 USDC
-        // on spot, 40 USDC pledged as perp collateral, no resting orders).
-        // Lighter runs unified margin: both legs are deployable equity, so
-        // total = balance + margin_balance, locked = locked_balance only,
-        // and MarginBalance.initial = 0 because user_stats.collateral ==
-        // available_balance (no margin in use).
+        // The snapshot holds 50 USDC in total and reports 40 USDC available
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
@@ -3944,11 +3939,9 @@ mod tests {
                 assert_eq!(state.base_currency, None);
                 assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
-                // balance 10 + margin_balance 40 = 50 total; locked = 0
-                // (no resting spot orders); free = 50 (all deployable).
                 assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("40.000000 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 assert_eq!(state.margins[0].currency, usdc);
                 assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
@@ -3969,9 +3962,8 @@ mod tests {
         // The 5 mUSDC haircut on margin_balance is the entry fee. The
         // 0.827055 USDC gap between collateral and available_balance is
         // the initial margin pledged to the open position. AccountBalance
-        // is unchanged in shape; perp-margin-in-use lives on
-        // MarginBalance, not in `locked`. Maintenance is zero because
-        // Lighter doesn't publish a maintenance value on user_stats.
+        // also includes funds outside the venue's reported availability.
+        // Maintenance is zero because user_stats does not publish it.
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_WITH_POSITION).unwrap();
@@ -3992,8 +3984,8 @@ mod tests {
                 // the trailing digit to 8 decimals, matching the
                 // production log).
                 assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10.82705556 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("39.16831400 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 // initial = collateral 39.995369 - available 39.168314 = 0.827055
                 assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));
