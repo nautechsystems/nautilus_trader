@@ -293,7 +293,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        accounts::{MarginAccount, margin_model::MarginModelHandle},
+        accounts::{MarginAccount, margin::MarginRates, margin_model::MarginModelHandle},
         events::account::stubs::margin_account_state,
         instruments::stubs::*,
         python::instruments::pyobject_to_instrument_any,
@@ -387,6 +387,64 @@ model = CustomMargin()
                     use_quote
                 );
             }
+        });
+    }
+
+    #[rstest]
+    fn test_python_margin_model_with_account_margin_rates_returns_error_without_callback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("MarginModel", py.get_type::<PyMarginModel>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    "\
+class CustomMargin(MarginModel):
+    def __init__(self):
+        self.calls = []
+    def calculate_initial_margin(self, *args):
+        self.calls.append(('initial', args))
+        return self.initial
+    def calculate_maintenance_margin(self, *args):
+        self.calls.append(('maintenance', args))
+        return self.maintenance
+model = CustomMargin()
+"
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let model = locals.get_item("model").unwrap().unwrap();
+            model.setattr("initial", Money::from("123.45 USD")).unwrap();
+            model
+                .setattr("maintenance", Money::from("67.89 USD"))
+                .unwrap();
+            let instrument = audusd_sim();
+            let mut account = MarginAccount::new(margin_account_state(), true);
+            account.set_margin_model(pyobject_to_margin_model_any(&model).unwrap().into());
+            account.set_margin_rates(instrument.id(), MarginRates::new(dec!(0.12), dec!(0.10)));
+            let expected =
+                "Margin model 'python' does not support account margin rates for AUD/USD.SIM";
+
+            let initial = account.calculate_initial_margin(
+                &instrument,
+                Quantity::from("12345"),
+                Price::from("0.81234"),
+                None,
+            );
+            let maintenance = account.calculate_maintenance_margin(
+                &instrument,
+                Quantity::from("12345"),
+                Price::from("0.81234"),
+                None,
+            );
+
+            assert_eq!(initial.unwrap_err().to_string(), expected);
+            assert_eq!(maintenance.unwrap_err().to_string(), expected);
+            assert_eq!(model.getattr("calls").unwrap().len().unwrap(), 0);
         });
     }
 

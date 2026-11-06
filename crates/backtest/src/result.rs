@@ -618,6 +618,24 @@ fn canonical_account(account: &AccountAny) -> anyhow::Result<Value> {
                 Value::String(canonical_decimal(margin.default_leverage)),
             );
             payload.insert("leverages".to_string(), Value::Object(leverages));
+
+            // Rates are omitted when unset, keeping accounts without overrides unchanged
+            if !margin.margin_rates().is_empty() {
+                let margin_rates = margin
+                    .margin_rates()
+                    .iter()
+                    .map(|(instrument_id, rates)| {
+                        (
+                            instrument_id.to_string(),
+                            json!({
+                                "initial": canonical_decimal(rates.initial),
+                                "maintenance": canonical_decimal(rates.maintenance),
+                            }),
+                        )
+                    })
+                    .collect::<Map<_, _>>();
+                payload.insert("margin_rates".to_string(), Value::Object(margin_rates));
+            }
             payload.insert(
                 "margin_model".to_string(),
                 Value::String(margin_model.to_string()),
@@ -1073,6 +1091,7 @@ mod tests {
     use nautilus_model::{
         accounts::{
             MarginAccount, WalletAccount,
+            margin::MarginRates,
             margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
         },
         enums::{AccountType, OrderType, TrailingOffsetType},
@@ -1209,6 +1228,44 @@ mod tests {
 
             assert_eq!(value["Margin"]["margin_model"], expected_name);
         }
+    }
+
+    #[rstest]
+    fn test_canonical_margin_account_includes_margin_rates_only_when_set() {
+        let state = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1_000_000 USD"),
+                Money::zero(Currency::USD()),
+                Money::from("1_000_000 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let mut account = MarginAccount::new(state, true);
+
+        let without_rates = canonical_account(&AccountAny::Margin(account.clone())).unwrap();
+        account.set_margin_rates(
+            InstrumentId::from("AUDUSD.SIM"),
+            MarginRates::new(Decimal::new(120, 3), Decimal::new(1_000, 4)),
+        );
+        let with_rates = canonical_account(&AccountAny::Margin(account)).unwrap();
+
+        assert!(
+            !without_rates["Margin"]
+                .as_object()
+                .unwrap()
+                .contains_key("margin_rates")
+        );
+        assert_eq!(
+            with_rates["Margin"]["margin_rates"],
+            json!({"AUDUSD.SIM": {"initial": "0.12", "maintenance": "0.1"}})
+        );
     }
 
     #[rstest]

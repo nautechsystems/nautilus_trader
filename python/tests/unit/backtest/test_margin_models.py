@@ -339,6 +339,26 @@ def test_runtime_margin_callback_errors(
     assert len(model.calls) == 1
 
 
+@pytest.mark.parametrize("method", ["initial", "maintenance"])
+def test_runtime_margin_rates_with_python_model_return_error_without_callback(
+    margin_account_factory: Callable,
+    method: str,
+) -> None:
+    """
+    Fail loudly when account margin rates are set for a model without rate support.
+    """
+    model = CustomMargin()
+    account = margin_account_factory(model)
+    instrument = TestInstrumentProvider.audusd_sim()
+    account.set_margin_rates(instrument.id, Decimal("0.05"), Decimal("0.04"))
+    calculate = getattr(account, f"calculate_{method}_margin")
+
+    with pytest.raises(ValueError, match="does not support account margin rates"):
+        calculate(instrument, Quantity.from_str("12345"), Price.from_str("0.81234"))
+
+    assert model.calls == []
+
+
 @pytest.mark.parametrize("model", [None, StandardMarginModel(), LeveragedMarginModel()])
 def test_runtime_builtin_margin_defaults(margin_account_factory: Callable, model: object) -> None:
     """

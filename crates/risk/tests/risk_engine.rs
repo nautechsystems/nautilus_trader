@@ -55,7 +55,7 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::{
         Account, AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount,
-        stubs::cash_account,
+        margin::MarginRates, stubs::cash_account,
     },
     data::{
         Bar, BarSpecification, BarType, QuoteTick, TradeTick,
@@ -13108,6 +13108,106 @@ fn test_submit_order_margin_account_quanto_checks_settlement_balance(
         Some(client_id_binance),
         strategy_id_ema_cross,
         instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if let Some((free_balance, initial_margin)) = expected_denial {
+        assert_eq!(process_messages.len(), 1);
+        assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+        assert_eq!(
+            process_messages[0].message().unwrap(),
+            Ustr::from(
+                &OrderDeniedReason::InitialMarginExceedsFreeBalance {
+                    free_balance: Money::from(free_balance),
+                    initial_margin: Money::from(initial_margin),
+                }
+                .to_string()
+            )
+        );
+        assert_eq!(execute_messages.len(), 0);
+    } else {
+        assert_eq!(process_messages.len(), 0);
+        assert_eq!(execute_messages.len(), 1);
+    }
+}
+
+#[rstest]
+#[case::instrument_rate(None, None)]
+#[case::account_rate(
+    Some(MarginRates::new(dec!(1.5), dec!(1.5))),
+    Some(("20000 USDT", "22500 USDT"))
+)]
+fn test_submit_order_margin_account_rate_override_checks_free_balance(
+    #[case] rates: Option<MarginRates>,
+    #[case] expected_denial: Option<(&str, &str)>,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+
+    // ETHUSDT margin_init=1.0, 10x leverage: margin = notional / 10 * rate
+    // Buy 50 ETH @ $3000 -> notional = $150,000 -> margin = $15,000 at the instrument rate,
+    // or $22,500 at an account rate of 1.5. Free balance = $20,000
+    let mut margin_acct = margin_account_with_usdt_balance("20000 USDT", "0 USDT", "20000 USDT");
+    margin_acct.set_default_leverage(dec!(10));
+
+    if let Some(rates) = rates {
+        margin_acct.set_margin_rates(instrument_eth_usdt.id(), rates);
+    }
+    simple_cache
+        .add_account(AccountAny::Margin(margin_acct))
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("3000.00"),
+        Price::from("3000.00"),
+        Quantity::from("100"),
+        Quantity::from("100"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("50.000"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
         order.client_order_id(),
         order.init_event().clone(),
         None,

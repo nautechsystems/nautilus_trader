@@ -24,7 +24,7 @@ use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    accounts::{Account, MarginAccount},
+    accounts::{Account, MarginAccount, margin::MarginRates},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     fees::MakerTakerFeeRates,
@@ -39,6 +39,10 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginAccount {
     /// Represents a margin account that can hold leveraged positions.
+    ///
+    /// Margin requirements resolve in layers: the instrument supplies the base `margin_init` and
+    /// `margin_maint` rates, the account supplies leverage and optional per-instrument margin rate
+    /// overrides, and the margin model applies the mechanics.
     #[new]
     fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
         Self::new(event, calculate_account_state)
@@ -284,6 +288,34 @@ impl MarginAccount {
             .map_err(correctness_error_to_pyvalue_err)
     }
 
+    /// Sets the margin rates for a specific instrument, overriding the instrument's own
+    /// `margin_init` and `margin_maint` for this account.
+    #[pyo3(name = "set_margin_rates")]
+    fn py_set_margin_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+    ) -> PyResult<()> {
+        self.try_set_margin_rates(instrument_id, MarginRates::new(margin_init, margin_maint))
+            .map_err(correctness_error_to_pyvalue_err)
+    }
+
+    /// Returns the margin rate override for a specific instrument, or `None` when the
+    /// instrument's own `margin_init` and `margin_maint` apply.
+    #[pyo3(name = "margin_rates")]
+    fn py_get_margin_rates(&self, instrument_id: InstrumentId) -> Option<(Decimal, Decimal)> {
+        self.get_margin_rates(&instrument_id)
+            .map(|rates| (rates.initial, rates.maintenance))
+    }
+
+    /// Removes the margin rate override for a specific instrument, so the instrument's own
+    /// `margin_init` and `margin_maint` apply again.
+    #[pyo3(name = "clear_margin_rates")]
+    fn py_clear_margin_rates(&mut self, instrument_id: InstrumentId) {
+        self.clear_margin_rates(&instrument_id);
+    }
+
     #[pyo3(name = "is_unleveraged")]
     fn py_is_unleveraged(&self, instrument_id: InstrumentId) -> bool {
         self.is_unleveraged(instrument_id)
@@ -391,12 +423,14 @@ impl MarginAccount {
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     /// Calculates the initial margin amount for the specified instrument and quantity.
     ///
-    /// Delegates to the configured `MarginModel`.
+    /// Delegates to the configured `MarginModel`, using the account's margin rate override for
+    /// the instrument when set, otherwise the instrument's `margin_init`.
     ///
     /// # Errors
     ///
-    /// Returns an error if leverage is not positive, or if the result cannot be represented
-    /// as `Money`.
+    /// Returns an error if leverage is not positive, if the account has a margin rate override
+    /// for the instrument and the model does not support it, or if the result cannot be
+    /// represented as `Money`.
     pub fn py_calculate_initial_margin(
         &self,
         instrument: Py<PyAny>,
@@ -466,11 +500,13 @@ impl MarginAccount {
 
     /// Calculates the maintenance margin amount for the specified instrument and quantity.
     ///
-    /// Delegates to the configured `MarginModel`.
+    /// Delegates to the configured `MarginModel`, using the account's margin rate override for
+    /// the instrument when set, otherwise the instrument's `margin_maint`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the result cannot be represented as `Money`.
+    /// Returns an error if the account has a margin rate override for the instrument and the model
+    /// does not support it, or if the result cannot be represented as `Money`.
     #[pyo3(name = "calculate_maintenance_margin")]
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(

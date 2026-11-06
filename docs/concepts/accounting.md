@@ -339,7 +339,7 @@ This query surface does not expose the internal Rust mutation methods
 `update_margin`, `clear_margin`, `clear_account_margin`, `clear_initial_margin`,
 `clear_maintenance_margin`, or `set_margin_model`. Python does expose other
 mutation methods, including `update_initial_margin`, `update_maintenance_margin`,
-`set_default_leverage`, and `set_leverage`.
+`set_default_leverage`, `set_leverage`, `set_margin_rates`, and `clear_margin_rates`.
 
 ### Portfolio-level queries
 
@@ -490,6 +490,66 @@ leverage affects margin requirements.
 | Leveraged | ($110,000 ÷ 50) × 0.03 | $66    | 0.06%      |
 
 On a $1,000 account: the standard model blocks the trade. The leveraged model allows it.
+
+### Account margin rates
+
+Margin requirements resolve in layers:
+
+1. The instrument supplies the base `margin_init` and `margin_maint` rates.
+2. The `MarginAccount` supplies leverage and optional per-instrument rate overrides.
+3. The margin model applies the mechanics and returns `Money`.
+
+Two accounts can therefore trade the same instrument with different margin rates, without
+constructing different instrument definitions. The instrument stays the venue-wide default.
+
+An override is set per instrument and replaces both instrument rates for that account:
+
+```python
+account.set_margin_rates(instrument.id, Decimal("0.05"), Decimal("0.04"))
+account.margin_rates(instrument.id)  # (Decimal("0.05"), Decimal("0.04")), or None when unset
+account.clear_margin_rates(instrument.id)  # the instrument rates apply again
+```
+
+- Overrides are absolute rates, not multipliers on the instrument rates.
+- Both rates must be positive. Otherwise `set_margin_rates` raises `ValueError` and leaves the
+  account unchanged.
+- `clear_margin_rates` removes an override, and clearing an unset override does nothing.
+- Instruments without an override keep using `instrument.margin_init` and `instrument.margin_maint`.
+- Overrides are runtime configuration on the account, like leverage. They are not part of the
+  reported `AccountState`.
+
+Leverage and rate are separate inputs. Under `LeveragedMarginModel` the notional is divided by
+leverage and then multiplied by the rate, so a different rate changes the requirement at the same
+leverage. `StandardMarginModel` ignores leverage and applies the rate to the full notional.
+
+For an order of 100,000 @ 0.80000 (notional $80,000) with an instrument rate of 0.10, the standard
+model reserves $8,000 on an account without an override and $9,600 on an account with an initial
+rate override of 0.12.
+
+:::note
+Accounts returned from the cache or portfolio to Python are detached snapshots, so calling
+`set_margin_rates` on one does not change the margin the engine calculates. Backtest and sandbox
+venue configuration do not yet accept margin rates.
+:::
+
+#### Custom models
+
+Rate overrides require a model that supports them. The built-in models do. A custom or Python
+model implements only the callbacks in the [callback contract](#callback-contract), which receive
+the instrument and not the account rate. For such a model, calculating margin for an instrument with
+an override fails with an error that says the model does not support account margin rates, and no
+callback is invoked.
+
+- Direct `MarginAccount` calls raise `ValueError`.
+- Pre-trade risk checks reject the order command.
+- Portfolio updates skip the instrument's margin update, as under
+  [failure handling](#failure-handling).
+
+#### Venue-reported margins
+
+Reported margins flow into the account without going through a model, so overrides do not change
+them. The pre-trade risk check still estimates the order's initial margin locally against the
+reported free balance, and uses the override for that estimate, as it uses account leverage.
 
 ### Python model selection
 
