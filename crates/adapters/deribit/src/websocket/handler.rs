@@ -98,6 +98,9 @@ use crate::{
 // Deribit documents a 32 kB frame limit: https://docs.deribit.com/articles/errors
 const SUBSCRIPTION_REQUEST_MAX_BYTES: usize = 32_000;
 
+// Bounds replay and terminal tombstone caches only, never pending or active ownership
+const REPLAY_CACHE_CAPACITY: usize = 10_000;
+
 /// Type of pending request for request ID correlation.
 #[derive(Debug, Clone)]
 pub enum PendingRequestType {
@@ -275,12 +278,14 @@ pub struct DeribitWsFeedHandler {
     pending_requests: AHashMap<u64, PendingRequestType>,
     account_id: Option<AccountId>,
     order_contexts: AHashMap<VenueOrderId, OrderContext>,
-    submitted_order_contexts: FifoCacheMap<ClientOrderId, OrderContext, 10_000>,
+    // Pending submits stay owned until venue binding or a definitive terminal outcome
+    submitted_order_contexts: AHashMap<ClientOrderId, OrderContext>,
 
     // Retain terminal ownership and whether later fills require report recovery
-    terminal_order_contexts: FifoCacheMap<VenueOrderId, TerminalOrderContext, 10_000>,
+    terminal_order_contexts:
+        FifoCacheMap<VenueOrderId, TerminalOrderContext, REPLAY_CACHE_CAPACITY>,
 
-    emitted_trades: FifoCache<(VenueOrderId, TradeId), 10_000>,
+    emitted_trades: FifoCache<(VenueOrderId, TradeId), REPLAY_CACHE_CAPACITY>,
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
     last_account_states: AHashMap<String, AccountState>,
@@ -330,7 +335,7 @@ impl DeribitWsFeedHandler {
             pending_requests: AHashMap::new(),
             account_id,
             order_contexts: AHashMap::new(),
-            submitted_order_contexts: FifoCacheMap::new(),
+            submitted_order_contexts: AHashMap::new(),
             terminal_order_contexts: FifoCacheMap::new(),
             emitted_trades: FifoCache::new(),
             pending_bars: AHashMap::new(),
@@ -3894,6 +3899,11 @@ mod tests {
             handler.order_contexts.contains_key(&venue_order_id),
             trade_state == "open",
         );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
     }
 
     #[rstest]
@@ -4080,6 +4090,189 @@ mod tests {
                 .get(&VenueOrderId::from("ETH-584830574"))
                 .unwrap()
                 .accepted
+        );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_submit_survives_replay_cache_eviction_pressure() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.track_submit(
+            1,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        for seq in 2..=(REPLAY_CACHE_CAPACITY as u64 + 1) {
+            let filler_id = ClientOrderId::from(format!("O-FILLER-{seq:05}"));
+            handler.track_submit(
+                seq,
+                OrderContext {
+                    client_order_id: filler_id,
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id: StrategyId::from("S-001"),
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Market,
+                    accepted: false,
+                    last_order_signature: None,
+                },
+            );
+        }
+
+        assert!(
+            handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            handler
+                .order_contexts
+                .get(&VenueOrderId::from("ETH-584830574"))
+                .unwrap()
+                .accepted
+        );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn active_order_survives_terminal_cache_eviction_pressure() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        for seq in 0..=REPLAY_CACHE_CAPACITY {
+            let filler_id = VenueOrderId::from(format!("ETH-FILLER-{seq:05}"));
+            let filler_client_id = ClientOrderId::from(format!("O-FILLER-{seq:05}"));
+            handler.terminal_order_contexts.insert(
+                filler_id,
+                TerminalOrderContext {
+                    context: OrderContext {
+                        client_order_id: filler_client_id,
+                        trader_id: TraderId::from("TRADER-001"),
+                        strategy_id: StrategyId::from("S-001"),
+                        instrument_id,
+                        order_side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                        accepted: true,
+                        last_order_signature: None,
+                    },
+                    late_fills_as_reports: true,
+                },
+            );
+        }
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            handler
+                .order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
+        );
+    }
+
+    #[tokio::test]
+    async fn submitted_order_cancelled_before_bind_releases_pending_context() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderCanceled(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+        assert!(
+            handler
+                .terminal_order_contexts
+                .contains_key(&venue_order_id)
         );
     }
 
@@ -6347,6 +6540,20 @@ mod tests {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("BTC_USDC.DERIBIT");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
         handler.pending_requests.insert(
             42,
             PendingRequestType::Buy {
@@ -6379,6 +6586,11 @@ mod tests {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason.as_str(), "post_only_reject");
         assert!(rejected.due_post_only);
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
     }
 
     #[rstest]
