@@ -656,6 +656,18 @@ impl AsyncRunner {
             self.channels.data_cmd_rx.len(),
         );
 
+        let total =
+            pending.0 + pending.1 + pending.2 + pending.3 + pending.4 + pending.5 + pending.6;
+        log::info!("Draining shutdown queues ({total} events initially pending)");
+        let mut progress = 0usize;
+        let mut process = |event| {
+            process(event);
+            progress += 1;
+            if progress.is_multiple_of(10_000) {
+                log::info!("Processed {progress} events during shutdown drain");
+            }
+        };
+
         let mut processed = 0;
         processed += poll_channel(
             &mut self.channels.time_evt_rx,
@@ -699,6 +711,7 @@ impl AsyncRunner {
             PendingRunnerEvent::DataCommand,
             &mut process,
         );
+        log::info!("Drained {processed} remaining events during shutdown");
         processed
     }
 
