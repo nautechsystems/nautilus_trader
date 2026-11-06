@@ -378,10 +378,10 @@ pub fn parse_spot_instrument(
         "lotSizeFilter.basePrecision",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_order_quantity(
         &definition.lot_size_filter.max_order_qty,
-        "lotSizeFilter.maxOrderQty",
-    )?);
+        &definition.symbol,
+    );
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -506,10 +506,10 @@ pub fn parse_linear_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_order_quantity(
         &definition.lot_size_filter.max_order_qty,
-        "lotSizeFilter.maxOrderQty",
-    )?);
+        &definition.symbol,
+    );
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -699,10 +699,10 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_order_quantity(
         &definition.lot_size_filter.max_order_qty,
-        "lotSizeFilter.maxOrderQty",
-    )?);
+        &definition.symbol,
+    );
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -854,10 +854,10 @@ pub fn parse_option_instrument(
         &definition.lot_size_filter.qty_step,
         "lotSizeFilter.qtyStep",
     )?;
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_order_quantity(
         &definition.lot_size_filter.max_order_qty,
-        "lotSizeFilter.maxOrderQty",
-    )?);
+        &definition.symbol,
+    );
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -1386,6 +1386,18 @@ pub(crate) fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
 
 pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
     Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
+}
+
+pub(crate) fn parse_max_order_quantity(value: &str, symbol: &str) -> Option<Quantity> {
+    match Quantity::from_str(value) {
+        Ok(qty) => Some(qty),
+        Err(e) => {
+            log::warn!(
+                "Bybit {symbol} lotSizeFilter.maxOrderQty '{value}' exceeds representable Quantity range: {e}; treating max_quantity as unbounded"
+            );
+            None
+        }
+    }
 }
 
 pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
