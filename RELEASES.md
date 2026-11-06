@@ -110,6 +110,7 @@ Released on TBD (UTC).
 
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
+- Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
 - Fixed stale bundled execution reports incorrectly voiding newer fills
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution

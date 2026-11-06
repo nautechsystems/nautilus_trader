@@ -37,12 +37,15 @@ stream. Typed cases append `_typed` to the scenario name, such as `replay_only_t
 keep the bare scenario name so earlier baselines stay comparable. The correctness test requires both
 modes to produce identical canonical results.
 
-Before timing, the benchmark checks these counts, all 20,000 processed data events, execution
-event counts, the canonical account digest, and the complete `CanonicalBacktestResult` digest.
+Before timing, the benchmark compares each result with its checked-in reference: an exact
+trading-state fingerprint and numerical values. The fingerprint contains these counts, all 20,000
+processed data events, execution event counts, the account digest, and a state digest.
+The [canonical comparison rules](../../../docs/developer_guide/benchmarking.md#canonical-backtest-workloads)
+define the numerical fields and tolerances.
 The correctness test also requires the preloaded and freshly loaded paths to produce identical
-canonical results. The complete result digest is exact within the active precision mode. Filled
-workloads lock separate standard and `high-precision` digests because portfolio statistics
-preserve exact `f64` bits; event counts, action counts, and account digests remain the same.
+canonical results. Both precision modes produce the same trading-state fingerprint, but some
+numerical values differ beyond the tolerances, so each mode has its own reference files.
+This check excludes the full `CanonicalBacktestResult` digest, which preserves exact `f64` bits.
 
 ### Absolute baseline environment
 
