@@ -24,7 +24,7 @@ use nautilus_model::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
         OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -40,7 +40,7 @@ use super::{
 };
 use crate::common::{
     enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
-    parse::get_currency,
+    parse::{get_currency, parse_venue_order_id},
 };
 
 /// Parses Kraken WebSocket ticker data into a Nautilus quote tick.
@@ -419,8 +419,10 @@ pub fn parse_ws_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(&exec.order_id)
-        .with_context(|| format!("Invalid order_id '{}' in Kraken execution", exec.order_id))?;
+    let venue_order_id = parse_venue_order_id(
+        &exec.order_id,
+        format_args!("execution, cl_ord_id={:?}", exec.cl_ord_id),
+    )?;
     let order_side = exec.side.map(Into::into);
     let order_type = parse_order_type(exec.order_type);
     let time_in_force = parse_time_in_force(exec.time_in_force, exec.post_only);
@@ -550,12 +552,8 @@ pub fn parse_ws_fill_report(
         .context("Missing exec_id for trade execution")?;
     let trade_id =
         TradeId::new_checked(exec_id).context("Invalid exec_id in Kraken trade execution")?;
-    let venue_order_id = VenueOrderId::new_checked(&exec.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken trade execution {exec_id}",
-            exec.order_id
-        )
-    })?;
+    let venue_order_id =
+        parse_venue_order_id(&exec.order_id, format_args!("trade execution {exec_id}"))?;
 
     let order_side = exec
         .side
@@ -940,6 +938,7 @@ mod tests {
     fn test_parse_ws_order_status_report_fails_on_an_invalid_order_id() {
         let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
         execution.order_id = String::new();
+        execution.cl_ord_id = Some("cl-1".to_string());
 
         let error = parse_ws_order_status_report(
             &execution,
@@ -950,7 +949,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(error.to_string(), "Invalid order_id '' in Kraken execution");
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken execution, cl_ord_id=Some(\"cl-1\")"
+        );
     }
 
     /// The dispatch logs only this message for the fill it drops, so the message names the fill.

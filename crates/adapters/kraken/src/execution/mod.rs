@@ -336,19 +336,23 @@ mod tests {
     #[rstest]
     fn test_invalid_order_id_in_a_command_response_is_ambiguous() {
         let submit = anyhow::Error::new(KrakenSubmitOrderError::InvalidOrderId {
-            detail: "''".to_string(),
+            detail: "Invalid order_id '' in Kraken spot submit response".to_string(),
         });
         let modify = anyhow::Error::new(KrakenModifyOrderError::InvalidOrderId {
-            detail: "''".to_string(),
+            detail: "Invalid order_id '' in Kraken futures edit response".to_string(),
         });
 
         assert_eq!(
             command_failure_from_submit_error(&submit),
-            CommandFailure::Ambiguous("Invalid order ID in submit response: ''".to_string())
+            CommandFailure::Ambiguous(
+                "Invalid order_id '' in Kraken spot submit response".to_string()
+            )
         );
         assert_eq!(
             command_failure_from_modify_error(&modify),
-            CommandFailure::Ambiguous("Invalid order ID in edit response: ''".to_string())
+            CommandFailure::Ambiguous(
+                "Invalid order_id '' in Kraken futures edit response".to_string()
+            )
         );
     }
 

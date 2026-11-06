@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use super::WsDispatchState;
 use crate::{
-    common::parse::truncate_cl_ord_id,
+    common::parse::{parse_venue_order_id, truncate_cl_ord_id},
     websocket::spot_v2::{
         enums::KrakenWsMethod,
         handler::SpotHandlerCommand,
@@ -481,14 +481,24 @@ impl OrderRequestState {
             );
             return;
         };
-        let venue_order_id = response
+        let Ok(venue_order_id) = response
             .result
             .as_ref()
             .and_then(|r| r.order_id.as_deref())
-            .and_then(|id| VenueOrderId::new_checked(id).ok());
+            .map(|id| {
+                parse_venue_order_id(
+                    id,
+                    format_args!("WS add_order response for {client_order_id}"),
+                )
+            })
+            .transpose()
+            .inspect_err(|e| log::error!("{e}"))
+        else {
+            return;
+        };
         let Some(venue_order_id) = venue_order_id else {
             log::error!(
-                "Kraken WS add_order success without a valid order_id client_order_id={client_order_id}",
+                "Kraken WS add_order success without order_id client_order_id={client_order_id}",
             );
             return;
         };
@@ -572,12 +582,15 @@ impl OrderRequestState {
             .result
             .as_ref()
             .and_then(|r| r.order_id.as_deref())
-            .map(VenueOrderId::new_checked)
+            .map(|id| {
+                parse_venue_order_id(
+                    id,
+                    format_args!("WS amend_order response for {client_order_id}"),
+                )
+            })
             .transpose()
+            .inspect_err(|e| log::error!("{e}"))
         else {
-            log::error!(
-                "Kraken WS amend_order success with an invalid order_id client_order_id={client_order_id}",
-            );
             return;
         };
         let venue_order_id =
@@ -728,10 +741,9 @@ impl OrderRequestState {
             }
 
             let leg_success = leg_result.is_some_and(|r| r.success);
-            let leg_venue_order_id = leg_result
-                .and_then(|r| r.order_id.as_deref())
-                .and_then(|id| VenueOrderId::new_checked(id).ok())
-                .or(leg_venue);
+            let leg_order_id = leg_result
+                .and_then(|r| r.order_id.clone())
+                .or_else(|| leg_venue.map(|v| v.to_string()));
             let leg_error = leg_result.and_then(|r| r.error.clone()).or_else(|| {
                 if leg_result.is_none() {
                     Some(format!(
@@ -751,8 +763,8 @@ impl OrderRequestState {
                 time_in: response.time_in.clone(),
                 time_out: response.time_out.clone(),
                 error: leg_error,
-                result: leg_venue_order_id.map(|v| KrakenWsOrderResult {
-                    order_id: Some(v.to_string()),
+                result: leg_order_id.map(|order_id| KrakenWsOrderResult {
+                    order_id: Some(order_id),
                     cl_ord_id: leg_result.and_then(|r| r.cl_ord_id.clone()),
                     order_userref: None,
                     warning: None,
@@ -762,7 +774,7 @@ impl OrderRequestState {
             let leg_pending = PendingRequest {
                 operation: PendingOperation::Submit,
                 client_order_ids: vec![client_order_id],
-                venue_order_ids: vec![leg_venue_order_id],
+                venue_order_ids: vec![leg_venue],
                 ts_sent_ns: pending.ts_sent_ns,
                 new_quantity: None,
                 new_price: None,
@@ -1340,15 +1352,23 @@ mod tests {
         harness.state.handle_response(&response, 9_000);
 
         match harness.event_rx.try_recv().expect("the failed leg rejects") {
-            OrderEventAny::Rejected(e) => assert_eq!(e.client_order_id, cl_b),
+            OrderEventAny::Rejected(e) => {
+                assert_eq!(e.client_order_id, cl_b);
+                assert_eq!(e.reason, Ustr::from("Bad price"));
+            }
             other => panic!("expected Rejected, was {other:?}"),
         }
 
         match harness.event_rx.try_recv().expect("the valid leg accepts") {
-            OrderEventAny::Accepted(e) => assert_eq!(e.client_order_id, cl_c),
+            OrderEventAny::Accepted(e) => {
+                assert_eq!(e.client_order_id, cl_c);
+                assert_eq!(e.venue_order_id, VenueOrderId::from("V-C"));
+            }
             other => panic!("expected Accepted, was {other:?}"),
         }
         assert!(harness.event_rx.try_recv().is_err());
+        assert!(harness.dispatch_state.lookup_identity(&cl_a).is_some());
+        assert!(!harness.dispatch_state.emitted_accepted.contains(&cl_a));
     }
 
     #[rstest]

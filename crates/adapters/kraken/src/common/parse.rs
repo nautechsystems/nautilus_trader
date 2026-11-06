@@ -729,6 +729,19 @@ fn insert_price_scale(
     }
 }
 
+/// Parses a venue order ID received from Kraken, naming `payload` in the error.
+///
+/// # Errors
+///
+/// Returns an error if `order_id` is empty, blank, or not ASCII.
+pub(crate) fn parse_venue_order_id(
+    order_id: &str,
+    payload: impl Display,
+) -> anyhow::Result<VenueOrderId> {
+    VenueOrderId::new_checked(order_id)
+        .with_context(|| format!("Invalid order_id '{order_id}' in Kraken {payload}"))
+}
+
 /// Parses a Kraken spot order into a Nautilus OrderStatusReport.
 ///
 /// # Errors
@@ -744,8 +757,7 @@ pub fn parse_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(order_id)
-        .with_context(|| format!("Invalid order_id '{order_id}' in Kraken spot order"))?;
+    let venue_order_id = parse_venue_order_id(order_id, "spot order")?;
 
     let order_side = OrderSide::from(order.descr.order_side).into();
     let order_type = order.descr.ordertype.into();
@@ -940,12 +952,7 @@ pub fn parse_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(&trade.ordertxid).with_context(|| {
-        format!(
-            "Invalid ordertxid '{}' in Kraken spot trade",
-            trade.ordertxid
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&trade.ordertxid, "spot trade")?;
     let trade_id_obj = TradeId::new(trade_id);
 
     let order_side = trade.trade_type.into();
@@ -1006,12 +1013,7 @@ pub fn parse_futures_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(&order.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures open order",
-            order.order_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&order.order_id, "futures open order")?;
 
     let order_side = OrderSide::from(order.side).into();
     let order_type: OrderType = order.order_type.into();
@@ -1096,12 +1098,7 @@ pub fn parse_futures_order_event_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(&event.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures order event",
-            event.order_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&event.order_id, "futures order event")?;
 
     let order_side = OrderSide::from(event.side).into();
     let order_type: OrderType = event.order_type.into();
@@ -1195,12 +1192,7 @@ pub fn parse_futures_order_status_details_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let venue_order_id = VenueOrderId::new_checked(&details.order.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures order status",
-            details.order.order_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&details.order.order_id, "futures order status")?;
 
     let order_side = OrderSide::from(details.order.side).into();
 
@@ -1339,12 +1331,7 @@ pub fn parse_futures_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new_checked(&fill.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures fill",
-            fill.order_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&fill.order_id, "futures fill")?;
     let trade_id = TradeId::new(&fill.fill_id);
 
     let order_side = fill.side.into();
@@ -2320,19 +2307,40 @@ mod tests {
         assert_eq!(report.venue_position_id, None);
     }
 
-    /// An order ID the model cannot hold fails its row, whichever way it is invalid: the panicking
-    /// constructor would abort a release build.
+    #[rstest]
+    fn test_parse_venue_order_id_returns_a_valid_id() {
+        assert_eq!(
+            parse_venue_order_id("OABCDE-12345-FGHIJ", "spot order").unwrap(),
+            VenueOrderId::new("OABCDE-12345-FGHIJ")
+        );
+    }
+
+    /// An order ID the model cannot hold is an error, whichever way it is invalid: the panicking
+    /// constructor would abort a release build. The error names the payload the caller gives.
     #[rstest]
     #[case::empty("")]
     #[case::whitespace("   ")]
     #[case::non_ascii("\u{e9}")]
-    fn test_parse_order_status_report_fails_on_an_invalid_order_id(#[case] order_id: &str) {
+    fn test_parse_venue_order_id_fails_on_an_invalid_id(#[case] order_id: &str) {
+        let fill_id = "F-1";
+
+        let error =
+            parse_venue_order_id(order_id, format_args!("futures fill {fill_id}")).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid order_id '{order_id}' in Kraken futures fill F-1")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_fails_on_an_invalid_order_id() {
         let order = spot_order_rows("http_open_orders_conditional.json")
             .swap_remove("OCAP08-LIMIT-000008")
             .unwrap();
 
         let error = parse_order_status_report(
-            order_id,
+            "",
             &order,
             &usdc_eur_instrument(),
             AccountId::new("KRAKEN-001"),
@@ -2342,7 +2350,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            format!("Invalid order_id '{order_id}' in Kraken spot order")
+            "Invalid order_id '' in Kraken spot order"
         );
     }
 
@@ -2366,7 +2374,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Invalid ordertxid '' in Kraken spot trade"
+            "Invalid order_id '' in Kraken spot trade"
         );
     }
 

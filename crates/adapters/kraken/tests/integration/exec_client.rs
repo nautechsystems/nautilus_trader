@@ -4286,8 +4286,14 @@ async fn test_futures_mass_status_skips_a_fill_with_an_invalid_order_id_as_incom
         .expect("mass status available");
 
     let fill_reports = mass_status.fill_reports();
-    assert!(fill_reports.contains_key(&VenueOrderId::from("V-SIBLING")));
     assert_eq!(fill_reports.len(), 1);
+    let sibling_reports = &fill_reports[&VenueOrderId::from("V-SIBLING")];
+    assert_eq!(sibling_reports.len(), 1);
+    assert_eq!(
+        sibling_reports[0].venue_order_id,
+        VenueOrderId::from("V-SIBLING")
+    );
+    assert_eq!(sibling_reports[0].trade_id, TradeId::from("f-sibling"));
     assert!(!mass_status.reports_complete());
 }
 
@@ -7475,9 +7481,14 @@ async fn test_futures_mass_status_fails_on_an_orders_status_row_with_an_invalid_
 
     let error = client.generate_mass_status(None).await.unwrap_err();
 
+    let message = format!("{error:#}");
     assert!(
-        format!("{error:#}").contains("treating the lookup as failed"),
-        "{error:#}"
+        message.contains("Invalid order_id '' in Kraken futures order status"),
+        "{message}"
+    );
+    assert!(
+        message.contains("treating the lookup as failed"),
+        "{message}"
     );
 }
 

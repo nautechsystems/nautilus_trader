@@ -42,6 +42,13 @@ variants are not venue responses.
 [executions channel documentation](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/executions),
 retrieved on 2026-10-13 and unchanged apart from whitespace.
 
+## Futures edit response
+
+`http_edit_order_futures.json` is the response example from Kraken's
+[Edit order](https://docs.kraken.com/api-reference/order-management/edit-order) documentation,
+retrieved on 2026-11-06 and unchanged apart from whitespace. Tests also replace or remove its
+`editStatus.orderId` and add an `editStatus.order_id`; those variants are not venue responses.
+
 ## Futures split amendment
 
 `ws_futures_split_amend.json` is a synthetic sequence authored on 2026-10-31, not a venue capture.

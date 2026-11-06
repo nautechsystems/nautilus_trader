@@ -1,0 +1,41 @@
+{
+  "result": "success",
+  "editStatus": {
+    "status": "edited",
+    "orderId": "022774bc-2c4a-4f26-9317-436c8d85746d",
+    "receivedTime": "2019-09-05T16:47:47.521Z",
+    "orderEvents": [
+      {
+        "type": "EDIT",
+        "old": {
+          "orderId": "022774bc-2c4a-4f26-9317-436c8d85746d",
+          "cliOrdId": null,
+          "type": "lmt",
+          "symbol": "PI_XBTUSD",
+          "side": "buy",
+          "quantity": 1000,
+          "filled": 0,
+          "limitPrice": 9400,
+          "reduceOnly": false,
+          "timestamp": "2019-09-05T16:41:35.173Z",
+          "lastUpdateTimestamp": "2019-09-05T16:41:35.173Z"
+        },
+        "new": {
+          "orderId": "022774bc-2c4a-4f26-9317-436c8d85746d",
+          "cliOrdId": null,
+          "type": "lmt",
+          "symbol": "PI_XBTUSD",
+          "side": "buy",
+          "quantity": 1501,
+          "filled": 0,
+          "limitPrice": 7200,
+          "reduceOnly": false,
+          "timestamp": "2019-09-05T16:41:35.173Z",
+          "lastUpdateTimestamp": "2019-09-05T16:47:47.519Z"
+        },
+        "reducedQuantity": null
+      }
+    ]
+  },
+  "serverTime": "2019-09-05T16:47:47.521Z"
+}

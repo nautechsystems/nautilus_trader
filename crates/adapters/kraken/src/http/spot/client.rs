@@ -76,7 +76,8 @@ use crate::{
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
             parse_fill_report, parse_order_status_report, parse_spot_instrument,
-            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
+            parse_tokenized_instrument, parse_trade_tick_from_array, parse_venue_order_id,
+            truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -3010,9 +3011,9 @@ impl KrakenSpotHttpClient {
                     detail: "transaction ID was absent".to_string(),
                 })?;
 
-        VenueOrderId::new_checked(venue_order_id).map_err(|e| {
+        parse_venue_order_id(venue_order_id, "spot submit response").map_err(|e| {
             KrakenSubmitOrderError::InvalidOrderId {
-                detail: format!("'{venue_order_id}': {e}"),
+                detail: format!("{e:#}"),
             }
             .into()
         })
@@ -4212,7 +4213,8 @@ mod tests {
         assert!(
             matches!(
                 error.downcast_ref::<KrakenSubmitOrderError>(),
-                Some(KrakenSubmitOrderError::InvalidOrderId { .. })
+                Some(KrakenSubmitOrderError::InvalidOrderId { detail })
+                    if detail.starts_with("Invalid order_id '' in Kraken spot submit response")
             ),
             "{error:#}"
         );

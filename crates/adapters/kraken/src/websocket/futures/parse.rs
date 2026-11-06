@@ -25,7 +25,7 @@ use nautilus_model::{
     enums::{
         AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -36,7 +36,10 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::{enums::KrakenOrderSide, parse::fee_currency};
+use crate::common::{
+    enums::KrakenOrderSide,
+    parse::{fee_currency, parse_venue_order_id},
+};
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -245,12 +248,7 @@ pub fn parse_futures_ws_order_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let venue_order_id = VenueOrderId::new_checked(&order.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures order delta",
-            order.order_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(&order.order_id, "futures order delta")?;
     let order_side = parse_ws_direction(order.direction);
     let order_type = OrderType::from(order.order_type);
     let order_type = if order_type == OrderType::MarketIfTouched && order.limit_price.is_some() {
@@ -341,12 +339,10 @@ pub fn parse_futures_ws_fill_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let venue_order_id = VenueOrderId::new_checked(&fill.order_id).with_context(|| {
-        format!(
-            "Invalid order_id '{}' in Kraken futures fill {}",
-            fill.order_id, fill.fill_id
-        )
-    })?;
+    let venue_order_id = parse_venue_order_id(
+        &fill.order_id,
+        format_args!("futures fill {}", fill.fill_id),
+    )?;
     let trade_id = TradeId::new(&fill.fill_id);
     let order_side = if fill.buy {
         OrderSide::Buy
