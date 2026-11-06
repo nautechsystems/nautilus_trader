@@ -16,7 +16,7 @@
 //! Dockerized IB Gateway management.
 
 #[cfg(feature = "gateway")]
-use std::{collections::HashMap, fmt::Debug, time::Duration};
+use std::{collections::HashMap, fmt::Debug};
 
 #[cfg(feature = "gateway")]
 use anyhow::Context;
@@ -44,6 +44,8 @@ use jiff::Timestamp;
 use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "gateway")]
+use super::startup::{self, GatewayContainer};
 #[cfg(not(feature = "gateway"))]
 use crate::config::DockerizedIBGatewayConfig;
 #[cfg(feature = "gateway")]
@@ -354,34 +356,102 @@ impl DockerizedIBGateway {
     /// - Container creation or startup fails.
     /// - The gateway does not log in within the wait.
     pub async fn start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
-        tracing::debug!("Ensuring gateway is running");
+        startup::start(&*self, wait.unwrap_or(self.config.timeout)).await
+    }
 
-        let status = self.container_status().await?;
+    /// Starts the gateway like [`Self::start`], and waits for the login of a container that
+    /// another caller has just created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Startup fails for a reason other than that conflict.
+    /// - The gateway does not log in within the wait.
+    pub async fn safe_start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
+        startup::safe_start(&*self, wait.unwrap_or(self.config.timeout)).await
+    }
 
-        let broken_statuses = [
-            ContainerStatus::NotLoggedIn,
-            ContainerStatus::ContainerStopped,
-            ContainerStatus::ContainerCreated,
-            ContainerStatus::Unknown,
-        ];
+    /// Stop and remove the gateway container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if container stop or removal fails.
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        let list_options = ListContainersOptions {
+            all: true,
+            ..Default::default()
+        };
 
-        match status {
-            ContainerStatus::NoContainer => {
-                tracing::debug!("No container, starting");
+        let containers = self
+            .docker
+            .list_containers(Some(list_options))
+            .await
+            .context("Failed to list containers")?;
+
+        let container = containers.iter().find(|c| {
+            c.names
+                .as_ref()
+                .and_then(|names| names.first())
+                .is_some_and(|name| name.trim_start_matches('/') == self.container_name)
+        });
+
+        if let Some(container) = container
+            && let Some(container_id) = &container.id
+        {
+            // Stop container if running
+            if matches!(
+                container.state.as_ref().map(|state| state.as_ref()),
+                Some("running")
+            ) {
+                self.docker
+                    .stop_container(container_id, None::<StopContainerOptions>)
+                    .await
+                    .context("Failed to stop container")?;
             }
-            status if broken_statuses.contains(&status) => {
-                tracing::debug!("Status {:?}, removing existing container", status);
-                self.stop().await?;
-            }
-            ContainerStatus::Ready | ContainerStatus::ContainerStarting => {
-                tracing::debug!("Status {:?}, using existing container", status);
-                return self.wait_until_ready(wait).await;
-            }
-            _ => {}
+
+            // Remove container
+            let remove_options = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+
+            self.docker
+                .remove_container(container_id, Some(remove_options))
+                .await
+                .context("Failed to remove container")?;
+
+            tracing::debug!("Stopped and removed container `{}`", self.container_name);
         }
 
-        tracing::debug!("Starting new container");
+        Ok(())
+    }
+}
 
+#[cfg(feature = "gateway")]
+impl GatewayContainer for DockerizedIBGateway {
+    fn name(&self) -> &str {
+        &self.container_name
+    }
+
+    fn is_conflict(error: &anyhow::Error) -> bool {
+        matches!(
+            error.downcast_ref(),
+            Some(DockerError::DockerResponseServerError {
+                status_code: 409,
+                ..
+            })
+        )
+    }
+
+    async fn status(&self) -> anyhow::Result<ContainerStatus> {
+        self.container_status().await
+    }
+
+    async fn remove(&self) -> anyhow::Result<()> {
+        self.stop().await
+    }
+
+    async fn create(&self) -> anyhow::Result<()> {
         // Determine port mappings
         let host_port = Self::host_port_for_mode(self.config.trading_mode);
         let container_port = Self::container_port_for_mode(self.config.trading_mode);
@@ -463,118 +533,10 @@ impl DockerizedIBGateway {
             .context("Failed to start container")?;
 
         tracing::debug!(
-            "Container `{}` starting, waiting for ready",
-            self.container_name
-        );
-
-        self.wait_until_ready(wait).await
-    }
-
-    /// Starts the gateway like [`Self::start`], and waits for the login of a container that
-    /// another caller has just created.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Startup fails for a reason other than that conflict.
-    /// - The gateway does not log in within the wait.
-    pub async fn safe_start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
-        match self.start(wait).await {
-            Ok(()) => Ok(()),
-            Err(e) if Self::is_conflict(&e) => {
-                tracing::warn!("Container already exists, continuing");
-                self.wait_until_ready(wait).await
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    fn is_conflict(error: &anyhow::Error) -> bool {
-        matches!(
-            error.downcast_ref(),
-            Some(DockerError::DockerResponseServerError {
-                status_code: 409,
-                ..
-            })
-        )
-    }
-
-    async fn wait_until_ready(&self, wait: Option<u64>) -> anyhow::Result<()> {
-        let wait_time = wait.unwrap_or(self.config.timeout);
-
-        tokio::time::timeout(Duration::from_secs(wait_time), async {
-            while !matches!(self.container_status().await, Ok(ContainerStatus::Ready)) {
-                tracing::debug!("Waiting for IB Gateway to start");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        })
-        .await
-        .with_context(|| {
-            format!(
-                "gateway `{}` not ready after {wait_time} seconds",
-                self.container_name
-            )
-        })?;
-
-        tracing::debug!(
-            "Gateway `{}` ready. VNC port is {:?}",
+            "Container `{}` starting, waiting for ready. VNC port is {:?}",
             self.container_name,
             self.config.vnc_port
         );
-        Ok(())
-    }
-
-    /// Stop and remove the gateway container.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if container stop or removal fails.
-    pub async fn stop(&self) -> anyhow::Result<()> {
-        let list_options = ListContainersOptions {
-            all: true,
-            ..Default::default()
-        };
-
-        let containers = self
-            .docker
-            .list_containers(Some(list_options))
-            .await
-            .context("Failed to list containers")?;
-
-        let container = containers.iter().find(|c| {
-            c.names
-                .as_ref()
-                .and_then(|names| names.first())
-                .is_some_and(|name| name.trim_start_matches('/') == self.container_name)
-        });
-
-        if let Some(container) = container
-            && let Some(container_id) = &container.id
-        {
-            // Stop container if running
-            if matches!(
-                container.state.as_ref().map(|state| state.as_ref()),
-                Some("running")
-            ) {
-                self.docker
-                    .stop_container(container_id, None::<StopContainerOptions>)
-                    .await
-                    .context("Failed to stop container")?;
-            }
-
-            // Remove container
-            let remove_options = RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            };
-
-            self.docker
-                .remove_container(container_id, Some(remove_options))
-                .await
-                .context("Failed to remove container")?;
-
-            tracing::debug!("Stopped and removed container `{}`", self.container_name);
-        }
 
         Ok(())
     }
@@ -601,7 +563,7 @@ mod tests {
     use nautilus_core::string::secret::SecretString;
     use rstest::rstest;
 
-    use super::{DockerError, DockerizedIBGateway};
+    use super::{DockerError, DockerizedIBGateway, GatewayContainer};
     use crate::config::{DockerizedIBGatewayConfig, TradingMode};
 
     #[rstest]
