@@ -1643,7 +1643,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         log::debug!("Cancelling order: {cmd}");
 
-        let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let client_order_id = cmd.client_order_id;
@@ -1651,7 +1650,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
         let symbol = cmd.instrument_id.symbol.inner();
-        let ws_client = self.ws_client.clone();
         let fast = can_fast_cancel_order(
             self.core
                 .cache()
@@ -1670,7 +1668,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             fast: fast.is_some(),
         };
 
-        if !http_client.allows_instrument(instrument_id) {
+        if !self.http_client.allows_instrument(instrument_id) {
             emit_cancel_failure(
                 &emitter,
                 &entry,
@@ -1690,6 +1688,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let rejected_entry = entry.clone();
 
         if !self.spawn_task("cancel_order", async move {
@@ -1796,12 +1796,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             })
             .collect();
 
-        let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let ws_client = self.ws_client.clone();
 
-        if !http_client.allows_instrument(instrument_id) {
+        if !self.http_client.allows_instrument(instrument_id) {
             for entry in &entries {
                 emit_cancel_failure(
                     &emitter,
@@ -1813,6 +1811,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let rejected_entries = entries.clone();
 
         if !self.spawn_task("cancel_all_orders", async move {
