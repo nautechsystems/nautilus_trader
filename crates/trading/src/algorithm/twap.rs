@@ -374,7 +374,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             reduce_only,
             tags,
             true,
-        );
+        )?;
         self.submit_order(spawned.into(), None, None)?;
 
         ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
@@ -441,7 +441,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             reduce_only,
             tags,
             true,
-        );
+        )?;
         self.submit_order(spawned.into(), None, None)?;
 
         Ok(())

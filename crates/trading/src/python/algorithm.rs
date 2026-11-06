@@ -1087,7 +1087,7 @@ impl PyExecutionAlgorithm {
         reduce_primary: bool,
     ) -> PyResult<MarketOrder> {
         let mut primary = self.primary_order_for_spawn(py, primary, quantity, reduce_primary)?;
-        Ok(ExecutionAlgorithm::spawn_market(
+        ExecutionAlgorithm::spawn_market(
             self,
             &mut primary,
             quantity,
@@ -1095,7 +1095,8 @@ impl PyExecutionAlgorithm {
             reduce_only,
             Self::tags_to_ustr(tags),
             reduce_primary,
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "spawn_limit")]
@@ -1129,7 +1130,7 @@ impl PyExecutionAlgorithm {
         reduce_primary: bool,
     ) -> PyResult<LimitOrder> {
         let mut primary = self.primary_order_for_spawn(py, primary, quantity, reduce_primary)?;
-        Ok(ExecutionAlgorithm::spawn_limit(
+        ExecutionAlgorithm::spawn_limit(
             self,
             &mut primary,
             quantity,
@@ -1142,7 +1143,8 @@ impl PyExecutionAlgorithm {
             emulation_trigger,
             Self::tags_to_ustr(tags),
             reduce_primary,
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "spawn_market_to_limit")]
@@ -1172,7 +1174,7 @@ impl PyExecutionAlgorithm {
         reduce_primary: bool,
     ) -> PyResult<MarketToLimitOrder> {
         let mut primary = self.primary_order_for_spawn(py, primary, quantity, reduce_primary)?;
-        Ok(ExecutionAlgorithm::spawn_market_to_limit(
+        ExecutionAlgorithm::spawn_market_to_limit(
             self,
             &mut primary,
             quantity,
@@ -1183,7 +1185,8 @@ impl PyExecutionAlgorithm {
             emulation_trigger,
             Self::tags_to_ustr(tags),
             reduce_primary,
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "deny_order")]

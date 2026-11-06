@@ -17,6 +17,7 @@ Test backtest engine exec algorithms behavior.
 """
 
 import inspect
+import re
 
 import pytest
 
@@ -36,6 +37,7 @@ from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderDenied
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TimeInForce
@@ -961,6 +963,80 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms() -> Non
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-B' is already registered"):
         engine.add_exec_algorithm_from_config(configs[1])
     engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("method_name", "quantity", "kwargs", "error_message"),
+    [
+        (
+            "spawn_market",
+            "10",
+            {"time_in_force": TimeInForce.GTD},
+            "GTD not supported for Market orders",
+        ),
+        ("spawn_market", "0", {}, "invalid `Quantity` for 'quantity' not positive, was 0"),
+        (
+            "spawn_limit",
+            "0",
+            {"price": Price.from_str("1.25")},
+            "invalid `Quantity` for 'quantity' not positive, was 0",
+        ),
+        (
+            "spawn_limit",
+            "10",
+            {"price": Price.from_str("1.25"), "time_in_force": TimeInForce.GTD},
+            "`expire_time` is required for `GTD` order",
+        ),
+        (
+            "spawn_limit",
+            "10",
+            {"price": Price.from_str("1.25"), "display_qty": Quantity.from_str("11")},
+            "`display_qty` may not exceed `quantity`",
+        ),
+        ("spawn_market_to_limit", "0", {}, "invalid `Quantity` for 'quantity' not positive, was 0"),
+        (
+            "spawn_market_to_limit",
+            "10",
+            {"time_in_force": TimeInForce.GTD},
+            "`expire_time` is required for `GTD` order",
+        ),
+        (
+            "spawn_market_to_limit",
+            "10",
+            {"display_qty": Quantity.from_str("11")},
+            "`display_qty` may not exceed `quantity`",
+        ),
+    ],
+)
+def test_execution_algorithm_spawn_constructor_errors_raise_value_error(
+    method_name: str,
+    quantity: str,
+    kwargs: dict,
+    error_message: str,
+) -> None:
+    """
+    Test invalid spawn parameters raise ValueError through the Python binding.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    algo = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-SPAWN")),
+    )
+    engine.add_exec_algorithm(algo)
+    primary = create_market_order()
+
+    try:
+        with pytest.raises(ValueError, match=re.escape(error_message)) as exc_info:
+            getattr(algo, method_name)(
+                primary,
+                Quantity.from_str(quantity),
+                reduce_primary=False,
+                **kwargs,
+            )
+
+        assert str(exc_info.value) == error_message
+        assert primary.quantity == Quantity.from_int(100_000)
+    finally:
+        engine.dispose()
 
 
 def create_market_order() -> object:

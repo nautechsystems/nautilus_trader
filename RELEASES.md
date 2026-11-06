@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Changed `BacktestEngine::reset` to return trader reset errors; run the engine before resetting
 - Changed local modify/cancel refusals to denied events; handle `on_order_modify_denied` and `on_order_cancel_denied`
 - Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`
+- Changed `ExecutionAlgorithm::spawn_*` to return `Result`; propagate construction errors
 - Changed native strategy startup to call `Strategy::on_start`; remove explicit calls from `DataActor::on_start`
 - Changed `Strategy::mark_order_pending_update` and `mark_order_pending_cancel` to take the command's UUID
 - Changed `Strategy::generate_order_pending_update` and `generate_order_pending_cancel` to take the command's UUID
@@ -108,6 +109,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
