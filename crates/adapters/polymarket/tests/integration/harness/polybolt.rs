@@ -47,8 +47,6 @@ pub(crate) const CRYPTO_SNAPSHOT_FIXTURE: &str =
     include_str!("../../../test_data/polybolt_crypto_price_snapshot.json");
 pub(crate) const TWAP_UPDATE_FIXTURE: &str =
     include_str!("../../../test_data/polybolt_crypto_twap_update.json");
-pub(crate) const EQUITY_UPDATE_FIXTURE: &str =
-    include_str!("../../../test_data/polybolt_equity_price_update.json");
 pub(crate) const EQUITY_SNAPSHOT_FIXTURE: &str =
     include_str!("../../../test_data/polybolt_equity_price_snapshot.json");
 pub(crate) const AUTHED_FIXTURE: &str = include_str!("../../../test_data/polybolt_authed.json");

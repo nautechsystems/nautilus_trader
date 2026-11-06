@@ -2355,6 +2355,8 @@ mod tests {
 
     const TWAP_SNAPSHOT_FIXTURE: &str =
         include_str!("../test_data/polybolt_crypto_twap_snapshot.json");
+    const EQUITY_UPDATE_FIXTURE: &str =
+        include_str!("../test_data/polybolt_equity_price_update.json");
 
     const SUBSCRIBED_FIXTURE: &str = include_str!("../test_data/polybolt_subscribed.json");
     const ERROR_AUTH_REQUIRED_FIXTURE: &str =
@@ -2363,6 +2365,7 @@ mod tests {
         include_str!("../test_data/polybolt_error_auth_invalid.json");
 
     const TWAP_OBSERVATION_TS: u64 = 1791355667000;
+    const SEQUENCE_GAP_STEP: u64 = 1000;
 
     fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
         let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
@@ -4057,7 +4060,15 @@ mod tests {
         drop(wire_guard);
 
         wait_for_op(&state, "subscribe").await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        wait_until_async(
+            || async {
+                feed.inner.live_subscriptions.lock().len() == 3
+                    && !feed.inner.reconcile_pending.load(Ordering::Acquire)
+                    && feed.inner.wire_mutex.try_lock().is_ok()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
 
         let payloads = state.payloads().await;
         assert_eq!(
@@ -4927,6 +4938,175 @@ mod tests {
         assert_eq!(feed.inner.auth_budget.lock().frames_sent, 1);
         assert!(feed.is_authenticated());
         feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[case(100)]
+    #[case(300)]
+    #[tokio::test]
+    async fn test_measure_gap_recovery(#[case] rounds: usize) {
+        let state = TestServerState::default();
+        state.snapshots.store(true, Ordering::Relaxed);
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, mut rx) = make_server_feed(addr);
+        for symbol in ["btcusd", "ethusd"] {
+            feed.track_subscribe(crypto_data_type(symbol)).unwrap();
+        }
+
+        for symbol in ["aapl", "msft"] {
+            feed.track_subscribe(equity_data_type(symbol)).unwrap();
+        }
+
+        feed.connect().await.unwrap();
+        wait_until_async(|| async { rx.len() >= 12 }, Duration::from_secs(5)).await;
+        let mut observations = Vec::new();
+        for _ in 0..12 {
+            observations.push(price_observation(&next_custom(&mut rx)));
+        }
+
+        assert_eq!(
+            observations.len(),
+            state.snapshot_points.load(Ordering::Relaxed)
+        );
+        state.clear_received_payloads().await;
+        state.subscription_times.lock().await.clear();
+        state.snapshot_times.lock().clear();
+        let started = std::time::Instant::now();
+        let period = Duration::from_millis(5);
+        let mut pacing = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        pacing.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        for round in 1..=rounds {
+            for fixture in [CRYPTO_UPDATE_FIXTURE, EQUITY_UPDATE_FIXTURE] {
+                let mut frame = fixture_json(fixture);
+                let sequence = round as u64 * SEQUENCE_GAP_STEP;
+                frame["seq"] = json!(sequence);
+                frame["dropped"] = json!(1);
+                frame["payload"]["timestamp"] = json!(price_timestamp_ms(sequence, 5));
+                state.send_text_to_all(frame.to_string()).await;
+            }
+
+            pacing.tick().await;
+        }
+
+        let last_drop = std::time::Instant::now();
+
+        let mut frames = Vec::new();
+        wait_until_async(
+            || {
+                while !rx.is_empty() {
+                    observations.push(price_observation(&next_custom(&mut rx)));
+                }
+
+                frames = state.sent_frames.lock().clone();
+                let mut expected = frame_observations(&frames);
+                let threshold = price_timestamp_ms(rounds as u64 * SEQUENCE_GAP_STEP + 1, 0);
+
+                let recovered = ["btcusd", "ethusd", "aapl", "msft"]
+                    .into_iter()
+                    .all(|symbol| {
+                        observations
+                            .iter()
+                            .any(|(name, ts)| name == symbol && *ts >= threshold)
+                    });
+
+                expected.sort();
+                let mut actual = observations.clone();
+                actual.sort();
+                let idle = feed.inner.resync_channels.lock().is_empty()
+                    && !feed.inner.reconcile_pending.load(Ordering::Acquire)
+                    && feed.inner.wire_mutex.try_lock().is_ok();
+                std::future::ready(recovered && actual == expected && idle)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let received = std::time::Instant::now();
+        let elapsed = started.elapsed();
+        feed.disconnect().await.unwrap();
+        assert!(rx.try_recv().is_err());
+        let payloads = state.payloads().await;
+        let subscribes = payloads.iter().filter(|p| p["op"] == "subscribe").count();
+        let unsubscribes = payloads.iter().filter(|p| p["op"] == "unsubscribe").count();
+        assert_eq!(subscribes, unsubscribes);
+        let subscription_times = state.subscription_times.lock().await.clone();
+        for window in subscription_times.windows(21) {
+            assert!(
+                window[20].duration_since(window[0]) >= Duration::from_secs(1),
+                "more than 20 subscription frames in a rolling second"
+            );
+        }
+
+        let snapshot_times = state.snapshot_times.lock();
+        assert!(snapshot_times[0].duration_since(started) < Duration::from_millis(500));
+        assert!(
+            snapshot_times
+                .last()
+                .unwrap()
+                .checked_duration_since(last_drop)
+                .unwrap_or_default()
+                < Duration::from_millis(500)
+        );
+        assert!(received.duration_since(last_drop) < Duration::from_millis(500));
+        assert!(
+            subscribes * 2
+                <= (elapsed.as_millis() / u128::from(POLYBOLT_SUBSCRIPTION_INTERVAL_MS) + 2)
+                    as usize,
+            "coalescing must bound snapshot work during sustained drops"
+        );
+
+        if rounds == 300 {
+            assert!(
+                subscription_times.len() >= 21,
+                "the sustained workload must exercise a full frame-limit window"
+            );
+        }
+
+        let snapshots = frames
+            .iter()
+            .filter(|frame| frame["snapshot"] == true)
+            .count();
+        assert_eq!(snapshots, state.snapshot_frames.load(Ordering::Relaxed));
+        assert_eq!(state.snapshot_points.load(Ordering::Relaxed), snapshots * 3);
+        assert_eq!(observations.len(), snapshots * 3 + rounds * 2);
+        let mut expected = frame_observations(&frames);
+        expected.sort();
+        observations.sort();
+        assert_eq!(observations, expected);
+    }
+
+    fn price_observation(custom: &CustomData) -> (String, u64) {
+        if let Some(payload) = custom.data.as_any().downcast_ref::<PolymarketCryptoPrice>() {
+            return (payload.symbol.clone(), payload.price_timestamp_ms);
+        }
+
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketEquityPrice>()
+            .expect("reference-price payload");
+        (payload.symbol.clone(), payload.price_timestamp_ms)
+    }
+
+    fn frame_observations(frames: &[Value]) -> Vec<(String, u64)> {
+        let mut observations = Vec::new();
+
+        for frame in frames {
+            let payload = &frame["payload"];
+            let symbol = payload["symbol"].as_str().unwrap();
+            if let Some(points) = payload["data"].as_array() {
+                observations.extend(
+                    points
+                        .iter()
+                        .map(|point| (symbol.to_string(), point["timestamp"].as_u64().unwrap())),
+                );
+            } else {
+                observations.push((symbol.to_string(), payload["timestamp"].as_u64().unwrap()));
+            }
+        }
+
+        observations
     }
 
     #[rstest]

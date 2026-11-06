@@ -35,7 +35,7 @@ use nautilus_polymarket::{
     common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
-    data_types::{PolymarketCryptoPrice, PolymarketCryptoTwap, PolymarketEquityPrice},
+    data_types::{PolymarketCryptoPrice, PolymarketCryptoTwap},
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
         gamma::PolymarketGammaHttpClient,
@@ -47,9 +47,6 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 use super::harness::polybolt::*;
-
-const SEQUENCE_GAP_STEP: u64 = 1000;
-const SUBSCRIPTION_INTERVAL_MS: u128 = 53;
 
 #[rstest]
 #[tokio::test]
@@ -92,10 +89,17 @@ async fn test_subscribe_waits_for_authed_acknowledgement() {
             result = &mut connect => panic!("connect completed before authentication: {result:?}"),
             () = wait_for_op(&state, "auth") => {},
         }
-        tokio::select! {
-            result = &mut connect => panic!("connect completed before acknowledgement: {result:?}"),
-            () = tokio::time::sleep(Duration::from_millis(200)) => {},
-        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), async {
+                tokio::select! {
+                    result = &mut connect => panic!("connect completed before acknowledgement: {result:?}"),
+                    () = wait_for_op(&state, "subscribe") => {},
+                }
+            })
+            .await
+            .is_err(),
+            "subscriptions must wait for authentication",
+        );
         assert_eq!(ops(&state.payloads().await), vec!["auth"]);
         state.send_text_to_all(AUTHED_FIXTURE.to_string()).await;
         connect.await.expect("connect after late authed");
@@ -172,7 +176,7 @@ async fn test_auth_attempts_error_recovers_on_a_fresh_connection() {
 async fn test_sequence_gap_resubscribes_only_the_affected_channel() {
     let state = TestServerState::default();
     let addr = start_polybolt_server(state.clone()).await;
-    let (mut client, _rx) = make_client(addr);
+    let (mut client, mut rx) = make_client(addr);
     subscribe(&mut client, crypto_data_type("btcusd")).expect("track BTC");
     subscribe(&mut client, equity_data_type("aapl")).expect("track AAPL");
     client.connect().await.expect("connect client");
@@ -181,7 +185,30 @@ async fn test_sequence_gap_resubscribes_only_the_affected_channel() {
 
     state.send_text_to_all(crypto_update_with_seq(1)).await;
     state.send_text_to_all(crypto_update_with_seq(2)).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    for sequence in [1, 2] {
+        let custom = next_custom(&mut rx).await;
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketCryptoPrice>()
+            .unwrap();
+        assert_eq!(payload.symbol, "btcusd");
+        assert_eq!(payload.price_timestamp_ms, price_timestamp_ms(sequence, 0));
+    }
+
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(200),
+            wait_until_async(
+                || async { !state.payloads().await.is_empty() },
+                Duration::from_secs(5),
+            ),
+        )
+        .await
+        .is_err(),
+        "contiguous seq must not queue recovery",
+    );
     assert!(
         state.payloads().await.is_empty(),
         "contiguous seq must not resubscribe"
@@ -495,15 +522,33 @@ async fn test_server_disconnect_does_not_restore_unsubscribed_symbol() {
 async fn test_terminal_peer_close_stops_reconnects_until_explicit_connect(#[case] close_code: u16) {
     let state = TestServerState::default();
     let addr = start_polybolt_server(state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
     let (mut client, _rx) = make_client(addr);
     subscribe(&mut client, crypto_data_type("btcusd")).unwrap();
     client.connect().await.unwrap();
     wait_for_op(&state, "subscribe").await;
     state.clear_received_payloads().await;
     state.close_all_connections_with_code(close_code).await;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let SystemEvent::SocketState(change) = system_rx.recv().await.unwrap();
+            if change.state == SocketState::Disconnected {
+                assert_eq!(change.endpoint.as_str(), "polymarket-polybolt-streams");
+                break;
+            }
+        }
+    })
+    .await
+    .expect("terminal peer close must disconnect the socket");
+
     subscribe(&mut client, crypto_data_type("ethusd")).unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), wait_for_op(&state, "auth"))
+            .await
+            .is_err(),
+        "terminal peer close must not authenticate a replacement socket",
+    );
     assert_eq!(state.connection_count().await, 1);
     assert_eq!(state.payloads().await, Vec::<Value>::new());
 
@@ -624,7 +669,18 @@ async fn test_background_auth_rejection_stops_auth_retries() {
         .downcast_ref::<PolymarketCryptoPrice>()
         .unwrap();
     assert_eq!(payload.price_timestamp_ms, 1791355667001);
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(300),
+            wait_until_async(
+                || async { state.payloads().await.len() > 1 },
+                Duration::from_secs(5),
+            ),
+        )
+        .await
+        .is_err(),
+        "rejected credentials must not retry authentication",
+    );
     assert_eq!(*state.auth_counts.lock(), vec![1, 1, 0]);
     assert_eq!(ops(&state.payloads().await), vec!["auth"]);
     client.disconnect().await.unwrap();
@@ -770,169 +826,6 @@ async fn test_spent_auth_budget_moves_to_a_fresh_connection() {
     client.disconnect().await.unwrap();
 }
 
-#[rstest]
-#[case(100)]
-#[case(300)]
-#[tokio::test]
-async fn test_measure_gap_recovery(#[case] rounds: usize) {
-    let state = TestServerState::default();
-    state.snapshots.store(true, Ordering::Relaxed);
-    let addr = start_polybolt_server(state.clone()).await;
-    let (mut client, mut rx) = make_client(addr);
-    for symbol in ["btcusd", "ethusd"] {
-        subscribe(&mut client, crypto_data_type(symbol)).unwrap();
-    }
-
-    for symbol in ["aapl", "msft"] {
-        subscribe(&mut client, equity_data_type(symbol)).unwrap();
-    }
-
-    client.connect().await.unwrap();
-    let mut observations = Vec::new();
-    for _ in 0..12 {
-        observations.push(price_observation(&next_custom(&mut rx).await));
-    }
-
-    assert_eq!(
-        observations.len(),
-        state.snapshot_points.load(Ordering::Relaxed)
-    );
-    state.clear_received_payloads().await;
-    state.subscription_times.lock().await.clear();
-    state.snapshot_times.lock().clear();
-    let started = std::time::Instant::now();
-
-    for round in 1..=rounds {
-        for fixture in [CRYPTO_UPDATE_FIXTURE, EQUITY_UPDATE_FIXTURE] {
-            let mut frame = fixture_json(fixture);
-            let sequence = round as u64 * SEQUENCE_GAP_STEP;
-            frame["seq"] = json!(sequence);
-            frame["dropped"] = json!(1);
-            frame["payload"]["timestamp"] = json!(price_timestamp_ms(sequence, 5));
-            state.send_text_to_all(frame.to_string()).await;
-        }
-
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-
-    let last_drop = std::time::Instant::now();
-
-    let frames = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            while let Ok(event) = rx.try_recv() {
-                observations.push(price_observation(&custom_data(event)));
-            }
-
-            let frames = state.sent_frames.lock().clone();
-            let mut expected = frame_observations(&frames);
-            let threshold = price_timestamp_ms(rounds as u64 * SEQUENCE_GAP_STEP + 1, 0);
-
-            let recovered = ["btcusd", "ethusd", "aapl", "msft"]
-                .into_iter()
-                .all(|symbol| {
-                    observations
-                        .iter()
-                        .any(|(name, ts)| name == symbol && *ts >= threshold)
-                });
-
-            expected.sort();
-            let mut actual = observations.clone();
-            actual.sort();
-            if recovered && actual == expected {
-                break frames;
-            }
-
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .expect("all final recovery snapshots must reach the public data channel");
-
-    let received = std::time::Instant::now();
-    let elapsed = started.elapsed();
-    client.disconnect().await.unwrap();
-    assert!(rx.try_recv().is_err());
-    let payloads = state.payloads().await;
-    let subscribes = payloads.iter().filter(|p| p["op"] == "subscribe").count();
-    let unsubscribes = payloads.iter().filter(|p| p["op"] == "unsubscribe").count();
-    assert_eq!(subscribes, unsubscribes);
-    let subscription_times = state.subscription_times.lock().await.clone();
-    for window in subscription_times.windows(21) {
-        assert!(
-            window[20].duration_since(window[0]) >= Duration::from_secs(1),
-            "more than 20 subscription frames in a rolling second"
-        );
-    }
-
-    let snapshot_times = state.snapshot_times.lock();
-    assert!(snapshot_times[0].duration_since(started) < Duration::from_millis(500));
-    assert!(
-        snapshot_times
-            .last()
-            .unwrap()
-            .checked_duration_since(last_drop)
-            .unwrap_or_default()
-            < Duration::from_millis(500)
-    );
-    assert!(received.duration_since(last_drop) < Duration::from_millis(500));
-    assert!(
-        subscribes * 2 <= (elapsed.as_millis() / SUBSCRIPTION_INTERVAL_MS + 2) as usize,
-        "coalescing must bound snapshot work during sustained drops"
-    );
-
-    if rounds == 300 {
-        assert!(
-            subscription_times.len() >= 21,
-            "the sustained workload must exercise a full frame-limit window"
-        );
-    }
-
-    let snapshots = frames
-        .iter()
-        .filter(|frame| frame["snapshot"] == true)
-        .count();
-    assert_eq!(snapshots, state.snapshot_frames.load(Ordering::Relaxed));
-    assert_eq!(state.snapshot_points.load(Ordering::Relaxed), snapshots * 3);
-    assert_eq!(observations.len(), snapshots * 3 + rounds * 2);
-    let mut expected = frame_observations(&frames);
-    expected.sort();
-    observations.sort();
-    assert_eq!(observations, expected);
-}
-
-fn price_observation(custom: &CustomData) -> (String, u64) {
-    if let Some(payload) = custom.data.as_any().downcast_ref::<PolymarketCryptoPrice>() {
-        return (payload.symbol.clone(), payload.price_timestamp_ms);
-    }
-
-    let payload = custom
-        .data
-        .as_any()
-        .downcast_ref::<PolymarketEquityPrice>()
-        .expect("reference-price payload");
-    (payload.symbol.clone(), payload.price_timestamp_ms)
-}
-
-fn frame_observations(frames: &[Value]) -> Vec<(String, u64)> {
-    let mut observations = Vec::new();
-
-    for frame in frames {
-        let payload = &frame["payload"];
-        let symbol = payload["symbol"].as_str().unwrap();
-        if let Some(points) = payload["data"].as_array() {
-            observations.extend(
-                points
-                    .iter()
-                    .map(|point| (symbol.to_string(), point["timestamp"].as_u64().unwrap())),
-            );
-        } else {
-            observations.push((symbol.to_string(), payload["timestamp"].as_u64().unwrap()));
-        }
-    }
-
-    observations
-}
-
 fn make_client(
     addr: SocketAddr,
 ) -> (
@@ -1022,6 +915,7 @@ fn custom_data(event: DataEvent) -> CustomData {
 fn crypto_update_with_seq(seq: u64) -> String {
     let mut update = fixture_json(CRYPTO_UPDATE_FIXTURE);
     update["seq"] = json!(seq);
+    update["payload"]["timestamp"] = json!(price_timestamp_ms(seq, 0));
     update.to_string()
 }
 
