@@ -71,9 +71,11 @@ alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 bon = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
+flate2 = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }

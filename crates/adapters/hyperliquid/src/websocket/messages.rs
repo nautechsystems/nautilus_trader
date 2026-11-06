@@ -26,6 +26,7 @@ use nautilus_core::{
     },
     string::secret::SecretString,
 };
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
@@ -108,6 +109,16 @@ pub enum SubscriptionRequest {
         #[serde(rename = "nSigFigs")]
         n_sig_figs: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        mantissa: Option<u32>,
+    },
+    /// Compact book feed used by the web application.
+    #[serde(rename = "l2")]
+    L2 {
+        #[serde(rename = "c")]
+        coin: Ustr,
+        #[serde(rename = "s", skip_serializing_if = "Option::is_none")]
+        n_sig_figs: Option<u32>,
+        #[serde(rename = "m", skip_serializing_if = "Option::is_none")]
         mantissa: Option<u32>,
     },
     /// Trade updates.
@@ -376,6 +387,9 @@ pub enum HyperliquidWsMessage {
     Candle { data: CandleData },
     /// Level 2 order book.
     L2Book { data: WsBookData },
+    /// Compact book snapshot or compressed update.
+    #[serde(rename = "l2")]
+    L2 { data: WsCompactBookData },
     /// Trade updates.
     Trades { data: Vec<WsTradeData> },
     /// Order updates.
@@ -429,18 +443,28 @@ pub(crate) fn decode_ws_message(text: &str) -> serde_json::Result<HyperliquidWsM
         return Ok(HyperliquidWsMessage::ActiveAssetData { data: message.data });
     }
 
+    if header.channel == "l2" {
+        let message: WsCompactBookMessage = serde_json::from_str(text)?;
+        return Ok(HyperliquidWsMessage::L2 { data: message.data });
+    }
+
     HyperliquidWsMessage::deserialize(&mut serde_json::Deserializer::from_str(text))
 }
 
 #[derive(Deserialize)]
-struct WsMessageHeader<'a> {
+pub(super) struct WsMessageHeader<'a> {
     #[serde(borrow)]
-    channel: Cow<'a, str>,
+    pub channel: Cow<'a, str>,
 }
 
 #[derive(Deserialize)]
 struct WsActiveAssetDataMessage {
     data: WsActiveAssetData,
+}
+
+#[derive(Deserialize)]
+struct WsCompactBookMessage {
+    data: WsCompactBookData,
 }
 
 /// Perp account snapshot from the clearinghouse state channel.
@@ -557,6 +581,62 @@ pub struct WsBookData {
     pub coin: Ustr,
     pub levels: [Vec<WsLevelData>; 2], // [bids, asks]
     pub time: u64,
+}
+
+/// Compact order book wire payload.
+#[derive(Debug, Clone)]
+pub enum WsCompactBookData {
+    Snapshot(WsBookData),
+    Update(WsCompactBookUpdate),
+}
+
+impl<'de> Deserialize<'de> for WsCompactBookData {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct WireData<'a> {
+            s: Option<WsBookData>,
+            #[serde(borrow)]
+            c: Option<CompactBookEncoded<'a>>,
+            u: Option<WsCompactBookUpdate>,
+        }
+
+        let data = WireData::deserialize(deserializer)?;
+
+        match (data.s, data.c, data.u) {
+            (Some(snapshot), _, _) => Ok(Self::Snapshot(snapshot)),
+            (_, Some(compressed), _) => super::l2::decode_update(&compressed.0)
+                .map(Self::Update)
+                .map_err(D::Error::custom),
+            (_, _, Some(update)) => Ok(Self::Update(update)),
+            _ => Err(D::Error::custom("Expected compact book snapshot or update")),
+        }
+    }
+}
+
+// The newtype lets serde borrow the string inside an optional payload
+#[derive(Deserialize)]
+struct CompactBookEncoded<'a>(#[serde(borrow)] Cow<'a, str>);
+
+/// Indexed changes to the previous compact book.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsCompactBookUpdate {
+    #[serde(rename = "c")]
+    pub coin: Ustr,
+    #[serde(rename = "t")]
+    pub time: u64,
+    #[serde(rename = "l")]
+    pub levels: [Vec<WsCompactLevelUpdate>; 2],
+    #[serde(rename = "r")]
+    pub removed: [Vec<usize>; 2],
+}
+
+/// Replacement price and quantity for a compact book level.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsCompactLevelUpdate {
+    #[serde(rename = "p", deserialize_with = "deserialize_decimal_from_str")]
+    pub px: Decimal,
+    #[serde(rename = "s", deserialize_with = "deserialize_decimal_from_str")]
+    pub sz: Decimal,
 }
 
 /// WebSocket level data.
@@ -1034,6 +1114,82 @@ mod tests {
 
     use super::*;
     use crate::common::enums::HyperliquidLeverageType;
+
+    #[rstest]
+    fn compact_l2_borrows_plain_encoded_payload_and_owns_escaped_payload() {
+        let plain: CompactBookEncoded = serde_json::from_str(r#""YWJj""#).unwrap();
+        assert!(matches!(plain.0, Cow::Borrowed("YWJj")));
+        let escaped: CompactBookEncoded = serde_json::from_str(r#""YW\u004aj""#).unwrap();
+        assert!(matches!(escaped.0, Cow::Owned(ref value) if value == "YWJj"));
+    }
+
+    #[rstest]
+    fn compact_l2_decodes_snapshot_and_expanded_update_without_precision_loss() {
+        let snapshot = r#"{"data":{"s":{"coin":"xyz:NVDA","time":100,"levels":[
+            [{"px":"123456789012345.12345678","sz":"0.1234567890123456789012345678","n":1}],[]
+        ]}},"channel":"l2"}"#;
+        let HyperliquidWsMessage::L2 {
+            data: WsCompactBookData::Snapshot(book),
+        } = decode_ws_message(snapshot).unwrap()
+        else {
+            panic!("expected compact snapshot");
+        };
+        assert_eq!(book.coin, Ustr::from("xyz:NVDA"));
+        assert_eq!(book.levels[0][0].px, dec!(123456789012345.12345678));
+        assert_eq!(book.levels[0][0].sz, dec!(0.1234567890123456789012345678));
+
+        let update = r#"{"channel":"l2","data":{"u":{"c":"xyz:NVDA","t":100,
+            "r":[[0],[]],"l":[[{"p":"123456789012345.12345679","s":"2"}],[]]
+        }}}"#;
+        let HyperliquidWsMessage::L2 {
+            data: WsCompactBookData::Update(update),
+        } = serde_json::from_str(update).unwrap()
+        else {
+            panic!("expected compact update");
+        };
+        assert_eq!(update.time, book.time);
+        assert_eq!(update.removed[0], vec![0]);
+        assert_eq!(update.levels[0][0].px, dec!(123456789012345.12345679));
+    }
+
+    #[rstest]
+    #[case::plain(false)]
+    #[case::json_escaped(true)]
+    fn compact_l2_decodes_captured_compressed_update(#[case] escaped: bool) {
+        let capture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_l2_capture.json")).unwrap();
+        let encoded = capture["update"]["data"]["c"].as_str().unwrap();
+        let encoded = if escaped {
+            encoded
+                .chars()
+                .map(|c| format!("\\u{:04x}", c as u32))
+                .collect::<String>()
+        } else {
+            encoded.to_string()
+        };
+        let frame = format!(r#"{{"channel":"l2","data":{{"c":"{encoded}"}}}}"#);
+        let HyperliquidWsMessage::L2 {
+            data: WsCompactBookData::Update(update),
+        } = decode_ws_message(&frame).unwrap()
+        else {
+            panic!("expected compressed compact update");
+        };
+        assert_eq!(update.coin, Ustr::from("BTC"));
+        assert_eq!(update.time, 1793945698742);
+        assert!(!update.levels[0].is_empty());
+    }
+
+    #[rstest]
+    #[case("{}")]
+    #[case(r#"{"c":42}"#)]
+    #[case(r#"{"c":"!"}"#)]
+    #[case(r#"{"c":"AAAA"}"#)]
+    #[case(r#"{"s":{"coin":"BTC","time":100,"levels":[]}}"#)]
+    #[case(r#"{"u":{"c":"BTC","t":100,"r":[[]],"l":[[],[]]}}"#)]
+    fn compact_l2_rejects_unusable_payloads(#[case] payload: &str) {
+        let frame = format!(r#"{{"channel":"l2","data":{payload}}}"#);
+        assert!(decode_ws_message(&frame).is_err());
+    }
 
     #[rstest]
     fn test_clearinghouse_state_accepts_zero_balances() {
@@ -1644,10 +1800,20 @@ pub enum NautilusWsMessage {
     Quote(QuoteTick),
     /// Parsed order book deltas.
     Deltas(OrderBookDeltas),
+    /// Reconstructed compact book, retaining whether the venue supplied a snapshot.
+    CompactBook {
+        deltas: OrderBookDeltas,
+        depth: Option<Box<OrderBookDepth>>,
+        is_snapshot: bool,
+        output_gate: SnapshotGate,
+    },
     /// Parsed order book depth-10 snapshot.
     Depth(Box<OrderBookDepth>),
     /// An order book frame that failed to parse, leaving the instrument's book out of sync.
-    BookInvalid(InstrumentId),
+    BookInvalid {
+        instrument_id: InstrumentId,
+        output_gate: Option<SnapshotGate>,
+    },
     /// Parsed candle/bar.
     Candle(Bar),
     /// Mark price update.

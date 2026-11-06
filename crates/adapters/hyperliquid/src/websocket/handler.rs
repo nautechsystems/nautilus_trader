@@ -50,10 +50,11 @@ use super::{
     client::{AssetContextDataType, CloidCache},
     enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
+    l2::CompactBook,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
         PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsAllDexsAssetCtxsData,
-        WsUserEventData,
+        WsCompactBookData, WsMessageHeader, WsUserEventData,
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
@@ -100,7 +101,7 @@ pub enum HandlerCommand {
     },
     /// Resubscribes without interleaving handler input between the two sends.
     Resubscribe { subscription: SubscriptionRequest },
-    /// Writes an `l2Book` subscription on the current connection, opening `gate` once written.
+    /// Writes a book subscription on the current connection, opening `gate` once written.
     ///
     /// With `replace`, sends the unsubscribe first so the venue restarts the stream with a
     /// snapshot. The write always runs, since the stream registry already counts it; `cancel`
@@ -138,8 +139,7 @@ pub enum HandlerCommand {
     CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<Option<InstrumentId>>>),
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
-    /// Flag whether the `l2Book` stream for `coin` should also be emitted
-    /// as [`NautilusWsMessage::Depth`] snapshots.
+    /// Flag whether the book stream for `coin` should also publish native depth snapshots.
     SetDepthSub { coin: Ustr, subscribed: bool },
 }
 
@@ -268,6 +268,7 @@ pub(super) struct FeedHandler {
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     depth_subs: AHashSet<Ustr>,
+    compact_books: AHashMap<Ustr, CompactBookStream>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     processed_public_trade_ids: FifoCache<(Ustr, u64), 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -322,6 +323,7 @@ impl FeedHandler {
             trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
             depth_subs: AHashSet::new(),
+            compact_books: AHashMap::new(),
             processed_trade_ids: FifoCache::new(),
             processed_public_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
@@ -556,6 +558,7 @@ impl FeedHandler {
                     match raw_msg {
                         Message::Text(text) => {
                             if text == RECONNECTED {
+                                self.compact_books.clear();
                                 log::info!("Received RECONNECTED sentinel");
                                 return Some(NautilusWsMessage::Reconnected);
                             }
@@ -573,6 +576,7 @@ impl FeedHandler {
                                     }
 
                                     if let HyperliquidWsMessage::SubscriptionResponse { data } = &msg {
+                                        self.confirm_compact_request(&data.subscription, &data.method);
                                         let key = subscription_response_key(&data.subscription, &self.subscriptions);
                                         match data.method.as_str() {
                                             "subscribe" => self.subscriptions.confirm_subscribe(&key),
@@ -599,6 +603,20 @@ impl FeedHandler {
                                     }
 
                                     let ts_init = self.clock.get_time_ns();
+
+                                    if let HyperliquidWsMessage::L2 { data } = msg {
+                                        if let Some(message) = self.handle_compact_book(data, ts_init) {
+                                            return Some(message);
+                                        }
+                                        continue;
+                                    }
+
+                                    if matches!(&msg, HyperliquidWsMessage::Error { .. })
+                                        && self.compact_books.values().any(|stream| !stream.pending.is_empty())
+                                    {
+                                        // A rejection has no subscribe ACK to retire its pending operation
+                                        self.invalidate_compact_books();
+                                    }
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
@@ -628,6 +646,11 @@ impl FeedHandler {
                                 }
                                 Err(e) => {
                                     context.log_decode_error(&text, &e);
+                                    if serde_json::from_str::<WsMessageHeader<'_>>(&text)
+                                        .is_ok_and(|header| header.channel == "l2")
+                                    {
+                                        self.invalidate_compact_books();
+                                    }
                                 }
                             }
                         }
@@ -662,6 +685,140 @@ impl FeedHandler {
         }
     }
 
+    fn prepare_compact_request(&mut self, request: &HyperliquidWsRequest) -> Option<Ustr> {
+        let (subscription, subscribe) = match request {
+            HyperliquidWsRequest::Subscribe { subscription } => (subscription, true),
+            HyperliquidWsRequest::Unsubscribe { subscription } => (subscription, false),
+            _ => return None,
+        };
+        let SubscriptionRequest::L2 { coin, .. } = subscription else {
+            return None;
+        };
+        let stream = self.compact_books.entry(*coin).or_default();
+        // Retire outputs already queued before this physical stream is replaced or removed
+        stream.output_gate.lock().close();
+        stream.output_gate = SnapshotGate::default();
+        stream.book = None;
+        stream.confirmed = false;
+        stream.desired = subscribe;
+
+        if subscribe {
+            stream.generation = stream.generation.wrapping_add(1);
+        }
+
+        stream.pending.push_back((subscribe, stream.generation));
+        Some(*coin)
+    }
+
+    fn compact_write_failed(&mut self, coin: Option<Ustr>) {
+        if let Some(coin) = coin
+            && let Some(stream) = self.compact_books.get_mut(&coin)
+        {
+            stream.pending.pop_back();
+        }
+    }
+
+    fn confirm_compact_request(&mut self, subscription: &SubscriptionRequest, method: &str) {
+        let SubscriptionRequest::L2 { coin, .. } = subscription else {
+            return;
+        };
+        let Some(stream) = self.compact_books.get_mut(coin) else {
+            return;
+        };
+        let subscribe = match method {
+            "subscribe" => true,
+            "unsubscribe" => false,
+            _ => return,
+        };
+        let Some(&(expected, generation)) = stream.pending.front() else {
+            return;
+        };
+
+        if subscribe != expected {
+            return;
+        }
+
+        stream.pending.pop_front();
+
+        // Old ACKs cannot admit frames into a replacement subscription's baseline
+        if subscribe && generation == stream.generation && stream.desired {
+            stream.confirmed = self.subscriptions.is_subscribed(&Ustr::from("l2"), coin);
+        }
+
+        if !stream.desired && stream.pending.is_empty() {
+            self.compact_books.remove(coin);
+        }
+    }
+
+    fn invalidate_compact_books(&mut self) {
+        self.compact_books.clear();
+
+        // A malformed compressed frame cannot reliably identify its affected coin
+        if let Some(client) = &self.client {
+            let _ = client.request_reconnect();
+        }
+    }
+
+    fn handle_compact_book(
+        &mut self,
+        data: WsCompactBookData,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let (coin, is_snapshot) = match &data {
+            WsCompactBookData::Snapshot(book) => (book.coin, true),
+            WsCompactBookData::Update(update) => (update.coin, false),
+        };
+        let stream = self.compact_books.get_mut(&coin)?;
+
+        if !stream.confirmed || !stream.desired {
+            return None;
+        }
+
+        let instrument = self.instruments.get(&coin)?;
+
+        let result = (|| -> anyhow::Result<Option<NautilusWsMessage>> {
+            match data {
+                WsCompactBookData::Snapshot(book) => stream.book = Some(CompactBook::new(book)),
+                WsCompactBookData::Update(update) => {
+                    let Some(book) = &mut stream.book else {
+                        return Ok(None);
+                    };
+                    book.apply(update)?;
+                }
+            }
+
+            let Some(book) = &stream.book else {
+                return Ok(None);
+            };
+            let deltas = parse_ws_order_book_deltas(&book.data, instrument, ts_init)?;
+            let depth = self
+                .depth_subs
+                .contains(&coin)
+                .then(|| parse_ws_order_book_depth(&book.data, instrument, ts_init))
+                .transpose()?
+                .map(Box::new);
+            Ok(Some(NautilusWsMessage::CompactBook {
+                deltas,
+                depth,
+                is_snapshot,
+                output_gate: stream.output_gate.clone(),
+            }))
+        })();
+
+        match result {
+            Ok(message) => message,
+            Err(e) => {
+                stream.book = None;
+                stream.confirmed = false;
+                log::warn!("Invalid compact book for {}: {e}", instrument.id());
+                Some(NautilusWsMessage::BookInvalid {
+                    instrument_id: instrument.id(),
+                    output_gate: Some(stream.output_gate.clone()),
+                })
+            }
+        }
+    }
+
     async fn subscribe(&mut self, subscriptions: Vec<SubscriptionRequest>) {
         for subscription in subscriptions {
             let key = subscription_to_key(&subscription);
@@ -682,7 +839,9 @@ impl FeedHandler {
             match serde_json::to_string(&request) {
                 Ok(payload) => {
                     log::debug!("Sending subscribe payload ({} bytes)", payload.len());
+                    let compact = self.prepare_compact_request(&request);
                     if let Err(e) = self.send_with_retry(payload).await {
+                        self.compact_write_failed(compact);
                         log::error!("Error subscribing to {key}: {e}");
                         self.subscriptions.mark_failure(&key);
                     }
@@ -695,19 +854,46 @@ impl FeedHandler {
         }
     }
 
+    async fn send_book_request(
+        &mut self,
+        request: &HyperliquidWsRequest,
+        rate_keys: Option<&[Ustr]>,
+        epoch: u64,
+    ) -> Result<(), HyperliquidWsError> {
+        let payload = serialize_request(request)?;
+        let compact = self.prepare_compact_request(request);
+        let result = match &self.client {
+            Some(client) => client
+                .send_text_on_connection(payload, rate_keys, epoch)
+                .await
+                .map_err(HyperliquidWsError::from),
+            None => Err(HyperliquidWsError::ClientError(
+                "No WebSocket client available".to_string(),
+            )),
+        };
+
+        if result.is_err() {
+            self.compact_write_failed(compact);
+        }
+        result
+    }
+
     async fn write_book(
-        &self,
+        &mut self,
         subscription: SubscriptionRequest,
         replace: bool,
     ) -> Result<(), HyperliquidWsError> {
-        let client = self.client.as_ref().ok_or_else(|| {
-            HyperliquidWsError::ClientError("No WebSocket client available".to_string())
-        })?;
+        let epoch = self
+            .client
+            .as_ref()
+            .ok_or_else(|| {
+                HyperliquidWsError::ClientError("No WebSocket client available".to_string())
+            })?
+            .connection_epoch();
 
         let key = subscription_to_key(&subscription);
         let rate_key = self.rate_limits.message_key();
         let rate_keys = Some(std::slice::from_ref(&rate_key));
-        let epoch = client.connection_epoch();
 
         if replace {
             // Keeps the stream desired for reconnect replay; its unsubscribe ack is then stale
@@ -716,10 +902,7 @@ impl FeedHandler {
             let request = HyperliquidWsRequest::Unsubscribe {
                 subscription: subscription.clone(),
             };
-
-            client
-                .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
-                .await?;
+            self.send_book_request(&request, rate_keys, epoch).await?;
         } else {
             self.subscriptions.mark_subscribe(&key);
 
@@ -734,13 +917,9 @@ impl FeedHandler {
         }
 
         let request = HyperliquidWsRequest::Subscribe { subscription };
-
-        if let Err(e) = client
-            .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
-            .await
-        {
+        if let Err(e) = self.send_book_request(&request, rate_keys, epoch).await {
             self.subscriptions.mark_failure(&key);
-            return Err(e.into());
+            return Err(e);
         }
 
         Ok(())
@@ -756,7 +935,9 @@ impl FeedHandler {
             match serde_json::to_string(&request) {
                 Ok(payload) => {
                     log::debug!("Sending unsubscribe payload ({} bytes)", payload.len());
+                    let compact = self.prepare_compact_request(&request);
                     if let Err(e) = self.send_with_retry(payload).await {
+                        self.compact_write_failed(compact);
                         log::error!("Error unsubscribing from {key}: {e}");
                     }
                 }
@@ -1180,7 +1361,10 @@ impl FeedHandler {
             Ok(deltas) => out.push(NautilusWsMessage::Deltas(deltas)),
             Err(e) => {
                 log::error!("Error parsing order book deltas: {e}");
-                out.push(NautilusWsMessage::BookInvalid(instrument.id()));
+                out.push(NautilusWsMessage::BookInvalid {
+                    instrument_id: instrument.id(),
+                    output_gate: None,
+                });
             }
         }
 
@@ -1565,6 +1749,22 @@ impl FeedHandler {
     }
 }
 
+#[derive(Debug, Default)]
+struct CompactBookStream {
+    book: Option<CompactBook>,
+    desired: bool,
+    confirmed: bool,
+    generation: u64,
+    pending: VecDeque<(bool, u64)>,
+    output_gate: SnapshotGate,
+}
+
+impl Drop for CompactBookStream {
+    fn drop(&mut self) {
+        self.output_gate.lock().close();
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FrameContext {
     client_id: u64,
@@ -1733,6 +1933,9 @@ pub(super) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
         }
         SubscriptionRequest::L2Book { coin, .. } => {
             format!("{}:{coin}", HyperliquidWsChannel::L2Book.as_str())
+        }
+        SubscriptionRequest::L2 { coin, .. } => {
+            format!("{}:{coin}", HyperliquidWsChannel::L2.as_str())
         }
         SubscriptionRequest::Trades { coin } => {
             format!("{}:{coin}", HyperliquidWsChannel::Trades.as_str())
@@ -1986,6 +2189,194 @@ pub(super) mod tests {
             ],
             time: 1_700_000_000_000,
         }
+    }
+
+    fn compact_handler() -> FeedHandler {
+        let (_, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            Arc::new(Mutex::new(FifoCacheMap::new())),
+            PostRouter::new(),
+            Arc::new(WebSocketRateLimits::new()),
+            1,
+        );
+        handler.instruments.insert(Ustr::from("BTC"), btc_perp());
+        handler
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn compact_replacement_waits_for_current_ack_and_new_baseline() {
+        use super::super::messages::{WsCompactBookData, WsCompactBookUpdate};
+
+        let mut handler = compact_handler();
+        let sub = SubscriptionRequest::L2 {
+            coin: "BTC".into(),
+            n_sig_figs: Some(5),
+            mantissa: Some(2),
+        };
+        let subscribe = HyperliquidWsRequest::Subscribe {
+            subscription: sub.clone(),
+        };
+        let unsubscribe = HyperliquidWsRequest::Unsubscribe {
+            subscription: sub.clone(),
+        };
+        handler.subscriptions.mark_subscribe("l2:BTC");
+        handler.prepare_compact_request(&subscribe);
+        handler.prepare_compact_request(&unsubscribe);
+        handler.prepare_compact_request(&subscribe);
+
+        // The first subscribe ACK belongs to the stream replaced before confirmation
+        handler.confirm_compact_request(&sub, "subscribe");
+        assert!(
+            handler
+                .handle_compact_book(
+                    WsCompactBookData::Snapshot(one_level_book()),
+                    UnixNanos::default()
+                )
+                .is_none()
+        );
+        handler.confirm_compact_request(&sub, "unsubscribe");
+        handler.confirm_compact_request(&sub, "subscribe");
+        let update: WsCompactBookUpdate = serde_json::from_value(json!({
+            "c":"BTC","t":1700000000000_u64,"r":[[],[]],
+            "l":[[{"p":"100","s":"2"}],[]],
+        }))
+        .unwrap();
+        assert!(
+            handler
+                .handle_compact_book(
+                    WsCompactBookData::Update(update.clone()),
+                    UnixNanos::default()
+                )
+                .is_none()
+        );
+        let snapshot = handler.handle_compact_book(
+            WsCompactBookData::Snapshot(one_level_book()),
+            UnixNanos::default(),
+        );
+        assert!(
+            matches!(&snapshot, Some(NautilusWsMessage::CompactBook { is_snapshot: true, deltas, .. }) if deltas.deltas.len() == 3)
+        );
+        let updated =
+            handler.handle_compact_book(WsCompactBookData::Update(update), UnixNanos::default());
+        assert!(
+            matches!(&updated, Some(NautilusWsMessage::CompactBook { is_snapshot: false, deltas, .. }) if deltas.deltas[1].order.size == Quantity::from("2"))
+        );
+
+        handler.prepare_compact_request(&unsubscribe);
+        assert!(
+            handler
+                .handle_compact_book(
+                    WsCompactBookData::Snapshot(one_level_book()),
+                    UnixNanos::default()
+                )
+                .is_none()
+        );
+        handler.confirm_compact_request(&sub, "unsubscribe");
+        assert!(!handler.compact_books.contains_key(&Ustr::from("BTC")));
+    }
+
+    #[rstest]
+    #[case::replacement(false)]
+    #[case::reconnect(true)]
+    #[tokio::test]
+    async fn compact_replacement_retires_already_queued_snapshot(#[case] reconnect: bool) {
+        use nautilus_common::live::dst::time::Instant;
+
+        use super::super::messages::WsCompactBookData;
+        use crate::book::sync::BookSyncTracker;
+
+        let mut handler = compact_handler();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.out_tx = tx;
+        let sub = SubscriptionRequest::L2 {
+            coin: "BTC".into(),
+            n_sig_figs: None,
+            mantissa: None,
+        };
+        let subscribe = HyperliquidWsRequest::Subscribe {
+            subscription: sub.clone(),
+        };
+        handler.subscriptions.mark_subscribe("l2:BTC");
+        handler.prepare_compact_request(&subscribe);
+        handler.confirm_compact_request(&sub, "subscribe");
+        let old = handler
+            .handle_compact_book(
+                WsCompactBookData::Snapshot(one_level_book()),
+                UnixNanos::default(),
+            )
+            .unwrap();
+        handler.send(old).unwrap();
+        let invalid = serde_json::from_value(json!({
+            "c":"BTC","t":1700000000001_u64,"r":[[9],[]],"l":[[],[]],
+        }))
+        .unwrap();
+        let error = handler
+            .handle_compact_book(WsCompactBookData::Update(invalid), UnixNanos::default())
+            .unwrap();
+        handler.send(error).unwrap();
+
+        // A delta subscription replaces an existing depth stream before the old output is read
+        let tracker = BookSyncTracker::default();
+        let id = btc_perp().id();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let cancel = tracker.record_subscription(id, Instant::now(), gate.clone());
+
+        if reconnect {
+            handler.compact_books.clear();
+        } else {
+            handler.prepare_compact_request(&HyperliquidWsRequest::Unsubscribe {
+                subscription: sub.clone(),
+            });
+        }
+
+        handler.prepare_compact_request(&subscribe);
+        gate.open();
+        let NautilusWsMessage::CompactBook { output_gate, .. } = rx.recv().await.unwrap() else {
+            panic!("expected compact book");
+        };
+        assert!(output_gate.lock().is_closed());
+        let NautilusWsMessage::BookInvalid {
+            output_gate: Some(error_gate),
+            ..
+        } = rx.recv().await.unwrap()
+        else {
+            panic!("expected compact conversion error");
+        };
+        assert!(error_gate.lock().is_closed());
+        assert!(!cancel.is_cancelled());
+
+        handler.confirm_compact_request(&sub, "unsubscribe");
+        handler.confirm_compact_request(&sub, "subscribe");
+        let fresh = handler
+            .handle_compact_book(
+                WsCompactBookData::Snapshot(one_level_book()),
+                UnixNanos::default(),
+            )
+            .unwrap();
+        let NautilusWsMessage::CompactBook {
+            is_snapshot,
+            output_gate,
+            ..
+        } = fresh
+        else {
+            panic!("expected replacement snapshot");
+        };
+        assert!(!output_gate.lock().is_closed());
+        assert_eq!(
+            tracker.record_compact(id, is_snapshot, Instant::now()),
+            Some(true)
+        );
+        assert!(cancel.is_cancelled());
     }
 
     fn btc_active_spot_asset_ctx() -> WsActiveAssetCtxData {
@@ -2688,7 +3079,7 @@ pub(super) mod tests {
         assert_eq!(msgs.len(), 1);
         assert!(matches!(
             msgs[0],
-            NautilusWsMessage::BookInvalid(id) if id == instrument_id
+            NautilusWsMessage::BookInvalid { instrument_id: id, .. } if id == instrument_id
         ));
     }
 

@@ -3128,8 +3128,9 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Trades(_)
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
+                        | NautilusWsMessage::CompactBook { .. }
                         | NautilusWsMessage::Depth(_)
-                        | NautilusWsMessage::BookInvalid(_)
+                        | NautilusWsMessage::BookInvalid { .. }
                         | NautilusWsMessage::Candle(_)
                         | NautilusWsMessage::MarkPrice(_)
                         | NautilusWsMessage::IndexPrice(_)

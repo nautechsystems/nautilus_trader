@@ -146,6 +146,46 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
     });
 }
 
+#[rstest]
+fn test_hyperliquid_book_feed_python_configuration() {
+    use nautilus_hyperliquid::config::HyperliquidBookFeed;
+    use pyo3::{exceptions::PyValueError, types::PyDict};
+
+    Python::initialize();
+    Python::attach(|py| {
+        let module = register_hyperliquid_python_module(py);
+        let cls = module.getattr("HyperliquidDataClientConfig").unwrap();
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("book_feed", "l2").unwrap();
+        let obj = cls.call((), Some(&kwargs)).unwrap();
+        let config: HyperliquidDataClientConfig = obj.extract().unwrap();
+        assert_eq!(config.book_feed, HyperliquidBookFeed::L2);
+        assert_eq!(
+            obj.getattr("book_feed")
+                .unwrap()
+                .extract::<String>()
+                .unwrap(),
+            "l2"
+        );
+        let default = cls.call0().unwrap();
+        assert_eq!(
+            default
+                .getattr("book_feed")
+                .unwrap()
+                .extract::<String>()
+                .unwrap(),
+            "l2Book"
+        );
+        kwargs.set_item("book_feed", py.None()).unwrap();
+        let explicit_none: HyperliquidDataClientConfig =
+            cls.call((), Some(&kwargs)).unwrap().extract().unwrap();
+        assert_eq!(explicit_none.book_feed, HyperliquidBookFeed::L2Book);
+        kwargs.set_item("book_feed", "fast").unwrap();
+        let error = cls.call((), Some(&kwargs)).unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
 fn obj<'py>(py: Python<'py>, value: impl IntoPyObjectExt<'py>) -> Py<PyAny> {
     value
         .into_py_any(py)

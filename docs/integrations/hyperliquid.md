@@ -1476,14 +1476,46 @@ Direct recovery would require tracking retired venue order IDs or draining fills
 
 ## Order books
 
-Each L2 WebSocket message is a snapshot of up to 20 price levels per side, not an incremental update.
-The adapter rebuilds the book with one event group: `Clear` then `Add` deltas, all flagged `F_SNAPSHOT`,
-with `F_LAST` on the final delta.
+The default `book_feed="l2Book"` receives snapshots of up to 20 price levels per side.
+The adapter publishes each complete book as one event group: `Clear` then `Add` deltas, all flagged
+`F_SNAPSHOT`, with `F_LAST` on the final delta.
 
 :::note
 A trader instance maintains one order book per instrument, so all subscribers to an instrument
 share the same book and the same venue-side precision options.
 :::
+
+### Compact web book feed
+
+Set `book_feed="l2"` in `HyperliquidDataClientConfig` to use the web application's compact book feed,
+with up to 20 levels per side. Sparse books contain fewer levels.
+The source is fixed for the client lifetime; strategy subscriptions do not select or switch it.
+
+```python
+config = HyperliquidDataClientConfig(book_feed="l2")
+```
+
+The compact feed sends an initial snapshot followed by compressed updates. The adapter replaces its
+local baseline on a snapshot, removes the previous side's indexed levels before applying price
+upserts, and publishes the reconstructed full book through the same snapshot-style deltas interface.
+Updates are applied in arrival order, including equal timestamps, matching the web reducer.
+
+Once synchronized, each snapshot or update produces a complete event group, including repeated
+timestamps or unchanged levels. Recording subscribers can retain this full stream while strategies
+sample managed books at their chosen cadence.
+
+Strategies continue to call `subscribe_book_deltas` with `BookType.L2_MBP`. Set `managed=True` to read
+the maintained book through `cache.order_book` in `on_book_deltas`; do not apply the deltas a second
+time. These snapshot records describe complete books, not individual exchange order actions.
+
+Compact updates omit per-level order counts. Native depth snapshots retain their 10-level limit
+and report counts as `0` (unavailable) in this mode. Use book deltas to receive up to 20 levels.
+The compact protocol is not listed in the public subscription documentation; its wire behavior
+follows the web application.
+
+Reconnect and targeted resubscribe discard the compact baseline and wait for a new snapshot.
+An update cannot finish snapshot recovery. Invalid indices stop that book's output and trigger
+recovery; malformed compact messages with no identifiable coin reconnect the data socket.
 
 ### Order book recovery
 
@@ -1522,8 +1554,10 @@ Deltas and depth for an instrument share one `l2Book` stream, so recovering the 
 refreshes depth snapshots. Subscribing to deltas while depth already holds the stream replaces the
 stream, so the book starts from a fresh snapshot. A depth-only stream emits no deltas.
 
-The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
-queued before a replacement can complete recovery once the replacement write finishes.
+For `l2Book`, the client does not correlate subscription acknowledgements with recovery attempts.
+A snapshot queued before a replacement can complete recovery once the replacement write finishes.
+The compact `l2` feed also waits for the current subscribe acknowledgement before accepting its
+baseline, so acknowledgements of replaced subscriptions cannot admit queued old snapshots.
 
 Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only from a
 failed initial write, an invalid frame, or a stale-stream report. Within the retry budget, a replacement that
@@ -1985,6 +2019,7 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `stale_stream_recovery_cooldown_secs`    | `120`     | Seconds between recovery actions per stream; must be positive for recovery to run.                   |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Depth-only or BBO resubscribe attempts before a full WebSocket reconnect.                            |
 | `book_snapshot_timeout_secs`             | `10`      | Initial, reconnect, and recovery snapshot wait in seconds; `0` disables deadlines.                   |
+| `book_feed`                              | `l2Book`  | Fixed book source: documented `l2Book` snapshots or the web application's compact `l2` feed.         |
 | `update_instruments_interval_mins`       | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                               |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                         |
 
