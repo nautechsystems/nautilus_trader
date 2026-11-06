@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added checked `StrikeRange::atm_percent` and `StrikeRange::delta` constructors
 - Added `BacktestNodeBuilder` with custom catalog factories for instrument loading and replay
 - Added FinFeedAPI prediction market data adapter with REST access, paginated historical requests, and polling
 - Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
@@ -31,6 +32,8 @@ Released on TBD (UTC).
 - Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
 - Removed `BookImbalanceActor` and its config; use `OrderBookImbalance` and `OrderBookImbalanceConfig`
+- Changed `SubscribeOptionChain::new` to return `Result`; propagate validation errors
+- Changed `DataActor::subscribe_option_chain` and `DataActorCore::subscribe_option_chain` to return `Result`
 - Changed `OrderMatchingEngineConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SimulatedVenueConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SandboxExecutionClientConfig` literals; add `order_priority_reset_policy: Default::default()`
@@ -114,6 +117,7 @@ Released on TBD (UTC).
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed FFI `synthetic_instrument_is_valid_formula` aborting on invalid component JSON
+- Fixed `StrikeRange` and option-chain subscriptions accepting invalid ranges or zero snapshot intervals
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
 - Fixed stale bundled execution reports incorrectly voiding newer fills

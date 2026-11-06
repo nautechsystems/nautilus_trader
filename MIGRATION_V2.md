@@ -1081,9 +1081,14 @@ an explicit unsupported-mode error from a custom selector. Matches inside `nauti
 
 This extension boundary covers `StrikeRange` only. `OptionSideFilter` retains its exhaustive `Both`,
 `Calls`, `Puts`, and `Otm` variants. `StrikeSearchProfile` uses checked construction and private fields.
-`SubscribeOptionChain` retains its existing fields and constructor.
+`SubscribeOptionChain` retains its existing fields.
 
-Existing selection behavior, serialized variant names, and variant order are unchanged. New variants
+Construct numeric ranges through `StrikeRange::atm_percent` or `StrikeRange::delta`, which return `Result`.
+`SubscribeOptionChain::new`, `DataActor::subscribe_option_chain`, and
+`DataActorCore::subscribe_option_chain` return `Result` for zero snapshot intervals. Handle errors or propagate
+them with `?`. Direct construction and deserialization leave input validity to the caller.
+
+Selection behavior for valid inputs, serialized variant names, and variant order are unchanged. New variants
 are appended after existing ones, preserving variant indices for downstream index-based Serde formats.
 Older readers still reject new variants during deserialization.
 

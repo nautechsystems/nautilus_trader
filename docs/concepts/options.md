@@ -179,6 +179,10 @@ def on_option_chain(self, chain) -> None:
 | `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
 | `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
+`StrikeRange::atm_percent` requires a finite, non-negative `pct`. `StrikeRange::delta` requires finite
+`target` and `tolerance` values in [0, 1]. These Rust constructors return `Result`; the corresponding
+Python factories raise `ValueError` for invalid values.
+
 For dynamic strike ranges, subscriptions are **deferred until the ATM price is determined**. ATM is derived
 from the venue reference price in `OptionGreeks.underlying_price`. It can also be seeded from a reference
 price fetched for the option series through HTTP. This permits immediate bootstrap before live WebSocket ticks
@@ -207,7 +211,7 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
   active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
 
-The engine rejects `snapshot_interval_ms=0`. Use `None` for raw mode.
+`subscribe_option_chain` raises `ValueError` for `snapshot_interval_ms=0`. Use `None` for raw mode.
 
 ## Backtesting option chains
 

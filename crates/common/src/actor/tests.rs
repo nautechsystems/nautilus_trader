@@ -1875,13 +1875,16 @@ fn test_subscription_facade_sends_exact_command_matrix(
         actor.subscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
         actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
     }
-    actor.subscribe_option_chain(
-        series_id,
-        strike_range.clone(),
-        snapshot_interval_ms,
-        Some(client_id),
-        Some(params.clone()),
-    );
+
+    actor
+        .subscribe_option_chain(
+            series_id,
+            strike_range.clone(),
+            snapshot_interval_ms,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
 
     actor.unsubscribe_data(
         data_type.clone(),
@@ -2719,16 +2722,19 @@ fn test_release_subscriptions_emits_retained_unsubscribe_commands(
         Some(book_params.clone()),
     );
     actor.subscribe_bars(bar_type, Some(bar_client_id), Some(bar_params.clone()));
-    actor.subscribe_option_chain(
-        series_id,
-        StrikeRange::AtmRelative {
-            strikes_above: 13,
-            strikes_below: 17,
-        },
-        Some(1_009),
-        Some(chain_client_id),
-        Some(chain_params),
-    );
+    actor
+        .subscribe_option_chain(
+            series_id,
+            StrikeRange::AtmRelative {
+                strikes_above: 13,
+                strikes_below: 17,
+            },
+            Some(1_009),
+            Some(chain_client_id),
+            Some(chain_params),
+        )
+        .unwrap();
+
     actor.subscribe_instrument(
         instrument_id,
         Some(remaining_client_id),
@@ -3214,20 +3220,24 @@ fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
         strikes_below: 11,
     };
 
-    actor.subscribe_option_chain(
-        series_id,
-        first_range.clone(),
-        Some(1_000),
-        Some(first_client_id),
-        None,
-    );
-    actor.subscribe_option_chain(
-        series_id,
-        second_range.clone(),
-        Some(2_000),
-        Some(second_client_id),
-        None,
-    );
+    actor
+        .subscribe_option_chain(
+            series_id,
+            first_range.clone(),
+            Some(1_000),
+            Some(first_client_id),
+            None,
+        )
+        .unwrap();
+    actor
+        .subscribe_option_chain(
+            series_id,
+            second_range.clone(),
+            Some(2_000),
+            Some(second_client_id),
+            None,
+        )
+        .unwrap();
 
     assert_eq!(
         get_message_bus()
@@ -5031,7 +5041,10 @@ fn test_subscribe_and_receive_option_chain(
         strikes_above: 5,
         strikes_below: 5,
     };
-    actor.subscribe_option_chain(series_id, strike_range, None, None, None);
+
+    actor
+        .subscribe_option_chain(series_id, strike_range, None, None, None)
+        .unwrap();
 
     let slice = OptionChainSlice {
         series_id,
@@ -5361,7 +5374,10 @@ fn test_unsubscribe_option_chain(
         strikes_above: 5,
         strikes_below: 5,
     };
-    actor.subscribe_option_chain(series_id, strike_range, None, None, None);
+
+    actor
+        .subscribe_option_chain(series_id, strike_range, None, None, None)
+        .unwrap();
 
     let slice = OptionChainSlice {
         series_id,
@@ -6617,7 +6633,9 @@ fn test_release_subscriptions_removes_every_handler_family_and_is_idempotent(
     actor.subscribe_index_prices(instrument_id, None, None);
     actor.subscribe_funding_rates(instrument_id, None, None);
     actor.subscribe_option_greeks(instrument_id, None, None);
-    actor.subscribe_option_chain(series_id, strike_range, Some(250), None, None);
+    actor
+        .subscribe_option_chain(series_id, strike_range, Some(250), None, None)
+        .unwrap();
 
     #[cfg(feature = "defi")]
     {
@@ -8806,4 +8824,85 @@ fn test_failed_retirement_request_cleanup(
     drop(actor);
     crate::component::deregister_component(&actor_id);
     crate::actor::registry::deregister_actor(&actor_id);
+}
+
+#[rstest]
+fn test_option_chain_zero_interval_has_no_side_effects(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[values(false, true)] subscribed: bool,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let series_id = OptionSeriesId::new_derived(
+        Venue::from("DERIBIT"),
+        Ustr::from("BTC"),
+        Ustr::from("USD"),
+        UnixNanos::from(37),
+    );
+    let client_id = ClientId::from("RETAINED-CHAIN-CLIENT");
+    let params = Params::new([("owner".to_string(), serde_json::json!(37))].into());
+
+    if subscribed {
+        actor
+            .subscribe_option_chain(
+                series_id,
+                StrikeRange::AtmRelative {
+                    strikes_above: 2,
+                    strikes_below: 3,
+                },
+                Some(750),
+                Some(client_id),
+                Some(params.clone()),
+            )
+            .unwrap();
+
+        saver.clear();
+    }
+
+    let error = actor
+        .subscribe_option_chain(series_id, StrikeRange::Fixed(vec![]), Some(0), None, None)
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "invalid u64 for 'snapshot_interval_ms' not positive, was 0"
+    );
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_option_chain
+            .subscription_count(),
+        usize::from(subscribed)
+    );
+    assert!(saver.get_messages().is_empty());
+
+    if subscribed {
+        actor.unsubscribe_option_chain(series_id, Some(ClientId::from("FALLBACK-CLIENT")));
+
+        let commands = saver.get_messages();
+
+        let [DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(command))] =
+            commands.as_slice()
+        else {
+            panic!("expected the retained chain unsubscribe, was {commands:?}");
+        };
+
+        assert_eq!(command.series_id, series_id);
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.venue, Some(series_id.venue));
+        assert_eq!(command.params, Some(params));
+        assert_eq!(
+            get_message_bus()
+                .borrow()
+                .router_option_chain
+                .subscription_count(),
+            0
+        );
+    }
 }

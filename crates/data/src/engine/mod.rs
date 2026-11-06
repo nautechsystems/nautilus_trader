@@ -1087,12 +1087,6 @@ impl DataEngine {
                     return Ok(None);
                 }
             }
-            SubscribeCommand::OptionChain(cmd) if cmd.snapshot_interval_ms == Some(0) => {
-                anyhow::bail!(
-                    "Cannot subscribe option chain {} with a zero `snapshot_interval_ms`; use `None` for raw mode",
-                    cmd.series_id,
-                );
-            }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
                 return Ok(None);

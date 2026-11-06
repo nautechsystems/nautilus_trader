@@ -4842,16 +4842,19 @@ fn non_streamable_subscribe_cases(
         ),
         (
             "option chain",
-            SubscribeCommand::OptionChain(SubscribeOptionChain::new(
-                series_id,
-                StrikeRange::Fixed(vec![Price::from("50000")]),
-                Some(1_000),
-                UUID4::new(),
-                UnixNanos::default(),
-                Some(client_id),
-                Some(venue),
-                None,
-            )),
+            SubscribeCommand::OptionChain(
+                SubscribeOptionChain::new(
+                    series_id,
+                    StrikeRange::Fixed(vec![Price::from("50000")]),
+                    Some(1_000),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    Some(client_id),
+                    Some(venue),
+                    None,
+                )
+                .unwrap(),
+            ),
         ),
     ]
 }

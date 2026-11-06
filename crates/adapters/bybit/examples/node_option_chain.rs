@@ -171,7 +171,7 @@ impl DataActor for OptionChainTester {
             SNAPSHOT_INTERVAL_MS,
             Some(client_id),
             None,
-        );
+        )?;
 
         self.series_id = Some(series_id);
 

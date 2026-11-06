@@ -2191,7 +2191,8 @@ impl PyDataActor {
             snapshot_interval_ms,
             client_id,
             params,
-        );
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(())
     }
 

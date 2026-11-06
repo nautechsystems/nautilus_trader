@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use pyo3::prelude::*;
 
 use crate::{
@@ -64,19 +64,17 @@ impl PyStrikeRange {
     /// Creates a `StrikeRange::AtmPercent` variant.
     #[staticmethod]
     #[pyo3(name = "atm_percent")]
-    fn py_atm_percent(pct: f64) -> Self {
-        Self {
-            inner: StrikeRange::AtmPercent { pct },
-        }
+    fn py_atm_percent(pct: f64) -> PyResult<Self> {
+        let inner = StrikeRange::atm_percent(pct).map_err(to_pyvalue_err)?;
+        Ok(Self { inner })
     }
 
     /// Creates a `StrikeRange::Delta` variant.
     #[staticmethod]
     #[pyo3(name = "delta")]
-    fn py_delta(target: f64, tolerance: f64) -> Self {
-        Self {
-            inner: StrikeRange::Delta { target, tolerance },
-        }
+    fn py_delta(target: f64, tolerance: f64) -> PyResult<Self> {
+        let inner = StrikeRange::delta(target, tolerance).map_err(to_pyvalue_err)?;
+        Ok(Self { inner })
     }
 
     /// Returns the variant name (`Fixed`, `AtmRelative`, `AtmPercent`, or `Delta`).

@@ -2208,6 +2208,10 @@ pub trait DataActor {
     ///
     /// The ATM price is always derived from the exchange-provided forward price
     /// embedded in each option greeks/ticker update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot interval is zero.
     fn subscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
@@ -2215,7 +2219,8 @@ pub trait DataActor {
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) where
+    ) -> anyhow::Result<()>
+    where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
@@ -2239,7 +2244,7 @@ pub trait DataActor {
             snapshot_interval_ms,
             client_id,
             params,
-        );
+        )
     }
 
     #[cfg(feature = "defi")]
@@ -5631,6 +5636,10 @@ impl DataActorCore {
     }
 
     /// Subscribes the actor to option chain snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot interval is zero.
     #[expect(
         clippy::too_many_arguments,
         reason = "subscription command mirrors the option chain request fields"
@@ -5644,7 +5653,7 @@ impl DataActorCore {
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
 
         let correlation_id = self
@@ -5666,12 +5675,14 @@ impl DataActorCore {
             client_id,
             Some(series_id.venue),
             params,
-        );
+        )?;
+
         subscribe.correlation_id = correlation_id;
         let command = DataCommand::Subscribe(SubscribeCommand::OptionChain(subscribe));
 
         self.set_option_chain_subscription(topic, handler, command.clone());
         self.send_data_cmd(command);
+        Ok(())
     }
 
     /// Unsubscribes the actor from data.

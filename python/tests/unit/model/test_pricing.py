@@ -409,3 +409,37 @@ def test_greeks_accept_valid_short_dated_index_option(
         rel=1e-8,
         abs=1e-12,
     )
+
+
+@pytest.mark.parametrize("pct", [float("nan"), float("inf"), -float("inf"), -0.1, -5e-324])
+def test_strike_range_rejects_invalid_atm_percent(pct: float) -> None:
+    """
+    Reject non-finite and negative percentage inputs.
+    """
+    with pytest.raises(ValueError, match="'pct'"):
+        StrikeRange.atm_percent(pct)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), -float("inf"), -0.1, -5e-324, 1.0000000000000002, 1.1],
+)
+@pytest.mark.parametrize("field", ["target", "tolerance"])
+def test_strike_range_rejects_invalid_delta(field: str, value: float) -> None:
+    """
+    Reject invalid delta targets and tolerances with field-specific errors.
+    """
+    values = {"target": 0.25, "tolerance": 0.05}
+    values[field] = value
+    with pytest.raises(ValueError, match=field) as error:
+        StrikeRange.delta(**values)
+    assert str(error.value) == f"{field} must be finite and in [0, 1]"
+
+
+@pytest.mark.parametrize("value", [0.0, -0.0, 5e-324, 0.25, 1.0])
+def test_strike_range_accepts_numeric_boundaries(value: float) -> None:
+    """
+    Accept zero and unit boundaries for percentage and delta ranges.
+    """
+    assert StrikeRange.atm_percent(value).kind == "AtmPercent"
+    assert StrikeRange.delta(value, value).kind == "Delta"

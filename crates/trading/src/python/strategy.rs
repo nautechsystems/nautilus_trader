@@ -3133,7 +3133,8 @@ impl PyStrategy {
             snapshot_interval_ms,
             client_id,
             params_map,
-        );
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(())
     }
 

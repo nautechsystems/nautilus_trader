@@ -21,7 +21,11 @@ use std::{
     ops::Deref,
 };
 
-use nautilus_core::{UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessResult, check_non_negative_f64, check_predicate_true},
+    serialization::Serializable,
+};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -137,6 +141,9 @@ impl<'de> Deserialize<'de> for StrikeSearchProfile {
 
 /// Defines which strikes to include in an option chain subscription.
 ///
+/// [`Self::atm_percent`] and [`Self::delta`] validate numeric inputs at construction.
+/// Direct variants and deserialization leave input validity to the caller.
+///
 /// Existing variants support direct construction. Downstream matches require a
 /// wildcard arm so new selection modes can be added without changing those matches.
 /// Use [`Self::resolve`] for model-level selection, or reject unsupported modes
@@ -178,6 +185,34 @@ pub enum StrikeRange {
 }
 
 impl StrikeRange {
+    /// Creates an ATM-percentage strike range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `pct` is non-finite or negative.
+    pub fn atm_percent(pct: f64) -> CorrectnessResult<Self> {
+        check_non_negative_f64(pct, "pct")?;
+        Ok(Self::AtmPercent { pct })
+    }
+
+    /// Creates an absolute-delta strike range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `target` or `tolerance` is non-finite or outside [0, 1].
+    pub fn delta(target: f64, tolerance: f64) -> CorrectnessResult<Self> {
+        let bounds = 0.0..=1.0;
+        check_predicate_true(
+            bounds.contains(&target),
+            "target must be finite and in [0, 1]",
+        )?;
+        check_predicate_true(
+            bounds.contains(&tolerance),
+            "tolerance must be finite and in [0, 1]",
+        )?;
+        Ok(Self::Delta { target, tolerance })
+    }
+
     /// Resolves the filtered set of strikes from all available strikes.
     ///
     /// - `Fixed`: returns the fixed strikes directly (intersected with available).
