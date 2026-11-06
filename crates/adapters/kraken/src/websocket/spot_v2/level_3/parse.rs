@@ -57,6 +57,8 @@ pub(crate) struct CachedL3Order {
     pub side: OrderSide,
     /// Insertion sequence used to preserve FIFO queue order within a price level for checksum.
     pub seq: u64,
+    /// Venue-assigned order timestamp for price-time priority within the price level (#5468).
+    pub ts: UnixNanos,
 }
 
 /// Parses a Kraken L3 snapshot into an `OrderBookDeltas` batch.
@@ -135,6 +137,7 @@ pub(crate) fn parse_l3_snapshot(
                 size_raw: order.order_qty.raw.clone(),
                 side,
                 seq: insertion_seq,
+                ts: datetime_to_nanos(order.timestamp, "order.timestamp")?,
             },
         );
 
@@ -208,6 +211,7 @@ pub(crate) fn parse_l3_update(
                 );
                 *sequence += 1;
 
+                let order_ts = datetime_to_nanos(event.timestamp, "event.timestamp")?;
                 open_orders.insert(
                     order_id,
                     CachedL3Order {
@@ -217,6 +221,7 @@ pub(crate) fn parse_l3_update(
                         size_raw: event.order_qty.raw.clone(),
                         side,
                         seq: insertion_seq,
+                        ts: order_ts,
                     },
                 );
 
@@ -313,6 +318,7 @@ pub(crate) fn parse_l3_update(
                         cached.size = event.order_qty.value;
                         cached.size_raw = event.order_qty.raw.clone();
                         cached.seq = new_seq;
+                        cached.ts = datetime_to_nanos(event.timestamp, "event.timestamp")?;
 
                         deltas.push(add_delta);
                     }
@@ -496,7 +502,9 @@ fn compare_l3_orders(a: &CachedL3Order, b: &CachedL3Order) -> Ordering {
         OrderSide::Buy => b.price.cmp(&a.price),
     };
 
-    price_order.then(a.seq.cmp(&b.seq))
+    price_order
+        .then(a.ts.cmp(&b.ts))
+        .then(a.seq.cmp(&b.seq))
 }
 
 fn side_rank(side: OrderSide) -> u8 {
