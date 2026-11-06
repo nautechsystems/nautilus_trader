@@ -39,13 +39,14 @@ use proc_macro::TokenStream;
 /// Expands a named-field struct into a Serde-backed custom data type.
 ///
 /// Generates the required Serde derives, `HasTsInit`, `CustomDataTrait`, `Data` conversions,
-/// constructor, display implementation, and optional PyO3 bindings. The struct must contain
-/// `ts_event` and `ts_init` fields.
+/// constructor, display implementation, and optional PyO3 bindings. The struct must end with
+/// `ts_event` and `ts_init` fields, in that order; constructors take them as their last arguments.
 ///
 /// Use `#[custom_data(pyo3)]` to generate Python bindings.
 /// Use `#[custom_data(pyo3, no_display)]` to provide a custom display implementation.
 /// Use `stub_module = "nautilus_trader.<module>"` with `pyo3` to emit stub metadata.
 /// Use `#[custom_data_field(serde)]` for fields requiring the generic Serde Python bridge.
+/// Use `export_fields` for internal Arrow generation in `nautilus_serialization` from model-crate fields.
 #[proc_macro_attribute]
 pub fn custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     model::expand_custom_data(attr.into(), item.into()).into()
@@ -77,4 +78,18 @@ pub fn custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn arrow_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     serialization::expand_arrow_custom_data(attr.into(), item.into()).into()
+}
+
+/// Generates Arrow implementations for a custom data type defined in another crate.
+///
+/// This internal form is used inside `nautilus_serialization`, which owns the Arrow traits.
+/// Mark the model type with `#[custom_data(export_fields)]`, then invoke
+/// `arrow_custom_data_remote!(model_crate::module::Type)` there.
+/// The exported fields preserve `#[custom_data_field(...)]` options. This emits the same schema,
+/// encoding, and decoding implementations as `#[arrow_custom_data]`, without redefining the type
+/// or generating Python methods.
+#[doc(hidden)]
+#[proc_macro]
+pub fn arrow_custom_data_remote(input: TokenStream) -> TokenStream {
+    serialization::expand_arrow_custom_data_remote(input.into()).into()
 }

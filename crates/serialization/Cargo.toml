@@ -80,6 +80,12 @@ path = "benches/sbe_decoding.rs"
 harness = false
 required-features = ["sbe"]
 
+[[bench]]
+name = "generated_custom_data"
+path = "benches/generated_custom_data.rs"
+harness = false
+required-features = ["arrow"]
+
 [[test]]
 name = "arrow_custom_data_macro"
 path = "tests/arrow_custom_data_macro.rs"

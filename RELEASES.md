@@ -34,6 +34,7 @@ Released on TBD (UTC).
 - Removed `BookImbalanceActor` and its config; use `OrderBookImbalance` and `OrderBookImbalanceConfig`
 - Changed `SubscribeOptionChain::new` to return `Result`; propagate validation errors
 - Changed `DataActor::subscribe_option_chain` and `DataActorCore::subscribe_option_chain` to return `Result`
+- Changed `custom_data` to require `ts_event` and `ts_init` last, in that order, thanks @faysou
 - Changed `OrderMatchingEngineConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SimulatedVenueConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SandboxExecutionClientConfig` literals; add `order_priority_reset_policy: Default::default()`
@@ -245,6 +246,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added shared field definitions for model and Arrow codec generation, thanks @faysou
 - Added NETTING startup reconciliation scenarios for flat accounts and recovered positions
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
@@ -253,6 +255,7 @@ Released on TBD (UTC).
 - Standardize Derive report generation with HTTP collection on runtime workers (#5216)
 - Standardize Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Refined Polymarket limit submit responses and venue order ID lookup
+- Optimized custom data Arrow encoding, decoding, and string buffer allocation, thanks @faysou
 - Optimized `deserialize_decimal_from_str` and `deserialize_decimal_or_zero` to avoid intermediate string copies
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-binstall` tool to v1.26.2

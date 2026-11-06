@@ -115,6 +115,9 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+// Generated custom data code uses the crate's public name
+extern crate self as nautilus_model;
+
 // Re-exported so `enum_strum_serde!` can reach serde through `$crate`, which works in a consumer
 // that renames its serde dependency or does not depend on it directly.
 #[doc(hidden)]

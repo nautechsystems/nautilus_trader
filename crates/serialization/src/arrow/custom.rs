@@ -134,14 +134,113 @@ mod tests {
     use arrow::{
         array::{Array, ArrayData, FixedSizeListArray, Int64Array, ListArray, ListViewArray},
         buffer::{Buffer, NullBuffer},
-        datatypes::{DataType, Field, Schema},
+        datatypes::{DataType, Field, Schema, TimeUnit},
         record_batch::RecordBatch,
     };
+    use nautilus_model::{
+        data::{CustomDataTrait, Data, registry::encode_custom_to_arrow, stubs::StubRemoteData},
+        enums::AggressorSide as TestSide,
+        identifiers::InstrumentId as TestInstrumentId,
+        types::{Currency, Money as TestMoney, Price as TestPrice},
+    };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::{
-        assert_custom_schema, validate_required_list_child, validate_required_list_values,
+        CustomDataSerialize, assert_custom_schema, ensure_custom_data_registered,
+        validate_required_list_child, validate_required_list_values,
     };
+    use crate::{
+        arrow::{
+            ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, json_string_field,
+        },
+        arrow_custom_data_remote,
+    };
+
+    // nautilus-import-ok: the macro resolves exported fields through the defining crate
+    arrow_custom_data_remote!(nautilus_model::data::stubs::StubRemoteData);
+
+    #[rstest]
+    #[case::none(false)]
+    #[case::some(true)]
+    fn remote_custom_data_round_trip(#[case] optional_price: bool) {
+        let price = TestPrice::from("123.45");
+
+        let original = StubRemoteData {
+            instrument_id: TestInstrumentId::from("ES.GLBX"),
+            price,
+            optional_price: optional_price.then(|| TestPrice::from("67.890")),
+            side: TestSide::Sell,
+            params: serde_json::from_value(serde_json::json!({"scenario": "shocked"})).unwrap(),
+            balances: vec![
+                TestMoney::from_decimal(dec!(7.25), Currency::USD()).unwrap(),
+                TestMoney::from_decimal(dec!(-9.5), Currency::EUR()).unwrap(),
+            ],
+            curve: vec![0.25, 1.0, 3.5],
+            ts_event: 17.into(),
+            ts_init: 23.into(),
+        };
+
+        ensure_custom_data_registered::<StubRemoteData>();
+        let payload: Arc<dyn CustomDataTrait> = Arc::new(original.clone());
+        let payloads = [payload];
+        let encoded = original.encode_record_batch(&payloads).unwrap();
+        let registered = encode_custom_to_arrow("StubRemoteData", &payloads)
+            .unwrap()
+            .unwrap();
+        let metadata = original.metadata();
+        let batch = StubRemoteData::encode_batch(&metadata, &[&original]).unwrap();
+        let schema = batch.schema();
+        let expected_fields = vec![
+            Field::new("instrument_id", DataType::Utf8, false),
+            Field::new("price", DataType::Decimal128(38, 16), true),
+            Field::new("optional_price", DataType::Decimal128(38, 16), true),
+            Field::new(
+                "side",
+                DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8)),
+                false,
+            ),
+            json_string_field("params", false),
+            json_string_field("balances", false),
+            Field::new(
+                "curve",
+                DataType::List(Arc::new(Field::new("item", DataType::Float64, true))),
+                false,
+            ),
+            Field::new(
+                "ts_event",
+                DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                false,
+            ),
+            Field::new(
+                "ts_init",
+                DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                false,
+            ),
+        ];
+        let decoded = StubRemoteData::decode_data_batch(schema.metadata(), batch).unwrap();
+
+        let [Data::Custom(custom)] = decoded.as_slice() else {
+            panic!("expected one native custom data value");
+        };
+
+        let restored = custom
+            .data
+            .as_any()
+            .downcast_ref::<StubRemoteData>()
+            .unwrap();
+
+        assert_eq!(encoded, registered);
+        assert_eq!(schema.fields(), Schema::new(expected_fields).fields());
+        assert_eq!(schema.metadata(), &metadata);
+        assert_eq!(StubRemoteData::get_schema(None).fields(), schema.fields());
+        assert_eq!(
+            schema.metadata().get("price_precision"),
+            Some(&"2".to_string())
+        );
+        assert_eq!(custom.data_type.type_name(), "StubRemoteData");
+        assert_eq!(restored, &original);
+    }
 
     #[rstest]
     fn custom_schema_allows_vec_u8_binary() {
