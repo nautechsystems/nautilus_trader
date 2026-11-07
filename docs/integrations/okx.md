@@ -1159,8 +1159,14 @@ Only limit-style orders are supported. OKX does not allow market orders for opti
 | `MARKET`          | -         | Rejected by the adapter before reaching the API. |
 | `MARKET_TO_LIMIT` | -         | Rejected by the adapter before reaching the API. |
 
-Options support FOK and IOC time-in-force. OKX uses a dedicated `op_fok` order type for options FOK orders.
-The adapter handles this mapping automatically.
+Options limit orders support FOK and IOC time-in-force. The adapter sends `fok` for FOK orders through
+both HTTP and WebSocket APIs, as listed in the
+[place-order request parameters](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order).
+OKX reports `op_fok` for simple-options orders; the adapter continues to parse these as limit FOK orders.
+
+Options trading requires account activation. Error `51198` indicates that the account must activate
+options through the OKX app or website. This account restriction differs from an invalid `ordType`
+rejection or an accepted FOK order that cancels because liquidity cannot fill its full quantity.
 
 Conditional/algo orders (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
 `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`) are not supported for options and are denied.

@@ -2287,8 +2287,7 @@ ExecTesterConfig(
 
 **Considerations**:
 
-- Some venues use a dedicated order type for options FOK orders (e.g. OKX uses
-  `op_fok`). The adapter handles this mapping transparently.
+- See the adapter's integration guide for its options FOK request mapping.
 - Use small quantities and aggressive pricing to get a fill for the positive case.
 
 ### TC-E100: Cancel option order

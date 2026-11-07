@@ -749,6 +749,92 @@ async fn test_submit_event_order_omits_speed_bump() {
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::option("http_get_instruments_option.json", OKXTradeMode::Cross)]
+#[case::spot("http_get_instruments_spot.json", OKXTradeMode::Cash)]
+#[case::swap("http_get_instruments_swap.json", OKXTradeMode::Cross)]
+#[tokio::test]
+async fn test_submit_limit_fok_order_uses_fok_on_wire(
+    #[case] fixture: &str,
+    #[case] td_mode: OKXTradeMode,
+) {
+    let payload = load_json(fixture);
+    let response: OKXResponse<OKXInstrument> = serde_json::from_value(payload).unwrap();
+    let instrument = parse_instrument_any(&response.data[0], None, None, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    let instrument_id = instrument.id();
+    let quote_currency = instrument.quote_currency();
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+    let mut client = connect_client(&ws_url);
+    client.cache_instruments(&[instrument]);
+    client.cache_inst_id_code(instrument_id.symbol.inner(), 1_000_000_287);
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            td_mode,
+            ClientOrderId::from("Ofokwire001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("3"),
+            Some(TimeInForce::Fok),
+            Some(Price::from("0.0002")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let mut expected = json!({
+        "instIdCode": 1_000_000_287,
+        "tdMode": td_mode,
+        "ccy": quote_currency.to_string(),
+        "clOrdId": "Ofokwire001",
+        "tag": OKX_NAUTILUS_BROKER_ID,
+        "side": "buy",
+        "ordType": "fok",
+        "sz": "3",
+        "px": "0.0002",
+    });
+
+    if td_mode == OKXTradeMode::Cross {
+        expected["posSide"] = json!("net");
+    }
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["op"], "order");
+    assert_eq!(messages[0]["args"], json!([expected]));
+
+    client.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn test_submit_event_post_only_order_omits_speed_bump() {
     let state = Arc::new(TestServerState::default());
