@@ -352,12 +352,15 @@ pub(super) struct HeldSpreadFills {
 
 /// Requested modify values in IB units, kept until an openOrder reflects them or the
 /// modify is rejected, so unrelated openOrder refreshes cannot clear the pending flag.
+///
+/// Only fields the modify writes are set; `None` leaves a field unchecked. IB reports
+/// fields an order type does not use (such as a limit or trail stop price on a plain stop)
+/// with undocumented values that can change between openOrder messages.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PendingModifyValues {
-    pub(super) total_quantity: f64,
+    pub(super) total_quantity: Option<f64>,
     pub(super) limit_price: Option<f64>,
     pub(super) aux_price: Option<f64>,
-    /// Requested trailing stop trigger; `None` leaves the venue-moved trigger unchecked.
     pub(super) trail_stop_price: Option<f64>,
 }
 
@@ -366,20 +369,16 @@ impl PendingModifyValues {
         const EPS: f64 = 1e-9;
         let approx = |a: f64, b: f64| (a - b).abs() <= EPS;
 
-        let approx_opt = |a: Option<f64>, b: Option<f64>| match (a, b) {
-            (Some(a), Some(b)) => approx(a, b),
-            (None, None) => true,
-            _ => false,
+        let reflects = |requested: Option<f64>, reported: Option<f64>| {
+            requested.is_none_or(|requested| {
+                reported.is_some_and(|reported| approx(requested, reported))
+            })
         };
 
-        approx(self.total_quantity, order.total_quantity)
-            && approx_opt(self.limit_price, order.limit_price)
-            && approx_opt(self.aux_price, order.aux_price)
-            && self.trail_stop_price.is_none_or(|requested| {
-                order
-                    .trail_stop_price
-                    .is_some_and(|current| approx(requested, current))
-            })
+        reflects(self.total_quantity, Some(order.total_quantity))
+            && reflects(self.limit_price, order.limit_price)
+            && reflects(self.aux_price, order.aux_price)
+            && reflects(self.trail_stop_price, order.trail_stop_price)
     }
 }
 
