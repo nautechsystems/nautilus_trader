@@ -121,6 +121,7 @@ fn command_failure_from_submit_error(error: &anyhow::Error) -> CommandFailure {
                 KrakenSubmitOrderError::MissingStatus
                 | KrakenSubmitOrderError::UnknownStatus { .. }
                 | KrakenSubmitOrderError::MissingOrderId { .. }
+                | KrakenSubmitOrderError::InvalidOrderId { .. }
                 | KrakenSubmitOrderError::PostSubmitLookup { .. } => {
                     CommandFailure::ambiguous(error.to_string())
                 }
@@ -139,7 +140,8 @@ fn command_failure_from_modify_error(error: &anyhow::Error) -> CommandFailure {
                     CommandFailure::venue_rejected(reason)
                 }
                 KrakenModifyOrderError::UnknownStatus { .. }
-                | KrakenModifyOrderError::MissingOrderId => {
+                | KrakenModifyOrderError::MissingOrderId
+                | KrakenModifyOrderError::InvalidOrderId { .. } => {
                     CommandFailure::ambiguous(error.to_string())
                 }
             };
@@ -327,6 +329,31 @@ mod tests {
         };
 
         assert_eq!(actual, expected);
+    }
+
+    /// The venue has acted on a response carrying a malformed order ID, so neither command may read
+    /// as not sent: that would reject a live order or deny an applied edit.
+    #[rstest]
+    fn test_invalid_order_id_in_a_command_response_is_ambiguous() {
+        let submit = anyhow::Error::new(KrakenSubmitOrderError::InvalidOrderId {
+            detail: "Invalid order_id '' in Kraken spot submit response".to_string(),
+        });
+        let modify = anyhow::Error::new(KrakenModifyOrderError::InvalidOrderId {
+            detail: "Invalid order_id '' in Kraken futures edit response".to_string(),
+        });
+
+        assert_eq!(
+            command_failure_from_submit_error(&submit),
+            CommandFailure::Ambiguous(
+                "Invalid order_id '' in Kraken spot submit response".to_string()
+            )
+        );
+        assert_eq!(
+            command_failure_from_modify_error(&modify),
+            CommandFailure::Ambiguous(
+                "Invalid order_id '' in Kraken futures edit response".to_string()
+            )
+        );
     }
 
     #[rstest]

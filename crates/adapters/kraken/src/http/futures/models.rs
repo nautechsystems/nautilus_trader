@@ -1193,8 +1193,13 @@ pub struct FuturesEditOrderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesEditStatus {
     pub status: String,
-    #[serde(rename = "order_id", default)]
+    /// The order ID under the key the edit API documents.
+    #[serde(rename = "orderId", default)]
     pub order_id: Option<String>,
+    /// The order ID under the snake-case key the send response uses, read as well since the key
+    /// the edit response carries is not verified against the live venue.
+    #[serde(rename = "order_id", default)]
+    pub order_id_snake_case: Option<String>,
     #[serde(rename = "cli_ord_id", default)]
     pub cli_ord_id: Option<String>,
 }
@@ -1468,6 +1473,25 @@ mod tests {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to load test data from {path}: {e}"))
+    }
+
+    #[rstest]
+    fn test_parse_futures_edit_order_response_reads_the_documented_order_id() {
+        let data = load_test_data("http_edit_order_futures.json");
+
+        let response: FuturesEditOrderResponse = serde_json::from_str(&data).unwrap();
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(
+            response.server_time.as_deref(),
+            Some("2019-09-05T16:47:47.521Z")
+        );
+        assert_eq!(response.edit_status.status, "edited");
+        assert_eq!(
+            response.edit_status.order_id.as_deref(),
+            Some("022774bc-2c4a-4f26-9317-436c8d85746d")
+        );
+        assert_eq!(response.edit_status.order_id_snake_case, None);
     }
 
     #[rstest]

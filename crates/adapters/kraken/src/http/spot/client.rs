@@ -76,7 +76,8 @@ use crate::{
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
             parse_fill_report, parse_order_status_report, parse_spot_instrument,
-            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
+            parse_tokenized_instrument, parse_trade_tick_from_array, parse_venue_order_id,
+            truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -2956,6 +2957,7 @@ impl KrakenSpotHttpClient {
     /// - The order type or time in force is not supported.
     /// - The request fails.
     /// - The order is rejected.
+    /// - The response carries an invalid order ID.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
@@ -3009,7 +3011,12 @@ impl KrakenSpotHttpClient {
                     detail: "transaction ID was absent".to_string(),
                 })?;
 
-        Ok(VenueOrderId::new(venue_order_id))
+        parse_venue_order_id(venue_order_id, "spot submit response").map_err(|e| {
+            KrakenSubmitOrderError::InvalidOrderId {
+                detail: format!("{e:#}"),
+            }
+            .into()
+        })
     }
 
     /// Submits multiple orders to the Kraken Spot exchange.
@@ -4139,6 +4146,77 @@ mod tests {
         assert_eq!(
             covered_balance_base(key, &covered_bases),
             expected.map(Ustr::from)
+        );
+    }
+
+    /// An order the venue placed, answered with a transaction ID the model cannot hold, returns the
+    /// typed error: an untyped one would read as a command never sent and reject a live order.
+    #[rstest]
+    #[tokio::test]
+    async fn test_submit_order_returns_a_typed_error_for_an_invalid_order_id() {
+        use axum::{Router, http::header, routing::any};
+
+        let body = include_str!("../../../test_data/http_add_order_spot.json")
+            .replace("OUF4EM-FRGI2-MQMWZD", "");
+        let app = Router::new().route(
+            "/0/private/AddOrder",
+            any(move || {
+                let body = body.clone();
+                async move { ([(header::CONTENT_TYPE, "application/json")], body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenSpotHttpClient::with_credentials(
+            "test".to_string(),
+            "c2VjcmV0".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let error = client
+            .submit_order(
+                AccountId::from("KRAKEN-001"),
+                instrument_id,
+                ClientOrderId::from("O-SUBMIT"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.00100000"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000.0")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+                AccountType::Cash,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenSubmitOrderError>(),
+                Some(KrakenSubmitOrderError::InvalidOrderId { detail })
+                    if detail.starts_with("Invalid order_id '' in Kraken spot submit response")
+            ),
+            "{error:#}"
         );
     }
 
