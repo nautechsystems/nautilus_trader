@@ -1110,7 +1110,10 @@ fn test_stopped_engine_blocks_new_physical_subscriptions(
         data_engine.stop();
     }
 
-    futures::executor::block_on(data_engine.connect());
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(data_engine.connect());
 
     let subscribe = || {
         SubscribeCommand::Quotes(SubscribeQuotes::new(
