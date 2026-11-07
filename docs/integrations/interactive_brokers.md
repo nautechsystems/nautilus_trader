@@ -422,11 +422,12 @@ The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in fo
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
 
-The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
-order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
-IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
-transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+The adapter rejects post-only and reduce-only orders. Quote quantity is valid only for inverse
+instruments, and only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash
+quantity on any other order type with error 10244). Trailing orders support price offsets and
+basis-point offsets, which IB receives as a trailing percent. These checks, and any order the
+adapter cannot resolve or transform for IB, emit coded `OrderDenied` reasons before the adapter
+sends an order to IB.
 
 ### Commands and order attributes
 
@@ -439,6 +440,16 @@ transform for IB, emit coded `OrderDenied` reasons before the adapter sends an o
 | Cancel all orders | Yes     | Scoped through the execution client.                         |
 | Query order       | Yes     | Checks open orders, then executions before inferring cancel. |
 | Mass status       | Yes     | Orders, fills, and positions.                                |
+
+Brackets from `OrderFactory::bracket()` make the take-profit and stop-loss legs reduce-only by
+default, so the adapter denies the whole order list. Set `tp_reduce_only` and `sl_reduce_only` to
+`false` to submit the bracket to IB.
+
+:::warning
+Exits that are not reduce-only give up the reduce-only guarantee. IB does not cancel bracket exits
+when another order closes the position, so a later exit fill opens a position in the opposite
+direction. Cancel the remaining exits before closing the position separately.
+:::
 
 Pass `params={"exchange": "IEX"}` to submit, submit-list, or modify commands to override the
 cached contract exchange for that command. An omitted or empty value retains the cached exchange.

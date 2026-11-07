@@ -1612,6 +1612,8 @@ class OrderFactory:
         sl_exec_algorithm_params: typing.Mapping[str, str] | None = None,
         sl_tags: typing.Sequence[str] | None = None,
         sl_client_order_id: model.ClientOrderId | None = None,
+        tp_reduce_only: bool = True,
+        sl_reduce_only: bool = True,
     ) -> list: ...
 
 @typing.final

@@ -542,6 +542,7 @@ impl<'a> OrderApi<'a> {
         tp_limit_offset: Option<Decimal>,
         #[builder(default = TimeInForce::Gtc)] tp_time_in_force: TimeInForce,
         #[builder(default = true)] tp_post_only: bool,
+        #[builder(default = true)] tp_reduce_only: bool,
         tp_exec_algorithm_id: Option<ExecAlgorithmId>,
         tp_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("TAKE_PROFIT")])] tp_tags: Vec<Ustr>,
@@ -553,6 +554,7 @@ impl<'a> OrderApi<'a> {
         sl_trailing_offset: Option<Decimal>,
         #[builder(default = TrailingOffsetType::Price)] sl_trailing_offset_type: TrailingOffsetType,
         #[builder(default = TimeInForce::Gtc)] sl_time_in_force: TimeInForce,
+        #[builder(default = true)] sl_reduce_only: bool,
         sl_exec_algorithm_id: Option<ExecAlgorithmId>,
         sl_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         #[builder(default = vec![Ustr::from("STOP_LOSS")])] sl_tags: Vec<Ustr>,
@@ -588,6 +590,7 @@ impl<'a> OrderApi<'a> {
             .maybe_tp_limit_offset(tp_limit_offset)
             .tp_time_in_force(tp_time_in_force)
             .tp_post_only(tp_post_only)
+            .tp_reduce_only(tp_reduce_only)
             .maybe_tp_exec_algorithm_id(tp_exec_algorithm_id)
             .maybe_tp_exec_algorithm_params(tp_exec_algorithm_params)
             .tp_tags(tp_tags)
@@ -599,6 +602,7 @@ impl<'a> OrderApi<'a> {
             .maybe_sl_trailing_offset(sl_trailing_offset)
             .sl_trailing_offset_type(sl_trailing_offset_type)
             .sl_time_in_force(sl_time_in_force)
+            .sl_reduce_only(sl_reduce_only)
             .maybe_sl_exec_algorithm_id(sl_exec_algorithm_id)
             .maybe_sl_exec_algorithm_params(sl_exec_algorithm_params)
             .sl_tags(sl_tags)
@@ -1073,6 +1077,74 @@ mod tests {
         assert_eq!(orders[2].order_type(), OrderType::Limit);
         assert_eq!(orders[2].order_side(), OrderSide::Sell);
         assert_eq!(orders[2].price(), Some(Price::from("1.10000")));
+    }
+
+    #[rstest]
+    fn test_order_api_bracket_exits_are_reduce_only_by_default() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let order_factory = RefCell::new(OrderFactory::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            None,
+            None,
+            clock,
+            false,
+            true,
+        ));
+        let api = OrderApi::new(&order_factory);
+
+        let orders = api
+            .bracket()
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .order_side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .tp_price(Price::from("1.10000"))
+            .sl_trigger_price(Price::from("0.90000"))
+            .call();
+
+        assert!(!orders[0].is_reduce_only(), "entry must not be reduce-only");
+        assert!(orders[1].is_reduce_only(), "stop-loss must be reduce-only");
+        assert!(
+            orders[2].is_reduce_only(),
+            "take-profit must be reduce-only"
+        );
+    }
+
+    #[rstest]
+    #[case::tp_disabled(false, true)]
+    #[case::sl_disabled(true, false)]
+    #[case::both_disabled(false, false)]
+    #[case::both_enabled(true, true)]
+    fn test_order_api_bracket_overrides_exit_reduce_only(
+        #[case] tp_reduce_only: bool,
+        #[case] sl_reduce_only: bool,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let order_factory = RefCell::new(OrderFactory::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            None,
+            None,
+            clock,
+            false,
+            true,
+        ));
+        let api = OrderApi::new(&order_factory);
+
+        let orders = api
+            .bracket()
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .order_side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .tp_price(Price::from("1.10000"))
+            .tp_reduce_only(tp_reduce_only)
+            .sl_trigger_price(Price::from("0.90000"))
+            .sl_reduce_only(sl_reduce_only)
+            .call();
+
+        assert!(!orders[0].is_reduce_only(), "entry must not be reduce-only");
+        assert_eq!(orders[1].is_reduce_only(), sl_reduce_only);
+        assert_eq!(orders[2].is_reduce_only(), tp_reduce_only);
     }
 
     #[rstest]
