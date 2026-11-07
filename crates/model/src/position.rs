@@ -35,6 +35,8 @@
 //!   PnL sums may absorb a disappearing residual smaller than one native settlement [`Money`] unit.
 //! - Derived [`Money`] values round midpoint to even at their native fixed-point scale.
 
+mod replay;
+
 use std::{
     fmt::Display,
     hash::{Hash, Hasher},
@@ -53,6 +55,7 @@ use ruint::aliases::{U256, U512};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+pub use self::replay::PositionReplayEvents;
 use crate::{
     data::InstrumentClose,
     enums::{
@@ -105,7 +108,7 @@ pub struct Position {
     pub events: Vec<OrderFilled>,
     pub adjustments: Vec<PositionAdjusted>,
     #[serde(default)]
-    pub replay_events: Vec<PositionReplayEvent>,
+    pub replay_events: PositionReplayEvents,
     #[serde(default)]
     pub fill_voids: Vec<PositionFillVoid>,
     pub trader_id: TraderId,
@@ -198,7 +201,7 @@ impl Position {
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
             adjustments: Vec::<PositionAdjusted>::new(),
-            replay_events: Vec::new(),
+            replay_events: PositionReplayEvents::default(),
             fill_voids: Vec::new(),
             trade_ids: AHashSet::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
@@ -259,7 +262,7 @@ impl Position {
         Self {
             events: Vec::new(),
             adjustments: Vec::new(),
-            replay_events: Vec::new(),
+            replay_events: PositionReplayEvents::default(),
             fill_voids: Vec::new(),
             trader_id: self.trader_id,
             strategy_id: self.strategy_id,
@@ -732,9 +735,7 @@ impl Position {
     /// Returns whether durable replay history contains `trade_id`.
     #[must_use]
     pub fn has_replay_trade_id(&self, trade_id: TradeId) -> bool {
-        self.replay_events.iter().any(
-            |event| matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == trade_id),
-        )
+        self.replay_events.has_trade_id(trade_id)
     }
 
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
@@ -866,23 +867,7 @@ impl Position {
     }
 
     fn has_replay_price_restatement(&self) -> bool {
-        let mut seen = AHashMap::new();
-
-        for event in &self.replay_events {
-            let PositionReplayEvent::Filled(fill) = event else {
-                continue;
-            };
-
-            if let Some(price) = seen.get(&fill.trade_id) {
-                if *price != fill.last_px {
-                    return true;
-                }
-            } else {
-                seen.insert(fill.trade_id, fill.last_px);
-            }
-        }
-
-        false
+        self.replay_events.has_price_restatement()
     }
 
     fn restate_open_average(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
