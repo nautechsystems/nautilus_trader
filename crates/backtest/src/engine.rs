@@ -2602,7 +2602,7 @@ mod tests {
         },
         types::{Currency, Money, Price, Quantity},
     };
-    use nautilus_system::{Controller, KernelEventStore, RegisteredComponents};
+    use nautilus_system::{Controller, KernelEventStore, RegisteredComponents, trader::Trader};
     use nautilus_testkit::{
         cache::TestCacheDatabaseControl,
         components::{StateActor, StateStrategy},
