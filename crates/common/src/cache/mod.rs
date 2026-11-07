@@ -1146,36 +1146,70 @@ impl Cache {
     // Calculate the unrealized profit and loss (PnL) for `position`.
     #[must_use]
     pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
-        if position.side == PositionSide::Flat {
-            return Some(Money::zero(position.settlement_currency));
-        }
+        let instrument_id = &position.instrument_id;
+        let price_type = match position.side {
+            PositionSide::Long => PriceType::Bid,
+            PositionSide::Short => PriceType::Ask,
+            PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
+        };
+
+        let allows_non_positive = || {
+            self.instrument(instrument_id)
+                .is_some_and(Instrument::allows_negative_price)
+        };
+        let is_valid = |price: &Price| {
+            !price.is_undefined()
+                && !price.is_error()
+                && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
+        };
+        let quote_price = || {
+            self.quote(instrument_id).and_then(|quote| {
+                let (price, size) = match price_type {
+                    PriceType::Bid => (quote.bid_price, quote.bid_size),
+                    _ => (quote.ask_price, quote.ask_size),
+                };
+                (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                    .then_some(price)
+            })
+        };
+
+        // Bars closing together rank in the fallback order above, then mid, then the opposite quote
+        // side, then by bar type, so the choice never depends on cache iteration order.
+        let bar_rank = |bar: &Bar| {
+            let bar_price_type = bar.bar_type.spec().price_type;
+            if bar_price_type == price_type {
+                0
+            } else {
+                match bar_price_type {
+                    PriceType::Mark => 1,
+                    PriceType::Last => 2,
+                    PriceType::Mid => 3,
+                    PriceType::Bid | PriceType::Ask => 4,
+                }
+            }
+        };
+
+        // In a backtest `ts_init` is the bar close for open- and close-stamped bars alike
+        let bar_close = || {
+            self.bars
+                .iter()
+                .filter(|(bar_type, _)| bar_type.instrument_id() == *instrument_id)
+                .filter_map(|(_, bars)| bars.front())
+                .filter(|bar| is_valid(&bar.close))
+                .min_by_key(|bar| (Reverse(bar.ts_init), bar_rank(bar), bar.bar_type))
+                .map(|bar| bar.close)
+        };
 
         // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask.
         // When quotes are unavailable, fall back across mark prices, trade ticks, and bars.
-        let last = if let Some(quote) = self.quote(&position.instrument_id) {
-            match position.side {
-                PositionSide::Flat => unreachable!(),
-                PositionSide::Long => quote.bid_price,
-                PositionSide::Short => quote.ask_price,
-            }
-        } else if let Some(mark) = self.mark_price(&position.instrument_id) {
-            mark.value
-        } else if let Some(trade) = self.trade(&position.instrument_id) {
-            trade.price
-        } else if let Some(bar_close) = self
-            .bars
-            .iter()
-            .filter(|(bar_type, _)| bar_type.instrument_id() == position.instrument_id)
-            .filter_map(|(_, bars)| bars.front())
-            .max_by_key(|bar| bar.ts_event)
-            .map(|bar| bar.close)
-        {
-            bar_close
-        } else {
+        let Some(last) = quote_price()
+            .or_else(|| self.price(instrument_id, PriceType::Mark).filter(is_valid))
+            .or_else(|| self.price(instrument_id, PriceType::Last).filter(is_valid))
+            .or_else(bar_close)
+        else {
             log::warn!(
-                "Cannot calculate unrealized PnL for {}, no quotes, mark prices, trades, or bars for {}",
+                "Cannot calculate unrealized PnL for {}, no quotes, mark prices, trades, or bars for {instrument_id}",
                 position.id,
-                position.instrument_id
             );
             return None;
         };
