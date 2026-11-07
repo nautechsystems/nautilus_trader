@@ -3260,12 +3260,12 @@ fn test_triggered_limit_style_order_not_matched_rests_unless_immediate(
     );
 }
 
-// Characterisation: a marketable limit with only half of the quantity available follows the
-// immediate-order law of the fill path, as it does for a plain limit
+// Characterization: a marketable limit with only half of the quantity available follows the
+// immediate-order rule of the fill path, as it does for a plain limit
 #[rstest]
 #[case::stop_limit(OrderType::StopLimit, "1495.00")]
 #[case::limit_if_touched(OrderType::LimitIfTouched, "1500.00")]
-fn test_triggered_limit_style_partial_match_follows_immediate_order_law(
+fn test_triggered_limit_style_partial_match_follows_immediate_order_rule(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
     #[case] order_type: OrderType,
@@ -3346,7 +3346,7 @@ fn test_triggered_limit_style_partial_match_follows_immediate_order_law(
     assert!(!engine_l2.order_exists(client_order_id));
 
     if time_in_force == TimeInForce::Fok {
-        // The cancelled FOK order consumed nothing: a later order still sees the full level
+        // The canceled FOK order consumed nothing: a later order still sees the full level
         clear_order_event_handler_messages(&order_event_handler);
         let mut later = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_eth_usdt.id())
