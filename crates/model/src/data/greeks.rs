@@ -43,7 +43,7 @@ use crate::{
 
 const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9_8845_33d4_3651);
 /// used to convert theta to per-calendar-day change when building `BlackScholesGreeksResult`.
-const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
+const THETA_DAILY_FACTOR: f64 = 1.0 / 365.0;
 /// Scale for vega to express as absolute percent change when building `BlackScholesGreeksResult`.
 const VEGA_PERCENT_FACTOR: f64 = 0.01;
 const RHO_PERCENT_FACTOR: f64 = 0.01;
@@ -1862,6 +1862,30 @@ mod tests {
         assert_eq!(greeks.pnl, -150.0);
     }
 
+    #[rstest]
+    #[case(true, 10.450_583_572_185_565, -0.017_572_678_209_419_72)]
+    #[case(false, 5.573_526_022_256_971, -0.004_542_138_147_766_099)]
+    fn test_theta_per_calendar_day(
+        #[case] is_call: bool,
+        #[case] price: f64,
+        #[case] expected: f64,
+    ) {
+        let exact = black_scholes_greeks_exact(100.0, 0.05, 0.05, 0.2, is_call, 100.0, 1.0);
+        let fast = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call, 100.0, 1.0);
+        let implied = imply_vol_and_greeks(100.0, 0.05, 0.05, is_call, 100.0, 1.0, price);
+        let refined = refine_vol_and_greeks(100.0, 0.05, 0.05, is_call, 100.0, 1.0, price, 0.2);
+
+        assert!((exact.theta - expected).abs() < 1e-12);
+
+        for result in [fast, implied, refined] {
+            assert!(
+                (result.theta - expected).abs() < 5e-8,
+                "Expected daily theta {expected}, was {}",
+                result.theta
+            );
+        }
+    }
+
     // Original accuracy tests (keeping these as they are comprehensive)
     #[rstest]
     fn test_greeks_accuracy_call() {
@@ -1888,7 +1912,7 @@ mod tests {
         let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps).price
             - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps).price)
             / (2.0 * eps)
-            / 365.25;
+            / 365.0;
 
         // Tolerance relaxed due to differences between fast f32 implementation and exact finite difference approximations
         // Also accounts for differences in how b (cost of carry) is handled between implementations
@@ -1947,7 +1971,7 @@ mod tests {
         let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps).price
             - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps).price)
             / (2.0 * eps)
-            / 365.25;
+            / 365.0;
 
         // Tolerance relaxed due to differences between fast f32 implementation and exact finite difference approximations
         // Also accounts for differences in how b (cost of carry) is handled between implementations

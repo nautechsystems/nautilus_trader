@@ -310,7 +310,7 @@ impl PortfolioGreeksParams {
 ///
 /// Vega is expressed in terms of absolute percent changes ((dV / dVol) / 100).
 /// Rho is expressed per percentage point of interest rate ((dV / dRate) / 100).
-/// Theta is expressed in terms of daily changes ((dV / d(T-t)) / 365.25, where T is the expiry of an option and t is the current time).
+/// Theta is expressed in terms of daily changes ((dV / d(T-t)) / 365, where T is the expiry of an option and t is the current time).
 ///
 /// Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
 #[allow(dead_code)]

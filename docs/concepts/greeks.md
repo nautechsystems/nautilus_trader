@@ -138,7 +138,7 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 Conventions:
 
 - Vega is scaled by 0.01 (sensitivity to a 1 percentage point vol change).
-- Theta is scaled by 1/365.25 (daily decay).
+- Theta is scaled by 1/365 (daily decay).
 - Rho is scaled by 0.01 (sensitivity to a 1 percentage point rate change).
 - American-style options are priced as European for Greeks computation.
 
