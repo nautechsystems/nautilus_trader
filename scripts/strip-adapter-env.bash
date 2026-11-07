@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs a command with every adapter environment variable unset, so tests cannot
-# silently depend on locally configured venue credentials. `make pre-flight`
-# runs through this wrapper.
+# silently depend on locally configured venue credentials. Rust and Python test
+# targets and `make pre-flight` run through this wrapper.
 #
 # When a new adapter environment variable is introduced (API key, secret,
 # passphrase, private key, vault, account address or index, URL override, or

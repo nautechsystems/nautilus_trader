@@ -129,8 +129,8 @@ pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p
 [[ "$pre_flight_recipe" != *'pytest-wheel'* && "$pre_flight_recipe" != *'build-wheel'* ]] ||
   fail "Pre-flight must not build a wheel for validation"
 isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory pytest-isolated)
-[[ "$isolated_commands" == 'bash scripts/test-python-isolation.bash' ]] ||
-  fail "Python isolation must only check the existing build"
+[[ "$isolated_commands" == "bash \"$REPO_ROOT/scripts/strip-adapter-env.bash\" bash scripts/test-python-isolation.bash" ]] ||
+  fail "Python isolation must only check the existing build with adapter variables unset"
 [[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
   fail "Pre-flight still runs Rust doctests"
 
