@@ -128,6 +128,12 @@ harness = false
 name = "market_data"
 harness = false
 
+[[bench]]
+name = "tick_to_trade"
+harness = true
+test = false
+required-features = ["python"]
+
 # Run with `cargo run -p nautilus-bybit --bin bybit-http`.
 [[bin]]
 name = "bybit-http"
