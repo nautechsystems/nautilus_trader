@@ -198,7 +198,10 @@ impl DataEngine {
                 aggregator.borrow_mut().set_is_running(keep_running);
             }
 
-            if !state.update_subscriptions
+            let stop_after_request = self.bar_aggregators_pending_stop.contains(&key)
+                && !self.has_pending_shared_bar_aggregation(bar_type);
+
+            if (!state.update_subscriptions || stop_after_request)
                 && let Err(e) = self.stop_bar_aggregator(bar_type, aggregator_request_id)
             {
                 log::error!("Error stopping request bar aggregator for {bar_type}: {e}");
@@ -398,11 +401,19 @@ impl DataEngine {
             },
         );
 
-        if self
-            .bar_aggregators
-            .contains_key(&bar_aggregator_key(bar_type, None))
-        {
-            match self.stop_bar_aggregator(bar_type, None) {
+        let key = bar_aggregator_key(bar_type, None);
+
+        if self.bar_aggregators.contains_key(&key) {
+            let result = if self.has_pending_shared_bar_aggregation(bar_type) {
+                // Release live data without canceling an accepted historical aggregation
+                self.unsubscribe_bar_aggregator_handlers(&key);
+                self.bar_aggregators_pending_stop.insert(key);
+                Ok(())
+            } else {
+                self.stop_bar_aggregator(bar_type, None)
+            };
+
+            match result {
                 Ok(()) => {
                     self.subscriptions_bar_aggregation
                         .remove(&bar_type.standard());
@@ -439,6 +450,16 @@ impl DataEngine {
                 ));
             }
         }
+    }
+
+    fn has_pending_shared_bar_aggregation(&self, bar_type: BarType) -> bool {
+        self.request_bar_aggregations.values().any(|state| {
+            state.update_subscriptions
+                && state
+                    .bar_types
+                    .iter()
+                    .any(|requested| requested.standard() == bar_type.standard())
+        })
     }
 
     fn create_bar_aggregator(
@@ -640,6 +661,7 @@ impl DataEngine {
         }
 
         self.start_bar_aggregator(bar_type, None, skip_first_non_full_bar, time_zone)?;
+        self.bar_aggregators_pending_stop.remove(&key);
         let source = self.subscribe_bar_aggregator(cmd);
         self.subscriptions_bar_aggregation.insert(
             bar_type.standard(),
@@ -977,10 +999,17 @@ impl DataEngine {
         })?;
 
         aggregator.borrow_mut().stop();
-        self.bar_aggregator_warmups.remove(&key);
+        self.bar_aggregators_pending_stop.remove(&key);
+        self.unsubscribe_bar_aggregator_handlers(&key);
+
+        Ok(())
+    }
+
+    fn unsubscribe_bar_aggregator_handlers(&mut self, key: &BarAggregatorKey) {
+        self.bar_aggregator_warmups.remove(key);
 
         // Unsubscribe any registered message handlers
-        if let Some(subs) = self.bar_aggregator_handlers.remove(&key) {
+        if let Some(subs) = self.bar_aggregator_handlers.remove(key) {
             for sub in subs {
                 match sub {
                     BarAggregatorSubscription::Bar { topic, handler } => {
@@ -995,8 +1024,6 @@ impl DataEngine {
                 }
             }
         }
-
-        Ok(())
     }
 }
 
