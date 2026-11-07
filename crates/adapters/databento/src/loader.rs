@@ -38,7 +38,7 @@ use super::{
         MboDeltaBuffer, decode_imbalance_msg, decode_mbo_msg, decode_record, decode_statistics_msg,
         decode_status_msg, is_supported_stat_type,
     },
-    symbology::{decode_nautilus_instrument_id, resolve_futures_instrument_id},
+    symbology::{decode_nautilus_instrument_id, nautilus_symbol, resolve_futures_instrument_id},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 use crate::{
@@ -85,6 +85,7 @@ use crate::{
 #[derive(Debug)]
 pub struct DatabentoDataLoader {
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
@@ -102,6 +103,7 @@ impl DatabentoDataLoader {
     pub fn new(publishers_filepath: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             futures_year_digits: FuturesYearDigits::default(),
+            share_class_space: true,
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
@@ -132,6 +134,13 @@ impl DatabentoDataLoader {
     #[must_use]
     pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
         self.futures_year_digits = futures_year_digits;
+        self
+    }
+
+    /// Spells a share class with a space in instrument IDs (`BRK.B` -> `BRK B`).
+    #[must_use]
+    pub fn with_share_class_space(mut self, share_class_space: bool) -> Self {
+        self.share_class_space = share_class_space;
         self
     }
 
@@ -281,7 +290,7 @@ impl DatabentoDataLoader {
                     let raw_symbol = rec
                         .raw_symbol()
                         .map_err(|e| anyhow::anyhow!("Error decoding `raw_symbol`: {e}"))?;
-                    let symbol = Symbol::from(raw_symbol);
+                    let symbol = nautilus_symbol(raw_symbol, self.share_class_space);
 
                     let publisher = rec
                         .hd
@@ -1002,6 +1011,7 @@ impl DatabentoDataLoader {
             &self.publisher_venue_map,
             &self.symbol_venue_map,
             self.futures_year_digits,
+            self.share_class_space,
             &self.futures_symbols,
             None,
         )

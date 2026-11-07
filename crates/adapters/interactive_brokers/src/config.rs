@@ -318,6 +318,10 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     /// Year digits in futures IDs: 2 by default, or 1 for existing catalogs and caches.
     #[builder(default)]
     pub futures_year_digits: FuturesYearDigits,
+    /// Whether simplified stock IDs keep IB's share-class space (`BRK B`), true by default,
+    /// or use a hyphen (`BRK-B`) for existing catalogs and caches.
+    #[builder(default = true)]
+    pub share_class_space: bool,
 }
 
 impl Default for InteractiveBrokersInstrumentProviderConfig {
@@ -836,6 +840,20 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "`futures_year_digits` must be either 1 or 2"
+        );
+    }
+
+    #[rstest]
+    fn test_provider_share_class_space_defaults_on_and_round_trips() {
+        let default = InteractiveBrokersInstrumentProviderConfig::default();
+        let decoded: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({"share_class_space": false})).unwrap();
+
+        assert!(default.share_class_space);
+        assert!(!decoded.share_class_space);
+        assert_eq!(
+            serde_json::to_value(&decoded).unwrap()["share_class_space"],
+            serde_json::json!(false)
         );
     }
 }

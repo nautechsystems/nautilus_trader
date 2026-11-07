@@ -162,7 +162,8 @@ impl InteractiveBrokersInstrumentProvider {
         config.validate()?;
 
         let symbology = Symbology::new(config.symbology_method)
-            .with_futures_year_digits(config.futures_year_digits);
+            .with_futures_year_digits(config.futures_year_digits)
+            .with_share_class_space(config.share_class_space);
 
         Ok(Self {
             config,

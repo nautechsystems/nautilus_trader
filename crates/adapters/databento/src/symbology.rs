@@ -78,12 +78,14 @@ pub fn instrument_id_to_symbol_string(
 /// - The publisher cannot be extracted from the record.
 /// - The publisher ID is not found in the venue map.
 /// - The underlying instrument ID mapping fails.
+#[expect(clippy::too_many_arguments)]
 pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     futures_symbols: &AHashMap<(PublisherId, u32, time::Date), Symbol>,
     requested_symbols: Option<&AHashSet<Symbol>>,
 ) -> anyhow::Result<InstrumentId> {
@@ -99,6 +101,7 @@ pub fn decode_nautilus_instrument_id(
         metadata,
         *venue,
         futures_year_digits,
+        share_class_space,
         futures_symbols,
         symbol_venue_map,
         requested_symbols,
@@ -128,11 +131,13 @@ pub fn decode_nautilus_instrument_id(
 /// - Timestamp overflow occurs when calculating the date.
 /// - Symbol metadata lookup fails.
 /// - No raw symbol is found for the instrument ID.
+#[expect(clippy::too_many_arguments)]
 pub fn get_nautilus_instrument_id_for_record(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
     venue: Venue,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     futures_symbols: &AHashMap<(PublisherId, u32, time::Date), Symbol>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     requested_symbols: Option<&AHashSet<Symbol>>,
@@ -174,7 +179,7 @@ pub fn get_nautilus_instrument_id_for_record(
         return Ok(InstrumentId::new(*symbol, venue));
     }
 
-    let symbol = Symbol::from_str_unchecked(raw_symbol);
+    let symbol = nautilus_symbol(raw_symbol, share_class_space);
     let instrument_id = InstrumentId::new(symbol, venue);
     resolve_futures_instrument_id(
         record,
@@ -240,12 +245,45 @@ pub(crate) fn dataset_uses_futures_symbology(dataset: &str) -> bool {
     )
 }
 
+/// Converts a Databento symbol to a Nautilus symbol.
+///
+/// With `share_class_space`, a share class's dot becomes a space (`BRK.B` -> `BRK B`), since a
+/// dot separates symbol and venue in instrument IDs and Interactive Brokers spells the class with
+/// a space. Parent (`ES.FUT`) and continuous (`ES.c.0`) symbols keep their dots.
+#[must_use]
+pub fn nautilus_symbol(raw_symbol: &str, share_class_space: bool) -> Symbol {
+    if share_class_space
+        && infer_symbology_type(raw_symbol) == SType::RawSymbol
+        && is_share_class_symbol(raw_symbol, '.')
+    {
+        Symbol::from_str_unchecked(raw_symbol.replace('.', " "))
+    } else {
+        Symbol::from_str_unchecked(raw_symbol)
+    }
+}
+
+/// Returns whether `symbol` is a share class: uppercase-letter parts joined by single
+/// `separator`s, such as `BRK.B` or `BRK B`.
+///
+/// Option and futures symbols such as `BRKB  261120C00525000` or `ESZ6 P5000` don't qualify.
+fn is_share_class_symbol(symbol: &str, separator: char) -> bool {
+    symbol.contains(separator)
+        && symbol
+            .split(separator)
+            .all(|part| !part.is_empty() && part.bytes().all(|c| c.is_ascii_uppercase()))
+}
+
 pub(crate) fn raw_symbol(
     symbol: &str,
     dataset: &str,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
 ) -> String {
-    if futures_year_digits == FuturesYearDigits::Two && dataset_uses_futures_symbology(dataset) {
+    if share_class_space && is_share_class_symbol(symbol, ' ') {
+        symbol.replace(' ', ".")
+    } else if futures_year_digits == FuturesYearDigits::Two
+        && dataset_uses_futures_symbology(dataset)
+    {
         rewrite_futures_symbol(symbol, 0, 1, false).unwrap_or_else(|| symbol.to_string())
     } else {
         symbol.to_string()
@@ -455,6 +493,48 @@ mod tests {
     }
 
     #[rstest]
+    #[case("BRK.B", true, "BRK B")]
+    #[case("BF.B", true, "BF B")]
+    #[case("BRK.B", false, "BRK.B")]
+    #[case("AAPL", true, "AAPL")]
+    #[case("SPY   240319P00511000", true, "SPY   240319P00511000")]
+    #[case("ES.FUT", true, "ES.FUT")]
+    #[case("SPX.OPT", true, "SPX.OPT")]
+    #[case("ES.c.0", true, "ES.c.0")]
+    #[case("ES.n.0", true, "ES.n.0")]
+    fn test_nautilus_symbol_spells_share_class_with_space(
+        #[case] raw: &str,
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            nautilus_symbol(raw, share_class_space),
+            Symbol::from(expected)
+        );
+    }
+
+    #[rstest]
+    #[case("BRK B", "EQUS.MINI", true, "BRK.B")]
+    #[case("BRK B", "XNYS.PILLAR", true, "BRK.B")]
+    #[case("BRK B", "EQUS.MINI", false, "BRK B")]
+    #[case("AAPL", "EQUS.MINI", true, "AAPL")]
+    #[case("BRKB  261120C00525000", "OPRA.PILLAR", true, "BRKB  261120C00525000")]
+    #[case("ESZ6 P5000", "GLBX.MDP3", true, "ESZ6 P5000")]
+    #[case("BRN FMM0024!", "IFEU.IMPACT", true, "BRN FMM0024!")]
+    #[case("BRN  99   5617289", "IFEU.IMPACT", true, "BRN  99   5617289")]
+    fn test_raw_symbol_spells_share_class_with_dot(
+        #[case] symbol: &str,
+        #[case] dataset: &str,
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            raw_symbol(symbol, dataset, FuturesYearDigits::One, share_class_space),
+            expected
+        );
+    }
+
+    #[rstest]
     #[case("ESZ26", "GLBX.MDP3", 2, "ESZ6")]
     #[case("ESZ95", "GLBX.MDP3", 2, "ESZ5")]
     #[case("ESZ26 P5000", "GLBX.MDP3", 2, "ESZ6 P5000")]
@@ -472,7 +552,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(
-            raw_symbol(symbol, dataset, digits.try_into().unwrap()),
+            raw_symbol(symbol, dataset, digits.try_into().unwrap(), false),
             expected
         );
     }

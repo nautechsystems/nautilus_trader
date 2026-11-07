@@ -332,7 +332,7 @@ impl InteractiveBrokersExecutionClientConfig {
 impl InteractiveBrokersInstrumentProviderConfig {
     /// Creates a new `InteractiveBrokersInstrumentProviderConfig` instance.
     #[new]
-    #[pyo3(signature = (symbology_method=None, load_ids=None, load_contracts=None, min_expiry_days=None, max_expiry_days=None, build_options_chain=None, build_futures_chain=None, cache_validity_days=None, convert_exchange_to_mic_venue=None, symbol_to_mic_venue=None, filter_sec_types=None, filter_callable=None, cache_path=None, futures_year_digits=None))]
+    #[pyo3(signature = (symbology_method=None, load_ids=None, load_contracts=None, min_expiry_days=None, max_expiry_days=None, build_options_chain=None, build_futures_chain=None, cache_validity_days=None, convert_exchange_to_mic_venue=None, symbol_to_mic_venue=None, filter_sec_types=None, filter_callable=None, cache_path=None, futures_year_digits=None, share_class_space=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         py: Python<'_>,
@@ -350,6 +350,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
         filter_callable: Option<String>,
         cache_path: Option<String>,
         futures_year_digits: Option<u8>,
+        share_class_space: Option<bool>,
     ) -> PyResult<Self> {
         let futures_year_digits = futures_year_digits
             .map(FuturesYearDigits::try_from)
@@ -390,6 +391,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
             filter_callable,
             cache_path,
             futures_year_digits,
+            share_class_space: share_class_space.unwrap_or(true),
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -399,6 +401,12 @@ impl InteractiveBrokersInstrumentProviderConfig {
     #[getter]
     fn futures_year_digits(&self) -> u8 {
         self.futures_year_digits.into()
+    }
+
+    /// Returns whether simplified stock IDs keep IB's share-class space.
+    #[getter]
+    fn share_class_space(&self) -> bool {
+        self.share_class_space
     }
 
     /// Returns the symbology method.
@@ -619,6 +627,35 @@ mod tests {
             assert_eq!(
                 error.value(py).to_string(),
                 "`futures_year_digits` must be either 1 or 2"
+            );
+        });
+    }
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some(true), true)]
+    #[case(Some(false), false)]
+    fn test_python_share_class_space(#[case] configured: Option<bool>, #[case] expected: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            if let Some(share_class_space) = configured {
+                kwargs
+                    .set_item("share_class_space", share_class_space)
+                    .unwrap();
+            }
+
+            let config = py
+                .get_type::<InteractiveBrokersInstrumentProviderConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            assert_eq!(
+                config
+                    .getattr("share_class_space")
+                    .unwrap()
+                    .extract::<bool>()
+                    .unwrap(),
+                expected
             );
         });
     }

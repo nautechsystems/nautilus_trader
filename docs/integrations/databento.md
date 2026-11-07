@@ -531,6 +531,13 @@ After upgrading, either set `futures_year_digits=1` or re-import existing data i
 rebuild caches, and update configured instrument IDs. Renaming catalog files does not change IDs stored
 in records.
 
+Share classes use a space in instrument IDs by default: Databento's `BRK.B` becomes `BRK B.EQUS`, since
+a dot separates symbol and venue. This matches Interactive Brokers, which writes the class with a space.
+Parent and continuous symbols such as `ES.FUT` and `ES.c.0` keep their dots. Requests send the native
+dotted symbol. The instrument's `raw_symbol` keeps `BRK.B`. Set
+`share_class_space=False` on the data client config, data loader, historical client, or live client to
+retain existing IDs.
+
 All symbols in one request or subscription must use the same symbology type.
 Batch `AAPL.EQUS` with `MSFT.EQUS`, or `ES.FUT.XCME` with `NQ.FUT.XCME`, but do
 not mix raw and parent symbols in one Databento request.
@@ -979,6 +986,7 @@ and point `publishers_filepath` at the local copy.
 | `publishers_filepath`     | Required | Local path to Databento publisher metadata.             |
 | `use_exchange_as_venue`   | `False`  | Use exchange MIC venues for GLBX instruments.           |
 | `futures_year_digits`     | `2`      | Use two-digit years, or `1` for existing futures IDs.   |
+| `share_class_space`       | `True`   | Spell share classes with a space (`BRK B`).             |
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
 | `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
 | `historical_base_url`     | `None`   | Override the Historical API base URL.                   |

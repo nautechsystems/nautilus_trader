@@ -445,3 +445,33 @@ fn test_parse_spread_instrument_id_to_legs() {
     assert_eq!(legs[1].0.symbol.as_str(), "MSFT");
     assert_eq!(legs[1].1, -2);
 }
+
+#[rstest]
+fn test_share_class_space_names_stock_with_space_both_ways() {
+    let config = InteractiveBrokersInstrumentProviderConfig {
+        symbol_to_mic_venue: HashMap::from([("BRK".to_string(), "EQUS".to_string())]),
+        ..Default::default()
+    };
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+    let contract = Contract {
+        contract_id: 0,
+        symbol: Symbol::from("BRK B"),
+        security_type: SecurityType::Stock,
+        exchange: Exchange::from("SMART"),
+        primary_exchange: Exchange::from("NYSE"),
+        currency: Currency::from("USD"),
+        local_symbol: "BRK B".to_string(),
+        ..Default::default()
+    };
+
+    let instrument_id = provider
+        .resolve_instrument_id_for_contract(&contract)
+        .unwrap();
+    let outbound = provider
+        .resolve_contract_for_instrument(instrument_id)
+        .unwrap();
+
+    assert_eq!(instrument_id, InstrumentId::from("BRK B.EQUS"));
+    assert_eq!(outbound.symbol.as_str(), "BRK B");
+    assert_eq!(outbound.security_type, SecurityType::Stock);
+}
