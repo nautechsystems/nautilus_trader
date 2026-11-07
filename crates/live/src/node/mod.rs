@@ -2631,12 +2631,12 @@ impl LiveNode {
             + exec_cmd_rx.len()
             + data_evt_rx.len()
             + data_cmd_rx.len();
-        log::info!("Draining shutdown queues ({pending} events initially pending)");
+        log::debug!("Draining shutdown queues ({pending} events initially pending)");
 
         let mut drained = 0;
         let log_progress = |processed: usize| {
             if processed.is_multiple_of(10_000) {
-                log::info!("Processed {processed} events during shutdown drain");
+                log::debug!("Processed {processed} events during shutdown drain");
             }
         };
 
@@ -2680,7 +2680,7 @@ impl LiveNode {
             log_progress(drained);
         }
 
-        log::info!("Drained {drained} remaining events during shutdown");
+        log::debug!("Drained {drained} remaining events during shutdown");
     }
 
     fn observe_exec_event_before_dispatch(
@@ -9552,11 +9552,11 @@ mod tests {
 
         impl Log for DrainLogCapture {
             fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-                metadata.level() == Level::Info
+                metadata.level() == Level::Debug
             }
 
             fn log(&self, record: &Record<'_>) {
-                assert_eq!(record.level(), Level::Info);
+                assert_eq!(record.level(), Level::Debug);
                 self.0.lock().push(record.args().to_string());
             }
 
@@ -9565,7 +9565,7 @@ mod tests {
 
         static LOGS: DrainLogCapture = DrainLogCapture(Mutex::new(Vec::new()));
         log::set_logger(&LOGS).unwrap();
-        log::set_max_level(LevelFilter::Info);
+        log::set_max_level(LevelFilter::Debug);
 
         let mut runner = AsyncRunner::new();
         runner.bind_senders();
