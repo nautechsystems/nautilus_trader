@@ -52,7 +52,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::SocketState,
     },
@@ -14506,6 +14506,87 @@ async fn test_execution_product_scope_does_not_flatten_excluded_position(
         let positions = cache.positions_open(None, Some(&id), None, None, None);
         assert_eq!(positions[0].quantity, Quantity::from("0.10000"));
     }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_preserves_cached_perp_order_across_checks() {
+    let order = query_recovery_order();
+    let client_order_id = order.client_order_id();
+    let instrument_id = order.instrument_id();
+    let venue_order_id = order.venue_order_id().unwrap();
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order(
+        "BTC",
+        venue_order_id.as_str().parse().unwrap()
+    )]));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Spot];
+    let (client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_perp_instrument_to_cache(&cache);
+    add_test_account_to_cache(&cache, order.account_id().unwrap());
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*HYPERLIQUID_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().build_index();
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: false,
+            open_check_lookback_mins: None,
+            open_check_missing_retries: 1,
+            max_single_order_queries_per_cycle: 1,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    for cycle in 1..=3 {
+        let events = manager.check_open_orders(&engine.get_all_clients()).await;
+        for event in &events {
+            engine.process(event);
+        }
+
+        assert!(
+            events.is_empty(),
+            "targeted check emitted events in cycle {cycle}"
+        );
+        assert_eq!(manager.recon_check_retry_count(&client_order_id), cycle);
+
+        let queries = manager.check_open_order_queries();
+        let [TradingCommand::QueryOrder(query)] = queries.as_slice() else {
+            panic!("Expected one fallback order query in cycle {cycle}");
+        };
+        assert_eq!(query.client_order_id, client_order_id);
+        assert_eq!(query.instrument_id, instrument_id);
+        assert_eq!(query.venue_order_id, Some(venue_order_id));
+        let e = engine.get_all_clients()[0]
+            .query_order(query.clone())
+            .unwrap_err();
+        assert!(e.to_string().contains("outside execution product scope"));
+        assert!(rx.try_recv().is_err());
+
+        let cache = cache.borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Accepted, "cycle {cycle}");
+        assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+    }
+
+    let requests = state.info_requests.lock().await;
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request["type"] == "frontendOpenOrders")
+    );
 }
 
 #[rstest]
