@@ -189,6 +189,50 @@ Feature: Startup reconciliation
         | start      |
         | run        |
 
+  Rule: An explicit flat position report and a missing report have different meanings
+    An explicit flat report closes retained exposure before trading starts
+    when the retaining strategy claims external orders for the instrument.
+    Without position reports or executions, startup preserves retained exposure.
+
+    @retained_position @explicit_flat
+    Scenario Outline: Close retained exposure from an explicit flat report using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the strategy claims external orders for the retained position's instrument
+      And the venue reports an explicit flat position and no orders or fills
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the retained position is flat with 0.000 ETH when the strategy starts
+      And the portfolio exposes 0 ETH when the strategy starts
+      And exactly one position is cached
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
+    @retained_position @missing_report
+    Scenario Outline: Preserve retained exposure when no position report arrives using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the strategy claims external orders for the retained position's instrument
+      And the venue reports no orders, fills, or positions
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the retained position is long with 1.000 ETH when the strategy starts
+      And the retained position remains long 1.000 ETH with realized profit of -0.60 USDT and total fees of 0.60 USDT when the strategy starts
+      And the portfolio exposes 1.000 ETH when the strategy starts
+      And exactly one position is cached
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
   Rule: Closing executions recover retained exposure when the venue cannot report positions
     A close executed while the node is offline must update the retained position,
     its realized profit, and its fees before the strategy starts.
