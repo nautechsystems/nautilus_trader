@@ -8452,10 +8452,18 @@ async fn assert_rpi_order_response(mut fixture: Value, reverse: bool) {
             .reverse();
     }
     let response = fixture["response"].clone();
-    let expected_request = fixture["request"].clone();
+    let mut expected_request = fixture["request"].clone();
     let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let captured = requests.clone();
     let op = response["op"].as_str().unwrap();
+    if op == "order" {
+        expected_request["tag"] = json!(OKX_NAUTILUS_BROKER_ID);
+    } else if op == "batch-orders" {
+        for request in expected_request.as_array_mut().unwrap() {
+            request["tag"] = json!(OKX_NAUTILUS_BROKER_ID);
+        }
+    }
+
     let path = match op {
         "batch-amend-orders" => "/api/v5/trade/amend-batch-orders".to_string(),
         _ => format!("/api/v5/trade/{op}"),

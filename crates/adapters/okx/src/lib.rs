@@ -44,6 +44,11 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `simulation`: Enables deterministic simulation testing with
 //!   [MadSim](https://crates.io/crates/madsim).
+//!
+//! # Integrator Attribution
+//!
+//! HTTP and WebSocket order submissions set `tag` to NautilusTrader's fixed broker ID.
+//! Caller-provided tags are replaced.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

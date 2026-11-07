@@ -1625,6 +1625,11 @@ impl OKXRawHttpClient {
         &self,
         request: OKXPlaceSpreadOrderRequest,
     ) -> Result<Vec<OKXPlaceOrderResponse>, OKXHttpError> {
+        let request = OKXPlaceSpreadOrderRequest {
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            ..request
+        };
+
         let body = serde_json::to_vec(&request)?;
 
         self.send_request(
@@ -6282,6 +6287,11 @@ impl OKXHttpClient {
         &self,
         request: OKXPlaceOrderRequest,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
+        let request = OKXPlaceOrderRequest {
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            ..request
+        };
+
         let body = serde_json::to_vec(&request)?;
 
         let resp: Vec<OKXPlaceOrderResponse> = self
@@ -6304,6 +6314,14 @@ impl OKXHttpClient {
         if requests.is_empty() {
             return Ok(Vec::new());
         }
+
+        let requests: Vec<_> = requests
+            .into_iter()
+            .map(|request| OKXPlaceOrderRequest {
+                tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+                ..request
+            })
+            .collect();
 
         let body = serde_json::to_vec(&requests)?;
         self.inner
@@ -6588,6 +6606,11 @@ impl OKXHttpClient {
         &self,
         request: OKXPlaceAlgoOrderRequest,
     ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        let request = OKXPlaceAlgoOrderRequest {
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            ..request
+        };
+
         let body = serde_json::to_vec(&request)?;
 
         let resp: Vec<OKXPlaceAlgoOrderResponse> = self

@@ -36,6 +36,11 @@ This crate provides feature flags to control source code inclusion during compil
   WebSocket connections use controlled peers. See the [DST transport contract](../../../docs/concepts/dst.md#simulated-http-and-websocket-transport)
   for supported transport behavior and exclusions.
 
+## Integrator attribution
+
+HTTP and WebSocket order submissions set `tag` to NautilusTrader's fixed broker ID.
+Caller-provided tags are replaced.
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-okx) for more detailed usage.
