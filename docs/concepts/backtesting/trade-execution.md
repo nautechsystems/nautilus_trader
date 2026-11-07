@@ -81,7 +81,8 @@ After the iteration, the engine restores matching references from the available 
 - With L2 or L3 data, the depth book stays the independent source of bid and ask state.
 - With an L1 quote baseline, the non-aggressor side is restored from the latest quote.
 - With trade-only L1 data, no quote baseline exists to restore, so the latest trade continues to define the
-  available top-of-book state.
+  available top-of-book state. Each trade sets the non-aggressor side to its own price, so it never matches
+  resting orders at an earlier trade's price.
 
 This distinction matters when interpreting a stream of trades without quotes. Repeated trades can
 move the simulated L1 state, but quote-backed L1 matching does not progressively discard the
