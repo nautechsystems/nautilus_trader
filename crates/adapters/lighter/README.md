@@ -22,17 +22,23 @@ to guarantee correctness of matching, fills, and liquidations.
 Trading is non-custodial: users hold their assets in Lighter's smart contracts
 and authorize trades with their own keys.
 
+The official Lighter API reference can be found at <https://docs.lighter.xyz/api>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/lighter.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -48,35 +54,12 @@ trait surface.
 
 ## Integrator attribution
 
-NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
-On Lighter Mainnet and Robinhood Mainnet, create and modify order transactions carry the deployment-specific
-NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including Standard.
-Maker and taker integrator fees are zero. Both testnets omit integrator attributes.
+On Lighter and Robinhood mainnets, the execution client adds NautilusTrader's integrator account index
+to create and modify transactions with zero integrator fees. At startup it attempts to approve the
+integrator and apply the `NAUTILUS` referral code. Both testnets omit attribution.
 
-Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
-During startup, each mainnet execution client submits the required **zero-fee** approval for
-a configured L2 account with a non-maker-only API key. Both testnets skip approval.
-
-During startup on either mainnet, when account details are available, the execution client
-attempts to apply the `NAUTILUS` referral code to the account's public L1 address using the
-configured L2 API key. The call is best effort with a 10-second timeout, and failures do not block trading.
-Selecting either mainnet opts the account into this attribution to support NautilusTrader development.
-Both testnets skip referral attribution.
-
-Lighter Mainnet's [referral program](https://docs.lighter.xyz/programs/referral-program) offers eligible
-referred users a 10% trading fee discount, paid as rebates. The venue determines referral acceptance and eligibility.
-
-See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
-for full attribution and revocation details.
-
-### Maker-only API keys
-
-On both mainnets, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly
-orders, modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves.
-The execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the
-approval with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any
-non-maker-only key on the same account unlocks orders for every key on that account,
-including maker-only ones. Both testnets skip `getMakerOnlyApiKeys` for integrator approval.
+See [attribution details](../../../docs/integrations/lighter.md#integrator-attribution)
+for approval, maker-only keys, and revocation.
 
 ## L2 transaction signer
 
@@ -114,7 +97,10 @@ root with `make install-tools` and `rustup toolchain install nightly`.
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-lighter) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-lighter)
+- [Integration guide](../../../docs/integrations/lighter.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/lighter/)
 
 ## License
 

@@ -40,7 +40,7 @@ pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(O
 /// Static client ID instance.
 pub static OKX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(OKX)));
 
-/// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
+/// See the [OKX integration program](https://www.okx.com/docs-v5/en/#overview-broker-program) for details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "5328c82e5542BCDE";
 
 /// Default lookback for terminal orders and fills during reconciliation.

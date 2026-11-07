@@ -16,7 +16,18 @@
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
 //! [Kraken](https://www.kraken.com) exchange.
 //!
-//! This adapter supports both Spot and Futures markets.
+//! The `nautilus-kraken` crate provides separate Spot and Futures data and execution clients over HTTP
+//! and WebSocket. It includes typed API models, instrument loading, order and account updates, and
+//! live-node factories for both markets.
+//!
+//! The official Kraken API reference can be found at <https://docs.kraken.com/>.
+//!
+//! # NautilusTrader
+//!
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+//!
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Features
 //!
@@ -26,17 +37,9 @@
 //! - Instrument, ticker, trade, orderbook, and OHLC data.
 //! - Prepared for execution support (orders, positions, balances).
 //!
-//! # API Documentation
-//!
-//! - [Kraken REST API](https://docs.kraken.com/api/docs/)
-//! - [Kraken WebSocket v2](https://docs.kraken.com/api/docs/websocket-v2/)
-//!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -45,6 +48,17 @@
 //!   to use 128-bit value types. Keep this default for Futures because Kraken may return instrument
 //!   precision above standard-precision mode's nine-decimal limit.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! Spot and Futures HTTP order builders set `broker` to NautilusTrader's integration ID.
+//! Raw HTTP clients preserve caller-provided parameters, and Spot WebSocket orders omit attribution.
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/kraken/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/kraken/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken)
 
 // pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
 // macro expansion; an item-level `allow` cannot reach the expansion

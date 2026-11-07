@@ -8,20 +8,27 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Bybit](https://www.bybit.com) exchange.
 
-The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket) and data models
-for the official **Bybit API**.
+The `nautilus-bybit` crate provides instrument loading, live market data, and order execution for
+Bybit's spot, futures, perpetual, and options markets. It includes typed HTTP and WebSocket clients
+for the **Bybit v5 API**, with live-node factories and optional Python bindings.
+
+The official Bybit API reference can be found at <https://bybit-exchange.github.io/docs/v5/intro>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/bybit.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `arrow`: Enables Apache Arrow data support.
 - `examples`: Enables the crate's example binaries.
@@ -33,12 +40,15 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Integrator attribution
 
-HTTP requests use `X-Referer`, and WebSocket orders use `Referer`, for NautilusTrader's broker ID.
+HTTP requests use `X-Referer`, and WebSocket orders use `Referer`, for NautilusTrader's integration ID.
 Post-only orders omit attribution when background detection identifies the account as a market maker.
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-bybit) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-bybit)
+- [Integration guide](../../../docs/integrations/bybit.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/bybit/)
 
 ## License
 

@@ -1,5 +1,11 @@
 # nautilus-finfeed
 
+[![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+[![Documentation](https://img.shields.io/docsrs/nautilus-finfeed)](https://docs.rs/nautilus-finfeed/latest/nautilus_finfeed/)
+[![crates.io version](https://img.shields.io/crates/v/nautilus-finfeed.svg)](https://crates.io/crates/nautilus-finfeed)
+![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
+
 [NautilusTrader](https://nautilustrader.io) adapter for the
 [FinFeedAPI Prediction Markets API](https://www.finfeedapi.com/products/prediction-markets-api?ref=nautilus).
 API Bricks provides FinFeedAPI and CoinAPI.
@@ -7,23 +13,26 @@ API Bricks provides FinFeedAPI and CoinAPI.
 The adapter provides authenticated REST access, checked Polymarket binary Yes/No instrument definitions,
 historical data requests, and book, quote, trade, and closed-bar polling. It is implemented in Rust with
 optional Python bindings. Order execution is unsupported.
+Importing the Python package neither reads credentials nor connects.
+
+The official FinFeedAPI API reference can be found at
+<https://www.finfeedapi.com/products/prediction-markets-api/docs?ref=nautilus>.
+
+## NautilusTrader
+
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 
 ## Capabilities and limits
 
-- **REST access**: Exchange discovery, bounded listings and active IDs, outcome metadata, current/latest
-  activity, L2 books, and trade, quote, book-event, and OHLCV history. Raw results retain exact `Decimal`
-  values, nanosecond timestamps, nullable identifiers, and source metadata.
-- **Instrument definitions**: Explicitly selected Polymarket Yes/No outcomes map to `BinaryOption` under
-  `FINFEED_POLYMARKET`. Other venues and non-binary definitions fail explicitly. FinFeed instrument IDs
-  are independent of native adapter IDs and must not be used for native execution.
-- **Polling**: Quotes and trades share latest-activity requests; L2 market-by-price (MBP) deltas and depth
-  share current-book snapshots. Deltas are complete replacements. Bars publish completed `EXTERNAL` and
-  `LAST` periods. Polling can miss events and provides no completeness or automatic backfill guarantee.
-- **History**: Trades, quotes, and L2 books share covering UTC-hour retrieval with checked overlapping
-  continuation. Book replay requires a returned snapshot at or before the requested start. Bars
-  continue from validated period ends, including short pages. Ambiguous continuation fails without
-  partial delivery. Timestamp selection and source action semantics remain assumptions, not
-  complete-coverage guarantees.
+| Capability                                                                         | Support                                                                  |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [Instruments](../../../docs/integrations/finfeed.md#supported-venues-and-outcomes) | Selected Polymarket Yes/No outcomes; independent FinFeed IDs             |
+| [REST access](../../../docs/integrations/finfeed.md#python-rest-access)            | Discovery, metadata, activity, books, and historical data                |
+| [Polling](../../../docs/integrations/finfeed.md#polling-subscriptions)             | Quotes, trades, replacement L2 books, and completed external `LAST` bars |
+| [History](../../../docs/integrations/finfeed.md#historical-data)                   | Trades, quotes, L2 books, and bars; book replay requires a snapshot      |
 
 Provider event timestamps are preserved rather than replaced with local arrival times. Historical
 book replay derives a monotone group ordering clock for `ts_init` and request bounds, using the
@@ -44,29 +53,11 @@ Historical books, quotes, trades, and bars have bounded Rust and Python checks a
 
 ## Configuration
 
-Pass an API key explicitly or set `FINFEED_API_KEY`. The client resolves it once at construction and
-reuses it on reconnect. Importing the Python package or constructing a config does not read credentials
-or connect. Requests send the key in `Authorization`; keys stay out of URLs and errors.
-Redirects are rejected, ambient proxies are disabled, and `proxy_url` selects an explicit HTTP(S) proxy.
-Custom origins require HTTPS, except for plaintext loopback peers.
-
-Configure explicit outcomes with `FinFeedInstrumentSelection` and register `FinFeedDataClientFactory`
-with a `LiveNode`. Python exports these types and `FinFeedDataClientConfig`, `FinFeedHttpClient`,
-`FINFEED`, and `FINFEED_CLIENT_ID` from `nautilus_trader.adapters.finfeed`.
-Rust nests HTTP and retry controls under `http` and `http.retry`; Python uses flat keywords, with omitted
-or `None` options retaining Rust defaults. Selections, URLs, and controls are validated before requests start.
-
-The defaults allow **100 managed attempts per connection generation**, with **10-second spacing** and
-one managed request in flight. Bootstrap, metadata refreshes, history, polling, and retries share that
-finite allowance. Bootstrap costs one exchange request plus one metadata request per distinct selected
-outcome, excluding retries. The default bootstrap deadline is 120 seconds; 12 outcomes require at least
-120 seconds of pacing alone. Size the allowance and deadlines for the workload. Exhaustion can suspend
-polling. These local controls do not guarantee billing or account-wide quota.
-
-See [configuration and defaults](../../../docs/integrations/finfeed.md#configuration) and
-[production sizing](../../../docs/integrations/finfeed.md#sizing-a-production-collection).
+See the [configuration guide](../../../docs/integrations/finfeed.md#configuration).
 
 ## Feature flags
+
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `extension-module`: Builds as a Python extension module.
 - `fuzz`: Enables the REST decoder and domain conversion libFuzzer target.
@@ -80,22 +71,23 @@ See [configuration and defaults](../../../docs/integrations/finfeed.md#configura
 
 ## Integrator attribution
 
-Every managed REST attempt, including retries and requests after reconnect, sends `X-Referrer: nautilus`.
-The header carries no credential or account data. API Bricks determines usage attribution on its side;
-see [attribution details](../../../docs/integrations/finfeed.md#integrator-attribution).
+REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
+The fixed header contains no credential or account data.
+
+See [attribution details](../../../docs/integrations/finfeed.md#integrator-attribution).
+
+## Fuzzing
+
+Coverage-guided fuzz target `fuzz-rest` covers REST decoding and domain conversion. It requires the
+workspace-pinned `cargo-fuzz` binary and a Rust nightly toolchain. See the
+[fuzzing instructions](tests/README.md#robustness-and-polling-workloads) for a bounded run with fixture seeds.
 
 ## Documentation
 
-- [Integration guide](../../../docs/integrations/finfeed.md): Setup, API contracts, lifecycle, and provider limits.
-- [Rust example](examples/node_data_tester.rs) and [Python example](../../../examples/live/finfeed/data_tester.py):
-  Bounded market-data collection through `LiveNode`.
-- [Discovery](../../../examples/live/finfeed/discovery.py),
-  [historical L2 replay](../../../examples/live/finfeed/historical_book.py), and
-  [historical research](../../../examples/live/finfeed/historical_research.py): Python workflows,
-  including explicit DB-backed, flat-file, and exchange-wide OHLCV access without source fallback.
-- [Conformance tests](tests/README.md): Native, Python, and deterministic simulation checks.
-- [Historical-book reference](tests/book_history.md) and [fixture provenance](test_data/README.md):
-  Replay assumptions, licensed published examples, and authored boundary cases.
+- [Rust API reference](https://docs.rs/nautilus-finfeed)
+- [Integration guide](../../../docs/integrations/finfeed.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/finfeed/)
 
 ## License
 

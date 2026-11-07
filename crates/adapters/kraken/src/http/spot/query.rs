@@ -82,7 +82,7 @@ pub struct KrakenSpotAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub displayvol: Option<String>,
 
-    /// Partner/broker attribution ID.
+    /// Integration ID.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker: Option<Ustr>,
@@ -136,7 +136,7 @@ impl KrakenSpotAddOrderParamsBuilder {
 /// A single order payload for `POST /0/private/AddOrderBatch`.
 ///
 /// This mirrors `KrakenSpotAddOrderParams` without the shared top-level `pair`
-/// and broker fields.
+/// and `broker` fields.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KrakenSpotBatchOrderParams {
     /// Order side: "buy" or "sell".

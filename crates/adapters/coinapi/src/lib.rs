@@ -37,20 +37,18 @@
 //! The [`csv`] module loads downloaded book, quote, trade, and OHLCV exports without downloading them.
 //! Optional Python bindings expose provider identity, configuration, factories, and flat-file loaders.
 //!
+//! The official CoinAPI API reference can be found at <https://www.coinapi.io/products/market-data-api/docs?ref=nautilus>.
+//!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -62,6 +60,19 @@
 //!   through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes HTTP and WebSocket through deterministic transport when built with
 //!   `cfg(madsim)`.
+//!
+//! # Integrator Attribution
+//!
+//! REST requests and WebSocket handshakes include `X-Referrer: nautilus` for API Bricks usage attribution.
+//! The fixed header contains no credential or account data.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/coinapi/#integrator-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/coinapi/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

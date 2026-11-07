@@ -1674,6 +1674,8 @@ symmetrically toward the extremes, and apply only to taker fills.
 | Tech            | 0.04            | 0               | 25%          |
 | Geopolitics     | 0               | 0               | -            |
 
+### Builder code attribution
+
 Every order signed by the adapter carries the hard-coded Nautilus builder code. Its builder fee
 rate is fixed at zero and is not configurable.
 

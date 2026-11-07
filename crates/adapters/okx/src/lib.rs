@@ -15,26 +15,24 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 //!
-//! The `nautilus-okx` crate provides client bindings (HTTP & WebSocket) and data
-//! models for the official **OKX v5 API**.
+//! The `nautilus-okx` crate provides instrument loading, live market data, and order execution through
+//! the **OKX v5 API**. It includes typed HTTP and WebSocket clients and live-node factories for spot,
+//! derivatives, spreads, and event contracts.
+//!
+//! All public links inside this crate reference the English version.
 //!
 //! The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
-//! All public links inside this crate reference the English version.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -47,8 +45,14 @@
 //!
 //! # Integrator Attribution
 //!
-//! HTTP and WebSocket order submissions set `tag` to NautilusTrader's fixed broker ID.
+//! HTTP and WebSocket order submissions set `tag` to NautilusTrader's fixed integration ID.
 //! Caller-provided tags are replaced.
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/okx/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/okx/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx)
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

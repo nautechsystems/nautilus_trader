@@ -1,5 +1,11 @@
 # nautilus-coinapi
 
+[![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+[![Documentation](https://img.shields.io/docsrs/nautilus-coinapi)](https://docs.rs/nautilus-coinapi/latest/nautilus_coinapi/)
+[![crates.io version](https://img.shields.io/crates/v/nautilus-coinapi.svg)](https://crates.io/crates/nautilus-coinapi)
+![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
+
 [NautilusTrader](https://nautilustrader.io) adapter for the
 [CoinAPI Market Data API](https://www.coinapi.io/products/market-data-api?ref=nautilus).
 API Bricks provides CoinAPI and FinFeedAPI.
@@ -9,37 +15,26 @@ multiple exchanges. It supports native venue instrument definitions, live feeds,
 and loaders for downloaded flat files. It is implemented in Rust with optional Python bindings.
 Order execution and account management are unsupported.
 
+The official CoinAPI API reference can be found at <https://www.coinapi.io/products/market-data-api/docs?ref=nautilus>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 
 ## Capabilities and limits
 
-- **Instrument definitions**: Explicitly selected spot, perpetual, and dated futures instruments map
-  to native venue IDs. Only the documented exchange and product forms are supported. Invalid,
-  unsupported, or ambiguous definitions are skipped; a missing selected instrument fails connection.
-- **Order books**: L2 market-by-price (MBP) and L3 market-by-order (MBO) deltas include snapshot gating,
-  sequence gap recovery, and increasing output sequences across reconnects. L3 requires individual
-  order IDs. Fixed-depth L2 snapshots use `book5`, `book20`, or `book50`, up to 50 levels.
-  Every book subscription on a client must use the same channel.
-- **Live feeds**: Quotes, trades, and supported `LAST` bars with `EXTERNAL` aggregation share one
-  WebSocket connection.
-  Bars publish when a later period arrives; retained periods are discarded on reconnect to avoid
-  incomplete bars. Transport reconnects restore subscriptions; a CoinAPI `error` ends the streams.
-- **History**: Trades, quotes, and bars require `start` and page through `[start, end)`, using now when
-  `end` is absent. Results can be truncated with a warning when the local credit budget runs out.
-  OHLCV periods outside the window do not count toward a request's record limit.
-  History can lag the live feed and does not fall back to latest-data endpoints. REST book requests
-  return current L2 snapshots; historical book snapshots are unsupported.
-- **Flat files**: Rust and Python load downloaded semicolon-delimited CSV exports for books, quotes,
-  trades, and OHLCV. Trade, quote, and book loaders also support chunked streaming. The adapter does
-  not list or download files from S3.
+| Capability                                                                 | Support                                                        |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [Instruments](../../../docs/integrations/coinapi.md#supported-instruments) | Selected spot, perpetuals, and dated futures; native venue IDs |
+| [Order books](../../../docs/integrations/coinapi.md#order-books)           | L2/L3 deltas with gap recovery; L2 snapshots up to 50 levels   |
+| [Live feeds](../../../docs/integrations/coinapi.md#data-subscriptions)     | Quotes, trades, and supported external `LAST` bars             |
+| [History](../../../docs/integrations/coinapi.md#historical-requests)       | Trades, quotes, and bars; current REST L2 snapshots only       |
+| [Flat files](../../../docs/integrations/coinapi.md#flat-files)             | Local CSV loading; chunked quote, trade, and book streaming    |
 
-The data client converts prices and sizes exactly at instrument precision. Finer values are rejected, with a
+The data client preserves prices and sizes at instrument precision. It rejects finer values, with a
 [bounded exception for OHLCV volume](../../../docs/integrations/coinapi.md#precision).
 Price precision can be overridden for selected instruments; size precision has no override.
 Only exchange-reported trade sides set the aggressor; CoinAPI estimates map to `NO_AGGRESSOR`.
@@ -52,37 +47,11 @@ and the [capability matrix](../../../docs/integrations/coinapi.md#supported-capa
 
 ## Configuration
 
-Pass an API key explicitly or set `COINAPI_API_KEY`. The data client resolves it at construction and
-reuses it on reconnect. REST requests and WebSocket upgrades send `X-CoinAPI-Key`; `hello` frames
-carry no credential. Importing the Python package neither reads credentials nor connects.
-REST redirects are rejected, ambient proxies are disabled, and `proxy_url` selects an explicit
-HTTP(S) proxy for both transports. Production endpoints use HTTPS and WSS; sandbox access is unverified.
-
-Configure explicit instruments with `CoinApiInstrumentSelection` and register
-`CoinApiDataClientFactory` with a `LiveNode`. Python exports these types, `CoinApiDataClientConfig`,
-`COINAPI`, `COINAPI_CLIENT_ID`, and flat-file loaders from `nautilus_trader.adapters.coinapi`.
-The raw HTTP and WebSocket clients are Rust APIs. Use `COINAPI_CLIENT_ID` for requests and subscriptions
-when routing alongside other data clients. Selections, price overrides, and transport controls are
-validated at client construction.
-
-The defaults allow **100 local REST credits over the client's lifetime**, with one request in flight.
-Each metadata or current book snapshot attempt costs one credit. Historical trade, quote, and bar
-attempts reserve `ceil(limit / 100)` credits; successful pages refund unused reservations above the
-charge for returned records, with a minimum charge of one credit. Failed and canceled attempts keep
-their reservations, and retries spend credits. All REST requests share the allowance, which does not
-reset on reconnect.
-It does not track provider billing or coordinate account-wide usage.
-
-Set explicit history windows and record limits: an unlimited range can reserve all remaining credits
-for its first page. WebSocket scope combines the session's data types, symbols, and bar periods, so
-unrequested combinations can still incur billable transfer even though the adapter filters them out.
-See [configuration and defaults](../../../docs/integrations/coinapi.md#configuration) and
-[usage and access constraints](../../../docs/integrations/coinapi.md#usage-and-access-constraints).
+See the [configuration guide](../../../docs/integrations/coinapi.md#configuration).
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation,
-depending on the intended use case:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -92,18 +61,14 @@ depending on the intended use case:
   to use 128-bit value types.
 - `python`: Enables Python bindings for identity, configuration, factories, and flat-file loaders
   through [PyO3](https://pyo3.rs).
-- `simulation`: Routes HTTP and WebSocket through deterministic transport when built with
-  `cfg(madsim)`.
+- `simulation`: Routes HTTP and WebSocket through deterministic transport when built with `cfg(madsim)`.
 
 ## Integrator attribution
 
-The adapter automatically sends the fixed referral header `X-Referrer: nautilus` on every REST
-request and WebSocket upgrade request, including retries and reconnects. API Bricks records the
-referral code and determines usage attribution on its side. The header carries no credential or
-account data.
+REST requests and WebSocket handshakes include `X-Referrer: nautilus` for API Bricks usage attribution.
+The fixed header contains no credential or account data.
 
-See the [CoinAPI integration guide](../../../docs/integrations/coinapi.md#integrator-attribution)
-for signup referral links and attribution details.
+See [attribution details](../../../docs/integrations/coinapi.md#integrator-attribution).
 
 ## Fuzzing
 
@@ -112,15 +77,10 @@ They require the workspace-pinned `cargo-fuzz` binary and a Rust nightly toolcha
 
 ## Documentation
 
-- [Integration guide](../../../docs/integrations/coinapi.md): Setup, symbology, API contracts, lifecycle,
-  and provider limits.
-- [Rust example](examples/node_data_tester.rs) and
-  [Python example](../../../examples/live/coinapi/data_tester.py): Market-data collection and historical
-  requests through `LiveNode` with a bounded REST credit budget.
-- [Flat-file guide](../../../docs/integrations/coinapi.md#flat-files): CSV layouts, loading and streaming,
-  timestamp rules, and precision handling.
-- [Integration tests](tests/integration/): Data-client contracts, instrument conversion, protocol models,
-  and deterministic transport checks.
+- [Rust API reference](https://docs.rs/nautilus-coinapi)
+- [Integration guide](../../../docs/integrations/coinapi.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/coinapi/)
 
 ## License
 

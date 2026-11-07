@@ -3482,8 +3482,8 @@ pub(crate) fn resolve_account<'a>(
     }
 }
 
-/// Account for an instrument. For broker-routed instruments the account lives
-/// under the broker venue (e.g. `IB`) while the instrument carries the exchange
+/// Account for an instrument. For instruments routed through an execution provider, the account
+/// uses the provider venue (e.g. `IB`) while the instrument carries the exchange
 /// MIC (e.g. `IBIS`); on venue miss, fall back to the position-owning account.
 fn resolve_account_for_instrument<'a>(
     cache: &'a Cache,

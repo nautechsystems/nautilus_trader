@@ -20,6 +20,7 @@
 //! This crate provides authenticated REST access, checked Polymarket binary Yes/No instrument
 //! definitions, historical data requests, and book, quote, trade, and closed-bar polling.
 //! Order execution is unsupported.
+//! Importing the Python package neither reads credentials nor connects.
 //!
 //! [`http::client::FinFeedHttpClient`] returns typed provider results.
 //! [`data::FinFeedDataClient`] uses explicit instrument selections and shares a finite request
@@ -31,7 +32,19 @@
 //! Optional Python bindings expose provider identity, configuration, factories, and read-only REST
 //! access with typed queries and results.
 //!
+//! The official FinFeedAPI API reference can be found at
+//! <https://www.finfeedapi.com/products/prediction-markets-api/docs?ref=nautilus>.
+//!
+//! # NautilusTrader
+//!
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+//!
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+//!
 //! # Feature Flags
+//!
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `extension-module`: Builds as a Python extension module.
 //! - `fuzz`: Enables the REST decoder and domain conversion libFuzzer target.
@@ -42,6 +55,19 @@
 //!   with typed queries and results through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes time and HTTP transport through deterministic simulation with `cfg(madsim)`.
 //!   Simulated transport supports plaintext local peers; HTTPS and explicit proxies require native tests.
+//!
+//! # Integrator Attribution
+//!
+//! REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
+//! The fixed header contains no credential or account data.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/finfeed/#integrator-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/finfeed/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/finfeed/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/finfeed)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

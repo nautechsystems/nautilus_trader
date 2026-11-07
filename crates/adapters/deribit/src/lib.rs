@@ -15,8 +15,9 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Deribit](https://www.deribit.com) cryptocurrency exchange.
 //!
-//! The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket) and data
-//! models for the official **Deribit API v2**.
+//! The `nautilus-deribit` crate provides live market data, historical requests, and order execution for
+//! options, futures, perpetuals, spot, and combo instruments. It includes typed HTTP and WebSocket
+//! clients, instrument loading, and live-node factories for the **Deribit API v2**.
 //!
 //! Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (not REST).
 //! WebSocket is preferred for subscriptions and real-time data.
@@ -25,18 +26,14 @@
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `arrow`: Enables Apache Arrow data support.
 //! - `examples`: Enables the crate's example binaries.
@@ -45,6 +42,12 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/deribit/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/deribit/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/deribit)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

@@ -8,6 +8,19 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for [AX Exchange](https://architect.exchange).
 
+The `nautilus-architect-ax` crate connects AX Exchange market data and order execution to NautilusTrader.
+It provides typed HTTP and WebSocket clients, instrument definitions, and live-node factories for
+production and sandbox environments.
+
+The official AX Exchange API reference can be found at <https://docs.architect.exchange/api-reference>.
+
+## NautilusTrader
+
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
 ## Overview
 
 [AX Exchange](https://architect.exchange) is a centralized and regulated derivatives exchange for
@@ -16,43 +29,39 @@ equities, energy ETFs, metals, energy, treasuries, and compute. Its sandbox also
 futures. AX is licensed by the
 [Bermuda Monetary Authority (BMA)](https://www.bma.bm).
 
-## NautilusTrader
+## Configuration
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+See the [integration guide](../../../docs/integrations/architect_ax.md) for client settings,
+credentials, and connection setup.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
-
-## Feature flags
-
-This crate provides feature flags to control source code inclusion during compilation:
-
-- `examples`: Enables the crate's example binaries.
-- `extension-module`: Builds as a Python extension module.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-
-## Documentation
-
-- [Crate docs](https://docs.rs/nautilus-architect-ax)
-- [API reference](https://docs.architect.exchange/api-reference)
-- [AX Exchange](https://architect.exchange)
-
-## Authentication
+### Authentication
 
 AX Exchange uses bearer token authentication via HTTP headers:
 
 1. API key and secret obtain a session token via `/authenticate`.
 2. The session token is used as a bearer token for subsequent REST and WebSocket requests.
 
-## API endpoints
+### API endpoints
 
 | Environment | HTTP API (market data)                           | HTTP API (orders)                                   | Market Data WS                                   | Orders WS                                            |
 | ----------- | ------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
 | Sandbox     | `https://gateway.sandbox.architect.exchange/api` | `https://gateway.sandbox.architect.exchange/orders` | `wss://gateway.sandbox.architect.exchange/md/ws` | `wss://gateway.sandbox.architect.exchange/orders/ws` |
 | Production  | `https://gateway.architect.exchange/api`         | `https://gateway.architect.exchange/orders`         | `wss://gateway.architect.exchange/md/ws`         | `wss://gateway.architect.exchange/orders/ws`         |
 
-## Usage
+## Feature flags
+
+Feature flags control code inclusion for Rust builds and Python bindings:
+
+- `examples`: Enables the crate's example binaries.
+- `extension-module`: Builds as a Python extension module.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+
+## Integrator attribution
+
+WebSocket order submissions set `tag` to `Nautilus` for attribution.
+HTTP order submissions omit `tag` unless the caller supplies it.
+
+## Examples
 
 Run example binaries to test the adapter. `AX_IS_SANDBOX` defaults to `true`.
 The WebSocket examples also require API credentials:
@@ -71,6 +80,13 @@ cargo run -p nautilus-architect-ax --bin ax-ws-data
 # WebSocket orders client example
 cargo run -p nautilus-architect-ax --bin ax-ws-orders
 ```
+
+## Documentation
+
+- [Rust API reference](https://docs.rs/nautilus-architect-ax)
+- [Integration guide](../../../docs/integrations/architect_ax.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/architect_ax/)
 
 ## License
 

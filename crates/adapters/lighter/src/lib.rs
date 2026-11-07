@@ -18,20 +18,18 @@
 //! The `nautilus-lighter` crate provides integration with the Lighter protocol for trading
 //! perpetual futures and spot markets on the Lighter and Robinhood Chain deployments.
 //!
+//! The official Lighter API reference can be found at <https://docs.lighter.xyz/api>.
+//!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -45,32 +43,20 @@
 //! enums, factory wiring, and integrator revocation. Data and execution
 //! clients are consumed directly through the Rust trait surface.
 //!
-//! # Integrator attribution
+//! # Integrator Attribution
 //!
-//! NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
-//! On Lighter Mainnet and Robinhood Mainnet, create and modify order transactions carry the
-//! deployment-specific NautilusTrader integrator account index in `L2TxAttributes` across all
-//! account tiers, including Standard. Maker and taker integrator fees are zero. Both testnets omit
-//! integrator attributes.
+//! On Lighter and Robinhood mainnets, the execution client adds NautilusTrader's integrator account index
+//! to create and modify transactions with zero integrator fees. At startup it attempts to approve the
+//! integrator and apply the `NAUTILUS` referral code. Both testnets omit attribution.
 //!
-//! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
-//! mainnet orders. During startup, each mainnet execution client submits the required zero-fee
-//! approval for a configured L2 account with a non-maker-only API key. Both testnets skip approval.
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
+//! for approval, maker-only keys, and revocation.
 //!
-//! During startup on either mainnet, when account details are available, the execution client
-//! attempts to apply the `NAUTILUS` referral code to the account's public L1 address using the
-//! configured L2 API key. The call is best effort with a 10-second timeout, and failures do not block
-//! trading.
-//! Selecting either mainnet opts the account into this attribution to support NautilusTrader
-//! development.
-//! Both testnets skip referral attribution.
+//! # Documentation
 //!
-//! Lighter Mainnet's [referral program](https://docs.lighter.xyz/programs/referral-program) offers eligible
-//! referred users a 10% trading fee discount, paid as rebates. The venue determines referral acceptance
-//! and eligibility.
-//!
-//! See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
-//! for attribution and revocation details.
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/lighter/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/lighter)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

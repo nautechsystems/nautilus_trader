@@ -33,12 +33,12 @@ pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::fr
 pub static BINANCE_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(BINANCE)));
 
-/// Binance Link and Trade broker ID for Spot.
+/// Binance Link and Trade integration ID for Spot.
 ///
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
 
-/// Binance Link and Trade broker ID for Futures.
+/// Binance Link and Trade integration ID for Futures.
 ///
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "aHRE4BCj";

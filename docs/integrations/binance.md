@@ -740,7 +740,7 @@ original_futures = decode_binance_futures_client_order_id(encoded_futures)
 # Returns "O-20200101-000000-000-000-0"
 ```
 
-Strings without the broker prefix pass through unchanged, so these are safe
+Strings without the integration prefix pass through unchanged, so these are safe
 to call on any `clientOrderId` value.
 
 :::note

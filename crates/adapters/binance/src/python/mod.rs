@@ -109,10 +109,10 @@ fn extract_binance_exec_config(
 /// Decodes a Binance Spot encoded `clientOrderId` back to the original value.
 ///
 /// Binance Spot orders placed through the Rust execution client have their
-/// `ClientOrderId` encoded with a broker ID prefix for Link and Trade
+/// `ClientOrderId` encoded with an integration prefix for Link and Trade
 /// attribution. This function reverses that encoding.
 ///
-/// Strings without the broker prefix are returned unchanged.
+/// Strings without the integration prefix are returned unchanged.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.binance")]
 #[pyo3(name = "decode_binance_spot_client_order_id")]
@@ -123,10 +123,10 @@ fn py_decode_binance_spot_client_order_id(encoded: &str) -> String {
 /// Decodes a Binance Futures encoded `clientOrderId` back to the original value.
 ///
 /// Binance Futures orders placed through the Rust execution client have their
-/// `ClientOrderId` encoded with a broker ID prefix for Link and Trade
+/// `ClientOrderId` encoded with an integration prefix for Link and Trade
 /// attribution. This function reverses that encoding.
 ///
-/// Strings without the broker prefix are returned unchanged.
+/// Strings without the integration prefix are returned unchanged.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.binance")]
 #[pyo3(name = "decode_binance_futures_client_order_id")]

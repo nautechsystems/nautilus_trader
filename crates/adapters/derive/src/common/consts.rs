@@ -39,7 +39,7 @@ pub static DERIVE_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(DERIVE)));
 
 /// Referral code for order attribution (zero additional fees),
-/// see <https://docs.derive.xyz/reference/api-broker> for further details.
+/// see the [Derive API reference](https://docs.derive.xyz/reference/api-broker) for details.
 pub const DERIVE_NAUTILUS_REFERRAL_CODE: &str = "nautilus";
 
 pub const REST_URL_MAINNET: &str = "https://api.derive.xyz/v3";

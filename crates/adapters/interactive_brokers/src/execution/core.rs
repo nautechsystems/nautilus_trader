@@ -2567,7 +2567,7 @@ impl InteractiveBrokersExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if broker order resolution or identity caching fails.
+    /// Returns an error if order resolution or identity caching fails.
     #[allow(
         clippy::too_many_arguments,
         reason = "cancel routing requires the request, target order, venue client, and event context"

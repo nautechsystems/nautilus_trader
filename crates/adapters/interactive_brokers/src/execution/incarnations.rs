@@ -7,12 +7,12 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-//! Tracks distinct broker orders sharing a Nautilus order reference.
+//! Tracks distinct venue orders sharing a Nautilus order reference.
 
 use super::{core::*, parse::parse_order_data_to_report};
 use crate::common::enums::IbAction;
 
-/// Returns the client order ID reporting a broker order that shares another order's reference.
+/// Returns the client order ID reporting a venue order that shares another order's reference.
 ///
 /// The engine models one physical order per client order ID, so each additional permanent ID
 /// reaches it as an external order under this ID.
