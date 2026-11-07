@@ -85,6 +85,7 @@ struct TestServerState {
     fail_instruments: bool,
     fail_rpi_book: bool,
     instrument_response: Option<Value>,
+    spread_response: Option<Value>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -183,7 +184,10 @@ fn create_router(state: TestServerState) -> Router {
                             .into_response();
                     }
 
-                    Json(spread_response(&params)).into_response()
+                    let response = state
+                        .spread_response
+                        .unwrap_or_else(|| spread_response(&params));
+                    Json(response).into_response()
                 }
             }),
         )
@@ -356,18 +360,29 @@ fn request_instrument(instrument_id: &str) -> RequestInstrument {
 fn instruments_response(events: &[DataEvent]) -> &InstrumentsResponse {
     events
         .iter()
-        .find_map(|event| match event {
-            DataEvent::Response(DataResponse::Instruments(response)) => Some(response),
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instruments(response)) => Some(response),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("expected DataResponse::Instruments, received {events:?}"))
+        .unwrap_or_else(|| {
+            panic!("expected a completed DataResponse::Instruments, received {events:?}")
+        })
 }
 
 fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
-    events.iter().find_map(|event| match event {
-        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+    events
+        .iter()
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instrument(response)) => Some(response.as_ref()),
+            _ => None,
+        })
+}
+
+fn completed_response(event: &DataEvent) -> Option<&DataResponse> {
+    match event {
+        DataEvent::ResponseEnvelope(envelope) if envelope.completed() => envelope.response(),
         _ => None,
-    })
+    }
 }
 
 fn book_response(events: &[DataEvent]) -> Option<&BookResponse> {
@@ -466,7 +481,7 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_continues_when_spread_endpoint_fails() {
+async fn test_request_instruments_fails_with_the_rows_when_spread_endpoint_fails() {
     let state = TestServerState {
         fail_spreads: true,
         ..TestServerState::default()
@@ -480,9 +495,19 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .request_instruments(request)
         .expect("request_instruments");
 
-    let events =
-        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
-    let response = instruments_response(&events);
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the fetched instruments, received {failure:?}");
+    };
+
     let spread_count = response
         .data
         .iter()
@@ -495,9 +520,90 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .count();
     let spread_queries = state.spread_queries.lock().await;
 
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains("spread"), "{}", failure.reason);
     assert_eq!(spread_count, 0);
     assert_eq!(spot_count, 5);
     assert_eq!(spread_queries.len(), 1);
+}
+
+#[rstest]
+#[case::instrument(
+    TestServerState {
+        instrument_response: Some(with_unparsable_first_definition(
+            "http_get_instruments_spot.json",
+        )),
+        ..TestServerState::default()
+    },
+    "BTC-USD",
+    &[
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "ETH-USD-SWAP_ETH-USD-231229.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[case::spread(
+    TestServerState {
+        spread_response: Some(with_unparsable_first_definition("http_get_spreads.json")),
+        ..TestServerState::default()
+    },
+    "ETH-USD-SWAP_ETH-USD-231229",
+    &[
+        "BTC-USD.OKX",
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[tokio::test]
+async fn test_request_instruments_fails_with_the_rows_when_a_definition_fails_to_parse(
+    #[case] state: TestServerState,
+    #[case] unparsable: &str,
+    #[case] expected_ids: &[&str],
+) {
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, true);
+
+    let request = request_instruments();
+    let request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the usable instruments, received {failure:?}");
+    };
+
+    let ids = response
+        .data
+        .iter()
+        .map(|instrument| instrument.id().to_string())
+        .collect::<Vec<_>>();
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains(unparsable), "{}", failure.reason);
+    assert_eq!(ids, expected_ids);
+}
+
+// Synthetic malformed input: blanks the tick size of a fixture definition
+fn with_unparsable_first_definition(filename: &str) -> Value {
+    let mut payload = load_test_data(filename);
+    payload["data"][0]["tickSz"] = json!("");
+    payload
 }
 
 #[rstest]

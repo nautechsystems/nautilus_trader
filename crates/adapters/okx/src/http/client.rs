@@ -2974,11 +2974,13 @@ impl OKXHttpClient {
     /// Requests all instruments for the `instrument_type` from OKX.
     ///
     /// Option requests require `instrument_family` (OKX `instFamily`), for example `BTC-USD`.
+    /// A definition that fails to parse is logged and left out.
     ///
     /// # Errors
     ///
-    /// Returns an error if `instrument_type` is option and `instrument_family` is missing,
-    /// the HTTP request fails, or instrument parsing fails.
+    /// Returns an error if:
+    /// - The `instrument_type` is option and `instrument_family` is missing.
+    /// - The HTTP request fails.
     ///
     /// # Returns
     ///
@@ -2990,6 +2992,22 @@ impl OKXHttpClient {
         instrument_type: OKXInstrumentType,
         instrument_family: Option<String>,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<(Ustr, u64)>)> {
+        let (instruments, inst_id_codes, parse_failures) = self
+            .request_instruments_with_parse_failures(instrument_type, instrument_family)
+            .await?;
+
+        for failure in parse_failures {
+            log::warn!("{failure}");
+        }
+
+        Ok((instruments, inst_id_codes))
+    }
+
+    pub(crate) async fn request_instruments_with_parse_failures(
+        &self,
+        instrument_type: OKXInstrumentType,
+        instrument_family: Option<String>,
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<(Ustr, u64)>, Vec<String>)> {
         if instrument_type == OKXInstrumentType::Option && instrument_family.is_none() {
             anyhow::bail!(
                 "option instruments require instrument_family (OKX instFamily), for example BTC-USD"
@@ -3045,6 +3063,7 @@ impl OKXHttpClient {
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         let mut inst_id_codes: Vec<(Ustr, u64)> = Vec::new();
         let mut trade_quote_ccy_lists: Vec<(Ustr, Vec<Ustr>)> = Vec::new();
+        let mut parse_failures: Vec<String> = Vec::new();
 
         for inst in &resp {
             // Collect inst_id_code mappings for WebSocket order operations
@@ -3070,7 +3089,8 @@ impl OKXHttpClient {
                     // Unsupported instrument type, skip silently
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse instrument {}: {e}", inst.inst_id);
+                    parse_failures
+                        .push(format!("Failed to parse instrument {}: {e}", inst.inst_id));
                 }
             }
         }
@@ -3079,18 +3099,35 @@ impl OKXHttpClient {
         self.inst_id_codes
             .rcu(|codes| codes.extend(inst_id_codes.iter().copied()));
 
-        Ok((instruments, inst_id_codes))
+        Ok((instruments, inst_id_codes, parse_failures))
     }
 
     /// Requests spread instruments from OKX.
     ///
+    /// A definition that fails to parse is logged and left out.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails or spread parsing fails.
+    /// Returns an error if the HTTP request fails.
     pub async fn request_spread_instruments(
         &self,
         params: GetSpreadsParams,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let (instruments, parse_failures) = self
+            .request_spread_instruments_with_parse_failures(params)
+            .await?;
+
+        for failure in parse_failures {
+            log::warn!("{failure}");
+        }
+
+        Ok(instruments)
+    }
+
+    pub(crate) async fn request_spread_instruments_with_parse_failures(
+        &self,
+        params: GetSpreadsParams,
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<String>)> {
         let resp = self
             .inner
             .get_spreads(params)
@@ -3099,15 +3136,18 @@ impl OKXHttpClient {
 
         let ts_init = self.generate_ts_init();
         let mut instruments = Vec::new();
+        let mut parse_failures = Vec::new();
 
         for spread in &resp {
             match parse_spread_instrument(spread, None, None, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
-                Err(e) => log::warn!("Failed to parse spread {}: {e}", spread.sprd_id),
+                Err(e) => {
+                    parse_failures.push(format!("Failed to parse spread {}: {e}", spread.sprd_id));
+                }
             }
         }
 
-        Ok(instruments)
+        Ok((instruments, parse_failures))
     }
 
     /// Requests a single instrument by `instrument_id` from OKX.

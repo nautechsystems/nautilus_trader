@@ -40,8 +40,9 @@ pub async fn drain_data_events(
 /// Collects the data events received on `rx` up to and including the response correlated with
 /// `request_id`, then drains any further events available without waiting.
 ///
-/// `timeout` bounds only the wait through the correlated response, so a passing run returns when
-/// that response arrives instead of waiting out the window.
+/// A response envelope ends the collection only once it is completed. `timeout` bounds only the
+/// wait through the correlated response, so a passing run returns when that response arrives
+/// instead of waiting out the window.
 ///
 /// # Panics
 ///
@@ -56,10 +57,15 @@ pub async fn collect_data_events_until_response(
     tokio::time::timeout(timeout, async {
         loop {
             let event = rx.recv().await.expect("data event channel closed");
-            let is_correlated_response = matches!(
-                &event,
-                DataEvent::Response(response) if response.correlation_id() == &request_id
-            );
+
+            let is_correlated_response = match &event {
+                DataEvent::Response(response) => response.correlation_id() == &request_id,
+                DataEvent::ResponseEnvelope(envelope) => {
+                    envelope.completed() && envelope.correlation_id() == &request_id
+                }
+                _ => false,
+            };
+
             events.push(event);
 
             if is_correlated_response {
@@ -79,7 +85,10 @@ pub async fn collect_data_events_until_response(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{DataResponse, data::InstrumentsResponse};
+    use nautilus_common::messages::{
+        DataResponse,
+        data::{DataResponseEnvelope, InstrumentsResponse},
+    };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         identifiers::{ClientId, Venue},
@@ -91,7 +100,19 @@ mod tests {
     use super::*;
 
     fn instruments_response(correlation_id: UUID4) -> DataEvent {
-        DataEvent::Response(DataResponse::Instruments(InstrumentsResponse::new(
+        DataEvent::Response(instruments(correlation_id))
+    }
+
+    fn instruments_envelope(correlation_id: UUID4, completed: bool) -> DataEvent {
+        DataEvent::ResponseEnvelope(DataResponseEnvelope::new(
+            instruments(correlation_id),
+            completed,
+            None,
+        ))
+    }
+
+    fn instruments(correlation_id: UUID4) -> DataResponse {
+        DataResponse::Instruments(InstrumentsResponse::new(
             correlation_id,
             ClientId::test_default(),
             Venue::test_default(),
@@ -100,7 +121,7 @@ mod tests {
             None,
             UnixNanos::default(),
             None,
-        )))
+        ))
     }
 
     fn correlation_ids(events: &[DataEvent]) -> Vec<Option<UUID4>> {
@@ -199,6 +220,40 @@ mod tests {
             vec![None, Some(other_id), Some(request_id), Some(trailing_id)]
         );
         assert_eq!(start.elapsed(), Duration::ZERO);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_collect_data_events_until_response_returns_at_completed_envelope() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let other_id = UUID4::new();
+        let request_id = UUID4::new();
+        tx.send(instruments_envelope(other_id, true)).unwrap();
+        tx.send(instruments_envelope(request_id, false)).unwrap();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            tx.send(instruments_envelope(request_id, true)).unwrap();
+        });
+
+        let start = tokio::time::Instant::now();
+        let events =
+            collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
+        let envelopes: Vec<(UUID4, bool)> = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::ResponseEnvelope(envelope) => {
+                    Some((*envelope.correlation_id(), envelope.completed()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            envelopes,
+            vec![(other_id, true), (request_id, false), (request_id, true)]
+        );
+        assert_eq!(start.elapsed(), Duration::from_millis(40));
     }
 
     #[rstest]
