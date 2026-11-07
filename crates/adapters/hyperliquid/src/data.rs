@@ -155,12 +155,13 @@ impl HyperliquidDataClient {
         }
 
         let ws_url = config.base_url_ws.clone();
-        let ws_client = HyperliquidWebSocketClient::new(
+        let ws_client = HyperliquidWebSocketClient::new_with_book_feed(
             ws_url,
             config.environment,
             None,
             config.transport_backend,
             proxy_url,
+            config.book_feed,
         );
         let ws_client = ws_client.with_socket_control(SocketControl::new(
             client_id,
@@ -565,6 +566,55 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send order book deltas: {e}");
                                     }
                                 }
+                                NautilusWsMessage::CompactBook {
+                                    deltas, depth, is_snapshot, output_gate,
+                                } => {
+                                    // Keep retirement serialized with synchronization and publication
+                                    let output = output_gate.lock();
+
+                                    if output.is_closed() {
+                                        continue;
+                                    }
+
+                                    record_stream_receive(
+                                        &stream_health,
+                                        MarketDataChannel::Deltas,
+                                        deltas.instrument_id,
+                                        deltas.ts_event,
+                                    );
+                                    let accepted = book_sync.record_compact(
+                                        deltas.instrument_id,
+                                        is_snapshot,
+                                        Instant::now(),
+                                    );
+
+                                    if accepted == Some(false) {
+                                        continue;
+                                    }
+
+                                    if accepted == Some(true)
+                                        && let Err(e) = data_sender.send(DataEvent::Data(
+                                            Data::BookDeltas(Box::new(deltas)),
+                                        ))
+                                    {
+                                        log::error!("Failed to send compact book snapshot: {e}");
+                                    }
+
+                                    if let Some(depth) = depth {
+                                        record_stream_receive(
+                                            &stream_health,
+                                            MarketDataChannel::Depth,
+                                            depth.instrument_id,
+                                            depth.ts_event,
+                                        );
+
+                                        if let Err(e) = data_sender.send(
+                                            DataEvent::Data(Data::BookDepth(depth)),
+                                        ) {
+                                            log::error!("Failed to send compact book depth: {e}");
+                                        }
+                                    }
+                                }
                                 NautilusWsMessage::Depth(depth) => {
                                     if let Err(e) =
                                         data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
@@ -572,7 +622,21 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send order book depth: {e}");
                                     }
                                 }
-                                NautilusWsMessage::BookInvalid(instrument_id) => {
+                                NautilusWsMessage::BookInvalid { instrument_id, output_gate } => {
+                                    let output = output_gate.as_ref().map(|gate| gate.lock());
+
+                                    if output.as_ref().is_some_and(|gate| gate.is_closed()) {
+                                        continue;
+                                    }
+
+                                    if output_gate.is_some()
+                                        && !book_sync.is_subscribed(instrument_id)
+                                    {
+                                        // Depth-only streams have no delta recovery tracker
+                                        ws_client.request_reconnect();
+                                        continue;
+                                    }
+
                                     book::recovery::reject_snapshot(
                                         instrument_id,
                                         &book_sync,
