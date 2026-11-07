@@ -943,6 +943,390 @@ fn test_calculate_unrealized_pnl_falls_back_to_bar(
 }
 
 #[rstest]
+fn test_calculate_unrealized_pnl_source_precedence(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PREC")),
+        Some(PositionId::new("P-PREC")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Minute,
+            PriceType::Last,
+        ),
+        AggregationSource::Internal,
+    );
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00040"),
+        Price::from("0.99990"),
+        Price::from("1.00025"),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_bar(bar).unwrap();
+
+    // With only bar: 25.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-PREC"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_trade(trade).unwrap();
+
+    // Trade takes precedence over bar: 30.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("1.00050"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_mark_price(mark).unwrap();
+
+    // Mark takes precedence over trade and bar: 50.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("50.00 USD"))
+    );
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(quote).unwrap();
+
+    // Quote takes precedence over all other sources: 10.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("10.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_sentinel_prices(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    use nautilus_model::types::price::{PRICE_ERROR, PRICE_UNDEF};
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-SENT")),
+        Some(PositionId::new("P-SENT")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Minute,
+            PriceType::Last,
+        ),
+        AggregationSource::Internal,
+    );
+    let valid_bar = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00040"),
+        Price::from("0.99990"),
+        Price::from("1.00025"),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_bar(valid_bar).unwrap();
+
+    let undef_bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Second,
+            PriceType::Last,
+        ),
+        AggregationSource::Internal,
+    );
+    let undef_bar = Bar::new(
+        undef_bar_type,
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Quantity::from(100_000),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_bar(undef_bar).unwrap();
+
+    // Undefined bar is skipped; falls back to the earlier valid bar
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Trade with PRICE_ERROR is skipped; still falls back to valid bar
+    let error_trade = TradeTick::new(
+        instrument.id(),
+        Price::from_raw(PRICE_ERROR, 0),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-ERR"),
+        UnixNanos::from(50),
+        UnixNanos::from(60),
+    );
+    cache.add_trade(error_trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Mark price with PRICE_UNDEF is skipped; still falls back to valid bar
+    let undef_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from_raw(PRICE_UNDEF, 0),
+        UnixNanos::from(70),
+        UnixNanos::from(80),
+    );
+    cache.add_mark_price(undef_mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Quote with PRICE_UNDEF is skipped; still falls back to valid bar
+    let undef_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(90),
+        UnixNanos::from(100),
+    );
+    cache.add_quote(undef_quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-TSINIT")),
+        Some(PositionId::new("P-TSINIT")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // 1-minute bar stamped at open: ts_event=3480, ts_init=3540, close=1.00010
+    let min_bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Minute,
+            PriceType::Last,
+        ),
+        AggregationSource::Internal,
+    );
+    let min_bar = Bar::new(
+        min_bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00020"),
+        Price::from("0.99980"),
+        Price::from("1.00010"),
+        Quantity::from(100_000),
+        UnixNanos::from(3_480_000_000_000),
+        UnixNanos::from(3_540_000_000_000),
+    );
+    cache.add_bar(min_bar).unwrap();
+
+    // 1-hour bar stamped at open: ts_event=0, ts_init=3600, close=1.00050
+    let hour_bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Hour,
+            PriceType::Last,
+        ),
+        AggregationSource::Internal,
+    );
+    let hour_bar = Bar::new(
+        hour_bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00060"),
+        Price::from("0.99950"),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        UnixNanos::from(0),
+        UnixNanos::from(3_600_000_000_000),
+    );
+    cache.add_bar(hour_bar).unwrap();
+
+    // Even though min_bar has a larger ts_event (3480s > 0s), hour_bar has a larger ts_init (3600s > 3540s).
+    // Selection by ts_init must choose the 1-hour bar.
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("50.00 USD"))
+    );
+}
+
+#[rstest]
+#[case(OrderSide::Buy, PositionSide::Long, "10.00 USD")]
+#[case(OrderSide::Sell, PositionSide::Short, "-50.00 USD")]
+fn test_calculate_unrealized_pnl_bar_selection_equal_close_tie_break(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] side: OrderSide,
+    #[case] position_side: PositionSide,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(side)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-TIE")),
+        Some(PositionId::new("P-TIE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&instrument, fill.into());
+    position.side = position_side;
+
+    let bid_bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Minute,
+            PriceType::Bid,
+        ),
+        AggregationSource::Internal,
+    );
+    let ask_bar_type = BarType::new(
+        instrument.id(),
+        nautilus_model::data::BarSpecification::new(
+            1,
+            nautilus_model::enums::BarAggregation::Minute,
+            PriceType::Ask,
+        ),
+        AggregationSource::Internal,
+    );
+
+    let bid_bar = Bar::new(
+        bid_bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(100_000),
+        UnixNanos::from(60),
+        UnixNanos::from(60),
+    );
+    let ask_bar = Bar::new(
+        ask_bar_type,
+        Price::from("1.00050"),
+        Price::from("1.00060"),
+        Price::from("1.00040"),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        UnixNanos::from(60),
+        UnixNanos::from(60),
+    );
+
+    cache.add_bar(bid_bar).unwrap();
+    cache.add_bar(ask_bar).unwrap();
+
+    // For long: Bid bar (1.00010) ranks higher -> PnL = 10 USD
+    // For short: Ask bar (1.00050) ranks higher -> PnL = -50 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
 fn test_build_index_when_empty(mut cache: Cache) {
     cache.build_index();
 }
