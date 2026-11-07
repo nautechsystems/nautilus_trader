@@ -412,15 +412,14 @@ pub fn check_position_reconciliation(
     false
 }
 
-/// Returns whether `report` predates an open position for its instrument and account that a
-/// synthetic reconciliation order opened and that does not hold the fill's trade.
+/// Returns whether a fill report predates a synthetic correction for its instrument and account.
 ///
-/// The venue position report behind such a position already includes the fill, so applying it
+/// The venue position report behind that correction already includes the fill, so applying it
 /// to the position would count the execution twice.
 #[must_use]
 pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillReport) -> bool {
     cache
-        .positions_open(
+        .positions_refs(
             None,
             Some(&report.instrument_id),
             None,
@@ -439,16 +438,16 @@ pub(crate) fn fill_precedes_reconciled_position(
     trade_id: TradeId,
     ts_event: UnixNanos,
 ) -> bool {
-    ts_event < position.ts_opened
-        && !position.trade_ids.contains(&trade_id)
-        && cache
-            .order(&position.opening_order_id)
-            .is_some_and(|order| {
-                order.tags().is_some_and(|tags| {
-                    tags.iter()
-                        .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+    !position.trade_ids.contains(&trade_id)
+        && position.events.iter().rev().any(|fill| {
+            ts_event < fill.ts_event
+                && cache.order(&fill.client_order_id).is_some_and(|order| {
+                    order.tags().is_some_and(|tags| {
+                        tags.iter()
+                            .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+                    })
                 })
-            })
+        })
 }
 
 /// Caps a price at the instrument's maximum price.

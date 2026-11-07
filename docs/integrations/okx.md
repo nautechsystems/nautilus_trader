@@ -1603,6 +1603,18 @@ Values above 7 days are clamped to the longest complete window across the regula
 and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
 available from OKX.
 
+Order reconciliation, including startup, does not infer executions from order status. Executions retain
+the venue trade IDs and fees provided by private updates or fill reports. Queries do not request
+additional fill history. Reconciliation accepts orders while fills are missing, including open orders at
+startup, and applies the venue fills it can obtain. Missing executions and dependent terminal transitions
+remain unresolved when history coverage is incomplete.
+
+To recover missing private executions at runtime, enable `LiveExecutionEngineConfig.open_check_interval_secs`.
+Set `open_check_open_only` to `false` to include terminal orders. Open-order checks and targeted follow-up
+queries request fills when a reported filled quantity exceeds the cached quantity. Missing fills and
+dependent status transitions remain unresolved while venue fill reports are unavailable or incomplete.
+See [Fill reconciliation](../concepts/execution/reconciliation.md#fill-reconciliation).
+
 Periodic position checks treat an absent report as flat only for configured derivative instrument types.
 Spot, margin, and spread instruments do not have complete bulk position coverage, so an absent report
 does not close their cached positions. Spot-margin positions that OKX reports still reconcile normally.

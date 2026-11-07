@@ -1259,10 +1259,15 @@ unapplied. Periodic and targeted reconciliation defer the affected work until a 
 
 #### Inferred fills
 
-Call the hook for every adapter-backed inferred fill: external and cached orders, continuous
-reconciliation, and targeted order recovery. If commission calculation fails, the engine may apply
-valid explicit fills, but it leaves the residual inferred quantity and dependent terminal
-transition pending.
+Adapters that require venue trade IDs and fees for every order execution return `true` from
+`ExecutionClient::requires_authoritative_fills`. Order statuses then leave missing fills and dependent
+status transitions pending until private updates or reconciliation supply venue fills. The default is
+`false`. Position-only synthetic corrections are unaffected.
+
+Call `ExecutionClient::calculate_commission` for every adapter-backed inferred fill: external and cached
+orders, continuous reconciliation, and targeted order recovery. If commission calculation fails, the
+engine may apply valid explicit fills, but it leaves the residual inferred quantity and dependent
+terminal transition pending.
 
 For an external order, calculate commission before a cache or event transition could prevent a retry. If the
 responsible execution client is unavailable, defer the inferred fill. Do not treat that missing client as an

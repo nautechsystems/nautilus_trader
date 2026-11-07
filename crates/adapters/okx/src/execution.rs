@@ -1699,6 +1699,10 @@ impl ExecutionClient for OKXExecutionClient {
         self.core.oms_type
     }
 
+    fn requires_authoritative_fills(&self) -> bool {
+        true
+    }
+
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
         if self.http_client.is_spread(instrument_id) {
             return false;

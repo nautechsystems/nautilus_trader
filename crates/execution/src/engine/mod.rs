@@ -1066,11 +1066,14 @@ impl ExecutionEngine {
     ///
     /// Handles order status transitions by generating appropriate events when the venue
     /// reports a different status than our local state. Supports all order states including
-    /// fills with inferred fill generation when instruments are available.
+    /// fills with inferred fill generation when instruments are available. Clients requiring
+    /// authoritative fills accept submitted orders but defer fill-dependent status transitions when
+    /// the report has missing executions.
     ///
     /// When the order is not found in cache, creates an external order from the report.
-    /// This handles exchange-generated orders (liquidation, ADL, settlement) that were
-    /// not submitted locally.
+    /// Orders requiring authoritative fills are created and accepted while their fills and dependent
+    /// status transitions remain pending. This handles exchange-generated orders (liquidation, ADL,
+    /// settlement) that were not submitted locally.
     pub fn reconcile_order_status_report(&mut self, report: &OrderStatusReport) {
         self.handle_order_status_report(report, false);
     }
@@ -1097,10 +1100,109 @@ impl ExecutionEngine {
         drop(cache);
 
         if let Some(order) = order {
-            self.apply_order_report_events(&order, report, instrument.as_ref(), is_snapshot);
+            self.reconcile_cached_order_status(&order, report, instrument.as_ref(), is_snapshot);
+        } else if instrument.is_some() && self.order_report_has_missing_fills(report, None) {
+            let _ = self.accept_external_order_from_status(report);
         } else {
             self.create_external_order(report, instrument.as_ref());
         }
+    }
+
+    fn reconcile_cached_order_status(
+        &mut self,
+        order: &OrderAny,
+        report: &OrderStatusReport,
+        instrument: Option<&InstrumentAny>,
+        is_snapshot: bool,
+    ) {
+        if self.order_report_has_missing_fills(report, Some(order)) {
+            if order.status() == OrderStatus::Submitted {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                for event in generate_reconciliation_order_pre_fill_events(order, report, ts_now) {
+                    self.handle_event(&event);
+                }
+            }
+
+            log::debug!(
+                "Deferring order status for {}: awaiting authoritative fills",
+                report.venue_order_id,
+            );
+            return;
+        }
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let events = if is_snapshot {
+            generate_reconciliation_order_snapshot_events(order, report, instrument, ts_now)
+        } else {
+            generate_reconciliation_order_events(order, report, instrument, ts_now)
+        };
+
+        for event in &events {
+            self.handle_event(event);
+        }
+    }
+
+    fn order_report_has_missing_fills(
+        &self,
+        report: &OrderStatusReport,
+        order: Option<&OrderAny>,
+    ) -> bool {
+        let filled_qty = order.map_or(
+            Quantity::zero(report.filled_qty.precision),
+            Order::filled_qty,
+        );
+
+        if report.filled_qty <= filled_qty {
+            return false;
+        }
+
+        let client = order
+            .and_then(|order| {
+                self.cache
+                    .borrow()
+                    .client_id(&order.client_order_id())
+                    .copied()
+            })
+            .and_then(|id| self.clients.get(&id));
+
+        client.map_or_else(
+            || {
+                self.clients.values().any(|client| {
+                    client.account_id == report.account_id
+                        && client.handles_order_venue(report.instrument_id.venue)
+                        && client.requires_authoritative_fills()
+                })
+            },
+            |client| client.requires_authoritative_fills(),
+        )
+    }
+
+    fn accept_external_order_from_status(
+        &mut self,
+        report: &OrderStatusReport,
+    ) -> Option<OrderAny> {
+        let order = self.materialize_external_order_from_status(report)?;
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        let accepted = OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            report.venue_order_id,
+            report.account_id,
+            UUID4::new(),
+            report.ts_accepted,
+            ts_now,
+            true,
+        );
+        self.handle_event(&OrderEventAny::Accepted(accepted));
+        Some(
+            self.cache
+                .borrow()
+                .order_owned(&order.client_order_id())
+                .unwrap_or(order),
+        )
     }
 
     fn create_external_order(
@@ -1434,16 +1536,8 @@ impl ExecutionEngine {
     /// liquidations) that arrive without a companion order status report still update the
     /// local position.
     ///
-    /// # Replayed Fills
-    ///
-    /// A fill updates its order but no position when an open position for its instrument and
-    /// account:
-    /// - Was opened by a synthetic reconciliation order.
-    /// - Has a `ts_opened` later than the fill's `ts_event`.
-    /// - Does not hold the fill's trade.
-    ///
-    /// The venue position report behind that position already includes the fill, so this stops
-    /// a venue that replays executions after a restart from doubling the position.
+    /// Replayed fills update their orders only when a cached synthetic correction already covers
+    /// them. Standalone reports check all strategies for the instrument and account.
     pub fn reconcile_fill_report(&mut self, report: &FillReport) {
         msgbus::publish_any(
             MessagingSwitchboard::reconciliation_raw_fill_report_topic(),
@@ -1587,7 +1681,9 @@ impl ExecutionEngine {
     ///
     /// Real fills supplied by the adapter are applied first so their `trade_id` and
     /// `commission` are preserved; any residual quantity not covered by the fills is
-    /// then synthesized as an inferred fill from the status report's `avg_px`.
+    /// then synthesized as an inferred fill from the status report's `avg_px`, unless the client
+    /// requires authoritative fills. In that case, residual quantity and dependent status transitions
+    /// remain pending.
     /// Adapters use this to emit ADL / liquidation / settlement events without
     /// losing real fill metadata.
     ///
@@ -1636,7 +1732,7 @@ impl ExecutionEngine {
             if fills.is_empty()
                 && let Some(order) = order
             {
-                self.apply_order_report_events(&order, report, None, is_snapshot);
+                self.reconcile_cached_order_status(&order, report, None, is_snapshot);
             }
             return;
         };
@@ -1657,28 +1753,11 @@ impl ExecutionEngine {
                     .unwrap_or(order)
             }
             None => {
-                let Some(order) = self.materialize_external_order_from_status(report) else {
+                let Some(order) = self.accept_external_order_from_status(report) else {
                     return;
                 };
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let accepted = OrderAccepted::new(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    report.venue_order_id,
-                    report.account_id,
-                    UUID4::new(),
-                    report.ts_accepted,
-                    ts_now,
-                    true, // reconciliation
-                );
-                self.handle_event(&OrderEventAny::Accepted(accepted));
-                self.cache
-                    .borrow()
-                    .order(&order.client_order_id())
-                    .map(|o| o.clone())
-                    .unwrap_or(order)
+
+                order
             }
         };
 
@@ -1708,26 +1787,7 @@ impl ExecutionEngine {
             }
         }
 
-        self.apply_order_report_events(&order, report, Some(&instrument), is_snapshot);
-    }
-
-    fn apply_order_report_events(
-        &mut self,
-        order: &OrderAny,
-        report: &OrderStatusReport,
-        instrument: Option<&InstrumentAny>,
-        is_snapshot: bool,
-    ) {
-        let ts_now = self.clock.borrow().timestamp_ns();
-        let events = if is_snapshot {
-            generate_reconciliation_order_snapshot_events(order, report, instrument, ts_now)
-        } else {
-            generate_reconciliation_order_events(order, report, instrument, ts_now)
-        };
-
-        for event in &events {
-            self.handle_event(event);
-        }
+        self.reconcile_cached_order_status(&order, report, Some(&instrument), is_snapshot);
     }
 
     /// Reconciles a position status report received at runtime.
@@ -1966,6 +2026,18 @@ impl ExecutionEngine {
     }
 
     /// Processes an order event, updating internal state and routing as needed.
+    ///
+    /// # Replayed Fills
+    ///
+    /// A reconciliation fill updates its order but no position when a cached position for its
+    /// instrument and account:
+    /// - Has a synthetic reconciliation fill later than the execution's `ts_event`.
+    /// - Does not hold the fill's trade.
+    ///
+    /// The venue position report behind that correction already includes the fill, so this stops
+    /// a venue that replays executions after a restart from doubling the position.
+    /// NETTING fills check all strategies; HEDGING fills check the routed position.
+    /// Ordinary private fills and price restatements still apply to positions.
     pub fn process(&mut self, event: &OrderEventAny) {
         self.handle_event(event);
     }
@@ -3052,14 +3124,13 @@ impl ExecutionEngine {
         }
 
         let is_covered = |position: &Position| {
-            position.is_open()
-                && position.account_id == fill.account_id
+            position.account_id == fill.account_id
                 && position.instrument_id == fill.instrument_id
                 && fill_precedes_reconciled_position(&cache, position, fill.trade_id, fill.ts_event)
         };
 
         if oms_type != OmsType::Hedging {
-            let positions = cache.positions_open(
+            let positions = cache.positions_refs(
                 None,
                 Some(&fill.instrument_id),
                 None,

@@ -633,6 +633,10 @@ impl ExecutionClient for LiveExecutionClient {
             .borrow()
             .allows_reconciliation_overfill(order, report)
     }
+
+    fn requires_authoritative_fills(&self) -> bool {
+        self.client.borrow().requires_authoritative_fills()
+    }
 }
 
 #[cfg(test)]

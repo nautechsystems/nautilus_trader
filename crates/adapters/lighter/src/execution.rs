@@ -27189,6 +27189,8 @@ mod tests {
         sell_trade.ask_client_id_str = Some(sell_index.to_string());
         sell_trade.size = buy_trade.size;
         sell_trade.usd_amount = sell_trade.size * sell_trade.price;
+        buy.updated_at = buy_trade.timestamp + 1;
+        sell.updated_at = sell_trade.timestamp + 1;
         let expected = [
             (
                 rig.cloid,

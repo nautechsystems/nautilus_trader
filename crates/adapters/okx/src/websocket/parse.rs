@@ -1343,6 +1343,23 @@ pub fn update_fee_fill_caches(
     filled_qty_cache: &mut FilledQtyCache,
 ) {
     let is_terminal = is_terminal_order_state(msg.state);
+    if let Some(previous) = filled_qty_cache.get(&msg.ord_id).copied()
+        && msg
+            .acc_fill_sz
+            .as_deref()
+            .and_then(|quantity| parse_quantity(quantity, instrument.size_precision()).ok())
+            .is_none_or(|quantity| quantity.is_zero())
+    {
+        if is_terminal {
+            if let Some(fee) = fee_cache.get(&msg.ord_id).copied() {
+                fee_cache.record(msg.ord_id, fee, true);
+            }
+
+            filled_qty_cache.record(msg.ord_id, previous, true);
+        }
+
+        return;
+    }
 
     if let Some(ref fee_str) = msg.fee
         && !fee_str.is_empty()
@@ -2098,6 +2115,9 @@ fn parse_spread_order_fill_report(
 
 /// Parses an OKX order message into a Nautilus fill report.
 ///
+/// Requires a valid cumulative fee for subsequent fee deltas, even when per-fill fees supply the
+/// commission.
+///
 /// # Errors
 ///
 /// Returns an error if order quantities, prices, or fees cannot be parsed.
@@ -2149,109 +2169,11 @@ pub fn parse_fill_report(
         )
     })?;
 
-    // OKX provides fillSz (incremental fill) or accFillSz (cumulative total)
-    // If fillSz is provided, use it directly as the incremental fill quantity
-    let last_qty = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
-        parse_quantity(&msg.fill_sz, size_precision)
-            .map_err(|e| anyhow::anyhow!("Failed to parse fill_sz='{}': {e}", msg.fill_sz))?
-    } else if let Some(ref acc_fill_sz) = msg.acc_fill_sz {
-        // If fillSz is missing but accFillSz is available, calculate incremental fill
-        if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
-            let current_filled = parse_quantity(acc_fill_sz, size_precision)
-                .map_err(|e| anyhow::anyhow!("Failed to parse acc_fill_sz='{acc_fill_sz}': {e}"))?;
-
-            // Calculate incremental fill as: current_total - previous_total
-            if let Some(prev_qty) = previous_filled_qty {
-                if current_filled < prev_qty {
-                    anyhow::bail!(
-                        "Cumulative fill went backwards: acc_fill_sz='{acc_fill_sz}' < previous_filled_qty={prev_qty} \
-                         (possible stale data after reconnect)"
-                    );
-                }
-                let incremental = current_filled - prev_qty;
-                if incremental.is_zero() {
-                    log::debug!(
-                        "Skipping duplicate fill: acc_fill_sz='{acc_fill_sz}' unchanged from previous={prev_qty}"
-                    );
-                    return Ok(None);
-                }
-                incremental
-            } else {
-                // First fill, use accumulated as incremental
-                current_filled
-            }
-        } else {
-            anyhow::bail!(
-                "Cannot determine fill quantity: fill_sz is empty/zero and acc_fill_sz is empty/zero"
-            );
-        }
-    } else {
-        anyhow::bail!(
-            "Cannot determine fill quantity: fill_sz='{}' and acc_fill_sz is None",
-            msg.fill_sz
-        );
+    let Some(last_qty) = parse_fill_quantity(msg, previous_filled_qty, size_precision)? else {
+        return Ok(None);
     };
 
-    let fee_str = msg
-        .fee
-        .as_deref()
-        .filter(|fee| !fee.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing fee for fill report inst_id={}", msg.inst_id))?;
-    let fee_dec = Decimal::from_str(fee_str)
-        .map_err(|e| anyhow::anyhow!("Failed to parse fee '{fee_str}': {e}"))?;
-
-    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_dec, || {
-        format!("fill report for inst_id={}", msg.inst_id)
-    });
-
-    // OKX sends fees as negative numbers (e.g., "-2.5" for a $2.5 charge), parse_fee negates to positive
-    let total_fee = parse_fee(Some(fee_str), fee_currency)
-        .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {}", msg.fee, e))?;
-
-    // OKX sends cumulative fees, so we subtract the previous total to get this fill's fee
-    let commission = if let Some(previous_fee) = previous_fee {
-        if total_fee.currency == previous_fee.currency {
-            let incremental = total_fee - previous_fee;
-
-            if incremental < Money::zero(fee_currency) {
-                log::debug!(
-                    "Negative incremental fee detected - likely a maker rebate or fee refund: order_id={}, total_fee={}, previous_fee={}, incremental={}",
-                    msg.ord_id.as_str(),
-                    total_fee,
-                    previous_fee,
-                    incremental,
-                );
-            }
-
-            // Skip corruption check when previous is negative (rebate), as transitions from
-            // rebate to charge legitimately have incremental > total (e.g., -1 → +2 gives +3)
-            if previous_fee >= Money::zero(fee_currency)
-                && total_fee > Money::zero(fee_currency)
-                && incremental > total_fee
-            {
-                log::error!(
-                    "Incremental fee exceeds total fee - likely fee cache corruption, using total fee as fallback: order_id={}, total_fee={}, previous_fee={}, incremental={}",
-                    msg.ord_id.as_str(),
-                    total_fee,
-                    previous_fee,
-                    incremental,
-                );
-                total_fee
-            } else {
-                incremental
-            }
-        } else {
-            log::warn!(
-                "Fee currency changed from {} to {} for order_id={}, using total fee as commission",
-                previous_fee.currency.code,
-                total_fee.currency.code,
-                msg.ord_id.as_str(),
-            );
-            total_fee
-        }
-    } else {
-        total_fee
-    };
+    let commission = parse_fill_commission(msg, previous_fee, previous_filled_qty, last_qty)?;
 
     let liquidity_side: LiquiditySide = msg.exec_type.into();
     let ts_event = parse_millisecond_timestamp(msg.fill_time);
@@ -2304,6 +2226,137 @@ pub fn parse_fill_report(
     );
 
     Ok(Some(report))
+}
+
+fn parse_fill_quantity(
+    msg: &OKXOrderMsg,
+    previous: Option<Quantity>,
+    precision: u8,
+) -> anyhow::Result<Option<Quantity>> {
+    if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        return parse_quantity(&msg.fill_sz, precision)
+            .map(Some)
+            .map_err(|e| anyhow::anyhow!("Failed to parse fill_sz='{}': {e}", msg.fill_sz));
+    }
+
+    let Some(cumulative) = msg.acc_fill_sz.as_deref() else {
+        anyhow::bail!(
+            "Cannot determine fill quantity: fill_sz='{}' and acc_fill_sz is None",
+            msg.fill_sz
+        );
+    };
+
+    anyhow::ensure!(
+        !cumulative.is_empty() && cumulative != "0",
+        "Cannot determine fill quantity: fill_sz is empty/zero and acc_fill_sz is empty/zero",
+    );
+
+    let cumulative = parse_quantity(cumulative, precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse acc_fill_sz='{}': {e}",
+            msg.acc_fill_sz.as_deref().unwrap_or_default()
+        )
+    })?;
+
+    let Some(previous) = previous else {
+        return Ok(Some(cumulative));
+    };
+
+    anyhow::ensure!(
+        cumulative >= previous,
+        "Cumulative fill went backwards: acc_fill_sz='{}' < previous_filled_qty={previous} (possible stale data after reconnect)",
+        msg.acc_fill_sz.as_deref().unwrap_or_default(),
+    );
+    let incremental = cumulative - previous;
+    if incremental.is_zero() {
+        log::debug!(
+            "Skipping duplicate fill: acc_fill_sz='{cumulative}' unchanged from previous={previous}"
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(incremental))
+}
+
+fn parse_fill_commission(
+    msg: &OKXOrderMsg,
+    previous_fee: Option<Money>,
+    previous_filled_qty: Option<Quantity>,
+    last_qty: Quantity,
+) -> anyhow::Result<Money> {
+    let fee = msg
+        .fee
+        .as_deref()
+        .filter(|fee| !fee.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing fee for fill report inst_id={}", msg.inst_id))?;
+    let amount =
+        Decimal::from_str(fee).map_err(|e| anyhow::anyhow!("Failed to parse fee '{fee}': {e}"))?;
+
+    let currency = parse_fee_currency(msg.fee_ccy.as_str(), amount, || {
+        format!("fill report for inst_id={}", msg.inst_id)
+    });
+
+    let total = parse_fee(Some(fee), currency)
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {e}", msg.fee))?;
+
+    if !msg.fill_sz.is_empty()
+        && msg.fill_sz != "0"
+        && let Some(fee) = msg.fill_fee.as_deref().filter(|fee| !fee.trim().is_empty())
+    {
+        let amount = Decimal::from_str(fee)?;
+        let currency = msg
+            .fill_fee_ccy
+            .filter(|currency| !currency.is_empty())
+            .context("missing per-fill fee currency")?;
+
+        let currency = parse_fee_currency(currency.as_str(), amount, || {
+            format!("fill report for inst_id={}", msg.inst_id)
+        });
+
+        return parse_fee(Some(fee), currency);
+    }
+
+    if let Some(cumulative) = msg.acc_fill_sz.as_deref().filter(|value| !value.is_empty()) {
+        let cumulative = parse_quantity(cumulative, last_qty.precision)?;
+        let previous = previous_filled_qty.map_or(Decimal::ZERO, |qty| qty.as_decimal());
+        anyhow::ensure!(
+            cumulative.as_decimal() <= previous + last_qty.as_decimal(),
+            "missing per-fill fee across a private fill gap for {}",
+            msg.ord_id
+        );
+    }
+
+    let Some(previous) = previous_fee else {
+        return Ok(total);
+    };
+
+    if total.currency != previous.currency {
+        log::warn!(
+            "Fee currency changed from {} to {} for order_id={}, using total fee as commission",
+            previous.currency.code,
+            total.currency.code,
+            msg.ord_id
+        );
+        return Ok(total);
+    }
+
+    let incremental = total - previous;
+    if incremental < Money::zero(currency) {
+        log::debug!(
+            "Negative incremental fee detected - likely a maker rebate or fee refund: order_id={}, total_fee={total}, previous_fee={previous}, incremental={incremental}",
+            msg.ord_id
+        );
+    }
+
+    if previous >= Money::zero(currency) && total > Money::zero(currency) && incremental > total {
+        log::error!(
+            "Incremental fee exceeds total fee - likely fee cache corruption, using total fee as fallback: order_id={}, total_fee={total}, previous_fee={previous}, incremental={incremental}",
+            msg.ord_id
+        );
+        return Ok(total);
+    }
+
+    Ok(incremental)
 }
 
 /// Parses an option summary payload into [`OptionGreeks`].
@@ -3664,6 +3717,283 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("missing fee"));
+    }
+
+    #[rstest]
+    #[case::charge("-0.03", "0.03 USD")]
+    #[case::rebate("0.02", "-0.02 USD")]
+    #[case::zero("0", "0 USD")]
+    fn test_parse_fill_report_uses_per_fill_fee(#[case] fee: &str, #[case] expected: &str) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut msg = create_stub_order_msg("0.006", Some("0.010".into()), "ord-1", "trade-2");
+        msg.fee = Some("-0.05".into());
+        msg.fee_ccy = Ustr::from("BTC");
+        msg.fill_fee = Some(fee.into());
+        msg.fill_fee_ccy = Some(Ustr::from("USD"));
+        let report = parse_fill_report(
+            &msg,
+            &instrument,
+            AccountId::from("OKX-001"),
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(report.trade_id, TradeId::from("trade-2"));
+        assert_eq!(report.last_qty, Quantity::from("0.00600000"));
+        assert_eq!(report.commission, Money::from(expected));
+    }
+
+    #[rstest]
+    #[case::absent(None, "missing fee for fill report inst_id=BTC-USDT-SWAP")]
+    #[case::empty(Some(""), "missing fee for fill report inst_id=BTC-USDT-SWAP")]
+    #[case::invalid(
+        Some("invalid"),
+        "Failed to parse fee 'invalid': Invalid decimal: unknown character"
+    )]
+    fn test_per_fill_fee_requires_valid_cumulative_fee(
+        #[case] cumulative_fee: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut msg = create_stub_order_msg("0.004", Some("0.004".into()), "ord-1", "trade-1");
+        msg.fee = cumulative_fee.map(str::to_owned);
+        msg.fill_fee = Some("-0.02".into());
+        msg.fill_fee_ccy = Some(Ustr::from("USD"));
+
+        let error = parse_fill_report(
+            &msg,
+            &instrument,
+            AccountId::from("OKX-001"),
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_per_fill_then_cumulative_fee_preserves_total(
+        #[values(false, true)] prior_fill: bool,
+        #[values("USD", "BTC")] currency: &str,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let account_id = AccountId::from("OKX-001");
+        let mut fees = FeeCache::new();
+        let mut quantities = FilledQtyCache::new();
+        let zero = format!("0 {currency}");
+        let mut total = Money::from(zero.as_str());
+
+        if prior_fill {
+            let mut prior =
+                create_stub_order_msg("0.002", Some("0.002".into()), "ord-1", "trade-0");
+            prior.fee = Some("-0.01".into());
+            prior.fee_ccy = Ustr::from(currency);
+            let fill = parse_fill_report(
+                &prior,
+                &instrument,
+                account_id,
+                None,
+                None,
+                UnixNanos::default(),
+            )
+            .unwrap()
+            .unwrap();
+            total = total + fill.commission;
+            update_fee_fill_caches(&prior, &instrument, &mut fees, &mut quantities);
+        }
+
+        let mut first = create_stub_order_msg(
+            "0.004",
+            Some(if prior_fill { "0.006" } else { "0.004" }.into()),
+            "ord-1",
+            "trade-1",
+        );
+        first.fee = None;
+        first.fee_ccy = Ustr::from(currency);
+        first.fill_fee = Some("-0.02".into());
+        first.fill_fee_ccy = Some(Ustr::from(currency));
+        let mut second = create_stub_order_msg(
+            "0.006",
+            Some(if prior_fill { "0.012" } else { "0.010" }.into()),
+            "ord-1",
+            "trade-2",
+        );
+        second.fee = Some(if prior_fill { "-0.06" } else { "-0.05" }.into());
+        second.fee_ccy = Ustr::from(currency);
+
+        let first_error = parse_fill_report(
+            &first,
+            &instrument,
+            account_id,
+            fees.get(&first.ord_id).copied(),
+            quantities.get(&first.ord_id).copied(),
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+        let second_error = parse_fill_report(
+            &second,
+            &instrument,
+            account_id,
+            fees.get(&second.ord_id).copied(),
+            quantities.get(&second.ord_id).copied(),
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+        first.fee = Some(if prior_fill { "-0.03" } else { "-0.02" }.into());
+        let first_fill = parse_fill_report(
+            &first,
+            &instrument,
+            account_id,
+            fees.get(&first.ord_id).copied(),
+            quantities.get(&first.ord_id).copied(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        update_fee_fill_caches(&first, &instrument, &mut fees, &mut quantities);
+        let second_fill = parse_fill_report(
+            &second,
+            &instrument,
+            account_id,
+            fees.get(&second.ord_id).copied(),
+            quantities.get(&second.ord_id).copied(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        total = total + first_fill.commission;
+        total = total + second_fill.commission;
+        let first_commission = format!("0.02 {currency}");
+        let second_commission = format!("0.03 {currency}");
+        let expected_total = format!("{} {currency}", if prior_fill { "0.06" } else { "0.05" });
+
+        assert_eq!(
+            first_error.to_string(),
+            "missing fee for fill report inst_id=BTC-USDT-SWAP"
+        );
+        assert_eq!(
+            second_error.to_string(),
+            "missing per-fill fee across a private fill gap for ord-1"
+        );
+        assert_eq!(first_fill.trade_id, TradeId::from("trade-1"));
+        assert_eq!(first_fill.last_qty, Quantity::from("0.00400000"));
+        assert_eq!(
+            first_fill.commission,
+            Money::from(first_commission.as_str())
+        );
+        assert_eq!(second_fill.trade_id, TradeId::from("trade-2"));
+        assert_eq!(second_fill.last_qty, Quantity::from("0.00600000"));
+        assert_eq!(
+            second_fill.commission,
+            Money::from(second_commission.as_str())
+        );
+        assert_eq!(total, Money::from(expected_total.as_str()));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_defers_fee_across_missing_private_fill() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut msg = create_stub_order_msg("0.006", Some("0.010".into()), "ord-1", "trade-2");
+        msg.fee = Some("-0.05".into());
+        let error = parse_fill_report(
+            &msg,
+            &instrument,
+            AccountId::from("OKX-001"),
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "missing per-fill fee across a private fill gap for ord-1"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_missing_per_fill_fee_currency() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut msg = create_stub_order_msg("0.006", Some("0.010".into()), "ord-1", "trade-2");
+        msg.fill_fee = Some("-0.03".into());
+        msg.fill_fee_ccy = None;
+        let error = parse_fill_report(
+            &msg,
+            &instrument,
+            AccountId::from("OKX-001"),
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "missing per-fill fee currency");
+    }
+
+    #[rstest]
+    fn test_zero_fill_terminal_update_preserves_and_retires_baselines() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fees = FeeCache::new();
+        let mut quantities = FilledQtyCache::new();
+        let mut msg = create_stub_order_msg("0.004", Some("0.004".into()), "retired", "trade-1");
+        msg.fee = Some("-0.02".into());
+        update_fee_fill_caches(&msg, &instrument, &mut fees, &mut quantities);
+        msg.acc_fill_sz = Some("0".into());
+        msg.fee = Some("0".into());
+        msg.state = OKXOrderStatus::Canceled;
+        update_fee_fill_caches(&msg, &instrument, &mut fees, &mut quantities);
+        assert_eq!(fees.get(&msg.ord_id), Some(&Money::from("0.02 USDT")));
+        assert_eq!(
+            quantities.get(&msg.ord_id),
+            Some(&Quantity::from("0.00400000"))
+        );
+
+        for index in 0..TERMINAL_BASELINE_CAPACITY {
+            let mut terminal = create_stub_order_msg(
+                "0.001",
+                Some("0.001".into()),
+                &format!("terminal{index}"),
+                "trade-2",
+            );
+            terminal.state = OKXOrderStatus::Filled;
+            update_fee_fill_caches(&terminal, &instrument, &mut fees, &mut quantities);
+        }
+
+        assert_eq!(fees.get(&msg.ord_id), None);
+        assert_eq!(quantities.get(&msg.ord_id), None);
+    }
+
+    #[rstest]
+    fn test_stale_acceptance_preserves_cumulative_fee_baseline(
+        #[values(None, Some(""), Some("0"), Some("0.00000000"))] cumulative: Option<&str>,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fees = FeeCache::new();
+        let mut quantities = FilledQtyCache::new();
+        let mut msg = create_stub_order_msg("0.004", Some("0.004".into()), "ord-1", "trade-1");
+        msg.fee = Some("-0.02".into());
+        update_fee_fill_caches(&msg, &instrument, &mut fees, &mut quantities);
+        msg.state = OKXOrderStatus::Live;
+        msg.acc_fill_sz = cumulative.map(str::to_string);
+        msg.fee = Some("0".into());
+        update_fee_fill_caches(&msg, &instrument, &mut fees, &mut quantities);
+        let mut remainder =
+            create_stub_order_msg("0.006", Some("0.010".into()), "ord-1", "trade-2");
+        remainder.fee = Some("-0.05".into());
+        let report = parse_fill_report(
+            &remainder,
+            &instrument,
+            AccountId::from("OKX-001"),
+            fees.get(&msg.ord_id).copied(),
+            quantities.get(&msg.ord_id).copied(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(report.commission, Money::from("0.03 USDT"));
+        assert_eq!(report.last_qty, Quantity::from("0.00600000"));
     }
 
     #[rstest]
