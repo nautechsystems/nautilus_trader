@@ -31,6 +31,11 @@ This crate provides feature flags to control source code inclusion during compil
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
+## Integrator attribution
+
+HTTP requests use `X-Referer`, and WebSocket orders use `Referer`, for NautilusTrader's broker ID.
+Post-only orders omit attribution when background detection identifies the account as a market maker.
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-bybit) for more detailed usage.

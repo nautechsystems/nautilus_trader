@@ -15,7 +15,15 @@
 
 //! Integration tests for Bybit HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -70,6 +78,155 @@ use ustr::Ustr;
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
 
+#[rstest]
+#[case(0, "PostOnly", Some("Qy000878"))]
+#[case(2, "PostOnly", None)]
+#[case(0, "GTC", Some("Qy000878"))]
+#[case(2, "GTC", Some("Qy000878"))]
+#[tokio::test]
+async fn test_http_attribution_uses_cached_detected_mm_level(
+    #[case] mm_level: u8,
+    #[case] time_in_force: &str,
+    #[case] expected_referer: Option<&str>,
+) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    state.mm_level.store(mm_level, Ordering::Relaxed);
+    let client = BybitHttpClient::with_credentials(
+        "test-key".to_string(),
+        "test-secret".to_string(),
+        Some(format!("http://{addr}")),
+        2,
+        0,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 0);
+    client.get_account_details().await.unwrap();
+    let request = json!({
+        "category":"linear", "symbol":"BTCUSDT", "side":"Buy",
+        "orderType":"Limit", "qty":"0.001", "price":"50000", "timeInForce":time_in_force,
+    });
+    client.place_order(&request).await.unwrap();
+    client.clone().place_order(&request).await.unwrap();
+    let submissions = state.order_submissions.lock().await.clone();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(submissions.len(), 2);
+
+    for order in submissions {
+        assert_eq!(order.referer.as_deref(), expected_referer);
+        assert_eq!(order.raw_body, request);
+    }
+}
+
+#[rstest]
+#[case(0)]
+#[case(2)]
+#[case(3)]
+#[tokio::test]
+async fn test_http_mm_detection_does_not_queue_orders_and_retries(#[case] failures: usize) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    state.mm_level.store(2, Ordering::Relaxed);
+    state
+        .account_query_failures
+        .store(failures, Ordering::Relaxed);
+    state.account_query_blocked.store(true, Ordering::Relaxed);
+    let client = BybitHttpClient::with_credentials(
+        "test-key".to_string(),
+        "test-secret".to_string(),
+        Some(format!("http://{addr}")),
+        2,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let request = json!({
+        "category":"linear", "symbol":"BTCUSDT", "side":"Buy",
+        "orderType":"Limit", "qty":"0.001", "price":"50000", "timeInForce":"PostOnly",
+    });
+    tokio::time::timeout(Duration::from_secs(2), client.place_order(&request))
+        .await
+        .unwrap()
+        .unwrap();
+    wait_until_async(
+        || async { state.account_queries.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let first = state.order_submissions.lock().await[0].clone();
+    state.account_query_blocked.store(false, Ordering::Relaxed);
+    state.account_query_gate.notify_one();
+
+    if failures < 3 {
+        wait_until_async(
+            || async {
+                client.clone().place_order(&request).await.unwrap();
+                state
+                    .order_submissions
+                    .lock()
+                    .await
+                    .last()
+                    .unwrap()
+                    .referer
+                    .is_none()
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+    } else {
+        wait_until_async(
+            || async { state.account_queries.load(Ordering::Relaxed) == 3 },
+            Duration::from_secs(10),
+        )
+        .await;
+        client.clone().place_order(&request).await.unwrap();
+    }
+
+    let submissions = state.order_submissions.lock().await.clone();
+
+    assert_eq!(first.referer.as_deref(), Some("Qy000878"));
+    assert_eq!(
+        submissions.last().unwrap().referer.as_deref(),
+        if failures < 3 { None } else { Some("Qy000878") }
+    );
+    assert_eq!(
+        state.account_queries.load(Ordering::Relaxed),
+        (failures + 1).min(3)
+    );
+    assert_eq!(state.account_query_failures.load(Ordering::Relaxed), 0);
+}
+
+async fn handle_account_details(State(state): State<TestServerState>) -> Response {
+    state.account_queries.fetch_add(1, Ordering::Relaxed);
+    if state.account_query_blocked.load(Ordering::Relaxed) {
+        state.account_query_gate.notified().await;
+    }
+
+    if state
+        .account_query_failures
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"retCode":10000,"retMsg":"Temporary failure"})),
+        )
+            .into_response();
+    }
+
+    let mut response = load_test_data("http_get_user_query_api.json");
+    response["result"]["mktMakerLevel"] = json!(state.mm_level.load(Ordering::Relaxed).to_string());
+    Json(response).into_response()
+}
+
 #[derive(Debug, Clone, Copy)]
 enum RequiredInstrumentCachePath {
     Trades,
@@ -82,6 +239,7 @@ enum RequiredInstrumentCachePath {
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 struct CapturedOrder {
+    referer: Option<String>,
     category: String,
     symbol: String,
     side: String,
@@ -104,6 +262,11 @@ struct CapturedOrder {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestServerState {
+    mm_level: Arc<AtomicU8>,
+    account_queries: Arc<AtomicUsize>,
+    account_query_failures: Arc<AtomicUsize>,
+    account_query_blocked: Arc<AtomicBool>,
+    account_query_gate: Arc<tokio::sync::Notify>,
     request_count: Arc<tokio::sync::Mutex<usize>>,
     execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     wallet_balance_requests: Arc<tokio::sync::Mutex<usize>>,
@@ -119,6 +282,11 @@ struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
+            mm_level: Arc::new(AtomicU8::new(0)),
+            account_queries: Arc::new(AtomicUsize::new(0)),
+            account_query_failures: Arc::new(AtomicUsize::new(0)),
+            account_query_blocked: Arc::new(AtomicBool::new(false)),
+            account_query_gate: Arc::new(tokio::sync::Notify::new()),
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
             execution_response: Arc::default(),
             wallet_balance_requests: Arc::new(tokio::sync::Mutex::new(0)),
@@ -432,6 +600,9 @@ async fn handle_post_order_with_capture(
     }
 
     let captured = CapturedOrder {
+        referer: headers
+            .get("X-Referer")
+            .map(|value| value.to_str().unwrap().to_string()),
         category: order_req
             .get("category")
             .and_then(|v| v.as_str())
@@ -1057,6 +1228,7 @@ async fn handle_get_orders_history_reconciliation(
 #[allow(dead_code)]
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
+        .route("/v5/user/query-api", get(handle_account_details))
         .route("/v5/market/time", get(handle_get_server_time))
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/market/kline", get(handle_get_klines))
@@ -3597,6 +3769,7 @@ async fn test_request_bars_continues_pagination_when_first_page_only_partial() {
 #[allow(dead_code)]
 fn create_order_capture_test_router(state: TestServerState) -> Router {
     Router::new()
+        .route("/v5/user/query-api", get(handle_account_details))
         .route("/v5/market/time", get(handle_get_server_time))
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/order/create", post(handle_post_order_with_capture))

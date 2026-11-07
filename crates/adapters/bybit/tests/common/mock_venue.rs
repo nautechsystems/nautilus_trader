@@ -870,6 +870,10 @@ pub(super) async fn handle_order_message(
 
 pub(super) fn create_test_router(state: TestServerState) -> Router {
     Router::new()
+        .route(
+            "/v5/user/query-api",
+            get(|| async { Json(load_test_data("http_get_user_query_api.json")) }),
+        )
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/account/fee-rate", get(handle_get_fee_rate))
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))

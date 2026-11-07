@@ -154,8 +154,8 @@ impl BybitExecutionClient {
 
         let mut ws_private = BybitWebSocketClient::new_private(
             config.environment,
-            Some(api_key.clone()),
-            Some(api_secret.clone()),
+            Some(api_key),
+            Some(api_secret),
             Some(config.ws_private_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,
@@ -173,8 +173,7 @@ impl BybitExecutionClient {
 
         let mut ws_trade = BybitWebSocketClient::new_trade(
             config.environment,
-            Some(api_key),
-            Some(api_secret),
+            http_client.clone(),
             Some(config.ws_trade_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,

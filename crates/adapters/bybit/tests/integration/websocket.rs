@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -30,7 +30,7 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    response::{Json, Response},
     routing::get,
 };
 use futures_util::StreamExt;
@@ -39,6 +39,7 @@ use nautilus_bybit::{
         BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
         BybitTimeInForce, BybitTriggerType,
     },
+    http::client::BybitHttpClient,
     websocket::{
         client::BybitWebSocketClient,
         messages::{
@@ -74,6 +75,11 @@ struct TestServerState {
     ping_count: Arc<AtomicUsize>,
     pong_count: Arc<AtomicUsize>,
     captured_messages: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    mm_level: Arc<AtomicU8>,
+    account_queries: Arc<AtomicUsize>,
+    account_query_error: Arc<AtomicBool>,
+    account_query_blocked: Arc<AtomicBool>,
+    account_query_gate: Arc<tokio::sync::Notify>,
 }
 
 impl Default for TestServerState {
@@ -91,6 +97,11 @@ impl Default for TestServerState {
             ping_count: Arc::new(AtomicUsize::new(0)),
             pong_count: Arc::new(AtomicUsize::new(0)),
             captured_messages: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            mm_level: Arc::new(AtomicU8::new(0)),
+            account_queries: Arc::new(AtomicUsize::new(0)),
+            account_query_error: Arc::new(AtomicBool::new(false)),
+            account_query_blocked: Arc::new(AtomicBool::new(false)),
+            account_query_gate: Arc::new(tokio::sync::Notify::new()),
         }
     }
 }
@@ -559,6 +570,8 @@ fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/public/linear", get(handle_websocket))
         .route("/v5/private", get(handle_websocket))
+        .route("/v5/trade", get(handle_websocket))
+        .route("/v5/user/query-api", get(handle_account_details))
         .with_state(state)
 }
 
@@ -2564,8 +2577,7 @@ async fn test_order_rate_wait_precedes_fresh_websocket_header() {
     let ws_url = format!("ws://{addr}/v5/private");
     let mut client = BybitWebSocketClient::new_trade(
         BybitEnvironment::Mainnet,
-        Some("test_api_key".to_string()),
-        Some("test_api_secret".to_string()),
+        trade_http_client(addr),
         Some(ws_url),
         20,
         TransportBackend::default(),
@@ -2630,8 +2642,7 @@ async fn test_trade_order_response_preserves_request_id() {
     let ws_url = format!("ws://{addr}/v5/private");
     let mut client = BybitWebSocketClient::new_trade(
         BybitEnvironment::Mainnet,
-        Some("test_api_key".to_string()),
-        Some("test_api_secret".to_string()),
+        trade_http_client(addr),
         Some(ws_url),
         20,
         TransportBackend::default(),
@@ -3297,4 +3308,252 @@ async fn test_batch_amend_order_with_order_iv() {
     assert!(args[0]["request"][0].get("category").is_none());
 
     client.close().await.unwrap();
+}
+
+#[rstest]
+#[case(0, true, false, Some("Qy000878"))]
+#[case(2, true, false, None)]
+#[case(2, false, false, Some("Qy000878"))]
+#[case(0, true, true, Some("Qy000878"))]
+#[case(2, true, true, None)]
+#[case(2, false, true, Some("Qy000878"))]
+#[tokio::test]
+async fn test_trade_attribution_uses_detected_mm_level(
+    #[case] mm_level: u8,
+    #[case] post_only: bool,
+    #[case] batch: bool,
+    #[case] expected_referer: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.mm_level.store(mm_level, Ordering::Relaxed);
+    let http_client = trade_http_client(addr);
+    http_client.get_account_details().await.unwrap();
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        http_client,
+        Some(format!("ws://{addr}/v5/trade")),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    let order: BybitWsPlaceOrderParams = serde_json::from_value(json!({
+        "category": "linear", "symbol": "BTCUSDT", "side": "Buy",
+        "orderType": "Limit", "qty": "0.001", "price": "50000",
+        "timeInForce": if post_only { "PostOnly" } else { "GTC" },
+        "orderLinkId": "detected-mm-level",
+    }))
+    .unwrap();
+
+    if batch {
+        client.batch_place_orders(vec![order]).await.unwrap();
+    } else {
+        client.place_order(order).await.unwrap();
+    }
+
+    wait_until_async(
+        || async { state.captured_messages.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let messages = state.captured_messages.lock().await.clone();
+    client.close().await.unwrap();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["header"]["Referer"].as_str(), expected_referer);
+    assert_eq!(
+        messages[0]["op"],
+        if batch {
+            "order.create-batch"
+        } else {
+            "order.create"
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_trade_attribution_retains_referer_for_mixed_mm_batch() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.mm_level.store(2, Ordering::Relaxed);
+    let http_client = trade_http_client(addr);
+    http_client.get_account_details().await.unwrap();
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        http_client,
+        Some(format!("ws://{addr}/v5/trade")),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    let requests = json!([
+        {
+            "symbol": "BTCUSDT", "side": "Buy", "orderType": "Limit",
+            "qty": "0.001", "price": "50000", "timeInForce": "PostOnly",
+            "orderLinkId": "mixed-mm-post-only",
+        },
+        {
+            "symbol": "BTCUSDT", "side": "Sell", "orderType": "Limit",
+            "qty": "0.002", "price": "50010", "timeInForce": "GTC",
+            "orderLinkId": "mixed-mm-gtc",
+        }
+    ]);
+
+    let orders = requests
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|request| {
+            let mut order = request.clone();
+            order["category"] = json!("linear");
+            serde_json::from_value(order).unwrap()
+        })
+        .collect();
+
+    client.batch_place_orders(orders).await.unwrap();
+    wait_until_async(
+        || async { state.captured_messages.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let messages = state.captured_messages.lock().await.clone();
+    client.close().await.unwrap();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["header"]["Referer"], "Qy000878");
+    assert_eq!(messages[0]["op"], "order.create-batch");
+    assert_eq!(
+        messages[0]["args"],
+        json!([{"category": "linear", "request": requests}])
+    );
+}
+
+#[tokio::test]
+async fn test_trade_attribution_caches_mm_level_across_connections() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.mm_level.store(2, Ordering::Relaxed);
+    let http_client = trade_http_client(addr);
+    http_client.get_account_details().await.unwrap();
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        http_client,
+        Some(format!("ws://{addr}/v5/trade")),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+
+    for (index, mm_level) in [2, 0].into_iter().enumerate() {
+        state.mm_level.store(mm_level, Ordering::Relaxed);
+        client.connect().await.unwrap();
+        client.wait_until_active(5.0).await.unwrap();
+        let order = serde_json::from_value(json!({
+            "category": "linear", "symbol": "BTCUSDT", "side": "Buy",
+            "orderType": "Limit", "qty": "0.001", "price": "50000",
+            "timeInForce": "PostOnly", "orderLinkId": format!("refresh-mm-{index}"),
+        }))
+        .unwrap();
+        client.place_order(order).await.unwrap();
+        wait_until_async(
+            || async { state.captured_messages.lock().await.len() == index + 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+        client.close().await.unwrap();
+    }
+
+    let messages = state.captured_messages.lock().await.clone();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(state.upgrade_requests.load(Ordering::Relaxed), 2);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["header"]["Referer"], serde_json::Value::Null);
+    assert_eq!(messages[1]["header"]["Referer"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn test_trade_connect_does_not_wait_for_mm_detection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.account_query_blocked.store(true, Ordering::Relaxed);
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        trade_http_client(addr),
+        Some(format!("ws://{addr}/v5/trade")),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    tokio::time::timeout(Duration::from_secs(5), client.connect())
+        .await
+        .unwrap()
+        .unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    wait_until_async(
+        || async { state.account_queries.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.account_query_gate.notify_one();
+    client.close().await.unwrap();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(state.upgrade_requests.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn test_trade_connect_continues_after_failed_mm_detection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.account_query_error.store(true, Ordering::Relaxed);
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        trade_http_client(addr),
+        Some(format!("ws://{addr}/v5/trade")),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    wait_until_async(
+        || async { state.account_queries.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.close().await.unwrap();
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(state.upgrade_requests.load(Ordering::Relaxed), 1);
+}
+
+async fn handle_account_details(State(state): State<TestServerState>) -> Json<serde_json::Value> {
+    state.account_queries.fetch_add(1, Ordering::Relaxed);
+    if state.account_query_blocked.load(Ordering::Relaxed) {
+        state.account_query_gate.notified().await;
+    }
+
+    if state.account_query_error.load(Ordering::Relaxed) {
+        return Json(json!({"retCode": 10003, "retMsg": "Invalid API key", "result": {}}));
+    }
+
+    let mut response = load_test_data("http_get_user_query_api.json");
+    response["result"]["mktMakerLevel"] = json!(state.mm_level.load(Ordering::Relaxed).to_string());
+    Json(response)
+}
+
+fn trade_http_client(addr: SocketAddr) -> BybitHttpClient {
+    BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        2,
+        0,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap()
 }

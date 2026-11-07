@@ -24,7 +24,7 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -33,7 +33,7 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use jiff::Timestamp;
-use nautilus_common::cache::InstrumentLookupError;
+use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
     AtomicMap, AtomicTime, env::get_or_env_var_opt, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -215,6 +215,8 @@ pub struct BybitRawHttpClient {
     client: Arc<ArcSwap<HttpClient>>,
     rate_limiter: BybitRateLimiter,
     credential: Option<Credential>,
+    mm_level: Arc<AtomicU8>,
+    mm_detection: Arc<AtomicBool>,
     recv_window_ms: u64,
     timeout_secs: u64,
     proxy_url: Option<String>,
@@ -295,6 +297,8 @@ impl BybitRawHttpClient {
             client: Arc::new(ArcSwap::from_pointee(client)),
             rate_limiter,
             credential: None,
+            mm_level: Arc::new(AtomicU8::new(0)),
+            mm_detection: Arc::new(AtomicBool::new(false)),
             recv_window_ms,
             timeout_secs,
             proxy_url,
@@ -346,6 +350,8 @@ impl BybitRawHttpClient {
             client: Arc::new(ArcSwap::from_pointee(client)),
             rate_limiter,
             credential: Some(credential),
+            mm_level: Arc::new(AtomicU8::new(0)),
+            mm_detection: Arc::new(AtomicBool::new(false)),
             recv_window_ms,
             timeout_secs,
             proxy_url,
@@ -434,7 +440,11 @@ impl BybitRawHttpClient {
     ) -> Result<HttpClient, BybitHttpError> {
         HttpClient::builder()
             .redirect_policy(HttpRedirectPolicy::Reject)
-            .headers(Self::default_headers())
+            .headers(
+                create_standard_nautilus_headers()
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
+            )
             .header_keys(vec![
                 BYBIT_RATE_LIMIT_HEADER.to_string(),
                 BYBIT_RATE_LIMIT_STATUS_HEADER.to_string(),
@@ -618,6 +628,20 @@ impl BybitRawHttpClient {
                 self.refresh_http_session(generation)?;
 
                 let mut headers = Self::default_headers();
+
+                if endpoint == "/v5/order/create" {
+                    self.start_mm_detection();
+                    let mm_level = self.mm_level();
+                    if mm_level > 0
+                        && body.as_ref().is_some_and(|body| {
+                            serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|value| {
+                                value["timeInForce"].as_str() == Some("PostOnly")
+                            })
+                        })
+                    {
+                        headers.remove("X-Referer");
+                    }
+                }
 
                 if authenticate {
                     let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
@@ -1038,8 +1062,34 @@ impl BybitRawHttpClient {
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
     pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
-        self.send_request::<_, ()>(Method::GET, "/v5/user/query-api", None, None, true)
-            .await
+        let response: BybitAccountDetailsResponse = self
+            .send_request::<_, ()>(Method::GET, "/v5/user/query-api", None, None, true)
+            .await?;
+        self.mm_level
+            .store(response.result.mkt_maker_level, Ordering::Release);
+        self.mm_detection.store(true, Ordering::Release);
+        Ok(response)
+    }
+
+    fn start_mm_detection(&self) {
+        if self
+            .mm_detection
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            let client = self.clone();
+            get_runtime().spawn(async move {
+                if let Err(e) = client.get_account_details().await {
+                    log::debug!(
+                        "Failed to detect market-maker level; retaining broker attribution: {e}"
+                    );
+                }
+            });
+        }
+    }
+
+    fn mm_level(&self) -> u8 {
+        self.mm_level.load(Ordering::Acquire)
     }
 
     /// Modifies a sub-account API key (requires authentication).
@@ -1791,6 +1841,14 @@ impl Debug for BybitHttpClient {
 }
 
 impl BybitHttpClient {
+    pub(crate) fn start_mm_detection(&self) {
+        self.inner.start_mm_detection();
+    }
+
+    pub(crate) fn mm_level(&self) -> u8 {
+        self.inner.mm_level()
+    }
+
     /// Creates a new [`BybitHttpClient`] using the default Bybit HTTP URL.
     ///
     /// # Errors

@@ -42,6 +42,11 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! HTTP requests use `X-Referer`, and WebSocket orders use `Referer`, for NautilusTrader's broker ID.
+//! Post-only orders omit attribution when background detection identifies the account as a market maker.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
