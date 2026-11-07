@@ -1812,6 +1812,130 @@ async fn test_instrument_filters_preserved(
 }
 
 #[rstest]
+#[case::beyond_quantity_range("54180000000000", true)]
+#[case::malformed("not-a-quantity", false)]
+#[case::negative("-1", false)]
+#[tokio::test]
+async fn test_instruments_with_unrepresentable_max_order_qty(
+    #[case] max_order_qty: &str,
+    #[case] kept: bool,
+    #[values(
+        BybitProductType::Spot,
+        BybitProductType::Linear,
+        BybitProductType::Inverse,
+        BybitProductType::Option
+    )]
+    product_type: BybitProductType,
+    #[values(false, true)] with_statuses: bool,
+) {
+    let mut response = load_test_data(&format!(
+        "http_get_instruments_{}.json",
+        product_type.as_str(),
+    ));
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    let id = InstrumentId::from(format!(
+        "{}{}.BYBIT",
+        definition["symbol"].as_str().unwrap(),
+        product_type.suffix(),
+    ));
+    definition["lotSizeFilter"]["maxOrderQty"] = json!(max_order_qty);
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = if with_statuses {
+        client
+            .request_instruments_with_statuses(product_type)
+            .await
+            .unwrap()
+            .0
+    } else {
+        client
+            .request_instruments(product_type, None, None)
+            .await
+            .unwrap()
+    };
+
+    server.abort();
+
+    let parsed: Vec<_> = instruments
+        .iter()
+        .map(|instrument| (instrument.id(), instrument.max_quantity()))
+        .collect();
+    let expected = if kept { vec![(id, None)] } else { Vec::new() };
+    assert_eq!(parsed, expected);
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_keeps_babydogeusdt_spot() {
+    // BABYDOGEUSDT lot size and tick size as Bybit lists them, other fields from the fixture
+    let mut response = load_test_data("http_get_instruments_spot.json");
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    definition["symbol"] = json!("BABYDOGEUSDT");
+    definition["baseCoin"] = json!("BABYDOGE");
+    definition["lotSizeFilter"]["basePrecision"] = json!("1");
+    definition["lotSizeFilter"]["minOrderQty"] = json!("1");
+    definition["lotSizeFilter"]["maxOrderQty"] = json!("54180000000000");
+    definition["priceFilter"]["tickSize"] = json!("0.0000000000001");
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = client
+        .request_instruments(
+            BybitProductType::Spot,
+            Some("BABYDOGEUSDT".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+    server.abort();
+
+    assert_eq!(instruments.len(), 1);
+    let instrument = &instruments[0];
+    assert_eq!(
+        instrument.id(),
+        InstrumentId::from("BABYDOGEUSDT-SPOT.BYBIT")
+    );
+    assert_eq!(instrument.price_increment(), Price::from("0.0000000000001"));
+    assert_eq!(instrument.size_increment(), Quantity::from("1"));
+    assert_eq!(instrument.min_quantity(), Some(Quantity::from("1")));
+    assert_eq!(instrument.max_quantity(), None);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_place_order() {
     let (addr, _state) = start_test_server().await.unwrap();
