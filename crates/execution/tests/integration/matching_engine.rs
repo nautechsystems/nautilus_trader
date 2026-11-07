@@ -2760,6 +2760,692 @@ fn test_process_stop_limit_order_triggered_not_filled(
     assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
+fn order_event_types(
+    event_handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+) -> Vec<OrderEventType> {
+    get_order_event_handler_messages(event_handler)
+        .iter()
+        .map(OrderEventAny::event_type)
+        .collect()
+}
+
+fn cached_order_status(cache: &Rc<RefCell<Cache>>, client_order_id: ClientOrderId) -> OrderStatus {
+    cache.borrow().order(&client_order_id).unwrap().status()
+}
+
+// Sets the market of an L1 engine: a quote, then optionally a trade at `last`
+fn set_l1_market(
+    engine: &mut CachingEngine,
+    instrument_id: InstrumentId,
+    bid: &str,
+    ask: &str,
+    last: Option<&str>,
+    ts: u64,
+) {
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    );
+    engine.process_quote_tick(&quote);
+
+    if let Some(last) = last {
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from(last),
+            Quantity::from("1.000"),
+            AggressorSide::Sell,
+            TradeId::new(format!("T-{ts}")),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        );
+        engine.process_trade_tick(&trade);
+    }
+}
+
+// Sets an L2 market of one bid and one ask level
+fn set_l2_market(engine: &mut CachingEngine, instrument_id: InstrumentId, bid: &str, ask: &str) {
+    for (side, price, order_id) in [(OrderSide::Buy, bid, 1), (OrderSide::Sell, ask, 2)] {
+        let delta = OrderBookDeltaTestBuilder::new(instrument_id)
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                side,
+                Price::from(price),
+                Quantity::from("1.000"),
+                order_id,
+            ))
+            .build();
+        engine.process_order_book_delta(&delta).unwrap();
+    }
+}
+
+// Prints a trade, which sets the last price and fires the triggers that watch it
+fn trade_at(engine: &mut CachingEngine, instrument_id: InstrumentId, price: &str, ts: u64) {
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new(format!("T-{ts}")),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    );
+    engine.process_trade_tick(&trade);
+}
+
+// Adds liquidity that crosses the limit of a triggered order of this side
+fn cross_limit(engine: &mut CachingEngine, instrument_id: InstrumentId, side: OrderSide) {
+    let (book_side, price) = match side {
+        OrderSide::Buy => (OrderSide::Sell, "1489.00"),
+        _ => (OrderSide::Buy, "1499.00"),
+    };
+    let delta = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            book_side,
+            Price::from(price),
+            Quantity::from("1.000"),
+            3,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+}
+
+fn build_triggered_order(
+    order_type: OrderType,
+    side: OrderSide,
+    instrument_id: InstrumentId,
+    trigger_price: &str,
+    limit_price: &str,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_id)
+        .side(side)
+        .trigger_price(Price::from(trigger_price))
+        .trigger_type(TriggerType::LastPrice)
+        .price(Price::from(limit_price))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build()
+}
+
+// The trigger step stamps the Triggered and the Canceled event with one instant
+fn assert_triggered_and_canceled_at_one_instant(
+    event_handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let messages = get_order_event_handler_messages(event_handler);
+    let instant = |event_type: OrderEventType| {
+        messages
+            .iter()
+            .find(|event| event.event_type() == event_type)
+            .map_or_else(
+                || panic!("no {event_type:?} event in {messages:?}"),
+                OrderEventAny::ts_event,
+            )
+    };
+    assert_eq!(
+        instant(OrderEventType::Triggered),
+        instant(OrderEventType::Canceled)
+    );
+}
+
+// An L2 market with the book at 1490 / 1500. Trade execution is off, so a print only sets the last
+// price (inside the touch here) and fires the triggers that watch it. With trade execution a print
+// also moves bid and ask to its price, which is itself liquidity at the trigger: a LimitIfTouched
+// buy (trigger <= limit) would be marketable the moment it triggers and fill.
+fn last_price_stop_engine(
+    instrument: &InstrumentAny,
+) -> (
+    CachingEngine,
+    Rc<RefCell<Cache>>,
+    TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        trade_execution: false,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine_l2(
+        instrument.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(config),
+    );
+    set_l2_market(&mut engine, instrument.id(), "1490.00", "1500.00");
+    (engine, cache, order_event_handler)
+}
+
+// Each case is a triggered limit whose limit stays off the market: (kind, side, trigger, limit,
+// last before the trigger, last that triggers). StopLimit triggers through the trigger price and
+// LimitIfTouched back to it, and LimitIfTouched needs trigger <= limit on a buy, >= on a sell.
+// The orders trigger on the last price, since the touch does not move with it
+#[rstest]
+#[case::buy_stop_limit(OrderType::StopLimit, OrderSide::Buy, ("1495.00", "1492.00"), "1496.00")]
+#[case::buy_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Buy,
+    ("1495.00", "1495.00"),
+    "1494.00"
+)]
+#[case::sell_stop_limit(OrderType::StopLimit, OrderSide::Sell, ("1495.00", "1498.00"), "1494.00")]
+#[case::sell_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Sell,
+    ("1495.00", "1495.00"),
+    "1496.00"
+)]
+fn test_triggered_limit_style_immediate_order_not_matched_is_canceled_at_submission(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+    #[case] prices: (&str, &str),
+    #[case] triggering_last: &str,
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let (trigger_price, limit_price) = prices;
+    let instrument_id = instrument_eth_usdt.id();
+    let (mut engine, cache, order_event_handler) = last_price_stop_engine(&instrument_eth_usdt);
+    trade_at(&mut engine, instrument_id, triggering_last, 3);
+
+    let mut order = build_triggered_order(
+        order_type,
+        side,
+        instrument_id,
+        trigger_price,
+        limit_price,
+        time_in_force,
+    );
+    let client_order_id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![
+            OrderEventType::Accepted,
+            OrderEventType::Triggered,
+            OrderEventType::Canceled
+        ],
+    );
+    assert_triggered_and_canceled_at_one_instant(&order_event_handler);
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cached_order_status(&cache, client_order_id),
+        OrderStatus::Canceled
+    );
+
+    // Liquidity that later crosses the limit finds nothing to fill
+    clear_order_event_handler_messages(&order_event_handler);
+    cross_limit(&mut engine, instrument_id, side);
+
+    assert!(order_event_types(&order_event_handler).is_empty());
+}
+
+// The same orders accepted untriggered, then triggered by a later print that leaves the touch
+// away from the limit
+#[rstest]
+#[case::buy_stop_limit(
+    OrderType::StopLimit,
+    OrderSide::Buy,
+    ("1495.00", "1492.00"),
+    ("1493.00", "1496.00")
+)]
+#[case::buy_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Buy,
+    ("1495.00", "1495.00"),
+    ("1498.00", "1494.00")
+)]
+#[case::sell_stop_limit(
+    OrderType::StopLimit,
+    OrderSide::Sell,
+    ("1495.00", "1498.00"),
+    ("1496.00", "1494.00")
+)]
+#[case::sell_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Sell,
+    ("1495.00", "1495.00"),
+    ("1493.00", "1496.00")
+)]
+fn test_triggered_limit_style_immediate_order_not_matched_is_canceled_when_triggered_later(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+    #[case] prices: (&str, &str),
+    #[case] lasts: (&str, &str),
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let (trigger_price, limit_price) = prices;
+    let (last_before, triggering_last) = lasts;
+    let instrument_id = instrument_eth_usdt.id();
+    let (mut engine, cache, order_event_handler) = last_price_stop_engine(&instrument_eth_usdt);
+    trade_at(&mut engine, instrument_id, last_before, 3);
+
+    let mut order = build_triggered_order(
+        order_type,
+        side,
+        instrument_id,
+        trigger_price,
+        limit_price,
+        time_in_force,
+    );
+    let client_order_id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Accepted]
+    );
+    assert!(engine.order_exists(client_order_id));
+
+    clear_order_event_handler_messages(&order_event_handler);
+    trade_at(&mut engine, instrument_id, triggering_last, 4);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Triggered, OrderEventType::Canceled],
+    );
+    assert_triggered_and_canceled_at_one_instant(&order_event_handler);
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cached_order_status(&cache, client_order_id),
+        OrderStatus::Canceled
+    );
+
+    // Liquidity that later crosses the limit finds nothing to fill
+    clear_order_event_handler_messages(&order_event_handler);
+    cross_limit(&mut engine, instrument_id, side);
+
+    assert!(order_event_types(&order_event_handler).is_empty());
+}
+
+// The cancel is the one an unmatched plain IOC limit gets, so it cascades to the linked leg of a
+// one-updates-other pair, as a protective order beside an immediate close relies on
+#[rstest]
+fn test_triggered_limit_style_immediate_order_cancel_cascades_to_ouo_sibling(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let (mut engine, cache, order_event_handler) = last_price_stop_engine(&instrument_eth_usdt);
+    trade_at(&mut engine, instrument_id, "1496.00", 3);
+
+    let stop_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let sibling_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sibling = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1600.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(sibling_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![stop_id])
+        .submit(true)
+        .build();
+    let mut stop = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1495.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .price(Price::from("1492.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(stop_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sibling_id])
+        .submit(true)
+        .build();
+    // Linked orders are in the cache before either reaches the engine
+    cache_order(&cache, &stop);
+    engine.process_order(&mut sibling, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.process_order(&mut stop, account_id);
+
+    let events: Vec<_> = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .map(|event| (event.event_type(), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        events,
+        vec![
+            (OrderEventType::Accepted, stop_id),
+            (OrderEventType::Triggered, stop_id),
+            (OrderEventType::Canceled, stop_id),
+            (OrderEventType::Canceled, sibling_id),
+        ],
+    );
+    assert!(!engine.order_exists(stop_id));
+    assert!(!engine.order_exists(sibling_id));
+    assert_eq!(
+        cached_order_status(&cache, sibling_id),
+        OrderStatus::Canceled
+    );
+}
+
+// A trailing stop activates at the market and its trigger materializes one tick away. The
+// limit sits on the far side of the market from the trigger, so it can never match
+#[rstest]
+#[case::buy(OrderSide::Buy, "1400.00", ("1499.00", "1500.00"), ("1500.00", "1502.00"))]
+#[case::sell(OrderSide::Sell, "1600.00", ("1499.00", "1500.00"), ("1497.00", "1500.00"))]
+fn test_triggered_trailing_stop_limit_immediate_order_not_matched_is_canceled(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] side: OrderSide,
+    #[case] limit_price: &str,
+    #[case] activation_market: (&str, &str),
+    #[case] triggering_market: (&str, &str),
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+    let (bid, ask) = activation_market;
+    set_l1_market(&mut engine, instrument_eth_usdt.id(), bid, ask, None, 3);
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .price(Price::from(limit_price))
+        .quantity(Quantity::from("1.000"))
+        .trailing_offset(dec!(1))
+        .limit_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .time_in_force(time_in_force)
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Accepted, OrderEventType::Updated],
+    );
+    assert!(engine.order_exists(client_order_id));
+
+    // The first market update after submission activates the trailing stop
+    let (bid, ask) = activation_market;
+    set_l1_market(&mut engine, instrument_eth_usdt.id(), bid, ask, None, 4);
+
+    // The market then reaches the materialized trigger
+    clear_order_event_handler_messages(&order_event_handler);
+    let (bid, ask) = triggering_market;
+    set_l1_market(&mut engine, instrument_eth_usdt.id(), bid, ask, None, 5);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Triggered, OrderEventType::Canceled],
+    );
+    assert_triggered_and_canceled_at_one_instant(&order_event_handler);
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cached_order_status(&cache, client_order_id),
+        OrderStatus::Canceled
+    );
+}
+
+// Control: the same triggered, unmatched limit keeps resting under every non-immediate time in
+// force, and fills once liquidity reaches it
+#[rstest]
+#[case::buy_stop_limit(OrderType::StopLimit, OrderSide::Buy, ("1495.00", "1492.00"), "1496.00")]
+#[case::buy_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Buy,
+    ("1495.00", "1495.00"),
+    "1494.00"
+)]
+#[case::sell_stop_limit(OrderType::StopLimit, OrderSide::Sell, ("1495.00", "1498.00"), "1494.00")]
+#[case::sell_limit_if_touched(
+    OrderType::LimitIfTouched,
+    OrderSide::Sell,
+    ("1495.00", "1495.00"),
+    "1496.00"
+)]
+fn test_triggered_limit_style_order_not_matched_rests_unless_immediate(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+    #[case] prices: (&str, &str),
+    #[case] triggering_last: &str,
+    #[values(TimeInForce::Gtc, TimeInForce::Day)] time_in_force: TimeInForce,
+) {
+    let (trigger_price, limit_price) = prices;
+    let instrument_id = instrument_eth_usdt.id();
+    let (mut engine, _cache, order_event_handler) = last_price_stop_engine(&instrument_eth_usdt);
+    trade_at(&mut engine, instrument_id, triggering_last, 3);
+
+    let mut order = build_triggered_order(
+        order_type,
+        side,
+        instrument_id,
+        trigger_price,
+        limit_price,
+        time_in_force,
+    );
+    let client_order_id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Accepted, OrderEventType::Triggered],
+    );
+    assert!(engine.order_exists(client_order_id));
+
+    clear_order_event_handler_messages(&order_event_handler);
+    cross_limit(&mut engine, instrument_id, side);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Filled]
+    );
+}
+
+// Characterisation: a marketable limit with only half of the quantity available follows the
+// immediate-order law of the fill path, as it does for a plain limit
+#[rstest]
+#[case::stop_limit(OrderType::StopLimit, "1495.00")]
+#[case::limit_if_touched(OrderType::LimitIfTouched, "1500.00")]
+fn test_triggered_limit_style_partial_match_follows_immediate_order_law(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] order_type: OrderType,
+    #[case] trigger_price: &str,
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        None,
+        Some(config),
+    );
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.500"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&ask).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from(trigger_price))
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order, account_id);
+
+    let filled_quantities = |handler: &TypedIntoMessageSavingHandler<OrderEventAny>| {
+        get_order_event_handler_messages(handler)
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.last_qty),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    if time_in_force == TimeInForce::Ioc {
+        assert_eq!(
+            order_event_types(&order_event_handler),
+            vec![
+                OrderEventType::Accepted,
+                OrderEventType::Triggered,
+                OrderEventType::Filled,
+                OrderEventType::Canceled,
+            ],
+        );
+        assert_eq!(
+            filled_quantities(&order_event_handler),
+            vec![Quantity::from("0.500")]
+        );
+    } else {
+        assert_eq!(
+            order_event_types(&order_event_handler),
+            vec![
+                OrderEventType::Accepted,
+                OrderEventType::Triggered,
+                OrderEventType::Canceled,
+            ],
+        );
+    }
+    assert!(!engine_l2.order_exists(client_order_id));
+
+    if time_in_force == TimeInForce::Fok {
+        // The cancelled FOK order consumed nothing: a later order still sees the full level
+        clear_order_event_handler_messages(&order_event_handler);
+        let mut later = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1500.00"))
+            .quantity(Quantity::from("0.500"))
+            .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+            .submit(true)
+            .build();
+        engine_l2.process_order(&mut later, account_id);
+
+        assert_eq!(
+            filled_quantities(&order_event_handler),
+            vec![Quantity::from("0.500")]
+        );
+    }
+}
+
+// A maker-inside triggered buy (trigger > limit > ask) with a fill model that refuses maker fills
+// at the limit (prob_fill_on_limit 0.0). The maker fill-model gate only refuses a fill when the
+// order is at its limit, which needs `last == limit` (trade data) or `bid == limit` (quotes). At a
+// trigger step maker-inside rules both out: a buy stop fires on `last >= trigger > limit`, and
+// `bid <= ask < limit`. So the gate is never consulted, the order takes the ordinary fill path
+// and an immediate order cannot be left resting by it. Here the print at 1010 fires the stop
+// and the order fills against the ask.
+#[rstest]
+fn test_triggered_maker_inside_immediate_order_never_reaches_limit_fill_gate(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(TimeInForce::Ioc, TimeInForce::Fok)] time_in_force: TimeInForce,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelAny::Default(DefaultFillModel::new(0.0, 0.0, Some(42)).unwrap()).into(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            trade_execution: true,
+            reject_stop_orders: false,
+            ..Default::default()
+        },
+    );
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+    set_l1_market(
+        &mut engine,
+        instrument_eth_usdt.id(),
+        "1000.00",
+        "1004.00",
+        None,
+        3,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1010.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .price(Price::from("1005.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Accepted]
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    set_l1_market(
+        &mut engine,
+        instrument_eth_usdt.id(),
+        "1000.00",
+        "1004.00",
+        Some("1010.00"),
+        4,
+    );
+
+    assert_eq!(
+        order_event_types(&order_event_handler),
+        vec![OrderEventType::Triggered, OrderEventType::Filled],
+    );
+    assert!(!engine.order_exists(client_order_id));
+    assert!(cache.borrow().order(&client_order_id).unwrap().is_closed());
+}
+
 #[rstest]
 fn test_process_stop_limit_order_triggered_filled(
     instrument_eth_usdt: InstrumentAny,
