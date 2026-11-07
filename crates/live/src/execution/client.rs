@@ -42,7 +42,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, map::Entry};
 use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::dst::task::JoinHandle,
@@ -307,25 +307,24 @@ impl ReportCollector {
         clients: &[LiveExecutionClient],
         client_id: ClientId,
     ) -> anyhow::Result<&'a mut Self> {
-        if !collectors.contains_key(&client_id) {
-            let client = clients
-                .iter()
-                .find(|client| client.client_id() == client_id)
-                .ok_or_else(|| anyhow::anyhow!("execution client {client_id} is unavailable"))?;
-            let guard = client.reserve_report_task().await?;
-            let guard = Rc::new(guard);
-            collectors.insert(
-                client_id,
-                Self {
+        match collectors.entry(client_id) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let client = clients
+                    .iter()
+                    .find(|client| client.client_id() == client_id)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("execution client {client_id} is unavailable")
+                    })?;
+
+                let guard = client.reserve_report_task().await?;
+                let guard = Rc::new(guard);
+                Ok(entry.insert(Self {
                     client: client.clone(),
                     guard,
-                },
-            );
+                }))
+            }
         }
-
-        Ok(collectors
-            .get_mut(&client_id)
-            .expect("reserved report collector"))
     }
 
     #[expect(
