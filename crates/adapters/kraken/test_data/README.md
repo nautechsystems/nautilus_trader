@@ -49,6 +49,14 @@ retrieved on 2026-10-13 and unchanged apart from whitespace.
 retrieved on 2026-11-06 and unchanged apart from whitespace. Tests also replace or remove its
 `editStatus.orderId` and add an `editStatus.order_id`; those variants are not venue responses.
 
+## Futures send responses
+
+`http_send_order_futures_placed.json` and `http_send_order_futures_executed.json` are the `placed`
+and `executed` response examples from Kraken's
+[Send order](https://docs.kraken.com/api-reference/order-management/send-order) documentation,
+retrieved on 2026-11-08 and unchanged apart from whitespace. Tests replace the order's `type`; those
+variants are not venue responses.
+
 ## Futures split amendment
 
 `ws_futures_split_amend.json` is a synthetic sequence authored on 2026-10-31, not a venue capture.

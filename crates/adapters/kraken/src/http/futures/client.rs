@@ -73,8 +73,9 @@ use crate::{
             bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
             parse_futures_fill_report, parse_futures_instrument,
             parse_futures_order_event_status_report, parse_futures_order_status_details_report,
-            parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution, parse_venue_order_id,
+            parse_futures_order_status_report, parse_futures_order_type_time_in_force,
+            parse_futures_position_status_report, parse_futures_public_execution,
+            parse_venue_order_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -1998,6 +1999,12 @@ impl KrakenFuturesHttpClient {
                 .collect();
             let mut latest: IndexMap<VenueOrderId, (OrderStatusReport, i64)> = IndexMap::new();
             let mut unread_ms: AHashMap<VenueOrderId, i64> = AHashMap::new();
+            // Kraken documents the `IoC` and `Post` types on history rows but not on the open-order
+            // snapshot, so a snapshot report takes its time in force and post-only from the newest
+            // readable row of its order, the first listed on a tie. An edit cannot change the order
+            // type, so an older row states what an unread newer one would.
+            let mut open_time_in_force: AHashMap<VenueOrderId, (i64, TimeInForce, bool)> =
+                AHashMap::new();
             let mut skipped_in_scope = 0usize;
 
             for row in &response.skipped_rows {
@@ -2040,8 +2047,18 @@ impl KrakenFuturesHttpClient {
 
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
+                let venue_order_id = VenueOrderId::new(&event.order_id);
 
-                if open_order_ids.contains(&VenueOrderId::new(&event.order_id)) {
+                if open_order_ids.contains(&venue_order_id) {
+                    match open_time_in_force.get(&venue_order_id) {
+                        Some((newest_ms, _, _)) if *newest_ms >= event_wrapper.event_ms => {}
+                        _ => {
+                            open_time_in_force.insert(
+                                venue_order_id,
+                                (event_wrapper.event_ms, event.time_in_force, event.post_only),
+                            );
+                        }
+                    }
                     continue;
                 }
 
@@ -2104,6 +2121,15 @@ impl KrakenFuturesHttpClient {
                         &event.order_id,
                         event_wrapper.event_ms,
                     );
+                }
+            }
+
+            for report in &mut all_reports {
+                if let Some(&(_, time_in_force, post_only)) =
+                    open_time_in_force.get(&report.venue_order_id)
+                {
+                    report.time_in_force = time_in_force;
+                    report.post_only = post_only;
                 }
             }
 
@@ -2574,6 +2600,8 @@ impl KrakenFuturesHttpClient {
             {
                 // Handle regular orders, trigger orders, and execution events
                 let event = if let Some(order_data) = &send_event.order {
+                    let (time_in_force, post_only) =
+                        parse_futures_order_type_time_in_force(order_data.order_type);
                     FuturesOrderEvent {
                         order_id: order_data.order_id.clone(),
                         cli_ord_id: order_data.cli_ord_id.clone(),
@@ -2587,10 +2615,12 @@ impl KrakenFuturesHttpClient {
                         timestamp: order_data.timestamp.clone(),
                         last_update_timestamp: order_data.last_update_timestamp.clone(),
                         reduce_only: order_data.reduce_only,
-                        time_in_force: TimeInForce::Gtc,
-                        post_only: false,
+                        time_in_force,
+                        post_only,
                     }
                 } else if let Some(trigger_data) = &send_event.order_trigger {
+                    let (time_in_force, post_only) =
+                        parse_futures_order_type_time_in_force(trigger_data.order_type);
                     FuturesOrderEvent {
                         order_id: trigger_data.uid.clone(),
                         cli_ord_id: trigger_data.client_id.clone(),
@@ -2604,11 +2634,13 @@ impl KrakenFuturesHttpClient {
                         timestamp: trigger_data.timestamp.clone(),
                         last_update_timestamp: trigger_data.last_update_timestamp.clone(),
                         reduce_only: trigger_data.reduce_only,
-                        time_in_force: TimeInForce::Gtc,
-                        post_only: false,
+                        time_in_force,
+                        post_only,
                     }
                 } else if let Some(prior_exec) = &send_event.order_prior_execution {
                     // EXECUTION event - use orderPriorExecution data
+                    let (time_in_force, post_only) =
+                        parse_futures_order_type_time_in_force(prior_exec.order_type);
                     FuturesOrderEvent {
                         order_id: prior_exec.order_id.clone(),
                         cli_ord_id: prior_exec.cli_ord_id.clone(),
@@ -2622,8 +2654,8 @@ impl KrakenFuturesHttpClient {
                         timestamp: prior_exec.timestamp.clone(),
                         last_update_timestamp: prior_exec.last_update_timestamp.clone(),
                         reduce_only: prior_exec.reduce_only,
-                        time_in_force: TimeInForce::Gtc,
-                        post_only: false,
+                        time_in_force,
+                        post_only,
                     }
                 } else {
                     anyhow::bail!("No order, orderTrigger, or orderPriorExecution data in event");
@@ -5617,6 +5649,334 @@ mod tests {
     #[case::invalid("clientOrderIdInvalid")]
     fn test_client_order_id_send_statuses_reject_the_submission(#[case] status: &str) {
         assert!(is_futures_submit_rejection(status));
+    }
+
+    const DOCUMENTED_SEND_PLACED: &str =
+        include_str!("../../../test_data/http_send_order_futures_placed.json");
+    const DOCUMENTED_SEND_EXECUTED: &str =
+        include_str!("../../../test_data/http_send_order_futures_executed.json");
+    const SEND_TRIGGER: &str =
+        include_str!("../../../test_data/http_send_order_futures_unknown_trigger.json");
+
+    /// `response` with the type of its first event's `payload` replaced by `order_type` and the
+    /// send status naming that payload's order, returned with the payload's contract.
+    fn send_response(response: &str, payload: &str, order_type: &str) -> (String, String) {
+        let mut response: serde_json::Value = serde_json::from_str(response).unwrap();
+        let order = &mut response["sendStatus"]["orderEvents"][0][payload];
+        order["type"] = serde_json::json!(order_type);
+        let order_id = order
+            .get("orderId")
+            .or_else(|| order.get("uid"))
+            .cloned()
+            .unwrap();
+        let symbol = order["symbol"].as_str().unwrap().to_string();
+        response["sendStatus"]["order_id"] = order_id;
+        (response.to_string(), symbol)
+    }
+
+    /// A submit answered from the send status reports the time in force and post-only its order
+    /// type states, whichever payload carries the order.
+    #[rstest]
+    #[case::order_ioc(DOCUMENTED_SEND_PLACED, "order", "ioc", TimeInForce::Ioc, false)]
+    #[case::order_post(DOCUMENTED_SEND_PLACED, "order", "post", TimeInForce::Gtc, true)]
+    #[case::order_lmt(DOCUMENTED_SEND_PLACED, "order", "lmt", TimeInForce::Gtc, false)]
+    #[case::order_stp(DOCUMENTED_SEND_PLACED, "order", "stp", TimeInForce::Gtc, false)]
+    #[case::trigger_ioc(SEND_TRIGGER, "orderTrigger", "ioc", TimeInForce::Ioc, false)]
+    #[case::trigger_post(SEND_TRIGGER, "orderTrigger", "post", TimeInForce::Gtc, true)]
+    #[case::trigger_lmt(SEND_TRIGGER, "orderTrigger", "lmt", TimeInForce::Gtc, false)]
+    #[case::trigger_stp(SEND_TRIGGER, "orderTrigger", "stp", TimeInForce::Gtc, false)]
+    #[case::prior_execution_ioc(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "ioc",
+        TimeInForce::Ioc,
+        false
+    )]
+    #[case::prior_execution_lmt(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "lmt",
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::prior_execution_stp(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "stp",
+        TimeInForce::Gtc,
+        false
+    )]
+    #[tokio::test]
+    async fn test_submit_order_send_status_fallback_reads_the_time_in_force_of_the_order_type(
+        #[case] response: &str,
+        #[case] payload: &str,
+        #[case] order_type: &str,
+        #[case] expected_time_in_force: TimeInForce,
+        #[case] expected_post_only: bool,
+    ) {
+        use axum::{Router, http::header, routing::any};
+
+        let (body, symbol) = send_response(response, payload, order_type);
+        let app = Router::new()
+            .route(
+                "/derivatives/api/v3/sendorder",
+                any(move || {
+                    let body = body.clone();
+                    async move { ([(header::CONTENT_TYPE, "application/json")], body) }
+                }),
+            )
+            .route(
+                "/derivatives/api/v3/openorders",
+                any(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"result":"success","openOrders":[]}"#,
+                    )
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        cache_futures_contract(&client, &symbol);
+
+        let result = client
+            .submit_order(
+                AccountId::from("KRAKEN-001"),
+                InstrumentId::from(format!("{symbol}.KRAKEN").as_str()),
+                ClientOrderId::from("cl-send-status"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("1"),
+                TimeInForce::Gtc,
+                Some(Price::from("9400")),
+                None,
+                None,
+                false,
+                false,
+            )
+            .await;
+
+        let report = result.unwrap();
+        assert_eq!(report.time_in_force, expected_time_in_force);
+        assert_eq!(report.post_only, expected_post_only);
+    }
+
+    /// A row of `kind` for `uid` on the test instrument at `event_ms`, of `order_type`, its quantity
+    /// 5 where the open-order snapshot lists 3.
+    fn typed_row(kind: &str, uid: &str, order_type: &str, event_ms: i64) -> String {
+        history_element(
+            kind,
+            event_ms,
+            &history_order(
+                uid,
+                "PF_XBTUSD",
+                event_ms,
+                &format!(r#""quantity":"5","orderType":"{order_type}""#),
+            ),
+        )
+    }
+
+    /// A report built from the open-order snapshot keeps the snapshot's state but takes its time in
+    /// force and post-only from the newest readable history row of its order on the page, the first
+    /// listed on a tie; without such a row, or on an open-only read, it keeps the snapshot's own.
+    #[rstest]
+    #[case::post(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1)],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::ioc(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-OPEN", "IoC", HISTORY_T1)],
+        false,
+        TimeInForce::Ioc,
+        false
+    )]
+    #[case::fill_or_kill(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-OPEN", "FillOrKill", HISTORY_T1)],
+        false,
+        TimeInForce::Fok,
+        false
+    )]
+    #[case::limit(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-OPEN", "Limit", HISTORY_T1)],
+        false,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::history_over_snapshot(
+        "post",
+        vec![typed_row("OrderPlaced", "H-OPEN", "Limit", HISTORY_T1)],
+        false,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::several_rows(
+        "lmt",
+        vec![
+            typed_row("OrderUpdated", "H-OPEN", "Post", HISTORY_T2),
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+        ],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::newest_listed_first(
+        "lmt",
+        vec![
+            typed_row("OrderUpdated", "H-OPEN", "Post", HISTORY_T2),
+            typed_row("OrderPlaced", "H-OPEN", "Limit", HISTORY_T1),
+        ],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::newest_listed_last(
+        "lmt",
+        vec![
+            typed_row("OrderPlaced", "H-OPEN", "Limit", HISTORY_T1),
+            typed_row("OrderUpdated", "H-OPEN", "Post", HISTORY_T2),
+        ],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::newest_is_limit(
+        "lmt",
+        vec![
+            typed_row("OrderUpdated", "H-OPEN", "Limit", HISTORY_T2),
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+        ],
+        false,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::tied(
+        "lmt",
+        vec![
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+            typed_row("OrderUpdated", "H-OPEN", "Limit", HISTORY_T1),
+        ],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::unreadable_newer_row(
+        "lmt",
+        vec![
+            unreadable_row("H-OPEN", HISTORY_T2),
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+        ],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::no_row(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-SIBLING", "Post", HISTORY_T1)],
+        false,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::no_row_keeps_snapshot("post", vec![], false, TimeInForce::Gtc, true)]
+    #[case::open_only(
+        "lmt",
+        vec![typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1)],
+        true,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[tokio::test]
+    async fn test_request_order_status_reports_take_an_open_order_time_in_force_from_its_history(
+        #[case] snapshot_type: &str,
+        #[case] rows: Vec<String>,
+        #[case] open_only: bool,
+        #[case] expected_time_in_force: TimeInForce,
+        #[case] expected_post_only: bool,
+    ) {
+        let open_orders = open_orders_json(&[("H-OPEN", "PF_XBTUSD")]).replace(
+            r#""orderType":"lmt""#,
+            &format!(r#""orderType":"{snapshot_type}""#),
+        );
+        let client = history_test_client_with_open_orders(
+            open_orders,
+            Arc::new(RwLock::new(history_json(&rows))),
+            None,
+        )
+        .await;
+        cache_futures_contract(&client, "PF_XBTUSD");
+
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                open_only,
+            )
+            .await
+            .unwrap();
+
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "H-OPEN")
+            .unwrap_or_else(|| panic!("{reports:?}"));
+        assert_eq!(report.quantity, Quantity::from("3"));
+        assert_eq!(report.time_in_force, expected_time_in_force);
+        assert_eq!(report.post_only, expected_post_only);
+        assert!(coverage.is_complete());
+    }
+
+    /// A page cut short by a continuation token still states the type of each order it holds.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_take_the_time_in_force_from_a_cut_page() {
+        let page = format!(
+            r#"{{"elements":[{}],"continuationToken":"c2ltYjE3OA=="}}"#,
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+        );
+        let client = history_test_client_with_open_orders(
+            open_orders_json(&[("H-OPEN", "PF_XBTUSD")]),
+            Arc::new(RwLock::new(page)),
+            None,
+        )
+        .await;
+        cache_futures_contract(&client, "PF_XBTUSD");
+
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].time_in_force, TimeInForce::Gtc);
+        assert!(reports[0].post_only);
+        assert!(!coverage.is_complete());
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {

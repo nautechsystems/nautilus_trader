@@ -959,6 +959,23 @@ than taking a row or reporting the order missing.
 The adapter returns open orders and, when `open_only=False`, historical closed and
 filled orders. Historical reads have the limits below.
 
+Kraken states an order's time in force and post-only flag only through its order type. It documents the `ioc` and
+`post` types in the send-order response and the order history (`IoC` and `Post`), but not in the open-order read
+(`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the orders-status window
+states no order type. Reports take these values as follows:
+
+- A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
+  history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
+- The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
+  send-order response's first order event, where `ioc` is `IOC` and `post` is post-only `GTC`, and from the order
+  history when the response carries no event.
+- An open-only read, an open order with no row on the page, and an order feed delta for an order the adapter does
+  not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not post-only.
+- The orders-status window reports `GTC` and not post-only.
+
+A resting post-only order adopted from a report that does not state it keeps `GTC` and not post-only: no later
+report changes an adopted order's time in force or post-only flag.
+
 #### Order history and pricing
 
 The adapter reads order lifecycle events from
@@ -982,11 +999,6 @@ assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
 The order type is the only place the history states a time in force. `IoC` and `HedgeImmediateOrCancel` rows are
 reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
 `GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
-
-The open-order read and order feed deltas for orders the adapter does not track report the `ioc` and `post` order
-types the same way, but Kraken documents neither there, and the orders-status window states no time in force or
-post-only flag. A resting post-only order the venue lists as a plain limit therefore reports as `GTC` and not
-post-only, and an order adopted from such a report keeps those values.
 
 The adapter skips unrepresentable rows with a warning:
 
