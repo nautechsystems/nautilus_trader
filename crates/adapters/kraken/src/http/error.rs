@@ -52,6 +52,9 @@ pub(crate) enum KrakenSubmitOrderError {
     #[error("No order ID in submit response: {detail}")]
     MissingOrderId { detail: String },
 
+    #[error("{detail}")]
+    InvalidOrderId { detail: String },
+
     #[error("Order lookup failed after submission: {source}")]
     PostSubmitLookup {
         #[source]
@@ -69,6 +72,9 @@ pub(crate) enum KrakenModifyOrderError {
 
     #[error("No order ID in edit response")]
     MissingOrderId,
+
+    #[error("{detail}")]
+    InvalidOrderId { detail: String },
 }
 
 #[derive(Debug, Error)]
