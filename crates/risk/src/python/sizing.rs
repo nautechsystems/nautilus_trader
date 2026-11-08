@@ -145,18 +145,22 @@ impl FixedRiskSizer {
 
     /// Calculates the position size quantity for the given risk parameters.
     ///
-    /// Returns zero when no position is riskable, including for zero exchange
-    /// rates and equal entry and stop-loss prices.
+    /// Returns zero when no position is riskable, including for a zero exchange rate
+    /// or equal valid entry and stop-loss prices.
+    /// Rounds the final quantity down within the risk budget and quantity limits.
+    /// Inverse futures, perpetuals, and futures spreads use reciprocal-price PnL;
+    /// inverse options and option spreads retain premium-based sizing.
     ///
     /// # Parameters
     ///
-    /// - `entry`: The entry price.
-    /// - `stop_loss`: The stop-loss price.
+    /// - `entry`: The entry price. Must be positive for reciprocal-price sizing.
+    /// - `stop_loss`: The stop-loss price. Must be positive for reciprocal-price sizing.
     /// - `equity`: The account equity.
     /// - `risk`: The positive risk fraction.
     /// - `commission_rate`: The non-negative commission rate.
-    /// - `exchange_rate`: The non-negative exchange rate between the instrument
-    ///   quote currency and the account currency.
+    /// - `exchange_rate`: The non-negative rate from instrument quote currency to equity currency.
+    ///   Reciprocal-price sizing uses PnL directly when equity uses the instrument's base currency;
+    ///   otherwise it values PnL in quote currency at the stop-loss price before conversion.
     /// - `hard_limit`: The optional positive limit for the total quantity.
     /// - `unit_batch_size`: The non-negative unit batch size.
     /// - `units`: The positive number of units to divide the position into.

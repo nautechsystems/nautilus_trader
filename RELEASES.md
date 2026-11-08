@@ -139,6 +139,13 @@ Released on TBD (UTC).
 - Fixed Redis message publishing stopping after retryable write errors (#5491), thanks @Dworf
 - Fixed live data disrupting historical bar aggregator warm-up (#5469), thanks @mahimn01
 - Fixed Binance perpetual test fixture lot size (#5499), thanks @Milchstrassse
+- Fixed pending orders reusing closing position quantity before venue acknowledgement
+- Fixed negative-price cash disposal funding and balance locks across reducing orders, lists, and modifications
+- Fixed negative-price cash buys crediting unreceived proceeds toward pending order funding
+- Fixed cash order lists reusing one currency for both sale inventory and purchase funding
+- Fixed betting order lists and batched modifications checking each side against the same free balance
+- Fixed `FixedRiskSizer` exceeding risk and quantity limits; sub-increment sizes now raise errors
+- Fixed `FixedRiskSizer` using linear PnL for inverse futures, perpetuals, and futures spreads
 - Fixed TWAP slice persistence failures skipping quantity or leaving execution unable to retry
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots

@@ -17,7 +17,7 @@ signed Uniswap V3 market swaps but is not production-ready.
 
 | Account type | Typical use case                                | Reservations                                                              |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (for example, BTC/USDT, stocks)    | Notional for pending buy orders. Base-asset quantity for pending sells.   |
+| Cash         | Spot trading (for example, BTC/USDT, stocks)    | Buy notional, sell inventory, and negative-price sell disposal costs.     |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue. No leverage.                                 |
 | Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders. No leverage or borrowing.    |
@@ -25,8 +25,8 @@ signed Uniswap V3 market swaps but is not production-ready.
 ### Cash accounts
 
 Cash accounts **settle trades in full**. They have no leverage and thus no concept of margin. Locked balances
-reflect the value reserved for pending orders: the notional value of each pending buy and the quantity each
-pending sell would deliver.
+reflect the value reserved for pending orders: the notional value of each pending buy, the quantity each
+pending sell would deliver, and any negative-price sell disposal cost.
 
 #### Precision and rounding
 
@@ -40,7 +40,8 @@ See [Precision and settlement](#precision-and-settlement) for the accounting rat
 
 A sell delivers the instrument's base asset, so the reservation belongs in that asset. Instruments whose
 `base_currency()` is `None`, such as binary options and equities, model no such asset. A pending sell on those
-instruments **locks nothing**, and its proceeds are not compared against the free quote balance.
+instruments locks only a negative-price disposal cost, when present. Sale proceeds are not compared against
+the free quote balance.
 
 Reserving the order quantity in the quote currency would label a share or contract count as money and lock
 collateral the sale never consumes. Comparing sale proceeds against free collateral would deny a sale for lack
@@ -89,9 +90,10 @@ checks use the reported free balance.
 - **Locked balance**: funds reserved as collateral, not available for new orders.
 
 :::note
-Reduce-only orders can only decrease exposure. Thus, they do not contribute to `balance_locked` on cash
-accounts or add to initial margin on margin accounts. Wallet orders still reserve the input asset because the
-on-chain transaction spends that asset even when the order reduces a position.
+Reduce-only orders can only decrease exposure. They do not reserve inventory or purchase funding on cash
+accounts or add to initial margin on margin accounts. Negative-price cash sells still lock the disposal cost.
+Wallet orders still reserve the input asset because the on-chain transaction spends that asset even when the
+order reduces a position.
 :::
 
 ### Betting accounts
