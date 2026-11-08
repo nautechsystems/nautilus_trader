@@ -10053,7 +10053,11 @@ async fn test_futures_refused_edit_emits_modify_rejected(
     .await
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
-            assert!(event.reason.contains(reason), "{event:?}");
+            assert_eq!(
+                event.reason.as_str(),
+                format!("modify-order error: {reason}"),
+                "{event:?}"
+            );
             assert_eq!(event.causation_id, Some(command_id));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
