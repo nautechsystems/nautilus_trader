@@ -1347,6 +1347,364 @@ fn test_trailing_stop_reopen_requires_fresh_channel_data(
     );
 }
 
+fn submit_bid_ask_trailing_stop(
+    engine: &mut CachingEngine,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    account_id: AccountId,
+) {
+    let mut order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::BidAsk)
+        .trailing_offset(dec!(0.50))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+}
+
+fn get_updated_trigger_prices(
+    handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+) -> Vec<Price> {
+    get_order_event_handler_messages(handler)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(e) => e.trigger_price,
+            _ => None,
+        })
+        .collect()
+}
+
+fn l1_depth(
+    instrument_id: InstrumentId,
+    bid: Option<&str>,
+    ask: Option<&str>,
+    ts_event: u64,
+    ts_init: u64,
+) -> OrderBookDepth {
+    let mut bids = [BookOrder::default(); DEPTH10_LEN];
+    let mut asks = [BookOrder::default(); DEPTH10_LEN];
+
+    if let Some(bid) = bid {
+        bids[0] = BookOrder::new(
+            OrderSide::Buy,
+            Price::from(bid),
+            Quantity::from("10.000"),
+            1,
+        );
+    }
+
+    if let Some(ask) = ask {
+        asks[0] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from(ask),
+            Quantity::from("10.000"),
+            2,
+        );
+    }
+
+    OrderBookDepth::new(
+        instrument_id,
+        bids,
+        asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        0,
+        0,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_init),
+    )
+}
+
+#[rstest]
+fn test_trailing_stop_follows_trade_only_l1_data_while_open(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt,
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        None,
+    );
+    let buyer_trade = |price: &str, ts: u64| {
+        TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from("1.000"),
+            AggressorSide::Buy,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_trade_tick(&buyer_trade("1000.00", 1));
+    submit_bid_ask_trailing_stop(&mut engine, instrument_id, OrderSide::Buy, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    engine.process_trade_tick(&buyer_trade("999.00", 2));
+    engine.process_trade_tick(&buyer_trade("998.00", 3));
+
+    // Each trade iteration sees the ask the previous trade left, so 999.00 + 0.50
+    assert_eq!(
+        get_updated_trigger_prices(&handler),
+        vec![Price::from("999.50")]
+    );
+}
+
+#[rstest]
+fn test_trailing_stop_follows_trades_after_one_sided_depth_while_open(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt,
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        None,
+    );
+    let buyer_trade = |price: &str, ts: u64| {
+        TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from("1.000"),
+            AggressorSide::Buy,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1000.00"),
+        Price::from("1000.25"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    submit_bid_ask_trailing_stop(&mut engine, instrument_id, OrderSide::Buy, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // A bid-only depth clears the ask, then trades set it again
+    engine
+        .process_order_book_depth(&l1_depth(instrument_id, Some("999.00"), None, 2, 2))
+        .unwrap();
+    engine.process_trade_tick(&buyer_trade("999.50", 3));
+    engine.process_trade_tick(&buyer_trade("999.25", 4));
+    engine.process_trade_tick(&buyer_trade("999.00", 5));
+
+    assert_eq!(
+        get_updated_trigger_prices(&handler),
+        vec![Price::from("1000.00"), Price::from("999.75")]
+    );
+}
+
+#[rstest]
+#[case::updated_after_reopen(true, vec![Price::from("110.50")])]
+#[case::left_from_closure(false, vec![])]
+fn test_trailing_stop_follows_l2_level_updated_after_reopen(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] update_level: bool,
+    #[case] expected_triggers: Vec<Price>,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt,
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        None,
+    );
+    let delta = |action: BookAction, side: OrderSide, price: &str, size: &str| {
+        OrderBookDeltaTestBuilder::new(instrument_id)
+            .book_action(action)
+            .book_order(BookOrder::new(
+                side,
+                Price::from(price),
+                Quantity::from(size),
+                0,
+            ))
+            .build()
+    };
+
+    engine
+        .process_order_book_delta(&delta(BookAction::Add, OrderSide::Buy, "99.00", "10.000"))
+        .unwrap();
+    engine
+        .process_order_book_delta(&delta(BookAction::Add, OrderSide::Sell, "115.00", "10.000"))
+        .unwrap();
+    submit_bid_ask_trailing_stop(&mut engine, instrument_id, OrderSide::Buy, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    engine.process_status(MarketStatusAction::Close);
+    engine
+        .process_order_book_delta(&delta(BookAction::Add, OrderSide::Sell, "100.00", "10.000"))
+        .unwrap();
+    engine
+        .process_order_book_delta(&delta(BookAction::Add, OrderSide::Sell, "110.00", "10.000"))
+        .unwrap();
+    engine.process_status(MarketStatusAction::Trading);
+    engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+
+    if update_level {
+        engine
+            .process_order_book_delta(&delta(
+                BookAction::Update,
+                OrderSide::Sell,
+                "110.00",
+                "5.000",
+            ))
+            .unwrap();
+    }
+
+    // Deleting the closure best ask exposes 110.00, followed only once updated
+    engine
+        .process_order_book_delta(&delta(
+            BookAction::Delete,
+            OrderSide::Sell,
+            "100.00",
+            "10.000",
+        ))
+        .unwrap();
+
+    assert_eq!(get_updated_trigger_prices(&handler), expected_triggers);
+}
+
+#[rstest]
+#[case::new_price("1000.50", "1000.75", "1000.00")]
+#[case::closure_price("1001.25", "1001.50", "1000.75")]
+fn test_trailing_stop_ignores_out_of_order_l1_depth_after_reopen(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] reopen_bid: &str,
+    #[case] reopen_ask: &str,
+    #[case] expected_trigger: &str,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt,
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        None,
+    );
+    let quote = |bid: &str, ask: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_quote_tick(&quote("1000.00", "1000.25", 1));
+    submit_bid_ask_trailing_stop(&mut engine, instrument_id, OrderSide::Sell, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    engine.process_status(MarketStatusAction::Close);
+    engine.process_quote_tick(&quote("1001.25", "1001.50", 3));
+    engine.process_status(MarketStatusAction::Trading);
+
+    // The book skips a depth older than the closure quote, which stays in the book
+    engine
+        .process_order_book_depth(&l1_depth(
+            instrument_id,
+            Some("1000.50"),
+            Some("1000.75"),
+            2,
+            4,
+        ))
+        .unwrap();
+    assert!(get_updated_trigger_prices(&handler).is_empty());
+
+    // A quote after the reopen is followed, even at the closure price
+    engine.process_quote_tick(&quote(reopen_bid, reopen_ask, 5));
+
+    assert_eq!(
+        get_updated_trigger_prices(&handler),
+        vec![Price::from(expected_trigger)]
+    );
+}
+
+#[rstest]
+fn test_trailing_stop_follows_trades_after_reopen(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument_id = instrument_eth_usdt.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt,
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        None,
+    );
+    let trade = |price: &str, aggressor_side: AggressorSide, ts: u64| {
+        TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from("1.000"),
+            aggressor_side,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let quote = |bid: &str, ask: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    engine.process_quote_tick(&quote("1000.00", "1000.25", 1));
+    submit_bid_ask_trailing_stop(&mut engine, instrument_id, OrderSide::Sell, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    engine.process_status(MarketStatusAction::Close);
+    engine.process_quote_tick(&quote("1001.25", "1001.50", 2));
+    engine.process_status(MarketStatusAction::Trading);
+
+    // A buyer trade below the closure bid leaves that bid in place
+    engine.process_trade_tick(&trade("1000.50", AggressorSide::Buy, 3));
+    assert!(get_updated_trigger_prices(&handler).is_empty());
+
+    // A seller trade sets the bid it hit: 1000.25 - 0.50
+    engine.process_trade_tick(&trade("1000.25", AggressorSide::Sell, 4));
+    assert_eq!(
+        get_updated_trigger_prices(&handler),
+        vec![Price::from("999.75")]
+    );
+}
+
 #[rstest]
 fn test_process_order_when_invalid_contingent_orders(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,

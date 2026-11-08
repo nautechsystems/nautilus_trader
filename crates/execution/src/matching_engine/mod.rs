@@ -34,6 +34,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashSet;
 use indexmap::{IndexMap, IndexSet};
 use jiff::SignedDuration;
 use nautilus_common::{
@@ -156,10 +157,7 @@ pub struct OrderMatchingEngine {
     tob_initialized: bool,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
-    trailing_bid_fresh: bool,
-    trailing_ask_fresh: bool,
-    trailing_last_fresh: bool,
-    trailing_mark_fresh: bool,
+    trailing_reopen_prices: ReopenPrices,
     precision_mismatch_streak: u32,
     instrument_close: Option<InstrumentClose>,
 
@@ -259,10 +257,7 @@ impl OrderMatchingEngine {
             tob_initialized: false,
             last_quote_bid: None,
             last_quote_ask: None,
-            trailing_bid_fresh: true,
-            trailing_ask_fresh: true,
-            trailing_last_fresh: true,
-            trailing_mark_fresh: true,
+            trailing_reopen_prices: ReopenPrices::default(),
             precision_mismatch_streak: 0,
             instrument_close: None,
             pending_resolution: None,
@@ -342,10 +337,7 @@ impl OrderMatchingEngine {
         self.tob_initialized = false;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
-        self.trailing_bid_fresh = true;
-        self.trailing_ask_fresh = true;
-        self.trailing_last_fresh = true;
-        self.trailing_mark_fresh = true;
+        self.trailing_reopen_prices = ReopenPrices::default();
         self.last_bar_bid = None;
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
@@ -1453,8 +1445,8 @@ impl OrderMatchingEngine {
             && let Some(status) = self.pending_resolution.take()
         {
             self.market_status = status;
-            if self.market_status != MarketStatus::Open {
-                self.clear_trailing_price_freshness();
+            if self.market_status == MarketStatus::Open {
+                self.record_trailing_reopen_prices();
             }
         }
 
@@ -1489,10 +1481,6 @@ impl OrderMatchingEngine {
             self.core.bid = None;
             self.core.ask = None;
             self.core.last = None;
-            let is_open = self.market_status == MarketStatus::Open;
-            self.trailing_bid_fresh = is_open;
-            self.trailing_ask_fresh = is_open;
-            self.trailing_last_fresh = is_open;
             log::info!(
                 "Updated instrument {} (price_precision={} size_precision={})",
                 instrument.id(),
@@ -1679,7 +1667,7 @@ impl OrderMatchingEngine {
         }
 
         self.book.apply_delta(delta)?;
-        self.update_trailing_freshness_for_delta(delta);
+        self.confirm_trailing_delta_price(delta);
 
         let is_snapshot = RecordFlag::F_SNAPSHOT.matches(delta.flags);
         let is_last = RecordFlag::F_LAST.matches(delta.flags);
@@ -1738,7 +1726,7 @@ impl OrderMatchingEngine {
 
         self.book.apply_deltas(deltas)?;
         for delta in &deltas.deltas {
-            self.update_trailing_freshness_for_delta(delta);
+            self.confirm_trailing_delta_price(delta);
         }
 
         let mut has_snapshot_or_clear = false;
@@ -1811,17 +1799,19 @@ impl OrderMatchingEngine {
                 depth.ts_event,
                 depth.ts_init,
             );
+            let update_count = self.book.update_count;
             self.book.update_quote_tick(&quote)?;
+            self.confirm_trailing_book_prices(update_count);
             self.reset_trade_liquidity(quote.ts_event);
             self.last_quote_bid = top_bid.map(|order| order.price);
             self.last_quote_ask = top_ask.map(|order| order.price);
         } else {
             self.book.apply_depth(depth)?;
-        }
 
-        let is_open = self.market_status == MarketStatus::Open;
-        self.trailing_bid_fresh = is_open && top_bid.is_some();
-        self.trailing_ask_fresh = is_open && top_ask.is_some();
+            // The depth replaced every level the reopen left in the book
+            self.trailing_reopen_prices.bids.clear();
+            self.trailing_reopen_prices.asks.clear();
+        }
 
         // Depth always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
@@ -1867,7 +1857,9 @@ impl OrderMatchingEngine {
     /// The latest mark remains valid until replaced or the engine is reset.
     pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) {
         self.core.mark = Some(mark.value);
-        self.trailing_mark_fresh = self.market_status == MarketStatus::Open;
+        self.trailing_reopen_prices
+            .mark
+            .take_if(|price| *price == mark.value);
         self.iterate_with_mode(
             mark.ts_init,
             AggressorSide::NoAggressor,
@@ -1932,9 +1924,6 @@ impl OrderMatchingEngine {
 
             self.last_quote_bid = Some(quote.bid_price);
             self.last_quote_ask = Some(quote.ask_price);
-            let is_open = self.market_status == MarketStatus::Open;
-            self.trailing_bid_fresh = is_open;
-            self.trailing_ask_fresh = is_open;
         }
 
         self.iterate(quote.ts_init, AggressorSide::NoAggressor);
@@ -2165,7 +2154,9 @@ impl OrderMatchingEngine {
 
         if size.is_zero() {
             self.core.set_last_raw(price);
-            self.trailing_last_fresh = self.market_status == MarketStatus::Open;
+            self.trailing_reopen_prices
+                .last
+                .take_if(|last| *last == price);
             return true;
         }
 
@@ -2176,7 +2167,9 @@ impl OrderMatchingEngine {
             }
             self.last_bar_trade = Some((price, size, aggressor_side));
             self.core.set_last_raw(price);
-            self.trailing_last_fresh = self.market_status == MarketStatus::Open;
+            self.trailing_reopen_prices
+                .last
+                .take_if(|last| *last == price);
             return true;
         }
 
@@ -2194,13 +2187,11 @@ impl OrderMatchingEngine {
             return false;
         }
 
-        let is_open = self.market_status == MarketStatus::Open;
-        self.trailing_bid_fresh = is_open;
-        self.trailing_ask_fresh = is_open;
-        self.trailing_last_fresh = is_open;
-
         // Set last before matching so last-price triggers see this leg, as for trade ticks
         self.core.set_last_raw(price);
+        self.trailing_reopen_prices
+            .last
+            .take_if(|last| *last == price);
         self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
         true
     }
@@ -2385,15 +2376,6 @@ impl OrderMatchingEngine {
             return true;
         }
 
-        let is_open = self.market_status == MarketStatus::Open;
-        if has_bid_size || bid_cleared {
-            self.trailing_bid_fresh = is_open && has_bid_size;
-        }
-
-        if has_ask_size || ask_cleared {
-            self.trailing_ask_fresh = is_open && has_ask_size;
-        }
-
         self.reset_trade_liquidity(quote.ts_event);
 
         self.iterate(quote.ts_init, AggressorSide::NoAggressor);
@@ -2413,6 +2395,7 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(bid, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+        self.trailing_reopen_prices.bids.remove(&quote.bid_price);
     }
 
     fn clear_bar_quote_bid(&mut self, quote: &QuoteTick) {
@@ -2429,6 +2412,7 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(ask, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+        self.trailing_reopen_prices.asks.remove(&quote.ask_price);
     }
 
     fn clear_bar_quote_ask(&mut self, quote: &QuoteTick) {
@@ -2481,9 +2465,10 @@ impl OrderMatchingEngine {
             }
         }
 
-        let is_open = self.market_status == MarketStatus::Open;
         self.core.set_last_raw(trade.price);
-        self.trailing_last_fresh = is_open;
+        self.trailing_reopen_prices
+            .last
+            .take_if(|last| *last == trade.price);
 
         if !self.config.trade_execution {
             if self.book_type == BookType::L1_MBP {
@@ -2493,11 +2478,6 @@ impl OrderMatchingEngine {
 
                 if let Some(ask) = self.book.best_ask_price() {
                     self.core.set_ask_raw(ask);
-                }
-
-                if !is_open {
-                    self.trailing_bid_fresh = false;
-                    self.trailing_ask_fresh = false;
                 }
             } else {
                 self.iterate_with_mode(
@@ -2567,20 +2547,6 @@ impl OrderMatchingEngine {
                 self.core.set_bid_raw(trade.price);
                 self.core.set_ask_raw(trade.price);
             }
-        }
-
-        if !is_open {
-            self.trailing_bid_fresh = false;
-            self.trailing_ask_fresh = false;
-        } else if (self.book_type == BookType::L1_MBP
-            && self.last_quote_bid.is_none()
-            && self.last_quote_ask.is_none())
-            || (self.book_type != BookType::L1_MBP
-                && self.book.best_bid_price().is_none()
-                && self.book.best_ask_price().is_none())
-        {
-            self.trailing_bid_fresh = self.core.bid == Some(trade.price);
-            self.trailing_ask_fresh = self.core.ask == Some(trade.price);
         }
 
         self.start_trade_iteration(trade.size);
@@ -2663,6 +2629,7 @@ impl OrderMatchingEngine {
     }
 
     fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
+        let update_count = self.book.update_count;
         if let Err(e) = self.book.update_quote_tick(quote) {
             log::warn!(
                 "Skipping {context} for {}: update_quote_tick failed: {e}",
@@ -2671,11 +2638,13 @@ impl OrderMatchingEngine {
             return false;
         }
 
+        self.confirm_trailing_book_prices(update_count);
         self.reset_trade_liquidity(quote.ts_event);
         true
     }
 
     fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
+        let update_count = self.book.update_count;
         if let Err(e) = self.book.update_trade_tick(trade) {
             log::warn!(
                 "Skipping {context} for {}: update_trade_tick failed: {e}",
@@ -2684,6 +2653,7 @@ impl OrderMatchingEngine {
             return false;
         }
 
+        self.confirm_trailing_book_prices(update_count);
         self.reset_trade_liquidity(trade.ts_event);
         true
     }
@@ -2691,6 +2661,7 @@ impl OrderMatchingEngine {
     /// Processes a market status action to update the market state.
     pub fn process_status(&mut self, action: MarketStatusAction) {
         log::debug!("Processing {action}");
+        let was_open = self.market_status == MarketStatus::Open;
         let market_status = self
             .pending_resolution
             .as_mut()
@@ -2719,53 +2690,60 @@ impl OrderMatchingEngine {
             _ => {}
         }
 
-        if self.market_status != MarketStatus::Open {
-            self.clear_trailing_price_freshness();
+        if !was_open && self.market_status == MarketStatus::Open {
+            self.record_trailing_reopen_prices();
         }
     }
 
-    fn clear_trailing_price_freshness(&mut self) {
-        self.trailing_bid_fresh = false;
-        self.trailing_ask_fresh = false;
-        self.trailing_last_fresh = false;
-        self.trailing_mark_fresh = false;
+    // Every price the engine holds at the reopen was set before it, so trailing stops
+    // wait until an update after the reopen sets the price they would follow
+    fn record_trailing_reopen_prices(&mut self) {
+        self.trailing_reopen_prices = ReopenPrices {
+            bids: self
+                .book
+                .bids(None)
+                .map(|level| level.price.value)
+                .chain(self.core.bid)
+                .chain(self.last_quote_bid)
+                .collect(),
+            asks: self
+                .book
+                .asks(None)
+                .map(|level| level.price.value)
+                .chain(self.core.ask)
+                .chain(self.last_quote_ask)
+                .collect(),
+            last: self.core.last,
+            mark: self.core.mark,
+        };
     }
 
-    fn update_trailing_freshness_for_delta(&mut self, delta: &OrderBookDelta) {
-        if self.market_status != MarketStatus::Open {
-            self.trailing_bid_fresh = false;
-            self.trailing_ask_fresh = false;
+    // An L1 quote or trade tick the book accepts replaces both of its sides
+    fn confirm_trailing_book_prices(&mut self, update_count: u64) {
+        if self.book.update_count == update_count {
             return;
         }
 
-        match delta.action {
-            BookAction::Clear => {
-                self.trailing_bid_fresh = false;
-                self.trailing_ask_fresh = false;
-            }
-            BookAction::Add | BookAction::Update => {
-                if delta.order.side != Some(OrderSide::Sell)
-                    && self.book.best_bid_price() == Some(delta.order.price)
-                {
-                    self.trailing_bid_fresh = true;
-                }
-
-                if delta.order.side != Some(OrderSide::Buy)
-                    && self.book.best_ask_price() == Some(delta.order.price)
-                {
-                    self.trailing_ask_fresh = true;
-                }
-            }
-            BookAction::Delete => {
-                if self.book.best_bid_price().is_none() {
-                    self.trailing_bid_fresh = false;
-                }
-
-                if self.book.best_ask_price().is_none() {
-                    self.trailing_ask_fresh = false;
-                }
-            }
+        if let Some(bid) = self.book.best_bid_price() {
+            self.trailing_reopen_prices.bids.remove(&bid);
         }
+
+        if let Some(ask) = self.book.best_ask_price() {
+            self.trailing_reopen_prices.asks.remove(&ask);
+        }
+    }
+
+    fn confirm_trailing_delta_price(&mut self, delta: &OrderBookDelta) {
+        if !matches!(delta.action, BookAction::Add | BookAction::Update) {
+            return;
+        }
+
+        let prices = match delta.order.side {
+            Some(OrderSide::Buy) => &mut self.trailing_reopen_prices.bids,
+            Some(OrderSide::Sell) => &mut self.trailing_reopen_prices.asks,
+            None => return,
+        };
+        prices.remove(&delta.order.price);
     }
 
     /// Processes an instrument close event.
@@ -2852,7 +2830,6 @@ impl OrderMatchingEngine {
 
         self.pending_resolution = Some(self.market_status);
         self.market_status = MarketStatus::Closed;
-        self.clear_trailing_price_freshness();
         self.cancel_open_orders_for_expiration(excluded);
         log::info!(
             "{} expired and is now pending resolution; open orders canceled and new orders blocked",
@@ -4657,8 +4634,6 @@ impl OrderMatchingEngine {
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
                 }
             }
-        } else {
-            self.clear_trailing_price_freshness();
         }
 
         let order_ids: Vec<ClientOrderId> = if matched_order {
@@ -4861,16 +4836,18 @@ impl OrderMatchingEngine {
             return (None, None, None, None);
         }
 
-        let (bid, ask) = match order_side {
-            OrderSide::Buy if self.trailing_ask_fresh => (self.core.bid, self.core.ask),
-            OrderSide::Sell if self.trailing_bid_fresh => (self.core.bid, self.core.ask),
-            _ => (None, None),
+        let reopen = &self.trailing_reopen_prices;
+        let quote_is_stale = match order_side {
+            OrderSide::Buy => self.core.ask.is_some_and(|ask| reopen.asks.contains(&ask)),
+            OrderSide::Sell => self.core.bid.is_some_and(|bid| reopen.bids.contains(&bid)),
         };
-        let last = self
-            .core
-            .last
-            .filter(|_| self.trailing_last_fresh || self.target_last.is_some());
-        let mark = self.core.mark.filter(|_| self.trailing_mark_fresh);
+        let (bid, ask) = if quote_is_stale {
+            (None, None)
+        } else {
+            (self.core.bid, self.core.ask)
+        };
+        let last = self.core.last.filter(|last| reopen.last != Some(*last));
+        let mark = self.core.mark.filter(|mark| reopen.mark != Some(*mark));
 
         (bid, ask, last, mark)
     }
@@ -8648,6 +8625,19 @@ struct PendingFill {
     position_id: Option<PositionId>,
     opening_trade_id: Option<TradeId>,
     quantity_change: Decimal,
+}
+
+/// Prices held when the market last reopened, which trailing stops do not follow.
+///
+/// A price leaves its set once an update accepted after the reopen sets it again, so
+/// trailing resumes from open-market prices only. All sets are empty while the market
+/// has stayed open.
+#[derive(Debug, Default)]
+struct ReopenPrices {
+    bids: AHashSet<Price>,
+    asks: AHashSet<Price>,
+    last: Option<Price>,
+    mark: Option<Price>,
 }
 
 /// Records liquidity consumption changes during a fill-or-kill (FOK) attempt for rollback.
