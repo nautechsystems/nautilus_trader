@@ -880,6 +880,7 @@ class StrategyConfig:
 class NonSubclassable:
     pass
 """.strip()
+
     fixups = {
         "StrategyConfig": generate_stubs.ClassMethodFixup(subclass=True),
         "NonSubclassable": generate_stubs.ClassMethodFixup(subclass=False),
@@ -908,6 +909,7 @@ class Sample:
         self, value: builtins.str
     ) -> dict: ...
 """.strip()
+
     fixups = {
         "Sample": generate_stubs.ClassMethodFixup(
             getters={"value"},
@@ -937,6 +939,7 @@ class DataActorConfig:
     def actor_id(self) -> model.ActorId | None: ...
     def set_actor_id(self, actor_id: model.ActorId | None = ...) -> None: ...
 """.strip()
+
     fixups = {
         "DataActorConfig": generate_stubs.ClassMethodFixup(
             getters={"actor_id"},
@@ -989,6 +992,7 @@ class Sample:
 class Other:
     pass
 """.strip()
+
     fixups = {
         "Sample": generate_stubs.ClassMethodFixup(
             injected_staticmethods={
@@ -1027,6 +1031,7 @@ class Sample:
     def __hash__(self) -> int: ...
     def value(self) -> str: ...
 """.strip()
+
     fixups = {
         "Sample": generate_stubs.ClassMethodFixup(
             getters={"value"},
@@ -1056,6 +1061,7 @@ class PriceType(Enum):
     def variants(self) -> EnumIterator: ...
     def from_str(self, data: str) -> PriceType: ...
 """.strip()
+
     fixups = {
         "PriceType": generate_stubs.ClassMethodFixup(
             classmethods={"variants", "from_str"},
@@ -1082,6 +1088,7 @@ def test_apply_rust_class_fixups_drops_extra_classmethod_cls_param() -> None:
 class HyperliquidAllMids:
     def from_json(self, _cls: type, data: typing.Any) -> typing.Any: ...
 """.strip()
+
     fixups = {
         "HyperliquidAllMids": generate_stubs.ClassMethodFixup(
             classmethods={"from_json"},
@@ -1109,6 +1116,7 @@ class Currency:
     @staticmethod
     def arbitrum_chain() -> Chain: ...
 """.strip()
+
     fixups = {
         "Currency": generate_stubs.ClassMethodFixup(
             staticmethods={
@@ -1677,6 +1685,7 @@ def test_binance_stub_exposes_python_migration_surface() -> None:
         "load_binance_instruments",
         "load_binance_order_book_deltas",
     }
+
     functions = {node.name: node for node in stub_module.body if isinstance(node, ast.FunctionDef)}
     reexports = {
         (node.module, alias.name, alias.asname)
@@ -1925,11 +1934,13 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "tardis_ws_url",
     "wss_rpc_url",
 }
+
 ADAPTER_CONFIG_READBACK_REPLACEMENTS = {
     "proxy_url": "has_proxy_url",
     "submitter_proxy_urls": "has_submitter_proxy_urls",
     "canceller_proxy_urls": "has_canceller_proxy_urls",
 }
+
 ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS = {
     (
         "nautilus_trader.adapters.blockchain",
@@ -1947,6 +1958,7 @@ ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS = {
         "password",
     ): "has_password",
 }
+
 ADAPTER_CONFIG_CONSTRUCTOR_ONLY_FIELDS = {
     (
         "nautilus_trader.adapters.interactive_brokers",
@@ -2161,6 +2173,7 @@ def test_stub_members_match_runtime_names() -> None:  # noqa: C901
             if not isinstance(runtime_class, type):
                 forward_missing.append(f"{module_name}.{stub_class.name}")
                 continue
+
             if runtime_class.__name__ != stub_class.name:
                 runtime_name_mismatches.append(
                     f"{module_name}.{stub_class.name} -> {runtime_class.__name__}",
@@ -2243,9 +2256,11 @@ def _stub_function_kind(fn: object) -> str:
     for decorator in fn.decorator_list:
         if isinstance(decorator, ast.Name) and decorator.id == "property":
             return "property"
+
         if isinstance(decorator, ast.Attribute):
             if decorator.attr == "property":
                 return "property"
+
             if decorator.attr in {"setter", "deleter"}:
                 return "accessor"
     return "method"
@@ -2257,6 +2272,7 @@ def _stub_member_kinds(stub_body: object, class_scope: object) -> object:
     for node in stub_body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
+
         if class_scope:
             if node.name.startswith("__") and node.name not in {"__init__", "__new__"}:
                 continue
@@ -2277,6 +2293,7 @@ def _runtime_member_kind(runtime_class: object, name: object) -> str | None:
     type_name = type(obj).__name__
     if isinstance(obj, property) or type_name == "getset_descriptor":
         return "property"
+
     if type_name in {
         "method_descriptor",
         "classmethod_descriptor",
@@ -2286,6 +2303,7 @@ def _runtime_member_kind(runtime_class: object, name: object) -> str | None:
         "method",
     }:
         return "method"
+
     if inspect.isfunction(obj) or inspect.ismethod(obj) or inspect.ismethoddescriptor(obj):
         return "method"
     return None
@@ -2320,8 +2338,10 @@ def _collect_reverse_member_drift(
                     f"{module_name}.{class_name}.{name}: runtime {runtime_kind} vs stub {stub_kind}",
                 )
             continue
+
         if runtime_kind == "property" and non_contract_dto:
             continue
+
         if runtime_kind == "method" and (module_name, class_name, name) in DEFERRED_RUNTIME_METHODS:
             continue
         reverse_missing.append(f"{module_name}.{class_name}.{name} ({runtime_kind})")
@@ -2527,6 +2547,7 @@ def _module_signature_mismatches(module_name: object, stub_module: object, modul
             runtime_default = runtime_signature.parameters[name].default
             if runtime_default is Ellipsis:
                 continue
+
             if runtime_default is inspect.Parameter.empty or stub_default != runtime_default:
                 default_mismatches.append(
                     f"{label}.{name}: stub={stub_default!r}, runtime={runtime_default!r}",
@@ -2580,6 +2601,7 @@ def _method_signature_mismatches(
             runtime_default = runtime_signature.parameters[name].default
             if runtime_default is Ellipsis:
                 continue
+
             if runtime_default is inspect.Parameter.empty or stub_default != runtime_default:
                 default_mismatches.append(
                     f"{label}.{name}: stub={stub_default!r}, runtime={runtime_default!r}",
@@ -2750,6 +2772,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         proxy_url="http://user:password@proxy.example.test",
         http_timeout_secs=17,
     )
+
     betfair_config = BetfairDataClientConfig(
         username="readback-user",
         password="readback-password",
@@ -2759,11 +2782,14 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         stream_heartbeat_secs=43,
         book_snapshot_timeout_secs=0,
     )
+
     betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
+
     bybit_config = BybitDataClientConfig(
         instrument_status_poll_secs=23,
         book_snapshot_timeout_secs=0,
     )
+
     databento_config = DatabentoDataClientConfig(
         api_key="readback-api-key",
         publishers_filepath=tmp_path / "publishers.json",
@@ -2771,6 +2797,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         bars_timestamp_on_close=False,
         venue_dataset_map={"XNAS": "XNAS.ITCH"},
     )
+
     ib_gateway_config = DockerizedIBGatewayConfig(username="ib-readback-user")
 
     assert ax_config.base_url_http == "https://ax.example.test"
@@ -2811,6 +2838,7 @@ def test_adapter_config_runtime_setter_policy(tmp_path: Path) -> None:
 
     with pytest.raises(AttributeError):
         readonly_config.base_url_http = "https://changed.example.test"
+
     for config_class in (
         InteractiveBrokersDataClientConfig,
         InteractiveBrokersExecutionClientConfig,
@@ -2843,6 +2871,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
         operator_id="operator",
         failure_domain_ids=["failure-domain"],
     )
+
     required_values = {
         "account_id": AccountId("VENUE-001"),
         "base_fee_buffer_bps": 100,
@@ -2861,13 +2890,13 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
         "wallet_address": "0x2222222222222222222222222222222222222222",
         "weth_address": "0x3333333333333333333333333333333333333333",
     }
+
     failures = []
 
     for stub_file in sorted((STUB_ROOT / "adapters").glob("*/__init__.pyi")):
         relative_package = stub_file.relative_to(STUB_ROOT).parent
         module_name = _module_name_from_stub_path(relative_package)
         module = importlib.import_module(module_name)
-
         for stub_class in (
             node
             for node in ast.parse(stub_file.read_text(encoding="utf-8")).body
@@ -2886,6 +2915,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
             for parameter in signature.parameters.values():
                 if parameter.default is not inspect.Parameter.empty or parameter.name in kwargs:
                     continue
+
                 if parameter.name not in required_values:
                     failures.append(
                         f"{module_name}.{stub_class.name}: no value for required {parameter.name}",
@@ -2902,6 +2932,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
                         failures.append(
                             f"{module_name}.{stub_class.name}.{parameter_name}: raw property exists",
                         )
+
                     if any(secret_value in representation for representation in representations):
                         failures.append(
                             f"{module_name}.{stub_class.name}.{parameter_name}: value in representation",
@@ -2925,6 +2956,7 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
     from nautilus_trader.model import DexType
 
     sentinel = "raw-sensitive-value"
+
     configs = [
         BetfairDataClientConfig(username=sentinel),
         BetfairExecutionClientConfig(username=sentinel),
@@ -3031,8 +3063,10 @@ def _config_readback_name(field_key: object) -> object:
     module_name, _, field_name = field_key
     if not module_name.startswith("nautilus_trader.adapters."):
         return CONFIG_READBACK_REPLACEMENTS.get(field_key, field_name)
+
     if field_key in ADAPTER_CONFIG_CONSTRUCTOR_ONLY_FIELDS:
         return None
+
     if field_name in ADAPTER_CONFIG_SECRET_FIELDS:
         return ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS.get(field_key)
     return ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS.get(
@@ -3090,8 +3124,10 @@ def _config_readback_descriptor_mismatches(
     descriptor = inspect.getattr_static(runtime_class, readback_name, None)
     if descriptor is None:
         return [f"{module_name}.{class_name}.{readback_name}: missing at runtime"]
+
     if not inspect.isdatadescriptor(descriptor):
         return [f"{module_name}.{class_name}.{readback_name}: not a data descriptor"]
+
     if callable(descriptor):
         return [f"{module_name}.{class_name}.{readback_name}: exposed as method"]
     return []
@@ -3120,6 +3156,7 @@ def test_supported_config_py_new_and_getters_match_rust_fields() -> None:
         if source["struct_count"] != 1:
             mismatches.append(f"{label}: Rust struct count {source['struct_count']}")
             continue
+
         if stub_params != constructor_params:
             mismatches.append(
                 f"{label}: stub/PyO3 constructor mismatch "
@@ -3248,11 +3285,12 @@ def _rust_config_source_inventory(config_names: object) -> object:
         )
         class_impls = impl_blocks.get(class_name, [])
         getters = set()
-
         for block in class_impls:
             getters.update(_pyo3_getter_names(block))
+
         for block in getter_macro_blocks.get(class_name, []):
             getters.update(RUST_STRUCT_FIELD_RE.findall(block))
+
         for macro_key in macro_invocations.get(class_name, []):
             macro_block = macro_blocks.get(macro_key)
             if macro_block is not None:
@@ -3284,25 +3322,30 @@ def _collect_rust_config_source_blocks(config_names: object):  # noqa: C901
                 struct_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),
                 )
+
         for match in RUST_CONFIG_IMPL_RE.finditer(content):
             class_name = match.group(1)
             if class_name.startswith("Py") and class_name[2:] in config_names:
                 class_name = class_name[2:]
+
             if class_name in config_names:
                 impl_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),
                 )
+
         for match in RUST_CONFIG_GETTER_MACRO_RE.finditer(content):
             class_name = match.group(1)
             if class_name in config_names:
                 getter_macro_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),
                 )
+
         for match in RUST_MACRO_RE.finditer(content):
             macro_blocks[(rust_file, match.group(1))] = _rust_block_after_position(
                 content,
                 match.start(),
             )
+
         for match in RUST_CONFIG_MACRO_INVOCATION_RE.finditer(content):
             macro_name, class_name = match.groups()
             if class_name in config_names:
@@ -3410,6 +3453,7 @@ def _rust_function_signature_after_position(content: object, start: object) -> o
             if depth == 0:
                 close_paren = pos
                 break
+
     if close_paren is None:
         raise AssertionError(f"Could not find Rust function arguments after position {start}")
 
@@ -3523,9 +3567,9 @@ def test_stub_enum_variants_match_runtime() -> None:
             runtime_only = set(expected_runtime_members) - set(stub_members)
             stub_only = set(stub_members) - set(expected_runtime_members)
             parts = [name]
-
             if runtime_only:
                 parts.append(f"runtime only: {sorted(runtime_only)}")
+
             if stub_only:
                 parts.append(f"stub only: {sorted(stub_only)}")
             mismatches.append(" | ".join(parts))

@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "92e309ea4904d58e02e3ac2a38d8617564835e3b"
-manifest_sha256 = "c118a09137ee947a24ab3d5d22650719f90b2954878e6c6a656c5ad8b7f19def"
+revision = "a7ea5c90472753c7c54892b60d17b396a5e4d52f"
+manifest_sha256 = "e4b3be265c62ccd21a5655dc5b68e98e9e69549acc767310c0d9d9d59f813961"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -86,7 +86,7 @@ executable = true
 [[file]]
 artifact = "markdown-table-check"
 path = "scripts/check-markdown-tables.py"
-sha256 = "7fff7ae1ad25b752badb749ad6e238b438ed61b1011c81a78821f3cf16ff0b0a"
+sha256 = "fb7b983c71991c52526756710aa5c90682addd1d7e01749407863f3e7c77953d"
 executable = false
 
 [[file]]
@@ -108,6 +108,12 @@ sha256 = "1bb731e945822869fcb3d9a835e56e067cf6f5a241ebfe3d7cd262d59367e676"
 executable = true
 
 [[file]]
+artifact = "python-formatter"
+path = "scripts/format-python.py"
+sha256 = "f5ab0d57579c50d2f02007a9b3e3d5af958b3c0135f0169990e4f5cf9708e348"
+executable = true
+
+[[file]]
 artifact = "osv-scanner-install"
 path = "scripts/install-osv-scanner.sh"
 sha256 = "c0f7b6055dcbfc568c95606f9cef1bf0e8368c6b760f46948836f6cc3319bfb2"
@@ -122,7 +128,7 @@ executable = true
 [[file]]
 artifact = "pre-commit-manager"
 path = "scripts/manage-nautilus-engineering-pre-commit.py"
-sha256 = "52148d1f8b329181bb6ae4de9db933e521b7b8f1f7697d78bc7871eec8641276"
+sha256 = "c4d3baa9dfed37b7a3847296965b9e739d50c1c9d9d02f02ef7e3b6ad49ce18f"
 executable = true
 
 [[file]]
@@ -134,7 +140,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "00c190ea859d95941b60d8b4d8fe5721d2c2f80403d445b46d229bf44080b8d7"
+sha256 = "d689f5868bb48f9819f4f3cbf3c76a86de21b82930a10925cbb5a1816e8f315b"
 executable = false
 
 [[file]]

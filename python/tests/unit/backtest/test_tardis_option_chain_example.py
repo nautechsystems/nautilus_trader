@@ -72,6 +72,7 @@ def mixed_series_options(module: ModuleType) -> object:
     """
     nearest_expiry_ns = 1_704_067_200_000_000_000
     later_expiry_ns = 1_706_745_600_000_000_000
+
     return [
         option_metadata(
             module,

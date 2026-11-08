@@ -141,7 +141,6 @@ class OptionGreeksTester(DataActor):
         On stop.
         """
         client_id = ClientId.from_str(DERIBIT)
-
         for instrument_id in self._subscribed_ids:
             self.unsubscribe_option_greeks(instrument_id, client_id=client_id)
 

@@ -55,6 +55,7 @@ from strategies import BBMeanReversionConfig
 
 OUT = Path(__file__).resolve().parent
 USD = Currency.from_str("USD")
+
 TRUEFX_CSV = Path(
     os.environ.get("TRUEFX_CSV", "test_data/local/truefx/EURUSD-2025-12.csv"),
 )
@@ -95,6 +96,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
 
 def run_backtest() -> object:
     instrument_id = InstrumentId.from_str("EURUSD-PERP.AX")
+
     EURUSD_PERP = PerpetualContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol("EURUSD-PERP"),
@@ -167,6 +169,7 @@ def run_backtest() -> object:
     engine.add_data(ticks)
 
     bar_type = BarType.from_str("EURUSD-PERP.AX-1-MINUTE-MID-INTERNAL")
+
     strategy = BBMeanReversion(
         BBMeanReversionConfig(
             instrument_id=instrument_id,
@@ -179,6 +182,7 @@ def run_backtest() -> object:
             rsi_sell_threshold=RSI_SELL,
         ),
     )
+
     engine.add_strategy(strategy)
     engine.run()
 
@@ -411,6 +415,7 @@ def panel_b_zoom(bars: pd.DataFrame, entries, closes) -> go.Figure:
             row=1,
             col=1,
         )
+
     if shorts:
         fig.add_trace(
             go.Scatter(
@@ -428,6 +433,7 @@ def panel_b_zoom(bars: pd.DataFrame, entries, closes) -> go.Figure:
             row=1,
             col=1,
         )
+
     if c:
         fig.add_trace(
             go.Scatter(
@@ -558,6 +564,7 @@ def panel_d_pnl(positions: pd.DataFrame, cycles: list[dict]) -> go.Figure:
     if not cycles:
         apply_layout(fig, "Cumulative realized pnl per closed cycle (no cycles)", height=420)
         return fig
+
     if "realized_pnl" in positions.columns:
         df = positions.copy()
         df = df[df["ts_closed"].notna()]
@@ -617,6 +624,7 @@ def main() -> None:
         f"entries={len(entries)} closes={len(closes)} cycles={len(cycles)} "
         f"positions={len(positions)}",
     )
+
     panels = {
         "panel_a_overview.png": panel_a_overview(bars_ind),
         "panel_b_zoom.png": panel_b_zoom(bars_ind, entries, closes),

@@ -160,6 +160,7 @@ class EMACross(Strategy):
     def _enter(self, side: OrderSide) -> None:
         if self._position_side == PositionSide.LONG and side == OrderSide.BUY:
             return
+
         if self._position_side == PositionSide.SHORT and side == OrderSide.SELL:
             return
 
@@ -182,6 +183,7 @@ class EMACross(Strategy):
 
     def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
+
         order = MarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -196,6 +198,7 @@ class EMACross(Strategy):
             quote_quantity=False,
             contingency_type=None,
         )
+
         self.submit_order(order)
 
     def on_reset(self) -> None:

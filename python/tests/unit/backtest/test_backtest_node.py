@@ -83,11 +83,13 @@ def test_node_construction() -> None:
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     node = BacktestNode([config])
     assert node is not None
@@ -98,6 +100,7 @@ def test_node_installs_configured_margin_model() -> None:
     Test node installs the configured margin model on the account.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -112,12 +115,14 @@ def test_node_installs_configured_margin_model() -> None:
         ),
         margin_model=StandardMarginModel(),
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
         dispose_on_completion=False,
     )
+
     node = BacktestNode([config])
 
     try:
@@ -150,12 +155,14 @@ def test_node_uses_margin_account_default_leverage() -> None:
             taker_rate=Decimal(0),
         ),
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
         dispose_on_completion=False,
     )
+
     node = BacktestNode([config])
 
     try:
@@ -178,6 +185,7 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
     quotes = _whipsaw_quotes(instrument, count=10)
     catalog.write_instruments([instrument])
     catalog.write_quote_ticks(quotes)
+
     venue = BacktestVenueConfig(
         name="BINANCE",
         oms_type=OmsType.NETTING,
@@ -190,16 +198,19 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         ),
         latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_id=instrument.id,
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
     )
+
     node = BacktestNode([config])
 
     try:
@@ -231,6 +242,7 @@ def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: 
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()
     ParquetDataCatalog(str(catalog_path)).write_instruments([currency_pair, equity])
+
     venues = [
         BacktestVenueConfig(
             name="SIM",
@@ -255,17 +267,20 @@ def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: 
             ),
         ),
     ]
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.Instrument,
         catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_ids=[currency_pair.id, equity.id],
     )
+
     config = BacktestRunConfig(
         venues=venues,
         data=[data],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
         dispose_on_completion=False,
     )
+
     node = BacktestNode([config])
 
     try:
@@ -424,11 +439,13 @@ def test_node_rejects_disposed_execution_algorithm_before_construction(
             taker_rate=Decimal(0),
         ),
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
     )
+
     node = BacktestNode([config])
     constructor_calls: list[bool] = []
 
@@ -509,6 +526,7 @@ def test_engine_reset_reopens_streaming_writer(tmp_path: Path) -> None:
     output_path = tmp_path / "output"
     instrument = TestInstrumentProvider.ethusdt_binance()
     quotes = _whipsaw_quotes(instrument, count=3)
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -517,6 +535,7 @@ def test_engine_reset_reopens_streaming_writer(tmp_path: Path) -> None:
             streaming=StreamingConfig(writer_path=str(output_path), flush_interval_ms=1),
         ),
     )
+
     engine.add_venue(
         venue=Venue("BINANCE"),
         oms_type=OmsType.NETTING,
@@ -551,6 +570,7 @@ def test_engine_streaming_promotes_into_separate_catalog(tmp_path: Path) -> None
     catalog_path = tmp_path / "catalog"
     instrument = TestInstrumentProvider.ethusdt_binance()
     quotes = _whipsaw_quotes(instrument, count=3)
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -563,6 +583,7 @@ def test_engine_streaming_promotes_into_separate_catalog(tmp_path: Path) -> None
             ),
         ),
     )
+
     engine.add_venue(
         venue=Venue("BINANCE"),
         oms_type=OmsType.NETTING,
@@ -593,11 +614,13 @@ def test_node_builds_with_configured_catalog(tmp_path: Path) -> None:
     Test node construction registers an existing built-in catalog.
     """
     input_path = tmp_path / "input"
+
     engine = BacktestEngineConfig(
         bypass_logging=True,
         run_analysis=False,
         catalogs=[DataCatalogConfig(path=str(input_path), name="history")],
     )
+
     node, _, _, quotes = _build_component_node(
         tmp_path,
         quote_count=4,
@@ -634,6 +657,7 @@ def test_node_rejects_duplicate_configured_catalog_names(tmp_path: Path) -> None
     Test node construction rejects duplicate catalog names without panicking.
     """
     catalog = DataCatalogConfig(path=str(tmp_path), name="history")
+
     engine = BacktestEngineConfig(
         bypass_logging=True,
         run_analysis=False,
@@ -671,6 +695,7 @@ def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
             ),
         ],
     )
+
     venue = BacktestVenueConfig(
         name="XNAS",
         oms_type="NETTING",
@@ -679,17 +704,20 @@ def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
         book_type="L1_MBP",
         fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path=str(tmp_path)),
         instrument_id=instrument.id,
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
         raise_exception=raise_exception,
     )
+
     node = BacktestNode([config])
     node.build()
     node.add_strategy(
@@ -739,11 +767,13 @@ def test_node_venue_mismatch_raises() -> None:
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     with pytest.raises(RuntimeError, match="No venue config found for venue"):
         BacktestNode([config])
@@ -764,11 +794,13 @@ def test_node_repr() -> None:
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     node = BacktestNode([config])
     assert "BacktestNode" in repr(node)
@@ -789,11 +821,13 @@ def test_node_dispose() -> None:
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     node = BacktestNode([config])
     node.dispose()
@@ -829,6 +863,7 @@ def test_node_post_run_inspection_unknown_config_raises(
             taker_rate=Decimal(0),
         ),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[])
     node = BacktestNode([config])
 
@@ -862,16 +897,19 @@ def test_node_missing_engine_explains_build_requirement(
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path=str(tmp_path)),
         instrument_id=InstrumentId.from_str("AAA.SIM"),
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
         raise_exception=build_state == "raised_failure",
     )
+
     node = BacktestNode([config])
 
     if build_state == "raised_failure":
@@ -881,6 +919,7 @@ def test_node_missing_engine_explains_build_requirement(
         node.build()
 
     args = ()
+
     if method_name == "add_strategy_from_config":
         args = (
             ImportableStrategyConfig(
@@ -1051,6 +1090,7 @@ def _build_component_node(
     quotes = _whipsaw_quotes(instrument, count=quote_count)
     catalog.write_instruments([instrument])
     catalog.write_quote_ticks(quotes)
+
     venue = BacktestVenueConfig(
         name="BINANCE",
         oms_type="NETTING",
@@ -1062,11 +1102,13 @@ def _build_component_node(
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_id=instrument.id,
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
@@ -1074,6 +1116,7 @@ def _build_component_node(
         dispose_on_completion=False,
         raise_exception=raise_exception,
     )
+
     node = BacktestNode([config])
     node.build()
     return node, config, instrument, quotes
@@ -1096,11 +1139,13 @@ def _build_ema_cross_node(
             taker_rate=Decimal(0),
         ),
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path=catalog_path),
         instrument_id=instrument.id,
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
@@ -1108,6 +1153,7 @@ def _build_ema_cross_node(
         chunk_size=chunk_size,
         dispose_on_completion=dispose_on_completion,
     )
+
     node = BacktestNode([config])
     node.build()
     node.add_builtin_strategy(

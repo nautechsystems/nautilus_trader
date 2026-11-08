@@ -59,6 +59,7 @@ from strategies import OrderBookImbalanceConfig
 
 OUT = Path(__file__).resolve().parent
 USD = Currency.from_str("USD")
+
 GC_DBN = Path(
     os.environ.get(
         "GC_DBN",
@@ -136,6 +137,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
 
 def run_backtest() -> object:
     instrument_id = InstrumentId.from_str("XAU-PERP.AX")
+
     XAU_PERP = PerpetualContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol("XAU-PERP"),
@@ -205,6 +207,7 @@ def run_backtest() -> object:
             min_seconds_between_triggers=5.0,
         ),
     )
+
     engine.add_strategy(strategy)
     engine.run()
 
@@ -270,6 +273,7 @@ def panel_a_top_book(
                 "close": [pd.Timestamp(c["ts"]) for c in closes],
             },
         )
+
         cycles_df["dur"] = cycles_df["close"] - cycles_df["open"]
         cycles_df = cycles_df[cycles_df["dur"] < pd.Timedelta(hours=2)]
         if not cycles_df.empty:
@@ -340,6 +344,7 @@ def panel_a_top_book(
                 },
             ),
         )
+
     if shorts:
         fig.add_trace(
             go.Scatter(
@@ -355,6 +360,7 @@ def panel_a_top_book(
                 },
             ),
         )
+
     if c_in:
         fig.add_trace(
             go.Scatter(
@@ -365,6 +371,7 @@ def panel_a_top_book(
                 marker={"symbol": "x", "size": 11, "color": "#eeeeee"},
             ),
         )
+
     if incremental:
         fig.add_trace(
             go.Scatter(
@@ -527,6 +534,7 @@ def panel_d_pnl(positions: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
 def main() -> None:
     samples, fills, positions = run_backtest()
     print(f"samples={len(samples)} fill_rows={len(fills)} positions={len(positions)}")
+
     panels = {
         "panel_a_top_book.png": panel_a_top_book(samples, fills, positions),
         "panel_b_imbalance_dist.png": panel_b_imbalance_dist(samples),

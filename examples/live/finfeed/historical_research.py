@@ -54,6 +54,7 @@ async def main(source: str) -> None:
             max_retries=0,
         ),
     )
+
     try:
         async with asyncio.timeout(30):
             if source == "flat-file":
@@ -63,6 +64,7 @@ async def main(source: str) -> None:
                     time_start=START,
                     time_end=END,
                 )
+
                 rows = await client.get_ohlcv_flat_file_history("POLYMARKET", MARKET_ID, query)
             else:
                 query = FinFeedOhlcvQuery(
@@ -88,6 +90,7 @@ async def main(source: str) -> None:
                 row.price_close,
                 row.volume_traded,
             )
+
         if len(rows) == LIMIT:
             print("Sample limit reached; more rows may exist, with no verified continuation")
         elif not rows:

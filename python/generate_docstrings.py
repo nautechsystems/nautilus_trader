@@ -231,7 +231,6 @@ def collect_source_docs(  # noqa: C901
 
         for line in lines:
             stripped = line.strip()
-
             if in_multiline_attr:
                 if ATTR_END_RE.search(stripped):
                     in_multiline_attr = False
@@ -261,7 +260,6 @@ def collect_source_docs(  # noqa: C901
                 impl_entered = False
 
             brace_depth += stripped.count("{") - stripped.count("}")
-
             if current_impl is not None:
                 if not impl_entered and "{" in stripped:
                     impl_depth = brace_depth
@@ -289,7 +287,6 @@ def collect_source_docs(  # noqa: C901
                     current_impl in TYPE_DOC_SOURCES.values() or stripped.startswith("pub")
                 ):
                     name = fn_m.group(1)
-
                     if not is_banner:
                         docs[(current_impl, name)] = list(doc_block)
                 else:
@@ -300,7 +297,6 @@ def collect_source_docs(  # noqa: C901
 
                     if type_m:
                         name = type_m.group(1)
-
                         if not is_banner:
                             docs[(None, name)] = list(doc_block)
                     elif current_type is not None:
@@ -356,6 +352,7 @@ def transform_doc(
 
     while result and result[0] == "":
         result.pop(0)
+
     while result and result[-1] == "":
         result.pop()
 
@@ -398,7 +395,6 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
 
     for i, line in enumerate(lines):
         stripped = line.strip()
-
         if in_ml_attr:
             if ATTR_END_RE.search(stripped):
                 in_ml_attr = False
@@ -413,10 +409,13 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
         if stripped.startswith("#["):
             if first_attr_line is None:
                 first_attr_line = i
+
             if stripped == "#[new]":
                 has_new = True
+
             if stripped in ("#[pymethods]", "#[pyo3::pymethods]"):
                 in_pymethods = True
+
             if rust_attr_continues(stripped):
                 in_ml_attr = True
             continue
@@ -479,7 +478,6 @@ def rust_fn_signature(lines: list[str], start: int) -> str:
     Return a Rust function signature starting at ``start``.
     """
     signature_lines: list[str] = []
-
     for line in lines[start:]:
         signature_lines.append(line.strip())
         if "{" in line:
@@ -569,6 +567,7 @@ def process_crate(  # noqa: C901
                         impl_type in TYPE_DOC_SOURCES or (impl_type, target) in METHOD_DOC_SOURCES
                     ):
                         source_doc = source_docs.get((source_type, f"member:{source_name}"))
+
                 if source_doc and target.startswith("has_") and target[4:] == source_name:
                     source_doc = [f"Returns whether `{source_name}` is set."]
             elif item["in_pymethods"]:
@@ -628,6 +627,7 @@ def process_crate(  # noqa: C901
             if enum_type is None:
                 continue
             enum_text = enum.group(0)
+
             for variant in reversed(
                 list(re.finditer(r"((?:    ///[^\n]*\n)*)    (\w+),$", enum_text, re.MULTILINE)),
             ):
@@ -666,6 +666,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate PyO3 doc comments from underlying Rust documentation.",
     )
+
     parser.add_argument(
         "--dry-run",
         action="store_true",

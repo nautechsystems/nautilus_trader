@@ -45,6 +45,7 @@ def test_yield_curve_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> N
         {"currency": "USD", "curve": "government"},
         "USD-GOVERNMENT",
     )
+
     original = MacroYieldCurveData(
         "USD",
         [0.25, 0.5, 1.0, 2.0, 5.0],
@@ -79,6 +80,7 @@ def test_params_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
         "RustTestParamsCustomData",
         {"source": "python", "kind": "params"},
     )
+
     params = {
         "name": "alpha",
         "enabled": True,
@@ -86,6 +88,7 @@ def test_params_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
         "ratio": 1.25,
         "nested": {"level": 2, "tags": ["x", "y"]},
     }
+
     original = RustTestParamsCustomData("first", params, 21, 22)
 
     item = _roundtrip(tmp_path, data_type, original)
@@ -110,14 +113,17 @@ def test_price_map_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> Non
     """
     audusd_id = InstrumentId.from_str("AUD/USD.SIM")
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
+
     prices = {
         audusd_id: Price.from_str("1.23456"),
         btcusdt_id: Price.from_str("65432.10"),
     }
+
     data_type = DataType(
         "RustTestPriceMapCustomData",
         {"source": "python", "kind": "price-map"},
     )
+
     original = RustTestPriceMapCustomData("prices", prices, 31, 32)
 
     item = _roundtrip(tmp_path, data_type, original)
@@ -147,10 +153,12 @@ def test_typed_map_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> Non
     price = Price.from_str("1.23456")
     quantity = Quantity.from_str("10.500")
     money = Money.from_str("123.45 USD")
+
     data_type = DataType(
         "RustTestTypedMapCustomData",
         {"source": "python", "kind": "typed-map"},
     )
+
     original = RustTestTypedMapCustomData(
         "typed",
         {"primary": instrument_id},

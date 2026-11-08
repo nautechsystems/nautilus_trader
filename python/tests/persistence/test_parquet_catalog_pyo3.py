@@ -88,12 +88,14 @@ def _read_arrow_stream(capsule: object) -> pa.Table:
 
 def _instrument(ts_init: int, venue_extra: str, count: int, enabled: bool) -> CurrencyPair:
     base = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
     payload = {
         **base.to_dict(),
         "info": {"venue_extra": venue_extra, "count": count, "enabled": enabled},
         "ts_event": ts_init,
         "ts_init": ts_init,
     }
+
     return CurrencyPair.from_dict(payload)
 
 
@@ -194,7 +196,6 @@ def test_catalog_run_preserves_recovery_and_writer_locks(
     quote = TestDataProviderPyo3.quote_tick()
     writer.write(quote)
     writer.flush()
-
     if not locked:
         writer.close()
         [sealed] = run.rglob("*.feather")
@@ -270,6 +271,7 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
     target_path = tmp_path / "target"
     target_path.mkdir()
     instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+
     values = {
         "funding_rate_update": FundingRateUpdate(
             instrument_id,
@@ -291,11 +293,13 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
     for type_name, value in values.items():
         staging = tmp_path / "staging" / type_name
         staging.mkdir(parents=True)
+
         writer = StreamingFeatherWriter(
             path=str(staging),
             cache=Cache(),
             clock=Clock.new_test(),
         )
+
         writer.write(value)
         writer.close()
         [feather_path] = staging.rglob("*.feather")
@@ -322,6 +326,7 @@ def test_funding_rate_updates_round_trip(tmp_path: Path) -> None:
     """
     catalog = ParquetDataCatalog(str(tmp_path))
     instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
+
     first = FundingRateUpdate(
         instrument_id,
         Decimal("0.000123456789012345"),
@@ -330,6 +335,7 @@ def test_funding_rate_updates_round_trip(tmp_path: Path) -> None:
         interval=480,
         next_funding_ns=28_800_000_000_000,
     )
+
     second = FundingRateUpdate(instrument_id, Decimal("-0.0001"), 2_000, 2_001)
 
     catalog.write_funding_rate_updates([first, second])
@@ -382,6 +388,7 @@ def test_instrument_typed_queries_match_generic_query(
 
     if kind == "statuses":
         data_type = NautilusDataType.InstrumentStatus
+
         records = [
             InstrumentStatus(
                 first_id,
@@ -416,6 +423,7 @@ def test_instrument_typed_queries_match_generic_query(
         ]
     else:
         data_type = NautilusDataType.InstrumentClose
+
         records = [
             InstrumentClose(
                 first_id,
@@ -478,6 +486,7 @@ def test_instrument_typed_queries_preserve_query_errors(tmp_path: Path, kind: st
         record = InstrumentStatus(instrument_id, MarketStatusAction.TRADING, 100, 1_001)
     else:
         data_type = NautilusDataType.InstrumentClose
+
         record = InstrumentClose(
             instrument_id,
             Price.from_str("100.25"),
@@ -526,6 +535,7 @@ def test_raw_multi_identity_query_uses_truthful_ipc_schema(
     )
     catalog.write_quote_ticks([second])
     catalog.write_quote_ticks([first])
+
     query_args = (
         NautilusDataType.QuoteTick,
         [str(first_id), str(second_id)],
@@ -534,6 +544,7 @@ def test_raw_multi_identity_query_uses_truthful_ipc_schema(
         None,
         False,
     )
+
     table = (
         _read_arrow_bytes(catalog.query_data_arrow_bytes(*query_args))
         if transport == "bytes"
@@ -566,6 +577,7 @@ def test_raw_multi_identity_status_query_preserves_identifiers(
     catalog = _catalog(tmp_path, backend)
     first_id = InstrumentId.from_str("STATUS-A.TEST")
     second_id = InstrumentId.from_str("STATUS-B.TEST")
+
     first = InstrumentStatus(
         first_id,
         MarketStatusAction.TRADING,
@@ -577,6 +589,7 @@ def test_raw_multi_identity_status_query_preserves_identifiers(
         is_quoting=True,
         is_short_sell_restricted=False,
     )
+
     second = InstrumentStatus(
         second_id,
         MarketStatusAction.HALT,
@@ -588,8 +601,10 @@ def test_raw_multi_identity_status_query_preserves_identifiers(
         is_quoting=False,
         is_short_sell_restricted=True,
     )
+
     catalog.write_instrument_statuses([second])
     catalog.write_instrument_statuses([first])
+
     query_args = (
         NautilusDataType.InstrumentStatus,
         [str(first_id), str(second_id)],
@@ -598,6 +613,7 @@ def test_raw_multi_identity_status_query_preserves_identifiers(
         None,
         False,
     )
+
     table = (
         _read_arrow_bytes(catalog.query_data_arrow_bytes(*query_args))
         if transport == "bytes"
@@ -858,10 +874,12 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
     register_custom_data_class(RustTestCustomData)
     register_custom_data_class(RustTestPriceMapCustomData)
     custom_instrument_id = InstrumentId.from_str("EXTERNAL.TEST")
+
     custom = CustomData(
         DataType("RustTestCustomData", None, str(custom_instrument_id)),
         RustTestCustomData(custom_instrument_id, 1.25, True, timestamp + 1, timestamp + 1),
     )
+
     price_map = CustomData(
         DataType("RustTestPriceMapCustomData", None, None),
         RustTestPriceMapCustomData(
@@ -871,6 +889,7 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
             timestamp + 2,
         ),
     )
+
     account_schema = _read_arrow_bytes(
         catalog.query_record_arrow_bytes(
             NautilusRecordType.AccountState,
@@ -1047,6 +1066,7 @@ def test_calculated_greeks_custom_data_round_trip(tmp_path: Path, portfolio: boo
     restored = CustomData.from_json_bytes(loaded.to_json_bytes())
 
     assert custom_data_backend_kind(original) == "native"
+
     for item in (loaded, restored):
         assert custom_data_backend_kind(item) == "native"
         assert type(item.data) is type(value)

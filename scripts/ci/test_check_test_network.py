@@ -47,6 +47,7 @@ def test_patterns() -> None:
         ('client.connect("test_bearer_token")', None),
         ("requests.get(endpoint)", None),
     ]
+
     for source, expected in cases:
         assert [rule for _, rule in findings(source)] == ([] if expected is None else [expected]), (
             source
@@ -59,6 +60,7 @@ def test_discovery() -> None:
     """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
+
         files = {
             "crates/probe/src/lib.rs": 'reqwest::get("https://api.exchange.com");\n',
             "crates/probe/src/client.rs": '#[cfg(test)]\nmod tests {\nreqwest::get("https://api.exchange.com");\n}',
@@ -66,16 +68,19 @@ def test_discovery() -> None:
             "crates/probe/tests/http.rs": 'reqwest::get("https://api.exchange.com");',
             "python/tests/test_http.py": 'requests.get("https://api.exchange.com")',
         }
+
         for name, source in files.items():
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(source, encoding="utf-8")
+
         expected = [
             "crates/probe/src/client.rs:3: non-local network call",
             "crates/probe/src/legacy.rs:3: non-local network call",
             "crates/probe/tests/http.rs:1: non-local network call",
             "python/tests/test_http.py:1: non-local network call",
         ]
+
         assert check(root) == expected
         script = root / "scripts/ci/check_test_network.py"
         script.parent.mkdir(parents=True)

@@ -375,6 +375,7 @@ def panel_d_session_clock(df: pd.DataFrame) -> go.Figure:
 def main() -> None:
     replay = build_replay()
     session = build_session_frame()
+
     panels = {
         "panel_a_reference_overlay.png": panel_a_reference_overlay(replay),
         "panel_b_signal_basis.png": panel_b_signal_basis(replay),

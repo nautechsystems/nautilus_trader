@@ -191,6 +191,7 @@ def test_catalog_write_and_read_quotes(tmp_path: Path) -> None:
         TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
         TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=2, ts_init=2),
     ]
+
     catalog.write_quote_ticks(quotes)
 
     intervals = catalog.get_intervals(NautilusDataType.QuoteTick, "AUD/USD.SIM")
@@ -212,6 +213,7 @@ def test_catalog_write_and_read_trades(tmp_path: Path) -> None:
         TestDataProviderPyo3.trade_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
         TestDataProviderPyo3.trade_tick(instrument_id=AUDUSD_SIM, ts_event=2, ts_init=2),
     ]
+
     catalog.write_trade_ticks(trades)
 
     intervals = catalog.get_intervals(NautilusDataType.TradeTick, "AUD/USD.SIM")
@@ -228,6 +230,7 @@ def test_catalog_write_and_read_order_book_deltas(tmp_path: Path) -> None:
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
+
     deltas = [
         OrderBookDelta(
             instrument_id=AUDUSD_SIM,
@@ -258,6 +261,7 @@ def test_catalog_write_and_read_order_book_deltas(tmp_path: Path) -> None:
             ts_init=4,
         ),
     ]
+
     catalog.write_order_book_deltas(deltas)
 
     loaded = catalog.query_order_book_deltas(["AUD/USD.SIM"])
@@ -302,6 +306,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
         )
         for level in range(10)
     ]
+
     depths = [
         OrderBookDepth(
             instrument_id=AUDUSD_SIM,
@@ -315,6 +320,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
             ts_init=6,
         ),
     ]
+
     catalog.write_order_book_depths(depths)
 
     loaded = catalog.query_order_book_depths(["AUD/USD.SIM"])
@@ -442,6 +448,7 @@ def test_catalog_list_parquet_files_with_typed_selectors(tmp_path: Path) -> None
     quotes = [
         TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
     ]
+
     catalog.write_quote_ticks(quotes)
     currency_pair = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     equity = TestInstrumentProvider.aapl_equity()
@@ -518,11 +525,13 @@ def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path:
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
+
     instrument_ids = [
         InstrumentId.from_str("EUR/USD.SIM"),
         InstrumentId.from_str("BTC-USD.COINBASE"),
         InstrumentId.from_str("ETH/USDT.BINANCE"),
     ]
+
     quotes = [
         TestDataProviderPyo3.quote_tick(instrument_id=instrument_id, ts_event=i, ts_init=i)
         for i, instrument_id in enumerate(instrument_ids, start=1)
@@ -587,10 +596,12 @@ def test_trade_tick_wrangler_rejects_malformed_trade_ids_and_recovers(
     Reject invalid IPC trade IDs without leaving the wrangler unusable.
     """
     wrangler = TradeTickDataWrangler("ETHUSDT.BINANCE", 2, 5)
+
     ticks = [
         TestDataProviderPyo3.trade_tick(price="1234.56", size="1.23456", ts_event=12, ts_init=34),
         TestDataProviderPyo3.trade_tick(price="2345.67", size="8.90123", ts_event=56, ts_init=78),
     ]
+
     valid_bytes = trades_to_arrow_record_batch_bytes(ticks)
     batch = next(pa.ipc.open_stream(valid_bytes))
     batch = batch.set_column(
@@ -683,6 +694,7 @@ def test_streaming_feather_writer_write_and_flush(tmp_path: Path) -> None:
         cache=Cache(),
         clock=Clock.new_test(),
     )
+
     quote = TestDataProviderPyo3.quote_tick()
     writer.write(quote)
     writer.flush()
@@ -700,6 +712,7 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
         cache=Cache(),
         clock=Clock.new_test(),
     )
+
     trade = TestDataProviderPyo3.trade_tick()
     writer.write(trade)
     writer.flush()
@@ -754,6 +767,7 @@ def test_streaming_feather_writer_uses_one_file_per_type(
     """
     path = tmp_path / f"streaming_{data_name}"
     path.mkdir()
+
     writer = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
@@ -777,12 +791,14 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
     path = tmp_path / "streaming_replace"
     path.mkdir()
     instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+
     writer = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
         clock=Clock.new_test(),
         include_types=[NautilusDataType.QuoteTick],
     )
+
     writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
     writer.close()
     assert len(list(path.glob("quotes/*.feather"))) == 1
@@ -794,6 +810,7 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
         include_types=[NautilusDataType.QuoteTick],
         replace=True,
     )
+
     replacement.close()
 
     assert list(path.glob("quotes/*.feather")) == []
@@ -806,12 +823,14 @@ def test_streaming_feather_writer_recovers_partial_files_on_start(tmp_path: Path
     path = tmp_path / "streaming_recover"
     path.mkdir()
     instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+
     writer = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
         clock=Clock.new_test(),
         include_types=[NautilusDataType.QuoteTick],
     )
+
     writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
     writer.close()
 
@@ -825,6 +844,7 @@ def test_streaming_feather_writer_recovers_partial_files_on_start(tmp_path: Path
         clock=Clock.new_test(),
         include_types=[NautilusDataType.QuoteTick],
     )
+
     files = [file.relative_to(path).as_posix() for file in path.rglob("*.feather*")]
     restarted.close()
 
@@ -864,11 +884,13 @@ def test_streaming_writer_promotes_into_catalog(tmp_path: Path) -> None:
     Test streaming writer with a catalog promotes its Feather files into that catalog.
     """
     catalog_path = tmp_path / "catalog"
+
     writer = StreamingWriter(
         str(tmp_path / "stream" / "backtest" / "run-1"),
         Clock.new_test(),
         catalog=DataCatalogConfig(path=str(catalog_path)),
     )
+
     quote = TestDataProviderPyo3.quote_tick()
 
     writer.write(quote)
@@ -891,13 +913,16 @@ def test_streaming_clear_snapshots_preserve_rows(
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()
     source = tmp_path / "stream" if automatic else catalog_path
+
     writer = StreamingWriter(
         str(source / "live" / "run-clear"),
         Clock.new_test(),
         DataCatalogConfig(path=str(catalog_path)) if automatic else None,
     )
+
     ts = 1_700_000_000_000_000_123
     clear = OrderBookDelta.clear(AUDUSD_SIM, 7, ts, ts)
+
     add = OrderBookDelta(
         AUDUSD_SIM,
         BookAction.ADD,
@@ -907,6 +932,7 @@ def test_streaming_clear_snapshots_preserve_rows(
         ts,
         ts,
     )
+
     second_add = OrderBookDelta(
         AUDUSD_SIM,
         BookAction.ADD,
@@ -916,6 +942,7 @@ def test_streaming_clear_snapshots_preserve_rows(
         ts,
         ts,
     )
+
     rows = [clear, add, clear, second_add]
     if batched:
         writer.write(OrderBookDeltas(AUDUSD_SIM, rows))
@@ -993,6 +1020,7 @@ def test_streaming_feather_writer_close(tmp_path: Path) -> None:
         cache=Cache(),
         clock=Clock.new_test(),
     )
+
     quote = TestDataProviderPyo3.quote_tick()
     writer.write(quote)
     writer.close()
@@ -1017,12 +1045,14 @@ def test_streaming_feather_writer_rotation_modes(tmp_path: Path) -> None:
     ):
         path = str(tmp_path / f"streaming_{index}")
         os.makedirs(path, exist_ok=True)
+
         writer = StreamingFeatherWriter(
             path=path,
             cache=cache,
             clock=clock,
             rotation_config=rotation_config,
         )
+
         assert writer is not None
 
 
@@ -1052,6 +1082,7 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
     os.makedirs(path, exist_ok=True)
     clock = Clock.new_test()
     clock.set_time(pd.Timestamp(now).value)
+
     writer = StreamingFeatherWriter(
         path=path,
         cache=Cache(),
@@ -1062,6 +1093,7 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
             timezone="America/New_York",
         ),
     )
+
     quote = TestDataProviderPyo3.quote_tick()
 
     writer.write(quote)
@@ -1079,7 +1111,6 @@ def _next_rotation_python(now: object) -> object:
     rotation_timezone = ZoneInfo("America/New_York")
     rotation_time = pd.Timestamp.combine(now.date(), dt.time(0, 30))
     next_rotation = pd.Timestamp(rotation_time, tz=rotation_timezone).tz_convert("UTC")
-
     while next_rotation <= now:
         next_rotation += pd.Timedelta(days=1)
 

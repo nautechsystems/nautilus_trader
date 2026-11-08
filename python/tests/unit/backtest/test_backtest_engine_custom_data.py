@@ -109,6 +109,7 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
     instrument_id = InstrumentId.from_str("CUSTOM.TEST")
     metadata = {"source": "python", "venue": "TEST"}
     data_type = DataType("RustTestCustomData", metadata, str(instrument_id))
+
     custom_data = [
         CustomData(
             data_type,
@@ -119,6 +120,7 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
             RustTestCustomData(instrument_id, 2.5, False, 2, 2),
         ),
     ]
+
     catalog.write_custom_data(custom_data)
     loaded = catalog.query_custom_data(
         NautilusDataType.Custom("RustTestCustomData"),
@@ -155,14 +157,17 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_strategy(strategy)
 
     try:
@@ -194,6 +199,7 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
         ],
     )
     loaded = catalog.query_custom_data(NautilusDataType.Custom("YieldCurve"))
+
     strategy = _YieldCurveStrategy(
         StrategyConfig(
             strategy_id=StrategyId("YIELD-CURVE-STRATEGY"),
@@ -201,14 +207,17 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_strategy(strategy)
 
     try:
@@ -290,6 +299,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
     now_ns = int(datetime(2025, 3, 8, 12, tzinfo=UTC).timestamp() * 1_000_000_000)
     expiration_ns = int(datetime(2025, 4, 7, 12, tzinfo=UTC).timestamp() * 1_000_000_000)
     usd = Currency.from_str("USD")
+
     underlying = Equity(
         instrument_id=InstrumentId.from_str("AAPL.OPRA"),
         raw_symbol=Symbol("AAPL"),
@@ -301,6 +311,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
         ts_event=0,
         ts_init=0,
     )
+
     option = OptionContract(
         instrument_id=InstrumentId.from_str("AAPL250407C00149000.OPRA"),
         raw_symbol=Symbol("AAPL250407C00149000"),
@@ -319,8 +330,10 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
         ts_event=0,
         ts_init=0,
     )
+
     data_type = DataType("YieldCurve", {"curve_name": "USD"})
     curve = YieldCurve("USD", [0.0], [0.07], now_ns - 1, now_ns - 1)
+
     quotes = [
         QuoteTick(
             option.id,
@@ -341,6 +354,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
             now_ns,
         ),
     ]
+
     strategy = _YieldCurveGreeksStrategy(
         StrategyConfig(
             strategy_id=StrategyId("YIELD-CURVE-GREEKS-STRATEGY"),
@@ -348,16 +362,19 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
     strategy.option_id = option.id
     strategy.valuation_ns = now_ns
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_venue(
         venue=Venue("OPRA"),
         oms_type=OmsType.NETTING,

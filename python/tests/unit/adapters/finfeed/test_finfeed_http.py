@@ -38,6 +38,7 @@ from nautilus_trader.adapters import finfeed as ff
 
 
 TEST_DATA = Path(__file__).resolve().parents[5] / "crates/adapters/finfeed/test_data"
+
 FIELDS = {
     "FinFeedExchange": "exchange_id market_name_institution_description website",
     "FinFeedMarket": "exchange_id market_id outcome_type outcome_name mechanism status price title description exchange source_specific_data",
@@ -52,6 +53,7 @@ FIELDS = {
     "FinFeedOhlcvPeriod": "period_id unit_name unit_count length_seconds length_months display_name",
     "FinFeedOhlcv": "market_id_exchange price_open price_high price_low price_close volume_traded trades_count time_period_start time_period_end time_open time_close",
 }
+
 ENUMS = {
     "status": "FinFeedMarketStatus",
     "outcome_type": "FinFeedOutcomeType",
@@ -89,6 +91,7 @@ def _peer(responses, **controls: Any) -> Iterator:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+
     config = ff.FinFeedDataClientConfig(
         api_key="python-rest-secret",
         base_url_http=f"http://127.0.0.1:{server.server_port}/v1/",
@@ -98,6 +101,7 @@ def _peer(responses, **controls: Any) -> Iterator:
         max_retries=0,
         http_timeout_secs=2,
     )
+
     try:
         yield ff.FinFeedHttpClient(config), requests, entered, release
     finally:
@@ -243,6 +247,7 @@ def test_read_only_operations_preserve_every_field(method, args, path, fixture, 
             time_end="2026-10-12T00:00:00.0000001Z",
         ),
     }
+
     args = tuple(queries.get(arg, arg) for arg in args)
     body = _response(fixture)
     if envelope == "array":
@@ -447,6 +452,7 @@ def _exchange_query(**overrides: Any):
         "time_start": "2026-10-11T00:00:00Z",
         "time_end": "2026-10-12T00:00:00Z",
     }
+
     values.update(overrides)
     return ff.FinFeedOhlcvQuery(**values)
 
@@ -757,7 +763,6 @@ def test_nullable_results_preserve_missing_values(kind) -> None:
         body = json.dumps(value).encode()
     elif kind == "bar":
         body = _response("exact-bar.json")
-
         for field, value in [
             ("price_open", "0.1"),
             ("price_high", "0.9"),
@@ -765,6 +770,7 @@ def test_nullable_results_preserve_missing_values(kind) -> None:
             ("price_close", "0.5"),
         ]:
             body = body.replace(f'"{field}":{value}'.encode(), f'"{field}":null'.encode())
+
         for field, value in [
             ("time_open", "2026-10-11T00:00:02.0000003Z"),
             ("time_close", "2026-10-11T00:00:58.0000004Z"),
@@ -1060,12 +1066,14 @@ def test_historical_research_example_keeps_selected_source(
         monkeypatch.setitem(main.__globals__, "FinFeedHttpClient", create_client)
         if result == "saturated":
             monkeypatch.setitem(main.__globals__, "LIMIT", 2)
+
         if result == "http-error":
             with pytest.raises(RuntimeError, match="429"):
                 asyncio.run(main(source))
         else:
             asyncio.run(main(source))
         output = capsys.readouterr().out
+
         expected_controls = {
             "attempt_budget": 1,
             "http_timeout_secs": 20,
@@ -1073,6 +1081,7 @@ def test_historical_research_example_keeps_selected_source(
             "min_request_interval_ms": 10_000,
             "max_retries": 0,
         }
+
         assert len(configs) == 1
         assert {name: getattr(configs[0], name) for name in expected_controls} == expected_controls
         limit = 2 if result == "saturated" else 5

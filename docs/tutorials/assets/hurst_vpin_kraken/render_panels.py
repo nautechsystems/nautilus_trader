@@ -116,7 +116,6 @@ def walk_fills(
     for _, row in fills.iterrows():
         delta = row["qty"] if row["side"] == "BUY" else -row["qty"]
         new_pos = pos + delta
-
         if abs(pos) < EPS and abs(new_pos) >= EPS:
             open_side = 1 if new_pos > 0 else -1
             open_ts = row["ts"]
@@ -188,6 +187,7 @@ def _contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:
         elif not v and start is not None:
             runs.append((start, i - 1))
             start = None
+
     if start is not None:
         runs.append((start, len(mask) - 1))
     return runs
@@ -258,6 +258,7 @@ def _draw_fill_markers(
             ),
             **kw,
         )
+
     if short_e:
         fig.add_trace(
             go.Scatter(
@@ -275,6 +276,7 @@ def _draw_fill_markers(
             ),
             **kw,
         )
+
     if closes:
         fig.add_trace(
             go.Scatter(
@@ -292,6 +294,7 @@ def _draw_fill_markers(
             ),
             **kw,
         )
+
     if partials:
         fig.add_trace(
             go.Scatter(
@@ -338,6 +341,7 @@ def panel_a_price_regime(
             line_width=0,
             layer="below",
         )
+
     for a, b in _contiguous_runs(in_pos):
         fig.add_vrect(
             x0=ts.iloc[a],

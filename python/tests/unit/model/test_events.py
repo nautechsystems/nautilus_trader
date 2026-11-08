@@ -191,6 +191,7 @@ def test_account_state_info_roundtrip(account_id: AccountId, uuid: UUID4) -> Non
         locked=Money.from_str("0 USD"),
         free=Money.from_str("1_000_000 USD"),
     )
+
     info = {"total_wallet_balance": 1525.0, "available_balance": 1500.0}
 
     state = AccountState(
@@ -245,6 +246,7 @@ def test_portfolio_snapshot_valuation_metadata(
     Test portfolio snapshot valuation metadata.
     """
     usd = Currency.from_str("USD")
+
     snapshot = PortfolioSnapshot(
         account_id=account_id,
         account_type=AccountType.CASH,
@@ -352,6 +354,7 @@ def _make_order_events(
         "ts_event": 1,
         "ts_init": 2,
     }
+
     reconciled = {
         **common,
         "venue_order_id": venue_order_id,
@@ -460,6 +463,7 @@ def test_command_denied_preserves_all_fields(
     Denied events retain every field through dictionary round trips.
     """
     cause = UUID4.from_str("a4f41181-2b03-49f3-a771-bbe98d176c0f") if with_cause else None
+
     fields = {
         "trader_id": trader_id,
         "strategy_id": strategy_id,
@@ -473,13 +477,16 @@ def test_command_denied_preserves_all_fields(
         "account_id": account_id if with_metadata else None,
         "causation_id": cause,
     }
+
     event = event_type(**fields)
+
     encoded = {
         "type": event_type.__name__,
         **{name: str(value) if value is not None else None for name, value in fields.items()},
         "ts_event": 11,
         "ts_init": 29,
     }
+
     restored = event_type.from_dict(encoded)
 
     assert event.to_dict() == encoded

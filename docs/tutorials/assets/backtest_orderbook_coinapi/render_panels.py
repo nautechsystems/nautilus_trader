@@ -48,6 +48,7 @@ def main() -> None:
     book = run["top_of_book"]
     executions = run["executions"]
     account = run["account"]
+
     panels = {
         "panel_a_top_book.png": _book_figure(book, executions),
         "panel_b_liquidity.png": _liquidity_figure(book),
@@ -61,7 +62,6 @@ def main() -> None:
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     figure = go.Figure()
-
     for column, label, color in [
         ("bid", "Best bid", COLORS["positive"]),
         ("ask", "Best ask", COLORS["negative"]),
@@ -191,6 +191,7 @@ def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     position.index = pd.to_datetime(ordered["ts_event"], utc=True)
     position = pd.concat([pd.Series([Decimal(0)], index=book.index[:1]), position])
     position = position.groupby(level=0, sort=False).last()
+
     figure = go.Figure(
         go.Scatter(
             x=position.index,
@@ -203,6 +204,7 @@ def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             showlegend=False,
         ),
     )
+
     _apply_layout(
         figure,
         "Position accumulation and final close",
@@ -232,6 +234,7 @@ def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
 def _pnl_figure(book: pd.DataFrame, account: pd.DataFrame) -> go.Figure:
     totals = account["total"].map(Decimal)
     pnl = (totals - totals.iloc[0]).groupby(level=0, sort=False).last()
+
     figure = go.Figure(
         go.Scatter(
             x=pnl.index,
@@ -244,6 +247,7 @@ def _pnl_figure(book: pd.DataFrame, account: pd.DataFrame) -> go.Figure:
             showlegend=False,
         ),
     )
+
     _apply_layout(
         figure,
         "Realized PnL and final account balance",

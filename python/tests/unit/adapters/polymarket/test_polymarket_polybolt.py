@@ -28,6 +28,7 @@ def test_data_client_config_accepts_polybolt_credentials_without_exposing_them()
     Test data client config accepts PolyBolt credentials and redacts them.
     """
     api_secret = base64.b64encode(b"fixture-secret").decode()
+
     config = PolymarketDataClientConfig(
         api_key="fixture-key",
         api_secret=api_secret,

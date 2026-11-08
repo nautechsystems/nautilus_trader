@@ -36,6 +36,7 @@ CONFIG_MODULE_NAMES = (
     "risk",
     "trading",
 )
+
 CONFIG_NAMES_EXCLUDED = frozenset(
     {
         "OrderBookImbalanceConfig",

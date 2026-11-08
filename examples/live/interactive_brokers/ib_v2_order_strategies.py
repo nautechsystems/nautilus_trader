@@ -87,6 +87,7 @@ def env_order_side(name: str, default: OrderSide) -> OrderSide:
     value = value.upper()
     if value == "BUY":
         return OrderSide.BUY
+
     if value == "SELL":
         return OrderSide.SELL
     raise ValueError(f"{name} must be BUY or SELL")
@@ -664,8 +665,10 @@ class IbV2OrderStrategy(Strategy):
 
         if env_bool("IB_V2_CANCEL_ON_STOP", True):
             self.cancel_all_orders(self.instrument_id, client_id=ib_client_id())
+
         if env_bool("IB_V2_CLOSE_ON_STOP", True):
             self.close_all_positions(self.instrument_id, client_id=ib_client_id())
+
         if self._quotes_subscribed:
             self.unsubscribe_quotes(self.instrument_id, client_id=ib_client_id())
 
@@ -790,12 +793,14 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
         """
         ib = interactive_brokers
         time_str = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S")
+
         time_condition = {
             "type": ib.IbConditionKind.TIME.as_str(),
             "time": time_str,
             "isMore": True,
             "conjunction": ib.IbConditionConjunction.AND.as_str(),
         }
+
         time_order = self.limit_order(
             self.client_order_id("TIME-CONDITION"),
             OrderSide.SELL,
@@ -837,6 +842,7 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
             ),
             "conjunction": ib.IbConditionConjunction.AND.as_str(),
         }
+
         price_order = self.limit_order(
             self.client_order_id("PRICE-CONDITION"),
             OrderSide.BUY,
@@ -917,6 +923,7 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
         On order filled.
         """
         print(f"{self.strategy_id}: order filled: {event}", flush=True)
+
         if not env_bool("IB_V2_SPREAD_FLATTEN_ON_FILL") or self._flatten_submitted:
             return
 

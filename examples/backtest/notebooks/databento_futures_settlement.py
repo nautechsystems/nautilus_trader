@@ -110,6 +110,7 @@ class FuturesSettlementStrategy(Strategy):
 if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parents[3]
     data_dir = repo_root / "test_data" / "databento" / "futures_settlement" / "databento"
+
     loader = DatabentoDataLoader(
         repo_root / "crates" / "adapters" / "databento" / "publishers.json",
     )
@@ -124,9 +125,11 @@ if __name__ == "__main__":
 
     future_id = InstrumentId.from_str("ESZ25.XCME")
     next_future_id = InstrumentId.from_str("ESH26.XCME")
+
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     XCME = Venue("XCME")
     USD = Currency.from_str("USD")
     engine.add_venue(

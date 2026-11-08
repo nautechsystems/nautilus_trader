@@ -163,6 +163,7 @@ def load_bybit_order_book_deltas(
         "flags",
         "sequence",
     ]
+
     frame = pd.DataFrame(rows, columns=columns).set_index("timestamp")
     return frame.astype({"order_id": int, "flags": int, "sequence": int})
 

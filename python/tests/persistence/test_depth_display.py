@@ -161,14 +161,17 @@ def test_raw_depth_query_preserves_empty_sides(
     Raw Arrow queries retain empty sides and the precision of populated sides.
     """
     catalog = ParquetDataCatalog(str(tmp_path))
+
     order = BookOrder(
         side or OrderSide.BUY,
         Price.from_str("12.34"),
         Quantity.from_str("5.678"),
         987,
     )
+
     bids = [order] if side == OrderSide.BUY else []
     asks = [order] if side == OrderSide.SELL else []
+
     depth = OrderBookDepth(
         InstrumentId.from_str("AAPL.XNAS"),
         bids,
@@ -180,14 +183,15 @@ def test_raw_depth_query_preserves_empty_sides(
         456,
         789,
     )
-    catalog.write_order_book_depths([depth])
 
+    catalog.write_order_book_depths([depth])
     if transport == "bytes":
         payload = catalog.query_data_arrow_bytes(NautilusDataType.OrderBookDepth, display=False)
         table = pa.ipc.open_stream(payload).read_all()
     else:
         capsule = catalog.query_data_arrow_stream(NautilusDataType.OrderBookDepth, display=False)
         table = pa.RecordBatchReader.from_stream(ArrowCStream(capsule)).read_all()
+
     for name in ("ts_event", "ts_init"):
         index = table.schema.get_field_index(name)
         table = table.set_column(index, name, table[name].cast(pa.int64()))

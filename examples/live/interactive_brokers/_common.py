@@ -35,6 +35,7 @@ from nautilus_trader.trading import ImportableStrategyConfig
 IB = "IB"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_TWS_PORT = 7497
+
 FUTURES_MONTH_CODES = {
     1: "F",
     2: "G",
@@ -49,6 +50,7 @@ FUTURES_MONTH_CODES = {
     11: "X",
     12: "Z",
 }
+
 QUARTERLY_CONTRACT_MONTHS = (3, 6, 9, 12)
 
 
@@ -80,6 +82,7 @@ def resolve_ib_endpoint() -> tuple[str, int]:
 
 def market_data_type() -> interactive_brokers.MarketDataType:
     value = os.getenv("IB_V2_MARKET_DATA_TYPE", "delayed-frozen").lower()
+
     values = {
         "realtime": interactive_brokers.MarketDataType.REALTIME,
         "frozen": interactive_brokers.MarketDataType.FROZEN,
@@ -87,6 +90,7 @@ def market_data_type() -> interactive_brokers.MarketDataType:
         "delayed-frozen": interactive_brokers.MarketDataType.DELAYED_FROZEN,
         "delayed_frozen": interactive_brokers.MarketDataType.DELAYED_FROZEN,
     }
+
     try:
         return values[value]
     except KeyError as e:
@@ -161,6 +165,7 @@ def active_quarterly_contract(
             expiry = third_friday(year, month)
             if expiry >= target_expiry:
                 local_symbol = f"{symbol}{FUTURES_MONTH_CODES[month]}{year % 10}"
+
                 return (
                     local_symbol,
                     f"{symbol}{contract_month_code(year, month)}.{venue}",
@@ -183,7 +188,6 @@ def active_monthly_contract(
     target_month = today + dt.timedelta(days=min_days_to_contract_month)
     year = today.year
     month = today.month
-
     while dt.date(year, month, 1) < target_month:
         month += 1
         if month > 12:
@@ -299,6 +303,7 @@ def default_stock_contracts() -> list[dict[str, object]]:
     Default stock contracts.
     """
     ib = interactive_brokers
+
     return [
         {
             "secType": ib.IbSecurityType.STOCK.as_str(),
@@ -336,6 +341,7 @@ def futures_contract(
     """
     ib = interactive_brokers
     default_local_symbol, _, default_expiry = default_es_future()
+
     return {
         "secType": ib.IbSecurityType.FUTURE.as_str(),
         "symbol": symbol,
@@ -364,6 +370,7 @@ def option_contract(
     right_value = right.as_str() if isinstance(right, ib.IbOptionRight) else str(right)
     default_local_symbol = default_es_put_option_local_symbol(strike or 6800.0)
     _, _, default_expiry = default_es_future()
+
     contract: dict[str, object] = {
         "secType": ib.IbSecurityType.FUTURES_OPTION.as_str(),
         "symbol": symbol,
@@ -416,6 +423,7 @@ def instrument_provider_config(
     Instrument provider config.
     """
     ib = interactive_brokers
+
     return ib.InteractiveBrokersInstrumentProviderConfig(
         symbology_method=ib.SymbologyMethod.SIMPLIFIED,
         load_ids=set(instrument_ids(load_ids or ())),

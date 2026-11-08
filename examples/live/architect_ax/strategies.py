@@ -127,6 +127,7 @@ class BBMeanReversion(Strategy):
 
         if not self.indicators_initialized():
             return
+
         if bar.open == bar.high == bar.low == bar.close:
             return
 
@@ -156,6 +157,7 @@ class BBMeanReversion(Strategy):
         if self.portfolio.is_net_long(self._instrument_id) and close >= self._bb.middle:
             self.close_all_positions(self._instrument_id)
             return True
+
         if self.portfolio.is_net_short(self._instrument_id) and close <= self._bb.middle:
             self.close_all_positions(self._instrument_id)
             return True
@@ -165,11 +167,13 @@ class BBMeanReversion(Strategy):
         if close <= self._bb.lower and self._rsi.value < self._rsi_buy_threshold:
             if self.portfolio.is_net_short(self._instrument_id):
                 self.close_all_positions(self._instrument_id)
+
             if not self.portfolio.is_net_long(self._instrument_id):
                 self._submit_market_order(OrderSide.BUY)
         elif close >= self._bb.upper and self._rsi.value > self._rsi_sell_threshold:
             if self.portfolio.is_net_long(self._instrument_id):
                 self.close_all_positions(self._instrument_id)
+
             if not self.portfolio.is_net_short(self._instrument_id):
                 self._submit_market_order(OrderSide.SELL)
 
@@ -225,10 +229,13 @@ class OrderBookImbalance(Strategy):
         """
         if config.max_trade_size <= 0:
             raise ValueError("max_trade_size must be positive")
+
         if config.trigger_min_size <= 0:
             raise ValueError("trigger_min_size must be positive")
+
         if not Decimal(0) < config.trigger_imbalance_ratio < Decimal(1):
             raise ValueError("trigger_imbalance_ratio must be between 0 and 1")
+
         if config.min_seconds_between_triggers < 0:
             raise ValueError("min_seconds_between_triggers must be non-negative")
 
@@ -271,11 +278,13 @@ class OrderBookImbalance(Strategy):
             return
 
         now = self.clock.timestamp_ns()
+
         if (
             self._last_trigger_ns is not None
             and now - self._last_trigger_ns < self._trigger_interval_ns
         ):
             return
+
         if self.cache.orders_inflight(strategy_id=self.strategy_id):
             return
 
@@ -289,6 +298,7 @@ class OrderBookImbalance(Strategy):
             level_size = bid_size
 
         self._last_trigger_ns = now
+
         if self._dry_run or self._instrument is None:
             return
 

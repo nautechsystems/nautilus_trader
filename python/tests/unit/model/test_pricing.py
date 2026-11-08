@@ -118,6 +118,7 @@ def test_option_greeks_and_strike_data_properties() -> None:
     Test option greeks and strike data properties.
     """
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
+
     quote = QuoteTick(
         instrument_id=instrument_id,
         bid_price=Price.from_str("100.0"),
@@ -127,6 +128,7 @@ def test_option_greeks_and_strike_data_properties() -> None:
         ts_event=1,
         ts_init=2,
     )
+
     greeks = OptionGreeks(
         instrument_id=instrument_id,
         delta=0.5,
@@ -142,6 +144,7 @@ def test_option_greeks_and_strike_data_properties() -> None:
         ts_event=3,
         ts_init=4,
     )
+
     strike = OptionStrikeData(quote, greeks)
 
     assert greeks.instrument_id == instrument_id
@@ -160,6 +163,7 @@ def test_option_chain_slice_empty_state_and_lookups() -> None:
     Test option chain slice empty state and lookups.
     """
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
+
     chain = OptionChainSlice(
         series_id=series_id,
         atm_strike=Price.from_str("50000.0"),

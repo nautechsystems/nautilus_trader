@@ -219,6 +219,7 @@ class SpotSwapQuoter(Strategy):
         # Clear order references on any terminal status
         if self._spot_bid_order and self._spot_bid_order.is_closed():
             self._spot_bid_order = None
+
         if self._spot_ask_order and self._spot_ask_order.is_closed():
             self._spot_ask_order = None
 
@@ -228,13 +229,13 @@ class SpotSwapQuoter(Strategy):
 
         # Guard against non-positive prices
         min_price = self.spot_instrument.price_increment.as_decimal()
-
         if desired_bid <= 0:
             log_msg = f"Calculated bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
                 log_msg,
             )
             desired_bid = min_price
+
         if desired_ask <= desired_bid:
             log_msg = f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping"
             self.log.warning(log_msg)
@@ -283,6 +284,7 @@ class SpotSwapQuoter(Strategy):
         # Clear order references on any terminal status
         if self._swap_bid_order and self._swap_bid_order.is_closed():
             self._swap_bid_order = None
+
         if self._swap_ask_order and self._swap_ask_order.is_closed():
             self._swap_ask_order = None
 
@@ -292,13 +294,13 @@ class SpotSwapQuoter(Strategy):
 
         # Guard against non-positive prices
         min_price = self.swap_instrument.price_increment.as_decimal()
-
         if desired_bid <= 0:
             log_msg = f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
                 log_msg,
             )
             desired_bid = min_price
+
         if desired_ask <= desired_bid:
             log_msg = f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping"
             self.log.warning(
@@ -355,7 +357,6 @@ class SpotSwapQuoter(Strategy):
         """
         self.cancel_all_orders(self._config.spot_instrument_id)
         self.cancel_all_orders(self._config.swap_instrument_id)
-
         if self._config.close_positions_on_stop:
             self.close_all_positions(self._config.spot_instrument_id)
             self.close_all_positions(self._config.swap_instrument_id)

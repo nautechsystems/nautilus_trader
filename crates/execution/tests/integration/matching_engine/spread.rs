@@ -16,12 +16,14 @@
 use std::cell::Cell;
 
 use nautilus_execution::models::fee::{FeeModel, FeeModelHandle, PerContractFeeModel};
+#[cfg(feature = "high-precision")]
+use nautilus_model::instruments::{CryptoFuture, CryptoFuturesSpread};
 use nautilus_model::{
     accounts::Account,
     enums::PriceType,
     events::account::stubs::cash_account_state_million_usd,
     instruments::{
-        CryptoFuture, CryptoFuturesSpread, FuturesSpread,
+        FuturesSpread,
         stubs::{
             crypto_option_btc_deribit, crypto_option_spread_btc_deribit, option_contract_appl,
             option_spread,

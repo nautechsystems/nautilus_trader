@@ -83,6 +83,7 @@ def test_equality() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     c2 = Currency(
         code="AUD",
         precision=2,
@@ -90,6 +91,7 @@ def test_equality() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     c3 = Currency(
         code="GBP",
         precision=2,
@@ -113,6 +115,7 @@ def test_hash() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     c2 = Currency(
         code="AUD",
         precision=2,
@@ -120,6 +123,7 @@ def test_hash() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     assert isinstance(hash(c1), int)
     assert hash(c1) == hash(c2)
 
@@ -154,6 +158,7 @@ def test_pickle_round_trip() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     pickled = pickle.dumps(currency)
     unpickled = pickle.loads(pickled)
 
@@ -172,6 +177,7 @@ def test_register_and_lookup() -> None:
         name="ApeCoin",
         currency_type=CurrencyType.CRYPTO,
     )
+
     Currency.register(ape)
     result = Currency.from_str("APE")
 
@@ -189,6 +195,7 @@ def test_register_overwrite_false_preserves_existing() -> None:
         name="AUD",
         currency_type=CurrencyType.CRYPTO,
     )
+
     Currency.register(another_aud, overwrite=False)
     result = Currency.from_str("AUD")
 
@@ -324,6 +331,7 @@ def test_register_overwrite_true_replaces_existing() -> None:
         name="Custom AUD",
         currency_type=CurrencyType.CRYPTO,
     )
+
     Currency.register(custom, overwrite=True)
     result = Currency.from_str("AUD")
 
@@ -337,4 +345,5 @@ def test_register_overwrite_true_replaces_existing() -> None:
         name="Australian dollar",
         currency_type=CurrencyType.FIAT,
     )
+
     Currency.register(original, overwrite=True)

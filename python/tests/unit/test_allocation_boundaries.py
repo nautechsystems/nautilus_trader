@@ -70,6 +70,7 @@ def _backtest_config(chunk_size: int) -> BacktestRunConfig:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     return BacktestRunConfig(venues=[venue], data=[], chunk_size=chunk_size)
 
 
@@ -97,9 +98,11 @@ def test_price_list_boundaries(method_name: str) -> None:
     assert method(1.0, 0) == []
     assert len(method(1.0, 100)) == 100
     assert len(method(1.0, PRICE_LIST_TICKS_MAX)) == PRICE_LIST_TICKS_MAX
+
     for value in (PRICE_LIST_TICKS_MAX + 1, sys.maxsize, USIZE_MAX):
         with pytest.raises(ValueError, match="num_ticks"):
             method(1.0, value)
+
     for value in (-1, USIZE_MAX + 1):
         with pytest.raises(OverflowError):
             method(1.0, value)
@@ -113,6 +116,7 @@ def test_tardis_stream_rejects_invalid_chunk_sizes(stream_function: object) -> N
     for value in (0, TARDIS_CHUNK_SIZE_MAX + 1, sys.maxsize, USIZE_MAX):
         with pytest.raises(ValueError, match="chunk_size"):
             stream_function("missing.csv", chunk_size=value)
+
     for value in (-1, USIZE_MAX + 1):
         with pytest.raises(OverflowError):
             stream_function("missing.csv", chunk_size=value)
@@ -142,9 +146,11 @@ def test_backtest_chunk_size_boundaries() -> None:
     assert _backtest_config(1).chunk_size == 1
     assert _backtest_config(100_000).chunk_size == 100_000
     assert _backtest_config(BACKTEST_CHUNK_SIZE_MAX).chunk_size == BACKTEST_CHUNK_SIZE_MAX
+
     for value in (0, BACKTEST_CHUNK_SIZE_MAX + 1, sys.maxsize, USIZE_MAX):
         with pytest.raises(ValueError, match="chunk_size"):
             _backtest_config(value)
+
     for value in (-1, USIZE_MAX + 1):
         with pytest.raises(OverflowError):
             _backtest_config(value)
@@ -164,6 +170,7 @@ def test_cache_capacity_boundaries(field: str) -> None:
     for value in (0, CACHE_DATA_CAPACITY_MAX + 1, sys.maxsize, USIZE_MAX):
         with pytest.raises(ValueError, match=field):
             CacheConfig(**{field: value})
+
     for value in (-1, USIZE_MAX + 1):
         with pytest.raises(OverflowError):
             CacheConfig(**{field: value})
@@ -184,6 +191,7 @@ def test_hurst_vpin_window_boundaries(field: str) -> None:
     for value in (0, HURST_VPIN_WINDOW_MAX + 1, sys.maxsize, USIZE_MAX):
         with pytest.raises(ValueError, match=field):
             _hurst_vpin_config(**{field: value})
+
     for value in (-1, USIZE_MAX + 1):
         with pytest.raises(OverflowError):
             _hurst_vpin_config(**{field: value})

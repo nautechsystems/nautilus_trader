@@ -43,6 +43,7 @@ class Cost:
             self.peak_bytes = max(self.peak_bytes, self.live_bytes)
         else:
             self.live_bytes -= size
+
         if self.live_bytes < 0:
             raise ValueError("Trace frees more bytes than it allocates")
 
@@ -56,6 +57,7 @@ def summarize(stream: BinaryIO) -> dict[str, Cost]:  # noqa: C901, PLR0912, PLR0
     outstanding: Counter[int] = Counter()
     costs: dict[str, Cost] = {}
     version = False
+
     for line in stream:
         fields = line.split()
         if not fields:
@@ -77,6 +79,7 @@ def summarize(stream: BinaryIO) -> dict[str, Cost]:  # noqa: C901, PLR0912, PLR0
         elif kind == b"t":
             ip, parent = (int(value, 16) for value in fields[1:])
             names = set(traces[parent])
+
             for function in frames[ip]:
                 for marker in (
                     "initialize_currencies",
@@ -86,6 +89,7 @@ def summarize(stream: BinaryIO) -> dict[str, Cost]:  # noqa: C901, PLR0912, PLR0
                 ):
                     if "cache_xrate_profile" in function and marker in function:
                         names.add(marker)
+
                 for marker in (
                     "build_quote_table",
                     "build_bar_quote_table",
@@ -99,6 +103,7 @@ def summarize(stream: BinaryIO) -> dict[str, Cost]:  # noqa: C901, PLR0912, PLR0
             names = set(traces[trace])
             if "first_lookup" in names:
                 names.discard("steady_lookup")
+
             if not names:
                 names.add("other")
             names.add("process")
@@ -112,6 +117,7 @@ def summarize(stream: BinaryIO) -> dict[str, Cost]:  # noqa: C901, PLR0912, PLR0
             size, names = allocations[index]
             for name in names:
                 costs.setdefault(name, Cost()).update(size, allocating=allocating)
+
     if not version:
         raise ValueError("Empty Heaptrack stream")
     return costs

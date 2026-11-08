@@ -121,6 +121,7 @@ config = BacktestEngineConfig(
     logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     risk_engine=RiskEngineConfig(bypass=True),
 )
+
 engine = BacktestEngine(config=config)
 
 # %% [markdown]
@@ -212,6 +213,7 @@ strategy_config = EMACrossConfig(
     slow_ema_period=20,
     trade_size=Decimal(1_000_000),
 )
+
 strategy = EMACross(config=strategy_config)
 engine.add_strategy(strategy=strategy)
 

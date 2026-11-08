@@ -90,10 +90,12 @@ def dt_to_unix_nanos(value: int | str | datetime | pd.Timestamp | None) -> int:
     except ImportError:
         if isinstance(value, int):
             return value
+
         if isinstance(value, str):
             if _has_more_than_microsecond_precision(value):
                 raise ValueError("pandas is required for nanosecond-precision datetimes") from None
             value = datetime.fromisoformat(value)
+
         if isinstance(value, datetime):
             return _datetime_to_unix_nanos(value)
         raise TypeError("value must be datetime-like") from None

@@ -64,11 +64,13 @@ def test_cash_account_properties_and_balances() -> None:
     Test cash account properties and balances.
     """
     usd = Currency.from_str("USD")
+
     balance = AccountBalance(
         total=Money.from_str("1000.00 USD"),
         locked=Money.from_str("100.00 USD"),
         free=Money.from_str("900.00 USD"),
     )
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -100,6 +102,7 @@ def test_cash_account_apply_updates_balances() -> None:
     Test cash account apply updates balances.
     """
     usd = Currency.from_str("USD")
+
     initial = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -117,6 +120,7 @@ def test_cash_account_apply_updates_balances() -> None:
         ts_init=2,
         base_currency=usd,
     )
+
     updated = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -150,6 +154,7 @@ def test_margin_account_properties_and_updates() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -227,6 +232,7 @@ def test_margin_account_from_account_events() -> None:
     Test margin account from account events.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     state = AccountState(
         account_id=AccountId("SIM-004"),
         account_type=AccountType.MARGIN,
@@ -296,6 +302,7 @@ def account_reconstruction(
     Return an account parser and a valid state dictionary for each reconstruction path.
     """
     factory, account_type = request.param
+
     state = AccountState(
         account_id=AccountId("SIM-123"),
         account_type=account_type,
@@ -306,6 +313,7 @@ def account_reconstruction(
         ts_event=11,
         ts_init=22,
     )
+
     parser = AccountState.from_dict if factory is None else lambda values: factory([values], True)
     return parser, state.to_dict()
 
@@ -345,6 +353,7 @@ def test_account_reconstruction_rejects_invalid_margin_instrument_id(
     Propagate malformed nested margin identifiers through every account parser.
     """
     parser, values = account_reconstruction
+
     values["margins"] = [
         {
             "currency": "USD",
@@ -605,6 +614,7 @@ def test_cash_account_multi_currency_balances() -> None:
     """
     usd = Currency.from_str("USD")
     btc = Currency.from_str("BTC")
+
     state = AccountState(
         account_id=AccountId("BINANCE-001"),
         account_type=AccountType.CASH,
@@ -645,6 +655,7 @@ def test_cash_account_multi_currency_from_account_events_round_trip() -> None:
     """
     usd = Currency.from_str("USD")
     btc = Currency.from_str("BTC")
+
     state = AccountState(
         account_id=AccountId("BINANCE-002"),
         account_type=AccountType.CASH,
@@ -694,6 +705,7 @@ def test_cash_account_calculate_balance_locked_buy(qty: str, price: str, expecte
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -730,6 +742,7 @@ def test_cash_account_calculate_balance_locked_sell() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -766,6 +779,7 @@ def test_cash_account_calculate_commission() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -817,6 +831,7 @@ def test_cash_account_calculate_pnls(
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -867,6 +882,7 @@ def test_cash_account_last_event_and_events() -> None:
     Test cash account last event and events.
     """
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-001"),
         account_type=AccountType.CASH,
@@ -899,6 +915,7 @@ def test_margin_account_leverage_operations() -> None:
     instrument = TestInstrumentProvider.audusd_sim()
     instrument2 = TestInstrumentProvider.usdjpy_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -937,24 +954,29 @@ def test_margin_account_margin_queries() -> None:
     usd = Currency.from_str("USD")
     jpy = Currency.from_str("JPY")
     eur = Currency.from_str("EUR")
+
     instrument_usd = MarginBalance(
         initial=Money.from_str("101.00 USD"),
         maintenance=Money.from_str("11.00 USD"),
         instrument_id=audusd.id,
     )
+
     instrument_jpy = MarginBalance(
         initial=Money.from_str("202 JPY"),
         maintenance=Money.from_str("22 JPY"),
         instrument_id=usdjpy.id,
     )
+
     account_usd = MarginBalance(
         initial=Money.from_str("303.00 USD"),
         maintenance=Money.from_str("33.00 USD"),
     )
+
     account_jpy = MarginBalance(
         initial=Money.from_str("404 JPY"),
         maintenance=Money.from_str("44 JPY"),
     )
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1082,6 +1104,7 @@ def test_margin_account_calculate_initial_margin() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1118,6 +1141,7 @@ def test_margin_account_calculate_maintenance_margin() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1177,6 +1201,7 @@ def test_margin_account_quanto_margin_is_in_settlement_currency() -> None:
     Test margin account quanto margin is in settlement currency.
     """
     instrument = _ethbtc_quanto()
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1194,6 +1219,7 @@ def test_margin_account_quanto_margin_is_in_settlement_currency() -> None:
         ts_init=0,
         base_currency=None,
     )
+
     account = MarginAccount(state, calculate_account_state=True)
     quantity = Quantity.from_str("100.000")
     price = Price.from_str("0.05000")
@@ -1227,6 +1253,7 @@ def test_cash_account_calculate_balance_locked_buy_quanto_uses_settlement_curren
         ts_init=0,
         base_currency=None,
     )
+
     account = CashAccount(state, calculate_account_state=True)
 
     locked = account.calculate_balance_locked(
@@ -1245,6 +1272,7 @@ def test_margin_account_is_unleveraged_default() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1278,6 +1306,7 @@ def test_margin_account_full_account_api() -> None:
 
     """
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1317,6 +1346,7 @@ def test_margin_account_full_account_api() -> None:
         locked=Money.from_str("100.00 USD"),
         free=Money.from_str("900.00 USD"),
     )
+
     assert account.balance(usd) == expected_balance
     assert account.balances() == {usd: expected_balance}
 
@@ -1333,6 +1363,7 @@ def test_margin_account_apply_updates_balances() -> None:
     Apply an event and bump MarginAccount event_count.
     """
     usd = Currency.from_str("USD")
+
     initial = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1350,6 +1381,7 @@ def test_margin_account_apply_updates_balances() -> None:
         ts_init=2,
         base_currency=usd,
     )
+
     updated = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1383,11 +1415,13 @@ def test_margin_account_apply_clears_margin_getters() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     balance = AccountBalance(
         total=Money.from_str("1000.00 USD"),
         locked=Money.from_str("100.00 USD"),
         free=Money.from_str("900.00 USD"),
     )
+
     initial = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1405,6 +1439,7 @@ def test_margin_account_apply_clears_margin_getters() -> None:
         ts_init=2,
         base_currency=usd,
     )
+
     updated = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1430,6 +1465,7 @@ def test_margin_account_calculate_balance_locked_buy() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1468,6 +1504,7 @@ def test_margin_account_calculate_commission() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1506,6 +1543,7 @@ def test_margin_account_calculate_pnls() -> None:
     """
     instrument = TestInstrumentProvider.audusd_sim()
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -1557,6 +1595,7 @@ def _account_for_purge(account_type: AccountType) -> object:
     Build an account of the given type for ``purge_account_events`` parametrization.
     """
     usd = Currency.from_str("USD")
+
     state = AccountState(
         account_id=AccountId("SIM-007"),
         account_type=account_type,
@@ -1577,8 +1616,10 @@ def _account_for_purge(account_type: AccountType) -> object:
 
     if account_type == AccountType.CASH:
         return CashAccount(state, calculate_account_state=True), state
+
     if account_type == AccountType.MARGIN:
         return MarginAccount(state, calculate_account_state=True), state
+
     if account_type == AccountType.BETTING:
         return BettingAccount(state, calculate_account_state=True), state
     raise ValueError(account_type)
@@ -1602,6 +1643,7 @@ def test_account_purge_account_events_drops_outdated_events() -> None:
     Keep only the latest event after a zero-lookback purge.
     """
     usd = Currency.from_str("USD")
+
     balances = [
         AccountBalance(
             total=Money.from_str("1000.00 USD"),
@@ -1609,10 +1651,12 @@ def test_account_purge_account_events_drops_outdated_events() -> None:
             free=Money.from_str("1000.00 USD"),
         ),
     ]
+
     base_ts = 1_000_000_000
 
     for account_type in (AccountType.CASH, AccountType.MARGIN, AccountType.BETTING):
         account, _state = _account_for_purge(account_type)
+
         # Apply a second, newer event so the account holds two.
         newer = AccountState(
             account_id=AccountId("SIM-007"),
@@ -1625,6 +1669,7 @@ def test_account_purge_account_events_drops_outdated_events() -> None:
             ts_init=base_ts + 1,
             base_currency=usd,
         )
+
         account.apply(newer)
         assert account.event_count == 2
 
@@ -1763,10 +1808,12 @@ def test_margin_account_leverage_setters_reject_non_positive(leverage: Decimal) 
     Test margin account leverage setters reject non positive.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     account = MarginAccount(
         _multi_currency_state(AccountType.MARGIN),
         calculate_account_state=True,
     )
+
     account.set_default_leverage(Decimal(5))
     account.set_leverage(instrument.id, Decimal(10))
 
@@ -1787,10 +1834,12 @@ def test_betting_account_balance_impact_rejects_unrepresentable_liability() -> N
     Test betting account balance impact rejects unrepresentable liability.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     account = BettingAccount(
         _multi_currency_state(AccountType.BETTING),
         calculate_account_state=True,
     )
+
     quantity = Quantity.from_int(1_000_000_000)
     price = Price.from_str("100000")
 
@@ -1815,10 +1864,12 @@ def test_betting_account_balance_impact_rejects_liability_overflow(raw: int) -> 
     Test betting account balance impact rejects liability overflow.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     account = BettingAccount(
         _multi_currency_state(AccountType.BETTING),
         calculate_account_state=True,
     )
+
     quantity = Quantity.from_int(10_000_000)
     price = Price.from_raw(raw, 0)
 
@@ -1835,6 +1886,7 @@ def test_betting_account_balance_impact_rejects_unspecified_side() -> None:
     Test betting account balance impact rejects unspecified side.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     account = BettingAccount(
         _multi_currency_state(AccountType.BETTING),
         calculate_account_state=True,

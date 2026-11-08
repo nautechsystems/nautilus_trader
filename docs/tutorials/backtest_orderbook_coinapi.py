@@ -156,6 +156,7 @@ print(f"Data file: {filepath}")
 
 # %%
 USDC = Currency.from_str("USDC")
+
 instrument = CryptoPerpetual(
     instrument_id=InstrumentId.from_str("ANTHROPIC-PERP.LIGHTER"),
     raw_symbol=Symbol("ANTHROPIC"),
@@ -174,6 +175,7 @@ instrument = CryptoPerpetual(
     ts_event=0,
     ts_init=0,
 )
+
 book_type = BookType.L2_MBP
 
 # %% [markdown]

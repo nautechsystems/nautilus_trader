@@ -284,9 +284,11 @@ def test_execution_client_uses_environment_credentials(
     monkeypatch.setenv("POLYMARKET_PASSPHRASE", SMOKE_PASSPHRASE)
     monkeypatch.delenv("POLYMARKET_FUNDER", raising=False)
     trader_id = TraderId.from_str("ENV-001")
+
     config = PolymarketExecutionClientConfig(
         private_key=SMOKE_PRIVATE_KEY if explicit_private_key else None,
     )
+
     node = (
         LiveNode.builder("POLYMARKET-ENV-PYTEST", trader_id, Environment.LIVE)
         .add_exec_client(None, PolymarketExecutionClientFactory(), config)
@@ -325,12 +327,14 @@ def test_position_client_preserves_relayer_environment_fallback(
     Test omitted and blank position-client Relayer keys retain environment fallback.
     """
     monkeypatch.setenv("POLYMARKET_RELAYER_API_KEY", "test-relayer-key")
+
     client = PolymarketPositionClient(
         private_key=SMOKE_PRIVATE_KEY,
         funder=SMOKE_FUNDER,
         relayer_api_key=relayer_api_key,
         relayer_api_key_address=SMOKE_FUNDER,
     )
+
     assert type(client) is PolymarketPositionClient
 
 
@@ -346,5 +350,6 @@ async def test_v2_trading_approvals_reject_invalid_limits(limit: Decimal) -> Non
         relayer_api_key="test-relayer-key",
         relayer_api_key_address=SMOKE_FUNDER,
     )
+
     with pytest.raises(ValueError, match="pUSD amount must be"):
         await client.approve_v2_trading(limit)

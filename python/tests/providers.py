@@ -68,6 +68,7 @@ class TestInstrumentProvider(InstrumentProvider):
         """
         activation_ns = int(datetime(2021, 9, 17, tzinfo=UTC).timestamp() * 1_000_000_000)
         expiration_ns = int(datetime(2021, 12, 17, tzinfo=UTC).timestamp() * 1_000_000_000)
+
         return FuturesContract(
             instrument_id=InstrumentId.from_str("ESZ21.GLBX"),
             raw_symbol=Symbol("ESZ21"),

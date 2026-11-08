@@ -96,6 +96,7 @@ class CustomFill(FillModel):
         Record liquidity inputs and optionally raise a callback error.
         """
         self.calls.append((instrument.id, order.client_order_id, best_bid, best_ask))
+
         if self.fails:
             raise ValueError("fill callback failed")
 
@@ -203,6 +204,7 @@ def test_node_dispatches_configured_python_fill_model(
     """
     model = CustomFill(fails=fails) if model_type is CustomFill else model_type()
     instrument = TestInstrumentProvider.audusd_sim()
+
     quote = QuoteTick(
         instrument_id=instrument.id,
         bid_price=Price.from_str("0.70000"),
@@ -212,9 +214,11 @@ def test_node_dispatches_configured_python_fill_model(
         ts_event=1000,
         ts_init=1000,
     )
+
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.write_instruments([instrument])
     catalog.write_quote_ticks([quote])
+
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type="NETTING",
@@ -223,6 +227,7 @@ def test_node_dispatches_configured_python_fill_model(
         fill_model=model,
         fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
     )
+
     run = BacktestRunConfig(
         venues=[venue],
         data=[
@@ -235,6 +240,7 @@ def test_node_dispatches_configured_python_fill_model(
         engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
         dispose_on_completion=False,
     )
+
     node = BacktestNode([run])
     try:
         node.build()
@@ -245,6 +251,7 @@ def test_node_dispatches_configured_python_fill_model(
         assert order.filled_qty == Quantity.from_str("0" if fails else "10000")
         if not fails:
             assert order.avg_px == Decimal("0.70010")
+
         if model_type is CustomFill:
             assert model.calls == [
                 (
@@ -254,6 +261,7 @@ def test_node_dispatches_configured_python_fill_model(
                     quote.ask_price,
                 ),
             ]
+
         if model_type is DuckFill:
             assert model.slips == 1
         assert node.configs[0].venues[0].fill_model is model

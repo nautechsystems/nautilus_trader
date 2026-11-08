@@ -113,6 +113,7 @@ def test_execution_mass_status_adds_reports_and_roundtrips(audusd_id: Instrument
         venue=Venue("SIM"),
         ts_init=77,
     )
+
     status.add_order_reports([order_report])
     status.add_fill_reports([fill_report])
     status.add_position_reports([position_report])

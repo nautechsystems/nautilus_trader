@@ -57,10 +57,12 @@ from nautilus_trader.model import VenueOrderId
 AUDUSD_SIM = TestInstrumentProvider.audusd_sim()
 USD = Currency.from_str("USD")
 FLOAT_PRECISION = 16
+
 ABOVE_FLOAT_PRECISION_CASES = [
     pytest.param(17, id="precision-17"),
     pytest.param(18, id="precision-18"),
 ]
+
 BALANCE_PRECISION_CASES = [
     pytest.param(16, id="precision-16"),
     pytest.param(17, id="precision-17"),
@@ -188,6 +190,7 @@ def _margin_account() -> MarginAccount:
         ts_init=0,
         base_currency=USD,
     )
+
     return MarginAccount(state, calculate_account_state=False)
 
 
@@ -221,6 +224,7 @@ def _margin_calculate_pnls(precision: int) -> object:
 
 
 BOOK_DIMENSIONS = {"price": (18, 16), "size": (16, 18)}
+
 BOOK_VARIANTS = [
     (
         "book-order-exposure",
@@ -275,6 +279,7 @@ BOOK_VARIANTS = [
         {"price", "size"},
     ),
 ]
+
 BOOK_CONVERTED_CASES = [
     pytest.param(call, *BOOK_DIMENSIONS[dimension], id=f"{name}-{dimension}")
     for name, call, _, converted in BOOK_VARIANTS
@@ -285,6 +290,7 @@ BOOK_UNCONVERTED_CASES = [
     for name, call, expected, converted in BOOK_VARIANTS
     for dimension in sorted(BOOK_DIMENSIONS.keys() - converted)
 ]
+
 FLOAT_VARIANTS = [
     ("price-float", lambda p: float(_price("1.5", p)), 1.5),
     ("price-as-double", lambda p: _price("1.5", p).as_double(), 1.5),
@@ -297,6 +303,7 @@ FLOAT_VARIANTS = [
         for name, call, expected, _ in BOOK_VARIANTS
     ),
 ]
+
 DECIMAL_VARIANTS = [
     ("position-new", _position_open, Decimal("1.5")),
     ("position-apply", _position_apply, Decimal("2.0")),
@@ -323,6 +330,7 @@ DECIMAL_VARIANTS = [
     ("position-from-dict-fill", _position_from_dict_fill, Quantity.from_int(2)),
     ("margin-account-calculate-pnls", _margin_calculate_pnls, [Money.from_str("2.00 USD")]),
 ]
+
 FLOAT_SUCCESS_CASES = [
     pytest.param(call, expected, id=name) for name, call, expected in FLOAT_VARIANTS
 ]
@@ -446,6 +454,7 @@ def test_account_balance_to_dict_formats_exact_amounts(precision: int) -> None:
     Test account balance to dict formats exact amounts.
     """
     total = _fixed("1234567.123456789012345678"[: 8 + precision], precision)
+
     balance = AccountBalance(
         total=_money(total, precision),
         locked=_money("0", precision),
@@ -471,6 +480,7 @@ def test_margin_balance_to_dict_formats_exact_amounts(precision: int) -> None:
     initial = _fixed("1234567.123456789012345678"[: 8 + precision], precision)
     maintenance = _fixed("7654321.876543210987654321"[: 8 + precision], precision)
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
     balance = MarginBalance(
         _money(initial, precision),
         _money(maintenance, precision),

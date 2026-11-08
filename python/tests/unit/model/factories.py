@@ -89,6 +89,7 @@ def make_market_order_snapshot_values(instrument_id: InstrumentId) -> object:
         quote_quantity=False,
         contingency_type=None,
     )
+
     values = order.to_dict()
     values["order_type"] = values["type"]
     values["order_side"] = values["side"]

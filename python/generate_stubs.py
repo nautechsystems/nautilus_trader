@@ -318,7 +318,6 @@ def python_libdir_env() -> dict[str, str]:
 
     """
     env = os.environ.copy()
-
     if sys.platform == "win32" or not sysconfig.get_config_var("Py_ENABLE_SHARED"):
         return env
 
@@ -586,7 +585,6 @@ def post_process_stubs(root: Path) -> None:
 
         # Normalize formatting
         content = normalize_stub_content(content)
-
         if content != original:
             stub_file.write_text(content, encoding="utf-8")
 
@@ -702,6 +700,7 @@ def _resolve_signature_params(
         param = raw_param.strip()
         if not param or param.startswith("*"):
             continue
+
         if "=" not in param:
             params.append((param, None))
             continue
@@ -754,6 +753,7 @@ def _split_signature_params(params_str: str) -> list[str]:
             current = []
         else:
             current.append(ch)
+
     if current:
         params.append("".join(current))
     return params
@@ -853,7 +853,6 @@ def collect_renamed_enums(workspace_root: Path) -> set[str]:
         lines = source.splitlines()
         pending_attrs: list[str] = []
         i = 0
-
         while i < len(lines):
             stripped = lines[i].strip()
 
@@ -895,7 +894,6 @@ def collect_renamed_enum_variants(workspace_root: Path) -> dict[str, list[str]]:
         lines = source.splitlines()
         pending_attrs: list[str] = []
         i = 0
-
         while i < len(lines):
             stripped = lines[i].strip()
 
@@ -933,7 +931,6 @@ def collect_rust_enum_variants(lines: list[str], enum_start: int) -> list[str]:
     variants: list[str] = []
     brace_depth = lines[enum_start].count("{") - lines[enum_start].count("}")
     i = enum_start + 1
-
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
@@ -1131,7 +1128,6 @@ def _collect_pyclass_name_fixups(source: str, fixups: dict[str, ClassMethodFixup
     lines = source.splitlines()
     pending_attrs: list[str] = []
     i = 0
-
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
@@ -1162,6 +1158,7 @@ def _collect_pyclass_name_fixups(source: str, fixups: dict[str, ClassMethodFixup
                 python_name = name_match.group(1)
                 if python_name != rust_name:
                     fixup.python_name = python_name
+
             if pyclass_has_option(pyclass_attr, "subclass"):
                 fixup.subclass = True
 
@@ -1196,7 +1193,6 @@ def strip_double_quoted_strings(text: str) -> str:
     chars: list[str] = []
     in_string = False
     escaped = False
-
     for ch in text:
         if escaped:
             chars.append(" ")
@@ -1226,7 +1222,6 @@ def _collect_custom_data_macro_fixups(source: str, fixups: dict[str, ClassMethod
     lines = source.splitlines()
     pending_attrs: list[str] = []
     i = 0
-
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
@@ -1266,7 +1261,6 @@ def _collect_struct_field_names(lines: list[str], struct_start: int) -> set[str]
     fields: set[str] = set()
     brace_depth = lines[struct_start].count("{") - lines[struct_start].count("}")
     i = struct_start + 1
-
     while i < len(lines) and brace_depth > 0:
         field_match = re.match(r"\s*pub\s+([A-Za-z_][A-Za-z0-9_]*)\s*:", lines[i])
         if field_match is not None:
@@ -1281,7 +1275,6 @@ def _collect_struct_field_names(lines: list[str], struct_start: int) -> set[str]
 def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
     lines = source.splitlines()
     i = 0
-
     while i < len(lines):
         if lines[i].strip() not in PYMETHODS_ATTRS:
             i += 1
@@ -1303,7 +1296,6 @@ def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -
         brace_depth = lines[j].count("{") - lines[j].count("}")
         block_lines = [lines[j]]
         j += 1
-
         while j < len(lines):
             block_lines.append(lines[j])
             brace_depth += lines[j].count("{") - lines[j].count("}")
@@ -1329,7 +1321,6 @@ def _collect_pyfunction_signature_defaults(
     """
     lines = source.splitlines()
     i = 0
-
     while i < len(lines):
         stripped = lines[i].strip()
         if not stripped.startswith("#[pyfunction"):
@@ -1382,6 +1373,7 @@ def _register_free_function_defaults(
     python_name = _python_exposed_name(rust_name, attrs, is_getter=False)
     if not python_name:
         return
+
     for attr in attrs:
         sig_defaults = _extract_pyo3_signature_defaults(attr)
         if sig_defaults:
@@ -1397,7 +1389,6 @@ def _collect_block_method_fixups(
 ) -> None:
     pending_attrs: list[str] = []
     i = 1  # Skip `impl X {`
-
     while i < len(block_lines):
         line = block_lines[i]
         stripped = line.strip()
@@ -1434,7 +1425,6 @@ def consume_rust_attribute(lines: list[str], start: int) -> tuple[str, int]:
     attribute_lines = [lines[start].strip()]
     bracket_depth = _bracket_depth(attribute_lines[0])
     i = start + 1
-
     while i < len(lines) and bracket_depth > 0:
         attribute_lines.append(lines[i].strip())
         bracket_depth += _bracket_depth(lines[i])
@@ -1450,14 +1440,15 @@ def _bracket_depth(line: str) -> int:
     depth = 0
     in_string = False
     escaped = False
-
     for ch in line:
         if escaped:
             escaped = False
             continue
+
         if ch == "\\" and in_string:
             escaped = True
             continue
+
         if ch == '"':
             in_string = not in_string
         elif not in_string:
@@ -1478,7 +1469,6 @@ def consume_rust_method_signature(
     """
     signature_lines = [lines[start].strip()]
     i = start + 1
-
     while i < len(lines) and "{" not in signature_lines[-1]:
         signature_lines.append(lines[i].strip())
         i += 1
@@ -1513,7 +1503,6 @@ def register_rust_method_fixup(  # noqa: C901 - Keep Rust method classification 
         method_names.add(fallback_name)
 
     fixup = fixups.setdefault(class_name, ClassMethodFixup())
-
     if fallback_name and fallback_name != python_name:
         fixup.renames[fallback_name] = python_name
 
@@ -1524,7 +1513,6 @@ def register_rust_method_fixup(  # noqa: C901 - Keep Rust method classification 
         register_rust_setter_fixup(rust_name, attrs, method_names, fixup)
 
     _extract_method_signature_defaults(attrs, python_name, fixup)
-
     if is_classmethod:
         fixup.classmethods.update(method_names)
         _register_injected_classmethod(class_name, python_name, params, fixup)
@@ -1698,7 +1686,6 @@ def apply_rust_class_fixups(
     lines = content.split("\n")
     result: list[str] = []
     i = 0
-
     while i < len(lines):
         class_match = STUB_CLASS_RE.match(lines[i].strip())
         if class_match is None:
@@ -1763,7 +1750,6 @@ def remove_final_from_subclassable_classes(
     lines = content.split("\n")
     result: list[str] = []
     i = 0
-
     while i < len(lines):
         if lines[i].strip() == "@typing.final" and i + 1 < len(lines):
             class_match = STUB_CLASS_RE.match(lines[i + 1].strip())
@@ -1790,7 +1776,6 @@ def apply_class_block_fixups(
     result = [header]
     seen_methods: set[str] = set()
     i = 0
-
     while i < len(body_lines):
         parsed = parse_stub_method_block(body_lines, i)
         if parsed is None:
@@ -1834,9 +1819,9 @@ def apply_class_block_fixups(
 
         if result and result[-1].strip():
             result.append("")
+
         for index, method in enumerate(missing):
             result.extend(method.split("\n"))
-
             if index != len(missing) - 1:
                 result.append("")
         result.extend(reversed(trailing_blank_lines))
@@ -1978,7 +1963,6 @@ def rewrite_stub_method_block(
         return method_block
 
     decorators, signature_text, remainder = split_method_block(method_block)
-
     if method_name in fixup.bound_receivers:
         signature_text = drop_named_stub_param(signature_text, fixup.bound_receivers[method_name])
 
@@ -2234,11 +2218,12 @@ def merge_stub_content(existing: str, new_blocks: list[str], fixup: StubFixup) -
 
     # Combine everything
     parts = [STUB_HEADER, "", "\n".join(sorted_imports), ""]
-
     if all_section:
         parts.append(all_section)
+
     if existing_body:
         parts.append(existing_body)
+
     if new_blocks:
         parts.append("\n\n".join(new_blocks))
     parts.append("")
@@ -2260,7 +2245,6 @@ def extract_class_blocks(
 
     for class_name in class_names:
         class_pattern = re.compile(rf"^class {class_name}(?:\([^)]*\))?:")
-
         for i, line in enumerate(lines):
             if not class_pattern.match(line):
                 continue
@@ -2409,7 +2393,6 @@ def strip_docstrings(content: str) -> str:
     lines = content.split("\n")
     result: list[str] = []
     i = 0
-
     while i < len(lines):
         m = _TRIPLE_QUOTE_RE.match(lines[i])
         if m is None:
@@ -2561,6 +2544,7 @@ def _fix_optional_defaults_in_line(line: str) -> str:
         p = params[i]
         if _has_default(p):
             continue
+
         if _is_optional_param(p):
             params[i] = p + " = ..."
             changed = True
@@ -2785,8 +2769,10 @@ def _scan_param_default_end(line: str, start: int) -> int:
 def _advance_quoted_default(ch: str, quote: str, *, escaped: bool) -> tuple[str | None, bool]:
     if escaped:
         return quote, False
+
     if ch == "\\":
         return quote, True
+
     if ch == quote:
         return None, False
     return quote, False
@@ -2841,8 +2827,10 @@ def add_missing_model_imports(content: str) -> str:
     for name in sorted(MODEL_EXPORTS):
         if name in defined_names:
             continue
+
         if f"from nautilus_trader.model import {name}" in content:
             continue
+
         if re.search(rf"(?<![.\w]){re.escape(name)}(?![\w])", content) is None:
             continue
         missing_imports.append(name)
@@ -2875,6 +2863,7 @@ def _strip_empty_all_block(lines: list[str]) -> list[str]:
         if stripped.startswith("__all__") or stripped in ("__all__ = []", "]", "["):
             skip_next_empty = True
             continue
+
         if skip_next_empty and not stripped:
             skip_next_empty = False
             continue
@@ -2912,6 +2901,7 @@ def remove_from_all_list(source: str, names_to_remove: set[str]) -> str:
 
         if not should_skip:
             result.append(line)
+
             # Track if __all__ has any remaining entries
             if stripped and stripped not in ("__all__ = [", "__all__ = []", "[", "]"):
                 all_empty = False
@@ -2929,10 +2919,8 @@ def clean_orphaned_decorators(source: str) -> str:
     lines = source.split("\n")
     result: list[str] = []
     i = 0
-
     while i < len(lines):
         line = lines[i]
-
         if line.strip().startswith("@"):
             # Look ahead for class/def or more decorators
             j = i + 1
@@ -2962,7 +2950,6 @@ def normalize_builtin_type_names(content: str) -> str:
     names = "|".join(BUILTIN_TYPE_NAMES)
     pattern = re.compile(rf"\bbuiltins\.({names})\b")
     content = pattern.sub(lambda match: match.group(1), content)
-
     if "builtins." not in content:
         content = re.sub(r"^import builtins\s*\n", "", content, flags=re.MULTILINE)
 
@@ -2983,6 +2970,7 @@ def normalize_stub_content(content: str) -> str:
     # e.g. nautilus_trader.model.X -> model.X
     if "from nautilus_trader import model" in content:
         content = re.sub(r"\bnautilus_trader\.model\.", "model.", content)
+
     if "from nautilus_trader import infrastructure" in content:
         content = re.sub(r"\bnautilus_trader\.infrastructure\.", "infrastructure.", content)
 
@@ -3210,6 +3198,7 @@ def _read_runtime_all(runtime_path: Path) -> list[str]:
             value = ast.literal_eval(node.value)
             if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
                 raise ValueError(f"{runtime_path}: __all__ must be a static list of strings")
+
             if len(value) != len(set(value)):
                 raise ValueError(f"{runtime_path}: __all__ must not contain duplicates")
             return value

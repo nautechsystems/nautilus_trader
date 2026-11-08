@@ -87,8 +87,10 @@ def _paths(paths: list[Path]) -> Iterator[Path]:
             raise FileNotFoundError(f"File not found: {path}")
     root = Path(__file__).resolve().parents[1]
     config = root / "python" / "pyproject.toml"
+    if not config.is_file():
+        config = root / "pyproject.toml"
 
-    # Reuse Ruff's discovery so exclusions and Git ignore rules agree with make format
+    # Reuse Ruff's discovery so exclusions and Git ignore rules agree with Ruff format
     result = subprocess.run(  # noqa: S603
         [
             sys.executable,

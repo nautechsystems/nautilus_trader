@@ -77,6 +77,7 @@ def _gamma_market(slug: str = "test-market") -> dict[str, object]:
 def _clob_market(slug: str) -> dict[str, object]:
     version = "v2" if slug.startswith("v2-") and slug != "v2-gamma" else "v1"
     yes_token, no_token = (V2_YES_TOKEN, V2_NO_TOKEN) if version == "v2" else (YES_TOKEN, NO_TOKEN)
+
     tokens: list[dict[str, object]] = [
         {"token_id": yes_token, "outcome": "Yes", "winner": True},
         {"token_id": no_token, "outcome": "No", "winner": False},
@@ -116,6 +117,7 @@ def _trades_page(slug: str) -> dict[str, object]:
     yes_token, no_token = (
         (V2_YES_TOKEN, V2_NO_TOKEN) if slug.startswith("v2-") else (YES_TOKEN, NO_TOKEN)
     )
+
     return {
         "data": [
             _trade(yes_token, 1_710_000_005, "f"),
@@ -145,7 +147,6 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         self.query_log.append((parsed.path, query))
-
         if parsed.path.startswith("/markets/slug/"):
             self._send_market_by_slug(parsed.path)
         elif parsed.path == "/markets/keyset":
@@ -186,6 +187,7 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
         slug = query.get("slug", ["test-market"])[0]
         if "slug" in query:
             type(self).current_slug = slug
+
         if slug == "missing-market":
             markets: list[dict[str, object]] = []
         elif slug == "malformed-response":
@@ -205,11 +207,13 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _event(slug: str = "test-event") -> dict[str, object]:
         markets = [_gamma_market()]
+
         if slug == "unsupported-protocol-event":
             unsupported = _gamma_market("unknown-gamma")
             unsupported["id"] = "100002"
             unsupported["conditionId"] = "0xunsupported"
             markets.append(unsupported)
+
         return {
             "id": "200001",
             "slug": slug,

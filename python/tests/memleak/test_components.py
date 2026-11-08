@@ -71,6 +71,7 @@ def _assert_components_released(engine: BacktestEngine) -> None:
         weakref.ref(strategy),
         weakref.ref(exec_algorithm),
     )
+
     del actor, strategy, exec_algorithm
 
     engine.clear_actors()

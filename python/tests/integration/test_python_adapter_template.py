@@ -182,6 +182,7 @@ def test_execution_output_rejects_foreign_report_identity(kind) -> None:
                 report = make_fill_report(INSTRUMENT_ID)
             elif kind.endswith("position"):
                 report = make_position_status_report(INSTRUMENT_ID)
+
             if kind.startswith("mass_"):
                 mass = ExecutionMassStatus(
                     self.client_id,
@@ -295,6 +296,7 @@ def test_order_list_batch_fields_and_shutdown_cancellation(shutdown_cancel) -> N
             self.accepted += 1
             if self.accepted != 2:
                 return
+
             if shutdown_cancel:
                 self.shutdown_system("Cancel during grace period")
             else:
@@ -437,6 +439,7 @@ def test_reconciliation_rejects_foreign_returned_reports(source) -> None:
                 account_type=AccountType.CASH,
                 oms_type=OmsType.NETTING,
             )
+
             clients.append(client)
             return client
 
@@ -465,6 +468,7 @@ def test_reconciliation_calls_external_order_and_commission_hooks() -> None:
 
         async def _generate_order_status_reports(self, _command):
             now = self.clock.timestamp_ns()
+
             return [
                 OrderStatusReport(
                     self.account_id,
@@ -485,6 +489,7 @@ def test_reconciliation_calls_external_order_and_commission_hooks() -> None:
 
         async def _generate_position_status_reports(self, _command):
             now = self.clock.timestamp_ns()
+
             return [
                 PositionStatusReport(
                     self.account_id,
@@ -607,6 +612,7 @@ def test_execution_generated_event_reaches_core_and_strategy(kind, expected_stat
                 account_type=AccountType.CASH,
                 oms_type=OmsType.NETTING,
             )
+
             emitted.append(client)
             return client
 
@@ -657,15 +663,19 @@ def test_execution_generated_event_reaches_core_and_strategy(kind, expected_stat
     assert event.client_order_id == consumer.order.client_order_id
     if kind != "denied":
         assert event.reconciliation is False
+
     if kind == "denied":
         assert event.ts_event == event.ts_init
     else:
         assert event.account_id == AccountId("TEMPLATE-001")
         assert event.ts_event == event_ns
+
     if kind in ("denied", "rejected", "modify_rejected", "cancel_rejected"):
         assert event.reason == reason
+
     if kind == "rejected":
         assert event.due_post_only is True
+
     if kind not in ("denied", "rejected"):
         assert event.venue_order_id == venue_order_id
     assert node.cache.order(consumer.order.client_order_id).status == expected_status
@@ -695,12 +705,14 @@ def test_adapter_cache_queries_follow_core_order_and_position_states(monkeypatch
     def capture(self, event):
         cache = clients[0].cache
         order_id = event.client_order_id
+
         filters = {
             "venue": VENUE,
             "instrument_id": INSTRUMENT_ID,
             "strategy_id": self.strategy_id,
             "account_id": AccountId("TEMPLATE-001"),
         }
+
         mismatches = {
             "venue": Venue("OTHER"),
             "instrument_id": InstrumentId.from_str("GBP/USD.TEMPLATE"),
@@ -708,6 +720,7 @@ def test_adapter_cache_queries_follow_core_order_and_position_states(monkeypatch
             "account_id": AccountId("OTHER-001"),
             "side": OrderSide.SELL,
         }
+
         collections = {}
 
         for method in ("orders", "orders_open", "orders_inflight"):
@@ -783,7 +796,6 @@ def test_adapter_cache_queries_follow_core_order_and_position_states(monkeypatch
         assert snapshot["order"].client_order_id == strategy.order.client_order_id
         assert snapshot["collections"]["orders"] == [strategy.order.client_order_id]
         assert snapshot["collections"]["orders:unfiltered"] == [strategy.order.client_order_id]
-
         for method, expected in (
             ("orders_open", status == OrderStatus.ACCEPTED),
             ("orders_inflight", status == OrderStatus.SUBMITTED),
@@ -914,6 +926,7 @@ def test_execution_output_rejects_invalid_payload_before_core_dispatch(kind) -> 
                     149,
                     151,
                 )
+
                 with pytest.raises(
                     TypeError,
                     match="Execution output identity does not match its owner",
@@ -970,6 +983,7 @@ def test_cancel_all_orders_preserves_filter_and_cancels_core_order(output) -> No
                     181,
                     187,
                 )
+
                 accepted = OrderAccepted(
                     self.trader_id,
                     command.strategy_id,
@@ -992,6 +1006,7 @@ def test_cancel_all_orders_preserves_filter_and_cancels_core_order(output) -> No
 
         async def _cancel_all_orders(self, command):
             commands.append(command)
+
             for order in self.cache.orders_open(
                 instrument_id=command.instrument_id,
                 side=command.order_side,
@@ -1100,6 +1115,7 @@ def test_hosted_historical_callbacks_and_join(failed: bool) -> None:
     """
     events = []
     failures = []
+
     quotes = [
         QuoteTick(
             instrument_id=INSTRUMENT_ID,

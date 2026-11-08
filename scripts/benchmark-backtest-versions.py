@@ -162,6 +162,7 @@ SCENARIOS = (
 )
 
 BOUNDARIES = ("run_preloaded", "load_build_run")
+
 BOUNDARY_DESCRIPTIONS = {
     "run_preloaded": "run only, after fixture generation, engine construction, and data load",
     "load_build_run": "fixture generation, engine construction, data load, and run",
@@ -227,6 +228,7 @@ class Bindings:
                 risk_engine=self.RiskEngineConfig(max_order_submit_rate="1000000/00:00:01"),
                 run_analysis=False,
             )
+
         return self.BacktestEngineConfig(
             logging=self.LoggingConfig.from_spec("bypass_logging"),
             risk_engine=self.RiskEngineConfig(max_order_submit_rate="1000000/00:00:01"),
@@ -360,6 +362,7 @@ def load_bindings() -> Bindings:  # noqa: PLR0915
             "Venue": Venue,
         },
     )
+
     return Bindings(
         generation,
         module,
@@ -377,6 +380,7 @@ def make_instrument(bindings: Bindings, symbol: str) -> Any:
     """
     model = bindings.module
     base = symbol[:3]
+
     return model.CryptoPerpetual(
         instrument_id=model.InstrumentId.from_str(f"{symbol}-PERP.BINANCE"),
         raw_symbol=model.Symbol(symbol),
@@ -470,6 +474,7 @@ def make_bars(bindings: Bindings, instrument: Any, count: int, price_type: str) 
     model = bindings.module
     price_types = [price_type] if price_type == "LAST" else ["BID", "ASK"]
     streams: list[list[Any]] = []
+
     for type_index, type_name in enumerate(price_types):
         bar_type = model.BarType(
             instrument.id,
@@ -480,7 +485,9 @@ def make_bars(bindings: Bindings, instrument: Any, count: int, price_type: str) 
             ),
             model.AggregationSource.EXTERNAL,
         )
+
         bars = []
+
         for index in range(count):
             close = Decimal("50000.00") + Decimal((index % 40) - 20 + type_index)
             ts = BASE_TS_NS + index * 60 * EVENT_INTERVAL_NS + type_index
@@ -506,6 +513,7 @@ def make_l2_deltas(bindings: Bindings, instrument: Any, count: int) -> list[list
     """
     model = bindings.module
     batches = []
+
     for index in range(count):
         mid = Decimal("50000.00") + Decimal((index % 40) - 20)
         ts = BASE_TS_NS + index * EVENT_INTERVAL_NS
@@ -554,10 +562,12 @@ def make_depth10(bindings: Bindings, instrument: Any, count: int) -> list[list[A
     """
     model = bindings.module
     depths = []
+
     for index in range(count):
         mid = Decimal("50000.00") + Decimal((index % 40) - 20)
         bids = []
         asks = []
+
         for level in range(10):
             offset = Decimal(level) * Decimal("0.01")
             bids.append(
@@ -599,6 +609,7 @@ def make_trigger_quotes(bindings: Bindings, instrument: Any, count: int) -> list
     """
     model = bindings.module
     quotes = []
+
     for index in range(count):
         mid = Decimal("50000.00")
         ts = BASE_TS_NS + index * EVENT_INTERVAL_NS
@@ -749,6 +760,7 @@ def strategy_type(bindings: Bindings) -> type:  # noqa: C901
                 "instrument_id": self.instrument_id,
                 "quantity": quantity(model, "0.010"),
             }
+
             orders = [
                 self.order_factory.market(order_side=model.OrderSide.BUY, **common),
                 self.order_factory.limit(
@@ -798,6 +810,7 @@ def strategy_type(bindings: Bindings) -> type:  # noqa: C901
                 ),
                 self.order_factory.market_to_limit(order_side=model.OrderSide.BUY, **common),
             ]
+
             for order in orders:
                 self.submit_order(order)
 
@@ -824,9 +837,11 @@ def build_engine(bindings: Bindings, scenario: Scenario, fixture: list[list[Any]
     instruments = [make_instrument(bindings, symbol) for symbol in ("BTCUSDT", "ETHUSDT")]
     for instrument in instruments[: scenario.instruments]:
         engine.add_instrument(instrument)
+
     if scenario.strategy != "none":
         strategy = strategy_type(bindings)()
         bar_types = []
+
         if scenario.strategy == "bar_audit":
             bar_types = sorted(
                 {
@@ -836,6 +851,7 @@ def build_engine(bindings: Bindings, scenario: Scenario, fixture: list[list[Any]
             )
         strategy.configure(instruments[0].id, scenario.strategy, scenario.count, bar_types)
         engine.add_strategy(strategy)
+
     for stream_index, stream in enumerate(fixture):
         client_id = model.ClientId(f"BENCH-{stream_index + 1}") if len(fixture) > 1 else None
         engine.add_data(stream, client_id=client_id, sort=True)
@@ -867,6 +883,7 @@ def stable_value(value: Any) -> str | int | bool | None:
     as_decimal = getattr(value, "as_decimal", None)
     if callable(as_decimal):
         return format(as_decimal().normalize(), "f")
+
     if isinstance(value, Decimal):
         return format(value.normalize(), "f")
     return str(value)
@@ -908,13 +925,16 @@ def fingerprint(bindings: Bindings, engine: Any) -> dict[str, Any]:
     Project exact event, order, position, and account state after a run.
     """
     result = engine.get_result()
+
     event_counts = {
         "iterations": int(value_or_call(result, "iterations")),
         "total_events": int(value_or_call(result, "total_events")),
         "total_orders": int(value_or_call(result, "total_orders")),
         "total_positions": int(value_or_call(result, "total_positions")),
     }
+
     orders = []
+
     for order in engine.cache.orders():
         instrument = engine.cache.instrument(value_or_call(order, "instrument_id"))
         price_precision = int(value_or_call(instrument, "price_precision"))
@@ -941,6 +961,7 @@ def fingerprint(bindings: Bindings, engine: Any) -> dict[str, Any]:
     orders.sort(key=lambda item: json.dumps(item, sort_keys=True))
     order_statuses = dict(sorted(Counter(order["status"] for order in orders).items()))
     closed_statuses = {"CANCELED", "DENIED", "EXPIRED", "FILLED", "REJECTED"}
+
     order_counts = {
         "canceled": order_statuses.get("CANCELED", 0),
         "expired": order_statuses.get("EXPIRED", 0),
@@ -953,6 +974,7 @@ def fingerprint(bindings: Bindings, engine: Any) -> dict[str, Any]:
     }
 
     positions = []
+
     for position in engine.cache.positions():
         instrument = engine.cache.instrument(value_or_call(position, "instrument_id"))
         price_precision = int(value_or_call(instrument, "price_precision"))
@@ -980,6 +1002,7 @@ def fingerprint(bindings: Bindings, engine: Any) -> dict[str, Any]:
     positions.sort(key=lambda item: json.dumps(item, sort_keys=True))
 
     accounts = []
+
     for account in bindings.accounts(engine):
         balances = value_or_call(account, "balances", {})
         balance_values = []
@@ -1009,6 +1032,7 @@ def fingerprint(bindings: Bindings, engine: Any) -> dict[str, Any]:
         ),
         "position_digest": digest(positions),
     }
+
     return {
         "account_count": len(accounts),
         "event_counts": event_counts,
@@ -1062,6 +1086,7 @@ def run_worker(args: argparse.Namespace) -> None:
     scenario = scenario_by_name(args.scenario)
     warmup = run_iteration(bindings, scenario, args.boundary)
     samples = []
+
     for iteration in range(args.iterations):
         sample = run_iteration(bindings, scenario, args.boundary)
         require_fingerprint_match(
@@ -1118,6 +1143,7 @@ def installed_artifact_url() -> str:
         installed_url = json.loads(direct_url)["url"]
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         raise RuntimeError("Installed distribution has invalid source metadata") from e
+
     if not isinstance(installed_url, str):
         raise TypeError("Installed distribution has a non-string source URL")
     return installed_url
@@ -1142,6 +1168,7 @@ def extension_path(bindings: Bindings) -> Path:
     """
     engine_module = inspect.getmodule(bindings.BacktestEngine)
     path = Path(inspect.getfile(engine_module)).resolve()
+
     if bindings.generation == "v2":
         import nautilus_trader._libnautilus as extension_module
 
@@ -1243,8 +1270,10 @@ def runtime_identity(args: argparse.Namespace) -> dict[str, Any]:
         loaded_extension,
     )
     embedded_source_commit = None
+
     if bindings.generation == "v2" and file_contains(loaded_extension, args.source_commit.encode()):
         embedded_source_commit = args.source_commit
+
     identity = {
         "artifact_path": str(artifact.resolve()),
         "artifact_sha256": file_sha256(artifact),
@@ -1268,6 +1297,7 @@ def runtime_identity(args: argparse.Namespace) -> dict[str, Any]:
         "wheel_extension_path": wheel_extension_path,
         "wheel_extension_sha256": wheel_extension_sha256,
     }
+
     expected = {
         "backend": args.expected_backend,
         "engine_module": (
@@ -1277,6 +1307,7 @@ def runtime_identity(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "package_version": args.expected_version,
     }
+
     if args.expected_backend == "pyo3":
         expected["embedded_source_commit"] = args.source_commit
     require_identity_match(expected, identity, "Identity")
@@ -1300,6 +1331,7 @@ def untracked_files_sha256(source_root: Path, paths: bytes) -> str:
     Hash untracked paths, file modes, and contents without following symlinks.
     """
     hasher = hashlib.sha256()
+
     for raw_path in sorted(filter(None, paths.split(b"\0"))):
         path = source_root / os.fsdecode(raw_path)
         file_stat = path.lstat()
@@ -1339,6 +1371,7 @@ def environment_metadata() -> dict[str, Any]:
     governor_paths = Path("/sys/devices/system/cpu").glob("cpu*/cpufreq/scaling_governor")
     governors = sorted({path.read_text(encoding="utf-8").strip() for path in governor_paths})
     paranoid_path = Path("/proc/sys/kernel/perf_event_paranoid")
+
     return {
         "argv": sys.argv,
         "cpu_count": os.cpu_count(),
@@ -1414,6 +1447,7 @@ def worker_command(
     Build a timed worker command bound to its initial runtime identity.
     """
     scenario, boundary = case
+
     return [
         str(runtime.python),
         str(script),
@@ -1479,12 +1513,14 @@ def summarize(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Calculate per-case medians, spreads, ratios, and gaps from raw samples.
     """
     grouped: dict[tuple[str, str], dict[str, list[int]]] = {}
+
     for sample in samples:
         key = (sample["scenario"], sample["boundary"])
         grouped.setdefault(key, {"v1": [], "v2": []})[sample["version"]].append(
             sample["elapsed_ns"],
         )
     summaries = []
+
     for (scenario, boundary), versions in sorted(grouped.items()):
         v1 = versions["v1"]
         v2 = versions["v2"]
@@ -1525,6 +1561,7 @@ def run_compare(args: argparse.Namespace) -> None:
     }
     scenarios = tuple(dict.fromkeys(scenario for scenario, _boundary in cases))
     boundaries = tuple(dict.fromkeys(boundary for _scenario, boundary in cases))
+
     runtimes = {
         "v1": Runtime(
             python=Path(args.v1_python),
@@ -1543,18 +1580,22 @@ def run_compare(args: argparse.Namespace) -> None:
             backend="pyo3",
         ),
     }
+
     started_at = dt.datetime.now(tz=dt.UTC)
     environment_before = environment_metadata()
     identities = {}
     for name, runtime in runtimes.items():
         identities[name] = invoke_json(identity_command(script, runtime))
+
     if identities["v1"]["python_version"] != identities["v2"]["python_version"]:
         raise RuntimeError("The v1 and v2 runtimes do not use the same Python version")
+
     if identities["v1"]["high_precision"] != identities["v2"]["high_precision"]:
         raise RuntimeError("The v1 and v2 runtimes do not use the same precision mode")
 
     samples = []
     expected_fingerprints: dict[tuple[str, str], dict[str, Any]] = {}
+
     for session in range(args.sessions):
         for scenario, boundary in ordered_cases(session, cases):
             case_index = case_indices[(scenario.name, boundary)]
@@ -1570,6 +1611,7 @@ def run_compare(args: argparse.Namespace) -> None:
                         args.iterations,
                     ),
                 )
+
                 for iteration, sample in enumerate(output["samples"]):
                     require_identity_match(
                         identities[version],
@@ -1603,6 +1645,7 @@ def run_compare(args: argparse.Namespace) -> None:
     environment_after = environment_metadata()
     environment_after["sessions"] = args.sessions
     fingerprints = []
+
     for scenario, boundary in cases:
         fingerprint_value = expected_fingerprints[(scenario.name, boundary)]
         fingerprints.append(
@@ -1613,6 +1656,7 @@ def run_compare(args: argparse.Namespace) -> None:
                 "scenario": scenario.name,
             },
         )
+
     output = {
         "boundaries": {boundary: BOUNDARY_DESCRIPTIONS[boundary] for boundary in boundaries},
         "driver_sha256": file_sha256(script),
@@ -1628,6 +1672,7 @@ def run_compare(args: argparse.Namespace) -> None:
         "started_at_utc": started_at.isoformat(),
         "summaries": summarize(samples),
     }
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")

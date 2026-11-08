@@ -108,6 +108,7 @@ async def main() -> None:
         max_retries=0,
         connect_timeout_secs=45,
     )
+
     node = (
         LiveNode.builder("FINFEED-HISTORICAL-BOOK", TraderId("TESTER-001"), Environment.LIVE)
         .with_load_state(False)

@@ -418,7 +418,6 @@ class TestDataProvider:
 
         for bid_row, ask_row in zip(bid_rows, ask_rows, strict=True):
             ts_ns = _parse_iso_to_ns(bid_row[0])
-
             for column in (1, 2, 3, 4):  # open, high, low, close
                 bid_price = Price(float(bid_row[column]), precision=precision)
                 ask_price = Price(float(ask_row[column]), precision=precision)
@@ -498,7 +497,6 @@ class TestDataProvider:
         precision = instrument.price_precision
         size = Quantity.from_int(1_000_000)
         ticks: list[QuoteTick] = []
-
         for ts, bid, ask in zip(df.index, df["bid_price"], df["ask_price"], strict=True):
             ticks.append(
                 QuoteTick(

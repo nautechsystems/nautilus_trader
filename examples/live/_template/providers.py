@@ -51,6 +51,7 @@ class TemplateInstrumentProvider(InstrumentProvider):
             ts_event=11,
             ts_init=13,
         )
+
         self.add(instrument)
 
     @override

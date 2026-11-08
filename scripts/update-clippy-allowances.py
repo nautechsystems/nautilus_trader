@@ -48,6 +48,7 @@ def main() -> int:
         for name, config in lints.items()
         if (config if isinstance(config, str) else config["level"]) == "allow"
     )
+
     if args.flags:
         print(" ".join(f"-Aclippy::{name}" for name in allowances))  # noqa: T201
         return 0
@@ -62,6 +63,7 @@ def main() -> int:
         encoding="utf-8",
     )
     changed = []
+
     for name in result.stdout.split("\0"):
         if not name:
             continue
@@ -72,10 +74,13 @@ def main() -> int:
         updated = _render(source, allowances)
         if updated != source:
             changed.append(name)
+
             if not args.check:
                 path.write_text(updated, encoding="utf-8", newline="\n")
+
     if changed:
         print("\n".join(changed))  # noqa: T201
+
         if args.check:
             print("Run python3 -B scripts/update-clippy-allowances.py", file=sys.stderr)  # noqa: T201
             return 1

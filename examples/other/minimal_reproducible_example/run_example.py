@@ -92,6 +92,7 @@ def generate_artificial_bars(instrument: CurrencyPair, bar_type: BarType) -> lis
             ts_event=last_bar.ts_event + TIME_CHANGE_NANOS,
             ts_init=last_bar.ts_init + TIME_CHANGE_NANOS,
         )
+
         generated_bars.append(last_bar)
 
     # Add some DECREASING bars
@@ -106,6 +107,7 @@ def generate_artificial_bars(instrument: CurrencyPair, bar_type: BarType) -> lis
             ts_event=last_bar.ts_event + TIME_CHANGE_NANOS,
             ts_init=last_bar.ts_init + TIME_CHANGE_NANOS,
         )
+
         generated_bars.append(last_bar)
 
     return generated_bars
@@ -127,6 +129,7 @@ def run_backtest() -> None:
             validate_data_sequence=True,
         ),
     )
+
     engine = BacktestEngine(config=engine_config)
 
     # Step 2: Define exchange and add it to the engine

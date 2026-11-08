@@ -176,6 +176,7 @@ async def collect_book(api_key: str) -> tuple[BinaryOption, list[OrderBookDelta]
         max_concurrent_requests=1,
         max_retries=0,
     )
+
     data_node = (
         LiveNode.builder("FINFEED-HISTORICAL-BOOK", TraderId("TUTORIAL-001"), Environment.LIVE)
         .with_load_state(load_state=False)
@@ -304,6 +305,7 @@ for delta in deltas:
     ask_size = book.best_ask_size()
     if bid is None or ask is None or bid_size is None or ask_size is None:
         continue
+
     if ask <= bid:
         continue
     bid_qty = bid_size.as_decimal()
@@ -382,6 +384,7 @@ config = BacktestRunConfig(
     ],
     dispose_on_completion=False,
 )
+
 strategy_config = OrderBookImbalanceConfig(
     instrument_id=instrument.id,
     book_type=book_type,
