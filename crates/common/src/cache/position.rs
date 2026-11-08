@@ -36,7 +36,7 @@ use nautilus_model::{
     types::Money,
 };
 
-use super::Cache;
+use super::{Cache, handle_persistence_result};
 
 /// Cache-owned reference to a snapshot blob.
 ///
@@ -148,9 +148,12 @@ impl Cache {
     /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
     /// unless a backing database has to persist the frame.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
         let (blob_ref, snapshot) = self.build_position_snapshot(position);
 
@@ -169,9 +172,15 @@ impl Cache {
     /// Behaves as [`Self::snapshot_position`] but encodes the frame eagerly, for callers that
     /// record the bytes or their content hash against a durable anchor.
     ///
+    /// Returning the reference does not confirm that its blob has been persisted. A durable
+    /// recovery anchor requires separate confirmation of blob storage.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     pub fn snapshot_position_encoded(
         &mut self,
         position: &Position,
@@ -264,7 +273,7 @@ impl Cache {
         Ok(encoded)
     }
 
-    /// Stores the frame after any persist step, so a failed write does not advance the count.
+    // Stores the frame after encoding and any best-effort backing write
     fn store_position_snapshot(
         &mut self,
         position_id: PositionId,
@@ -357,9 +366,11 @@ impl Cache {
 
     /// Creates a snapshot of the `position` state in the database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if snapshotting the position state fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     pub fn snapshot_position_state(
         &mut self,
         position: &Position,
@@ -374,15 +385,10 @@ impl Cache {
         }
 
         if let Some(database) = &mut self.database {
-            database
-                .snapshot_position_state(position, ts_snapshot, unrealized_pnl)
-                .map_err(|e| {
-                    log::error!(
-                        "Failed to snapshot position state for {}: {e:?}",
-                        position.id
-                    );
-                    e
-                })?;
+            handle_persistence_result(
+                format_args!("snapshot position {}", position.id),
+                database.snapshot_position_state(position, ts_snapshot, unrealized_pnl),
+            )?;
         } else {
             log::warn!(
                 "Cannot snapshot position state for {} (no database configured)",

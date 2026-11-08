@@ -348,7 +348,10 @@ fn test_release_continues_after_transformed_order_persistence_fails(
     ));
     assert_eq!(
         order_events.get_messages().as_slice(),
-        std::slice::from_ref(&released)
+        &[
+            OrderEventAny::Initialized(command.order_init.clone()),
+            released.clone(),
+        ]
     );
     assert_eq!(risk_events.get_messages(), [released]);
     assert_eq!(command.client_order_id, client_order_id);

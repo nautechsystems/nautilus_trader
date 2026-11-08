@@ -49,7 +49,7 @@ use ustr::Ustr;
 
 use super::get_index_key;
 #[cfg(feature = "defi")]
-use crate::defi::{contract_conflict, integrity_error, validate_marker};
+use crate::defi::{contract_conflict, integrity_error, redis_read_error, validate_marker};
 
 /// Persisted representation of a [`Currency`].
 ///
@@ -262,7 +262,9 @@ impl DatabaseQueries {
         );
 
         for _ in 0..4 {
-            let previous = Self::read_bulk(con, &keys).await.map_err(integrity_error)?;
+            let previous = Self::read_bulk(con, &keys)
+                .await
+                .map_err(redis_read_error)?;
             let mut replacement =
                 Self::check_currency_records(encoding, codes, payloads, &previous)?;
 
@@ -303,7 +305,9 @@ impl DatabaseQueries {
             command
                 .arg(
                     "for i = 1, #KEYS do
-                    local value = redis.call('GET', KEYS[i])
+                    -- Keep command error codes intact on Redis 6.x
+                    local value = redis.pcall('GET', KEYS[i])
+                    if type(value) == 'table' and value.err then return value end
                     local offset = 1 + (i - 1) * 3
                     if ARGV[offset + 1] == '0' then
                         if value then return 0 end
@@ -331,15 +335,13 @@ impl DatabaseQueries {
                     .arg(new.as_ref());
             }
 
-            let written: i32 = command.query_async(con).await.map_err(integrity_error)?;
+            let written: i32 = command.query_async(con).await.map_err(redis_read_error)?;
             if written == 1 {
                 return Ok(());
             }
         }
 
-        Err(integrity_error(
-            "Token dependencies changed concurrently; retry the write",
-        ))
+        anyhow::bail!("Token dependencies changed concurrently; retry the write")
     }
 
     #[cfg(feature = "defi")]
@@ -426,11 +428,11 @@ impl DatabaseQueries {
     ) -> anyhow::Result<()> {
         let keys = Self::scan_keys(con, format!("{trader_key}:currencies:*"))
             .await
-            .map_err(integrity_error)?;
+            .map_err(redis_read_error)?;
 
         for bytes in Self::read_bulk(con, &keys)
             .await
-            .map_err(integrity_error)?
+            .map_err(redis_read_error)?
             .into_iter()
             .flatten()
         {
@@ -578,7 +580,7 @@ impl DatabaseQueries {
 
         for key in Self::scan_keys(con, format!("{prefix}*"))
             .await
-            .map_err(integrity_error)?
+            .map_err(redis_read_error)?
         {
             let code = key
                 .strip_prefix(&prefix)
@@ -586,7 +588,7 @@ impl DatabaseQueries {
             let id = ClientOrderId::new_checked(code).map_err(integrity_error)?;
             let order = Self::load_order(con, trader_key, &id, encoding)
                 .await
-                .map_err(integrity_error)?
+                .map_err(redis_read_error)?
                 .ok_or_else(|| integrity_error(format!("Missing order state at {key}")))?;
 
             if order.instrument_id() == instrument_id && !order.is_closed() {
@@ -600,9 +602,9 @@ impl DatabaseQueries {
 
         for key in Self::scan_keys(con, format!("{prefix}*"))
             .await
-            .map_err(integrity_error)?
+            .map_err(redis_read_error)?
         {
-            let values: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(integrity_error)?;
+            let values: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(redis_read_error)?;
             for bytes in values {
                 let snapshot: OrderSnapshot =
                     Self::deserialize_payload(encoding, &bytes).map_err(integrity_error)?;
@@ -632,10 +634,10 @@ impl DatabaseQueries {
 
             for key in Self::scan_keys(con, format!("{prefix}*"))
                 .await
-                .map_err(integrity_error)?
+                .map_err(redis_read_error)?
             {
                 let values: Vec<Vec<u8>> =
-                    con.lrange(&key, 0, -1).await.map_err(integrity_error)?;
+                    con.lrange(&key, 0, -1).await.map_err(redis_read_error)?;
 
                 if values.is_empty() {
                     return Err(integrity_error(format!(
@@ -678,9 +680,9 @@ impl DatabaseQueries {
 
         for key in Self::scan_keys(con, format!("{prefix}*"))
             .await
-            .map_err(integrity_error)?
+            .map_err(redis_read_error)?
         {
-            let blob: Vec<u8> = con.get(&key).await.map_err(integrity_error)?;
+            let blob: Vec<u8> = con.get(&key).await.map_err(redis_read_error)?;
             if CacheSnapshotRef::position_instrument_id(&blob).map_err(integrity_error)?
                 == instrument_id
             {

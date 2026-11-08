@@ -136,6 +136,33 @@ connection settings. Python passes a concrete backend config or registered nativ
 Custom backend factories must be integrated into NautilusTrader's native extension and use unique
 Python class names. Python does not expose a factory registration API for separately installed packages.
 
+#### Persistence failure policy
+
+Cache operations complete valid in-memory changes independently of optional database persistence.
+Persistence failures are logged at `ERROR` without failing the cache operation or interrupting event
+publication or command dispatch. This policy applies to all cache writes, including
+indexes, snapshots, component state, heartbeats, and purge deletions.
+
+The cache still propagates:
+
+- Validation and in-memory operation errors.
+- DeFi currency integrity errors reported by the backing database.
+- Read, restoration, and explicit database flush errors returned by the backing.
+
+For queued backings, persistence attempts can fail at writer-channel admission or later in the database
+worker. Both failures are logged. Cache success confirms the cache operation, not queue admission or
+durable storage. Restored state can therefore differ from the running cache.
+
+:::note Shut down on persistence errors
+To request a normal shutdown when a persistence error is logged, set `shutdown_on_error=True` in
+[`LiveNodeConfig`](live.md#shutdown-on-error) or
+[`BacktestEngineConfig`](backtesting/apis-and-runs.md#shutdown-on-error). This setting responds to Rust error
+logs emitted after the runtime starts, including persistence errors. Shutdown takes effect when the runtime
+next checks the request; it does not abort the process or roll back the current operation.
+Error-triggered shutdown handling is disabled before final component-state saves. Those saves still follow
+the best-effort persistence policy, so their persistence failures are logged without failing finalization.
+:::
+
 #### Recovery
 
 - Startup restores supported, successfully persisted general data, currencies, instruments,
@@ -151,20 +178,31 @@ Python class names. Python does not expose a factory registration API for separa
   conflicts fail recovery. See [token currency recovery](../integrations/blockchain.md#token-currency-identity-and-recovery)
   for legacy-data and instrument-replacement rules.
 
+An event-store snapshot anchor records a reference and hash, not the snapshot blob. Recording an anchor
+does not confirm blob persistence, and recovery fails if the referenced blob is unavailable. Durable
+blob-before-anchor ordering requires a separate persistence acknowledgment; cache success cannot establish
+it. See [Snapshot-anchored recovery](event_sourcing.md#snapshot-anchored-recovery).
+
 #### Explicit database operations
 
 - `cache.load_instrument(instrument_id)` and `cache.load_synthetic(instrument_id)` check memory first,
   then load from the backing and cache successful results. Fill handling also uses this instrument fallback
   when processing order fills and orderless spread legs. Failed or missing reads leave memory unchanged.
-- `cache.delete_actor(actor_id)` and `cache.delete_strategy(strategy_id)` remove saved component state
-  without unregistering components.
-- `cache.heartbeat(timestamp)` persists a caller-supplied timestamp in UNIX nanoseconds.
+- `cache.delete_actor(actor_id)` and `cache.delete_strategy(strategy_id)` attempt to delete saved component
+  state without unregistering components.
+- `cache.heartbeat(timestamp)` attempts to persist a caller-supplied timestamp in UNIX nanoseconds.
+
+Deletions and heartbeats follow the [persistence failure policy](#persistence-failure-policy).
 
 #### Postgres
 
 - With `save_market_data = true`, Postgres queues `GreeksData` per instrument and `YieldCurve` per name.
   Later writes replace earlier values, regardless of timestamp.
-- Validation and queueing errors preserve memory. The adapter logs later database write failures.
+- Cache validation rejects invalid yield curves. Postgres rejects non-finite Greeks for persistence;
+  the cache logs the error and retains the Greeks in memory. Queueing failures also follow the
+  [persistence failure policy](#persistence-failure-policy); the adapter logs later database write failures.
+- Order-book and funding-rate persistence are unsupported. With `save_market_data = true`, order-book
+  and bulk funding-rate additions log an `ERROR` and update memory only.
 - Orders, positions, their snapshots, and accounts belong to a trader. Two traders can reuse client order
   or position IDs.
 - Flushes, including `flush_on_start`, delete only the trader's rows. Currencies, instruments,
@@ -190,10 +228,11 @@ nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_I
 #### Redis
 
 - Does not persist quotes, trades, bars, order books, funding rates, Greeks, or yield curves.
-- With `save_market_data = true`, these additions fail before changing memory. For funding rates,
-  only bulk additions attempt persistence; single additions stay in memory.
+- With `save_market_data = true`, each unsupported persistence attempt logs an `ERROR` and updates memory
+  only. For funding rates, only bulk additions attempt persistence; single additions stay in memory.
 - Direct `load_greeks` and `load_yield_curves` calls return errors; `load_all` returns empty maps for them.
-- For Greeks and yield curves, disable `save_market_data` for memory-only caching or use Postgres for persistence.
+- Disable `save_market_data` with Redis to avoid unsupported writes. Postgres supports quotes, trades,
+  bars, Greeks, and yield curves; neither built-in backing persists order books or funding rates.
 
 #### Connect a backing
 
@@ -664,9 +703,9 @@ the live trading engine can keep memory bounded without restarting the system.
 
 Purges change memory only by default. Pass `purge_from_database=True` to order and position purge methods
 in Python to queue deletion of their persisted histories and routine snapshots. Rust callers pass the
-boolean explicitly and handle the returned `Result`. A successful return confirms queue admission;
-the adapter logs later database failures. Encoded position snapshots used to replay corrections remain
-persisted as general data.
+boolean explicitly. Persistence failures follow the [persistence failure policy](#persistence-failure-policy),
+so a successful return does not confirm queue admission or database deletion. Encoded position snapshots
+used to replay corrections remain persisted as general data.
 Instrument purges change memory only.
 
 #### Targeted purges

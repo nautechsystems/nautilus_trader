@@ -569,10 +569,8 @@ impl RedisCacheDatabase {
             Some(payloads),
         );
 
-        self.tx
-            .send(command)
-            .map_err(crate::defi::integrity_error)?;
-        blocking_recv(&receiver).map_err(crate::defi::integrity_error)?
+        self.tx.send(command)?;
+        blocking_recv(&receiver)?
     }
 
     /// Sends an update command for `key` with optional `payload` to Redis via the background task.

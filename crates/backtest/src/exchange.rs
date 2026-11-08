@@ -1739,9 +1739,8 @@ impl SimulatedExchange {
                         original.id
                     );
 
-                    // Inclusive of `index`: the failed update applies the adjustment to the
-                    // cached position before attempting to persist it, so the position whose
-                    // update returned the error also needs reverting.
+                    // Include the failing position in case its adjustment was applied before
+                    // a backing integrity check rejected it.
                     revert_funding_adjustments(
                         &mut cache,
                         &adjusted_positions[..=index],

@@ -664,7 +664,7 @@ fn test_on_reset_clears_all_state() {
 }
 
 #[rstest]
-fn test_entry_submission_error_releases_latch_and_allows_retry() {
+fn test_entry_persistence_failure_keeps_latch_and_dispatch() {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
     let (database, database_control) = FailNthAddOrderDatabase::create();
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
@@ -674,25 +674,22 @@ fn test_entry_submission_error_releases_latch_and_allows_retry() {
     let risk_commands = capture_risk_commands();
     database_control.set_fail_add_order_on(Some(1));
 
-    let error = strategy.on_quote(&quote(instrument_id, 1)).unwrap_err();
-
-    assert_eq!(error.to_string(), "test add order failure");
-    assert!(strategy.entry_order_id.is_none());
-    assert!(submitted_order_ids(&risk_commands).is_empty());
+    strategy.on_quote(&quote(instrument_id, 1)).unwrap();
+    let entry_id = strategy.entry_order_id.unwrap();
 
     database_control.set_fail_add_order_on(None);
     strategy.on_quote(&quote(instrument_id, 2)).unwrap();
 
-    let retry_id = strategy.entry_order_id.unwrap();
-    assert_eq!(submitted_order_ids(&risk_commands), vec![retry_id]);
+    assert_eq!(strategy.entry_order_id, Some(entry_id));
+    assert_eq!(submitted_order_ids(&risk_commands), vec![entry_id]);
     let cache = cache.borrow();
-    let order = cache.order(&retry_id).unwrap();
+    let order = cache.order(&entry_id).unwrap();
     assert_eq!(order.order_side(), OrderSide::Buy);
     assert_eq!(order.quantity(), Quantity::from("0.01"));
 }
 
 #[rstest]
-fn test_close_submission_error_releases_failed_latch_and_allows_retry() {
+fn test_close_persistence_failure_keeps_latch_and_dispatch() {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
     let (database, database_control) = FailNthAddOrderDatabase::create();
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
@@ -704,14 +701,10 @@ fn test_close_submission_error_releases_failed_latch_and_allows_retry() {
     let risk_commands = capture_risk_commands();
     database_control.set_fail_add_order_on(Some(1));
 
-    let error = strategy
+    strategy
         .on_quote(&quote(instrument_id, 61_000_000_000))
-        .unwrap_err();
-
-    assert_eq!(error.to_string(), "test add order failure");
-    assert!(strategy.exit_order_ids.is_empty());
-    assert!(strategy.exit_cooldown);
-    assert!(submitted_order_ids(&risk_commands).is_empty());
+        .unwrap();
+    let first_ids = submitted_order_ids(&risk_commands);
 
     database_control.set_fail_add_order_on(None);
     strategy
@@ -719,7 +712,9 @@ fn test_close_submission_error_releases_failed_latch_and_allows_retry() {
         .unwrap();
 
     let submitted_ids = submitted_order_ids(&risk_commands);
+    assert_eq!(submitted_ids, first_ids);
     assert_eq!(submitted_ids.len(), 1);
+    assert!(strategy.exit_cooldown);
     assert!(strategy.exit_order_ids.contains(&submitted_ids[0]));
     assert_eq!(strategy.exit_order_ids.len(), 1);
     let cache = cache.borrow();
@@ -730,7 +725,7 @@ fn test_close_submission_error_releases_failed_latch_and_allows_retry() {
 }
 
 #[rstest]
-fn test_close_submission_error_preserves_successful_exit_ids() {
+fn test_close_persistence_failure_preserves_all_exit_ids() {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
     let (database, database_control) = FailNthAddOrderDatabase::create();
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
@@ -743,18 +738,23 @@ fn test_close_submission_error_preserves_successful_exit_ids() {
     let risk_commands = capture_risk_commands();
     database_control.set_fail_add_order_on(Some(2));
 
-    let error = strategy
+    strategy
         .on_quote(&quote(instrument_id, 61_000_000_000))
-        .unwrap_err();
+        .unwrap();
 
     let submitted_ids = submitted_order_ids(&risk_commands);
-    assert_eq!(error.to_string(), "test add order failure");
-    assert_eq!(submitted_ids.len(), 1);
-    assert_eq!(strategy.exit_order_ids.len(), 1);
-    assert!(strategy.exit_order_ids.contains(&submitted_ids[0]));
+    assert_eq!(submitted_ids.len(), 2);
+    assert_eq!(strategy.exit_order_ids.len(), 2);
+    assert_eq!(
+        strategy.exit_order_ids,
+        submitted_ids
+            .iter()
+            .copied()
+            .collect::<ahash::AHashSet<_>>()
+    );
     assert!(strategy.exit_cooldown);
 
-    let successful_position_id = {
+    let closing_position_id = {
         let messages = risk_commands.get_messages();
 
         let TradingCommand::SubmitOrder(command) = &messages[0] else {
@@ -769,7 +769,7 @@ fn test_close_submission_error_preserves_successful_exit_ids() {
         .strategy_id(strategy.core.strategy_id().unwrap())
         .instrument_id(instrument_id)
         .client_order_id(submitted_ids[0])
-        .position_id(successful_position_id)
+        .position_id(closing_position_id)
         .trade_id(TradeId::from("T-CLOSE-PARTIAL"))
         .order_side(OrderSide::Sell)
         .last_qty(Quantity::from("0.01"))
@@ -779,7 +779,7 @@ fn test_close_submission_error_preserves_successful_exit_ids() {
         .build();
     let closed_position = cache
         .borrow_mut()
-        .update_position_from_fill(successful_position_id, &closing_fill)
+        .update_position_from_fill(closing_position_id, &closing_fill)
         .unwrap();
     let closed_event = PositionClosed::create(
         &closed_position,
@@ -794,14 +794,14 @@ fn test_close_submission_error_preserves_successful_exit_ids() {
         .on_quote(&quote(instrument_id, 62_000_000_000))
         .unwrap();
 
-    let retry_ids = submitted_order_ids(&risk_commands);
+    let submitted_ids_after = submitted_order_ids(&risk_commands);
     assert_eq!(strategy.position_opened_ns, Some(UnixNanos::from(0)));
-    assert_eq!(retry_ids.len(), 2);
+    assert_eq!(submitted_ids_after, submitted_ids);
     assert_eq!(strategy.exit_order_ids.len(), 1);
     assert!(!strategy.exit_order_ids.contains(&submitted_ids[0]));
-    assert!(strategy.exit_order_ids.contains(&retry_ids[1]));
+    assert!(strategy.exit_order_ids.contains(&submitted_ids_after[1]));
     let cache = cache.borrow();
-    let order = cache.order(&retry_ids[1]).unwrap();
+    let order = cache.order(&submitted_ids_after[1]).unwrap();
     assert_eq!(order.order_side(), OrderSide::Sell);
     assert!(order.is_reduce_only());
 }

@@ -2658,17 +2658,23 @@ fn test_position_flip_retains_opening_leg_after_database_update_failure(audusd_s
     assert_eq!(snapshots[0].realized_pnl, Some(Money::from("1 USD")));
     let events = saver.get_messages();
 
-    let [PositionEvent::PositionOpened(opened)] = events.as_slice() else {
-        panic!("expected one PositionOpened event");
+    let [
+        PositionEvent::PositionClosed(closed),
+        PositionEvent::PositionOpened(opened),
+    ] = events.as_slice()
+    else {
+        panic!("expected PositionClosed and PositionOpened events");
     };
 
+    assert_eq!(closed.position_id, position.id);
+    assert_eq!(closed.realized_pnl, Some(Money::from("1 USD")));
     assert_eq!(opened.position_id, position.id);
     assert_eq!(opened.quantity, Quantity::from(1));
     assert_eq!(opened.avg_px_open, dec!(2));
 }
 
 #[rstest]
-fn test_process_funding_rate_restores_position_when_database_update_fails(
+fn test_process_funding_rate_keeps_settlement_when_database_update_fails(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     let account_id = AccountId::from("BINANCE-001");
@@ -2697,8 +2703,6 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     );
     let position = Position::new(&instrument, fill.into());
     let position_id = position.id;
-    let adjustments_before = position.adjustments.clone();
-    let realized_pnl_before = position.realized_pnl;
     cache.add_position(&position, OmsType::Netting).unwrap();
     cache
         .add_mark_price(MarkPriceUpdate::new(
@@ -2713,6 +2717,8 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     let (position_handler, position_saver) =
         get_typed_message_saving_handler::<PositionEvent>(None);
     msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
     let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
     msgbus::subscribe_any(
         "events.funding_settlements.*".into(),
@@ -2747,17 +2753,42 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
         .unwrap();
 
     let cached_position = cache.borrow().position_owned(&position_id).unwrap();
-    assert_eq!(cached_position.adjustments, adjustments_before);
-    assert_eq!(cached_position.realized_pnl, realized_pnl_before);
-    assert!(position_saver.get_messages().is_empty());
-    assert!(settlement_saver.get_messages().is_empty());
+    let events = position_saver.get_messages();
+
+    let [PositionEvent::PositionAdjusted(adjustment)] = events.as_slice() else {
+        panic!("expected one PositionAdjusted event");
+    };
+
+    let settlements = settlement_saver.get_messages();
+
+    let [settlement] = settlements.as_slice() else {
+        panic!("expected one FundingSettlement");
+    };
+
+    assert_eq!(cached_position.adjustments, vec![*adjustment]);
+    assert_eq!(cached_position.realized_pnl, Some(Money::from("-1 USDT")));
+    assert_eq!(adjustment.position_id, position_id);
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
+    assert_eq!(settlement.rate, Decimal::from_str("0.001").unwrap());
+    assert_eq!(settlement.ts_event, settlement_ns);
 
     database_control.set_fail_update_position(false);
     exchange
         .borrow_mut()
         .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
         .unwrap();
-    assert_eq!(settlement_saver.get_messages().len(), 1);
+    assert_eq!(settlement_saver.get_messages(), settlements);
+    assert_eq!(
+        serde_json::to_value(position_saver.get_messages()).unwrap(),
+        serde_json::to_value(&events).unwrap()
+    );
+    let after_retry = cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(after_retry.adjustments, vec![*adjustment]);
+    assert_eq!(after_retry.realized_pnl, Some(Money::from("-1 USDT")));
+    let account_events = account_saver.get_messages();
+    assert_eq!(account_events.len(), 1);
+    assert_eq!(account_events[0].balances[0].total, Money::from("999 USDT"));
 }
 
 // Two open long positions on the instrument, in the order the exchange settles them, with
@@ -2849,31 +2880,14 @@ fn settle_funding_once(cache: &Rc<RefCell<Cache>>, instrument: &CryptoPerpetual)
         .unwrap();
 }
 
-fn assert_position_restored(
-    cache: &Rc<RefCell<Cache>>,
-    database_control: &TestCacheDatabaseControl,
-    original: &Position,
-) {
-    let cached = cache.borrow().position_owned(&original.id).unwrap();
-    assert!(cached.adjustments.is_empty());
-    assert_eq!(cached.realized_pnl, original.realized_pnl);
-
-    // The database must not keep the adjusted state of a settlement that was rolled back
-    let persisted = database_control
-        .updated_positions()
-        .into_iter()
-        .rfind(|position| position.id == original.id)
-        .unwrap();
-    assert!(persisted.adjustments.is_empty());
-    assert_eq!(persisted.realized_pnl, original.realized_pnl);
-}
-
 #[rstest]
-fn test_process_funding_rate_restores_persisted_positions_when_later_update_fails(
+fn test_process_funding_rate_settles_all_positions_when_later_write_fails(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     let (cache, database_control, positions) =
         setup_two_position_funding(&crypto_perpetual_ethusdt);
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
     let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
     msgbus::subscribe_any(
         "events.funding_settlements.*".into(),
@@ -2883,12 +2897,32 @@ fn test_process_funding_rate_restores_persisted_positions_when_later_update_fail
     database_control.set_fail_update_position_id(Some(positions[1].id));
 
     settle_funding_once(&cache, &crypto_perpetual_ethusdt);
+    for original in &positions {
+        let cached = cache.borrow().position_owned(&original.id).unwrap();
+        assert_eq!(cached.adjustments.len(), 1);
+        assert_eq!(
+            cached.adjustments[0].adjustment_type,
+            PositionAdjustmentType::Funding
+        );
+        assert_eq!(
+            cached.adjustments[0].pnl_change,
+            Some(Money::from("-1 USDT"))
+        );
+        assert_eq!(cached.realized_pnl, Some(Money::from("-1 USDT")));
+    }
 
-    assert_position_restored(&cache, &database_control, &positions[0]);
-    let cached = cache.borrow().position_owned(&positions[1].id).unwrap();
-    assert!(cached.adjustments.is_empty());
-    assert_eq!(cached.realized_pnl, positions[1].realized_pnl);
-    assert!(settlement_saver.get_messages().is_empty());
+    let persisted = database_control.updated_positions();
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].id, positions[0].id);
+    assert_eq!(persisted[0].realized_pnl, Some(Money::from("-1 USDT")));
+    assert_eq!(persisted[0].adjustments.len(), 1);
+    let settlements = settlement_saver.get_messages();
+    assert_eq!(settlements.len(), 1);
+    assert_eq!(settlements[0].rate, Decimal::from_str("0.001").unwrap());
+    assert_eq!(settlements[0].ts_event, UnixNanos::from(3));
+    let account_events = account_saver.get_messages();
+    assert_eq!(account_events.len(), 1);
+    assert_eq!(account_events[0].balances[0].total, Money::from("998 USDT"));
 }
 
 #[rstest]

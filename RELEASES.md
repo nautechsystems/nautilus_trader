@@ -70,8 +70,9 @@ Released on TBD (UTC).
 - Changed `bytes_to_string_vec` and `optional_bytes_to_*` to return `Result`; handle JSON decoding errors
 - Changed `trailing_stop_calculate*` to return `TrailingStopError`; use `MissingLast` for missing last/mark prices
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
-- Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
+- Changed Redis Greek and yield-curve persistence to log errors; disable `save_market_data` or use Postgres
 - Changed Postgres cache schema in `defi` builds; run `nautilus database init`
+- Changed ordinary cache persistence failures to log and continue; use `ERROR` logs or runtime `shutdown_on_error`
 - Changed Architect AX `AxWhoAmI.is_onboarded` and `is_frozen` to `Option<bool>`; handle missing flags as `None`
 - Changed Binance non-GET REST requests to fail at quota gates; retry `RateLimitBlocked` when quota is available
 - Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
@@ -146,7 +147,9 @@ Released on TBD (UTC).
 - Fixed betting order lists and batched modifications checking each side against the same free balance
 - Fixed `FixedRiskSizer` exceeding risk and quantity limits; sub-increment sizes now raise errors
 - Fixed `FixedRiskSizer` using linear PnL for inverse futures, perpetuals, and futures spreads
-- Fixed TWAP slice persistence failures skipping quantity or leaving execution unable to retry
+- Fixed cache persistence failures interrupting memory updates, order submission, and event processing
+- Fixed Postgres cache panicking on order-book additions with `save_market_data`
+- Fixed TWAP slice persistence failures interrupting dispatch or skipping quantity
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation
 - Fixed Python execution algorithm modify/cancel and strategy `query_order` using stale order snapshots
 - Fixed FFI `synthetic_instrument_is_valid_formula` aborting on invalid component JSON

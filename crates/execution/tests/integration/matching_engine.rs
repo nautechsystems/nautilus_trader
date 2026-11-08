@@ -17198,9 +17198,7 @@ fn test_option_physical_settlement_delivers_underlying(
 }
 
 #[rstest]
-fn test_option_physical_settlement_second_registration_failure_dispatches_nothing(
-    account_id: AccountId,
-) {
+fn test_option_physical_settlement_persistence_failure_still_dispatches(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let venue = "OPRA";
@@ -17358,11 +17356,11 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
 
     assert!(
         option_b_engine.is_expiration_processed(),
-        "Second option must settle after the first option registration failure",
+        "Second option must settle after the first option persistence failure",
     );
     assert!(
         order_ids_before_failure.is_subset(&order_ids_after_failure),
-        "Failed settlement plan must not remove any existing order ID",
+        "Settlement plan must not remove any existing order ID",
     );
     let added_order_ids: HashSet<ClientOrderId> = order_ids_after_failure
         .difference(&order_ids_before_failure)
@@ -17371,7 +17369,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     assert_eq!(
         added_order_ids.len(),
         2,
-        "Failed settlement plan must expose both indexed settlement order IDs",
+        "Settlement plan must expose both indexed settlement order IDs",
     );
     let cache_ref = cache.borrow();
     let registered_order_count = added_order_ids
@@ -17380,7 +17378,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         .count();
     assert_eq!(
         registered_order_count, 2,
-        "Both settlement legs must resolve to order objects after registration failure",
+        "Both settlement legs must resolve to order objects after persistence failure",
     );
     assert_eq!(
         added_order_ids
@@ -17388,12 +17386,12 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
             .filter(|client_order_id| cache_ref.order(client_order_id).is_none())
             .count(),
         0,
-        "Registration failure must not leave a stale order ID index",
+        "Persistence failure must not leave a stale order ID index",
     );
     drop(cache_ref);
     assert!(
         position_order_ids_before_failure.is_subset(&position_order_ids_after_failure),
-        "Failed settlement plan must not remove any position-order relationship",
+        "Settlement plan must not remove any position-order relationship",
     );
     let added_position_order_ids: HashSet<ClientOrderId> = position_order_ids_after_failure
         .difference(&position_order_ids_before_failure)
@@ -17433,30 +17431,50 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     );
     drop(cache_ref);
 
-    assert!(
-        events
-            .borrow()
-            .iter()
-            .all(|event| !matches!(event, OrderEventAny::Accepted(_) | OrderEventAny::Filled(_))),
-        "Registration failure must dispatch no acceptance or fill for either leg",
-    );
+    let dispatched = events.borrow();
+
+    let accepted: Vec<_> = dispatched
+        .iter()
+        .filter_map(|event| {
+            if let OrderEventAny::Accepted(event) = event {
+                Some(event.client_order_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let filled: Vec<_> = dispatched
+        .iter()
+        .filter_map(|event| {
+            if let OrderEventAny::Filled(event) = event {
+                Some(event.client_order_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(accepted, vec![close_order_id, open_order_id]);
+    assert_eq!(filled, vec![close_order_id, open_order_id]);
+    drop(dispatched);
     assert!(
         events.borrow().iter().any(|event| matches!(
             event,
             OrderEventAny::Canceled(canceled) if canceled.client_order_id == resting_client_order_id
         )),
-        "Open orders must be canceled at the first expiration trigger even when settlement fails",
+        "Open orders must be canceled at expiry despite persistence failure",
     );
     assert!(
-        !engine.is_expiration_processed(),
-        "Registration failure must not commit option expiration",
+        engine.is_expiration_processed(),
+        "Persistence failure must not prevent option expiration",
     );
 
     events.borrow_mut().clear();
     engine.process_instrument_expiration(UnixNanos::from(expiration_ns.as_u64() + 1));
     assert!(
         events.borrow().is_empty(),
-        "Terminal settlement failure must block re-entry",
+        "Processed expiration must not dispatch duplicate events",
     );
 }
 

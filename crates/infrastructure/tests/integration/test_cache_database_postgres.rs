@@ -571,7 +571,7 @@ mod serial_tests {
     #[case::rho(|g: &mut GreeksData, value| g.greeks.rho = value)]
     #[case::itm_prob(|g: &mut GreeksData, value| g.itm_prob = value)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_greeks_persistence_rejects_non_finite_values(
+    async fn test_greeks_persistence_failure_keeps_non_finite_values_in_memory(
         #[case] set_value: fn(&mut GreeksData, f64),
         #[values(f64::NAN, f64::INFINITY, f64::NEG_INFINITY)] invalid: f64,
     ) {
@@ -589,7 +589,7 @@ mod serial_tests {
         let mut rejected = expected.clone();
         set_value(&mut rejected, invalid);
 
-        let result = cache.add_greeks(rejected);
+        let result = cache.add_greeks(rejected.clone());
         let cached = cache.greeks(&expected.instrument_id);
         cache.dispose();
         let mut adapter = get_test_pg_cache_database().await.unwrap();
@@ -597,11 +597,13 @@ mod serial_tests {
         reset_test_database(&adapter).await;
         adapter.close().unwrap();
 
+        result.unwrap();
+
+        // MessagePack preserves non-finite values, which JSON equality would collapse to null
         assert_eq!(
-            result.unwrap_err().to_string(),
-            "Cannot persist non-finite GreeksData"
+            rmp_serde::to_vec_named(&cached.unwrap()).unwrap(),
+            rmp_serde::to_vec_named(&rejected).unwrap()
         );
-        assert_eq!(cached, Some(expected.clone()));
         assert_eq!(
             recovered.unwrap(),
             AHashMap::from([(expected.instrument_id, expected)])

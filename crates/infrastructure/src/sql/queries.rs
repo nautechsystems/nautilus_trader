@@ -260,25 +260,22 @@ impl DatabaseQueries {
             .map_err(integrity_error)?
             .is_some()
         {
-            let mut transaction = pool.begin().await.map_err(integrity_error)?;
+            let mut transaction = pool.begin().await?;
             Self::write_token_currency(&mut transaction, currency).await?;
-            transaction.commit().await.map_err(integrity_error)?;
+            transaction.commit().await?;
             return Ok(());
         }
 
         #[cfg(feature = "defi")]
         if currency.code.contains('@') {
-            let mut transaction = pool.begin().await.map_err(integrity_error)?;
-            Self::insert_currency(&mut *transaction, currency)
-                .await
-                .map_err(integrity_error)?;
+            let mut transaction = pool.begin().await?;
+            Self::insert_currency(&mut *transaction, currency).await?;
             let tagged: bool = sqlx::query_scalar(
                 "SELECT EXISTS (SELECT 1 FROM defi_currency WHERE currency_id = $1)",
             )
             .bind(currency.code.as_str())
             .fetch_one(&mut *transaction)
-            .await
-            .map_err(integrity_error)?;
+            .await?;
 
             if tagged {
                 return Err(integrity_error(format!(
@@ -287,7 +284,7 @@ impl DatabaseQueries {
                 )));
             }
 
-            transaction.commit().await.map_err(integrity_error)?;
+            transaction.commit().await?;
             return Ok(());
         }
 
@@ -581,21 +578,18 @@ impl DatabaseQueries {
                 integrity_error(format!("Missing token definition for {}", currency.code))
             })?;
 
-        let inserted = Self::insert_currency(&mut **transaction, currency)
-            .await
-            .map_err(integrity_error)?;
-        let row =
-            sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency WHERE id = $1 FOR UPDATE")
-                .bind(currency.code.as_str())
-                .fetch_one(&mut **transaction)
-                .await
-                .map_err(integrity_error)?;
+        let inserted = Self::insert_currency(&mut **transaction, currency).await?;
+        let row = sqlx::query("SELECT * FROM currency WHERE id = $1 FOR UPDATE")
+            .bind(currency.code.as_str())
+            .fetch_one(&mut **transaction)
+            .await?;
+        let row = CurrencyRow::from_row(&row).map_err(integrity_error)?;
 
         if inserted == 1 {
             sqlx::query("INSERT INTO defi_currency (currency_id, chain_id, address, symbol, chain_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (chain_id, address) DO NOTHING")
                 .bind(currency.code.as_str()).bind(i64::from(metadata.chain_id)).bind(&metadata.address)
                 .bind(&metadata.symbol).bind(metadata.chain_name.to_string())
-                .execute(&mut **transaction).await.map_err(integrity_error)?;
+                .execute(&mut **transaction).await?;
         }
 
         let bound_code: Option<String> = sqlx::query_scalar(
@@ -604,8 +598,7 @@ impl DatabaseQueries {
         .bind(i64::from(metadata.chain_id))
         .bind(&metadata.address)
         .fetch_optional(&mut **transaction)
-        .await
-        .map_err(integrity_error)?;
+        .await?;
 
         if let Some(code) = bound_code
             && code != currency.code.as_str()
@@ -616,8 +609,7 @@ impl DatabaseQueries {
         let tag = sqlx::query("SELECT * FROM defi_currency WHERE currency_id = $1")
             .bind(currency.code.as_str())
             .fetch_optional(&mut **transaction)
-            .await
-            .map_err(integrity_error)?
+            .await?
             .ok_or_else(|| {
                 integrity_error(format!(
                     "Legacy currency or missing metadata for {}",
@@ -724,14 +716,13 @@ impl DatabaseQueries {
         id: &str,
     ) -> anyhow::Result<()> {
         let history: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM position WHERE instrument_id = $1 UNION ALL SELECT 1 FROM position_event WHERE instrument_id = $1)")
-            .bind(id).fetch_one(&mut **transaction).await.map_err(integrity_error)?;
+            .bind(id).fetch_one(&mut **transaction).await?;
 
         let archives: Vec<Vec<u8>> =
             sqlx::query_scalar("SELECT value FROM general WHERE id LIKE $1")
                 .bind(format!("{}%", CacheSnapshotRef::POSITION_PREFIX))
                 .fetch_all(&mut **transaction)
-                .await
-                .map_err(integrity_error)?;
+                .await?;
         let mut history = history;
         for blob in archives {
             history |= CacheSnapshotRef::position_instrument_id(&blob)
@@ -747,7 +738,7 @@ impl DatabaseQueries {
         }
 
         let rows = sqlx::query("SELECT * FROM order_event WHERE instrument_id = $1 ORDER BY trader_id, client_order_id, created_at ASC")
-            .bind(id).fetch_all(&mut **transaction).await.map_err(integrity_error)?;
+            .bind(id).fetch_all(&mut **transaction).await?;
         let mut events: AHashMap<(String, String), Vec<OrderEventAny>> = AHashMap::new();
 
         for row in rows {
@@ -772,8 +763,7 @@ impl DatabaseQueries {
             sqlx::query(r#"SELECT trader_id, id, status FROM "order" WHERE instrument_id = $1"#)
                 .bind(id)
                 .fetch_all(&mut **transaction)
-                .await
-                .map_err(integrity_error)?;
+                .await?;
 
         for row in snapshots {
             let key = (
@@ -809,18 +799,16 @@ impl DatabaseQueries {
     ) -> anyhow::Result<()> {
         let references = currency_references(instrument.as_ref());
         let id = instrument.id().to_string();
-        let mut transaction = pool.begin().await.map_err(integrity_error)?;
+        let mut transaction = pool.begin().await?;
         // Serialize changes to one instrument before checking its previous currency identities
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(&id)
             .execute(&mut *transaction)
-            .await
-            .map_err(integrity_error)?;
+            .await?;
         let previous = sqlx::query("SELECT * FROM instrument WHERE id = $1 FOR UPDATE")
             .bind(&id)
             .fetch_optional(&mut *transaction)
-            .await
-            .map_err(integrity_error)?;
+            .await?;
 
         if let Some(row) = previous {
             let previous_codes = Self::instrument_marker(&row)?;
@@ -868,15 +856,12 @@ impl DatabaseQueries {
             Self::write_token_currency(&mut transaction, currency).await?;
         }
 
-        Self::write_instrument(&mut *transaction, kind, instrument)
-            .await
-            .map_err(integrity_error)?;
+        Self::write_instrument(&mut *transaction, kind, instrument).await?;
         let mut persisted: Vec<String> =
             sqlx::query_scalar("SELECT currency_id FROM defi_currency WHERE currency_id = ANY($1)")
                 .bind(&references)
                 .fetch_all(&mut *transaction)
-                .await
-                .map_err(integrity_error)?;
+                .await?;
 
         persisted.sort_unstable();
         if persisted != codes {
@@ -889,9 +874,8 @@ impl DatabaseQueries {
             .bind(id)
             .bind((!codes.is_empty()).then_some(codes))
             .execute(&mut *transaction)
-            .await
-            .map_err(integrity_error)?;
-        transaction.commit().await.map_err(integrity_error)?;
+            .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -2738,4 +2722,35 @@ pub(super) fn trader_key_prefix(trader_id: TraderId) -> String {
         "{CACHE_DATABASE_KEY_PREFIX}trader:{}:{trader_id}:",
         trader_id.as_str().len()
     )
+}
+
+#[cfg(all(test, feature = "defi"))]
+mod tests {
+    use nautilus_model::instruments::stubs::audusd_sim;
+    use sqlx::{Error, postgres::PgPoolOptions};
+
+    use super::DatabaseQueries;
+    use crate::defi::IntegrityError;
+
+    #[tokio::test]
+    async fn test_token_write_closed_pool_preserves_database_error() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        pool.close().await;
+        let error = DatabaseQueries::write_token_instrument(
+            &pool,
+            "CurrencyPair",
+            Box::new(audusd_sim()),
+            &[],
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(!error.is::<IntegrityError>());
+        assert!(matches!(
+            error.downcast_ref::<Error>(),
+            Some(Error::PoolClosed)
+        ));
+    }
 }

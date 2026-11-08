@@ -1063,9 +1063,9 @@ impl BacktestEngine {
     /// # Errors
     ///
     /// Returns an error if callback dispatch or ownership cleanup fails, an account rejects a
-    /// fill's balance update, actor or strategy state cannot be saved, or a simulation module
-    /// cannot produce its diagnostics. Callback errors and balance rejections trigger abort
-    /// cleanup, stopping the trader and engines.
+    /// fill's balance update, collecting component state fails, the cache backing reports a DeFi
+    /// currency integrity error, or a simulation module cannot produce its diagnostics. Callback
+    /// errors and balance rejections trigger abort cleanup, stopping the trader and engines.
     pub fn end(&mut self) -> anyhow::Result<()> {
         let result = self.end_impl();
         if let Err(e) = &result

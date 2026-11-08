@@ -70,7 +70,7 @@ use nautilus_model::{
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled,
         OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderUpdated,
-        PositionEvent,
+        PositionEvent, PositionOpened,
         order::spec::{
             OrderCancelDeniedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
             OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderModifyDeniedSpec,
@@ -19727,9 +19727,8 @@ thread_local! {
 }
 
 #[rstest]
-fn test_open_position_failure_is_logged() {
+fn test_open_position_persistence_failure_still_publishes_event() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-    capture_reconciliation_logs();
 
     let (database, control) = FailNthAddOrderDatabase::create();
     control.set_fail_add_position(true);
@@ -19754,6 +19753,7 @@ fn test_open_position_failure_is_logged() {
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
         .build();
+    let (received, handler) = capture_position_events();
     process_position_fill(
         &mut execution_engine,
         &order,
@@ -19764,22 +19764,33 @@ fn test_open_position_failure_is_logged() {
         position_id,
     );
 
-    let logs = take_reconciliation_logs();
-    assert!(
-        logs.iter().any(|(level, message)| {
-            *level == Level::Error
-                && message.contains("Failed to open position")
-                && message.contains(position_id.as_str())
-                && message.contains("T-OPEN-FAIL")
-        }),
-        "expected open failure log, was {logs:?}"
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+    let order = cache.order(&order.client_order_id()).unwrap();
+
+    let OrderEventAny::Filled(fill) = order.last_event() else {
+        panic!("expected cached fill");
+    };
+
+    let received = received.borrow();
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(position.opening_order_id, order.client_order_id());
+    assert_eq!(received.len(), 1);
+
+    let PositionEvent::PositionOpened(opened) = &received[0] else {
+        panic!("expected position opened event");
+    };
+
+    assert_eq!(
+        opened,
+        &PositionOpened::create(&position, fill, opened.event_id, UnixNanos::default())
     );
 }
 
 #[rstest]
-fn test_reopen_position_failure_is_logged() {
+fn test_reopen_position_persistence_failure_still_publishes_event() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-    capture_reconciliation_logs();
 
     let (database, control) = FailNthAddOrderDatabase::create();
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
@@ -19829,7 +19840,6 @@ fn test_reopen_position_failure_is_logged() {
         position_id,
     );
     control.set_fail_add_position(true);
-    capture_reconciliation_logs();
 
     let reopen_order = OrderTestBuilder::new(OrderType::Market)
         .strategy_id(strategy_id)
@@ -19838,6 +19848,7 @@ fn test_reopen_position_failure_is_logged() {
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
         .build();
+    let (received, handler) = capture_position_events();
     process_position_fill(
         &mut execution_engine,
         &reopen_order,
@@ -19848,15 +19859,27 @@ fn test_reopen_position_failure_is_logged() {
         position_id,
     );
 
-    let logs = take_reconciliation_logs();
-    assert!(
-        logs.iter().any(|(level, message)| {
-            *level == Level::Error
-                && message.contains("Failed to reopen position")
-                && message.contains(position_id.as_str())
-                && message.contains("T-REOPEN-3")
-        }),
-        "expected reopen failure log, was {logs:?}"
+    msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+    let order = cache.order(&reopen_order.client_order_id()).unwrap();
+
+    let OrderEventAny::Filled(fill) = order.last_event() else {
+        panic!("expected cached fill");
+    };
+
+    let received = received.borrow();
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(position.opening_order_id, reopen_order.client_order_id());
+    assert_eq!(received.len(), 1);
+
+    let PositionEvent::PositionOpened(opened) = &received[0] else {
+        panic!("expected position opened event");
+    };
+
+    assert_eq!(
+        opened,
+        &PositionOpened::create(&position, fill, opened.event_id, UnixNanos::default())
     );
 }
 
@@ -21381,7 +21404,7 @@ fn test_submit_order_rejects_conflicting_cached_client_origin(
 }
 
 #[rstest]
-fn test_submit_order_does_not_transport_when_origin_persistence_cannot_be_enqueued(
+fn test_submit_order_transports_when_origin_persistence_cannot_be_enqueued(
     mut execution_engine: ExecutionEngine,
 ) {
     let trader_id = TraderId::test_default();
@@ -21430,12 +21453,15 @@ fn test_submit_order_does_not_transport_when_origin_persistence_cannot_be_enqueu
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
-    assert_eq!(cache.client_id(&order.client_order_id()), None);
+    assert_eq!(cache.client_id(&order.client_order_id()), Some(&client_id));
     assert_eq!(
         cache.order(&order.client_order_id()).unwrap().status(),
-        OrderStatus::Denied
+        OrderStatus::Initialized
     );
-    assert!(submitted_order_ids.borrow().is_empty());
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()]
+    );
 }
 
 #[rstest]
@@ -21616,7 +21642,7 @@ fn test_submit_order_adds_missing_order_to_cache_from_init(mut execution_engine:
 #[rstest]
 #[case::in_memory(false)]
 #[case::batch_enqueue_rejected(true)]
-fn test_submit_order_list_adds_missing_orders_then_claims_origin_atomically(
+fn test_submit_order_list_adds_missing_orders_despite_origin_persistence_failure(
     mut execution_engine: ExecutionEngine,
     #[case] reject_batch_enqueue: bool,
 ) {
@@ -21700,29 +21726,19 @@ fn test_submit_order_list_adds_missing_orders_then_claims_origin_atomically(
             .order(&order.client_order_id())
             .expect("Order should be cached from the order list initialization events");
 
-        assert_eq!(
-            cached_order.status(),
-            if reject_batch_enqueue {
-                OrderStatus::Denied
-            } else {
-                OrderStatus::Initialized
-            }
-        );
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+        assert_eq!(cached_order.init_event(), order.init_event());
         assert_eq!(cached_order.instrument_id(), order.instrument_id());
         assert_eq!(
             cache.client_id(&order.client_order_id()).copied(),
-            (!reject_batch_enqueue).then_some(client_id)
+            Some(client_id)
         );
     }
 
-    if reject_batch_enqueue {
-        assert!(submitted_order_ids.borrow().is_empty());
-    } else {
-        assert_eq!(
-            submitted_order_ids.borrow().as_slice(),
-            &[entry.client_order_id(), stop_loss.client_order_id()],
-        );
-    }
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[entry.client_order_id(), stop_loss.client_order_id()],
+    );
 }
 
 #[rstest]

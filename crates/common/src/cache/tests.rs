@@ -79,6 +79,9 @@ use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
+use super::handle_persistence_result;
+#[cfg(feature = "defi")]
+use crate::defi::cache::IntegrityError;
 use crate::{
     cache::{
         ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheApi, CacheConfig,
@@ -90,6 +93,10 @@ use crate::{
         database::{CacheDatabaseAdapter, CacheMap},
     },
     component::ComponentAccessError,
+    logging::{
+        arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+        take_shutdown_on_error_trigger,
+    },
     signal::Signal,
 };
 
@@ -2352,19 +2359,18 @@ fn test_cache_all_overwrites_instrument_closes() {
 }
 
 #[rstest]
-fn test_add_instrument_close_does_not_mutate_when_persistence_fails() {
+fn test_add_instrument_close_updates_memory_when_persistence_fails() {
     let close = instrument_close_with_ts(InstrumentId::from("BINARY-1.POLYMARKET"), 10);
     let database = SnapshotBlobTestDatabase::fail_add_instrument_close();
     let mut cache = Cache::new(None, Some(Box::new(database)));
 
-    let error = cache.add_instrument_close(close).unwrap_err();
+    cache.add_instrument_close(close).unwrap();
 
-    assert_eq!(error.to_string(), "add instrument close failed");
-    assert!(!cache.has_instrument_close(&close.instrument_id));
+    assert_eq!(cache.instrument_close(&close.instrument_id), Some(&close));
 }
 
 #[rstest]
-fn test_add_instrument_close_does_not_replace_when_persistence_fails() {
+fn test_add_instrument_close_replaces_memory_when_persistence_fails() {
     let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
     let first = instrument_close_with_ts(instrument_id, 10);
     let replacement = InstrumentClose::new(
@@ -2383,10 +2389,9 @@ fn test_add_instrument_close_does_not_replace_when_persistence_fails() {
     let mut cache = Cache::new(None, Some(Box::new(database)));
     futures::executor::block_on(cache.cache_all()).unwrap();
 
-    let error = cache.add_instrument_close(replacement).unwrap_err();
+    cache.add_instrument_close(replacement).unwrap();
 
-    assert_eq!(error.to_string(), "add instrument close failed");
-    assert_eq!(cache.instrument_close(&instrument_id), Some(&first));
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&replacement));
     assert_eq!(instrument_closes.lock().get(&instrument_id), Some(&first));
 }
 
@@ -2512,7 +2517,7 @@ fn test_greeks_and_yield_curves_survive_cache_restart(#[case] with_memory: bool)
 #[rstest]
 #[case(false)]
 #[case(true)]
-fn test_greeks_and_yield_curve_write_failure_preserves_memory(#[case] replace: bool) {
+fn test_greeks_and_yield_curve_write_failure_keeps_memory_updates(#[case] replace: bool) {
     let database = SnapshotBlobTestDatabase {
         fail_market_data: true,
         ..Default::default()
@@ -2531,17 +2536,14 @@ fn test_greeks_and_yield_curve_write_failure_preserves_memory(#[case] replace: b
     let curve = YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 11.into(), 12.into());
 
     if replace {
-        cache.greeks.insert(first.instrument_id, first);
+        cache.greeks.insert(first.instrument_id, first.clone());
         cache.yield_curves.insert(curve.curve_name.clone(), curve);
     }
 
-    let expected_greeks = cache.greeks.clone();
-    let expected_curves = cache.yield_curves.clone();
-
-    let greek_error = cache
+    cache
         .add_greeks(persisted_greeks("SPY240315C00500000.OPRA", 2.0))
-        .unwrap_err();
-    let curve_error = cache
+        .unwrap();
+    cache
         .add_yield_curve(YieldCurve::new(
             "USD".into(),
             vec![2.0],
@@ -2549,12 +2551,22 @@ fn test_greeks_and_yield_curve_write_failure_preserves_memory(#[case] replace: b
             21.into(),
             22.into(),
         ))
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(greek_error.to_string(), "add greeks failed");
-    assert_eq!(curve_error.to_string(), "add yield curve failed");
-    assert_eq!(cache.greeks, expected_greeks);
-    assert_eq!(cache.yield_curves, expected_curves);
+    assert_eq!(
+        cache.greeks,
+        AHashMap::from([(
+            first.instrument_id,
+            persisted_greeks("SPY240315C00500000.OPRA", 2.0)
+        )])
+    );
+    assert_eq!(
+        cache.yield_curves,
+        AHashMap::from([(
+            "USD".to_string(),
+            YieldCurve::new("USD".into(), vec![2.0], vec![0.06], 21.into(), 22.into())
+        )])
+    );
     assert!(greeks.lock().is_empty());
     assert!(curves.lock().is_empty());
 }
@@ -5018,6 +5030,206 @@ fn test_add_order_with_account_id_populates_account_index() {
 }
 
 #[rstest]
+fn test_metadata_persistence_failure_keeps_memory_updates() {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.fail_persistence_io = true;
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let value = Bytes::from_static(b"cached-data");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let synthetic = SyntheticInstrument::default();
+    let account = cash_account_with_balance(Currency::USD());
+
+    cache.add("policy/data", value.clone()).unwrap();
+    cache.add_currency(Currency::USD()).unwrap();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache.add_synthetic(synthetic.clone()).unwrap();
+    cache.add_account(account.clone()).unwrap();
+
+    assert_eq!(cache.get("policy/data").unwrap(), Some(&value));
+    assert_eq!(
+        cache.currency(&Currency::USD().code),
+        Some(&Currency::USD())
+    );
+    assert_eq!(
+        cache.currency(&Currency::AUD().code),
+        Some(&Currency::AUD())
+    );
+    assert_eq!(cache.instrument(&instrument.id()), Some(&instrument));
+    assert_eq!(cache.synthetic(&synthetic.id), Some(&synthetic));
+    assert_eq!(
+        serde_json::to_value(&*cache.account(&account.id()).unwrap()).unwrap(),
+        serde_json::to_value(&account).unwrap()
+    );
+    assert_eq!(
+        calls.lock().metadata_writes,
+        vec![
+            "add",
+            "add_currency",
+            "add_currency",
+            "add_instrument",
+            "add_synthetic",
+            "add_account"
+        ]
+    );
+}
+
+#[rstest]
+fn test_funding_persistence_failure_keeps_every_update() {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.fail_market_data = true;
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let id = InstrumentId::from("BTCUSDT.BINANCE");
+    let updates = [funding_rate_with_ts(id, 17), funding_rate_with_ts(id, 29)];
+
+    cache.add_funding_rates(&updates).unwrap();
+
+    assert_eq!(cache.funding_rate(&id), Some(&updates[1]));
+    assert_eq!(cache.funding_rate_at_index(&id, 1), Some(&updates[0]));
+    assert_eq!(
+        calls.lock().market_data_writes,
+        vec!["add_funding_rate", "add_funding_rate"]
+    );
+}
+
+#[rstest]
+fn test_market_data_persistence_failure_keeps_cache_current(#[values(false, true)] bulk: bool) {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.fail_market_data = true;
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let quotes = [quote_tick_with_ts(11), quote_tick_with_ts(22)];
+    let trades = [trade_tick_with_ts(33), trade_tick_with_ts(44)];
+    let bars = [bar_with_ts(55), bar_with_ts(66)];
+    let book = OrderBook::new(quotes[0].instrument_id, BookType::L2_MBP);
+    cache.add_order_book(book).unwrap();
+    if bulk {
+        cache.add_quotes(&quotes).unwrap();
+        cache.add_trades(&trades).unwrap();
+        cache.add_bars(&bars).unwrap();
+    } else {
+        for quote in quotes {
+            cache.add_quote(quote).unwrap();
+        }
+
+        for trade in trades {
+            cache.add_trade(trade).unwrap();
+        }
+
+        for bar in bars {
+            cache.add_bar(bar).unwrap();
+        }
+    }
+
+    assert_eq!(cache.quote(&quotes[0].instrument_id), Some(&quotes[1]));
+    assert_eq!(
+        cache.quote_at_index(&quotes[0].instrument_id, 1),
+        Some(&quotes[0])
+    );
+    assert_eq!(cache.trade(&trades[0].instrument_id), Some(&trades[1]));
+    assert_eq!(
+        cache.trade_at_index(&trades[0].instrument_id, 1),
+        Some(&trades[0])
+    );
+    assert_eq!(cache.bar(&bars[0].bar_type), Some(&bars[1]));
+    assert_eq!(cache.bar_at_index(&bars[0].bar_type, 1), Some(&bars[0]));
+    assert_eq!(
+        cache
+            .order_book(&quotes[0].instrument_id)
+            .unwrap()
+            .instrument_id,
+        quotes[0].instrument_id
+    );
+    assert_eq!(
+        calls.lock().market_data_writes,
+        vec![
+            "add_order_book",
+            "add_quote",
+            "add_quote",
+            "add_trade",
+            "add_trade",
+            "add_bar",
+            "add_bar"
+        ]
+    );
+}
+
+#[rstest]
+fn test_add_bar_historical_persistence_failure_keeps_ordered_history() {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.fail_market_data = true;
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let older = bar_with_ts(55);
+    let newer = bar_with_ts(66);
+
+    cache.add_bar(newer).unwrap();
+    cache.add_bar_historical(older).unwrap();
+
+    assert_eq!(cache.bar(&newer.bar_type), Some(&newer));
+    assert_eq!(cache.bar_at_index(&older.bar_type, 1), Some(&older));
+    assert_eq!(calls.lock().market_data_writes, vec!["add_bar", "add_bar"]);
+}
+
+#[rstest]
+fn test_cache_persistence_error_obeys_shutdown_on_error(#[values(false, true)] shutdown: bool) {
+    let _guard = init_logging(
+        TraderId::from("TRADER-001"),
+        UUID4::new(),
+        Default::default(),
+        Default::default(),
+    )
+    .unwrap();
+    arm_shutdown_on_error(shutdown);
+    let result = handle_persistence_result(
+        "persist sample",
+        Err(anyhow::anyhow!("background unavailable")),
+    );
+    let trigger = take_shutdown_on_error_trigger();
+    disarm_shutdown_on_error();
+    result.unwrap();
+
+    if shutdown {
+        assert_eq!(
+            trigger.unwrap().message,
+            "Failed to persist sample: background unavailable"
+        );
+    } else {
+        assert_eq!(trigger, None);
+    }
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_cache_persistence_integrity_rejection_remains_an_error() {
+    let result = handle_persistence_result(
+        "persist instrument",
+        Err(IntegrityError("conflicting identity".to_string()).into()),
+    );
+    let error = result.unwrap_err();
+    assert!(error.is::<IntegrityError>());
+    assert_eq!(
+        error.to_string(),
+        "DeFi currency integrity: conflicting identity"
+    );
+}
+
+#[rstest]
 fn test_add_order_list() {
     let mut cache = Cache::default();
     let audusd_sim = audusd_sim();
@@ -5697,6 +5909,7 @@ fn funding_adjustment(position: &Position, pnl: &str) -> PositionAdjusted {
 fn test_update_position_from_adjustment_applies_in_place_and_reverts(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
+    #[values(false, true)] persistence_failure: bool,
 ) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let opening_fill = OrderFilledSpec::builder()
@@ -5711,6 +5924,9 @@ fn test_update_position_from_adjustment_applies_in_place_and_reverts(
     let position = Position::new(&instrument, opening_fill);
     let position_id = position.id;
     cache.add_position(&position, OmsType::Netting).unwrap();
+    if persistence_failure {
+        cache.set_database(Box::new(SnapshotBlobTestDatabase::fail_update_position()));
+    }
 
     {
         let mut cached = cache.position_mut(&position_id).unwrap();
@@ -7615,13 +7831,17 @@ fn test_add_account_persists_margin_currencies() {
 ///
 /// The event is applied before the currencies are persisted, as `update_account` orders it.
 #[rstest]
-fn test_update_account_state_applies_the_event_before_persisting_currencies() {
+fn test_update_account_state_applies_the_event_before_persisting_currencies(
+    #[values(false, true)] fail_persistence_io: bool,
+) {
     let mut cache = Cache::default();
     let account = cash_account_with_balance(Currency::USD());
     let account_id = account.id();
+    let mut expected = account.clone();
     cache.add_account(account).unwrap();
     cache.set_database(Box::new(SnapshotBlobTestDatabase {
         fail_add_currency: true,
+        fail_persistence_io,
         ..Default::default()
     }));
 
@@ -7633,10 +7853,11 @@ fn test_update_account_state_applies_the_event_before_persisting_currencies() {
         CurrencyType::Crypto,
     );
     let event = account_state_with_balances(account_id, &[Currency::USD(), arrived]);
+    expected.apply(event.clone()).unwrap();
 
     let result = cache.update_account_state(&event);
 
-    assert!(result.is_err(), "the database failure is reported");
+    result.unwrap();
     let account = cache
         .account_owned(&account_id)
         .expect("the account stays cached");
@@ -7644,17 +7865,24 @@ fn test_update_account_state_applies_the_event_before_persisting_currencies() {
         account.balances().contains_key(&arrived),
         "the event is applied in memory before the currencies are persisted"
     );
+    assert_eq!(
+        serde_json::to_value(&account).unwrap(),
+        serde_json::to_value(&expected).unwrap()
+    );
 }
 
 /// The owned path keeps an account the caller took out, even when saving currencies fails.
 #[rstest]
-fn test_update_account_owned_keeps_the_account_when_persisting_currencies_fails() {
+fn test_update_account_owned_keeps_the_account_when_persisting_currencies_fails(
+    #[values(false, true)] fail_persistence_io: bool,
+) {
     let mut cache = Cache::default();
     let account = cash_account_with_balance(Currency::USD());
     let account_id = account.id();
     cache.add_account(account).unwrap();
     cache.set_database(Box::new(SnapshotBlobTestDatabase {
         fail_add_currency: true,
+        fail_persistence_io,
         ..Default::default()
     }));
 
@@ -7668,20 +7896,28 @@ fn test_update_account_owned_keeps_the_account_when_persisting_currencies_fails(
             &[Currency::USD(), arrived],
         ))
         .unwrap();
+    let expected = taken.clone();
 
     let result = cache.update_account_owned(taken);
 
-    assert!(result.is_err(), "the database failure is reported");
+    result.unwrap();
     let account = cache
         .account_owned(&account_id)
         .expect("the account is back in the cache despite the failure");
     assert!(account.balances().contains_key(&arrived));
+    assert_eq!(
+        serde_json::to_value(&account).unwrap(),
+        serde_json::to_value(&expected).unwrap()
+    );
 }
 
 /// The same holds when an account is replaced rather than added.
 #[rstest]
-fn test_update_account_persists_account_currencies() {
-    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+fn test_update_account_attempts_to_persist_account_currencies(
+    #[values(false, true)] fail_persistence_io: bool,
+) {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.fail_persistence_io = fail_persistence_io;
     let mut cache = Cache::new(None, Some(Box::new(database)));
 
     let collateral = Currency::new("ZZACCT2", 4, 0, "Account Fixture Two", CurrencyType::Crypto);
@@ -7689,13 +7925,21 @@ fn test_update_account_persists_account_currencies() {
 
     cache.update_account(&account).unwrap();
 
-    assert!(
-        calls
-            .lock()
-            .currencies
-            .iter()
-            .any(|c| c.code.as_str() == "ZZACCT2"),
-        "updating an account must persist its balance currencies"
+    let persisted_currencies = if fail_persistence_io {
+        vec![]
+    } else {
+        vec![collateral]
+    };
+
+    assert_eq!(calls.lock().currencies, persisted_currencies);
+    assert_eq!(cache.currency(&collateral.code), Some(&collateral));
+    assert_eq!(
+        serde_json::to_value(&*cache.account(&account.id()).unwrap()).unwrap(),
+        serde_json::to_value(&account).unwrap()
+    );
+    assert_eq!(
+        calls.lock().metadata_writes,
+        vec!["add_currency", "update_account"]
     );
 }
 
@@ -11767,40 +12011,35 @@ fn test_database_purge_is_opt_in(
 }
 
 #[rstest]
-fn test_database_purge_failure_preserves_entity_and_indexes(#[values(false, true)] bulk: bool) {
+fn test_database_purge_failure_does_not_block_memory_purge(#[values(false, true)] bulk: bool) {
     let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
     database.fail_persistence_io = true;
     let mut cache = Cache::new(None, Some(Box::new(database)));
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let order = closed_order_in_cache(&mut cache, &instrument, "O-FAILED-PURGE");
     let position_id = closed_position_in_cache(&mut cache, &instrument, "P-FAILED-PURGE");
-    let order_error = if bulk {
+    if bulk {
         cache.purge_closed_orders(UnixNanos::from(u64::MAX), 0, true)
     } else {
         cache.purge_order(order.client_order_id(), true)
     }
-    .unwrap_err();
+    .unwrap();
 
-    let position_error = if bulk {
+    if bulk {
         cache.purge_closed_positions(UnixNanos::from(u64::MAX), 0, true)
     } else {
         cache.purge_position(position_id, true)
     }
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(order_error.to_string(), "state I/O failed");
-    assert_eq!(position_error.to_string(), "state I/O failed");
-    assert_eq!(
-        cache.order(&order.client_order_id()).unwrap().cloned(),
-        order
-    );
-    assert!(cache.is_order_closed(&order.client_order_id()));
+    assert!(!cache.order_exists(&order.client_order_id()));
+    assert!(!cache.is_order_closed(&order.client_order_id()));
     assert_eq!(
         cache.client_order_id(&order.venue_order_id().unwrap()),
-        Some(&order.client_order_id())
+        None
     );
-    assert!(cache.is_position_closed(&position_id));
-    assert!(cache.position_exists(&position_id));
+    assert!(!cache.is_position_closed(&position_id));
+    assert!(!cache.position_exists(&position_id));
     assert_eq!(calls.lock().order_deletes, vec![order.client_order_id()]);
     assert_eq!(calls.lock().position_deletes, vec![position_id]);
 }
@@ -11857,11 +12096,7 @@ fn test_database_explicit_state_operations(#[values(false, true)] fail: bool) {
     ];
 
     for result in results {
-        if fail {
-            assert_eq!(result.unwrap_err().to_string(), "state I/O failed");
-        } else {
-            result.unwrap();
-        }
+        result.unwrap();
     }
 
     let calls = calls.lock();
@@ -11928,7 +12163,7 @@ fn test_database_lazy_load_failure_or_miss_leaves_cache_empty(#[values(false, tr
 }
 
 #[rstest]
-fn test_database_bulk_purge_failure_cleans_aliases_of_already_purged_orders() {
+fn test_database_bulk_purge_failure_does_not_leave_partial_memory_purge() {
     let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
     database.fail_delete_order_at = Some(2);
     let mut cache = Cache::new(None, Some(Box::new(database)));
@@ -11944,22 +12179,17 @@ fn test_database_bulk_purge_failure_cleans_aliases_of_already_purged_orders() {
         orders.push((order, alias));
     }
 
-    let error = cache
+    cache
         .purge_closed_orders(UnixNanos::from(u64::MAX), 0, true)
-        .unwrap_err();
+        .unwrap();
     let deleted = calls.lock().order_deletes.clone();
 
-    assert_eq!(error.to_string(), "state I/O failed");
-    assert_eq!(deleted.len(), 2);
+    assert_eq!(deleted.len(), orders.len());
 
     for (order, alias) in orders {
-        let retained = order.client_order_id() == deleted[1];
-        assert_eq!(cache.order_exists(&order.client_order_id()), retained);
-        assert_eq!(cache.is_order_closed(&order.client_order_id()), retained);
-        assert_eq!(
-            cache.client_order_id(&alias).copied(),
-            retained.then_some(order.client_order_id())
-        );
+        assert!(!cache.order_exists(&order.client_order_id()));
+        assert!(!cache.is_order_closed(&order.client_order_id()));
+        assert_eq!(cache.client_order_id(&alias), None);
     }
 
     assert!(cache.check_integrity());
@@ -11991,6 +12221,8 @@ type CacheDatabaseCalls = Arc<Mutex<CacheDatabaseCallLog>>;
 
 #[derive(Default)]
 struct CacheDatabaseCallLog {
+    metadata_writes: Vec<&'static str>,
+    market_data_writes: Vec<&'static str>,
     instrument_loads: Vec<InstrumentId>,
     synthetic_loads: Vec<InstrumentId>,
     actor_deletes: Vec<ActorId>,
@@ -12349,6 +12581,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add(&self, _key: String, _value: Bytes) -> anyhow::Result<()> {
+        self.database_calls.lock().metadata_writes.push("add");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
+
         if self.fail_add {
             anyhow::bail!("add failed");
         }
@@ -12356,6 +12591,12 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .metadata_writes
+            .push("add_currency");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
+
         if self.fail_add_currency {
             anyhow::bail!("add_currency failed");
         }
@@ -12364,6 +12605,11 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .metadata_writes
+            .push("add_instrument");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
         Ok(())
     }
 
@@ -12378,10 +12624,20 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .metadata_writes
+            .push("add_synthetic");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
         Ok(())
     }
 
     fn add_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .metadata_writes
+            .push("add_account");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
         Ok(())
     }
 
@@ -12408,6 +12664,11 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .market_data_writes
+            .push("add_order_book");
+        anyhow::ensure!(!self.fail_market_data, "market-data persistence failed");
         Ok(())
     }
 
@@ -12420,18 +12681,38 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .market_data_writes
+            .push("add_quote");
+        anyhow::ensure!(!self.fail_market_data, "market-data persistence failed");
         Ok(())
     }
 
     fn add_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .market_data_writes
+            .push("add_trade");
+        anyhow::ensure!(!self.fail_market_data, "market-data persistence failed");
         Ok(())
     }
 
     fn add_funding_rate(&self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .market_data_writes
+            .push("add_funding_rate");
+        anyhow::ensure!(!self.fail_market_data, "market-data persistence failed");
         Ok(())
     }
 
     fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .market_data_writes
+            .push("add_bar");
+        anyhow::ensure!(!self.fail_market_data, "market-data persistence failed");
         Ok(())
     }
 
@@ -12557,6 +12838,11 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn update_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .metadata_writes
+            .push("update_account");
+        anyhow::ensure!(!self.fail_persistence_io, "metadata persistence failed");
         Ok(())
     }
 
@@ -12761,7 +13047,7 @@ fn test_component_and_state_snapshots_forward_exact_values() {
 }
 
 #[rstest]
-fn test_component_and_state_snapshot_errors_propagate() {
+fn test_component_reads_fail_and_state_writes_are_best_effort() {
     let mut cache = Cache::new(
         None,
         Some(Box::new(SnapshotBlobTestDatabase::fail_persistence_io())),
@@ -12787,36 +13073,17 @@ fn test_component_and_state_snapshot_errors_propagate() {
             .to_string(),
         "state I/O failed"
     );
-    assert_eq!(
-        cache
-            .update_actor_state(&actor_id, &state)
-            .unwrap_err()
-            .to_string(),
-        "state I/O failed"
-    );
-    assert_eq!(
-        cache
-            .update_strategy_state(&strategy_id, &state)
-            .unwrap_err()
-            .to_string(),
-        "state I/O failed"
-    );
-    assert_eq!(
-        cache.snapshot_order_state(&order).unwrap_err().to_string(),
-        "state I/O failed"
-    );
-    assert_eq!(
-        cache
-            .snapshot_position_state(
-                &position,
-                UnixNanos::from(1),
-                Some(Money::from("1.00 USD")),
-                None,
-            )
-            .unwrap_err()
-            .to_string(),
-        "state I/O failed"
-    );
+    cache.update_actor_state(&actor_id, &state).unwrap();
+    cache.update_strategy_state(&strategy_id, &state).unwrap();
+    cache.snapshot_order_state(&order).unwrap();
+    cache
+        .snapshot_position_state(
+            &position,
+            UnixNanos::from(1),
+            Some(Money::from("1.00 USD")),
+            None,
+        )
+        .unwrap();
 }
 
 #[rstest]
@@ -12940,7 +13207,7 @@ fn test_claim_order_clients_rejects_invalid_batch_without_mutation(audusd_sim: C
 }
 
 #[rstest]
-fn test_claim_order_clients_database_error_leaves_memory_unmodified(audusd_sim: CurrencyPair) {
+fn test_claim_order_clients_database_error_keeps_claims_in_memory(audusd_sim: CurrencyPair) {
     let (database, recorded_claims) = SnapshotBlobTestDatabase::order_client_claim_recorder(true);
     let mut cache = Cache::new(None, Some(Box::new(database)));
     let client_id = ClientId::from("CLIENT-B");
@@ -12964,11 +13231,16 @@ fn test_claim_order_clients_database_error_leaves_memory_unmodified(audusd_sim: 
     cache.add_order(order_1.clone(), None, None, false).unwrap();
     cache.add_order(order_2.clone(), None, None, false).unwrap();
 
-    let error = cache.claim_order_clients(&claims).unwrap_err();
+    cache.claim_order_clients(&claims).unwrap();
 
-    assert_eq!(error.to_string(), "index order clients failed");
-    assert_eq!(cache.client_id(&order_1.client_order_id()), None);
-    assert_eq!(cache.client_id(&order_2.client_order_id()), None);
+    assert_eq!(
+        cache.client_id(&order_1.client_order_id()),
+        Some(&client_id)
+    );
+    assert_eq!(
+        cache.client_id(&order_2.client_order_id()),
+        Some(&client_id)
+    );
     assert_eq!(recorded_claims.lock().as_slice(), &[claims.to_vec()]);
 }
 
@@ -12984,11 +13256,8 @@ fn test_add_order_commits_memory_when_database_add_fails(audusd_sim: CurrencyPai
         .build();
     let client_order_id = order.client_order_id();
 
-    let error = cache
-        .add_order(order.clone(), None, None, false)
-        .unwrap_err();
+    cache.add_order(order.clone(), None, None, false).unwrap();
 
-    assert_eq!(error.to_string(), "add order failed");
     let cached = cache.order(&client_order_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -13050,9 +13319,8 @@ fn test_add_order_replacement_commits_indexes_when_database_add_fails(audusd_sim
     let original_cell = cache.orders.get(&client_order_id).unwrap().clone();
     cache.database = Some(Box::new(SnapshotBlobTestDatabase::fail_add_order()));
 
-    let error = cache.add_order(replacement, None, None, true).unwrap_err();
+    cache.add_order(replacement, None, None, true).unwrap();
 
-    assert_eq!(error.to_string(), "add order failed");
     assert_eq!(
         original_cell.as_ptr(),
         cache.orders.get(&client_order_id).unwrap().as_ptr(),
@@ -13088,11 +13356,10 @@ fn test_add_order_commits_position_indexes_when_database_index_fails(audusd_sim:
     let client_order_id = order.client_order_id();
     let position_id = PositionId::new("P-INDEX-FAILURE");
 
-    let error = cache
+    cache
         .add_order(order.clone(), Some(position_id), None, false)
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(error.to_string(), "index order position failed");
     assert_eq!(cache.position_id(&client_order_id), Some(&position_id));
     // `OrderAny` compares on `client_order_id` alone, so compare structurally.
     let related = cache.orders_for_position(&position_id);
@@ -13148,9 +13415,8 @@ fn test_add_position_commits_memory_when_database_add_fails(audusd_sim: Currency
     let position = Position::new(&instrument, fill.into());
     let position_id = position.id;
 
-    let error = cache.add_position(&position, OmsType::Netting).unwrap_err();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
-    assert_eq!(error.to_string(), "add position failed");
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -13206,9 +13472,8 @@ fn test_add_position_commits_memory_when_database_index_fails(audusd_sim: Curren
     let position = Position::new(&instrument, fill.into());
     let position_id = position.id;
 
-    let error = cache.add_position(&position, OmsType::Netting).unwrap_err();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
-    assert_eq!(error.to_string(), "index order position failed");
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -13275,9 +13540,8 @@ fn test_replace_order_commits_canonical_state_when_database_update_fails(audusd_
     let submitted = TestOrderEventStubs::submitted(&replacement, AccountId::new("SIM-001"));
     replacement.apply(submitted).unwrap();
 
-    let error = cache.replace_order(&replacement).unwrap_err();
+    cache.replace_order(&replacement).unwrap();
 
-    assert_eq!(error.to_string(), "update order failed");
     let cached = cache.order(&client_order_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -13351,9 +13615,7 @@ fn test_update_position_commits_canonical_state_when_database_update_fails() {
     );
     closed.apply(&closing_fill.into());
 
-    let error = cache.update_position(&closed).unwrap_err();
-
-    assert_eq!(error.to_string(), "update position failed");
+    cache.update_position(&closed).unwrap();
 
     // `Position` equality compares only the ID, so the canonical value is pinned by
     // structural comparison. Fields such as `quantity`, `realized_pnl` and `adjustments`
@@ -13433,11 +13695,14 @@ fn test_update_position_from_fill_commits_canonical_state_when_database_update_f
     let mut expected = position;
     expected.apply(&closing_fill);
 
-    let error = cache
+    let returned = cache
         .update_position_from_fill(position_id, &closing_fill)
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(error.to_string(), "update position failed");
+    assert_eq!(
+        serde_json::to_value(&returned).unwrap(),
+        serde_json::to_value(expected.clone_without_events()).unwrap()
+    );
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -13540,17 +13805,20 @@ fn test_restore_position_snapshot_blob_rejects_position_id_prefix_collision(mut 
 }
 
 #[rstest]
-fn test_snapshot_position_failed_persist_does_not_advance_frame_count() {
+fn test_snapshot_position_failed_persist_keeps_frame_in_memory() {
     let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::fail_add())));
     let position = snapshot_test_position();
 
-    let err = cache
-        .snapshot_position(&position)
-        .expect_err("database add failure");
+    cache.snapshot_position(&position).unwrap();
 
-    assert!(err.to_string().contains("add failed"), "err was: {err}");
-    assert_eq!(cache.position_snapshot_count(&position.id), 0);
-    assert!(cache.position_snapshot_bytes(&position.id).is_none());
+    assert_eq!(cache.position_snapshot_count(&position.id), 1);
+    let restored: Position =
+        serde_json::from_slice(&cache.position_snapshot_bytes(&position.id).unwrap()[0]).unwrap();
+    let frames = cache.position_snapshots(Some(&position.id), None);
+    assert_eq!(
+        serde_json::to_value(&restored).unwrap(),
+        serde_json::to_value(&frames[0]).unwrap()
+    );
 }
 
 #[rstest]
