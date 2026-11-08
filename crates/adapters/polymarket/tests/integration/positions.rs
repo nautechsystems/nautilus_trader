@@ -62,7 +62,7 @@ struct TestServerState {
     wallet: Arc<tokio::sync::Mutex<String>>,
     owner: Arc<tokio::sync::Mutex<String>>,
     market: Arc<tokio::sync::Mutex<Value>>,
-    market_overrides: Arc<tokio::sync::Mutex<HashMap<String, (Value, Duration)>>>,
+    market_responses: Arc<tokio::sync::Mutex<VecDeque<(Value, Duration)>>>,
     market_status: Arc<tokio::sync::Mutex<StatusCode>>,
     nonce: Arc<tokio::sync::Mutex<Value>>,
     submit_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -93,7 +93,7 @@ impl Default for TestServerState {
             wallet: Arc::new(tokio::sync::Mutex::new(TEST_DEPOSIT_WALLET.into())),
             owner: Arc::new(tokio::sync::Mutex::new(TEST_SIGNER.into())),
             market: Arc::new(tokio::sync::Mutex::new(market_json(false))),
-            market_overrides: Arc::default(),
+            market_responses: Arc::default(),
             market_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             nonce: Arc::new(tokio::sync::Mutex::new(
                 json!({"address": TEST_SIGNER, "nonce": "7"}),
@@ -148,18 +148,9 @@ async fn handle_market(
     State(state): State<TestServerState>,
     Path(condition_id): Path<String>,
 ) -> Response {
-    state
-        .market_requests
-        .lock()
-        .await
-        .push(condition_id.clone());
+    state.market_requests.lock().await.push(condition_id);
     let status = *state.market_status.lock().await;
-    let market = state
-        .market_overrides
-        .lock()
-        .await
-        .get(&condition_id)
-        .cloned();
+    let market = state.market_responses.lock().await.pop_front();
     let body = if let Some((body, delay)) = market {
         tokio::time::sleep(delay).await;
         body
@@ -391,27 +382,23 @@ async fn test_redeem_positions_confirms() {
 #[tokio::test]
 async fn test_redeem_positions_batch_preserves_calls(#[values(1, 4, 51)] count: usize) {
     let state = TestServerState::default();
-    let markets = (0..3)
-        .map(|i| (format!("0x{i:064x}"), i % 2 != 0))
+    let conditions = (0..count)
+        .map(|i| format!("0x{:064x}", i % 3))
         .collect::<Vec<_>>();
 
-    for (condition, neg_risk) in &markets {
-        let mut market = market_json(*neg_risk);
+    for (i, condition) in conditions.iter().enumerate() {
+        let mut market = market_json(i % 3 == 1);
         market["condition_id"] = json!(condition);
         state
-            .market_overrides
+            .market_responses
             .lock()
             .await
-            .insert(condition.clone(), (market, Duration::ZERO));
+            .push_back((market, Duration::ZERO));
     }
-    let selected = markets.iter().cycle().take(count).collect::<Vec<_>>();
-    let conditions = selected
-        .iter()
-        .map(|(condition, _)| condition.as_str())
-        .collect::<Vec<_>>();
+    let condition_ids = conditions.iter().map(String::as_str).collect::<Vec<_>>();
     let addr = start_mock_server(state.clone()).await;
     let outcome = position_client(&addr)
-        .redeem_positions_batch(&conditions)
+        .redeem_positions_batch(&condition_ids)
         .await
         .unwrap()
         .wait()
@@ -426,10 +413,12 @@ async fn test_redeem_positions_batch_preserves_calls(#[values(1, 4, 51)] count: 
     assert_eq!(submit["metadata"], "Redeem positions batch");
     let calls = submit["depositWalletParams"]["calls"].as_array().unwrap();
     assert_eq!(calls.len(), count);
-    for (call, (condition, neg_risk)) in calls.iter().zip(selected) {
-        let expected =
-            nautilus_polymarket::positions::calldata::encode_redeem_positions(condition, *neg_risk)
-                .unwrap();
+    for (i, (call, condition)) in calls.iter().zip(&conditions).enumerate() {
+        let expected = nautilus_polymarket::positions::calldata::encode_redeem_positions(
+            condition,
+            i % 3 == 1,
+        )
+        .unwrap();
         assert_eq!(
             call,
             &json!({"target": format!("{:#x}", expected.target), "value": "0", "data": expected.data.to_string()})
@@ -464,34 +453,30 @@ async fn test_batch_preparation_submits_nothing(
         Duration::ZERO
     };
     state
-        .market_overrides
+        .market_responses
         .lock()
         .await
-        .insert(condition.clone(), (market, delay));
+        .extend([(market_json(false), Duration::ZERO), (market, delay)]);
     let addr = start_mock_server(state.clone()).await;
-    let requested = condition.clone();
     let empty = failure == "empty";
-    let task = tokio::spawn(async move {
-        let conditions = if empty {
-            vec![]
-        } else {
-            vec![CONDITION_ID, requested.as_str()]
-        };
-        position_client(&addr)
-            .redeem_positions_batch(&conditions)
-            .await
-    });
+    let conditions = if empty {
+        vec![]
+    } else {
+        vec![CONDITION_ID, &condition]
+    };
+    let client = position_client(&addr);
+    let preparation = client.redeem_positions_batch(&conditions);
 
     if failure == "cancelled" {
-        wait_until_async(
-            || async { state.market_requests.lock().await.len() == 2 },
-            Duration::from_secs(2),
-        )
-        .await;
-        task.abort();
-        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::select! {
+            _ = preparation => panic!("Preparation completed before cancellation"),
+            () = wait_until_async(
+                || async { state.market_requests.lock().await.len() == 2 },
+                Duration::from_secs(2),
+            ) => {}
+        }
     } else {
-        let e = task.await.unwrap().unwrap_err();
+        let e = preparation.await.unwrap_err();
 
         match failure {
             "empty" => assert_eq!(
@@ -932,13 +917,11 @@ async fn test_recovery_record_precedes_submit_response(
     assert_eq!(body["nonce"], "7");
     assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
 
-    if operation == "batch" {
-        assert!(matches!(
-            position_client(&addr).redeem_positions(CONDITION_ID).await,
-            Err(Error::Exchange(_))
-        ));
-        assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
-    }
+    assert!(matches!(
+        position_client(&addr).redeem_positions(CONDITION_ID).await,
+        Err(Error::Exchange(_))
+    ));
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
 }
 
 fn install_log_capture() {
@@ -1791,18 +1774,10 @@ asyncio.run(check())", Some(&locals), Some(&locals)).unwrap();
         nautilus_polymarket::positions::calldata::encode_redeem_positions(&condition, false)
     };
     let expected_data = expected.unwrap().data.to_string();
-    assert_eq!(
-        submit["depositWalletParams"]["calls"][0]["data"],
-        expected_data
-    );
+    let calls = submit["depositWalletParams"]["calls"].as_array().unwrap();
+    assert_eq!(calls[0]["data"], expected_data);
     assert_eq!(state.submit_count.load(Ordering::Acquire), 1);
-    assert_eq!(
-        submit["depositWalletParams"]["calls"]
-            .as_array()
-            .unwrap()
-            .len(),
-        if input == "v2" { 1 } else { 2 }
-    );
+    assert_eq!(calls.len(), if input == "v2" { 1 } else { 2 });
 }
 
 fn market_v2_json(module: u8) -> Value {
