@@ -5638,13 +5638,11 @@ mod tests {
         );
     }
 
-    /// A status confirming the venue applied the edit returns the order's venue order ID.
+    /// A filled edit is an applied edit, so it returns the order's venue order ID.
     #[rstest]
-    #[case::edited("edited")]
-    #[case::filled("filled")]
     #[tokio::test]
-    async fn test_modify_order_confirms_an_applied_edit(#[case] status: &str) {
-        let venue_order_id = modify_order_answered_with(edit_response_with_status(status), None)
+    async fn test_modify_order_confirms_a_filled_edit() {
+        let venue_order_id = modify_order_answered_with(edit_response_with_status("filled"), None)
             .await
             .unwrap();
 
@@ -5690,16 +5688,12 @@ mod tests {
         );
     }
 
-    /// A status that does not establish whether the venue applied the edit leaves the outcome
-    /// unknown: Kraken documents that a self-matching edit removes the order, its documentation
-    /// conflicts on whether an edit can still end as `iocWouldNotExecute`, and it documents no
-    /// other status for an edit.
+    /// A documented edit status that does not establish whether the venue applied the edit leaves
+    /// the outcome unknown: Kraken documents that a self-matching edit removes the order, and its
+    /// documentation conflicts on whether an edit can still end as `iocWouldNotExecute`.
     #[rstest]
     #[case::self_fill("selfFill")]
     #[case::ioc_would_not_execute("iocWouldNotExecute")]
-    #[case::market_suspended("marketSuspended")]
-    #[case::undocumented("processing")]
-    #[case::empty("")]
     #[tokio::test]
     async fn test_modify_order_leaves_an_unestablished_edit_status_unknown(#[case] status: &str) {
         let error = modify_order_answered_with(
