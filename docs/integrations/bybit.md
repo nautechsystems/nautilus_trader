@@ -28,7 +28,11 @@ on the use case.
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `BybitLiquidation`: Custom data for public liquidations on linear and inverse contracts, see
   [Liquidations](#liquidations).
+- `BybitMarginBorrowResult`, `BybitMarginRepayResult`, `BybitMarginStatusResult`: Custom data
+  for manual spot margin operations, see [Manual margin operations](#manual-margin-operations).
 - `BYBIT`, `BYBIT_CLIENT_ID`, `BYBIT_VENUE`: Public identifiers.
+- `BybitMarginAction`: Names the manual margin `query_account` actions; params take its spelling
+  as a string.
 - `BybitEnvironment`, `BybitProductType`, `BybitMarginMode`, `BybitPositionIdx`,
   `BybitPositionMode`: Public enums used by the configurations and order params.
 
@@ -761,7 +765,7 @@ through the Bybit interface if you need one, and manage the resulting position e
 
 ## Spot margin borrowing and repayment
 
-NautilusTrader provides automated spot margin borrow repayment functionality to prevent interest accrual after closing short positions on Bybit.
+NautilusTrader can automatically repay spot margin borrows after BUY orders fill, and strategies can drive borrowing, repayment, and borrow queries manually.
 
 ### Background
 
@@ -821,7 +825,91 @@ minutes 31 seconds past the hour.
   [Manual Repay](https://bybit-exchange.github.io/docs/v5/account/repay) and
   [Manual Repay Without Asset Conversion](https://bybit-exchange.github.io/docs/v5/account/no-convert-repay).
 - Manual borrowing is still required before opening short positions unless auto-borrow is enabled
-  on your Bybit account.
+  on your Bybit account. See [Manual margin operations](#manual-margin-operations).
+
+### Manual margin operations
+
+Strategies control spot margin borrowing directly through `query_account` params. An unknown or
+missing `action` refreshes the account state instead of performing a margin operation, and an
+unknown value also logs a warning.
+
+| Param    | Type            | Description                                                                      |
+| -------- | --------------- | -------------------------------------------------------------------------------- |
+| `action` | `str`           | `borrow`, `repay`, or `get_borrow_amount` (case-insensitive).                    |
+| `coin`   | `str`           | Required. Without it the client logs an error and publishes no result.           |
+| `amount` | `str` or number | Required for `borrow` and must be positive. Omit on `repay` to repay everything. |
+
+An `amount` that is present but null, zero, negative, or not a string or number publishes a failed
+result rather than repaying everything. Unlike v1, the params must use plain strings or numbers:
+`json.dumps` raises `TypeError` on `Decimal` values and enum objects. An omitted `amount` asks the
+venue to repay the whole outstanding borrow, bounded by the available coin balance, so query the
+remaining borrow with `get_borrow_amount` before treating the liability as cleared.
+
+```python
+account_id = self.portfolio.account(BYBIT_VENUE).id
+
+# Borrow the base coin before opening a short
+self.query_account(
+    account_id=account_id,
+    params={"action": "borrow", "coin": "ETH", "amount": 0.5},
+)
+
+# Repay a specific amount, or omit "amount" to repay the whole outstanding borrow
+self.query_account(
+    account_id=account_id,
+    params={"action": "repay", "coin": "ETH", "amount": 0.05},
+)
+
+# Query the current borrowed amount
+self.query_account(
+    account_id=account_id,
+    params={"action": "get_borrow_amount", "coin": "ETH"},
+)
+```
+
+Each action that names a `coin` publishes custom data:
+
+| Action              | Published type            | Notes                                                                  |
+| ------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| `borrow`            | `BybitMarginBorrowResult` | `success` and `message`; a missing or invalid `amount` publishes this. |
+| `repay`             | `BybitMarginRepayResult`  | `result_status` is the venue `P` or `SU` on success, `FAIL` otherwise. |
+| `get_borrow_amount` | `BybitMarginStatusResult` | `borrow_amount`; a failed query publishes nothing.                     |
+
+Manual repayment differs from auto-repayment:
+
+- REPAY uses Bybit's
+  [no-convert repay](https://bybit-exchange.github.io/docs/v5/account/no-convert-repay) endpoint,
+  so an explicit amount that exceeds the available coin balance fails rather than spending other
+  assets. Repaying immediately after a Spot BUY fill can therefore fall short by the base-coin
+  trading fee; use `auto_repay_spot_borrows` to cover that shortfall by conversion.
+- A REPAY is checked immediately before the request and, inside the hourly
+  [blackout window](#utc-blackout-window), is not sent: the client publishes a failed result whose
+  `message` names the retry time. A request admitted just before the window opens can still reach
+  the venue and fail with the venue's error. Borrow and borrow-amount queries are not blocked.
+- A manual repay can race the auto-repay queue on the same coin; the losing side fails with the
+  venue's error and publishes or logs it.
+
+Subscribe with each type's name and unwrap the `CustomData` in `on_data`:
+
+```python
+from nautilus_trader.adapters.bybit import BybitMarginBorrowResult
+from nautilus_trader.adapters.bybit import BybitMarginRepayResult
+from nautilus_trader.adapters.bybit import BybitMarginStatusResult
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+
+
+class MyStrategy(Strategy):
+    def on_start(self):
+        self.subscribe_data(DataType(BybitMarginBorrowResult.__name__))
+        self.subscribe_data(DataType(BybitMarginRepayResult.__name__))
+        self.subscribe_data(DataType(BybitMarginStatusResult.__name__))
+
+    def on_data(self, data: CustomData) -> None:
+        result = data.data
+        if isinstance(result, BybitMarginRepayResult) and not result.success:
+            self.log.error(f"Repay failed: {result.message}")
+```
 
 ## Funding rates
 

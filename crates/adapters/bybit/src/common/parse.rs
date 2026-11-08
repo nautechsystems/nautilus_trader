@@ -218,11 +218,12 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
-            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus,
-            BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitPositionSide,
-            BybitProductType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
-            BybitTriggerDirection, BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginAction,
+            BybitMarginTrading, BybitMarketUnit, BybitOptionType, BybitOrderSide,
+            BybitOrderSmpType, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
+            BybitSymbolType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -1829,6 +1830,18 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
     }
 }
 
+/// Parses a Bybit margin action from a `query_account` parameter, accepting the
+/// `BybitMarginAction` enum's snake_case and Python variant spellings.
+#[must_use]
+pub fn parse_margin_action(s: &str) -> Option<BybitMarginAction> {
+    match s.to_ascii_lowercase().as_str() {
+        "borrow" => Some(BybitMarginAction::Borrow),
+        "repay" => Some(BybitMarginAction::Repay),
+        "get_borrow_amount" => Some(BybitMarginAction::GetBorrowAmount),
+        _ => None,
+    }
+}
+
 /// Parses a Bybit self-match prevention type from an order parameter or configuration value.
 ///
 /// # Errors
@@ -2111,6 +2124,28 @@ mod tests {
     };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    #[rstest]
+    #[case::snake("borrow", BybitMarginAction::Borrow)]
+    #[case::python_variant("BORROW", BybitMarginAction::Borrow)]
+    #[case::repay_snake("repay", BybitMarginAction::Repay)]
+    #[case::repay_variant("REPAY", BybitMarginAction::Repay)]
+    #[case::query_snake("get_borrow_amount", BybitMarginAction::GetBorrowAmount)]
+    #[case::query_variant("GET_BORROW_AMOUNT", BybitMarginAction::GetBorrowAmount)]
+    fn test_parse_margin_action_accepts_param_spellings(
+        #[case] action: &str,
+        #[case] expected: BybitMarginAction,
+    ) {
+        assert_eq!(parse_margin_action(action), Some(expected));
+    }
+
+    #[rstest]
+    #[case("lend")]
+    #[case("")]
+    #[case("borrow_all")]
+    fn test_parse_margin_action_rejects_unknown_actions(#[case] action: &str) {
+        assert_eq!(parse_margin_action(action), None);
+    }
 
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");

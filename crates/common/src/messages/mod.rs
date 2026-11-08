@@ -20,7 +20,7 @@
 //! and system control messages.
 
 use nautilus_model::{
-    data::Data,
+    data::{CustomData, Data},
     events::{
         AccountState, OrderAcceptedBatch, OrderCanceledBatch, OrderEventAny, OrderSubmittedBatch,
     },
@@ -86,6 +86,8 @@ pub enum ExecutionEvent {
     Report(ExecutionReport),
     #[strum(transparent)]
     Account(AccountState),
+    /// Custom data published on the bus, such as venue account operations.
+    Data(CustomData),
 }
 
 #[cfg(test)]

@@ -180,6 +180,7 @@ fn assert_event_types(events: &[ExecutionEvent], expected: &[&str]) {
             ExecutionEvent::OrderCanceledBatch(_) => "OrderCanceledBatch",
             ExecutionEvent::Report(_) => "Report",
             ExecutionEvent::Account(_) => "Account",
+            ExecutionEvent::Data(_) => "Data",
         })
         .collect();
     assert_eq!(
