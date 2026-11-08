@@ -26,7 +26,7 @@
 //!
 //! - Connects a real data client to a real venue through a local fault-injecting proxy.
 //! - Forces gaps, missing snapshots, disconnects, and subscription churn.
-//! - Checks every emitted book against the contract and an independent venue oracle.
+//! - Checks every requested book against the contract and an independent venue oracle.
 //! - Waits for each faulted book to recover and reports `PASS` or `FAIL`.
 //!
 //! The developer guide covers the validation levels, fault catalog, oracles, and harness
@@ -39,8 +39,8 @@
 //!
 //! - [`FaultProxy`] relays the adapter's WebSocket or line traffic to the venue and applies
 //!   per-book [`Fault`] rules plus connection cuts and freezes.
-//! - [`Session`] subscribes books, passes every emitted batch through [`BookStreamChecker`] and the
-//!   venue oracle, waits for books to heal, and checks shutdown.
+//! - [`Session`] subscribes books, passes their emitted batches through [`BookStreamChecker`] and
+//!   the venue oracle, waits for books to heal, and checks shutdown.
 //! - [`run`] parses `--scenario`, `--timeout`, `--rounds`, and venue flags, runs the venue
 //!   self-check, and reports one line per event: `START`, `ROUND`, `CHECK`, `SHUTDOWN`, and a final
 //!   `PASS` or `FAIL`. A panic on any thread prints `FAIL` and exits with status 1.
