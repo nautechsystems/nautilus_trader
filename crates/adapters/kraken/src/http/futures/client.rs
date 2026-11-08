@@ -3244,9 +3244,9 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
 /// The list holds the refusals the edit documentation lists other than `selfFill` and
 /// `postWouldExecute`, which remove the order: the Maker Protection guide documents that a
 /// self-matching edit that is not held removes the order being amended, and the edit documentation
-/// says a `postWouldExecute` order "would be filled upon placement, thus is cancelled". It adds
-/// `tooManyOrders`, which the Maker Protection guide returns for a request past
-/// the hold cap that held edits count toward, and the `KrakenSendStatus` statuses the edit
+/// says a `postWouldExecute` order would be filled upon placement and is canceled instead. It adds
+/// `tooManyOrders`, which the Maker Protection guide returns for a request past the hold cap that
+/// held edits count toward, and the `KrakenSendStatus` statuses the edit
 /// documentation does not list. The guide documents `orderForEditNotFound` for an edit whose
 /// target is not resting: it had left the book by the time a held edit released, or its placement
 /// is still held. Such an edit is rejected as the cancel path rejects `notFound`.

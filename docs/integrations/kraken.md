@@ -511,8 +511,8 @@ These outcomes stay unconfirmed, so the adapter logs a warning and emits no even
 
 - `selfFill`: the Maker Protection guide documents that a self-matching edit that is not held
   removes the order being amended.
-- `postWouldExecute`: the edit documentation says the edited order "would be filled upon
-  placement, thus is cancelled". A placement answered with it is still rejected.
+- `postWouldExecute`: the edit documentation says the edited order would be filled upon placement
+  and is canceled instead. A placement answered with it is still rejected.
 - `iocWouldNotExecute`: the edit documentation reports an edit applied as immediate-or-cancel with
   its remainder removed, while the 22 October 2026 changelog says a held order is no longer
   converted to immediate-or-cancel.
