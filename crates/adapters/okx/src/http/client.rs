@@ -121,9 +121,9 @@ use crate::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE, okx_algo_target_currency, okx_market_target_currency,
-            okx_reduce_only_wire_value, spot_trade_quote_ccy_wire_value,
-            validate_algo_trigger_type,
+            okx_algo_target_currency, okx_market_target_currency, okx_reduce_only_wire_value,
+            spot_trade_quote_ccy_wire_value, validate_algo_trigger_type,
+            validate_order_time_in_force, validate_regular_order_params,
         },
         credential::Credential,
         enums::{
@@ -6935,13 +6935,7 @@ impl OKXHttpClient {
             ));
         }
 
-        if let Some(tif) = time_in_force
-            && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
-        {
-            return Err(OKXHttpError::ValidationError(format!(
-                "Unsupported time in force: {tif:?}",
-            )));
-        }
+        validate_order_time_in_force(time_in_force).map_err(OKXHttpError::ValidationError)?;
 
         if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
             return Err(OKXHttpError::ValidationError(
@@ -6981,11 +6975,15 @@ impl OKXHttpClient {
             okx_market_target_currency(instrument_type, order_side, order_type, quote_quantity)
                 .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
-        if rpi && order_type != OrderType::Limit {
-            return Err(OKXHttpError::ValidationError(
-                "OKX RPI orders require a limit order".to_string(),
-            ));
-        }
+        validate_regular_order_params(
+            instrument_type,
+            order_type,
+            time_in_force,
+            post_only.unwrap_or(false),
+            rpi,
+            outcome.as_deref(),
+        )
+        .map_err(OKXHttpError::ValidationError)?;
 
         let (ord_type, px) = if rpi {
             (OKXOrderType::Rpi, price)
@@ -6993,11 +6991,6 @@ impl OKXHttpClient {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
             match (order_type, tif) {
-                (OrderType::Market, TimeInForce::Fok) => {
-                    return Err(OKXHttpError::ValidationError(
-                        "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string(),
-                    ));
-                }
                 (OrderType::Market, TimeInForce::Ioc) => {
                     // optimal_limit_ioc only works for SWAP/FUTURES
                     if matches!(
@@ -7016,12 +7009,6 @@ impl OKXHttpClient {
         } else {
             (OKXOrderType::from(order_type), price)
         };
-
-        if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
-            return Err(OKXHttpError::ValidationError(
-                "OKX event contract orders require `outcome`".to_string(),
-            ));
-        }
 
         let reduce_only = if reduce_only == Some(true) || position_side.is_some() {
             okx_reduce_only_wire_value(

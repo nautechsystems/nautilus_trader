@@ -228,6 +228,7 @@ Released on TBD (UTC).
 - Fixed Lighter public data startup failing on unused malformed credentials
 - Fixed Lighter execution config credential checks ignoring environment fallback
 - Fixed Lighter free collateral ignoring venue availability (#5578), thanks for reporting @AlphaTraderK
+- Fixed OKX TIF, RPI, and event parameter failures emitting `OrderRejected` instead of `OrderDenied`
 - Fixed OKX VIP4+ book subscriptions failing without public WebSocket login
 - Fixed OKX HTTP retries ignoring `http_timeout_secs`
 - Fixed OKX rejected WebSocket logins waiting for the authentication timeout

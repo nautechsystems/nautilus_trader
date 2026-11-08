@@ -57,7 +57,9 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
     testing::wait_until_async,
 };
-use nautilus_core::{AtomicMap, DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicMap, DurationNanos, UUID4, UnixNanos, params::Params, time::get_atomic_clock_realtime,
+};
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter,
     execution::context::OrderIdentity,
@@ -84,8 +86,8 @@ use nautilus_model::{
     instruments::{
         CryptoFuturesSpread, Instrument, InstrumentAny,
         stubs::{
-            crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-            currency_pair_ethusdt,
+            binary_option, crypto_option_btc_deribit, crypto_perpetual_ethusdt,
+            currency_pair_btcusdt, currency_pair_ethusdt,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -5032,6 +5034,294 @@ fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrd
         }
     }
     by_cid
+}
+
+#[rstest]
+#[case::gtd(
+    OrderType::Limit,
+    TimeInForce::Gtd,
+    false,
+    "ETH-USDT-SWAP.OKX",
+    "Unsupported time in force: Gtd"
+)]
+#[case::market_fok(
+    OrderType::Market,
+    TimeInForce::Fok,
+    false,
+    "ETH-USDT-SWAP.OKX",
+    "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead."
+)]
+#[case::rpi_market(
+    OrderType::Market,
+    TimeInForce::Gtc,
+    true,
+    "ETH-USDT-SWAP.OKX",
+    "OKX RPI orders require a limit order"
+)]
+#[case::event_outcome(
+    OrderType::Limit,
+    TimeInForce::Gtc,
+    false,
+    "BTC-ABOVE-DAILY-260224-1600-65000.OKX",
+    "OKX event contract orders require `outcome`"
+)]
+#[case::cached_event_outcome(
+    OrderType::Limit,
+    TimeInForce::Gtc,
+    false,
+    "EVENT.OKX",
+    "OKX event contract orders require `outcome`"
+)]
+#[tokio::test]
+async fn test_submit_order_denies_invalid_request_before_submitted(
+    #[case] order_type: OrderType,
+    #[case] time_in_force: TimeInForce,
+    #[case] rpi: bool,
+    #[case] instrument_id: &str,
+    #[case] reason: &str,
+) {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let instrument_id = InstrumentId::from(instrument_id);
+    if instrument_id.symbol.as_str() == "EVENT" {
+        let mut instrument = binary_option();
+        instrument.id = instrument_id;
+        instrument.raw_symbol = instrument_id.symbol;
+        client.on_instrument(InstrumentAny::BinaryOption(instrument));
+    }
+
+    let client_order_id = ClientOrderId::from("OLOCALINVALID001");
+    let order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(time_in_force)
+        .expire_time(UnixNanos::from(1_900_000_000_000_000_000))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let mut cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    cmd.params = Some(Params::new(
+        [
+            ("rpi".to_string(), json!(rpi)),
+            ("td_mode".to_string(), json!("isolated")),
+        ]
+        .into(),
+    ));
+
+    client.submit_order(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+
+    let [ExecutionEvent::Order(OrderEventAny::Denied(denied))] = events.as_slice() else {
+        panic!("Expected only OrderDenied, was {events:?}");
+    };
+
+    assert_eq!(denied.trader_id, TraderId::from("TESTER-001"));
+    assert_eq!(denied.strategy_id, StrategyId::from("STRATEGY-001"));
+    assert_eq!(denied.instrument_id, instrument_id);
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason, format!("VALIDATION_FAILED: {reason}"));
+    assert_eq!(denied.causation_id, None);
+}
+
+#[rstest]
+#[case::rpi(false)]
+#[case::event_outcome(true)]
+#[tokio::test]
+async fn test_submit_order_list_denies_invalid_params_before_submitted(#[case] event: bool) {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from(if event {
+        "BTC-ABOVE-DAILY-260224-1600-65000.OKX"
+    } else {
+        "ETH-USDT-SWAP.OKX"
+    });
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let ids = [
+        ClientOrderId::from("OLISTVALID001"),
+        ClientOrderId::from("OLISTINVALID002"),
+    ];
+
+    let orders: Vec<_> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let order_type = if event || index == 0 {
+                OrderType::Limit
+            } else {
+                OrderType::Market
+            };
+
+            OrderTestBuilder::new(order_type)
+                .trader_id(trader_id)
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(*id)
+                .side(OrderSide::Buy)
+                .price(Price::from("2000.00"))
+                .quantity(Quantity::from("2"))
+                .time_in_force(TimeInForce::Gtc)
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("OLINVALID"),
+        instrument_id,
+        strategy_id,
+        ids.to_vec(),
+        UnixNanos::default(),
+    );
+
+    let params = Params::new(
+        [
+            ("rpi".to_string(), json!(!event)),
+            ("td_mode".to_string(), json!("isolated")),
+        ]
+        .into(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*OKX_CLIENT_ID),
+        strategy_id,
+        order_list,
+        orders.iter().map(OrderInitialized::from).collect(),
+        None,
+        None,
+        Some(params),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+
+    for (index, emitted) in events.iter().enumerate() {
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = emitted else {
+            panic!("Expected only OrderDenied, was {events:?}");
+        };
+
+        let reason = if event {
+            "VALIDATION_FAILED: OKX event contract orders require `outcome`"
+        } else if index == 0 {
+            "ORDER_LIST_DENIED: OLINVALID"
+        } else {
+            "VALIDATION_FAILED: OKX RPI orders require a limit order"
+        };
+
+        assert_eq!(denied.trader_id, trader_id);
+        assert_eq!(denied.strategy_id, strategy_id);
+        assert_eq!(denied.instrument_id, instrument_id);
+        assert_eq!(denied.client_order_id, ids[index]);
+        assert_eq!(denied.reason, reason);
+        assert_eq!(denied.causation_id, None);
+    }
+}
+
+#[rstest]
+#[case::gtc("ETH-USDT-SWAP.OKX", TimeInForce::Gtc, false, None)]
+#[case::ioc("ETH-USDT-SWAP.OKX", TimeInForce::Ioc, false, None)]
+#[case::fok("ETH-USDT-SWAP.OKX", TimeInForce::Fok, false, None)]
+#[case::rpi("ETH-USDT-SWAP.OKX", TimeInForce::Gtc, true, None)]
+#[case::event(
+    "BTC-ABOVE-DAILY-260224-1600-65000.OKX",
+    TimeInForce::Gtc,
+    false,
+    Some("yes")
+)]
+#[tokio::test]
+async fn test_submit_order_preserves_supported_params(
+    #[case] instrument_id: &str,
+    #[case] time_in_force: TimeInForce,
+    #[case] rpi: bool,
+    #[case] outcome: Option<&str>,
+) {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let client_order_id = ClientOrderId::from("OVALIDTIF001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(time_in_force)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let mut cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let mut params: indexmap::IndexMap<String, Value> = [
+        ("rpi".to_string(), json!(rpi)),
+        ("td_mode".to_string(), json!("isolated")),
+    ]
+    .into_iter()
+    .collect();
+
+    if let Some(outcome) = outcome {
+        params.insert("outcome".to_string(), json!(outcome));
+    }
+
+    cmd.params = Some(Params::new(params));
+    client.submit_order(cmd).unwrap();
+
+    let event = recv_order_event_matching(&mut rx, |_| true).await;
+
+    let OrderEventAny::Submitted(submitted) = event else {
+        panic!("Expected OrderSubmitted, was {event:?}");
+    };
+
+    assert_eq!(submitted.trader_id, TraderId::from("TESTER-001"));
+    assert_eq!(submitted.strategy_id, StrategyId::from("STRATEGY-001"));
+    assert_eq!(submitted.instrument_id, InstrumentId::from(instrument_id));
+    assert_eq!(submitted.client_order_id, client_order_id);
+    assert_eq!(submitted.account_id, AccountId::from("OKX-001"));
 }
 
 #[rstest]

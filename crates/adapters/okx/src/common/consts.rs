@@ -286,6 +286,45 @@ pub(crate) fn validate_algo_trigger_type(
     Ok(())
 }
 
+pub(crate) fn validate_order_time_in_force(
+    time_in_force: Option<TimeInForce>,
+) -> Result<(), String> {
+    if let Some(tif) = time_in_force
+        && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
+    {
+        return Err(format!("Unsupported time in force: {tif:?}"));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_regular_order_params(
+    instrument_type: OKXInstrumentType,
+    order_type: OrderType,
+    time_in_force: Option<TimeInForce>,
+    post_only: bool,
+    rpi: bool,
+    outcome: Option<&str>,
+) -> Result<(), String> {
+    if rpi && order_type != OrderType::Limit {
+        return Err("OKX RPI orders require a limit order".to_string());
+    }
+
+    if !rpi
+        && !post_only
+        && order_type == OrderType::Market
+        && time_in_force == Some(TimeInForce::Fok)
+    {
+        return Err("Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string());
+    }
+
+    if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
+        return Err("OKX event contract orders require `outcome`".to_string());
+    }
+
+    Ok(())
+}
+
 /// OKX supported order time in force.
 ///
 /// # Notes
@@ -518,6 +557,26 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::market_fok(false, Err("Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()))]
+    #[case::post_only_precedence(true, Ok(()))]
+    fn test_validate_regular_order_params_preserves_post_only_precedence(
+        #[case] post_only: bool,
+        #[case] expected: Result<(), String>,
+    ) {
+        assert_eq!(
+            validate_regular_order_params(
+                OKXInstrumentType::Swap,
+                OrderType::Market,
+                Some(TimeInForce::Fok),
+                post_only,
+                false,
+                None
+            ),
+            expected
+        );
+    }
 
     #[rstest]
     #[case::buy_quote(OrderSide::Buy, Some(true))]

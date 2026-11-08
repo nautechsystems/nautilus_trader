@@ -84,7 +84,8 @@ use crate::{
             OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
             OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types, okx_algo_target_currency,
             okx_reduce_only_wire_value, resolve_instrument_families, validate_algo_trigger_type,
-            validate_okx_client_order_id,
+            validate_okx_client_order_id, validate_order_time_in_force,
+            validate_regular_order_params,
         },
         enums::{
             OKXAlgoOrderType, OKXInstrumentType, OKXMarginMode, OKXPositionMode, OKXPositionSide,
@@ -92,7 +93,7 @@ use crate::{
         },
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
-            is_order_status_report_more_advanced, nanos_to_datetime,
+            is_order_status_report_more_advanced, nanos_to_datetime, okx_instrument_type,
             okx_instrument_type_from_symbol, venue_position_id,
         },
         task::{spawn_task, terminate_tasks},
@@ -2293,11 +2294,11 @@ impl ExecutionClient for OKXExecutionClient {
 
             let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
-            if let Err(reason) = validate_order(
+            if let Err(reason) = self.validate_order(
                 &*order,
                 trade_mode,
                 OrderSubmission::Single,
-                self.http_client.is_spread(order.instrument_id()),
+                cmd.params.as_ref(),
             ) {
                 self.emitter.emit_order_denied(&order, &reason.to_string());
                 return Ok(());
@@ -2356,11 +2357,11 @@ impl ExecutionClient for OKXExecutionClient {
         let invalid: Vec<(ClientOrderId, OrderDeniedReason)> = orders
             .iter()
             .filter_map(|order| {
-                validate_order(
+                self.validate_order(
                     order,
                     trade_mode,
                     OrderSubmission::List,
-                    self.http_client.is_spread(order.instrument_id()),
+                    cmd.params.as_ref(),
                 )
                 .and_then(|()| {
                     self.validate_trade_mode(
@@ -2856,6 +2857,106 @@ impl OKXExecutionClient {
             (OrderSide::Buy, false) | (OrderSide::Sell, true) => PositionSide::Long,
             (OrderSide::Sell, false) | (OrderSide::Buy, true) => PositionSide::Short,
         })
+    }
+
+    fn validate_order(
+        &self,
+        order: &impl Order,
+        trade_mode: OKXTradeMode,
+        submission: OrderSubmission,
+        params: Option<&Params>,
+    ) -> Result<(), OrderDeniedReason> {
+        if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
+            return Err(OrderDeniedReason::InvalidClientOrderId { detail });
+        }
+
+        let is_spread = self.http_client.is_spread(order.instrument_id());
+        if is_spread && order.is_reduce_only() {
+            return Err(OrderDeniedReason::UnsupportedReduceOnly);
+        }
+
+        okx_algo_target_currency(
+            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            trade_mode,
+            order.order_side(),
+            order.order_type(),
+            order.is_quote_quantity(),
+        )?;
+
+        validate_algo_trigger_type(
+            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            trade_mode,
+            order.order_type(),
+            order.trigger_type(),
+        )
+        .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
+
+        if order.is_reduce_only()
+            && okx_reduce_only_wire_value(
+                okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+                trade_mode,
+                order.order_side(),
+                None,
+                Some(true),
+            )
+            .is_err()
+        {
+            return Err(OrderDeniedReason::UnsupportedReduceOnly);
+        }
+
+        if matches!(submission, OrderSubmission::List) {
+            if OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
+                return Err(OrderDeniedReason::UnsupportedOrderList {
+                    detail: format!(
+                        "conditional order {} is not supported",
+                        order.client_order_id()
+                    ),
+                });
+            }
+
+            if order.time_in_force() != TimeInForce::Gtc {
+                return Err(OrderDeniedReason::UnsupportedOrderList {
+                    detail: format!(
+                        "order {} has unsupported time in force {}",
+                        order.client_order_id(),
+                        order.time_in_force()
+                    ),
+                });
+            }
+        }
+
+        if !is_spread && !OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
+            let instrument = self
+                .http_client
+                .get_instrument(&order.instrument_id().symbol.inner());
+
+            let instrument_type = instrument
+                .as_ref()
+                .map(okx_instrument_type)
+                .transpose()
+                .map_err(|e| OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                })?
+                .unwrap_or_else(|| {
+                    okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str())
+                });
+
+            let outcome = get_param_as_string(params, "outcome");
+            validate_order_time_in_force(Some(order.time_in_force()))
+                .and_then(|()| {
+                    validate_regular_order_params(
+                        instrument_type,
+                        order.order_type(),
+                        Some(order.time_in_force()),
+                        order.is_post_only(),
+                        get_param_as_bool(params, "rpi").unwrap_or(false),
+                        outcome.as_deref(),
+                    )
+                })
+                .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
+        }
+
+        Ok(())
     }
 
     fn validate_trade_mode(
@@ -3791,73 +3892,6 @@ fn validate_submit_position_id(
     Ok(())
 }
 
-fn validate_order(
-    order: &impl Order,
-    trade_mode: OKXTradeMode,
-    submission: OrderSubmission,
-    is_spread: bool,
-) -> Result<(), OrderDeniedReason> {
-    if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
-        return Err(OrderDeniedReason::InvalidClientOrderId { detail });
-    }
-
-    if is_spread && order.is_reduce_only() {
-        return Err(OrderDeniedReason::UnsupportedReduceOnly);
-    }
-
-    okx_algo_target_currency(
-        okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
-        trade_mode,
-        order.order_side(),
-        order.order_type(),
-        order.is_quote_quantity(),
-    )?;
-
-    validate_algo_trigger_type(
-        okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
-        trade_mode,
-        order.order_type(),
-        order.trigger_type(),
-    )
-    .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
-
-    if order.is_reduce_only()
-        && okx_reduce_only_wire_value(
-            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
-            trade_mode,
-            order.order_side(),
-            None,
-            Some(true),
-        )
-        .is_err()
-    {
-        return Err(OrderDeniedReason::UnsupportedReduceOnly);
-    }
-
-    if matches!(submission, OrderSubmission::List) {
-        if OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
-            return Err(OrderDeniedReason::UnsupportedOrderList {
-                detail: format!(
-                    "conditional order {} is not supported",
-                    order.client_order_id()
-                ),
-            });
-        }
-
-        if order.time_in_force() != TimeInForce::Gtc {
-            return Err(OrderDeniedReason::UnsupportedOrderList {
-                detail: format!(
-                    "order {} has unsupported time in force {}",
-                    order.client_order_id(),
-                    order.time_in_force()
-                ),
-            });
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrderCommandRoute {
     RegularWs,
@@ -4480,12 +4514,7 @@ mod tests {
             QueryOrderRoute::Regular
         );
         assert_eq!(
-            validate_order(
-                &order,
-                OKXTradeMode::Cross,
-                OrderSubmission::Single,
-                is_spread
-            ),
+            client.validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single, None),
             Ok(())
         );
     }
@@ -4501,7 +4530,12 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single, false),
+            build_test_exec_client().validate_order(
+                &order,
+                OKXTradeMode::Cross,
+                OrderSubmission::Single,
+                None
+            ),
             Ok(())
         );
     }
@@ -4517,7 +4551,12 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List, false),
+            build_test_exec_client().validate_order(
+                &order,
+                OKXTradeMode::Cross,
+                OrderSubmission::List,
+                None
+            ),
             Err(OrderDeniedReason::UnsupportedOrderList {
                 detail: "conditional order OCONDITIONALLIST is not supported".to_string(),
             })
@@ -4536,7 +4575,12 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List, false),
+            build_test_exec_client().validate_order(
+                &order,
+                OKXTradeMode::Cross,
+                OrderSubmission::List,
+                None
+            ),
             Err(OrderDeniedReason::UnsupportedOrderList {
                 detail: "order OIOCLIST has unsupported time in force IOC".to_string(),
             })
@@ -4561,7 +4605,12 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, trade_mode, OrderSubmission::Single, false),
+            build_test_exec_client().validate_order(
+                &order,
+                trade_mode,
+                OrderSubmission::Single,
+                None
+            ),
             Err(OrderDeniedReason::UnsupportedReduceOnly)
         );
     }

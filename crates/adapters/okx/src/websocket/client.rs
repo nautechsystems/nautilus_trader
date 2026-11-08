@@ -83,9 +83,10 @@ use super::{
 };
 use crate::common::{
     consts::{
-        OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-        OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, okx_market_target_currency,
-        okx_reduce_only_wire_value, select_book_channel, spot_trade_quote_ccy_wire_value,
+        OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_WS_PUBLIC_URL,
+        OKX_WS_TOPIC_DELIMITER, okx_market_target_currency, okx_reduce_only_wire_value,
+        select_book_channel, spot_trade_quote_ccy_wire_value, validate_order_time_in_force,
+        validate_regular_order_params,
     },
     credential::Credential,
     enums::{
@@ -2432,13 +2433,7 @@ impl OKXWebSocketClient {
             )));
         }
 
-        if let Some(tif) = time_in_force
-            && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
-        {
-            return Err(OKXWsError::ClientError(format!(
-                "Unsupported time in force: {tif:?}",
-            )));
-        }
+        validate_order_time_in_force(time_in_force).map_err(OKXWsError::ClientError)?;
 
         let mut builder = WsPostOrderParamsBuilder::default();
 
@@ -2539,11 +2534,15 @@ impl OKXWebSocketClient {
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)
         // optimal_limit_ioc is only supported for SWAP/FUTURES, not SPOT or OPTION
-        if rpi && order_type != OrderType::Limit {
-            return Err(OKXWsError::ClientError(
-                "OKX RPI orders require a limit order".to_string(),
-            ));
-        }
+        validate_regular_order_params(
+            instrument_type,
+            order_type,
+            time_in_force,
+            post_only.unwrap_or(false),
+            rpi,
+            outcome.as_deref(),
+        )
+        .map_err(OKXWsError::ClientError)?;
 
         let (okx_ord_type, price) = if rpi {
             (OKXOrderType::Rpi, price)
@@ -2551,11 +2550,6 @@ impl OKXWebSocketClient {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
             match (order_type, tif) {
-                (OrderType::Market, TimeInForce::Fok) => {
-                    return Err(OKXWsError::ClientError(
-                        "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()
-                    ));
-                }
                 (OrderType::Market, TimeInForce::Ioc) => {
                     // optimal_limit_ioc only works for SWAP/FUTURES
                     if matches!(
@@ -2578,12 +2572,6 @@ impl OKXWebSocketClient {
         log::debug!(
             "Order type mapping: order_type={order_type:?}, time_in_force={time_in_force:?}, post_only={post_only:?} -> okx_ord_type={okx_ord_type:?}"
         );
-
-        if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
-            return Err(OKXWsError::ClientError(
-                "OKX event contract orders require `outcome`".to_string(),
-            ));
-        }
 
         if let Some(outcome) = outcome {
             builder.outcome(outcome);
