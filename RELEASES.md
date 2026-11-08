@@ -335,6 +335,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Clarified Parquet migration coverage and CLEAR snapshot promotion limits
+- Clarified WebSocket and raw TCP socket retry attempts, reconnect disabling, and send-wait timeouts
 - Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
 - Added Python tutorial for backtesting Lighter ANTHROPIC pre-IPO order books from CoinAPI Flat Files
 - Clarified Kraken margin recovery limits and manual reconciliation (#5470), thanks @zhaow-de
