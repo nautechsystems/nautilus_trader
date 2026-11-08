@@ -37,7 +37,6 @@ use nautilus_model::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
-        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
         AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
@@ -351,8 +350,6 @@ impl PyStreamingFeatherWriter {
         try_write!(FillReport, "FillReport");
         try_write!(PositionStatusReport, "PositionStatusReport");
         try_write!(ExecutionMassStatus, "ExecutionMassStatus");
-        try_write!(GreeksData, "GreeksData");
-        try_write!(PortfolioGreeks, "PortfolioGreeks");
 
         // Try instrument types (uses type_str attribute for dispatch)
         if let Ok(instrument) = pyobject_to_instrument_any(py, data.clone_ref(py)) {

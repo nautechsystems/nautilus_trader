@@ -382,7 +382,7 @@ or external message bus use.
 
 ### Recording calculated values
 
-`GreeksData` and `PortfolioGreeks` also support custom data. Wrap a calculated value in `CustomData`
+`GreeksData` and `PortfolioGreeks` are custom data. Wrap a calculated value in `CustomData`
 to publish it with `publish_data()`, receive it through `subscribe_data()` and `on_data()`, or store
 it with `ParquetDataCatalog.write_custom_data()`:
 
@@ -411,18 +411,14 @@ In Rust, register each type with `nautilus_serialization::ensure_custom_data_reg
 before custom-data catalog, streaming, or external message bus use. Python registers these types on import.
 JSON and MsgPack custom-data transport require finite numeric values.
 
-`GreeksData` and `PortfolioGreeks` support native Arrow recording under their matching
-`NautilusRecordType` selectors. Rust streaming writers accept these records directly.
-A subscribed writer also captures the Rust calculator's typed `GreeksData` publications.
+`StreamingFeatherWriter.write()` accepts these values wrapped in `CustomData`. A subscribed writer
+also captures the Rust calculator's typed `GreeksData` publications as custom data, using the
+instrument ID as the catalog identifier. Typed `PortfolioGreeks` messages published through the
+dynamic message bus are recorded as custom data without an identifier.
 
-In Python, `StreamingFeatherWriter.write()` accepts `GreeksData` and `PortfolioGreeks`.
-Use `nautilus_trader.serialization.pyobjects_to_arrow_record_batch_bytes()` to encode these objects, then
-`ParquetDataCatalog.write_record_arrow_bytes()` with the matching record selector to store them.
-
-Read recorded values with `query_record_arrow_bytes()` or `query_record_arrow_stream()`.
-These queries return Arrow data. Calculated records do not participate in `OptionGreeks`
-market-data replay or populate the calculator's caches. Yield curves are custom data, not records;
-see [Yield curves](#yield-curves).
+Calculated Greeks retain their native Arrow schemas. Query them through the custom-data APIs;
+they have no `NautilusRecordType` selectors. They remain separate from venue-reported `OptionGreeks`.
+Yield curves use the same custom-data path; see [Yield curves](#yield-curves).
 
 ## Choosing between the two paths
 

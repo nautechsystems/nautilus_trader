@@ -959,14 +959,13 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
 
 
 @pytest.mark.parametrize("portfolio", [False, True])
-def test_calculated_greeks_native_record_round_trip(tmp_path: Path, portfolio: bool) -> None:
+def test_calculated_greeks_custom_stream_schema(tmp_path: Path, portfolio: bool) -> None:
     """
-    Preserve Python Greeks objects through native Feather and catalog recording.
+    Preserve the Arrow schema for calculated Greeks custom data.
     """
     greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
     value = greeks.to_portfolio_greeks() if portfolio else greeks
     name = type(value).__name__
-    selector = getattr(NautilusRecordType, name)
     encoded = pyobjects_to_arrow_record_batch_bytes([value])
     table = _read_arrow_bytes(encoded)
     schema = pa.ipc.open_stream(pa.py_buffer(get_arrow_schema_bytes(type(value)))).schema
@@ -988,20 +987,19 @@ def test_calculated_greeks_native_record_round_trip(tmp_path: Path, portfolio: b
     assert table.schema == schema
     assert set(get_arrow_schema_map(type(value))) == set(table.column_names)
     assert scalar_table.to_pylist() == [expected]
-    assert selector == NautilusRecordType(name)
+    assert not hasattr(NautilusRecordType, name)
+    with pytest.raises(RuntimeError, match="Invalid `NautilusRecordType`"):
+        NautilusRecordType(name)
 
     staging = tmp_path / "staging"
     writer = StreamingFeatherWriter(path=str(staging), cache=Cache(), clock=Clock.new_test())
-    writer.write(value)
+    with pytest.raises(OSError, match="Unsupported data type for feather writer"):
+        writer.write(value)
+    writer.write(CustomData(DataType(name), value))
     writer.close()
     [feather_path] = staging.rglob("*.feather")
     staged = _read_arrow_bytes(feather_path.read_bytes())
     assert staged.select(table.column_names).to_pylist() == table.to_pylist()
-
-    catalog = _catalog(tmp_path, "parquet")
-    catalog.write_record_arrow_bytes(selector, encoded)
-    actual = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
-    assert actual.to_pylist() == table.to_pylist()
 
 
 def test_yield_curve_custom_data_round_trip(tmp_path: Path) -> None:
@@ -1138,15 +1136,30 @@ def test_calculated_greeks_reject_mixed_object_types() -> None:
         pyobjects_to_arrow_record_batch_bytes([greeks, greeks.to_portfolio_greeks()])
 
 
-def test_calculated_greeks_reject_mixed_instruments() -> None:
+def test_calculated_greeks_encode_mixed_instruments() -> None:
     """
-    Reject instrument Greeks that cannot share one batch's metadata.
+    Preserve each instrument in its payload column without stream identity metadata.
     """
     first = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
     second = GreeksData.from_delta(InstrumentId.from_str("NQ.GLBX"), -0.75, 7.0, 13)
 
-    with pytest.raises(ValueError, match="Mixed metadata at row 1"):
-        pyobjects_to_arrow_record_batch_bytes([first, second])
+    table = _read_arrow_bytes(pyobjects_to_arrow_record_batch_bytes([first, second]))
+    for name in ("ts_event", "ts_init"):
+        table = table.set_column(
+            table.schema.get_field_index(name),
+            name,
+            table.column(name).cast(pa.int64()),
+        )
+    expected = [
+        {
+            name: str(value.instrument_id) if name == "instrument_id" else getattr(value, name)
+            for name in table.column_names
+        }
+        for value in (first, second)
+    ]
+
+    assert table.to_pylist() == expected
+    assert b"instrument_id" not in table.schema.metadata
 
 
 def test_calculated_greeks_reject_timestamp_overflow() -> None:

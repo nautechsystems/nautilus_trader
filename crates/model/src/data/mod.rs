@@ -915,8 +915,6 @@ pub enum NautilusRecordType {
     ExecutionMassStatus,
     #[cfg(feature = "defi")]
     Defi,
-    GreeksData,
-    PortfolioGreeks,
 }
 
 impl FromStr for NautilusRecordType {
@@ -954,8 +952,6 @@ impl FromStr for NautilusRecordType {
             "FillReport" | "fill_report" => Ok(Self::FillReport),
             "PositionStatusReport" | "position_status_report" => Ok(Self::PositionStatusReport),
             "ExecutionMassStatus" | "execution_mass_status" => Ok(Self::ExecutionMassStatus),
-            "GreeksData" | "greeks_data" => Ok(Self::GreeksData),
-            "PortfolioGreeks" | "portfolio_greeks" => Ok(Self::PortfolioGreeks),
             "custom" | "CustomData" => {
                 anyhow::bail!("custom data queries require NautilusDataType::Custom")
             }
@@ -1414,8 +1410,6 @@ mod tests {
     #[case(NautilusRecordType::OrderFilled, "OrderFilled")]
     #[case(NautilusRecordType::OrderFillVoided, "OrderFillVoided")]
     #[case(NautilusRecordType::ExecutionMassStatus, "ExecutionMassStatus")]
-    #[case(NautilusRecordType::GreeksData, "GreeksData")]
-    #[case(NautilusRecordType::PortfolioGreeks, "PortfolioGreeks")]
     fn nautilus_record_type_display_from_str_roundtrips(
         #[case] record_type: NautilusRecordType,
         #[case] expected: &str,
@@ -1429,13 +1423,23 @@ mod tests {
     #[case("order_filled", NautilusRecordType::OrderFilled)]
     #[case("order_fill_voided", NautilusRecordType::OrderFillVoided)]
     #[case("position_snapshot", NautilusRecordType::PositionSnapshot)]
-    #[case("greeks_data", NautilusRecordType::GreeksData)]
-    #[case("portfolio_greeks", NautilusRecordType::PortfolioGreeks)]
     fn nautilus_record_type_storage_names_parse(
         #[case] value: &str,
         #[case] expected: NautilusRecordType,
     ) {
         assert_eq!(value.parse::<NautilusRecordType>().unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("GreeksData")]
+    #[case("greeks_data")]
+    #[case("PortfolioGreeks")]
+    #[case("portfolio_greeks")]
+    fn nautilus_record_type_rejects_calculated_greeks(#[case] value: &str) {
+        assert_eq!(
+            value.parse::<NautilusRecordType>().unwrap_err().to_string(),
+            format!("Invalid `NautilusRecordType`: '{value}'")
+        );
     }
 
     #[rstest]

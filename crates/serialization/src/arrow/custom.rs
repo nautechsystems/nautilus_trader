@@ -33,7 +33,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::data::{
-    ArrowDecoder, ArrowEncoder, CustomData, CustomDataTrait, Data, DataType, NautilusRecordType,
+    ArrowDecoder, ArrowEncoder, CustomData, CustomDataTrait, Data, DataType,
     decode_custom_from_arrow, ensure_arrow_registered, ensure_custom_data_json_registered,
     get_arrow_schema, validate_custom_arrow_schema,
 };
@@ -95,12 +95,6 @@ where
     let schema = Arc::new(T::get_schema(None));
     assert_custom_schema(type_name, &schema);
 
-    // Record instrument metadata must not override custom stream identity
-    let record_metadata = type_name
-        .parse::<NautilusRecordType>()
-        .ok()
-        .map(|_| schema.metadata().clone());
-
     let encoder: ArrowEncoder = Box::new(move |items: &[Arc<dyn CustomDataTrait>]| {
         let typed: Result<Vec<T>, _> = items
             .iter()
@@ -113,9 +107,7 @@ where
             .collect();
         let typed = typed?;
 
-        let metadata = if let Some(metadata) = &record_metadata {
-            metadata.clone()
-        } else if typed.is_empty() {
+        let metadata = if typed.is_empty() {
             HashMap::new()
         } else {
             T::chunk_metadata(&typed)

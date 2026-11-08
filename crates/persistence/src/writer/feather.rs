@@ -53,9 +53,9 @@ use nautilus_common::{clock::Clock, live::LiveClock};
 use nautilus_core::{DurationNanos, UnixNanos, time::nanos_since_unix_epoch};
 use nautilus_model::{
     data::{
-        Bar, CustomData, CustomDataTrait, Data, DataBatch, FundingRateUpdate, IndexPriceUpdate,
-        InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, CustomData, CustomDataTrait, Data, DataBatch, DataType as CustomDataType,
+        FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, NautilusDataType,
+        OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         encode_custom_to_arrow, get_arrow_schema,
         greeks::{GreeksData, PortfolioGreeks},
@@ -71,9 +71,12 @@ use nautilus_model::{
     instruments::{InstrumentAny, NautilusInstrumentType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
-use nautilus_serialization::arrow::{
-    EncodeToRecordBatch, KEY_TYPE_NAME, catalog_identifier_from_metadata,
-    record_batch_with_identifier_column, schema_with_identifier_column,
+use nautilus_serialization::{
+    arrow::{
+        EncodeToRecordBatch, KEY_TYPE_NAME, catalog_identifier_from_metadata,
+        record_batch_with_identifier_column, schema_with_identifier_column,
+    },
+    ensure_custom_data_registered,
 };
 
 use crate::{
@@ -1355,8 +1358,25 @@ impl FeatherWriter {
         try_write!(message, FillReport);
         try_write!(message, PositionStatusReport);
         try_write!(message, ExecutionMassStatus);
-        try_write!(message, GreeksData);
-        try_write!(message, PortfolioGreeks);
+
+        if let Some(greeks) = message.downcast_ref::<GreeksData>() {
+            ensure_custom_data_registered::<GreeksData>();
+
+            let data_type = CustomDataType::new(
+                GreeksData::type_name_static(),
+                None,
+                Some(greeks.instrument_id.to_string()),
+            );
+
+            let custom = CustomData::new(Arc::new(greeks.clone()), data_type);
+            return Some(Box::new(move |writer| writer.write_custom_data(&custom)));
+        }
+
+        if let Some(portfolio) = message.downcast_ref::<PortfolioGreeks>() {
+            ensure_custom_data_registered::<PortfolioGreeks>();
+            let custom = CustomData::from_arc(Arc::new(portfolio.clone()));
+            return Some(Box::new(move |writer| writer.write_custom_data(&custom)));
+        }
 
         if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
             let deltas = deltas.deltas.clone();
@@ -1904,8 +1924,7 @@ mod tests {
     #[rstest]
     fn test_subscription_records_greeks_once_and_unsubscribes() {
         use nautilus_common::msgbus::{MStr, publish_any, publish_greeks};
-        use nautilus_model::data::greeks::GreeksData;
-        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, custom::CustomDataDecoder};
         let temp_dir = TempDir::new().unwrap();
 
         let writer = Rc::new(RefCell::new(FeatherWriter::new(
@@ -1928,27 +1947,46 @@ mod tests {
         writer.borrow_mut().close().unwrap();
         let mut counts = HashMap::new();
 
-        for batch in feather_files(temp_dir.path(), FEATHER_EXTENSION)
+        for batch in feather_files(&temp_dir.path().join("data/custom"), FEATHER_EXTENSION)
             .iter()
             .flat_map(|path| read_feather_batches(path))
         {
             let schema = batch.schema();
             let name = schema.metadata()["type_name"].clone();
             *counts.entry(name.clone()).or_insert(0) += batch.num_rows();
+            let decoded = CustomDataDecoder::decode_data_batch(schema.metadata(), batch).unwrap();
+            assert_eq!(decoded.len(), 1);
+
+            let Data::Custom(custom) = &decoded[0] else {
+                panic!("expected custom data")
+            };
+
             match name.as_str() {
                 "GreeksData" => {
-                    let values = GreeksData::decode_typed_batch(schema.metadata(), batch).unwrap();
-                    assert_eq!(values[0].instrument_id, greeks.instrument_id);
-                    assert_eq!(values[0].greeks, greeks.greeks);
-                    assert_eq!(values[0].ts_init, greeks.ts_init);
+                    assert_eq!(
+                        custom.data_type,
+                        CustomDataType::new(
+                            "GreeksData",
+                            None,
+                            Some(greeks.instrument_id.to_string())
+                        )
+                    );
+                    assert_eq!(
+                        custom.data.as_any().downcast_ref::<GreeksData>(),
+                        Some(&greeks)
+                    );
                 }
                 "PortfolioGreeks" => {
-                    let values =
-                        PortfolioGreeks::decode_typed_batch(schema.metadata(), batch).unwrap();
-                    assert_eq!(values[0].greeks, portfolio.greeks);
-                    assert_eq!(values[0].ts_init, portfolio.ts_init);
+                    assert_eq!(
+                        custom.data_type,
+                        CustomDataType::new("PortfolioGreeks", None, None)
+                    );
+                    assert_eq!(
+                        custom.data.as_any().downcast_ref::<PortfolioGreeks>(),
+                        Some(&portfolio)
+                    );
                 }
-                _ => panic!("unexpected record type {name}"),
+                _ => panic!("unexpected custom data type {name}"),
             }
         }
 

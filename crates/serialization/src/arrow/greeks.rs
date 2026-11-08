@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Native Arrow records for calculated Greeks and yield curves.
+//! Arrow schemas and codecs for calculated Greeks and yield curve custom data.
 
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
@@ -36,7 +36,7 @@ use nautilus_model::{
 
 use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, StringColumnRef, extract_column_by_name,
+    EncodeToRecordBatch, EncodingError, StringColumnRef, extract_column_by_name,
     extract_column_string, identifier_array_from_display, metadata_with_type_name,
     record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
@@ -136,12 +136,7 @@ impl EncodeToRecordBatch for GreeksData {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        let mut metadata = metadata_with_type_name("GreeksData", None);
-        metadata.insert(
-            KEY_INSTRUMENT_ID.to_string(),
-            self.instrument_id.to_string(),
-        );
-        metadata
+        metadata_with_type_name(Self::type_name_static(), None)
     }
 }
 
