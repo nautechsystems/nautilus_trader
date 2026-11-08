@@ -81,8 +81,8 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es,
-            gbpusd_sim,
+            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, default_fx_ccy,
+            futures_contract_es, gbpusd_sim,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2377,6 +2377,205 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+}
+
+// Opens a 1 ETH long at 1000 USDT on a single-currency margin account holding `balance`,
+// with a mark price of 1000 USDT and a 1% funding rate due at the returned boundary
+fn setup_single_currency_funding(
+    instrument: &CryptoPerpetual,
+    balance: Money,
+) -> (
+    Rc<RefCell<Cache>>,
+    Rc<RefCell<SimulatedExchange>>,
+    PositionId,
+    UnixNanos,
+) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_any = InstrumentAny::CryptoPerpetual(instrument.clone());
+    let mut cache = Cache::default();
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                balance,
+                Money::zero(balance.currency),
+                balance,
+            )],
+            vec![],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(balance.currency),
+        ),
+        false,
+    );
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    cache.add_instrument(instrument_any.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::from("T-001")),
+        None,
+        Some(Price::from("1000.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument_any)
+        .unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            instrument.id,
+            Decimal::from_str("0.01").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    (cache, exchange, position.id, settlement_ns)
+}
+
+fn add_usdtusd_quote(cache: &Rc<RefCell<Cache>>) {
+    let usdtusd = default_fx_ccy(Symbol::from("USDT/USD"), Some(Venue::new("BINANCE")));
+    let usdtusd_id = usdtusd.id;
+    let mut cache = cache.borrow_mut();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(usdtusd))
+        .unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            usdtusd_id,
+            Price::from("0.99000"),
+            Price::from("1.00000"),
+            Quantity::from("1000000"),
+            Quantity::from("1000000"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+}
+
+// The long pays 1% of 1000 USDT, so -10 USDT. A USD account receives it at the
+// USDT/USD mid of 0.995 (bid 0.99, ask 1.00), so -9.95 USD, while a USDT account
+// needs no rate. The position's PnL stays in USDT either way.
+#[rstest]
+#[case::usd_base_converted(Money::from("1000 USD"), true, Money::from("990.05 USD"))]
+#[case::settlement_currency_base(Money::from("1000 USDT"), false, Money::from("990 USDT"))]
+fn test_process_funding_rate_settles_in_single_currency_account_base(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] balance: Money,
+    #[case] with_xrate: bool,
+    #[case] expected_total: Money,
+) {
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
+    let (cache, exchange, position_id, settlement_ns) =
+        setup_single_currency_funding(&crypto_perpetual_ethusdt, balance);
+
+    if with_xrate {
+        add_usdtusd_quote(&cache);
+    }
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    let position_events = position_saver.get_messages();
+    let [PositionEvent::PositionAdjusted(adjustment)] = position_events.as_slice() else {
+        panic!("expected one PositionAdjusted event");
+    };
+    let account_states = account_saver.get_messages();
+    let [account_state] = account_states.as_slice() else {
+        panic!("expected one AccountState");
+    };
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-10 USDT")));
+    assert_eq!(position.realized_pnl, Some(Money::from("-10 USDT")));
+    assert_eq!(account_state.balances.len(), 1);
+    assert_eq!(account_state.balances[0].total, expected_total);
+    assert_eq!(account_state.balances[0].free, expected_total);
+}
+
+#[rstest]
+fn test_process_funding_rate_without_xrate_for_account_base_retries(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    let (cache, exchange, position_id, settlement_ns) =
+        setup_single_currency_funding(&crypto_perpetual_ethusdt, Money::from("1000 USD"));
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    assert!(settlement_saver.get_messages().is_empty());
+    assert!(account_saver.get_messages().is_empty());
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    assert!(position.adjustments.is_empty());
+    assert_eq!(position.realized_pnl, Some(Money::from("0 USDT")));
+
+    add_usdtusd_quote(&cache);
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    assert_eq!(settlement_saver.get_messages().len(), 1);
+    let account_states = account_saver.get_messages();
+    let [account_state] = account_states.as_slice() else {
+        panic!("expected one AccountState");
+    };
+    assert_eq!(account_state.balances[0].total, Money::from("990.05 USD"));
 }
 
 #[rstest]
