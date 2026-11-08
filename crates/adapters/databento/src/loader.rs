@@ -1721,6 +1721,47 @@ mod tests {
     }
 
     #[rstest]
+    #[case(true, "BRK B.XNAS")]
+    #[case(false, "BRK.B.XNAS")]
+    fn test_loader_share_class_keeps_native_raw_symbol(
+        #[case] share_class_space: bool,
+        #[case] expected: InstrumentId,
+    ) {
+        let publishers = Path::new(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
+        let path = test_data_path().join("test_data.definition.equity.dbn.zst");
+        let mut decoder = Decoder::from_zstd_file(&path).unwrap();
+        let metadata = decoder.metadata().clone();
+        let mut definition = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        definition.raw_symbol = dbn::record::str_to_c_chars("BRK.B").unwrap();
+        let replay_path =
+            std::env::temp_dir().join(format!("equity-{}.dbn.zst", nautilus_core::UUID4::new()));
+        let mut encoded = Vec::new();
+        {
+            let mut encoder =
+                dbn::encode::dbn::Encoder::with_zstd(&mut encoded, &metadata).unwrap();
+            encoder.encode_record(&definition).unwrap();
+            encoder.flush().unwrap();
+        }
+        std::fs::write(&replay_path, encoded).unwrap();
+        let mut loader = DatabentoDataLoader::new(Some(publishers))
+            .unwrap()
+            .with_share_class_space(share_class_space);
+
+        let instruments = loader
+            .load_instruments(&replay_path, false, false, None)
+            .unwrap();
+
+        std::fs::remove_file(replay_path).unwrap();
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), expected);
+        assert_eq!(instruments[0].raw_symbol(), Symbol::from("BRK.B"));
+    }
+
+    #[rstest]
     #[case("futures_contract", "ESU6", "ESU26.GLBX", "ESU36.GLBX")]
     #[case("futures_spread", "ESU6-ESM7", "ESU26-ESM27.GLBX", "ESU36-ESM37.GLBX")]
     fn test_loader_definition_year_is_scoped_to_record_date(
