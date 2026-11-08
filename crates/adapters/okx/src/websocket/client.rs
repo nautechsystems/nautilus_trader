@@ -245,6 +245,7 @@ pub struct OKXWebSocketClient {
     inst_id_code_cache: Arc<AtomicMap<Ustr, u64>>,
     trade_quote_ccy_lists: Arc<AtomicMap<Ustr, Vec<Ustr>>>,
     spot_trade_quote_ccy: Arc<Mutex<Option<Ustr>>>,
+    order_request_ttl_ms: Option<u64>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
@@ -376,6 +377,7 @@ impl OKXWebSocketClient {
             inst_id_code_cache: Arc::new(AtomicMap::new()),
             trade_quote_ccy_lists: Arc::new(AtomicMap::new()),
             spot_trade_quote_ccy: Arc::new(Mutex::new(None)),
+            order_request_ttl_ms: None,
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
@@ -395,6 +397,22 @@ impl OKXWebSocketClient {
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(Arc::new(control));
         self
+    }
+
+    /// Sets the TTL used to derive `expTime` on place and amend requests.
+    ///
+    /// Each request carries `expTime = now + ttl_ms`, computed when the request is built.
+    /// OKX does not process the request if its server time is past `expTime`. `None` omits
+    /// `expTime`.
+    #[must_use]
+    pub fn with_order_request_ttl_ms(mut self, ttl_ms: Option<u64>) -> Self {
+        self.order_request_ttl_ms = ttl_ms;
+        self
+    }
+
+    fn order_request_exp_time(&self) -> Option<String> {
+        self.order_request_ttl_ms
+            .map(|ttl_ms| self.clock.get_time_ms().saturating_add(ttl_ms).to_string())
     }
 
     /// Creates a new [`OKXWebSocketClient`] instance.
@@ -2294,7 +2312,7 @@ impl OKXWebSocketClient {
         let request = OKXWsRequest::<Value> {
             id: Some(request_id.clone()),
             op: super::enums::OKXWsOperation::BatchOrders,
-            exp_time: None,
+            exp_time: self.order_request_exp_time(),
             args,
         };
 
@@ -2369,7 +2387,7 @@ impl OKXWebSocketClient {
         let request = OKXWsRequest::<Value> {
             id: Some(request_id.clone()),
             op: super::enums::OKXWsOperation::BatchAmendOrders,
-            exp_time: None,
+            exp_time: self.order_request_exp_time(),
             args,
         };
 
@@ -2619,7 +2637,7 @@ impl OKXWebSocketClient {
         let request = OKXWsRequest {
             id: Some(request_id.clone()),
             op: super::enums::OKXWsOperation::Order,
-            exp_time: None,
+            exp_time: self.order_request_exp_time(),
             args: vec![params],
         };
 
@@ -2774,7 +2792,7 @@ impl OKXWebSocketClient {
         let request = OKXWsRequest {
             id: Some(request_id.clone()),
             op: super::enums::OKXWsOperation::AmendOrder,
-            exp_time: None,
+            exp_time: self.order_request_exp_time(),
             args: vec![params],
         };
 
@@ -3653,6 +3671,15 @@ mod tests {
         let now = UnixNanos::new(1_700_000_000_999_999_999);
 
         assert_eq!(authentication_timestamp(now), "1700000000");
+    }
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some(u64::MAX), Some(u64::MAX.to_string()))]
+    fn test_order_request_exp_time(#[case] ttl_ms: Option<u64>, #[case] expected: Option<String>) {
+        let client = OKXWebSocketClient::default().with_order_request_ttl_ms(ttl_ms);
+
+        assert_eq!(client.order_request_exp_time(), expected);
     }
 
     #[rstest]

@@ -1696,6 +1696,27 @@ query-budget rules. Retained submissions still unresolved at the node's `delay_p
 policy does not change timeout resolution for commands on already accepted orders, provide crash-durable
 recovery, or prove that positions are flat.
 
+### Request expiry
+
+Set `order_request_ttl_ms` on the execution client config to send OKX's
+[`expTime`](https://www.okx.com/docs-v5/en/#overview-transaction-timeouts) on WebSocket place and amend
+requests, single and batch. OKX does not process a request once its server time is past `expTime`. The
+default `None` omits `expTime`, and `0` is rejected.
+
+```python
+OKXExecutionClientConfig(
+    account_id=AccountId("OKX-001"),
+    order_request_ttl_ms=5_000,
+)
+```
+
+- The adapter sets `expTime` to the local time plus the TTL when it builds the request. Time spent waiting
+  for rate limits or a WebSocket reconnect counts against the TTL, so a request delayed past it reaches OKX
+  expired and is rejected.
+- `expTime` is compared with OKX's clock, not the local one. Allow for clock skew when choosing the TTL.
+
+Algo and spread orders do not carry `expTime`.
+
 ## Configuration
 
 ### Instrument filters
@@ -1808,6 +1829,7 @@ The OKX execution client provides the following Python configuration options.
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                             |
 | `max_reconciliation_history_pages` | `None`                     | Pages per startup history query, capped at 50; `0` skips history.                        |
+| `order_request_ttl_ms`             | `None`                     | Place and amend request TTL, sent as `expTime`; see [Request expiry](#request-expiry).   |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
