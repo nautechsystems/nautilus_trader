@@ -403,6 +403,11 @@ impl DataEngine {
 
         let key = bar_aggregator_key(bar_type, None);
 
+        // History retains this instance after its live-source ownership was released
+        if self.bar_aggregators_pending_stop.contains(&key) {
+            return;
+        }
+
         if self.bar_aggregators.contains_key(&key) {
             let result = if self.has_pending_shared_bar_aggregation(bar_type) {
                 // Release live data without canceling an accepted historical aggregation

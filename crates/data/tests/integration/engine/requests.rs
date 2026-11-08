@@ -1435,6 +1435,363 @@ fn test_request_bar_aggregation_chain_after_unsubscribe(
 }
 
 #[rstest]
+#[case::trades(PriceType::Last)]
+#[case::quotes(PriceType::Bid)]
+fn test_request_bar_aggregation_after_batch_unsubscribe(
+    #[case] price_type: PriceType,
+    #[values(false, true)] resubscribe_before_response: bool,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let source = BarType::from(format!("{instrument_id}-1-TICK-{price_type}-INTERNAL").as_str());
+    let composite = BarType::from(
+        format!("{instrument_id}-2-TICK-{price_type}-INTERNAL@1-TICK-INTERNAL").as_str(),
+    );
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [source.to_string(), composite.to_string()],
+        "update_subscriptions": true,
+    }))
+    .unwrap();
+    let (response_handler, response_saver) =
+        get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, response_handler);
+    let request = if price_type == PriceType::Last {
+        RequestCommand::Trades(RequestTrades::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            request_id,
+            UnixNanos::default(),
+            Some(params.clone()),
+        ))
+    } else {
+        RequestCommand::Quotes(RequestQuotes::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            request_id,
+            UnixNanos::default(),
+            Some(params.clone()),
+        ))
+    };
+    data_engine.execute_request(request).unwrap();
+
+    let (bar_handler, bar_saver) = get_typed_message_saving_handler::<Bar>(None);
+
+    for bar_type in [source, composite] {
+        let topic = switchboard::get_bars_topic(bar_type.standard());
+        msgbus::subscribe_bars(topic.into(), bar_handler.clone(), None);
+    }
+    let subscribe_bars = || {
+        SubscribeCommand::Bars(SubscribeBars::new(
+            vec![source, composite],
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    };
+    data_engine.execute_subscribe(subscribe_bars()).unwrap();
+
+    let (trade_handler, trade_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("remaining-consumer")));
+    let (quote_handler, quote_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("remaining-consumer")));
+    let subscribe = if price_type == PriceType::Last {
+        let topic = switchboard::get_trades_topic(instrument_id);
+        msgbus::subscribe_trades(topic.into(), trade_handler.clone(), None);
+        SubscribeCommand::Trades(SubscribeTrades::new(
+            instrument_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    } else {
+        let topic = switchboard::get_quotes_topic(instrument_id);
+        msgbus::subscribe_quotes(topic.into(), quote_handler.clone(), None);
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    };
+    data_engine.execute_subscribe(subscribe).unwrap();
+    let subscribe_count = recorder
+        .borrow()
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                DataCommand::Subscribe(SubscribeCommand::Trades(_) | SubscribeCommand::Quotes(_))
+            )
+        })
+        .count();
+    let unsubscribe_count = || {
+        recorder
+            .borrow()
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    DataCommand::Unsubscribe(
+                        UnsubscribeCommand::Trades(_) | UnsubscribeCommand::Quotes(_)
+                    )
+                )
+            })
+            .count()
+    };
+
+    // The actor releases both bar handlers before its composite-first batch command
+    for bar_type in [composite, source] {
+        let topic = switchboard::get_bars_topic(bar_type.standard());
+        msgbus::unsubscribe_bars(topic.into(), &bar_handler);
+    }
+    let unsubscribe_bars = || {
+        UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            vec![composite, source],
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    };
+    data_engine
+        .execute_unsubscribe(&unsubscribe_bars())
+        .unwrap();
+
+    if resubscribe_before_response {
+        for bar_type in [source, composite] {
+            let topic = switchboard::get_bars_topic(bar_type.standard());
+            msgbus::subscribe_bars(topic.into(), bar_handler.clone(), None);
+        }
+        data_engine.execute_subscribe(subscribe_bars()).unwrap();
+
+        for bar_type in [composite, source] {
+            let topic = switchboard::get_bars_topic(bar_type.standard());
+            msgbus::unsubscribe_bars(topic.into(), &bar_handler);
+        }
+        data_engine
+            .execute_unsubscribe(&unsubscribe_bars())
+            .unwrap();
+    }
+
+    let releases_before_response = unsubscribe_count();
+    let feed_before_response = if price_type == PriceType::Last {
+        data_engine.subscribed_trades()
+    } else {
+        data_engine.subscribed_quotes()
+    };
+    let bars_before_response = data_engine.subscribed_bars();
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buy,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let make_quote = |ts: u64| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Price::from("0.65020"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let historical_trades = vec![
+        make_trade(1_000, "history-1"),
+        make_trade(2_000, "history-2"),
+    ];
+    let historical_quotes = vec![make_quote(1_000), make_quote(2_000)];
+    let live_trade = make_trade(3_000, "remaining-live");
+    let live_quote = make_quote(3_000);
+    let response = if price_type == PriceType::Last {
+        data_engine.process_data(Data::Trade(live_trade));
+        DataResponse::Trades(TradesResponse::new(
+            request_id,
+            client_id,
+            instrument_id,
+            historical_trades.clone(),
+            None,
+            None,
+            UnixNanos::from(2_000),
+            Some(params),
+        ))
+    } else {
+        data_engine.process_data(Data::Quote(live_quote));
+        DataResponse::Quotes(QuotesResponse::new(
+            request_id,
+            client_id,
+            instrument_id,
+            historical_quotes.clone(),
+            None,
+            None,
+            UnixNanos::from(2_000),
+            Some(params),
+        ))
+    };
+    data_engine.response(response);
+    let source_bars = cache.borrow().bars(&source).unwrap_or_default();
+    let composite_bars = cache
+        .borrow()
+        .bars(&composite.standard())
+        .unwrap_or_default();
+    let responses = response_saver.get_messages();
+    let handler_consumed = stub_msgbus
+        .borrow()
+        .get_response_handler(&request_id)
+        .is_none();
+    let feed_after_response = if price_type == PriceType::Last {
+        data_engine.subscribed_trades()
+    } else {
+        data_engine.subscribed_quotes()
+    };
+    let bars_after_response = data_engine.subscribed_bars();
+    let releases_after_response = unsubscribe_count();
+    let trades_received = trade_saver.get_messages();
+    let quotes_received = quote_saver.get_messages();
+
+    let unsubscribe = if price_type == PriceType::Last {
+        let topic = switchboard::get_trades_topic(instrument_id);
+        msgbus::unsubscribe_trades(topic.into(), &trade_handler);
+        UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+            instrument_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    } else {
+        let topic = switchboard::get_quotes_topic(instrument_id);
+        msgbus::unsubscribe_quotes(topic.into(), &quote_handler);
+        UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            instrument_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    };
+    data_engine.execute_unsubscribe(&unsubscribe).unwrap();
+    let final_release_count = unsubscribe_count();
+    let final_feed = if price_type == PriceType::Last {
+        data_engine.subscribed_trades()
+    } else {
+        data_engine.subscribed_quotes()
+    };
+    data_engine.stop();
+    data_engine.dispose();
+
+    assert_eq!(subscribe_count, 1);
+    assert_eq!(releases_before_response, 0);
+    assert_eq!(releases_after_response, 0);
+    assert_eq!(feed_before_response, vec![instrument_id]);
+    assert_eq!(feed_after_response, vec![instrument_id]);
+    assert!(bars_before_response.is_empty());
+    assert!(bars_after_response.is_empty());
+
+    if price_type == PriceType::Last {
+        assert_eq!(trades_received, vec![live_trade]);
+        assert!(quotes_received.is_empty());
+    } else {
+        assert_eq!(quotes_received, vec![live_quote]);
+        assert!(trades_received.is_empty());
+    }
+    assert!(bar_saver.get_messages().is_empty());
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id(), &request_id);
+    assert!(responses[0].completed());
+    assert!(responses[0].failure_reason().is_none());
+    assert!(handler_consumed);
+
+    match responses[0].response() {
+        Some(DataResponse::Trades(response)) if price_type == PriceType::Last => {
+            assert_eq!(response.data.as_ref(), historical_trades.as_slice());
+        }
+        Some(DataResponse::Quotes(response)) if price_type == PriceType::Bid => {
+            assert_eq!(response.data.as_ref(), historical_quotes.as_slice());
+        }
+        _ => panic!("Expected the original historical tick response"),
+    }
+    let historical_bar = Bar::new(
+        source,
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Price::from("0.65000"),
+        Quantity::from("1000"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    assert_eq!(source_bars.len(), 2);
+    assert!(source_bars.contains(&historical_bar));
+    assert!(source_bars.contains(&Bar {
+        ts_event: UnixNanos::from(2_000),
+        ts_init: UnixNanos::from(2_000),
+        ..historical_bar
+    }));
+    assert_eq!(
+        composite_bars,
+        vec![Bar {
+            bar_type: composite.standard(),
+            volume: Quantity::from("2000"),
+            ts_event: UnixNanos::from(2_000),
+            ts_init: UnixNanos::from(2_000),
+            ..historical_bar
+        }]
+    );
+    assert_eq!(final_release_count, 1);
+    assert!(final_feed.is_empty());
+}
+
+#[rstest]
 fn test_update_subscriptions_request_aggregator_replays_live_quotes_after_response(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
