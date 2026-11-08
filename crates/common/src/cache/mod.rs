@@ -1207,7 +1207,7 @@ impl Cache {
 
         let allows_non_positive = || {
             self.instrument(instrument_id)
-                .is_some_and(Instrument::allows_negative_price)
+                .map_or(true, Instrument::allows_negative_price)
         };
         let is_valid = |price: &Price| {
             !price.is_undefined()

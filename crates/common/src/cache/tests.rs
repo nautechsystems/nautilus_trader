@@ -31,13 +31,13 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        Bar, BarSpecification, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
         greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookType, ContingencyType,
         CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
         MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
         PositionAdjustmentType, PositionSide, PriceType, TimeInForce, TriggerType,
@@ -917,9 +917,9 @@ fn test_calculate_unrealized_pnl_falls_back_to_bar(
     let position = Position::new(&instrument, fill.into());
     let bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -969,9 +969,9 @@ fn test_calculate_unrealized_pnl_source_precedence(
 
     let bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -1072,9 +1072,9 @@ fn test_calculate_unrealized_pnl_skips_sentinel_prices(
 
     let bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -1093,9 +1093,9 @@ fn test_calculate_unrealized_pnl_skips_sentinel_prices(
 
     let undef_bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Second,
+            BarAggregation::Second,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -1195,9 +1195,9 @@ fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
     // 1-minute bar stamped at open: ts_event=3480, ts_init=3540, close=1.00010
     let min_bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -1217,9 +1217,9 @@ fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
     // 1-hour bar stamped at open: ts_event=0, ts_init=3600, close=1.00050
     let hour_bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Hour,
+            BarAggregation::Hour,
             PriceType::Last,
         ),
         AggregationSource::Internal,
@@ -1277,18 +1277,18 @@ fn test_calculate_unrealized_pnl_bar_selection_equal_close_tie_break(
 
     let bid_bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Bid,
         ),
         AggregationSource::Internal,
     );
     let ask_bar_type = BarType::new(
         instrument.id(),
-        nautilus_model::data::BarSpecification::new(
+        BarSpecification::new(
             1,
-            nautilus_model::enums::BarAggregation::Minute,
+            BarAggregation::Minute,
             PriceType::Ask,
         ),
         AggregationSource::Internal,
@@ -1324,6 +1324,164 @@ fn test_calculate_unrealized_pnl_bar_selection_equal_close_tie_break(
         cache.calculate_unrealized_pnl(&position),
         Some(Money::from(expected_pnl))
     );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_and_negative_quotes_without_cached_instrument(
+    mut cache: Cache,
+) {
+    let esz1 = futures_contract_es(None, None);
+    let instrument = InstrumentAny::FuturesContract(esz1);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-FUT-1")),
+        Some(PositionId::new("P-FUT-1")),
+        Some(Price::from("10.00")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // Without instrument cached: valid zero quote is accepted
+    let zero_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("0.01"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-10.00 USD"))
+    );
+
+    // Without instrument cached: valid negative quote is accepted
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-5.00"),
+        Price::from("-4.99"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-15.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_and_negative_quotes_with_cached_instrument(
+    mut cache: Cache,
+) {
+    let esz1 = futures_contract_es(None, None);
+    let instrument = InstrumentAny::FuturesContract(esz1);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-FUT-2")),
+        Some(PositionId::new("P-FUT-2")),
+        Some(Price::from("10.00")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // With future instrument cached: valid zero quote is accepted
+    let zero_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("0.01"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-10.00 USD"))
+    );
+
+    // With future instrument cached: valid negative quote is accepted
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-5.00"),
+        Price::from("-4.99"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-15.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_rejects_negative_quote_when_instrument_forbids_negative_prices(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-NEG")),
+        Some(PositionId::new("P-AUDUSD-NEG")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-1.00000"),
+        Price::from("-0.99990"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(cache.calculate_unrealized_pnl(&position), None);
 }
 
 #[rstest]
