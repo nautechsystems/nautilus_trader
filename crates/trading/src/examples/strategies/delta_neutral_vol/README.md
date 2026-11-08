@@ -61,6 +61,12 @@ hedge order is still in flight.
 
 Positions are tracked via `on_order_filled`. Each fill on the hedge
 instrument, call leg, or put leg updates the corresponding position field.
+After `OrderFillVoided`, the strategy applies the change in the cached order's
+filled quantity to the matching position field. It retains startup exposure from
+external positions and other strategies, and ignores their later fills, even when
+they share a venue position with this strategy. The next Greeks update or timer
+check uses the corrected exposure.
+
 Portfolio delta is computed as:
 
 ```

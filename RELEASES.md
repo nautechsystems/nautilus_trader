@@ -135,6 +135,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `DeltaNeutralVol` hedging with stale exposure after fill voids
 - Fixed calculated daily theta to use a 365-day divisor instead of 365.25
 - Fixed remote Parquet instrument queries under catalog prefixes containing a `data` segment
 - Fixed L1 trade-only matching using stale passive-side prices (#5573), thanks @chaneyka1
