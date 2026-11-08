@@ -217,3 +217,156 @@ impl ExecutionClientAdapter {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use async_trait::async_trait;
+    use futures::future::FutureExt;
+    use nautilus_common::clients::ExecutionClient;
+    use nautilus_core::{Params, UnixNanos};
+    use nautilus_model::{
+        accounts::AccountAny,
+        enums::OmsType,
+        identifiers::{AccountId, ClientId, Venue},
+        reports::ExecutionMassStatus,
+        types::{AccountBalance, MarginBalance},
+    };
+    use rstest::rstest;
+
+    use super::ExecutionClientAdapter;
+    use crate::engine::stubs::StubExecutionClient;
+
+    struct MassStatusClient {
+        stub: StubExecutionClient,
+        mass_status: ExecutionMassStatus,
+        lookbacks: Rc<RefCell<Vec<Option<u64>>>>,
+    }
+
+    impl MassStatusClient {
+        fn new(mass_status: ExecutionMassStatus, lookbacks: Rc<RefCell<Vec<Option<u64>>>>) -> Self {
+            let stub = StubExecutionClient::new(
+                ClientId::from("SIM"),
+                AccountId::from("SIM-001"),
+                Venue::from("SIM"),
+                OmsType::Netting,
+                None,
+            );
+
+            Self {
+                stub,
+                mass_status,
+                lookbacks,
+            }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for MassStatusClient {
+        fn is_connected(&self) -> bool {
+            self.stub.is_connected()
+        }
+
+        fn client_id(&self) -> ClientId {
+            self.stub.client_id()
+        }
+
+        fn account_id(&self) -> AccountId {
+            self.stub.account_id()
+        }
+
+        fn venue(&self) -> Venue {
+            self.stub.venue()
+        }
+
+        fn oms_type(&self) -> OmsType {
+            self.stub.oms_type()
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            self.stub.get_account()
+        }
+
+        fn generate_account_state(
+            &self,
+            balances: Vec<AccountBalance>,
+            margins: Vec<MarginBalance>,
+            reported: bool,
+            ts_event: UnixNanos,
+            info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            self.stub
+                .generate_account_state(balances, margins, reported, ts_event, info)
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            self.stub.start()
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            self.stub.stop()
+        }
+
+        async fn generate_mass_status(
+            &self,
+            lookback_mins: Option<u64>,
+        ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+            self.lookbacks.borrow_mut().push(lookback_mins);
+
+            Ok(Some(self.mass_status.clone()))
+        }
+    }
+
+    #[rstest]
+    #[case::matching_identity("SIM", "SIM-001", "SIM", None)]
+    #[case::mismatched_client_id(
+        "OTHER",
+        "SIM-001",
+        "SIM",
+        Some("Execution mass status client ID OTHER did not match source client SIM")
+    )]
+    #[case::mismatched_account_id(
+        "SIM",
+        "OTHER-001",
+        "SIM",
+        Some("Execution mass status account ID OTHER-001 did not match source account SIM-001")
+    )]
+    #[case::mismatched_venue(
+        "SIM",
+        "SIM-001",
+        "OTHER",
+        Some("Execution mass status venue OTHER did not match source venue SIM")
+    )]
+    fn test_generate_mass_status_validates_identity_and_forwards_lookback(
+        #[case] report_client_id: &str,
+        #[case] report_account_id: &str,
+        #[case] report_venue: &str,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let mass_status = ExecutionMassStatus::new(
+            ClientId::from(report_client_id),
+            AccountId::from(report_account_id),
+            Venue::from(report_venue),
+            UnixNanos::from(42),
+            None,
+        );
+
+        let lookbacks = Rc::new(RefCell::new(Vec::new()));
+        let client = MassStatusClient::new(mass_status.clone(), Rc::clone(&lookbacks));
+        let adapter = ExecutionClientAdapter::new(Box::new(client));
+
+        let result = adapter
+            .generate_mass_status(Some(23))
+            .now_or_never()
+            .expect("mass status stub should complete immediately");
+
+        if let Some(expected_error) = expected_error {
+            assert_eq!(result.unwrap_err().to_string(), expected_error);
+        } else {
+            assert_eq!(result.unwrap(), Some(mass_status));
+        }
+
+        assert_eq!(lookbacks.borrow().as_slice(), &[Some(23)]);
+    }
+}

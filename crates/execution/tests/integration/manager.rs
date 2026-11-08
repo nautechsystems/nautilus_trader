@@ -34,8 +34,8 @@ use nautilus_model::{
         },
     },
     identifiers::{
-        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TradeId,
-        TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
+        TradeId, TraderId, VenueOrderId,
     },
     instruments::{
         Instrument, InstrumentAny,
@@ -305,6 +305,75 @@ fn test_create_new_submit_order_returns_emulator_submit_action() {
             .get_submit_order_commands()
             .contains_key(&order.client_order_id())
     );
+}
+
+#[rstest]
+fn test_create_new_submit_order_preserves_command_context_and_cache_indexes() {
+    let (clock, cache) = create_test_components();
+    let manager_clock = clock.clone();
+    let mut manager = OrderManager::new(clock, cache.clone(), true);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim().id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let position_id = PositionId::from("P-SUBMIT-CONTEXT");
+    let client_id = ClientId::from("CLIENT-SUBMIT-CONTEXT");
+    let correlation_id = UUID4::new();
+
+    let actions = manager
+        .create_new_submit_order(
+            &order,
+            Some(position_id),
+            Some(client_id),
+            Some(correlation_id),
+        )
+        .unwrap();
+
+    assert_eq!(actions.len(), 2);
+    assert!(matches!(
+        &actions[0],
+        OrderManagerAction::PublishInitialized(OrderEventAny::Initialized(event))
+            if event == order.init_event()
+    ));
+
+    let command = match &actions[1] {
+        OrderManagerAction::SubmitToRisk(command) => command,
+        other => panic!("expected risk submit action, was {other:?}"),
+    };
+
+    let order_init = order.init_event().clone();
+    let ts_init = manager_clock.borrow().timestamp_ns();
+
+    let expected = SubmitOrder::new(
+        order.trader_id(),
+        Some(client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order_init,
+        order.exec_algorithm_id(),
+        Some(position_id),
+        None,
+        command.command_id,
+        ts_init,
+        Some(correlation_id),
+    );
+
+    assert_eq!(command, &expected);
+    assert_eq!(
+        manager
+            .get_submit_order_commands()
+            .get(&order.client_order_id()),
+        Some(command)
+    );
+    let cache = cache.borrow();
+    assert_eq!(
+        cache.position_id(&order.client_order_id()),
+        Some(&position_id)
+    );
+    assert_eq!(cache.client_id(&order.client_order_id()), Some(&client_id));
 }
 
 #[rstest]

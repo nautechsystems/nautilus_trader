@@ -2238,6 +2238,25 @@ fn test_l1_depth_skips_padding_for_last_quote_tracking() {
 #[case::historical_gtc((None, TimeInForce::Gtc, "3.000", OrderStatus::Filled))]
 #[case::historical_ioc((None, TimeInForce::Ioc, "3.000", OrderStatus::Filled))]
 #[case::historical_fok((None, TimeInForce::Fok, "3.000", OrderStatus::Filled))]
+fn test_l2_historical_book_order_lifecycle(
+    #[case] scenario: (Option<&str>, TimeInForce, &str, OrderStatus),
+    #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] liquidity_consumption: bool,
+    #[values(false, true)] use_market_order_acks: bool,
+    #[values(false, true)] one_sided: bool,
+) {
+    assert_l2_book_order_lifecycle(
+        scenario,
+        order_type,
+        side,
+        liquidity_consumption,
+        use_market_order_acks,
+        one_sided,
+    );
+}
+
+#[rstest]
 #[case::custom_fok((Some("3.000"), TimeInForce::Fok, "3.000", OrderStatus::Filled))]
 #[case::empty_gtc((Some("0.000"), TimeInForce::Gtc, "0.000", OrderStatus::Accepted))]
 #[case::empty_ioc((Some("0.000"), TimeInForce::Ioc, "0.000", OrderStatus::Canceled))]
@@ -2252,6 +2271,24 @@ fn test_l2_custom_book_order_lifecycle(
     #[values(false, true)] liquidity_consumption: bool,
     #[values(false, true)] use_market_order_acks: bool,
     #[values(false, true)] one_sided: bool,
+) {
+    assert_l2_book_order_lifecycle(
+        scenario,
+        order_type,
+        side,
+        liquidity_consumption,
+        use_market_order_acks,
+        one_sided,
+    );
+}
+
+fn assert_l2_book_order_lifecycle(
+    scenario: (Option<&str>, TimeInForce, &str, OrderStatus),
+    order_type: OrderType,
+    side: OrderSide,
+    liquidity_consumption: bool,
+    use_market_order_acks: bool,
+    one_sided: bool,
 ) {
     let (custom_size, time_in_force, expected_qty, expected_status) = scenario;
     let (mut engine, events) = custom_book_engine(

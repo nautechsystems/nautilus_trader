@@ -3173,6 +3173,67 @@ mod tests {
     }
 
     #[rstest]
+    fn test_submit_order_unsupported_emulation_trigger_cancels_order(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let portfolio_events =
+            register_portfolio_event_handler("Portfolio.update_order.unsupported_trigger");
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::LastOrBidAsk);
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        let command = create_submit_order(&instrument, &order);
+        let (order_handler, order_events) = subscribe_order_topic(strategy_id);
+        let (cancel_handler, cancel_events) = subscribe_order_cancel_topic(instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+
+        emulator.borrow_mut().handle_submit_order(&command);
+        msgbus::unsubscribe_order_events(get_event_order_topic(strategy_id).into(), &order_handler);
+        msgbus::unsubscribe_order_events(
+            get_order_canceled_topic(instrument_id).into(),
+            &cancel_handler,
+        );
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let portfolio_events = portfolio_events.get_messages();
+        let order_events = order_events.borrow();
+        let cancel_events = cancel_events.borrow();
+
+        assert_eq!(cached_order.status(), OrderStatus::Canceled);
+        assert!(matches!(
+            cached_order.last_event(),
+            OrderEventAny::Canceled(event) if event.client_order_id == client_order_id
+        ));
+        assert!(
+            !emulator
+                .get_submit_order_commands()
+                .contains_key(&client_order_id)
+        );
+        assert!(emulator.get_matching_core(&instrument_id).is_none());
+        assert!(emulator.subscribed_quotes().is_empty());
+        assert!(emulator.subscribed_trades().is_empty());
+        assert_eq!(
+            portfolio_events.as_slice(),
+            std::slice::from_ref(cached_order.last_event())
+        );
+        assert_eq!(
+            order_events.as_slice(),
+            std::slice::from_ref(cached_order.last_event())
+        );
+        assert_eq!(
+            cancel_events.as_slice(),
+            std::slice::from_ref(cached_order.last_event())
+        );
+    }
+
+    #[rstest]
     fn test_submit_order_missing_trigger_instrument_cancels_order(
         instrument: CryptoPerpetual,
         #[values(false, true)] synthetic: bool,
@@ -5523,6 +5584,78 @@ mod tests {
 
         let commands = emulator.borrow().get_submit_order_commands();
         assert!(!commands.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_cancel_order_after_release_forwards_to_execution_engine(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.released_cancel");
+        let _risk_commands =
+            register_risk_command_handler("RiskEngine.queue_execute.released_cancel");
+        let (exec_handler, exec_commands) = get_typed_into_message_saving_handler::<TradingCommand>(
+            Some(Ustr::from("ExecutionEngine.queue_execute.released_cancel")),
+        );
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        submit_to_emulator(&cache, &emulator, &instrument, &order);
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5099.00", "5101.00"));
+        let released_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        assert_eq!(released_order.status(), OrderStatus::Released);
+
+        let account_id = AccountId::from("ACCOUNT-001");
+        let submitted = TestOrderEventStubs::submitted(&released_order, account_id);
+        cache.borrow_mut().update_order(&submitted).unwrap();
+        let accepted = TestOrderEventStubs::accepted(
+            &released_order,
+            account_id,
+            VenueOrderId::from("V-RELEASED"),
+        );
+        cache.borrow_mut().update_order(&accepted).unwrap();
+        let accepted_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        assert_eq!(accepted_order.status(), OrderStatus::Accepted);
+
+        let cancel = CancelOrder::new(
+            accepted_order.trader_id(),
+            None,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            accepted_order.venue_order_id(),
+            UUID4::new(),
+            UnixNanos::from(31),
+            None,
+            None,
+        );
+
+        let (order_handler, order_events) = subscribe_order_topic(strategy_id);
+        let (cancel_handler, cancel_events) = subscribe_order_cancel_topic(instrument_id);
+
+        emulator.borrow_mut().handle_cancel_order(cancel.clone());
+        msgbus::unsubscribe_order_events(get_event_order_topic(strategy_id).into(), &order_handler);
+        msgbus::unsubscribe_order_events(
+            get_order_canceled_topic(instrument_id).into(),
+            &cancel_handler,
+        );
+        let cached_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let exec_commands = exec_commands.get_messages();
+
+        assert_eq!(cached_order.status(), OrderStatus::Accepted);
+        assert_eq!(
+            exec_commands,
+            [TradingCommand::CancelOrder(cancel)],
+            "forwarded commands"
+        );
+        assert!(order_events.borrow().is_empty());
+        assert!(cancel_events.borrow().is_empty());
     }
 
     #[rstest]

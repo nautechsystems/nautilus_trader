@@ -326,7 +326,7 @@ mod tests {
         orders::builder::OrderTestBuilder,
         types::Quantity,
     };
-    use pyo3::ffi::c_str;
+    use pyo3::{exceptions::PyTypeError, ffi::c_str};
     use rstest::rstest;
 
     use super::*;
@@ -394,6 +394,32 @@ mod tests {
             assert!(!handle.is_limit_filled().unwrap());
             assert!(handle.is_slipped().unwrap());
             assert!(handle.fill_limit_inside_spread().unwrap());
+        });
+    }
+
+    #[rstest]
+    #[case::neither(&[])]
+    #[case::limit_only(&["is_limit_filled"])]
+    #[case::slipped_only(&["is_slipped"])]
+    fn test_python_fill_model_any_rejects_missing_required_methods(#[case] methods: &[&str]) {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let model = py
+                .eval(c_str!("type('CustomFillModel', (), {})()"), None, None)
+                .unwrap();
+            let callback = py.eval(c_str!("lambda self: True"), None, None).unwrap();
+            for method in methods {
+                model.setattr(*method, &callback).unwrap();
+            }
+
+            let error = pyobject_to_fill_model_any(&model).unwrap_err();
+
+            assert!(error.is_instance_of::<PyTypeError>(py));
+            assert_eq!(
+                error.to_string(),
+                "TypeError: Cannot convert CustomFillModel to FillModel"
+            );
         });
     }
 

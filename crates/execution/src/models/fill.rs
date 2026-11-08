@@ -1992,6 +1992,78 @@ mod tests {
     }
 
     #[rstest]
+    #[case::two_tier(
+        FillModelAny::TwoTier(TwoTierFillModel::default()),
+        Quantity::from(10),
+        vec![(dec!(0.80000), dec!(10)), (dec!(0.79999), dec!(10_000_000_000))],
+        vec![(dec!(0.80010), dec!(10)), (dec!(0.80011), dec!(10_000_000_000))]
+    )]
+    #[case::three_tier(
+        FillModelAny::ThreeTier(ThreeTierFillModel::default()),
+        Quantity::from(10),
+        vec![
+            (dec!(0.80000), dec!(50)),
+            (dec!(0.79999), dec!(30)),
+            (dec!(0.79998), dec!(20)),
+        ],
+        vec![
+            (dec!(0.80010), dec!(50)),
+            (dec!(0.80011), dec!(30)),
+            (dec!(0.80012), dec!(20)),
+        ]
+    )]
+    #[case::limit_order_partial_fill(
+        FillModelAny::LimitOrderPartialFill(LimitOrderPartialFillModel::default()),
+        Quantity::from(10),
+        vec![(dec!(0.80000), dec!(5)), (dec!(0.79999), dec!(10_000_000_000))],
+        vec![(dec!(0.80010), dec!(5)), (dec!(0.80011), dec!(10_000_000_000))]
+    )]
+    #[case::size_aware_at_threshold(
+        FillModelAny::SizeAware(SizeAwareFillModel::default()),
+        Quantity::from(10),
+        vec![(dec!(0.80000), dec!(50))],
+        vec![(dec!(0.80010), dec!(50))]
+    )]
+    #[case::size_aware_above_threshold(
+        FillModelAny::SizeAware(SizeAwareFillModel::default()),
+        Quantity::from(11),
+        vec![(dec!(0.80000), dec!(10)), (dec!(0.79999), dec!(1))],
+        vec![(dec!(0.80010), dec!(10)), (dec!(0.80011), dec!(1))]
+    )]
+    fn test_fill_model_any_builds_expected_books(
+        #[case] mut model: FillModelAny,
+        #[case] order_qty: Quantity,
+        #[case] expected_bids: Vec<(Decimal, Decimal)>,
+        #[case] expected_asks: Vec<(Decimal, Decimal)>,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(order_qty)
+            .build();
+
+        let book = model
+            .get_orderbook_for_fill_simulation(
+                &instrument,
+                &order,
+                Some(Price::from("0.80000")),
+                Some(Price::from("0.80010")),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            expected_bids
+        );
+        assert_eq!(
+            book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            expected_asks
+        );
+    }
+
+    #[rstest]
     fn test_fill_model_any_is_limit_filled() {
         let mut model = FillModelAny::Default(DefaultFillModel::new(0.5, 0.1, Some(42)).unwrap());
         let result = model.is_limit_filled().unwrap();
@@ -2065,18 +2137,18 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(10))
             .build();
-        let models: Vec<Box<dyn FillModel>> = vec![
-            Box::new(DefaultFillModel::default()),
-            Box::new(BestPriceFillModel::default()),
-            Box::new(OneTickSlippageFillModel::default()),
-            Box::new(ProbabilisticFillModel::default()),
-            Box::new(TwoTierFillModel::default()),
-            Box::new(ThreeTierFillModel::default()),
-            Box::new(LimitOrderPartialFillModel::default()),
-            Box::new(SizeAwareFillModel::default()),
-            Box::new(CompetitionAwareFillModel::default()),
-            Box::new(VolumeSensitiveFillModel::default()),
-            Box::new(MarketHoursFillModel::default()),
+        let models: Vec<FillModelAny> = vec![
+            FillModelAny::Default(DefaultFillModel::default()),
+            FillModelAny::BestPrice(BestPriceFillModel::default()),
+            FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default()),
+            FillModelAny::Probabilistic(ProbabilisticFillModel::default()),
+            FillModelAny::TwoTier(TwoTierFillModel::default()),
+            FillModelAny::ThreeTier(ThreeTierFillModel::default()),
+            FillModelAny::LimitOrderPartialFill(LimitOrderPartialFillModel::default()),
+            FillModelAny::SizeAware(SizeAwareFillModel::default()),
+            FillModelAny::CompetitionAware(CompetitionAwareFillModel::default()),
+            FillModelAny::VolumeSensitive(VolumeSensitiveFillModel::default()),
+            FillModelAny::MarketHours(MarketHoursFillModel::default()),
         ];
 
         for mut model in models {
@@ -2103,14 +2175,27 @@ mod tests {
 
     #[rstest]
     fn test_fill_model_any_fill_limit_inside_spread_dispatch() {
-        let default = FillModelAny::Default(DefaultFillModel::default());
-        assert!(!default.fill_limit_inside_spread().unwrap());
+        let models: Vec<FillModelAny> = vec![
+            FillModelAny::Default(DefaultFillModel::default()),
+            FillModelAny::BestPrice(BestPriceFillModel::default()),
+            FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default()),
+            FillModelAny::Probabilistic(ProbabilisticFillModel::default()),
+            FillModelAny::TwoTier(TwoTierFillModel::default()),
+            FillModelAny::ThreeTier(ThreeTierFillModel::default()),
+            FillModelAny::LimitOrderPartialFill(LimitOrderPartialFillModel::default()),
+            FillModelAny::SizeAware(SizeAwareFillModel::default()),
+            FillModelAny::CompetitionAware(CompetitionAwareFillModel::default()),
+            FillModelAny::VolumeSensitive(VolumeSensitiveFillModel::default()),
+            FillModelAny::MarketHours(MarketHoursFillModel::default()),
+        ];
 
-        let best_price = FillModelAny::BestPrice(BestPriceFillModel::default());
-        assert!(best_price.fill_limit_inside_spread().unwrap());
+        let expected_policies = [
+            false, true, false, false, false, false, false, false, false, false, false,
+        ];
 
-        let one_tick = FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default());
-        assert!(!one_tick.fill_limit_inside_spread().unwrap());
+        for (model, expected) in models.into_iter().zip(expected_policies) {
+            assert_eq!(model.fill_limit_inside_spread().unwrap(), expected);
+        }
     }
 
     #[rstest]
