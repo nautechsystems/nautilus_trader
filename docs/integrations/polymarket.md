@@ -1283,9 +1283,17 @@ market-order type.
 a pUSD maker budget, so price improvement can return more shares.
 
 When `quantity * price` is not an exact cent amount, the adapter truncates that budget to two
-decimal places. It signs the share quantity derived from that budget, rounded up to the market
-amount precision, so the signed ratio does not exceed the limit price. It updates the local order
-to that signed quantity before posting. This applies to single and batch submissions.
+decimal places. It signs the share quantity derived from that budget, rounded down to the market
+amount precision, so the order can match at the limit price. It updates the local order to that
+signed quantity before posting. This applies to single and batch submissions.
+
+For example, buying 75.82 shares at 0.999 signs a 75.74 pUSD budget and 75.81581 shares. Rounding
+the shares up to 75.81582 would put the signed price below 0.999 and prevent matching at that price.
+
+For both these immediate BUYs and market BUYs, the signed amount ratio must remain strictly below
+the limit plus 0.0001, the finest supported tick. This prevents matching at a higher legal price even
+if the cached market tick becomes finer. The adapter blocks unsafe orders before signing. Immediate
+limit BUYs emit `OrderSubmitted` followed by `OrderRejected`; market BUYs emit `OrderDenied`.
 
 A later fill can still raise the quantity to the actual matched size. A budget that truncates to
 zero is denied before signing.
