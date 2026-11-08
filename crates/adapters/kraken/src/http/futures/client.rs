@@ -2760,17 +2760,31 @@ impl KrakenFuturesHttpClient {
         let original_order_id = params.order_id.clone();
 
         let response = self.inner.edit_order(&params).await?;
-        let status = response.edit_status.status.as_str();
+        let succeeded = response.result == KrakenApiResult::Success;
 
-        if response.result != KrakenApiResult::Success {
-            return Err(KrakenModifyOrderError::Rejected {
-                reason: status.to_string(),
+        let Some(edit_status) = response.edit_status else {
+            if succeeded {
+                return Err(KrakenHttpError::ParseError(
+                    "edit response has no `editStatus`".to_string(),
+                )
+                .into());
             }
-            .into());
-        }
 
-        match status {
-            "edited" => {}
+            return Err(match response.error.filter(|code| !code.is_empty()) {
+                Some(code) if is_futures_modify_error_rejection(&code) => {
+                    KrakenModifyOrderError::Rejected { reason: code }.into()
+                }
+                Some(code) => KrakenHttpError::ApiError(vec![code]).into(),
+                None => KrakenHttpError::ApiError(vec![
+                    "edit request failed without a reason".to_string(),
+                ])
+                .into(),
+            });
+        };
+
+        // An error result confirms no edit, so an applied status there leaves the outcome unknown
+        match edit_status.status.as_str() {
+            "edited" | "filled" if succeeded => {}
             status if is_futures_modify_rejection(status) => {
                 return Err(KrakenModifyOrderError::Rejected {
                     reason: status.to_string(),
@@ -2786,10 +2800,9 @@ impl KrakenFuturesHttpClient {
         }
 
         // Return the new order_id from the response, or fall back to the original
-        let new_venue_order_id = response
-            .edit_status
+        let new_venue_order_id = edit_status
             .order_id
-            .or(response.edit_status.order_id_snake_case)
+            .or(edit_status.order_id_snake_case)
             .or(original_order_id)
             .ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
@@ -3225,10 +3238,63 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
     )
 }
 
+/// Whether an edit status states that the venue did not apply the edit.
+///
+/// The list holds the refusals the edit documentation lists other than `selfFill`, since Kraken
+/// documents that a self-matching edit removes the order. It adds `tooManyOrders`, which the Maker
+/// Protection guide returns for a request past the hold cap that held edits count toward, and
+/// send-order refusals the edit documentation does not list. `orderForEditNotFound` is a refusal as
+/// the cancel path treats `notFound`, although it can also mean the order has left the book, which
+/// only the private feeds or reconciliation establish.
+///
+/// `iocWouldNotExecute` is left out, since Kraken's edit documentation and 22 October 2026
+/// changelog conflict on whether an edit can still end as immediate-or-cancel. The list therefore
+/// stands apart from `is_futures_submit_rejection`, where that status refuses a placement.
 fn is_futures_modify_rejection(status: &str) -> bool {
-    status.parse::<KrakenSendStatus>().is_ok_and(|status| {
-        status == KrakenSendStatus::NotFound || is_futures_submit_rejection(status.as_ref())
-    })
+    matches!(
+        status,
+        "invalidPrice"
+            | "tooManySmallOrders"
+            | "outsidePriceCollar"
+            | "wouldNotReducePosition"
+            | "orderForEditNotFound"
+            | "orderForEditNotAStop"
+            | "editAlreadyHeld"
+            | "tooManyOrders"
+    ) || matches!(
+        status.parse::<KrakenSendStatus>(),
+        Ok(KrakenSendStatus::NotFound
+            | KrakenSendStatus::InsufficientAvailableFunds
+            | KrakenSendStatus::InvalidOrderType
+            | KrakenSendStatus::InvalidSize
+            | KrakenSendStatus::WouldCauseLiquidation
+            | KrakenSendStatus::PostWouldExecute
+            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition
+            | KrakenSendStatus::ClientOrderIdAlreadyExist
+            | KrakenSendStatus::ClientOrderIdTooBig
+            | KrakenSendStatus::ClientOrderIdTooLong
+            | KrakenSendStatus::ClientOrderIdInvalid)
+    )
+}
+
+/// Whether a Kraken Futures error code refuses an edit request, so the venue did not apply it.
+///
+/// Every other code leaves the outcome unknown. `apiLimitExceeded`, `Server Error`, `Unavailable`
+/// and `unknownError` do not say whether the request was processed, and `nonceDuplicate` means the
+/// venue already saw a request under this nonce, which can be this edit. Kraken documents one set
+/// of error codes for every endpoint, so a code outside it has no documented meaning for an edit.
+fn is_futures_modify_error_rejection(code: &str) -> bool {
+    matches!(
+        code,
+        "invalidArgument"
+            | "requiredArgumentMissing"
+            | "Json Parse Error"
+            | "notFound"
+            | "accountInactive"
+            | "marketUnavailable"
+            | "authenticationError"
+            | "nonceBelowThreshold"
+    )
 }
 
 fn map_futures_trigger_signal(
@@ -5363,6 +5429,41 @@ mod tests {
         response.to_string()
     }
 
+    /// Kraken's documented edit response with `editStatus.status` replaced and no order events.
+    fn edit_response_with_status(status: &str) -> String {
+        let mut response: serde_json::Value =
+            serde_json::from_str(DOCUMENTED_EDIT_RESPONSE).unwrap();
+        response["editStatus"]["status"] = serde_json::json!(status);
+        response["editStatus"]["orderEvents"] = serde_json::json!([]);
+        response.to_string()
+    }
+
+    /// Kraken's documented edit response carrying `status`, answered with `result: "error"` and
+    /// `code` as its error.
+    fn error_edit_response_with_status(status: &str, code: Option<&str>) -> String {
+        let mut response: serde_json::Value =
+            serde_json::from_str(&edit_response_with_status(status)).unwrap();
+        response["result"] = serde_json::json!("error");
+
+        if let Some(code) = code {
+            response["error"] = serde_json::json!(code);
+        }
+        response.to_string()
+    }
+
+    /// The error response the edit API documents, carrying `code` as its error, or no code.
+    fn edit_error_response(code: Option<&str>) -> String {
+        let mut response = serde_json::json!({
+            "result": "error",
+            "serverTime": "2020-08-27T17:03:33.196Z",
+        });
+
+        if let Some(code) = code {
+            response["error"] = serde_json::json!(code);
+        }
+        response.to_string()
+    }
+
     /// Sends an edit naming the order by `venue_order_id`, or by client order ID alone, to a venue
     /// that answers with `body`.
     async fn modify_order_answered_with(
@@ -5507,6 +5608,248 @@ mod tests {
             matches!(
                 error.downcast_ref::<KrakenModifyOrderError>(),
                 Some(KrakenModifyOrderError::MissingOrderId)
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A filled edit names the order as an applied edit does, so a response naming no order leaves
+    /// nothing to name it on a request by client order ID alone.
+    #[rstest]
+    #[tokio::test]
+    async fn test_modify_order_filled_by_client_id_fails_without_an_order_id() {
+        let mut response: serde_json::Value =
+            serde_json::from_str(&edit_response_with_status("filled")).unwrap();
+        response["editStatus"]
+            .as_object_mut()
+            .unwrap()
+            .remove("orderId");
+
+        let error = modify_order_answered_with(response.to_string(), None)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::MissingOrderId)
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A status confirming the venue applied the edit returns the order's venue order ID.
+    #[rstest]
+    #[case::edited("edited")]
+    #[case::filled("filled")]
+    #[tokio::test]
+    async fn test_modify_order_confirms_an_applied_edit(#[case] status: &str) {
+        let venue_order_id = modify_order_answered_with(edit_response_with_status(status), None)
+            .await
+            .unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from(DOCUMENTED_EDIT_ORDER_ID));
+    }
+
+    /// A status stating the venue did not apply the edit rejects it.
+    #[rstest]
+    #[case::invalid_size("invalidSize")]
+    #[case::invalid_price("invalidPrice")]
+    #[case::insufficient_available_funds("insufficientAvailableFunds")]
+    #[case::too_many_small_orders("tooManySmallOrders")]
+    #[case::outside_price_collar("outsidePriceCollar")]
+    #[case::post_would_execute("postWouldExecute")]
+    #[case::would_not_reduce_position("wouldNotReducePosition")]
+    #[case::order_for_edit_not_found("orderForEditNotFound")]
+    #[case::order_for_edit_not_a_stop("orderForEditNotAStop")]
+    #[case::edit_already_held("editAlreadyHeld")]
+    #[case::too_many_orders("tooManyOrders")]
+    #[case::not_found("notFound")]
+    #[case::invalid_order_type("invalidOrderType")]
+    #[case::would_cause_liquidation("wouldCauseLiquidation")]
+    #[case::reduce_only_would_increase_position("reduceOnlyWouldIncreasePosition")]
+    #[case::client_order_id_already_exist("clientOrderIdAlreadyExist")]
+    #[case::client_order_id_too_big("clientOrderIdTooBig")]
+    #[case::client_order_id_too_long("clientOrderIdTooLong")]
+    #[case::client_order_id_invalid("clientOrderIdInvalid")]
+    #[tokio::test]
+    async fn test_modify_order_rejects_an_edit_refusal_status(#[case] status: &str) {
+        let error = modify_order_answered_with(
+            edit_response_with_status(status),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::Rejected { reason }) if reason == status
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A status that does not establish whether the venue applied the edit leaves the outcome
+    /// unknown: Kraken documents that a self-matching edit removes the order, its documentation
+    /// conflicts on whether an edit can still end as `iocWouldNotExecute`, and it documents no
+    /// other status for an edit.
+    #[rstest]
+    #[case::self_fill("selfFill")]
+    #[case::ioc_would_not_execute("iocWouldNotExecute")]
+    #[case::market_suspended("marketSuspended")]
+    #[case::undocumented("processing")]
+    #[case::empty("")]
+    #[tokio::test]
+    async fn test_modify_order_leaves_an_unestablished_edit_status_unknown(#[case] status: &str) {
+        let error = modify_order_answered_with(
+            edit_response_with_status(status),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::UnknownStatus { status: unknown }) if unknown == status
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// An error response carrying an edit status that refuses the edit rejects it by that status,
+    /// whatever error code accompanies it.
+    #[rstest]
+    #[case::not_found("notFound", None)]
+    #[case::invalid_price("invalidPrice", None)]
+    #[case::with_a_refusal_code("invalidPrice", Some("invalidArgument"))]
+    #[case::with_an_unsettled_code("invalidPrice", Some("apiLimitExceeded"))]
+    #[tokio::test]
+    async fn test_modify_order_error_response_rejects_a_refusal_status(
+        #[case] status: &str,
+        #[case] code: Option<&str>,
+    ) {
+        let error = modify_order_answered_with(
+            error_edit_response_with_status(status, code),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::Rejected { reason }) if reason == status
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// An error response carrying an edit status that does not refuse the edit leaves the outcome
+    /// unknown, so an applied or removed order is not reported as working on its old terms.
+    #[rstest]
+    #[case::edited("edited", None)]
+    #[case::filled("filled", None)]
+    #[case::ioc_would_not_execute("iocWouldNotExecute", None)]
+    #[case::undocumented("processing", Some("invalidArgument"))]
+    #[tokio::test]
+    async fn test_modify_order_error_response_leaves_another_status_unknown(
+        #[case] status: &str,
+        #[case] code: Option<&str>,
+    ) {
+        let error = modify_order_answered_with(
+            error_edit_response_with_status(status, code),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::UnknownStatus { status: unknown }) if unknown == status
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// The documented error response rejects the edit when its code refuses the request.
+    #[rstest]
+    #[case::invalid_argument("invalidArgument")]
+    #[case::required_argument_missing("requiredArgumentMissing")]
+    #[case::json_parse_error("Json Parse Error")]
+    #[case::not_found("notFound")]
+    #[case::account_inactive("accountInactive")]
+    #[case::market_unavailable("marketUnavailable")]
+    #[case::authentication_error("authenticationError")]
+    #[case::nonce_below_threshold("nonceBelowThreshold")]
+    #[tokio::test]
+    async fn test_modify_order_rejects_an_error_code_refusing_the_edit(#[case] code: &str) {
+        let error = modify_order_answered_with(
+            edit_error_response(Some(code)),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::Rejected { reason }) if reason == code
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// The documented error response with any other code, or none, leaves the outcome unknown and
+    /// keeps the venue's code.
+    #[rstest]
+    #[case::rate_limited(Some("apiLimitExceeded"), "apiLimitExceeded")]
+    #[case::duplicate_nonce(Some("nonceDuplicate"), "nonceDuplicate")]
+    #[case::undocumented(Some("undocumentedError"), "undocumentedError")]
+    #[case::empty(Some(""), "edit request failed without a reason")]
+    #[case::absent(None, "edit request failed without a reason")]
+    #[tokio::test]
+    async fn test_modify_order_keeps_an_unsettled_error_code_as_an_api_error(
+        #[case] code: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let error =
+            modify_order_answered_with(edit_error_response(code), Some(DOCUMENTED_EDIT_ORDER_ID))
+                .await
+                .unwrap_err();
+
+        assert!(
+            error.downcast_ref::<KrakenModifyOrderError>().is_none(),
+            "{error:#}"
+        );
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenHttpError>(),
+                Some(KrakenHttpError::ApiError(errors)) if errors == &[expected]
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A success response without an edit status establishes nothing, so it fails rather than
+    /// reporting the edit applied.
+    #[rstest]
+    #[tokio::test]
+    async fn test_modify_order_without_an_edit_status_fails_to_parse() {
+        let error = modify_order_answered_with(
+            r#"{"result":"success","serverTime":"2020-08-27T17:03:33.196Z"}"#.to_string(),
+            Some(DOCUMENTED_EDIT_ORDER_ID),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenHttpError>(),
+                Some(KrakenHttpError::ParseError(message))
+                    if message == "edit response has no `editStatus`"
             ),
             "{error:#}"
         );

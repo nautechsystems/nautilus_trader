@@ -484,6 +484,40 @@ size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resiz
 the order, single or batch. Kraken Futures does not document its answer to a
 total at or below the filled quantity.
 
+Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm
+the edit, and the private feeds carry the update or the fills. These statuses refuse the edit and
+emit `OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
+`tooManySmallOrders`, `outsidePriceCollar`, `postWouldExecute`, `wouldNotReducePosition`,
+`orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the
+Maker Protection guide returns for a request past its hold cap. The send-order refusals `notFound`,
+`invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`, and the client
+order ID statuses also reject an edit, though the edit documentation does not list them. So does
+an error response whose code refuses the request: `invalidArgument`, `requiredArgumentMissing`,
+`Json Parse Error`, `notFound`, `accountInactive`, `marketUnavailable`, `authenticationError`, or
+`nonceBelowThreshold`. `orderForEditNotFound` can also mean the order has left the book; the
+adapter rejects the edit as it rejects a cancel answered `notFound`.
+
+A refusal does not establish that the order is still working. Kraken can refuse an edit by
+canceling the order, and the open-orders feed then closes it. If that update is missed, the order
+stays open locally until an open-order check or a restart reconciles it, since the Futures
+execution client does not reconcile on reconnect. Nor does a refusal establish that nothing
+applied: a refused reprice in a [split amendment](#split-amendments) leaves the size reduction
+already applied, which arrives as `OrderUpdated`.
+
+These outcomes stay unconfirmed, so the adapter logs a warning and emits no event:
+
+- `selfFill`: Kraken documents that a self-matching edit removes the order.
+- `iocWouldNotExecute`: the edit documentation reports an edit applied as immediate-or-cancel with
+  its remainder removed, while the 22 October 2026 changelog says a held order is no longer
+  converted to immediate-or-cancel.
+- Any other status, such as one Kraken does not document.
+- Any other error code, including `apiLimitExceeded` and `nonceDuplicate`, or none.
+
+If no private update resolves such an edit, the in-flight check cancels the order locally once its
+retries run out, about 30 seconds on the default settings. This classification covers responses
+served with HTTP 200, the only status Kraken Futures documents. A response with an HTTP error
+status stays unconfirmed whatever its body.
+
 ### Position management
 
 | Feature          | Spot | Futures | Notes                                                |
@@ -527,6 +561,8 @@ The Phase 3 rollout added 51 markets at the same time. The hold applies to every
   placements are not held. Orders fired by triggers are held unless post-only.
 - **Self-trade prevention**: A released order cancels any resting order of the same account it would
   match, overriding the configured strategy. The resting order's cancel reason is `CANCELLED_BY_SELF_TRADE`.
+- **Held edits**: A second edit while an earlier edit of the order is held is refused with
+  `editAlreadyHeld`, and the order stays as it rests until the earlier edit releases.
 
 #### Split amendments
 
