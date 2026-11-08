@@ -9998,8 +9998,8 @@ async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
     assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
 }
 
-/// A documented edit refusal, by edit status or by error code, emits `OrderModifyRejected` caused
-/// by the modify command, which ends the command's in-flight tracking.
+/// A documented edit refusal, by edit status or by error code, emits `OrderModifyRejected` with the
+/// venue's status or code as its reason and the modify command as its causation.
 #[rstest]
 #[case::invalid_price(
     r#"{"result":"success","editStatus":{"status":"invalidPrice","orderId":"F-MODIFY","orderEvents":[]}}"#,
