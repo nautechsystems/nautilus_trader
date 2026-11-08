@@ -294,6 +294,7 @@ Released on TBD (UTC).
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
 - Fixed Polymarket open-order checks failing while an admitted fill awaits application
 - Fixed Polymarket Gamma requests not retrying transient HTTP failures (#5508), thanks @imbolc
+- Fixed Polymarket Gamma `condition_ids` lookups failing with HTTP 414 (#5433), thanks for reporting @gingeard
 - Fixed Sandbox open-order checks rejecting resting orders (#5366), thanks for reporting @awss1i
 - Fixed Sandbox execution panic on non-time bars (#5271), thanks for reporting @chaneyka1
 

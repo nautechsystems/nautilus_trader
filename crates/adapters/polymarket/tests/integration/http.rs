@@ -526,6 +526,10 @@ async fn handle_gamma_markets_keyset(
         .await
         .push(query_pairs(&uri));
 
+    if uri.to_string().len() > 8192 {
+        return StatusCode::URI_TOO_LONG.into_response();
+    }
+
     if let Some(page) = state.gamma_markets_pages.lock().await.pop_front() {
         return Json(page).into_response();
     }
@@ -4025,6 +4029,142 @@ async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
 
     // The local offset spans two pages: 87 markets x 2 tokens each
     assert_eq!(instruments.len(), 174);
+}
+
+#[rstest]
+#[case(0, None)]
+#[case(7, None)]
+#[case(100, None)]
+#[case(101, None)]
+#[case(7, Some(3))]
+#[case(0, Some(200))]
+#[case(0, Some(0))]
+#[tokio::test]
+async fn test_gamma_condition_ids_skip_redundant_cursor(
+    #[case] offset: u32,
+    #[case] max_markets: Option<u32>,
+) {
+    let state = TestServerState::default();
+    let condition_ids: Vec<String> = (0..100).map(|i| format!("0x{i:064x}")).collect();
+
+    let markets: Vec<Value> = condition_ids
+        .iter()
+        .enumerate()
+        .map(|(i, condition_id)| {
+            gamma_market_with_slug(
+                &format!("market-{i}"),
+                condition_id,
+                [&format!("3{i:075}"), &format!("4{i:075}")],
+            )
+        })
+        .collect();
+
+    state.gamma_markets_pages.lock().await.push_back(json!({
+        "markets": markets,
+        "next_cursor": "a".repeat(216),
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let markets = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids.clone()),
+            offset: Some(offset),
+            max_markets,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let actual: Vec<&str> = markets
+        .iter()
+        .map(|market| market.condition_id.as_str())
+        .collect();
+    let expected: Vec<&str> = condition_ids
+        .iter()
+        .skip(offset as usize)
+        .take(max_markets.map_or(usize::MAX, |maximum| maximum as usize))
+        .map(String::as_str)
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(state.gamma_markets_query_log.lock().await.len(), 1);
+}
+
+#[rstest]
+#[case(None, false)]
+#[case(Some("0xfirst"), false)]
+#[case(Some(" 0xfirst "), false)]
+#[case(None, true)]
+#[tokio::test]
+async fn test_gamma_condition_ids_paginate_until_distinct_bound(
+    #[case] duplicate: Option<&str>,
+    #[case] missing: bool,
+) {
+    let state = TestServerState::default();
+    let first = gamma_market_with_slug("first", "0xfirst", ["31", "41"]);
+    let second = gamma_market_with_slug("second", "0xsecond", ["32", "42"]);
+    {
+        let mut pages = state.gamma_markets_pages.lock().await;
+        pages.push_back(json!({"markets": [first], "next_cursor": "cursor-1"}));
+
+        let next_cursor = if missing { None } else { Some("unused-cursor") };
+        pages.push_back(json!({"markets": [second], "next_cursor": next_cursor}));
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+    let mut condition_ids = vec!["0xfirst".to_string(), "0xsecond".to_string()];
+    if let Some(duplicate) = duplicate {
+        condition_ids.push(duplicate.to_string());
+    }
+
+    if missing {
+        condition_ids.push("0xmissing".to_string());
+    }
+
+    let markets = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let actual: Vec<&str> = markets
+        .iter()
+        .map(|market| market.condition_id.as_str())
+        .collect();
+    let log = state.gamma_markets_query_log.lock().await;
+    assert_eq!(actual, vec!["0xfirst", "0xsecond"]);
+    assert_eq!(log.len(), 2);
+    assert!(!log[0].contains_key("after_cursor"));
+    assert_eq!(
+        log[1].get("after_cursor").map(String::as_str),
+        Some("cursor-1")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_gamma_condition_ids_empty_filter_rejected_before_http() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let error = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(Vec::new()),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: condition_ids must contain non-empty values"
+    );
+    assert!(state.gamma_markets_query_log.lock().await.is_empty());
 }
 
 #[rstest]

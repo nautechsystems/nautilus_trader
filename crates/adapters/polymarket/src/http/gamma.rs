@@ -21,13 +21,15 @@
 //! - `/events/keyset` accepts at most 500 items per page.
 //! - Keyset endpoints reject `offset`; the paginators apply a requested initial
 //!   offset locally for compatibility.
-//! - `next_cursor` is absent on the final page.
+//! - Missing `next_cursor` ends pagination; a full final page can still include one.
 //! - `condition_ids=` accepts at most 100 IDs per request, so `load_ids` for
-//!   larger sets chunks the request and unions the responses.
+//!   larger sets chunks the request and unions the responses. `condition_ids`
+//!   lookups stop at one market per distinct ID, since a redundant cursor request
+//!   can exceed Gamma's URI limit (HTTP 414).
 
 use std::{collections::HashMap, future::Future, result::Result as StdResult, sync::Arc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use jiff::Timestamp;
 use nautilus_common::live::dst;
 use nautilus_core::{
@@ -576,7 +578,7 @@ impl PolymarketGammaHttpClient {
 
         let reducer = WindowedCollect::new(
             base_params.offset.unwrap_or(0) as usize,
-            base_params.max_markets.map(|value| value as usize),
+            gamma_markets_maximum(&base_params),
             GammaStop::CallerCapped,
         );
         let paginator = Paginator::new("Gamma market", protocol, reducer);
@@ -1092,6 +1094,24 @@ impl PolymarketGammaHttpClient {
     #[must_use]
     pub fn inner(&self) -> &Arc<PolymarketGammaRawHttpClient> {
         &self.inner
+    }
+}
+
+fn gamma_markets_maximum(params: &GetGammaMarketsParams) -> Option<usize> {
+    let caller_maximum = params.max_markets.map(|value| value as usize);
+
+    let condition_maximum = params.condition_ids.as_ref().map(|ids| {
+        let distinct = ids
+            .iter()
+            .map(|id| id.trim())
+            .collect::<AHashSet<_>>()
+            .len();
+        distinct.saturating_sub(params.offset.unwrap_or(0) as usize)
+    });
+
+    match (caller_maximum, condition_maximum) {
+        (Some(caller), Some(conditions)) => Some(caller.min(conditions)),
+        (caller, conditions) => caller.or(conditions),
     }
 }
 
