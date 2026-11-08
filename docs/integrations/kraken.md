@@ -962,15 +962,19 @@ filled orders. Historical reads have the limits below.
 Kraken states an order's time in force and post-only flag only through its order type. It documents the `ioc` and
 `post` types in the send-order response and the order history (`IoC` and `Post`), but not in the open-order read
 (`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the orders-status window
-states no order type. Reports take these values as follows:
+states no time in force or post-only flag (its type is only `ORDER` or `TRIGGER_ORDER`). Reports take these values
+as follows:
 
 - A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
   history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
 - The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
   send-order response's first order event, where `ioc` is `IOC` and `post` is post-only `GTC`, and from the order
-  history when the response carries no event.
-- An open-only read, an open order with no row on the page, and an order feed delta for an order the adapter does
-  not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not post-only.
+  history when the response carries no event. A resting post-only order the open-order read lists with a documented
+  type therefore reports as `GTC` and not post-only, since that read documents no `post` type; a read with
+  `open_only=False` that finds a readable history row of the order on the page reports it post-only.
+- An open-only read, an open order with no readable row on the page, and an order feed delta for an order the adapter
+  does not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not
+  post-only.
 - The orders-status window reports `GTC` and not post-only.
 
 A resting post-only order adopted from a report that does not state it keeps `GTC` and not post-only: no later

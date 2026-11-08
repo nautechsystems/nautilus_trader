@@ -5936,10 +5936,12 @@ mod tests {
             .await
             .unwrap();
 
-        let report = reports
+        let open_reports: Vec<_> = reports
             .iter()
-            .find(|report| report.venue_order_id.as_str() == "H-OPEN")
-            .unwrap_or_else(|| panic!("{reports:?}"));
+            .filter(|report| report.venue_order_id.as_str() == "H-OPEN")
+            .collect();
+        assert_eq!(open_reports.len(), 1, "{reports:?}");
+        let report = open_reports[0];
         assert_eq!(report.quantity, Quantity::from("3"));
         assert_eq!(report.time_in_force, expected_time_in_force);
         assert_eq!(report.post_only, expected_post_only);

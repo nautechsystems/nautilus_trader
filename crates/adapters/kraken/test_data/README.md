@@ -57,6 +57,10 @@ and `executed` response examples from Kraken's
 retrieved on 2026-11-08 and unchanged apart from whitespace. Tests replace the order's `type`; those
 variants are not venue responses.
 
+The send-status `orderTrigger` test cases reuse `http_send_order_futures_unknown_trigger.json`, a
+synthetic payload, because the Send order documentation has no `orderTrigger` example; they replace
+its `type` and add a `sendStatus.order_id`.
+
 ## Futures split amendment
 
 `ws_futures_split_amend.json` is a synthetic sequence authored on 2026-10-31, not a venue capture.
