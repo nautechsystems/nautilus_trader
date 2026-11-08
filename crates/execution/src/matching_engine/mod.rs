@@ -3805,6 +3805,31 @@ impl OrderMatchingEngine {
             return;
         }
 
+        // Matching is suspended while the market is not open, so an update that makes the
+        // order marketable would fill against the book the market left. Reject it as a
+        // submit is rejected; a cancel is still accepted
+        if self.market_status != MarketStatus::Open {
+            self.generate_order_modify_rejected(
+                command.trader_id,
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                Ustr::from(
+                    format!(
+                        "Market {} is {}, cannot modify order {}",
+                        self.instrument.id(),
+                        self.market_status,
+                        command.client_order_id
+                    )
+                    .as_str(),
+                ),
+                command.venue_order_id,
+                Some(account_id),
+                Some(command.command_id),
+            );
+            return;
+        }
+
         let order = match self.order_snapshot(command.client_order_id) {
             Some(order) => order,
             None => {

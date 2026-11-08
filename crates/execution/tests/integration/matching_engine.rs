@@ -1010,6 +1010,123 @@ fn test_process_order_rejects_when_market_not_open_and_accepts_after_reopen(
     assert!(engine.order_exists(accepted_client_order_id));
 }
 
+// A modify while the market is not open must not fill against the book the market left
+#[rstest]
+#[case::halted(MarketStatusAction::Halt, MarketStatus::Closed)]
+#[case::paused(MarketStatusAction::Pause, MarketStatus::Paused)]
+#[case::suspended(MarketStatusAction::Suspend, MarketStatus::Suspended)]
+#[case::closed(MarketStatusAction::Close, MarketStatus::Closed)]
+fn test_process_modify_rejects_when_market_not_open_and_applies_after_reopen(
+    #[case] close_action: MarketStatusAction,
+    #[case] expected_status: MarketStatus,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    for (side, price, order_id) in [
+        (OrderSide::Buy, "1500.00", 1),
+        (OrderSide::Sell, "1501.00", 2),
+    ] {
+        let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                side,
+                Price::from(price),
+                Quantity::from("1.000"),
+                order_id,
+            ))
+            .build();
+        engine.process_order_book_delta(&delta).unwrap();
+    }
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1510.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let modify = |price: &str| {
+        ModifyOrder::new(
+            TraderId::test_default(),
+            Some(ClientId::from("CLIENT-001")),
+            StrategyId::test_default(),
+            instrument_eth_usdt.id(),
+            client_order_id,
+            None,
+            None,
+            Some(Price::from(price)),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None, // correlation_id
+        )
+    };
+
+    engine.process_status(close_action);
+    assert_eq!(engine.market_status, expected_status);
+
+    // Crossing the bid the market left (1500.00), then not crossing it
+    for price in ["1499.00", "1505.00"] {
+        let command = modify(price);
+        engine.process_modify(&command, account_id);
+
+        let saved_messages = get_order_event_handler_messages(&order_event_handler);
+        assert_eq!(saved_messages.len(), 1, "{saved_messages:?}");
+        let rejected = match saved_messages.first().unwrap() {
+            OrderEventAny::ModifyRejected(rejected) => rejected,
+            event => panic!("Expected OrderModifyRejected event, was {event:?}"),
+        };
+        assert_eq!(rejected.causation_id, Some(command.command_id));
+        assert_eq!(
+            rejected.reason.as_str(),
+            format!(
+                "Market {} is {expected_status}, cannot modify order {client_order_id}",
+                instrument_eth_usdt.id()
+            )
+        );
+        assert_eq!(
+            cache.borrow().order(&client_order_id).unwrap().price(),
+            Some(Price::from("1510.00"))
+        );
+        assert!(engine.order_exists(client_order_id));
+        clear_order_event_handler_messages(&order_event_handler);
+    }
+
+    engine.process_status(MarketStatusAction::Trading);
+    assert_eq!(engine.market_status, MarketStatus::Open);
+    engine.process_modify(&modify("1499.00"), account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let filled = saved_messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(filled) => Some(filled),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("Expected OrderFilled event, was {saved_messages:?}"));
+    assert_eq!(filled.last_px, Price::from("1500.00"));
+}
+
 #[rstest]
 #[case::halted(MarketStatusAction::Halt, MarketStatus::Closed)]
 #[case::paused(MarketStatusAction::Pause, MarketStatus::Paused)]
