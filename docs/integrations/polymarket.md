@@ -574,13 +574,18 @@ ordered wallet submission. Standard and negative-risk conditions can share a bat
 are preserved; callers choose the batch size and deduplication policy. No supported numerical maximum is
 established. A preparation error submits nothing and logs the failing condition and zero-based index at
 WARN, while returning the original error. A V2 condition prevents the entire submission.
+Replace the illustrative condition IDs below with actual CTF market IDs.
 
 ```rust tab="Rust"
+let condition_a = "0x1111111111111111111111111111111111111111111111111111111111111111";
+let condition_b = "0x2222222222222222222222222222222222222222222222222222222222222222";
 let transaction = client.redeem_positions_batch(&[condition_a, condition_b]).await?;
 let outcome = transaction.wait().await?;
 ```
 
 ```python tab="Python"
+condition_a = "0x" + "11" * 32
+condition_b = "0x" + "22" * 32
 transaction = await client.redeem_positions_batch([condition_a, condition_b])
 outcome = await transaction.wait()
 ```
