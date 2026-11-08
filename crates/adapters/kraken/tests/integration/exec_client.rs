@@ -10074,6 +10074,9 @@ async fn test_futures_refused_edit_emits_modify_rejected(
 #[case::self_fill(
     r#"{"result":"success","editStatus":{"status":"selfFill","orderId":"F-MODIFY","orderEvents":[]}}"#
 )]
+#[case::post_would_execute(
+    r#"{"result":"success","editStatus":{"status":"postWouldExecute","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
 #[case::rate_limited(
     r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"apiLimitExceeded"}"#
 )]

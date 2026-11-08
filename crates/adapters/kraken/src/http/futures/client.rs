@@ -3241,9 +3241,11 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
 
 /// Whether an edit status states that the venue did not apply the edit.
 ///
-/// The list holds the refusals the edit documentation lists other than `selfFill`, since the Maker
-/// Protection guide documents that a self-matching edit that is not held removes the order being
-/// amended. It adds `tooManyOrders`, which the Maker Protection guide returns for a request past
+/// The list holds the refusals the edit documentation lists other than `selfFill` and
+/// `postWouldExecute`, which remove the order: the Maker Protection guide documents that a
+/// self-matching edit that is not held removes the order being amended, and the edit documentation
+/// says a `postWouldExecute` order "would be filled upon placement, thus is cancelled". It adds
+/// `tooManyOrders`, which the Maker Protection guide returns for a request past
 /// the hold cap that held edits count toward, and the `KrakenSendStatus` statuses the edit
 /// documentation does not list. The guide documents `orderForEditNotFound` for an edit whose
 /// target is not resting: it had left the book by the time a held edit released, or its placement
@@ -3270,7 +3272,6 @@ fn is_futures_modify_rejection(status: &str) -> bool {
             | KrakenSendStatus::InvalidOrderType
             | KrakenSendStatus::InvalidSize
             | KrakenSendStatus::WouldCauseLiquidation
-            | KrakenSendStatus::PostWouldExecute
             | KrakenSendStatus::ReduceOnlyWouldIncreasePosition
             | KrakenSendStatus::ClientOrderIdAlreadyExist
             | KrakenSendStatus::ClientOrderIdTooBig
@@ -5658,7 +5659,6 @@ mod tests {
     #[case::insufficient_available_funds("insufficientAvailableFunds")]
     #[case::too_many_small_orders("tooManySmallOrders")]
     #[case::outside_price_collar("outsidePriceCollar")]
-    #[case::post_would_execute("postWouldExecute")]
     #[case::would_not_reduce_position("wouldNotReducePosition")]
     #[case::order_for_edit_not_found("orderForEditNotFound")]
     #[case::order_for_edit_not_a_stop("orderForEditNotAStop")]
@@ -5692,10 +5692,11 @@ mod tests {
 
     /// A documented edit status that does not establish whether the venue applied the edit leaves
     /// the outcome unknown: Kraken documents that a self-matching edit that is not held removes the
-    /// order being amended, and its documentation conflicts on whether an edit can still end as
-    /// `iocWouldNotExecute`.
+    /// order being amended and that a `postWouldExecute` order is canceled, and its documentation
+    /// conflicts on whether an edit can still end as `iocWouldNotExecute`.
     #[rstest]
     #[case::self_fill("selfFill")]
+    #[case::post_would_execute("postWouldExecute")]
     #[case::ioc_would_not_execute("iocWouldNotExecute")]
     #[tokio::test]
     async fn test_modify_order_leaves_an_unestablished_edit_status_unknown(#[case] status: &str) {

@@ -487,8 +487,7 @@ total at or below the filled quantity.
 Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm
 the edit, and the private feeds carry the update or the fills. These statuses refuse the edit and
 emit `OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
-`tooManySmallOrders`, `outsidePriceCollar`, `postWouldExecute`, `wouldNotReducePosition`,
-`orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the
+`tooManySmallOrders`, `outsidePriceCollar`, `wouldNotReducePosition`, `orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the
 Maker Protection guide returns for a request past its hold cap. The adapter also rejects an edit on
 statuses from its send-order status set that the edit documentation does not list: `notFound`,
 `invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`,
@@ -511,6 +510,8 @@ These outcomes stay unconfirmed, so the adapter logs a warning and emits no even
 
 - `selfFill`: the Maker Protection guide documents that a self-matching edit that is not held
   removes the order being amended.
+- `postWouldExecute`: the edit documentation says the edited order "would be filled upon
+  placement, thus is cancelled". A placement answered with it is still rejected.
 - `iocWouldNotExecute`: the edit documentation reports an edit applied as immediate-or-cancel with
   its remainder removed, while the 22 October 2026 changelog says a held order is no longer
   converted to immediate-or-cancel.
