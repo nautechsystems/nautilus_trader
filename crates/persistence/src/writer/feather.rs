@@ -620,7 +620,7 @@ impl FeatherWriter {
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
         // Write the RecordBatch to the appropriate FileWriter.
-        self.stage_batch_write(path, &batch)?;
+        self.stage_batch_writes(path, std::slice::from_ref(&batch))?;
         self.flush_if_due()
     }
 
@@ -632,7 +632,10 @@ impl FeatherWriter {
     /// `price_precision=0, size_precision=0`).
     ///
     /// Rows are grouped by identifier so each group encodes with its own metadata before it is
-    /// appended to the type's file.
+    /// appended to the type's file. The groups of one file are staged together
+    /// (`stage_batch_writes`): the groups come out of their map in hash order, and a rotation
+    /// decided group by group could seal the file on a later group's row and put an earlier
+    /// group's row, equal to the sealed file's last `ts_init`, in the next file.
     pub fn write_batch<T>(&mut self, data: Vec<T>) -> Result<(), Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogFamily + 'static,
@@ -663,6 +666,8 @@ impl FeatherWriter {
             return Ok(());
         }
 
+        let mut staged: Vec<(FileWriterPath, Vec<RecordBatch>)> = Vec::new();
+
         for (data_type, group) in groups.into_values() {
             let path = self.get_writer_path(data_type);
             let metadata = T::chunk_metadata(&group);
@@ -681,7 +686,14 @@ impl FeatherWriter {
             let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
             let batch = record_batch_with_delta_staged_metadata(&batch, &metadata_rows)?;
 
-            self.stage_batch_write(path, &batch)?;
+            match staged.iter_mut().find(|(staged, _)| *staged == path) {
+                Some((_, batches)) => batches.push(batch),
+                None => staged.push((path, vec![batch])),
+            }
+        }
+
+        for (path, batches) in staged {
+            self.stage_batch_writes(path, &batches)?;
         }
 
         self.flush_if_due()
@@ -703,26 +715,29 @@ impl FeatherWriter {
         Ok(CatalogDataType::Instrument(class))
     }
 
-    /// Appends `batch` to the open file of `path`, or to the file opened after rotating it when
-    /// the batch's first `ts_init` is due one (`rotated_for`).
-    fn stage_batch_write(
+    /// Appends `batches` to the open file of `path`, or to the file opened after rotating it when
+    /// their earliest `ts_init` is due one (`rotated_for`). The batches share that one decision,
+    /// so rows written together land in one file whatever their order.
+    fn stage_batch_writes(
         &mut self,
         path: FileWriterPath,
-        batch: &RecordBatch,
+        batches: &[RecordBatch],
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !self.writers.contains_key(&path) {
             return Ok(());
         }
 
-        let (first_ts, last_ts) = record_batch_ts_init_range(std::slice::from_ref(batch))?;
+        let (first_ts, last_ts) = record_batch_ts_init_range(batches)?;
         let path = self.rotated_for(path, first_ts)?;
         let Some(file) = self.writers.get_mut(&path) else {
             return Ok(());
         };
 
-        if let Err(e) = file.write_record_batch(batch) {
-            self.abandon_file(&path);
-            return Err(e.into());
+        for batch in batches {
+            if let Err(e) = file.write_record_batch(batch) {
+                self.abandon_file(&path);
+                return Err(e.into());
+            }
         }
 
         file.last_ts_init = Some(file.last_ts_init.map_or(last_ts, |last| last.max(last_ts)));
@@ -1482,7 +1497,7 @@ impl FeatherWriter {
         batch =
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
-        self.stage_batch_write(path, &batch)?;
+        self.stage_batch_writes(path, std::slice::from_ref(&batch))?;
         self.flush_if_due()
     }
 
@@ -1804,8 +1819,12 @@ mod tests {
     }
 
     fn quote_at(ts: u64) -> QuoteTick {
+        quote_for("AUD/USD.SIM", ts)
+    }
+
+    fn quote_for(instrument_id: &str, ts: u64) -> QuoteTick {
         QuoteTick::new(
-            InstrumentId::from("AUD/USD.SIM"),
+            InstrumentId::from(instrument_id),
             Price::from("1.0"),
             Price::from("1.1"),
             Quantity::from("1000"),
@@ -2252,6 +2271,42 @@ mod tests {
             sealed_timestamps(temp_dir.path()),
             vec![vec![before], vec![after, after]]
         );
+    }
+
+    // `write_batch` stages its identifier groups in hash order. Rotating group by group could
+    // seal the file on the later row of one group and then put the other group's row, sharing the
+    // sealed file's last `ts_init`, in the next file: the rows of one call share one file
+    #[rstest]
+    fn a_batch_shares_one_rotation_decision_whatever_its_group_order() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::Interval { interval_ns: 10 },
+            None,
+            None,
+        );
+
+        writer.write(quote_at(1)).unwrap();
+        writer
+            .write_data_batch(vec![
+                Data::from(quote_at(1)),
+                Data::from(quote_for("EUR/USD.SIM", 11)),
+            ])
+            .unwrap();
+        assert_eq!(sealed_timestamps(temp_dir.path()), Vec::<Vec<u64>>::new());
+
+        // The rotation the batch's row at 11 made due opens the next file at the next later row
+        writer.write(quote_at(12)).unwrap();
+        writer.close().unwrap();
+
+        // The groups' order within the file follows their map
+        let mut files = sealed_timestamps(temp_dir.path());
+        for file in &mut files {
+            file.sort_unstable();
+        }
+        assert_eq!(files, vec![vec![1, 1, 11], vec![12]]);
     }
 
     #[rstest]

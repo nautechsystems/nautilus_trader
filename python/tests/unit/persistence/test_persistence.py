@@ -1046,8 +1046,9 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
     """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
+    now_ns = pd.Timestamp(now).value
     clock = Clock.new_test()
-    clock.set_time(pd.Timestamp(now).value)
+    clock.set_time(now_ns)
     writer = StreamingFeatherWriter(
         path=path,
         cache=Cache(),
@@ -1058,7 +1059,8 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
             timezone="America/New_York",
         ),
     )
-    quote = TestDataProviderPyo3.quote_tick()
+    # The file's first row sets its rotation from its own ts_init
+    quote = TestDataProviderPyo3.quote_tick(ts_event=now_ns, ts_init=now_ns)
 
     writer.write(quote)
 
