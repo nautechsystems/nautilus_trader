@@ -282,8 +282,13 @@ for the shared recovery machinery and adapter responsibilities.
 
 The `bybit-book-stress` harness is a development tool for changes to book synchronization and recovery. It
 connects to Bybit mainnet public market data and submits no orders. It checks six linear books at the default
-depth of 50 against the book stream contract. These checks include rising sequences within each snapshot
-episode. It also checks against an independent reconstruction of the venue feed's best 50 levels.
+depth of 50 against:
+
+- The book stream contract, including rising sequences within each snapshot episode.
+- A reference book of the best 50 levels, rebuilt from the frames the proxy relays.
+
+A separate public connection, outside the proxy, compares that reference book at the same cross sequence
+(`seq`). A session fails unless every book has at least one such comparison.
 
 From the repository root, run:
 

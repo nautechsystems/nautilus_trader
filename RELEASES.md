@@ -310,6 +310,7 @@ Released on TBD (UTC).
 - Standardized Derive report generation with HTTP collection on runtime workers (#5216)
 - Standardized Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Improved Docker publishing with temporary digest directories isolated per job
+- Improved Bybit book stress comparisons with a separate public order book connection
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Optimized account cloning by sharing event histories (#5496), thanks @mi-netizen007
 - Optimized custom data Arrow encoding, decoding, and string buffer allocation, thanks @faysou
