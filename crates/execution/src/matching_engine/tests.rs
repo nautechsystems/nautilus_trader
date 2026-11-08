@@ -6596,6 +6596,104 @@ fn test_quote_touch_fills_inside_limit_without_own_side_probability_gate(
 }
 
 #[rstest]
+#[case::buy_limit_resting(
+    OrderType::Limit,
+    OrderSide::Buy,
+    Some("99.00"),
+    None,
+    "99.00",
+    "99.00"
+)]
+#[case::sell_limit_resting(
+    OrderType::Limit,
+    OrderSide::Sell,
+    Some("101.00"),
+    None,
+    "101.00",
+    "101.00"
+)]
+#[case::buy_limit_marketable(
+    OrderType::Limit,
+    OrderSide::Buy,
+    Some("101.00"),
+    None,
+    "100.00",
+    "100.01"
+)]
+#[case::buy_market(OrderType::Market, OrderSide::Buy, None, None, "100.00", "100.01")]
+#[case::sell_market(OrderType::Market, OrderSide::Sell, None, None, "100.00", "99.99")]
+#[case::buy_market_protected(OrderType::Market, OrderSide::Buy, None, Some(0), "100.00", "100.00")]
+fn test_l1_bar_slippage_never_crosses_limit_or_protection_price(
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+    #[case] price: Option<&str>,
+    #[case] protection_points: Option<u32>,
+    #[case] unslipped_px: &str,
+    #[case] slipped_px: &str,
+    #[values(0.0, 1.0)] prob_slippage: f64,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.bar_execution = true;
+    engine.config.price_protection_points = protection_points;
+    engine.set_fill_model(
+        FillModelAny::Default(DefaultFillModel::new(1.0, prob_slippage, Some(42)).unwrap()).into(),
+    );
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+    let bar = |open: &str, high: &str, low: &str, close: &str, ts: u64| {
+        Bar::new(
+            bar_type,
+            Price::from(open),
+            Price::from(high),
+            Price::from(low),
+            Price::from(close),
+            Quantity::from("10.000"),
+            ts.into(),
+            ts.into(),
+        )
+    };
+    engine.process_bar(&bar("100.00", "100.00", "100.00", "100.00", 1));
+
+    let id = ClientOrderId::from("L1-SLIP");
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(side)
+        .quantity(Quantity::from("0.001"))
+        .submit(true);
+
+    if let Some(price) = price {
+        builder.price(Price::from(price));
+    }
+
+    let mut order = builder.build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+
+    // A resting limit fills when the next bar trades through it
+    engine.process_bar(&bar("100.00", "101.50", "98.50", "100.00", 2));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.last_px),
+            _ => None,
+        })
+        .collect();
+
+    let expected_px = if prob_slippage == 1.0 {
+        slipped_px
+    } else {
+        unslipped_px
+    };
+    assert_eq!(fills, vec![Price::from(expected_px)]);
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Filled
+    );
+}
+
+#[rstest]
 fn test_oco_fill_does_not_cancel_already_closed_sibling() {
     let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
     engine.config.support_contingent_orders = true;
