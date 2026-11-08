@@ -442,6 +442,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
 	VIRTUAL_ENV= uv run --project python --no-sync ruff format . --config python/pyproject.toml --force-exclude
+	VIRTUAL_ENV= uv run --project python --no-sync python scripts/format-python.py --fix .
 
 .PHONY: pre-commit
 pre-commit: check-cargo-cooldown  #-- Run all pre-commit hooks on all files
