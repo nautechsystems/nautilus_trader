@@ -210,7 +210,7 @@ use nautilus_model::{
         perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, QUANTITY_MAX, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -379,10 +379,10 @@ pub fn parse_spot_instrument(
         "lotSizeFilter.basePrecision",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -507,10 +507,10 @@ pub fn parse_linear_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -700,10 +700,10 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -855,10 +855,10 @@ pub fn parse_option_instrument(
         &definition.lot_size_filter.qty_step,
         "lotSizeFilter.qtyStep",
     )?;
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -1387,6 +1387,15 @@ pub(crate) fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
 
 pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
     Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
+}
+
+/// Parses an order size limit, returning `None` when it exceeds [`QUANTITY_MAX`].
+pub(crate) fn parse_max_quantity(value: &str, field: &str) -> anyhow::Result<Option<Quantity>> {
+    if parse_decimal(value, field)? > Decimal::try_from(QUANTITY_MAX)? {
+        return Ok(None);
+    }
+
+    parse_quantity(value, field).map(Some)
 }
 
 pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
@@ -2210,6 +2219,16 @@ mod tests {
 
         assert_eq!(quantity, Quantity::from(expected));
         assert_eq!(quantity.precision, precision);
+    }
+
+    #[rstest]
+    #[case::in_range("100.0".to_string(), Some("100.0".to_string()))]
+    #[case::at_max(QUANTITY_MAX.to_string(), Some(QUANTITY_MAX.to_string()))]
+    #[case::above_max(format!("{QUANTITY_MAX}.5"), None)]
+    fn test_parse_max_quantity(#[case] value: String, #[case] expected: Option<String>) {
+        let quantity = parse_max_quantity(&value, "test.quantity").unwrap();
+
+        assert_eq!(quantity, expected.as_deref().map(Quantity::from));
     }
 
     #[rstest]
