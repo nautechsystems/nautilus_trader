@@ -489,13 +489,16 @@ the edit, and the private feeds carry the update or the fills. These statuses re
 emit `OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
 `tooManySmallOrders`, `outsidePriceCollar`, `postWouldExecute`, `wouldNotReducePosition`,
 `orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the
-Maker Protection guide returns for a request past its hold cap. The send-order refusals `notFound`,
-`invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`, and the client
-order ID statuses also reject an edit, though the edit documentation does not list them. So does
-an error response whose code refuses the request: `invalidArgument`, `requiredArgumentMissing`,
-`Json Parse Error`, `notFound`, `accountInactive`, `marketUnavailable`, `authenticationError`, or
-`nonceBelowThreshold`. `orderForEditNotFound` can also mean the order has left the book; the
-adapter rejects the edit as it rejects a cancel answered `notFound`.
+Maker Protection guide returns for a request past its hold cap. The adapter also rejects an edit on
+statuses from its send-order status set that the edit documentation does not list: `notFound`,
+`invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`,
+and the client order ID statuses. The send-order documentation lists each of them except
+`reduceOnlyWouldIncreasePosition`. An error response whose code refuses the request also rejects
+the edit: `invalidArgument`, `requiredArgumentMissing`, `Json Parse Error`, `notFound`,
+`accountInactive`, `marketUnavailable`, `authenticationError`, or `nonceBelowThreshold`.
+For `orderForEditNotFound`, the Maker Protection guide states that "the edit's target is not
+resting: it had genuinely left the book by the time a held edit released, or its placement is
+still held." The adapter rejects such an edit as it rejects a cancel answered `notFound`.
 
 A refusal does not establish that the order is still working. Kraken can refuse an edit by
 canceling the order, and the open-orders feed then closes it. If that update is missed, the order
@@ -506,7 +509,8 @@ already applied, which arrives as `OrderUpdated`.
 
 These outcomes stay unconfirmed, so the adapter logs a warning and emits no event:
 
-- `selfFill`: Kraken documents that a self-matching edit removes the order.
+- `selfFill`: the Maker Protection guide documents that a self-matching edit that is not held
+  removes the order being amended.
 - `iocWouldNotExecute`: the edit documentation reports an edit applied as immediate-or-cancel with
   its remainder removed, while the 22 October 2026 changelog says a held order is no longer
   converted to immediate-or-cancel.

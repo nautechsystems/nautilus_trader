@@ -2782,7 +2782,8 @@ impl KrakenFuturesHttpClient {
             });
         };
 
-        // An error result confirms no edit, so an applied status there leaves the outcome unknown
+        // An error result does not confirm the edit, so an applied status there leaves the
+        // outcome unknown
         match edit_status.status.as_str() {
             "edited" | "filled" if succeeded => {}
             status if is_futures_modify_rejection(status) => {
@@ -3240,12 +3241,13 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
 
 /// Whether an edit status states that the venue did not apply the edit.
 ///
-/// The list holds the refusals the edit documentation lists other than `selfFill`, since Kraken
-/// documents that a self-matching edit removes the order. It adds `tooManyOrders`, which the Maker
-/// Protection guide returns for a request past the hold cap that held edits count toward, and
-/// send-order refusals the edit documentation does not list. `orderForEditNotFound` is a refusal as
-/// the cancel path treats `notFound`, although it can also mean the order has left the book, which
-/// only the private feeds or reconciliation establish.
+/// The list holds the refusals the edit documentation lists other than `selfFill`, since the Maker
+/// Protection guide documents that a self-matching edit that is not held removes the order being
+/// amended. It adds `tooManyOrders`, which the Maker Protection guide returns for a request past
+/// the hold cap that held edits count toward, and the `KrakenSendStatus` statuses the edit
+/// documentation does not list. The guide documents `orderForEditNotFound` for an edit whose
+/// target is not resting: it had left the book by the time a held edit released, or its placement
+/// is still held. Such an edit is rejected as the cancel path rejects `notFound`.
 ///
 /// `iocWouldNotExecute` is left out, since Kraken's edit documentation and 22 October 2026
 /// changelog conflict on whether an edit can still end as immediate-or-cancel. The list therefore
@@ -5689,8 +5691,9 @@ mod tests {
     }
 
     /// A documented edit status that does not establish whether the venue applied the edit leaves
-    /// the outcome unknown: Kraken documents that a self-matching edit removes the order, and its
-    /// documentation conflicts on whether an edit can still end as `iocWouldNotExecute`.
+    /// the outcome unknown: Kraken documents that a self-matching edit that is not held removes the
+    /// order being amended, and its documentation conflicts on whether an edit can still end as
+    /// `iocWouldNotExecute`.
     #[rstest]
     #[case::self_fill("selfFill")]
     #[case::ioc_would_not_execute("iocWouldNotExecute")]
