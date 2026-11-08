@@ -19,8 +19,8 @@ use std::str::FromStr;
 
 use ibapi::market_data::{
     historical::{
-        BarSize as HistoricalBarSize, BarTimestamp, Duration as IBDuration, ToDuration,
-        WhatToShow as HistoricalWhatToShow,
+        BarSize as HistoricalBarSize, BarTimestamp, Duration as IBDuration, HistoricalDataBuilder,
+        ToDuration, WhatToShow as HistoricalWhatToShow,
     },
     realtime::WhatToShow as RealtimeWhatToShow,
 };
@@ -428,8 +428,8 @@ pub fn jiff_to_ib_datetime(dt: &Timestamp) -> OffsetDateTime {
 
 /// Calculate duration segments for IB historical data request.
 ///
-/// This is used to break down a large time range into multiple requests
-/// to comply with IB's duration limits for specific bar sizes.
+/// Splits the range into year, day and second durations ending at calendar-time
+/// offsets from `end`.
 pub fn calculate_duration_segments(
     start: Option<Timestamp>,
     end: Option<Timestamp>,
@@ -570,15 +570,98 @@ pub(crate) fn retain_historical_ticks_in_range<T>(
     });
 }
 
-/// Adapt duration segments for an IB historical bars request.
+/// The time range of an IB historical bars request.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum BarRequestRange {
+    /// The bars closing from `start` to the end, or with no upper bound when `None`, fetched by
+    /// one request whose duration covers the range (see [`HistoricalDataBuilder::between`]).
+    Between(Timestamp, Option<Timestamp>),
+    /// The bars over a duration ending at an end time, or at the current time when `None`.
+    Ending(Option<Timestamp>, IBDuration),
+}
+
+impl BarRequestRange {
+    /// Returns `request` set to fetch this range of bars of `spec`.
+    pub(crate) fn apply<'a, C>(
+        self,
+        request: HistoricalDataBuilder<'a, C>,
+        spec: &BarSpecification,
+    ) -> HistoricalDataBuilder<'a, C> {
+        match self {
+            Self::Between(start, end) => {
+                let (from, to) = between_bounds(start, end, spec);
+                request.between(jiff_to_ib_datetime(&from), jiff_to_ib_datetime(&to))
+            }
+            Self::Ending(Some(end), duration) => {
+                request.duration(duration).ending(jiff_to_ib_datetime(&end))
+            }
+            Self::Ending(None, duration) => request.duration(duration),
+        }
+    }
+
+    /// Returns whether this range keeps a bar closing at `ts_event`.
+    ///
+    /// A duration range keeps every bar IB returns.
+    #[must_use]
+    pub(crate) fn contains(self, ts_event: UnixNanos) -> bool {
+        match self {
+            Self::Between(start, end) => {
+                let ts_event = Timestamp::from(ts_event);
+                ts_event >= start && end.is_none_or(|end| ts_event <= end)
+            }
+            Self::Ending(..) => true,
+        }
+    }
+}
+
+/// Returns the bounds of the `between` request for the bars of `spec` closing from `start` to
+/// `end`, or to the current time when `None`.
 ///
-/// For continuous futures the end date is dropped and only the first segment is
-/// kept (IB rejects an explicit end date with error 10339), logging a warning
-/// when the requested range cannot be honored.
-pub fn bar_request_segments(
-    segments: Vec<(Timestamp, IBDuration)>,
+/// `between` keeps the bars IB stamps in `[from, to)`. IB stamps intraday and daily bars at their
+/// open (a daily bar at midnight UTC) and weekly and monthly bars at their period end, so `from`
+/// is one bar before `start` to keep the bar opening before `start`, and `to` is just past `end`
+/// to keep a bar stamped at `end`. [`BarRequestRange::contains`] then keeps the bars closing in
+/// the range.
+#[must_use]
+fn between_bounds(
+    start: Timestamp,
+    end: Option<Timestamp>,
+    spec: &BarSpecification,
+) -> (Timestamp, Timestamp) {
+    let end = end.unwrap_or_else(Timestamp::now);
+    (
+        start - spec.timedelta(),
+        end + jiff::SignedDuration::from_nanos(1),
+    )
+}
+
+/// Returns the time range of an IB historical bars request ending at `end`, or at the current
+/// time when `None`, or `None` when the range is empty.
+///
+/// A request with a start is fetched as one request covering the range. IB counts durations
+/// in trading time, so segments whose ends are computed in calendar time leave gaps between
+/// them.
+///
+/// For continuous futures the end date is dropped and only the first duration segment is
+/// kept (IB rejects an explicit end date with error 10339), logging a warning when the
+/// requested range cannot be honored.
+#[must_use]
+pub(crate) fn bar_request_range(
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
+    duration: Option<IBDuration>,
     is_continuous_future: bool,
-) -> Vec<(Option<Timestamp>, IBDuration)> {
+) -> Option<BarRequestRange> {
+    if !is_continuous_future
+        && duration.is_none()
+        && let Some(start) = start
+    {
+        return (start < end.unwrap_or_else(Timestamp::now))
+            .then_some(BarRequestRange::Between(start, end));
+    }
+
+    let segments = calculate_duration_segments(start, end, duration);
+
     if is_continuous_future {
         // Treat end dates within the last second as "now" so requests whose
         // end defaults to the current time do not trigger a spurious warning.
@@ -595,17 +678,14 @@ pub fn bar_request_segments(
             );
         }
 
-        segments
-            .into_iter()
-            .take(1)
-            .map(|(_, d)| (None, d))
-            .collect()
-    } else {
-        segments
-            .into_iter()
-            .map(|(end, d)| (Some(end), d))
-            .collect()
+        return segments
+            .first()
+            .map(|(_, duration)| BarRequestRange::Ending(None, *duration));
     }
+
+    segments
+        .first()
+        .map(|(end, duration)| BarRequestRange::Ending(Some(*end), *duration))
 }
 
 #[cfg(test)]
@@ -1128,36 +1208,140 @@ mod tests {
         assert_eq!(end, Some(Timestamp::from_nanosecond(29).unwrap()));
     }
 
-    #[rstest]
-    fn test_bar_request_segments_attaches_end_dates_when_not_continuous() {
-        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
-        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
-        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
-
-        let result = bar_request_segments(segments, false);
-
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].0, Some(end));
-        assert_eq!(result[1].0, Some(earlier));
+    fn timestamp(value: &str) -> Timestamp {
+        value.parse().unwrap()
     }
 
     #[rstest]
-    fn test_bar_request_segments_drops_end_date_and_keeps_only_first_for_continuous() {
-        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
-        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
-        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
+    #[case::start_spans_sessions(
+        Some(timestamp("2026-10-05T00:00:00Z")),
+        None,
+        false,
+        Some(BarRequestRange::Between(
+            timestamp("2026-10-05T00:00:00Z"),
+            Some(timestamp("2026-10-07T18:00:00Z")),
+        ))
+    )]
+    #[case::start_spans_years(
+        Some(timestamp("2024-01-01T10:00:00Z")),
+        None,
+        false,
+        Some(BarRequestRange::Between(
+            timestamp("2024-01-01T10:00:00Z"),
+            Some(timestamp("2026-10-07T18:00:00Z")),
+        ))
+    )]
+    #[case::no_start(
+        None,
+        None,
+        false,
+        Some(BarRequestRange::Ending(
+            Some(timestamp("2026-10-07T18:00:00Z")),
+            IBDuration::days(1),
+        ))
+    )]
+    #[case::duration(
+        None,
+        Some(IBDuration::weeks(2)),
+        false,
+        Some(BarRequestRange::Ending(
+            Some(timestamp("2026-10-07T18:00:00Z")),
+            IBDuration::weeks(2),
+        ))
+    )]
+    #[case::start_at_end(Some(timestamp("2026-10-07T18:00:00Z")), None, false, None)]
+    #[case::start_after_end(Some(timestamp("2026-10-08T00:00:00Z")), None, false, None)]
+    #[case::continuous_future_start(
+        Some(timestamp("2025-07-03T10:00:00Z")),
+        None,
+        true,
+        Some(BarRequestRange::Ending(None, IBDuration::years(1)))
+    )]
+    #[case::continuous_future_no_start(
+        None,
+        None,
+        true,
+        Some(BarRequestRange::Ending(None, IBDuration::days(1)))
+    )]
+    #[case::continuous_future_start_after_end(
+        Some(timestamp("2026-10-08T00:00:00Z")),
+        None,
+        true,
+        None
+    )]
+    fn test_bar_request_range(
+        #[case] start: Option<Timestamp>,
+        #[case] duration: Option<IBDuration>,
+        #[case] is_continuous_future: bool,
+        #[case] expected: Option<BarRequestRange>,
+    ) {
+        let end = timestamp("2026-10-07T18:00:00Z");
 
-        let result = bar_request_segments(segments, true);
+        let range = bar_request_range(start, Some(end), duration, is_continuous_future);
 
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, None);
-        assert_eq!(result[0].1, IBDuration::years(1));
+        assert_eq!(range, expected);
     }
 
     #[rstest]
-    fn test_bar_request_segments_empty_input_yields_nothing_for_continuous() {
-        let result = bar_request_segments(vec![], true);
-        assert!(result.is_empty());
+    #[case::start_before_now(
+        timestamp("2026-10-05T00:00:00Z"),
+        Some(BarRequestRange::Between(timestamp("2026-10-05T00:00:00Z"), None))
+    )]
+    #[case::start_after_now(timestamp("2999-01-01T00:00:00Z"), None)]
+    fn test_bar_request_range_without_end(
+        #[case] start: Timestamp,
+        #[case] expected: Option<BarRequestRange>,
+    ) {
+        let range = bar_request_range(Some(start), None, None, false);
+
+        assert_eq!(range, expected);
+    }
+
+    #[rstest]
+    #[case::before_start(Some(2_000), 1_000 - 1, false)]
+    #[case::start(Some(2_000), 1_000, true)]
+    #[case::end(Some(2_000), 2_000, true)]
+    #[case::after_end(Some(2_000), 2_000 + 1, false)]
+    #[case::no_end_before_start(None, 1_000 - 1, false)]
+    #[case::no_end(None, u64::MAX, true)]
+    fn test_bar_request_range_between_contains_closes_in_inclusive_range(
+        #[case] end: Option<i128>,
+        #[case] ts_event: u64,
+        #[case] expected: bool,
+    ) {
+        let range = BarRequestRange::Between(
+            Timestamp::from_nanosecond(1_000).unwrap(),
+            end.map(|end| Timestamp::from_nanosecond(end).unwrap()),
+        );
+
+        assert_eq!(range.contains(UnixNanos::from(ts_event)), expected);
+    }
+
+    #[rstest]
+    #[case::minute(BarAggregation::Minute, "2026-10-05T09:59:00Z")]
+    #[case::day(BarAggregation::Day, "2026-10-04T10:00:00Z")]
+    #[case::week(BarAggregation::Week, "2026-09-28T10:00:00Z")]
+    fn test_between_bounds_start_one_bar_early_and_end_past_end(
+        #[case] aggregation: BarAggregation,
+        #[case] from: &str,
+    ) {
+        let spec = BarSpecification::new(1, aggregation, PriceType::Last);
+        let start = timestamp("2026-10-05T10:00:00Z");
+        let end = timestamp("2026-10-07T18:00:00Z");
+
+        let bounds = between_bounds(start, Some(end), &spec);
+
+        assert_eq!(
+            bounds,
+            (timestamp(from), timestamp("2026-10-07T18:00:00.000000001Z"))
+        );
+    }
+
+    #[rstest]
+    fn test_bar_request_range_ending_contains_every_bar() {
+        let range = BarRequestRange::Ending(None, IBDuration::days(1));
+
+        assert!(range.contains(UnixNanos::from(1)));
     }
 
     fn create_equity() -> InstrumentAny {
