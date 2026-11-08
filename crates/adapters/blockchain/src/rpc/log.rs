@@ -163,8 +163,8 @@ pub fn extract_address_from_topic(
     let bytes = extract_topic_bytes(log, index)
         .map_err(|_| anyhow::anyhow!("Missing {description} address in topic{index}"))?;
     anyhow::ensure!(
-        bytes.len() >= 32,
-        "Topic must be at least 32 bytes, was {}",
+        bytes.len() == 32,
+        "Topic must be 32 bytes, was {}",
         bytes.len()
     );
     Ok(Address::from_slice(&bytes[12..32]))
@@ -351,6 +351,29 @@ mod tests {
         assert_eq!(
             address.to_string().to_lowercase(),
             "0x838930cfe7502dd36b0b1ebbef8001fbf94f3bfb"
+        );
+    }
+
+    #[rstest]
+    #[case(31)]
+    #[case(33)]
+    fn test_extract_address_from_topic_rejects_noncanonical_width(
+        mut log: RpcLog,
+        #[case] byte_len: usize,
+    ) {
+        let valid_log = log.clone();
+        log.topics[1] = format!("0x{}", "11".repeat(byte_len));
+
+        let error = extract_address_from_topic(&log, 1, "token0").unwrap_err();
+        let address = extract_address_from_topic(&valid_log, 1, "token0").unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Topic must be 32 bytes, was {byte_len}")
+        );
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0x2e5353426c89f4ecd52d1036da822d47e73376c4"
         );
     }
 

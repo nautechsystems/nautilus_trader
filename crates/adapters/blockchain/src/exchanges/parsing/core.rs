@@ -28,13 +28,9 @@ use nautilus_core::hex;
 ///
 /// # Errors
 ///
-/// Returns an error if the byte slice is shorter than 32 bytes.
+/// Returns an error if the byte slice is not exactly 32 bytes.
 pub fn extract_address_from_bytes(bytes: &[u8]) -> anyhow::Result<Address> {
-    anyhow::ensure!(
-        bytes.len() >= 32,
-        "Topic must be at least 32 bytes, was {}",
-        bytes.len()
-    );
+    require_topic_width(bytes)?;
     Ok(Address::from_slice(&bytes[12..32]))
 }
 
@@ -45,13 +41,9 @@ pub fn extract_address_from_bytes(bytes: &[u8]) -> anyhow::Result<Address> {
 ///
 /// # Errors
 ///
-/// Returns an error if the byte slice is shorter than 32 bytes.
+/// Returns an error if the byte slice is not exactly 32 bytes.
 pub fn extract_u32_from_bytes(bytes: &[u8]) -> anyhow::Result<u32> {
-    anyhow::ensure!(
-        bytes.len() >= 32,
-        "Topic must be at least 32 bytes, was {}",
-        bytes.len()
-    );
+    require_topic_width(bytes)?;
     Ok(u32::from_be_bytes(bytes[28..32].try_into()?))
 }
 
@@ -62,14 +54,19 @@ pub fn extract_u32_from_bytes(bytes: &[u8]) -> anyhow::Result<u32> {
 ///
 /// # Errors
 ///
-/// Returns an error if the byte slice is shorter than 32 bytes.
+/// Returns an error if the byte slice is not exactly 32 bytes.
 pub fn extract_i32_from_bytes(bytes: &[u8]) -> anyhow::Result<i32> {
+    require_topic_width(bytes)?;
+    Ok(i32::from_be_bytes(bytes[28..32].try_into()?))
+}
+
+fn require_topic_width(bytes: &[u8]) -> anyhow::Result<()> {
     anyhow::ensure!(
-        bytes.len() >= 32,
-        "Topic must be at least 32 bytes, was {}",
+        bytes.len() == 32,
+        "Topic must be 32 bytes, was {}",
         bytes.len()
     );
-    Ok(i32::from_be_bytes(bytes[28..32].try_into()?))
+    Ok(())
 }
 
 /// Validate event signature matches expected hash.
@@ -127,16 +124,40 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_bytes_too_short() {
-        let bytes = vec![0u8; 31];
-        let result = extract_address_from_bytes(&bytes);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Topic must be at least 32 bytes")
+    #[case(31)]
+    #[case(33)]
+    fn test_extract_topic_rejects_noncanonical_width(#[case] byte_len: usize) {
+        let bytes = vec![0xffu8; byte_len];
+        let expected = format!("Topic must be 32 bytes, was {byte_len}");
+        let address_error = extract_address_from_bytes(&bytes).unwrap_err();
+        let fee_error = extract_u32_from_bytes(&bytes).unwrap_err();
+        let tick_error = extract_i32_from_bytes(&bytes).unwrap_err();
+
+        let address = extract_address_from_bytes(
+            &hex::decode("0000000000000000000000002e5353426c89f4ecd52d1036da822d47e73376c4")
+                .unwrap(),
+        )
+        .unwrap();
+        let fee = extract_u32_from_bytes(
+            &hex::decode("0000000000000000000000000000000000000000000000000000000000000bb8")
+                .unwrap(),
+        )
+        .unwrap();
+        let tick = extract_i32_from_bytes(
+            &hex::decode("000000000000000000000000000000000000000000000000000000000000003c")
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(address_error.to_string(), expected);
+        assert_eq!(fee_error.to_string(), expected);
+        assert_eq!(tick_error.to_string(), expected);
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0x2e5353426c89f4ecd52d1036da822d47e73376c4"
         );
+        assert_eq!(fee, 3000);
+        assert_eq!(tick, 60);
     }
 
     #[rstest]

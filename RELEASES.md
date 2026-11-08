@@ -221,6 +221,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures sided cancel-all selecting other accounts' orders (#5467), thanks @Milchstrassse
 - Fixed Binance Spot position checks incorrectly treating missing reports as flat (#5478), thanks @Milchstrassse
 - Fixed blockchain currency collisions and missing token definitions during Redis/Postgres recovery
+- Fixed blockchain event parsers panicking on short fields or misreading oversized topics
 - Fixed blockchain execution retries after host clock errors
 - Fixed blockchain pool events carrying a superseded block hash and timestamp after reorgs
 - Fixed Bybit batch modify orders not using the trade WebSocket batch amend
