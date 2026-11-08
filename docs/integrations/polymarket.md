@@ -1292,8 +1292,8 @@ the shares up to 75.81582 would put the signed price below 0.999 and prevent mat
 
 For both these immediate BUYs and market BUYs, the signed amount ratio must remain strictly below
 the limit plus 0.0001, the finest supported tick. This prevents matching at a higher legal price even
-if the cached market tick becomes finer. Orders whose rounded amounts could reach that price are
-denied before signing.
+if the cached market tick becomes finer. The adapter blocks unsafe orders before signing. Immediate
+limit BUYs emit `OrderSubmitted` followed by `OrderRejected`; market BUYs emit `OrderDenied`.
 
 A later fill can still raise the quantity to the actual matched size. A budget that truncates to
 zero is denied before signing.
