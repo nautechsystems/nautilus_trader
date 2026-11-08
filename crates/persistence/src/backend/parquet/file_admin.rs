@@ -18,7 +18,6 @@
 use std::collections::BTreeMap;
 
 use ahash::AHashSet;
-use futures::StreamExt;
 use nautilus_core::UnixNanos;
 use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 
@@ -88,6 +87,7 @@ impl ParquetDataCatalog {
     /// This operation is irreversible. Ensure the file is no longer needed before deletion.
     pub(crate) fn delete_file(&self, path: &str) -> anyhow::Result<()> {
         let object_path = self.to_object_path_parsed(path)?;
+        self.recover_consolidation(&object_path.parent().unwrap_or_default())?;
         self.execute_async(|| async {
             self.object_store
                 .delete(&object_path)
@@ -241,6 +241,7 @@ impl ParquetDataCatalog {
     /// - Files are renamed one at a time. Object stores without a native rename copy then
     ///   delete, so a failure can leave a file under both names.
     fn reset_file_names(&self, directory: &str) -> anyhow::Result<()> {
+        self.recover_consolidation(&self.to_object_path(directory)?)?;
         let parquet_files = self.list_parquet_files(directory)?;
         let mut intervals_by_directory = BTreeMap::<ObjectPath, Vec<(u64, u64)>>::new();
         let mut moves = Vec::with_capacity(parquet_files.len());
@@ -339,45 +340,40 @@ impl ParquetDataCatalog {
     /// ```
     pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<String>> {
         let data_dir = make_object_store_path(&self.base_path, ["data"]);
+        let objects = self.list_objects(&data_dir)?;
 
-        self.execute_async(|| async {
-            let mut directories = AHashSet::new();
+        let mut directories = AHashSet::new();
 
-            // List all objects under the data directory
-            let prefix = ObjectPath::from(format!("{data_dir}/"));
-            let mut stream = self.object_store.list(Some(&prefix));
+        // List all objects under the data directory
+        for object in objects {
+            let parts = object.location.parts().collect::<Vec<_>>();
 
-            while let Some(object) = stream.next().await {
-                let object = object?;
-                let parts = object.location.parts().collect::<Vec<_>>();
-
-                // Decode to match `make_path` output, which callers encode again
-                if let Some((_, parent)) = parts.split_last() {
-                    let directory = parent
-                        .iter()
-                        .map(|part| decode_object_store_segment(part.as_ref()))
-                        .collect::<Vec<_>>()
-                        .join("/");
-                    directories.insert(directory);
-                }
+            // Decode to match `make_path` output, which callers encode again
+            if let Some((_, parent)) = parts.split_last() {
+                let directory = parent
+                    .iter()
+                    .map(|part| decode_object_store_segment(part.as_ref()))
+                    .collect::<Vec<_>>()
+                    .join("/");
+                directories.insert(directory);
             }
+        }
 
-            // Find leaf directories (every listed directory contains at least one file,
-            // so a leaf is one without subdirectories)
-            let mut leaf_dirs = Vec::new();
+        // Find leaf directories (every listed directory contains at least one file,
+        // so a leaf is one without subdirectories)
+        let mut leaf_dirs = Vec::new();
 
-            for dir in &directories {
-                let prefix = format!("{dir}/");
-                let has_subdirs = directories.iter().any(|d| d.starts_with(&prefix));
+        for dir in &directories {
+            let prefix = format!("{dir}/");
+            let has_subdirs = directories.iter().any(|d| d.starts_with(&prefix));
 
-                if !has_subdirs {
-                    leaf_dirs.push(dir.clone());
-                }
+            if !has_subdirs {
+                leaf_dirs.push(dir.clone());
             }
+        }
 
-            leaf_dirs.sort();
+        leaf_dirs.sort();
 
-            Ok::<Vec<String>, anyhow::Error>(leaf_dirs)
-        })
+        Ok(leaf_dirs)
     }
 }

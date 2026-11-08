@@ -390,7 +390,11 @@ def test_catalog_file_operations_take_identifier_keyword(tmp_path: Path) -> None
     extended = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
     catalog.reset_data_file_names(NautilusDataType.Bar, identifier=bar_type)
     reset = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
-    catalog.consolidate_data(NautilusDataType.Bar, identifier=bar_type)
+    catalog.consolidate_data(
+        NautilusDataType.Bar,
+        identifier=bar_type,
+        ensure_contiguous_files=False,
+    )
     consolidated = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
     missing = catalog.get_missing_intervals_for_request(
         0,

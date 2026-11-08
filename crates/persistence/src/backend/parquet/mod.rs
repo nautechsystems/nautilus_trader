@@ -37,6 +37,8 @@ pub mod writer;
 
 pub(crate) mod metadata;
 
+mod consolidation_state;
+
 /// Default number of rows in a Parquet row group.
 pub const DEFAULT_ROW_GROUP_SIZE: usize = 131_072;
 

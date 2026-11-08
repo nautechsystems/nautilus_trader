@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
 - Removed `BookImbalanceActor` and its config; use `OrderBookImbalance` and `OrderBookImbalanceConfig`
 - Removed native `GreeksData` and `PortfolioGreeks` records; use `CustomData` for catalog writes and replay
+- Changed Parquet consolidation to reject gaps by default; pass `ensure_contiguous_files=False` to allow gaps
 - Changed `BaseAccount.events` to `Arc<Vec<AccountState>>`; use `Arc::make_mut` to edit (#5496), thanks @mi-netizen007
 - Changed Redis message retries to at-least-once delivery; deduplicate messages (#5491), thanks @Dworf
 - Changed `SubscribeOptionChain::new` to return `Result`; propagate validation errors
@@ -126,6 +127,8 @@ Released on TBD (UTC).
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
+- Fixed Parquet consolidation hiding gaps, misordering rows, and duplicating data after cleanup errors
+- Fixed Parquet consolidation moving instrument data outside its partitions
 - Fixed CoinAPI WebSocket diagnostics logging API keys from malformed frames
 - Fixed Derive configs and HTTP client exposing endpoint credentials in `Debug` output
 - Fixed `Throttler` timer deadline overflow that could panic during order submission or modification
@@ -133,6 +136,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed calculated daily theta to use a 365-day divisor instead of 365.25
+- Fixed remote Parquet instrument queries under catalog prefixes containing a `data` segment
 - Fixed L1 trade-only matching using stale passive-side prices (#5573), thanks @chaneyka1
 - Fixed relative catalog paths with the `file` protocol (#5562), thanks @madebymlai
 - Fixed Python `open_check_lookback_mins=None` ignoring unbounded lookback (#5540), thanks @SoYuCry
