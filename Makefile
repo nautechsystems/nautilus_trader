@@ -1130,7 +1130,7 @@ cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-cargo-cooldown check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
-	$(TEST_ENV) cargo llvm-cov nextest run --locked --workspace --lib --tests --features "$(CARGO_FEATURES)"
+	$(TEST_ENV) cargo llvm-cov nextest --locked --workspace --lib --tests --features "$(CARGO_FEATURES)"
 
 # -----------------------------------------------------------------------------
 # Library tests for a single crate

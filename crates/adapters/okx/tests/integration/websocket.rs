@@ -18,7 +18,6 @@
 use std::{
     collections::HashSet,
     net::SocketAddr,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -46,6 +45,7 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
+    data::BarType,
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
@@ -109,14 +109,8 @@ struct TestServerState {
     upgrade_delay: Duration,
 }
 
-fn data_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
-}
-
 fn load_json(filename: &str) -> Value {
-    let content = std::fs::read_to_string(data_path().join(filename))
-        .unwrap_or_else(|_| panic!("failed to read {filename}"));
-    serde_json::from_str(&content).expect("invalid json")
+    crate::common::load_test_json(filename)
 }
 
 fn load_margin_instruments() -> Vec<InstrumentAny> {
@@ -3715,6 +3709,67 @@ async fn test_reconnection_race_condition() {
 }
 
 #[tokio::test]
+async fn test_bar_subscription_flow() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url);
+    client.cache_instruments(&instruments);
+    client.connect().await.expect("connect failed");
+    client.wait_until_active(5.0).await.expect("wait failed");
+
+    let bar_type = BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL");
+    client
+        .subscribe_bars(bar_type)
+        .await
+        .expect("subscribe bars failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert_eq!(
+        state.subscription_events().await,
+        vec![(
+            "candle1m:BTC-USD".to_string(),
+            Some("BTC-USD".to_string()),
+            true,
+        )],
+    );
+
+    client
+        .unsubscribe_bars(bar_type)
+        .await
+        .expect("unsubscribe bars failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.unsubscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(
+        unsubscriptions.as_slice(),
+        &[json!({"channel": "candle1m", "instId": "BTC-USD"})],
+    );
+    drop(unsubscriptions);
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
 async fn test_subscribe_after_stream_call() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -3811,47 +3866,7 @@ async fn test_is_active_lifecycle() {
         !client.is_active(),
         "Client should not be active after close"
     );
-}
-
-#[tokio::test]
-async fn test_is_active_false_after_close() {
-    let state = Arc::new(TestServerState::default());
-    let addr = start_ws_server(state.clone()).await;
-    let ws_url = format!("ws://{addr}/ws");
-
-    let instruments = load_instruments();
-
-    let mut client = connect_client(&ws_url);
-    client.cache_instruments(&instruments);
-
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("wait until active failed");
-
-    assert!(
-        client.is_active(),
-        "Expected is_active() to be true after connect"
-    );
-
-    client.close().await.expect("close failed");
-
-    let client_ref = &client;
-    wait_until_async(
-        || async move { !client_ref.is_active() },
-        Duration::from_secs(2),
-    )
-    .await;
-
-    assert!(
-        !client.is_active(),
-        "Expected is_active() to be false after close"
-    );
-    assert!(
-        client.is_closed(),
-        "Expected is_closed() to be true after close"
-    );
+    assert!(client.is_closed(), "Client should be closed after close");
 }
 
 #[tokio::test]

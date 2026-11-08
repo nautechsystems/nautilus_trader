@@ -2589,7 +2589,7 @@ mod tests {
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::{AccountType, BookType, GreeksConvention},
         identifiers::{ClientOrderId, PositionId, Symbol, VenueOrderId},
-        instruments::{CryptoPerpetual, CurrencyPair},
+        instruments::CurrencyPair,
         orderbook::OrderBook,
         types::Currency,
     };
@@ -2608,7 +2608,7 @@ mod tests {
                 OKXTradeMode,
             },
             parse::parse_account_state,
-            testing::load_test_json,
+            testing::{create_stub_instrument, load_test_json},
         },
         http::models::OKXAccount,
         websocket::messages::{
@@ -2644,25 +2644,6 @@ mod tests {
         }
 
         Ok(false)
-    }
-
-    fn create_stub_instrument() -> CryptoPerpetual {
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap()
     }
 
     #[rstest]
@@ -3446,21 +3427,7 @@ mod tests {
 
         // Create a mock instrument for testing
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
@@ -3517,21 +3484,7 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let ts_init = UnixNanos::default();
 
@@ -3653,21 +3606,7 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let ts_init = UnixNanos::default();
 
@@ -4081,96 +4020,15 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report_with_fee_cache() {
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
         // First fill: 0.01 BTC out of 0.03 BTC total (1/3)
-        let order_msg_1 = OKXOrderMsg {
-            acc_fill_sz: Some("0.01".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_1".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-1.0".to_string()), // Total fee so far
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_402,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("1234567890"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::PartiallyFilled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.03".to_string(), // Total order size
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_1".to_string(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_1 =
+            create_stub_order_msg("0.01", Some("0.01".to_string()), "1234567890", "trade_1");
+        order_msg_1.exec_type = OKXExecType::Maker;
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
@@ -4187,75 +4045,13 @@ mod tests {
         assert_eq!(fill_report_1.commission, Money::new(1.0, Currency::USDT()));
 
         // Second fill: 0.02 BTC more, now 0.03 BTC total (completely filled)
-        let order_msg_2 = OKXOrderMsg {
-            acc_fill_sz: Some("0.03".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_1".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-3.0".to_string()), // Same total fee
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.02".to_string(),
-            fill_time: 1_746_947_317_403,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("1234567890"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Filled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.03".to_string(), // Same total order size
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_2".to_string(),
-            u_time: 1_746_947_317_403,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_2 =
+            create_stub_order_msg("0.02", Some("0.03".to_string()), "1234567890", "trade_2");
+        order_msg_2.fee = Some("-3.0".to_string());
+        order_msg_2.fill_time = 1_746_947_317_403;
+        order_msg_2.state = OKXOrderStatus::Filled;
+        order_msg_2.exec_type = OKXExecType::Maker;
+        order_msg_2.u_time = 1_746_947_317_403;
 
         let fill_report_2 = parse_fill_report(
             &order_msg_2,
@@ -4276,96 +4072,22 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report_with_maker_rebates() {
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
         // First fill: maker rebate of $0.5 (OKX sends as "0.5", parse_fee makes it -0.5)
-        let order_msg_1 = OKXOrderMsg {
-            acc_fill_sz: Some("0.01".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_rebate".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("0.5".to_string()), // Rebate: positive value from OKX
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_402,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("rebate_order_123"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::PartiallyFilled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_rebate_1".to_string(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_1 = create_stub_order_msg(
+            "0.01",
+            Some("0.01".to_string()),
+            "rebate_order_123",
+            "trade_rebate_1",
+        );
+        order_msg_1.cl_ord_id = "test_order_rebate".to_string();
+        order_msg_1.fee = Some("0.5".to_string());
+        order_msg_1.exec_type = OKXExecType::Maker;
+        order_msg_1.sz = "0.02".to_string();
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
@@ -4382,75 +4104,19 @@ mod tests {
         assert_eq!(fill_report_1.commission, Money::new(-0.5, Currency::USDT()));
 
         // Second fill: another maker rebate of $0.3, cumulative now $0.8
-        let order_msg_2 = OKXOrderMsg {
-            acc_fill_sz: Some("0.02".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_rebate".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("0.8".to_string()), // Cumulative rebate
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_403,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("rebate_order_123"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Filled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_rebate_2".to_string(),
-            u_time: 1_746_947_317_403,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_2 = create_stub_order_msg(
+            "0.01",
+            Some("0.02".to_string()),
+            "rebate_order_123",
+            "trade_rebate_2",
+        );
+        order_msg_2.cl_ord_id = "test_order_rebate".to_string();
+        order_msg_2.fee = Some("0.8".to_string());
+        order_msg_2.fill_time = 1_746_947_317_403;
+        order_msg_2.state = OKXOrderStatus::Filled;
+        order_msg_2.exec_type = OKXExecType::Maker;
+        order_msg_2.sz = "0.02".to_string();
+        order_msg_2.u_time = 1_746_947_317_403;
 
         let fill_report_2 = parse_fill_report(
             &order_msg_2,
@@ -4469,96 +4135,22 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report_rebate_to_charge_transition() {
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
         // First fill: maker rebate of $1.0
-        let order_msg_1 = OKXOrderMsg {
-            acc_fill_sz: Some("0.01".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_transition".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("1.0".to_string()), // Rebate from OKX
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_402,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("transition_order_456"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::PartiallyFilled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_transition_1".to_string(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_1 = create_stub_order_msg(
+            "0.01",
+            Some("0.01".to_string()),
+            "transition_order_456",
+            "trade_transition_1",
+        );
+        order_msg_1.cl_ord_id = "test_order_transition".to_string();
+        order_msg_1.fee = Some("1.0".to_string());
+        order_msg_1.exec_type = OKXExecType::Maker;
+        order_msg_1.sz = "0.02".to_string();
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
@@ -4577,75 +4169,18 @@ mod tests {
         // Second fill: taker charge of $5.0, net cumulative is now $2.0 charge
         // This is the edge case: incremental = 2.0 - (-1.0) = 3.0, which exceeds total (2.0)
         // But it's legitimate, not corruption
-        let order_msg_2 = OKXOrderMsg {
-            acc_fill_sz: Some("0.02".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_transition".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-2.0".to_string()), // Now a charge (negative from OKX)
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_403,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("transition_order_456"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Filled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_transition_2".to_string(),
-            u_time: 1_746_947_317_403,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_2 = create_stub_order_msg(
+            "0.01",
+            Some("0.02".to_string()),
+            "transition_order_456",
+            "trade_transition_2",
+        );
+        order_msg_2.cl_ord_id = "test_order_transition".to_string();
+        order_msg_2.fee = Some("-2.0".to_string());
+        order_msg_2.fill_time = 1_746_947_317_403;
+        order_msg_2.state = OKXOrderStatus::Filled;
+        order_msg_2.sz = "0.02".to_string();
+        order_msg_2.u_time = 1_746_947_317_403;
 
         let fill_report_2 = parse_fill_report(
             &order_msg_2,
@@ -4665,96 +4200,21 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report_negative_incremental() {
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
         // First fill: charge of $2.0
-        let order_msg_1 = OKXOrderMsg {
-            acc_fill_sz: Some("0.01".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_neg_inc".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-2.0".to_string()),
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_402,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("neg_inc_order_789"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::PartiallyFilled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_neg_inc_1".to_string(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_1 = create_stub_order_msg(
+            "0.01",
+            Some("0.01".to_string()),
+            "neg_inc_order_789",
+            "trade_neg_inc_1",
+        );
+        order_msg_1.cl_ord_id = "test_order_neg_inc".to_string();
+        order_msg_1.fee = Some("-2.0".to_string());
+        order_msg_1.sz = "0.02".to_string();
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
@@ -4771,75 +4231,19 @@ mod tests {
 
         // Second fill: charge reduced to $1.5 total (refund or maker rebate on this fill)
         // Incremental = 1.5 - 2.0 = -0.5 (negative incremental triggers debug log)
-        let order_msg_2 = OKXOrderMsg {
-            acc_fill_sz: Some("0.02".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_order_neg_inc".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-1.5".to_string()), // Total reduced
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "50000.0".to_string(),
-            fill_sz: "0.01".to_string(),
-            fill_time: 1_746_947_317_403,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("neg_inc_order_789"),
-            ord_type: OKXOrderType::Market,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Filled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Maker,
-            sz: "0.02".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "trade_neg_inc_2".to_string(),
-            u_time: 1_746_947_317_403,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut order_msg_2 = create_stub_order_msg(
+            "0.01",
+            Some("0.02".to_string()),
+            "neg_inc_order_789",
+            "trade_neg_inc_2",
+        );
+        order_msg_2.cl_ord_id = "test_order_neg_inc".to_string();
+        order_msg_2.fee = Some("-1.5".to_string());
+        order_msg_2.fill_time = 1_746_947_317_403;
+        order_msg_2.state = OKXOrderStatus::Filled;
+        order_msg_2.exec_type = OKXExecType::Maker;
+        order_msg_2.sz = "0.02".to_string();
+        order_msg_2.u_time = 1_746_947_317_403;
 
         let fill_report_2 = parse_fill_report(
             &order_msg_2,
@@ -5149,22 +4553,7 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         // Create mock instrument
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -5202,22 +4591,7 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         // Create mock instrument
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -5326,22 +4700,7 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         // Create mock instrument
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -5388,22 +4747,7 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         // Create mock instrument
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -5451,22 +4795,10 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         // Create mock instrument
-        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("ETH-USDT-SWAP"))
-            .base_currency(Currency::ETH())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let mut instrument = create_stub_instrument();
+        instrument.id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        instrument.raw_symbol = Symbol::from("ETH-USDT-SWAP");
+        instrument.base_currency = Currency::ETH();
         instruments.insert(
             Ustr::from("ETH-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -5529,96 +4861,28 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let mut instruments = AHashMap::new();
 
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(0.into())
-            .ts_init(0.into())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let partial_liq_msg = OKXOrderMsg {
-            acc_fill_sz: Some("0.25".to_string()),
-            algo_id: None,
-            avg_px: "39000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::PartialLiquidation,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: String::new(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("-9.75".to_string()),
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: "39000.0".to_string(),
-            fill_sz: "0.25".to_string(),
-            fill_time: 1_746_947_317_402,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "10.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("2497956918703120888"),
-            ord_type: OKXOrderType::Market,
-            pnl: "-2500".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: String::new(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Sell,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Filled,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: "0.25".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: "1518905888".to_string(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut partial_liq_msg = create_stub_order_msg(
+            "0.25",
+            Some("0.25".to_string()),
+            "2497956918703120888",
+            "1518905888",
+        );
+        partial_liq_msg.avg_px = "39000.0".to_string();
+        partial_liq_msg.category = OKXOrderCategory::PartialLiquidation;
+        partial_liq_msg.cl_ord_id = String::new();
+        partial_liq_msg.fee = Some("-9.75".to_string());
+        partial_liq_msg.fill_px = "39000.0".to_string();
+        partial_liq_msg.lever = "10.0".to_string();
+        partial_liq_msg.pnl = "-2500".to_string();
+        partial_liq_msg.side = OKXSide::Sell;
+        partial_liq_msg.state = OKXOrderStatus::Filled;
+        partial_liq_msg.sz = "0.25".to_string();
 
         let fee_cache = FeeCache::new();
         let filled_qty_cache = FilledQtyCache::new();
@@ -5957,52 +5221,51 @@ mod tests {
         #[case] okx_ord_type: OKXOrderType,
         #[case] expected_tif: TimeInForce,
     ) {
-        let time_in_force = match okx_ord_type {
-            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
-            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
-            _ => TimeInForce::Gtc,
+        let payload: Value = serde_json::from_str(&load_test_json("ws_orders.json")).unwrap();
+        let mut msg: OKXOrderMsg = serde_json::from_value(payload["data"][0].clone()).unwrap();
+        msg.ord_type = okx_ord_type;
+        msg.px = if okx_ord_type == OKXOrderType::Market {
+            String::new()
+        } else {
+            "50000.0".to_string()
         };
 
-        assert_eq!(
-            time_in_force, expected_tif,
-            "OKXOrderType::{okx_ord_type:?} should parse to TimeInForce::{expected_tif:?}"
-        );
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+
+        let report = parse_order_status_report(
+            &msg,
+            &instrument,
+            AccountId::new("OKX-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, expected_tif);
     }
 
     #[rstest]
-    fn test_deserialize_fok_order_message() {
-        let json_data = load_test_json("ws_orders_fok.json");
-        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+    #[case::fok("ws_orders_fok.json", OKXOrderType::Fok, "FOK-TEST-001", "BTC-USDT")]
+    #[case::ioc("ws_orders_ioc.json", OKXOrderType::Ioc, "IOC-TEST-001", "BTC-USDT")]
+    #[case::optimal_limit_ioc(
+        "ws_orders_optimal_limit_ioc.json",
+        OKXOrderType::OptimalLimitIoc,
+        "OPTIMAL-IOC-TEST-001",
+        "BTC-USDT-SWAP"
+    )]
+    fn test_deserialize_time_in_force_order_message(
+        #[case] fixture: &str,
+        #[case] expected_ord_type: OKXOrderType,
+        #[case] expected_client_order_id: &str,
+        #[case] expected_instrument: &str,
+    ) {
+        let json_data = load_test_json(fixture);
+        let ws_msg: Value = serde_json::from_str(&json_data).unwrap();
         let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
 
         assert!(!data.is_empty());
-        assert_eq!(data[0].ord_type, OKXOrderType::Fok);
-        assert_eq!(data[0].cl_ord_id, "FOK-TEST-001");
-        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT"));
-    }
-
-    #[rstest]
-    fn test_deserialize_ioc_order_message() {
-        let json_data = load_test_json("ws_orders_ioc.json");
-        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].ord_type, OKXOrderType::Ioc);
-        assert_eq!(data[0].cl_ord_id, "IOC-TEST-001");
-        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT"));
-    }
-
-    #[rstest]
-    fn test_deserialize_optimal_limit_ioc_order_message() {
-        let json_data = load_test_json("ws_orders_optimal_limit_ioc.json");
-        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].ord_type, OKXOrderType::OptimalLimitIoc);
-        assert_eq!(data[0].cl_ord_id, "OPTIMAL-IOC-TEST-001");
-        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+        assert_eq!(data[0].ord_type, expected_ord_type);
+        assert_eq!(data[0].cl_ord_id, expected_client_order_id);
+        assert_eq!(data[0].inst_id, Ustr::from(expected_instrument));
     }
 
     #[rstest]
@@ -6024,110 +5287,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_algo_order_message() {
-        let json_data = load_test_json("ws_orders_algo.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
-    }
-
-    #[rstest]
     fn test_deserialize_algo_order_missing_trigger_px_type() {
         // algo-advance channel messages omit triggerPxType
-        let json = r#"{
-            "algoId": "123",
-            "algoClOrdId": "cl_1",
-            "clOrdId": "",
-            "ordId": "",
-            "instId": "BTC-USDT-SWAP",
-            "instType": "SWAP",
-            "ordType": "move_order_stop",
-            "state": "live",
-            "side": "sell",
-            "posSide": "long",
-            "sz": "0.01",
-            "triggerPx": "95000",
-            "ordPx": "-1",
-            "tdMode": "cross",
-            "lever": "",
-            "reduceOnly": "false",
-            "actualPx": "",
-            "actualSz": "",
-            "notionalUsd": "",
-            "cTime": "1706000000000",
-            "uTime": "1706000001000",
-            "triggerTime": "",
-            "tag": "",
-            "callbackRatio": "0.01",
-            "callbackSpread": "",
-            "activePx": ""
-        }"#;
+        let mut value =
+            serde_json::to_value(stub_algo_order_msg(OKXAlgoOrderType::MoveOrderStop)).unwrap();
+        value.as_object_mut().unwrap().remove("triggerPxType");
+        // OKX omits optional string fields rather than sending null
+        value.as_object_mut().unwrap().retain(|_, v| !v.is_null());
+        value["cTime"] = Value::String("1706000000000".to_string());
+        value["uTime"] = Value::String("1706000001000".to_string());
 
-        let msg: OKXAlgoOrderMsg = serde_json::from_str(json).unwrap();
+        let msg: OKXAlgoOrderMsg = serde_json::from_value(value).unwrap();
 
         assert_eq!(msg.trigger_px_type, OKXTriggerType::None);
         assert_eq!(msg.ord_type, OKXAlgoOrderType::MoveOrderStop);
-    }
-
-    #[rstest]
-    fn test_deserialize_liquidation_order_message() {
-        let json_data = load_test_json("ws_orders_liquidation.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].category, OKXOrderCategory::FullLiquidation);
-    }
-
-    #[rstest]
-    fn test_deserialize_adl_order_message() {
-        let json_data = load_test_json("ws_orders_adl.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].category, OKXOrderCategory::Adl);
-    }
-
-    #[rstest]
-    fn test_deserialize_trigger_order_message() {
-        let json_data = load_test_json("ws_orders_trigger.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(data[0].ord_type, OKXOrderType::Trigger);
-        assert_eq!(data[0].category, OKXOrderCategory::Normal);
-    }
-
-    #[rstest]
-    fn test_deserialize_book_snapshot_message() {
-        let json_data = load_test_json("ws_books_snapshot.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let action: Option<OKXBookAction> =
-            serde_json::from_value(payload["action"].clone()).unwrap();
-        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(action, Some(OKXBookAction::Snapshot));
-        assert!(!data[0].asks.is_empty());
-        assert!(!data[0].bids.is_empty());
-    }
-
-    #[rstest]
-    fn test_deserialize_book_update_message() {
-        let json_data = load_test_json("ws_books_update.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let action: Option<OKXBookAction> =
-            serde_json::from_value(payload["action"].clone()).unwrap();
-        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert_eq!(action, Some(OKXBookAction::Update));
-        assert!(!data[0].asks.is_empty());
-        assert!(!data[0].bids.is_empty());
     }
 
     #[rstest]
@@ -6142,19 +5315,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_candle_message() {
-        let json_data = load_test_json("ws_candle.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXCandleMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert!(!data[0].o.is_empty());
-        assert!(!data[0].h.is_empty());
-        assert!(!data[0].l.is_empty());
-        assert!(!data[0].c.is_empty());
-    }
-
-    #[rstest]
     fn test_deserialize_funding_rate_message() {
         let json_data = load_test_json("ws_funding_rate.json");
         let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
@@ -6162,17 +5322,6 @@ mod tests {
 
         assert!(!data.is_empty());
         assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
-    }
-
-    #[rstest]
-    fn test_deserialize_bbo_tbt_message() {
-        let json_data = load_test_json("ws_bbo_tbt.json");
-        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
-        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
-
-        assert!(!data.is_empty());
-        assert!(!data[0].asks.is_empty());
-        assert!(!data[0].bids.is_empty());
     }
 
     #[rstest]
@@ -6192,75 +5341,16 @@ mod tests {
         px: &str,
         sz: &str,
     ) -> OKXOrderMsg {
-        OKXOrderMsg {
-            acc_fill_sz: Some("0".to_string()),
-            algo_id: None,
-            avg_px: "50000.0".to_string(),
-            c_time: 1_746_947_317_401,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: cl_ord_id.to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: Some("0".to_string()),
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: String::new(),
-            fill_sz: String::new(),
-            fill_time: 0,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: "2.0".to_string(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from(ord_id),
-            ord_type: OKXOrderType::Limit,
-            pnl: "0".to_string(),
-            pos_side: OKXPositionSide::Long,
-            px: px.to_string(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: sz.to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Isolated,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: String::new(),
-            u_time: 1_746_947_317_402,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        }
+        let mut msg = create_stub_order_msg("", Some("0".to_string()), ord_id, "");
+        msg.cl_ord_id = cl_ord_id.to_string();
+        msg.fee = Some("0".to_string());
+        msg.fill_px = String::new();
+        msg.fill_time = 0;
+        msg.ord_type = OKXOrderType::Limit;
+        msg.px = px.to_string();
+        msg.state = state;
+        msg.sz = sz.to_string();
+        msg
     }
 
     fn create_spread_order_msg_for_event_test(
@@ -6870,59 +5960,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_is_order_expired_by_reason_gtd_in_reason() {
+    #[case::gtd_in_reason(None, Some("GTD order expired"), true)]
+    #[case::timeout_in_reason(None, Some("Order timeout"), true)]
+    #[case::expir_in_reason(None, Some("Expiration reached"), true)]
+    #[case::source_code_5(Some("5"), None, true)]
+    #[case::source_time_expired(Some("time_expired"), None, true)]
+    #[case::user_cancel(Some("1"), Some("User canceled"), false)]
+    #[case::no_reason(None, None, false)]
+    fn test_is_order_expired_by_reason(
+        #[case] source: Option<&str>,
+        #[case] reason: Option<&str>,
+        #[case] expected: bool,
+    ) {
         let mut msg =
             create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source_reason = Some("GTD order expired".to_string());
-        assert!(is_order_expired_by_reason(&msg));
-    }
+        msg.cancel_source = source.map(str::to_string);
+        msg.cancel_source_reason = reason.map(str::to_string);
 
-    #[rstest]
-    fn test_is_order_expired_by_reason_timeout_in_reason() {
-        let mut msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source_reason = Some("Order timeout".to_string());
-        assert!(is_order_expired_by_reason(&msg));
-    }
-
-    #[rstest]
-    fn test_is_order_expired_by_reason_expir_in_reason() {
-        let mut msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source_reason = Some("Expiration reached".to_string());
-        assert!(is_order_expired_by_reason(&msg));
-    }
-
-    #[rstest]
-    fn test_is_order_expired_by_reason_source_code_5() {
-        let mut msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source = Some("5".to_string());
-        assert!(is_order_expired_by_reason(&msg));
-    }
-
-    #[rstest]
-    fn test_is_order_expired_by_reason_source_time_expired() {
-        let mut msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source = Some("time_expired".to_string());
-        assert!(is_order_expired_by_reason(&msg));
-    }
-
-    #[rstest]
-    fn test_is_order_expired_by_reason_false_for_user_cancel() {
-        let mut msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        msg.cancel_source_reason = Some("User canceled".to_string());
-        msg.cancel_source = Some("1".to_string());
-        assert!(!is_order_expired_by_reason(&msg));
-    }
-
-    #[rstest]
-    fn test_is_order_expired_by_reason_false_when_no_reason() {
-        let msg =
-            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
-        assert!(!is_order_expired_by_reason(&msg));
+        assert_eq!(is_order_expired_by_reason(&msg), expected);
     }
 
     fn fresh_cancel_source_seen() -> Mutex<AHashSet<String>> {
@@ -7146,75 +6201,21 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::from(999_000_000_000u64);
 
-        let msg = OKXOrderMsg {
-            acc_fill_sz: Some("0".to_string()),
-            algo_id: None,
-            avg_px: String::new(),
-            c_time: 1_706_000_000_000, // ~2024-01-23 in ms
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "test_ts_order".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: None,
-            attach_algo_ords: Vec::new(),
-            outcome: None,
-            fee: None,
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: String::new(),
-            fill_sz: String::new(),
-            fill_time: 0,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: String::new(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("123456"),
-            ord_type: OKXOrderType::Limit,
-            pnl: String::new(),
-            pos_side: OKXPositionSide::Long,
-            px: "50000.00".to_string(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Live,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: "0.01".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Cross,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: String::new(),
-            u_time: 1_706_000_001_000, // 1 second later in ms
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut msg = create_stub_order_msg("", Some("0".to_string()), "123456", "");
+        msg.avg_px = String::new();
+        msg.c_time = 1_706_000_000_000;
+        msg.cl_ord_id = "test_ts_order".to_string();
+        msg.fee = None;
+        msg.fill_px = String::new();
+        msg.fill_time = 0;
+        msg.lever = String::new();
+        msg.ord_type = OKXOrderType::Limit;
+        msg.pnl = String::new();
+        msg.px = "50000.00".to_string();
+        msg.state = OKXOrderStatus::Live;
+        msg.sz = "0.01".to_string();
+        msg.td_mode = OKXTradeMode::Cross;
+        msg.u_time = 1_706_000_001_000;
 
         let report = parse_order_status_report(&msg, &inst, account_id, ts_init).unwrap();
 
@@ -7236,102 +6237,50 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
-        let msg = OKXOrderMsg {
-            acc_fill_sz: Some("0".to_string()),
-            algo_id: None,
-            avg_px: String::new(),
-            c_time: 1_706_000_000_000,
-            cancel_source: None,
-            cancel_source_reason: None,
-            category: OKXOrderCategory::Normal,
-            ccy: Ustr::from("USDT"),
-            cl_ord_id: "O-attached-entry".to_string(),
-            algo_cl_ord_id: None,
-            attach_algo_cl_ord_id: Some("O-attached-sl".to_string()),
-            attach_algo_ords: vec![
-                OKXAttachedAlgoOrd {
-                    attach_algo_id: "algo-sl".to_string(),
-                    attach_algo_cl_ord_id: "O-attached-sl".to_string(),
-                    sl_trigger_px: "1500".to_string(),
-                    sl_ord_px: "-1".to_string(),
-                    sl_trigger_px_type: Some(OKXTriggerType::Last),
-                    tp_trigger_px: String::new(),
-                    tp_ord_px: String::new(),
-                    tp_trigger_px_type: None,
-                    callback_ratio: String::new(),
-                    callback_spread: String::new(),
-                    active_px: String::new(),
-                },
-                OKXAttachedAlgoOrd {
-                    attach_algo_id: "algo-tp".to_string(),
-                    attach_algo_cl_ord_id: "O-attached-tp".to_string(),
-                    sl_trigger_px: String::new(),
-                    sl_ord_px: String::new(),
-                    sl_trigger_px_type: None,
-                    tp_trigger_px: "2500".to_string(),
-                    tp_ord_px: "-1".to_string(),
-                    tp_trigger_px_type: Some(OKXTriggerType::Last),
-                    callback_ratio: String::new(),
-                    callback_spread: String::new(),
-                    active_px: String::new(),
-                },
-            ],
-            outcome: None,
-            fee: None,
-            fee_ccy: Ustr::from("USDT"),
-            fill_fee: None,
-            fill_fee_ccy: None,
-            fill_mark_px: None,
-            fill_mark_vol: None,
-            fill_px_vol: None,
-            fill_px_usd: None,
-            fill_fwd_px: None,
-            fill_notional_usd: None,
-            fill_pnl: None,
-            fill_px: String::new(),
-            fill_sz: String::new(),
-            fill_time: 0,
-            inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: OKXInstrumentType::Swap,
-            is_tp_limit: None,
-            lever: String::new(),
-            linked_algo_ord: None,
-            notional_usd: None,
-            ord_id: Ustr::from("123456"),
-            ord_type: OKXOrderType::Limit,
-            pnl: String::new(),
-            pos_side: OKXPositionSide::Long,
-            px: "2000.00".to_string(),
-            px_type: OKXPriceType::None,
-            px_usd: None,
-            px_vol: None,
-            quick_mgn_type: OKXQuickMarginType::None,
-            rebate: None,
-            rebate_ccy: None,
-            reduce_only: "false".to_string(),
-            side: OKXSide::Buy,
-            sl_ord_px: None,
-            sl_trigger_px: None,
-            sl_trigger_px_type: None,
-            source: None,
-            state: OKXOrderStatus::Live,
-            stp_id: None,
-            stp_mode: OKXSelfTradePreventionMode::None,
-            exec_type: OKXExecType::Taker,
-            sz: "0.01".to_string(),
-            tag: None,
-            td_mode: OKXTradeMode::Cross,
-            tgt_ccy: None,
-            tp_ord_px: None,
-            tp_trigger_px: None,
-            tp_trigger_px_type: None,
-            trade_id: String::new(),
-            u_time: 1_706_000_001_000,
-            amend_result: None,
-            req_id: None,
-            code: None,
-            msg: None,
-        };
+        let mut msg = create_stub_order_msg("", Some("0".to_string()), "123456", "");
+        msg.avg_px = String::new();
+        msg.c_time = 1_706_000_000_000;
+        msg.cl_ord_id = "O-attached-entry".to_string();
+        msg.attach_algo_cl_ord_id = Some("O-attached-sl".to_string());
+        msg.attach_algo_ords = vec![
+            OKXAttachedAlgoOrd {
+                attach_algo_id: "algo-sl".to_string(),
+                attach_algo_cl_ord_id: "O-attached-sl".to_string(),
+                sl_trigger_px: "1500".to_string(),
+                sl_ord_px: "-1".to_string(),
+                sl_trigger_px_type: Some(OKXTriggerType::Last),
+                tp_trigger_px: String::new(),
+                tp_ord_px: String::new(),
+                tp_trigger_px_type: None,
+                callback_ratio: String::new(),
+                callback_spread: String::new(),
+                active_px: String::new(),
+            },
+            OKXAttachedAlgoOrd {
+                attach_algo_id: "algo-tp".to_string(),
+                attach_algo_cl_ord_id: "O-attached-tp".to_string(),
+                sl_trigger_px: String::new(),
+                sl_ord_px: String::new(),
+                sl_trigger_px_type: None,
+                tp_trigger_px: "2500".to_string(),
+                tp_ord_px: "-1".to_string(),
+                tp_trigger_px_type: Some(OKXTriggerType::Last),
+                callback_ratio: String::new(),
+                callback_spread: String::new(),
+                active_px: String::new(),
+            },
+        ];
+        msg.fee = None;
+        msg.fill_px = String::new();
+        msg.fill_time = 0;
+        msg.lever = String::new();
+        msg.ord_type = OKXOrderType::Limit;
+        msg.pnl = String::new();
+        msg.px = "2000.00".to_string();
+        msg.state = OKXOrderStatus::Live;
+        msg.sz = "0.01".to_string();
+        msg.td_mode = OKXTradeMode::Cross;
+        msg.u_time = 1_706_000_001_000;
 
         let report = parse_order_status_report(&msg, &inst, account_id, ts_init).unwrap();
         let linked_order_ids = report
@@ -8240,26 +7189,24 @@ mod tests {
 
     #[rstest]
     fn test_option_summary_msg_deserializes_with_uppercase_bs_alias() {
-        let json = r#"{
-            "instId": "BTC-USD-250328-92000-C",
-            "uly": "BTC-USD",
-            "delta": "0.52",
-            "gamma": "0.00001",
-            "theta": "-0.001",
-            "vega": "0.003",
-            "deltaBS": "0.53",
-            "gammaBS": "0.00002",
-            "thetaBS": "-0.002",
-            "vegaBS": "0.004",
-            "realVol": "0.45",
-            "bidVol": "0.50",
-            "askVol": "0.55",
-            "markVol": "0.52",
-            "lever": "10.0",
-            "ts": "1711612800000"
-        }"#;
-        let msg: OKXOptionSummaryMsg =
-            serde_json::from_str(json).expect("deltaBS alias failed to deserialize");
+        let mut payload: Value =
+            serde_json::from_str(&load_test_json("ws_opt_summary.json")).unwrap();
+        let summary = payload[0].as_object_mut().unwrap();
+
+        // Preserve the original alias values while reusing the fixture's remaining fields
+        for (key, alias, expected) in [
+            ("deltaBs", "deltaBS", "0.53"),
+            ("gammaBs", "gammaBS", "0.00002"),
+            ("thetaBs", "thetaBS", "-0.002"),
+            ("vegaBs", "vegaBS", "0.004"),
+        ] {
+            summary.insert(key.to_string(), Value::String(expected.to_string()));
+            let value = summary.remove(key).unwrap();
+            summary.insert(alias.to_string(), value);
+        }
+
+        let msg: OKXOptionSummaryMsg = serde_json::from_value(payload[0].clone())
+            .expect("deltaBS alias failed to deserialize");
         assert_eq!(msg.delta_bs, "0.53");
         assert_eq!(msg.gamma_bs, "0.00002");
         assert_eq!(msg.theta_bs, "-0.002");

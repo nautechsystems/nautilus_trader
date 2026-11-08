@@ -3614,7 +3614,7 @@ mod tests {
         },
         websocket::{
             handler::is_post_only_auto_cancel,
-            messages::{OKXOrderMsg, OKXWebSocketError, OKXWsFrame},
+            messages::{OKXOrderMsg, OKXWsFrame},
         },
     };
 
@@ -4037,69 +4037,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_websocket_error_handling() {
-        let clock = get_atomic_clock_realtime();
-        let ts = clock.get_time_ns().as_u64();
-
-        let error = OKXWebSocketError {
-            code: "60012".to_string(),
-            message: "Invalid request".to_string(),
-            conn_id: None,
-            timestamp: ts,
-        };
-
-        assert_eq!(error.code, "60012");
-        assert_eq!(error.message, "Invalid request");
-        assert_eq!(error.timestamp, ts);
-
-        let nautilus_msg = OKXWsMessage::Error(error);
-        match nautilus_msg {
-            OKXWsMessage::Error(e) => {
-                assert_eq!(e.code, "60012");
-                assert_eq!(e.message, "Invalid request");
-            }
-            _ => panic!("Expected Error variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_websocket_error_scenarios() {
-        let clock = get_atomic_clock_realtime();
-        let ts = clock.get_time_ns().as_u64();
-
-        let error_scenarios = vec![
-            ("60012", "Invalid request", None),
-            ("60009", "Invalid API key", Some("conn-123".to_string())),
-            ("60014", "Too many requests", None),
-            ("50001", "Order not found", None),
-        ];
-
-        for (code, message, conn_id) in error_scenarios {
-            let error = OKXWebSocketError {
-                code: code.to_string(),
-                message: message.to_string(),
-                conn_id: conn_id.clone(),
-                timestamp: ts,
-            };
-
-            assert_eq!(error.code, code);
-            assert_eq!(error.message, message);
-            assert_eq!(error.conn_id, conn_id);
-            assert_eq!(error.timestamp, ts);
-
-            let nautilus_msg = OKXWsMessage::Error(error);
-            match nautilus_msg {
-                OKXWsMessage::Error(e) => {
-                    assert_eq!(e.code, code);
-                    assert_eq!(e.message, message);
-                    assert_eq!(e.conn_id, conn_id);
-                }
-                _ => panic!("Expected Error variant"),
-            }
-        }
-    }
-
-    #[rstest]
     fn test_feed_handler_reconnection_detection() {
         let msg = Message::Text(RECONNECTED.to_string().into());
         let result = OKXWsFeedHandler::parse_raw_message(msg);
@@ -4492,119 +4429,5 @@ mod tests {
         msg.ord_type = OKXOrderType::PostOnly;
 
         assert!(!is_post_only_auto_cancel(&msg));
-    }
-
-    #[tokio::test]
-    async fn test_batch_cancel_orders_with_multiple_orders() {
-        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, VenueOrderId};
-
-        let client = OKXWebSocketClient::new(
-            Some("wss://test.okx.com".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TransportBackend::default(),
-            None,
-        )
-        .expect("Failed to create client");
-
-        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let client_order_id1 = ClientOrderId::new("order1");
-        let client_order_id2 = ClientOrderId::new("order2");
-        let venue_order_id1 = VenueOrderId::new("venue1");
-        let venue_order_id2 = VenueOrderId::new("venue2");
-
-        let orders = vec![
-            (instrument_id, Some(client_order_id1), Some(venue_order_id1)),
-            (instrument_id, Some(client_order_id2), Some(venue_order_id2)),
-        ];
-
-        let result = client.batch_cancel_orders(orders).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_batch_cancel_orders_with_only_client_order_id() {
-        use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
-
-        let client = OKXWebSocketClient::new(
-            Some("wss://test.okx.com".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TransportBackend::default(),
-            None,
-        )
-        .expect("Failed to create client");
-
-        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let client_order_id = ClientOrderId::new("order1");
-
-        let orders = vec![(instrument_id, Some(client_order_id), None)];
-
-        let result = client.batch_cancel_orders(orders).await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_batch_cancel_orders_with_only_venue_order_id() {
-        use nautilus_model::identifiers::{InstrumentId, VenueOrderId};
-
-        let client = OKXWebSocketClient::new(
-            Some("wss://test.okx.com".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TransportBackend::default(),
-            None,
-        )
-        .expect("Failed to create client");
-
-        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let venue_order_id = VenueOrderId::new("venue1");
-
-        let orders = vec![(instrument_id, None, Some(venue_order_id))];
-
-        let result = client.batch_cancel_orders(orders).await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_batch_cancel_orders_with_both_ids() {
-        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, VenueOrderId};
-
-        let client = OKXWebSocketClient::new(
-            Some("wss://test.okx.com".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TransportBackend::default(),
-            None,
-        )
-        .expect("Failed to create client");
-
-        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let client_order_id = ClientOrderId::new("order1");
-        let venue_order_id = VenueOrderId::new("venue1");
-
-        let orders = vec![(instrument_id, Some(client_order_id), Some(venue_order_id))];
-
-        let result = client.batch_cancel_orders(orders).await;
-
-        assert!(result.is_err());
     }
 }

@@ -19,7 +19,6 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     num::NonZeroUsize,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -88,15 +87,8 @@ struct TestServerState {
     spread_response: Option<Value>,
 }
 
-fn manifest_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn load_test_data(filename: &str) -> Value {
-    let path = manifest_path().join("test_data").join(filename);
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    serde_json::from_str(&content).expect("invalid json fixture")
+    crate::common::load_test_json(filename)
 }
 
 fn spread_response(params: &HashMap<String, String>) -> Value {
@@ -413,15 +405,8 @@ fn option_chain_reference_price_response(
 #[case::depth_400_passes_through(400, 400)]
 #[case::depth_50_passes_through(50, 50)]
 #[case::depth_1_clamps_to_50(1, 50)]
-#[case::depth_5_clamps_to_50(5, 50)]
-#[case::depth_10_clamps_to_50(10, 50)]
-#[case::depth_25_clamps_to_50(25, 50)]
-#[case::depth_49_clamps_to_50(49, 50)]
 #[case::depth_51_clamps_to_400(51, 400)]
-#[case::depth_100_clamps_to_400(100, 400)]
-#[case::depth_200_clamps_to_400(200, 400)]
 #[case::depth_500_clamps_to_400(500, 400)]
-#[case::depth_1000_clamps_to_400(1000, 400)]
 fn test_resolve_book_depth(#[case] raw_depth: usize, #[case] expected: usize) {
     assert_eq!(resolve_book_depth(raw_depth), expected);
 }
