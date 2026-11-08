@@ -26,6 +26,7 @@ mod grid_mm_itch;
 mod netting_fill_void;
 mod option_chain_backtest;
 mod option_chain_data_client;
+mod spread_execution;
 
 #[cfg(feature = "streaming")]
 mod backtest_node_workload;

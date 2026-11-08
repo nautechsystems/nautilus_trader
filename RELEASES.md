@@ -48,6 +48,9 @@ Released on TBD (UTC).
 - Changed `SubscribeOptionChain::new` to return `Result`; propagate validation errors
 - Changed `DataActor::subscribe_option_chain` and `DataActorCore::subscribe_option_chain` to return `Result`
 - Changed `custom_data` to require `ts_event` and `ts_init` last, in that order, thanks @faysou
+- Changed simulated spread execution to require encoded leg IDs; use `new_generic_spread_id`
+- Changed simulated spreads to reject `liquidity_consumption=true` and cancel multi-candidate `FOK` orders
+- Changed simulated cash spreads to bypass equity and binary-option short-sale checks; avoid these legs
 - Changed `OrderMatchingEngineConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SimulatedVenueConfig` literals; add `order_priority_reset_policy: Default::default()`
 - Changed `SandboxExecutionClientConfig` literals; add `order_priority_reset_policy: Default::default()`
@@ -161,6 +164,7 @@ Released on TBD (UTC).
 - Fixed native strategy startup skipping GTD timer reactivation and expired-order cancellation for cached orders
 - Fixed canonical backtest checks failing on float rounding (#5576), thanks for reporting @petarstamenov
 - Fixed stale bundled execution reports incorrectly voiding newer fills
+- Fixed simulated spread fills not creating leg positions or booking leg commissions (#4329), thanks @faysou
 - Fixed emulated orders sharing a trigger instrument triggering from the wrong quote or trade source
 - Fixed resting GTD orders filling after expiry in backtests and sandbox execution
 - Fixed `Trader` shutdown skipping later components after stop errors and leaving degraded components active

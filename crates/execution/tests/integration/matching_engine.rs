@@ -18,6 +18,7 @@ mod expiration;
 mod fill_models;
 mod order_submission;
 mod position_sync;
+mod spread;
 
 use std::{
     cell::RefCell,
