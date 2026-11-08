@@ -484,20 +484,21 @@ size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resiz
 the order, single or batch. Kraken Futures does not document its answer to a
 total at or below the filled quantity.
 
-Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm
-the edit, and the private feeds carry the update or the fills. These statuses refuse the edit and
-emit `OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
-`tooManySmallOrders`, `outsidePriceCollar`, `wouldNotReducePosition`, `orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the
-Maker Protection guide returns for a request past its hold cap. The adapter also rejects an edit on
-statuses from its send-order status set that the edit documentation does not list: `notFound`,
-`invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`,
-and the client order ID statuses. The send-order documentation lists each of them except
-`reduceOnlyWouldIncreasePosition`. An error response whose code refuses the request also rejects
-the edit: `invalidArgument`, `requiredArgumentMissing`, `Json Parse Error`, `notFound`,
-`accountInactive`, `marketUnavailable`, `authenticationError`, or `nonceBelowThreshold`.
-For `orderForEditNotFound`, the Maker Protection guide states that "the edit's target is not
-resting: it had genuinely left the book by the time a held edit released, or its placement is
-still held." The adapter rejects such an edit as it rejects a cancel answered `notFound`.
+Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
+edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit
+`OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
+`tooManySmallOrders`, `outsidePriceCollar`, `wouldNotReducePosition`, `orderForEditNotFound`,
+`orderForEditNotAStop`, `editAlreadyHeld`, and `tooManyOrders`, which the Maker Protection guide
+returns for a request past its hold cap. The adapter also rejects an edit on statuses from its
+send-order status set that the edit documentation does not list: `notFound`, `invalidOrderType`,
+`wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`, and the client order ID statuses. The
+send-order documentation lists each of them except `reduceOnlyWouldIncreasePosition`. An error
+response whose code refuses the request also rejects the edit: `invalidArgument`,
+`requiredArgumentMissing`, `Json Parse Error`, `notFound`, `accountInactive`, `marketUnavailable`,
+`authenticationError`, or `nonceBelowThreshold`. For `orderForEditNotFound`, the Maker Protection
+guide states that "the edit's target is not resting: it had genuinely left the book by the time a
+held edit released, or its placement is still held." The adapter rejects such an edit as it rejects
+a cancel answered `notFound`.
 
 A refusal does not establish that the order is still working. Kraken can refuse an edit by
 canceling the order, and the open-orders feed then closes it. If that update is missed, the order
@@ -519,9 +520,9 @@ These outcomes stay unconfirmed, so the adapter logs a warning and emits no even
 - Any other error code, including `apiLimitExceeded` and `nonceDuplicate`, or none.
 
 If no private update resolves such an edit, the in-flight check cancels the order locally once its
-retries run out, about 30 seconds on the default settings. This classification covers responses
-served with HTTP 200, the only status Kraken Futures documents. A response with an HTTP error
-status stays unconfirmed whatever its body.
+retries run out, about 30 seconds on the default settings, even if the order still rests at Kraken.
+This classification covers responses served with HTTP 200, the only status Kraken Futures documents.
+A response with an HTTP error status stays unconfirmed whatever its body.
 
 ### Position management
 
