@@ -55,7 +55,7 @@
 
 use std::{
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Display},
     future::Future,
     pin::pin,
     sync::{
@@ -420,41 +420,46 @@ impl WebSocketClientInner {
         let operation = || {
             attempt.fetch_add(1, Ordering::Relaxed);
 
-            await_initial_connect_attempt(&cancellation_token, async {
-                if let Some(rate_limit) = &connection_rate_limit {
-                    rate_limit
-                        .limiter
-                        .await_keys_ready(Some(&rate_limit.keys))
-                        .await;
-                }
+            async {
+                await_initial_connect_attempt(&cancellation_token, async {
+                    if let Some(rate_limit) = &connection_rate_limit {
+                        rate_limit
+                            .limiter
+                            .await_keys_ready(Some(&rate_limit.keys))
+                            .await;
+                    }
 
-                // Bound only the dial: the connection rate-limit wait has its own venue timing
-                dst::time::timeout(
-                    connect_timeout,
-                    Box::pin(Self::connect_with_server_activity(
-                        &config.url,
-                        config.headers.clone(),
-                        config.backend,
-                        config.proxy_url.as_deref(),
-                        config.max_message_size_bytes,
-                        config.max_frame_size_bytes,
-                        frame_activity.clone(),
-                    )),
-                )
-                .await
-                .unwrap_or_else(|_| {
-                    Err(TransportError::Io(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        format!(
-                            "connection timed out after {}s",
-                            connect_timeout.as_secs_f64()
-                        ),
-                    )))
+                    // Bound only the dial: the connection rate-limit wait has its own venue timing
+                    dst::time::timeout(
+                        connect_timeout,
+                        Box::pin(Self::connect_with_server_activity(
+                            &config.url,
+                            config.headers.clone(),
+                            config.backend,
+                            config.proxy_url.as_deref(),
+                            config.max_message_size_bytes,
+                            config.max_frame_size_bytes,
+                            frame_activity.clone(),
+                        )),
+                    )
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(TransportError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "connection timed out after {}s",
+                                connect_timeout.as_secs_f64()
+                            ),
+                        )))
+                    })
                 })
-            })
+                .await
+                .map_err(InitialConnectError)
+            }
         };
 
-        let classify = |error: &TransportError| {
+        let classify = |error: &InitialConnectError| {
+            let error = &error.0;
             let retryable = is_retryable_initial_connect_error(error);
             let attempt = attempt.load(Ordering::Relaxed);
             if retryable && attempt < max_attempts && !cancellation_token.is_cancelled() {
@@ -468,15 +473,13 @@ impl WebSocketClientInner {
         };
 
         let transport = retry_manager
-            .invocation(
-                INITIAL_CONNECT_OPERATION,
-                operation,
-                classify,
-                initial_connect_retry_error,
-            )
+            .invocation(INITIAL_CONNECT_OPERATION, operation, classify, |e| {
+                InitialConnectError(initial_connect_retry_error(e))
+            })
             .cancellation_token(&cancellation_token)
             .execute()
-            .await?;
+            .await
+            .map_err(|e| e.0)?;
 
         let attempt = attempt.load(Ordering::Relaxed);
         if attempt > 1 {
@@ -1094,6 +1097,22 @@ where
         biased;
         () = cancellation_token.cancelled() => Err(initial_connect_cancelled()),
         result = attempt => result,
+    }
+}
+
+struct InitialConnectError(TransportError);
+
+impl std::error::Error for InitialConnectError {}
+
+impl Display for InitialConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.redacted_message())
+    }
+}
+
+impl Debug for InitialConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
     }
 }
 
@@ -3925,8 +3944,9 @@ impl WebSocketClient {
                         Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
                             log::warn!(
-                                "Reconnect attempt {} failed: {e}",
-                                inner.reconnection_attempt_count
+                                "Reconnect attempt {} failed: {}",
+                                inner.reconnection_attempt_count,
+                                e.redacted_message()
                             );
 
                             if !duration.is_zero() {
@@ -5624,6 +5644,189 @@ mod rust_tests {
         "nautilus_network::transport::sockudo",
         "nautilus_network::websocket::client",
     ];
+
+    #[cfg(target_os = "linux")]
+    #[rstest]
+    #[case::tungstenite(TransportBackend::Tungstenite)]
+    #[cfg_attr(
+        feature = "transport-sockudo",
+        case::sockudo(TransportBackend::Sockudo)
+    )]
+    #[tokio::test]
+    async fn test_initial_connect_redacts_error_text(#[case] backend: TransportBackend) {
+        let capture = capture_logs_for(&["nautilus_network::retry"]).await;
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let mut config = reconnect_test_config(socket.local_addr().unwrap().port());
+        config.backend = backend;
+        let error = WebSocketClient::builder()
+            .config(config)
+            .message_handler(Arc::new(|_| {}))
+            .connect()
+            .await
+            .unwrap_err();
+        let messages = capture.messages();
+        let raw_message = error.to_string();
+        let redacted_message = error.redacted_message();
+
+        assert!(
+            matches!(error, TransportError::Io(ref e) if e.kind() == std::io::ErrorKind::ConnectionRefused)
+        );
+        assert_ne!(raw_message, redacted_message);
+        assert_eq!(redacted_message, "I/O error: ConnectionRefused");
+        assert!(messages.contains(&(
+            Level::Trace,
+            format!(
+                "Operation '{INITIAL_CONNECT_OPERATION}' retries exhausted after 1 attempts: {redacted_message}"
+            ),
+        )), "{messages:?}");
+        assert!(
+            messages
+                .iter()
+                .all(|(_, message)| !message.contains(&raw_message)),
+            "{messages:?}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[rstest]
+    #[case::tungstenite(TransportBackend::Tungstenite)]
+    #[cfg_attr(
+        feature = "transport-sockudo",
+        case::sockudo(TransportBackend::Sockudo)
+    )]
+    #[tokio::test]
+    async fn test_reconnect_redacts_error_text(#[case] backend: TransportBackend) {
+        let capture = capture_logs_for(&["nautilus_network::websocket::client"]).await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (close_tx, close_rx) = oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let ws_client = accept_async(stream).await.unwrap();
+            close_rx.await.unwrap();
+            drop(ws_client);
+            let (_stream, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut config = reconnect_test_config(port);
+        config.backend = backend;
+        config.reconnect_max_attempts = Some(1);
+        config.reconnect_delay_initial_ms = Some(1);
+        config.reconnect_delay_max_ms = Some(1);
+        config.reconnect_jitter_ms = Some(0);
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(Arc::new(|_| {}))
+            .connect()
+            .await
+            .unwrap();
+        close_tx.send(()).unwrap();
+
+        wait_until_async(
+            || async {
+                capture.messages().iter().any(|(level, message)| {
+                    *level == Level::Warn && message.starts_with("Reconnect attempt 1 failed:")
+                })
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        client.disconnect().await;
+        server.abort();
+        await_task_termination(server, "redaction peer").await;
+        let messages = capture.messages();
+        let warnings: Vec<_> = messages
+            .iter()
+            .filter(|(_, message)| message.starts_with("Reconnect attempt "))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            warnings,
+            vec![(
+                Level::Warn,
+                "Reconnect attempt 1 failed: I/O error: TimedOut".into()
+            )],
+        );
+    }
+
+    #[cfg(all(feature = "transport-sockudo", target_os = "linux"))]
+    #[tokio::test]
+    async fn test_sockudo_handshake_trace_redacts_authentication() {
+        let capture = capture_logs_for(&[
+            "tungstenite::handshake::client",
+            "nautilus_network::transport::sockudo",
+            "nautilus_network::retry",
+            "nautilus_network::websocket::client",
+        ])
+        .await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            stream.flush().await.unwrap();
+            request
+        });
+
+        let config = WebSocketConfig::builder()
+            .url(format!(
+                "ws://{addr}/TRACE_PATH_SECRET?token=TRACE_QUERY_SECRET"
+            ))
+            .headers(vec![
+                ("KALSHI-ACCESS-KEY".into(), "TRACE_KEY_SECRET".into()),
+                (
+                    "KALSHI-ACCESS-SIGNATURE".into(),
+                    "TRACE_SIGNATURE_SECRET".into(),
+                ),
+            ])
+            .backend(TransportBackend::Sockudo)
+            .build()
+            .unwrap();
+        let error = WebSocketClient::builder()
+            .config(config)
+            .message_handler(Arc::new(|_| {}))
+            .connect()
+            .await
+            .unwrap_err();
+        let request = String::from_utf8(peer.await.unwrap()).unwrap();
+        let messages = capture.messages();
+
+        assert!(matches!(error, TransportError::UpgradeRejected(503)));
+
+        for secret in [
+            "TRACE_KEY_SECRET",
+            "TRACE_SIGNATURE_SECRET",
+            "TRACE_PATH_SECRET",
+            "TRACE_QUERY_SECRET",
+        ] {
+            assert!(request.contains(secret));
+            assert!(
+                messages
+                    .iter()
+                    .all(|(_, message)| !message.contains(secret)),
+                "{messages:?}"
+            );
+        }
+
+        assert!(
+            messages
+                .iter()
+                .any(|(level, message)| *level == log::Level::Trace
+                    && message.contains("retries exhausted after 1 attempts")),
+            "{messages:?}"
+        );
+    }
 
     struct CondvarReleaseGuard<'a> {
         release: &'a (Mutex<bool>, Condvar),

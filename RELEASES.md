@@ -127,6 +127,7 @@ Released on TBD (UTC).
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
+- Fixed HTTP default header debug redaction and WebSocket connection error log redaction
 - Fixed Parquet consolidation hiding gaps, misordering rows, and duplicating data after cleanup errors
 - Fixed Parquet consolidation moving instrument data outside its partitions
 - Fixed CoinAPI WebSocket diagnostics logging API keys from malformed frames

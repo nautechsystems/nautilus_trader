@@ -214,10 +214,11 @@ impl HttpClient {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
 
-            let header_value = HeaderValue::from_str(&value).map_err(|e| {
+            let mut header_value = HeaderValue::from_str(&value).map_err(|e| {
                 HttpClientError::Error(format!("Invalid header value for '{key}': {e}"))
             })?;
 
+            header_value.set_sensitive(true);
             header_map.insert(header_name, header_value);
         }
 
@@ -1144,6 +1145,24 @@ mod tests {
 
     use super::*;
     use crate::logging::tests::capture_logs;
+
+    #[rstest]
+    fn test_debug_redacts_custom_default_headers() {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .headers(HashMap::from([(
+                "kalshi-access-key".into(),
+                "HEADER_DEBUG_SECRET".into(),
+            )]))
+            .build()
+            .unwrap();
+        let header = &client.client.headers["kalshi-access-key"];
+        let debug = format!("{client:?}");
+
+        assert_eq!(header.to_str().unwrap(), "HEADER_DEBUG_SECRET");
+        assert!(header.is_sensitive());
+        assert!(!debug.contains("HEADER_DEBUG_SECRET"), "{debug}");
+    }
 
     #[rstest]
     #[case("ftp://127.0.0.1:1/resource")]
