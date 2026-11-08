@@ -569,6 +569,29 @@ with verified binary or negative-risk position IDs. Callers do not supply contra
   share amount exactly representable at six decimal places, with no rounding. The index is the position
   ID's final byte (`0` or `1`), independent of CLOB token-array order. The CTF redeem-both call refuses V2.
 
+`redeem_positions_batch(condition_ids)` prepares a nonempty list of CTF conditions and attempts one
+ordered wallet submission. Standard and negative-risk conditions can share a batch. Order and duplicates
+are preserved; callers choose the batch size and deduplication policy. No supported numerical maximum is
+established. A preparation error submits nothing and logs the failing condition and zero-based index at
+WARN, while returning the original error. A V2 condition prevents the entire submission.
+
+```rust tab="Rust"
+let transaction = client.redeem_positions_batch(&[condition_a, condition_b]).await?;
+let outcome = transaction.wait().await?;
+```
+
+```python tab="Python"
+transaction = await client.redeem_positions_batch([condition_a, condition_b])
+outcome = await transaction.wait()
+```
+
+The handle reports one Relayer outcome for the batch. Subcall rollback depends on the effective wallet
+implementation; verify its behavior and Relayer acceptance before relying on a batch size or atomicity.
+Existing [submission coordination](#submission-coordination) applies, including blockage after rejected
+or uncertain submissions. Reducing the batch size does not make resubmission safe. Retain all per-call
+intent records for the wallet/nonce when [recovering a submission](#recover-an-unknown-submission);
+these logs are not a durable journal.
+
 Split spends the specified pUSD amount and creates that amount of each outcome. Merge consumes the specified
 amount of each outcome and returns pUSD. V2 redemption burns only the selected outcome amount and returns
 its PositionManager payout. A valid zero losing payout is redeemable; a reverted or unavailable payout

@@ -62,6 +62,7 @@ struct TestServerState {
     wallet: Arc<tokio::sync::Mutex<String>>,
     owner: Arc<tokio::sync::Mutex<String>>,
     market: Arc<tokio::sync::Mutex<Value>>,
+    market_overrides: Arc<tokio::sync::Mutex<HashMap<String, (Value, Duration)>>>,
     market_status: Arc<tokio::sync::Mutex<StatusCode>>,
     nonce: Arc<tokio::sync::Mutex<Value>>,
     submit_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -92,6 +93,7 @@ impl Default for TestServerState {
             wallet: Arc::new(tokio::sync::Mutex::new(TEST_DEPOSIT_WALLET.into())),
             owner: Arc::new(tokio::sync::Mutex::new(TEST_SIGNER.into())),
             market: Arc::new(tokio::sync::Mutex::new(market_json(false))),
+            market_overrides: Arc::default(),
             market_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             nonce: Arc::new(tokio::sync::Mutex::new(
                 json!({"address": TEST_SIGNER, "nonce": "7"}),
@@ -146,9 +148,24 @@ async fn handle_market(
     State(state): State<TestServerState>,
     Path(condition_id): Path<String>,
 ) -> Response {
-    state.market_requests.lock().await.push(condition_id);
+    state
+        .market_requests
+        .lock()
+        .await
+        .push(condition_id.clone());
     let status = *state.market_status.lock().await;
-    let body = state.market.lock().await.clone();
+    let market = state
+        .market_overrides
+        .lock()
+        .await
+        .get(&condition_id)
+        .cloned();
+    let body = if let Some((body, delay)) = market {
+        tokio::time::sleep(delay).await;
+        body
+    } else {
+        state.market.lock().await.clone()
+    };
     (status, Json(body)).into_response()
 }
 
@@ -368,6 +385,154 @@ async fn test_redeem_positions_confirms() {
         outcome,
         PolymarketPositionOutcome::Confirmed { .. }
     ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_redeem_positions_batch_preserves_calls(#[values(1, 4, 51)] count: usize) {
+    let state = TestServerState::default();
+    let markets = (0..3)
+        .map(|i| (format!("0x{i:064x}"), i % 2 != 0))
+        .collect::<Vec<_>>();
+
+    for (condition, neg_risk) in &markets {
+        let mut market = market_json(*neg_risk);
+        market["condition_id"] = json!(condition);
+        state
+            .market_overrides
+            .lock()
+            .await
+            .insert(condition.clone(), (market, Duration::ZERO));
+    }
+    let selected = markets.iter().cycle().take(count).collect::<Vec<_>>();
+    let conditions = selected
+        .iter()
+        .map(|(condition, _)| condition.as_str())
+        .collect::<Vec<_>>();
+    let addr = start_mock_server(state.clone()).await;
+    let outcome = position_client(&addr)
+        .redeem_positions_batch(&conditions)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        PolymarketPositionOutcome::Confirmed { .. }
+    ));
+    let submit = state.last_submit.lock().await.clone().unwrap();
+    assert_eq!(submit["type"], "WALLET");
+    assert_eq!(submit["metadata"], "Redeem positions batch");
+    let calls = submit["depositWalletParams"]["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), count);
+    for (call, (condition, neg_risk)) in calls.iter().zip(selected) {
+        let expected =
+            nautilus_polymarket::positions::calldata::encode_redeem_positions(condition, *neg_risk)
+                .unwrap();
+        assert_eq!(
+            call,
+            &json!({"target": format!("{:#x}", expected.target), "value": "0", "data": expected.data.to_string()})
+        );
+    }
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_preparation_submits_nothing(
+    #[values("empty", "v2", "serde", "timeout", "cancelled")] failure: &str,
+) {
+    install_log_capture();
+    let state = TestServerState::default();
+    let mut market = if failure == "v2" {
+        market_v2_json(1)
+    } else {
+        market_json(false)
+    };
+
+    if failure != "v2" {
+        market["condition_id"] = json!(format!("0x{:064x}", 1));
+    }
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    if failure == "serde" {
+        market["tokens"] = json!(0);
+    }
+    let delay = if matches!(failure, "timeout" | "cancelled") {
+        Duration::from_secs(3)
+    } else {
+        Duration::ZERO
+    };
+    state
+        .market_overrides
+        .lock()
+        .await
+        .insert(condition.clone(), (market, delay));
+    let addr = start_mock_server(state.clone()).await;
+    let requested = condition.clone();
+    let empty = failure == "empty";
+    let task = tokio::spawn(async move {
+        let conditions = if empty {
+            vec![]
+        } else {
+            vec![CONDITION_ID, requested.as_str()]
+        };
+        position_client(&addr)
+            .redeem_positions_batch(&conditions)
+            .await
+    });
+
+    if failure == "cancelled" {
+        wait_until_async(
+            || async { state.market_requests.lock().await.len() == 2 },
+            Duration::from_secs(2),
+        )
+        .await;
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+    } else {
+        let e = task.await.unwrap().unwrap_err();
+
+        match failure {
+            "empty" => assert_eq!(
+                e.to_string(),
+                "bad request: redeem_positions_batch requires at least one condition"
+            ),
+            "serde" => assert!(matches!(e, Error::Serde(_))),
+            "timeout" => {
+                assert!(matches!(e, Error::Timeout));
+                assert!(e.is_retryable());
+            }
+            _ => assert!(matches!(e, Error::BadRequest(_))),
+        }
+    }
+    assert_eq!(
+        state.market_requests.lock().await.len(),
+        if empty { 0 } else { 2 }
+    );
+    assert!(state.rpc_reads.lock().await.is_empty());
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 0);
+    let wallet = wallet_address(&addr);
+    let records = RECOVERY_LOG_CAPTURE
+        .records
+        .lock()
+        .iter()
+        .filter(|(level, message)| *level == Level::Warn && message.contains(&wallet))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if matches!(failure, "empty" | "cancelled") {
+        assert!(records.is_empty());
+    } else {
+        assert_eq!(records.len(), 1);
+        assert!(records[0].1.contains(&format!(
+            "condition_index=1, condition_id={condition}, error="
+        )));
+    }
+    position_client(&addr)
+        .redeem_positions(CONDITION_ID)
+        .await
+        .unwrap();
 }
 
 #[rstest]
@@ -672,16 +837,17 @@ fn wallet_address(addr: &SocketAddr) -> String {
 #[case("redeem", "rejected")]
 #[case("split", "timeout")]
 #[case("merge", "accepted")]
+#[case("batch", "accepted")]
+#[case("batch", "rejected")]
+#[case("batch", "omitted_id")]
+#[case("batch", "timeout")]
+#[case("batch", "cancelled")]
 #[tokio::test]
 async fn test_recovery_record_precedes_submit_response(
     #[case] operation: &'static str,
     #[case] response: &str,
 ) {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        log::set_logger(&RECOVERY_LOG_CAPTURE).unwrap();
-        log::set_max_level(LevelFilter::Info);
-    });
+    install_log_capture();
 
     let state = TestServerState::default();
     *state.submit_delay.lock().await = if matches!(response, "cancelled" | "timeout") {
@@ -705,6 +871,11 @@ async fn test_recovery_record_precedes_submit_response(
             "split" => client.split_position(CONDITION_ID, dec!(1.234567)).await,
             "merge" => client.merge_positions(CONDITION_ID, dec!(2.345678)).await,
             "redeem" => client.redeem_positions(CONDITION_ID).await,
+            "batch" => {
+                client
+                    .redeem_positions_batch(&[CONDITION_ID, CONDITION_ID])
+                    .await
+            }
             _ => unreachable!(),
         }
     });
@@ -754,9 +925,28 @@ async fn test_recovery_record_precedes_submit_response(
         call["target"].as_str().unwrap(),
         call["data"].as_str().unwrap(),
     );
-    assert_eq!(records, vec![(Level::Info, expected)]);
+    assert_eq!(
+        records,
+        vec![(Level::Info, expected); if operation == "batch" { 2 } else { 1 }]
+    );
     assert_eq!(body["nonce"], "7");
     assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
+
+    if operation == "batch" {
+        assert!(matches!(
+            position_client(&addr).redeem_positions(CONDITION_ID).await,
+            Err(Error::Exchange(_))
+        ));
+        assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
+    }
+}
+
+fn install_log_capture() {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        log::set_logger(&RECOVERY_LOG_CAPTURE).unwrap();
+        log::set_max_level(LevelFilter::Info);
+    });
 }
 
 struct RecoveryLogCapture {
@@ -765,7 +955,7 @@ struct RecoveryLogCapture {
 
 impl Log for RecoveryLogCapture {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() == Level::Info && metadata.target() == "nautilus_polymarket::positions"
+        metadata.level() <= Level::Info && metadata.target() == "nautilus_polymarket::positions"
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -1537,14 +1727,20 @@ async fn test_v2_redemption_refuses_ctf_market() {
 #[cfg(feature = "python")]
 #[rstest]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_python_v2_redemption_arguments_reach_wallet_submission() {
+async fn test_python_redemption_arguments_reach_wallet_submission(
+    #[values("v2", "list", "tuple")] input: &str,
+) {
     use pyo3::{
         Python,
         types::{PyDict, PyDictMethods, PyModule},
     };
 
     let state = TestServerState::default();
-    let market = market_v2_json(1);
+    let market = if input == "v2" {
+        market_v2_json(1)
+    } else {
+        market_json(false)
+    };
     let condition = market["condition_id"].as_str().unwrap().to_string();
     *state.market.lock().await = market;
     let addr = start_mock_server(state.clone()).await;
@@ -1559,11 +1755,25 @@ async fn test_python_v2_redemption_arguments_reach_wallet_submission() {
         locals.set_item("wallet", wallet_address(&addr)).unwrap();
         locals.set_item("url", format!("http://{addr}")).unwrap();
         locals.set_item("condition", &condition).unwrap();
+        locals.set_item("input", input).unwrap();
         py.run(c"import asyncio
 from decimal import Decimal
 async def check():
     client = polymarket.PolymarketPositionClient(private_key=private_key, funder=wallet, relayer_api_key='dummy-key', relayer_api_key_address=signer, base_url_relayer=url, base_url_clob=url, base_url_rpc=url, timeout_secs=2)
-    tx = await client.redeem_position(condition, 1, Decimal('0.123457'))
+    if input == 'v2':
+        tx = await client.redeem_position(condition, 1, Decimal('0.123457'))
+    else:
+        try:
+            await client.redeem_positions_batch([])
+        except ValueError as e:
+            assert 'requires at least one condition' in str(e)
+        else:
+            raise AssertionError('empty batch must fail')
+        conditions = [condition, condition] if input == 'list' else (condition, condition)
+        pending = client.redeem_positions_batch(conditions)
+        if input == 'list':
+            conditions.clear()
+        tx = await pending
     result = await tx.wait()
     assert (result.status, result.transaction_id, result.transaction_hash, result.error_msg) == ('confirmed', 'tx-1', '0xabc', None)
 asyncio.run(check())", Some(&locals), Some(&locals)).unwrap();
@@ -1571,19 +1781,28 @@ asyncio.run(check())", Some(&locals), Some(&locals)).unwrap();
 
     let submit = state.last_submit.lock().await.clone().unwrap();
 
-    let expected_data = nautilus_polymarket::positions::calldata::encode_redeem_position_v2(
-        &condition,
-        1,
-        dec!(0.123457),
-    )
-    .unwrap()
-    .data
-    .to_string();
+    let expected = if input == "v2" {
+        nautilus_polymarket::positions::calldata::encode_redeem_position_v2(
+            &condition,
+            1,
+            dec!(0.123457),
+        )
+    } else {
+        nautilus_polymarket::positions::calldata::encode_redeem_positions(&condition, false)
+    };
+    let expected_data = expected.unwrap().data.to_string();
     assert_eq!(
         submit["depositWalletParams"]["calls"][0]["data"],
         expected_data
     );
     assert_eq!(state.submit_count.load(Ordering::Acquire), 1);
+    assert_eq!(
+        submit["depositWalletParams"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        if input == "v2" { 1 } else { 2 }
+    );
 }
 
 fn market_v2_json(module: u8) -> Value {
