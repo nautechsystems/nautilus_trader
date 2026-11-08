@@ -27,8 +27,10 @@ use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::
 
 use nautilus_common::clients::DataClient;
 use nautilus_deribit::{
-    common::consts::{DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_BOOK_DEFAULT_GROUP, DERIBIT_CLIENT_ID},
-    common::enums::DeribitEnvironment,
+    common::{
+        consts::{DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_BOOK_DEFAULT_GROUP, DERIBIT_CLIENT_ID},
+        enums::DeribitEnvironment,
+    },
     config::DeribitDataClientConfig,
     data::DeribitDataClient,
     http::models::DeribitProductType,
