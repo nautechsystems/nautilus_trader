@@ -7626,6 +7626,11 @@ impl OrderMatchingEngine {
             cached_order.set_liquidity_side(liquidity_side);
         }
 
+        if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+            self.cancel_order(&order, None);
+            return;
+        }
+
         self.resync_core_entry(client_order_id);
     }
 
