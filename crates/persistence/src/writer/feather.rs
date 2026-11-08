@@ -87,9 +87,12 @@ use crate::{
             record_path_prefix,
         },
     },
-    common::custom::{
-        augment_batch_with_data_type_column, schema_with_data_type_column,
-        validate_custom_catalog_schema,
+    common::{
+        custom::{
+            augment_batch_with_data_type_column, schema_with_data_type_column,
+            validate_custom_catalog_schema,
+        },
+        metadata::record_batch_ts_init_range,
     },
     writer::{
         filter::{WriterRecordFilter, catalog_family},
@@ -337,6 +340,10 @@ struct FeatherFile {
     buffer: Vec<RecordBatch>,
     buffer_rows: usize,
     buffer_bytes: u64,
+    /// The largest `ts_init` written, which the next file's rows must exceed.
+    last_ts_init: Option<u64>,
+    /// The file reached `max_size`; the next row with a later `ts_init` opens a new file.
+    size_rotation_due: bool,
 }
 
 impl FeatherFile {
@@ -379,11 +386,13 @@ impl FeatherFile {
             buffer: Vec::new(),
             buffer_rows: 0,
             buffer_bytes: 0,
+            last_ts_init: None,
+            size_rotation_due: false,
         })
     }
 
-    // Returns true when size rotation is due
-    fn write_record_batch(&mut self, batch: &RecordBatch) -> Result<bool, ArrowError> {
+    // Appends the batch and notes when size rotation is due
+    fn write_record_batch(&mut self, batch: &RecordBatch) -> Result<(), ArrowError> {
         let batch = if batch.schema() == self.schema {
             batch.clone()
         } else {
@@ -399,7 +408,7 @@ impl FeatherFile {
         }
 
         let Some(max_size) = self.max_size else {
-            return Ok(false);
+            return Ok(());
         };
 
         // The in-memory size only estimates the encoded size, so write before the exact check
@@ -407,7 +416,8 @@ impl FeatherFile {
             self.write_buffer()?;
         }
 
-        Ok(self.size() >= max_size)
+        self.size_rotation_due = self.size() >= max_size;
+        Ok(())
     }
 
     fn write_buffer(&mut self) -> Result<(), ArrowError> {
@@ -472,27 +482,24 @@ impl<W: Write> Write for CountingWriter<W> {
     }
 }
 
-/// Rotations and flushes collected by the synchronous encode path and run once it completes.
-#[derive(Debug, Default)]
-struct PendingIo {
-    rotate_paths: Vec<FileWriterPath>,
-    flush_due: bool,
-}
-
 /// Configuration for file rotation.
+///
+/// Time rotations are decided by the rows' `ts_init`, not the wall clock, and no rotation splits
+/// rows of one `ts_init` over two files (`FeatherWriter::rotated_for`): the catalog requires the
+/// promoted files' `ts_init` ranges to be disjoint.
 #[derive(Debug, Clone)]
 pub enum RotationConfig {
-    /// Rotate based on file size.
+    /// Rotate based on file size, before the next row with a later `ts_init`.
     Size {
         /// Maximum buffer size in bytes before rotation.
         max_size: u64,
     },
-    /// Rotate based on a time interval.
+    /// Rotate before the first row whose `ts_init` is an interval past the file's first row.
     Interval {
         /// Interval in nanoseconds.
         interval_ns: u64,
     },
-    /// Rotate based on scheduled dates.
+    /// Rotate before the first row whose `ts_init` is at or after a scheduled time of day.
     ScheduledDates {
         /// Interval in nanoseconds.
         interval_ns: u64,
@@ -613,12 +620,8 @@ impl FeatherWriter {
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
         // Write the RecordBatch to the appropriate FileWriter.
-        let mut pending = PendingIo::default();
-
-        self.stage_batch_write(path, &batch, &mut pending)?;
-        pending.flush_due = self.flush_is_due();
-
-        self.complete_pending_io(&pending)
+        self.stage_batch_write(path, &batch)?;
+        self.flush_if_due()
     }
 
     /// Writes a batch of data values as one or more `RecordBatch`es.
@@ -660,8 +663,6 @@ impl FeatherWriter {
             return Ok(());
         }
 
-        let mut pending = PendingIo::default();
-
         for (data_type, group) in groups.into_values() {
             let path = self.get_writer_path(data_type);
             let metadata = T::chunk_metadata(&group);
@@ -680,12 +681,10 @@ impl FeatherWriter {
             let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
             let batch = record_batch_with_delta_staged_metadata(&batch, &metadata_rows)?;
 
-            self.stage_batch_write(path, &batch, &mut pending)?;
+            self.stage_batch_write(path, &batch)?;
         }
 
-        pending.flush_due = self.flush_is_due();
-
-        self.complete_pending_io(&pending)
+        self.flush_if_due()
     }
 
     // Instrument classes have different fields, so each class stages its own file
@@ -704,29 +703,67 @@ impl FeatherWriter {
         Ok(CatalogDataType::Instrument(class))
     }
 
+    /// Appends `batch` to the open file of `path`, or to the file opened after rotating it when
+    /// the batch's first `ts_init` is due one (`rotated_for`).
     fn stage_batch_write(
         &mut self,
         path: FileWriterPath,
         batch: &RecordBatch,
-        pending: &mut PendingIo,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.writers.contains_key(&path) {
+            return Ok(());
+        }
+
+        let (first_ts, last_ts) = record_batch_ts_init_range(std::slice::from_ref(batch))?;
+        let path = self.rotated_for(path, first_ts)?;
         let Some(file) = self.writers.get_mut(&path) else {
             return Ok(());
         };
 
-        let should_rotate = match file.write_record_batch(batch) {
-            Ok(should_rotate) => should_rotate,
-            Err(e) => {
-                self.abandon_file(&path);
-                return Err(e.into());
-            }
-        };
-
-        if should_rotate || self.check_scheduled_rotation(&path) {
-            pending.rotate_paths.push(path);
+        if let Err(e) = file.write_record_batch(batch) {
+            self.abandon_file(&path);
+            return Err(e.into());
         }
 
+        file.last_ts_init = Some(file.last_ts_init.map_or(last_ts, |last| last.max(last_ts)));
         Ok(())
+    }
+
+    /// The file a row of `path` at `ts_init` writes to: the open one, or the one opened after
+    /// sealing it when a rotation is due.
+    ///
+    /// The catalog promotes each sealed file to one Parquet file and requires the files' `ts_init`
+    /// ranges to be disjoint, so a rotation is decided by the row's own `ts_init` before the row is
+    /// written: the first row at or after a scheduled boundary opens the next file, and a row
+    /// sharing the `ts_init` of the file's last row stays in it whatever rotation is due. The
+    /// wall clock would put the first row after a boundary in the old file, and a second row with
+    /// the same `ts_init` (the prints of one fill) in the new one.
+    fn rotated_for(
+        &mut self,
+        path: FileWriterPath,
+        ts_init: u64,
+    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
+        let scheduled = self.scheduled_rotation_due(&path, ts_init);
+        let Some(file) = self.writers.get(&path) else {
+            return Ok(path);
+        };
+
+        if !(scheduled || file.size_rotation_due)
+            || file.last_ts_init.is_some_and(|last| ts_init <= last)
+        {
+            return Ok(path);
+        }
+
+        let schema = file.schema.clone();
+        let data_type = path.data_type.clone();
+        self.seal_file(&path)?;
+
+        let path = self.reserve_writer_path(data_type);
+        let file = FeatherFile::create(&path.path, &schema, &self.rotation_config)?;
+        self.writers.insert(path.clone(), file);
+        // This row is the new file's first: it sets the file's next rotation
+        self.scheduled_rotation_due(&path, ts_init);
+        Ok(path)
     }
 
     /// Returns whether the auto-flush interval has elapsed since the last flush.
@@ -740,82 +777,52 @@ impl FeatherWriter {
         elapsed_ms >= self.flush_interval_ms
     }
 
-    fn complete_pending_io(
-        &mut self,
-        pending: &PendingIo,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for path in &pending.rotate_paths {
-            self.seal_file(path)?;
-        }
-
-        if pending.flush_due {
+    /// Flushes once the synchronous encode path completes, when the auto-flush interval elapsed.
+    fn flush_if_due(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.flush_is_due() {
             self.flush()?;
         }
 
         Ok(())
     }
 
-    fn check_scheduled_rotation(&mut self, path: &FileWriterPath) -> bool {
-        match &self.rotation_config {
-            RotationConfig::Interval { interval_ns } => {
-                let now = self.clock.timestamp_ns();
-                let next_rotation = self.next_rotation_times.get(path).copied();
+    /// Whether a row at `ts_init` falls at or after the next interval or scheduled rotation of
+    /// `path`'s file. The file's first row sets that rotation from its own `ts_init`; sealing the
+    /// file forgets it, so a due rotation stays due until the file is sealed.
+    fn scheduled_rotation_due(&mut self, path: &FileWriterPath, ts_init: u64) -> bool {
+        if let Some(next) = self.next_rotation_times.get(path) {
+            return ts_init >= next.as_u64();
+        }
 
-                match next_rotation {
-                    None => {
-                        self.next_rotation_times
-                            .insert(path.clone(), now + DurationNanos::new(*interval_ns));
-                        false
-                    }
-                    Some(next) if now >= next => {
-                        self.next_rotation_times
-                            .insert(path.clone(), now + DurationNanos::new(*interval_ns));
-                        true
-                    }
-                    _ => false,
-                }
+        let next = match &self.rotation_config {
+            RotationConfig::Interval { interval_ns } => {
+                UnixNanos::from(ts_init) + DurationNanos::new(*interval_ns)
             }
             RotationConfig::ScheduledDates {
                 interval_ns,
                 rotation_time,
                 rotation_timezone,
-            } => {
-                let now = self.clock.timestamp_ns();
-                let next_rotation = self.next_rotation_times.get(path).copied();
-
-                match next_rotation {
-                    None => {
-                        let next = self.calculate_next_scheduled_rotation(
-                            *rotation_time,
-                            rotation_timezone,
-                            *interval_ns,
-                        );
-                        self.next_rotation_times.insert(path.clone(), next);
-                        false
-                    }
-                    Some(next) if now >= next => {
-                        let next = self.calculate_next_scheduled_rotation(
-                            *rotation_time,
-                            rotation_timezone,
-                            *interval_ns,
-                        );
-                        self.next_rotation_times.insert(path.clone(), next);
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
+            } => Self::next_scheduled_rotation(
+                UnixNanos::from(ts_init),
+                *rotation_time,
+                rotation_timezone,
+                *interval_ns,
+            ),
+            _ => return false,
+        };
+        self.next_rotation_times.insert(path.clone(), next);
+        false
     }
 
-    fn calculate_next_scheduled_rotation(
-        &self,
+    /// The first scheduled rotation after `after`: today's `rotation_time` in `rotation_timezone`,
+    /// advanced by `interval_ns` until it passes `after`.
+    fn next_scheduled_rotation(
+        after: UnixNanos,
         rotation_time: UnixNanos,
         rotation_timezone: &TimeZone,
         interval_ns: u64,
     ) -> UnixNanos {
-        let now_utc = self.clock.timestamp_ns().to_datetime_utc();
+        let now_utc = after.to_datetime_utc();
         let now_local = rotation_timezone.to_datetime(now_utc);
 
         let rotation_time_secs = u32::try_from(*rotation_time / 1_000_000_000).unwrap_or(0);
@@ -1475,12 +1482,8 @@ impl FeatherWriter {
         batch =
             record_batch_with_delta_staged_metadata(&batch, std::slice::from_ref(&metadata_row))?;
 
-        let mut pending = PendingIo::default();
-
-        self.stage_batch_write(path, &batch, &mut pending)?;
-        pending.flush_due = self.flush_is_due();
-
-        self.complete_pending_io(&pending)
+        self.stage_batch_write(path, &batch)?;
+        self.flush_if_due()
     }
 
     pub(crate) fn should_write_custom(&self, type_name: &str, identifier: Option<&str>) -> bool {
@@ -2162,22 +2165,35 @@ mod tests {
         assert_eq!(identifiers, vec!["AUD/USD.SIM".to_string()]);
     }
 
+    // The `ts_init` of every quote in a sealed file, in file order
+    fn timestamps(path: &Path) -> Vec<u64> {
+        read_quotes(path)
+            .into_iter()
+            .map(|data| match data {
+                Data::Quote(quote) => quote.ts_init.as_u64(),
+                other => panic!("not a quote: {other:?}"),
+            })
+            .collect()
+    }
+
+    // Every sealed file's timestamps, ordered by content
+    fn sealed_timestamps(directory: &Path) -> Vec<Vec<u64>> {
+        let mut files: Vec<_> = feather_files(directory, FEATHER_EXTENSION)
+            .iter()
+            .map(|path| timestamps(path))
+            .collect();
+        files.sort();
+        files
+    }
+
     #[rstest]
     fn scheduled_rotation_keeps_time_of_day_anchor_after_late_rotation() {
         let temp_dir = TempDir::new().unwrap();
-
-        let now = Arc::new(AtomicU64::new(
-            1_767_258_000_000_000_000, // 2026-01-01 09:00:00 UTC
-        ));
-
-        let path = FileWriterPath {
-            path: PathBuf::from("quotes.feather"),
-            data_type: NautilusDataType::QuoteTick.into(),
-        };
+        let quotes = NautilusDataType::QuoteTick.into();
 
         let mut writer = FeatherWriter::new(
             temp_dir.path().to_path_buf(),
-            WriterClock::Test(Arc::clone(&now)),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
             RotationConfig::ScheduledDates {
                 interval_ns: 86_400_000_000_000,
                 rotation_time: UnixNanos::from(36_000_000_000_000u64),
@@ -2187,17 +2203,77 @@ mod tests {
             None,
         );
 
-        assert!(!writer.check_scheduled_rotation(&path));
+        // 2026-01-01 09:00:00 UTC: the file rotates at 10:00
+        writer.write(quote_at(1_767_258_000_000_000_000)).unwrap();
         assert_eq!(
-            writer.next_rotation_times[&path],
-            UnixNanos::from(1_767_261_600_000_000_000u64),
+            writer.get_next_rotation_time(&quotes),
+            Some(UnixNanos::from(1_767_261_600_000_000_000u64)),
         );
 
-        now.store(1_767_263_400_000_000_000, Ordering::Relaxed); // 10:30 UTC
-        assert!(writer.check_scheduled_rotation(&path));
+        // The first row after it, at 10:30, opens the next file, which rotates at 10:00 tomorrow
+        writer.write(quote_at(1_767_263_400_000_000_000)).unwrap();
         assert_eq!(
-            writer.next_rotation_times[&path],
-            UnixNanos::from(1_767_348_000_000_000_000u64),
+            writer.get_next_rotation_time(&quotes),
+            Some(UnixNanos::from(1_767_348_000_000_000_000u64)),
+        );
+        assert_eq!(
+            sealed_timestamps(temp_dir.path()),
+            vec![vec![1_767_258_000_000_000_000]]
+        );
+    }
+
+    // The prints of one fill share a `ts_init`; a scheduled rotation between them left the catalog
+    // two files with touching ranges, which its promotion refuses
+    #[rstest]
+    fn scheduled_rotation_opens_the_next_file_before_the_first_row_past_the_boundary() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::ScheduledDates {
+                interval_ns: 3_600_000_000_000,
+                rotation_time: UnixNanos::default(),
+                rotation_timezone: jiff::tz::TimeZone::UTC,
+            },
+            None,
+            None,
+        );
+
+        // 2026-11-07 17:47:15 UTC, then two rows at 18:14:41.380125727 UTC
+        let (before, after) = (1_794_073_635_000_000_000u64, 1_794_075_281_380_125_727u64);
+        writer.write(quote_at(before)).unwrap();
+        writer.write(quote_at(after)).unwrap();
+        writer.write(quote_at(after)).unwrap();
+        assert_eq!(sealed_timestamps(temp_dir.path()), vec![vec![before]]);
+
+        writer.close().unwrap();
+        assert_eq!(
+            sealed_timestamps(temp_dir.path()),
+            vec![vec![before], vec![after, after]]
+        );
+    }
+
+    #[rstest]
+    fn size_rotation_waits_for_the_next_ts_init() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::Size { max_size: 1 },
+            None,
+            None,
+        );
+
+        for ts in [1, 1, 2, 2, 3] {
+            writer.write(quote_at(ts)).unwrap();
+        }
+        writer.close().unwrap();
+
+        assert_eq!(
+            sealed_timestamps(temp_dir.path()),
+            vec![vec![1, 1], vec![2, 2], vec![3]]
         );
     }
 
@@ -3219,23 +3295,28 @@ mod tests {
             })
             .to_vec();
 
-        // Both identifier groups fill the shared quotes file, so the batch queues its seal twice
+        // The first identifier group fills the shared quotes file; the second shares its
+        // `ts_init`, so it joins the full file instead of opening the next
         writer.write_batch(quotes).unwrap();
 
-        let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
-        let batches = read_feather_batches(&sealed[0]);
+        assert_eq!(writer.writers.len(), 1);
+        assert!(feather_files(temp_dir.path(), FEATHER_EXTENSION).is_empty());
 
-        assert!(writer.writers.is_empty());
+        writer.close().unwrap();
+
+        let sealed = feather_files(temp_dir.path(), FEATHER_EXTENSION);
         assert_eq!(sealed.len(), 1);
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
         assert_eq!(
-            identifiers_from_record_batches(&batches).unwrap(),
+            identifiers_from_record_batches(&read_feather_batches(&sealed[0])).unwrap(),
             vec!["AUD/USD.SIM".to_string(), "EUR/USD.SIM".to_string()],
         );
     }
 
+    // A full file is sealed when the next row with a later `ts_init` arrives, which opens the
+    // next file; the last full file waits for close
     #[rstest]
-    fn size_rotation_seals_each_full_file_and_opens_the_next_lazily() {
+    fn size_rotation_seals_each_full_file_before_the_next_later_row() {
         let temp_dir = TempDir::new().unwrap();
         let shared_clock = Arc::new(AtomicU64::new(0));
 
@@ -3262,18 +3343,16 @@ mod tests {
                 .unwrap();
         }
 
-        let rows = feather_files(temp_dir.path(), FEATHER_EXTENSION)
-            .iter()
-            .map(|path| {
-                read_feather_batches(path)
-                    .iter()
-                    .map(RecordBatch::num_rows)
-                    .sum::<usize>()
-            })
-            .collect::<Vec<_>>();
+        assert_eq!(sealed_timestamps(temp_dir.path()), vec![vec![1_000]]);
+        assert_eq!(writer.writers.len(), 1);
+
+        writer.close().unwrap();
 
         assert!(writer.writers.is_empty());
-        assert_eq!(rows, vec![1, 1]);
+        assert_eq!(
+            sealed_timestamps(temp_dir.path()),
+            vec![vec![1_000], vec![2_000]]
+        );
         assert!(feather_files(temp_dir.path(), FEATHER_PARTIAL_EXTENSION).is_empty());
     }
 
