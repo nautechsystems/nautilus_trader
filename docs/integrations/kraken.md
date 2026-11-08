@@ -495,10 +495,11 @@ send-order status set that the edit documentation does not list: `notFound`, `in
 send-order documentation lists each of them except `reduceOnlyWouldIncreasePosition`. An error
 response whose code refuses the request also rejects the edit: `invalidArgument`,
 `requiredArgumentMissing`, `Json Parse Error`, `notFound`, `accountInactive`, `marketUnavailable`,
-`authenticationError`, or `nonceBelowThreshold`. For `orderForEditNotFound`, the Maker Protection
-guide states that "the edit's target is not resting: it had genuinely left the book by the time a
-held edit released, or its placement is still held." The adapter rejects such an edit as it rejects
-a cancel answered `notFound`.
+`authenticationError`, `nonceBelowThreshold`, or `nonceDuplicate`, since each edit is sent once
+under a fresh nonce. For `orderForEditNotFound`, the Maker Protection guide states that "the edit's
+target is not resting: it had genuinely left the book by the time a held edit released, or its
+placement is still held." The adapter rejects such an edit as it rejects a cancel answered
+`notFound`.
 
 A refusal does not establish that the order is still working. Kraken can refuse an edit by
 canceling the order, and the open-orders feed then closes it. If that update is missed, the order
@@ -517,7 +518,7 @@ These outcomes stay unconfirmed, so the adapter logs a warning and emits no even
   its remainder removed, while the 22 October 2026 changelog says a held order is no longer
   converted to immediate-or-cancel.
 - Any other status, such as one Kraken does not document.
-- Any other error code, including `apiLimitExceeded` and `nonceDuplicate`, or none.
+- Any other error code, including `apiLimitExceeded`, or none.
 
 If no private update resolves such an edit, the in-flight check cancels the order locally once its
 retries run out, about 30 seconds on the default settings, even if the order still rests at Kraken.

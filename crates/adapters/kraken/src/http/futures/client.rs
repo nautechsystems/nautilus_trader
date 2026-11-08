@@ -3282,10 +3282,12 @@ fn is_futures_modify_rejection(status: &str) -> bool {
 
 /// Whether a Kraken Futures error code refuses an edit request, so the venue did not apply it.
 ///
+/// `nonceDuplicate` refuses the request too: `send_authenticated_post` sends each edit once under a
+/// fresh nonce, so the duplicate is another request's nonce, not an earlier copy of this edit.
+///
 /// Every other code leaves the outcome unknown. `apiLimitExceeded`, `Server Error`, `Unavailable`
-/// and `unknownError` do not say whether the request was processed, and `nonceDuplicate` means the
-/// venue already saw a request under this nonce, which can be this edit. Kraken documents one set
-/// of error codes for every endpoint, so a code outside it has no documented meaning for an edit.
+/// and `unknownError` do not say whether the request was processed. Kraken documents one set of
+/// error codes for every endpoint, so a code outside it has no documented meaning for an edit.
 fn is_futures_modify_error_rejection(code: &str) -> bool {
     matches!(
         code,
@@ -3297,6 +3299,7 @@ fn is_futures_modify_error_rejection(code: &str) -> bool {
             | "marketUnavailable"
             | "authenticationError"
             | "nonceBelowThreshold"
+            | "nonceDuplicate"
     )
 }
 
@@ -5782,6 +5785,7 @@ mod tests {
     #[case::market_unavailable("marketUnavailable")]
     #[case::authentication_error("authenticationError")]
     #[case::nonce_below_threshold("nonceBelowThreshold")]
+    #[case::nonce_duplicate("nonceDuplicate")]
     #[tokio::test]
     async fn test_modify_order_rejects_an_error_code_refusing_the_edit(#[case] code: &str) {
         let error = modify_order_answered_with(
@@ -5804,7 +5808,6 @@ mod tests {
     /// keeps the venue's code.
     #[rstest]
     #[case::rate_limited(Some("apiLimitExceeded"), "apiLimitExceeded")]
-    #[case::duplicate_nonce(Some("nonceDuplicate"), "nonceDuplicate")]
     #[case::undocumented(Some("undocumentedError"), "undocumentedError")]
     #[case::empty(Some(""), "edit request failed without a reason")]
     #[case::absent(None, "edit request failed without a reason")]

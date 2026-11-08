@@ -10025,6 +10025,10 @@ async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
     r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceBelowThreshold"}"#,
     "nonceBelowThreshold"
 )]
+#[case::nonce_duplicate(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceDuplicate"}"#,
+    "nonceDuplicate"
+)]
 #[tokio::test]
 async fn test_futures_refused_edit_emits_modify_rejected(
     #[case] body: &'static str,
