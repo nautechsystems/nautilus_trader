@@ -35,7 +35,7 @@ use nautilus_core::{
     AtomicMap, AtomicSet, UUID4, env::get_or_env_var_opt, string::secret::SecretString,
     time::get_atomic_clock_realtime,
 };
-use nautilus_live::{SocketControl, task::TaskGroup};
+use nautilus_live::{SocketControl, book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS, task::TaskGroup};
 use nautilus_model::{
     data::BarType,
     enums::OrderSide,
@@ -104,6 +104,8 @@ pub struct DeribitWebSocketClient {
     mark_price_subs: Arc<AtomicSet<InstrumentId>>,
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
     book_depth_subs: Arc<tokio::sync::Mutex<SubscriptionState>>,
+    book_snapshot_timeout_secs: u64,
+    book_stale_threshold_secs: u64,
     cancellation_token: CancellationToken,
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
@@ -217,6 +219,8 @@ impl DeribitWebSocketClient {
             mark_price_subs: Arc::new(AtomicSet::new()),
             index_price_subs: Arc::new(AtomicSet::new()),
             book_depth_subs: Arc::new(tokio::sync::Mutex::new(SubscriptionState::new('.'))),
+            book_snapshot_timeout_secs: DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS,
+            book_stale_threshold_secs: 120,
             cancellation_token: CancellationToken::new(),
             account_id: None,
             bars_timestamp_on_close: true,
@@ -236,6 +240,20 @@ impl DeribitWebSocketClient {
     #[must_use]
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
+        self
+    }
+
+    /// Configures the order book snapshot and stale-feed timers, in seconds.
+    ///
+    /// A zero value disables the corresponding timer.
+    #[must_use]
+    pub fn with_book_timeouts(
+        mut self,
+        snapshot_timeout_secs: u64,
+        stale_threshold_secs: u64,
+    ) -> Self {
+        self.book_snapshot_timeout_secs = snapshot_timeout_secs;
+        self.book_stale_threshold_secs = stale_threshold_secs;
         self
     }
 
@@ -625,6 +643,11 @@ impl DeribitWebSocketClient {
         );
 
         handler.set_book_depth_subs(self.book_depth_subs.clone());
+        handler.set_book_sync(
+            cmd_tx.clone(),
+            Duration::from_secs(self.book_snapshot_timeout_secs),
+            Duration::from_secs(self.book_stale_threshold_secs),
+        );
 
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());

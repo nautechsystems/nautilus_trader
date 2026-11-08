@@ -52,6 +52,24 @@ def test_deribit_factories_expose_python_names() -> None:
     assert DeribitExecutionClientFactory().name() == DERIBIT
 
 
+def test_deribit_data_config_book_timer_defaults() -> None:
+    """
+    Test deribit data config book timer defaults and overrides.
+    """
+    config = DeribitDataClientConfig()
+
+    assert config.book_snapshot_timeout_secs == 10
+    assert config.book_stale_threshold_secs == 120
+
+    override = DeribitDataClientConfig(
+        book_snapshot_timeout_secs=0,
+        book_stale_threshold_secs=0,
+    )
+
+    assert override.book_snapshot_timeout_secs == 0
+    assert override.book_stale_threshold_secs == 0
+
+
 def test_live_node_builder_accepts_deribit_data_factory() -> None:
     """
     Test live node builder accepts deribit data factory.

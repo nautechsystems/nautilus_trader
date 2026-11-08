@@ -51,11 +51,13 @@ use nautilus_deribit::{
         messages::{DeribitOrderParams, NautilusWsMessage},
     },
 };
-use nautilus_live::socket::{
-    SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+use nautilus_live::{
+    book::conformance::BookStreamChecker,
+    socket::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome},
 };
 use nautilus_model::{
     data::Data,
+    enums::BookType,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -108,6 +110,53 @@ fn load_test_instruments() -> Vec<InstrumentAny> {
     vec![create_btc_perpetual()]
 }
 
+/// Book frames for gap-recovery tests: the first subscribe sends a snapshot, a contiguous
+/// delta, then a gapped delta; every resubscribe sends a fresh snapshot episode.
+fn book_gap_frames(n: usize, snapshot: &Value, delta: &Value) -> Vec<Value> {
+    fn with_ids(frame: &Value, change_id: u64, prev_change_id: Option<u64>) -> Value {
+        let mut frame = frame.clone();
+        frame["params"]["data"]["change_id"] = json!(change_id);
+        if let Some(prev) = prev_change_id {
+            frame["params"]["data"]["prev_change_id"] = json!(prev);
+        }
+
+        frame
+    }
+
+    if n == 0 {
+        vec![
+            with_ids(snapshot, 100, None),
+            with_ids(delta, 101, Some(100)),
+            with_ids(delta, 105, Some(104)),
+        ]
+    } else {
+        vec![
+            with_ids(snapshot, 200, None),
+            with_ids(delta, 201, Some(200)),
+        ]
+    }
+}
+
+async fn send_book_gap_frames(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    snapshot: &Value,
+    delta: &Value,
+) {
+    let n = state.book_subscribe_count.fetch_add(1, Ordering::Relaxed);
+    let frames = book_gap_frames(n, snapshot, delta);
+
+    for frame in frames {
+        if socket
+            .send(Message::Text(frame.to_string().into()))
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------
 // Test Server State
 // ------------------------------------------------------------------------------------------------
@@ -137,6 +186,8 @@ struct TestServerState {
     fail_next_auth: Arc<AtomicBool>,
     auth_expires_in: Arc<tokio::sync::Mutex<u64>>,
     suppress_private_subscribe_ack: Arc<AtomicBool>,
+    book_gap_mode: Arc<AtomicBool>,
+    book_subscribe_count: Arc<AtomicUsize>,
 }
 
 impl TestServerState {
@@ -268,17 +319,30 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 let data_payload = if channel.starts_with("trades.") {
                                     Some(&trades_payload)
                                 } else if channel.starts_with("book.") {
-                                    // Send snapshot first, then delta
-                                    if socket
-                                        .send(Message::Text(
-                                            book_snapshot_payload.to_string().into(),
-                                        ))
-                                        .await
-                                        .is_err()
-                                    {
-                                        break;
+                                    if state.book_gap_mode.load(Ordering::Relaxed) {
+                                        send_book_gap_frames(
+                                            &mut socket,
+                                            &state,
+                                            &book_snapshot_payload,
+                                            &book_delta_payload,
+                                        )
+                                        .await;
+
+                                        None
+                                    } else {
+                                        // Send snapshot first, then delta
+                                        if socket
+                                            .send(Message::Text(
+                                                book_snapshot_payload.to_string().into(),
+                                            ))
+                                            .await
+                                            .is_err()
+                                        {
+                                            break;
+                                        }
+
+                                        Some(&book_delta_payload)
                                     }
-                                    Some(&book_delta_payload)
                                 } else if channel.starts_with("ticker.") {
                                     Some(&ticker_payload)
                                 } else if channel.starts_with("quote.") {
@@ -883,6 +947,62 @@ async fn test_book_subscription_snapshot() {
         }
         other => panic!("unexpected message: {other:?}"),
     }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_book_gap_recovery_emits_valid_stream() {
+    let state = Arc::new(TestServerState::default());
+    state.book_gap_mode.store(true, Ordering::Relaxed);
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(&instruments);
+    connect_and_wait(&mut client).await;
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    client
+        .subscribe_book(instrument_id, None)
+        .await
+        .expect("subscribe failed");
+
+    let mut checker = BookStreamChecker::new(BookType::L2_MBP, true);
+    checker.open(instrument_id);
+
+    let stream = client.stream().unwrap();
+    pin_mut!(stream);
+
+    let mut sequences = Vec::new();
+    while sequences.len() < 4 {
+        let message = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("timed out waiting for book data")
+            .expect("stream ended unexpectedly");
+
+        let NautilusWsMessage::Deltas(deltas) = message else {
+            panic!("unexpected message: {message:?}");
+        };
+
+        checker
+            .apply(&deltas)
+            .expect("book stream broke the contract");
+        sequences.push(deltas.sequence);
+    }
+
+    assert_eq!(sequences, vec![100, 101, 200, 201]);
+
+    client
+        .unsubscribe_book(instrument_id, None)
+        .await
+        .expect("unsubscribe failed");
+    checker.close(instrument_id);
+
+    let quiet = tokio::time::timeout(Duration::from_secs(2), stream.next()).await;
+    assert!(quiet.is_err(), "unexpected output after close: {quiet:?}");
 
     client.close().await.expect("close failed");
 }

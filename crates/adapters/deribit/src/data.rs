@@ -175,7 +175,11 @@ impl DeribitDataClient {
             client_id,
             Some(*DERIBIT_VENUE),
             "deribit-data-streams",
-        ));
+        ))
+        .with_book_timeouts(
+            config.book_snapshot_timeout_secs,
+            config.book_stale_threshold_secs,
+        );
 
         let session_tasks = TaskGroup::new();
         let command_tasks = TaskGroup::new();

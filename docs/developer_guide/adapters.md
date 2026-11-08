@@ -1009,10 +1009,15 @@ snapshot parsing. The shared types describe the result of validation and monitor
   reconnects. Advancing empty snapshots count as updates. Replacement uses an unsubscribe/subscribe pair on
   the existing socket. See [Derive order book recovery](../integrations/derive.md#order-book-recovery) for
   timer defaults and the notification correlation limit.
+- **Deribit**: sequences non-grouped channels by `change_id`/`prev_change_id` per instrument and
+  tracks grouped channels as snapshot-only books by exact channel. Replacement uses an
+  unsubscribe/subscribe pair on the existing socket. See
+  [Deribit sequence gap recovery](../integrations/deribit.md#sequence-gap-recovery) for timer
+  defaults and live validation.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive): a replacement
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit): a replacement
   resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
