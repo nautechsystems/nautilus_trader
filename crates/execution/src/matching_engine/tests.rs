@@ -6713,6 +6713,250 @@ fn test_oco_fill_does_not_cancel_already_closed_sibling() {
     );
 }
 
+fn linked_pair(
+    engine: &OrderMatchingEngine,
+    contingency_type: ContingencyType,
+) -> (OrderAny, OrderAny) {
+    let first_id = ClientOrderId::from("LINKED-FIRST");
+    let second_id = ClientOrderId::from("LINKED-SECOND");
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(first_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("2.000"))
+        .contingency_type(contingency_type)
+        .linked_order_ids(vec![second_id])
+        .submit(true)
+        .build();
+    let mut second = OrderTestBuilder::new(OrderType::Limit);
+    second
+        .instrument_id(engine.instrument.id())
+        .client_order_id(second_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1400.00"))
+        .quantity(Quantity::from("2.000"))
+        .submit(true);
+
+    if contingency_type == ContingencyType::Oto {
+        second.parent_order_id(first_id);
+    } else {
+        second
+            .contingency_type(contingency_type)
+            .linked_order_ids(vec![first_id]);
+    }
+    (first, second.build())
+}
+
+fn fill_linked_first(engine: &mut OrderMatchingEngine) {
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            engine.instrument.id(),
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1501.00"),
+                Quantity::from("2.000"),
+                2,
+            ),
+            RecordFlag::F_LAST as u8,
+            2,
+            2.into(),
+            2.into(),
+        ))
+        .unwrap();
+}
+
+fn drain_order_events(events: &Rc<RefCell<Vec<OrderEventAny>>>) -> Vec<(String, String)> {
+    events
+        .borrow_mut()
+        .drain(..)
+        .map(|event| {
+            let detail = match &event {
+                OrderEventAny::Accepted(_) => "accepted".to_string(),
+                OrderEventAny::Filled(fill) => format!("filled {}@{}", fill.last_qty, fill.last_px),
+                OrderEventAny::Canceled(_) => "canceled".to_string(),
+                OrderEventAny::Rejected(rejected) => format!("rejected: {}", rejected.reason),
+                OrderEventAny::Updated(updated) => format!("updated {}", updated.quantity),
+                other => format!("{other:?}"),
+            };
+            (event.client_order_id().to_string(), detail)
+        })
+        .collect()
+}
+
+#[rstest]
+#[case::oco(ContingencyType::Oco)]
+#[case::ouo(ContingencyType::Ouo)]
+fn test_linked_order_processed_before_its_sibling_is_submitted(
+    #[case] contingency_type: ContingencyType,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let account_id = AccountId::from("SIM-001");
+    let (mut first, mut second) = linked_pair(&engine, contingency_type);
+
+    process_cached_order(&mut engine, &mut first, account_id);
+    assert_eq!(
+        drain_order_events(&events),
+        vec![("LINKED-FIRST".to_string(), "accepted".to_string())]
+    );
+
+    process_cached_order(&mut engine, &mut second, account_id);
+    assert_eq!(
+        drain_order_events(&events),
+        vec![("LINKED-SECOND".to_string(), "accepted".to_string())]
+    );
+
+    fill_linked_first(&mut engine);
+    assert_eq!(
+        drain_order_events(&events),
+        vec![
+            (
+                "LINKED-FIRST".to_string(),
+                "filled 2.000@1500.00".to_string()
+            ),
+            ("LINKED-SECOND".to_string(), "canceled".to_string()),
+        ]
+    );
+}
+
+#[rstest]
+#[case::oco(
+    ContingencyType::Oco,
+    "rejected: Contingent order LINKED-FIRST already closed"
+)]
+#[case::ouo(
+    ContingencyType::Ouo,
+    "rejected: Contingent order LINKED-FIRST already closed"
+)]
+#[case::oto(ContingencyType::Oto, "accepted")]
+fn test_linked_order_filled_before_its_sibling_is_submitted(
+    #[case] contingency_type: ContingencyType,
+    #[case] second_event: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let account_id = AccountId::from("SIM-001");
+    let (mut first, mut second) = linked_pair(&engine, contingency_type);
+
+    process_cached_order(&mut engine, &mut first, account_id);
+    fill_linked_first(&mut engine);
+    assert_eq!(
+        drain_order_events(&events),
+        vec![
+            ("LINKED-FIRST".to_string(), "accepted".to_string()),
+            (
+                "LINKED-FIRST".to_string(),
+                "filled 2.000@1500.00".to_string()
+            ),
+        ]
+    );
+
+    process_cached_order(&mut engine, &mut second, account_id);
+    assert_eq!(
+        drain_order_events(&events),
+        vec![("LINKED-SECOND".to_string(), second_event.to_string())]
+    );
+}
+
+// The first order links an order that is never submitted ahead of a submitted one, so skipping
+// the missing order is what lets the contingent action reach the submitted one
+#[rstest]
+#[case::oco_fill(ContingencyType::Oco, "fill", "canceled")]
+#[case::ouo_fill(ContingencyType::Ouo, "fill", "canceled")]
+#[case::oto_fill(ContingencyType::Oto, "fill", "accepted")]
+#[case::oco_cancel(ContingencyType::Oco, "cancel", "canceled")]
+#[case::ouo_cancel(ContingencyType::Ouo, "cancel", "canceled")]
+#[case::oto_cancel(ContingencyType::Oto, "cancel", "canceled")]
+#[case::ouo_modify(ContingencyType::Ouo, "modify", "updated 1.000")]
+#[case::oto_modify(ContingencyType::Oto, "modify", "updated 1.000")]
+fn test_contingent_action_skips_unsubmitted_linked_order(
+    #[case] contingency_type: ContingencyType,
+    #[case] action: &str,
+    #[case] third_event: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let account_id = AccountId::from("SIM-001");
+    let first_id = ClientOrderId::from("LINKED-FIRST");
+    let unsubmitted_id = ClientOrderId::from("LINKED-UNSUBMITTED");
+    let third_id = ClientOrderId::from("LINKED-THIRD");
+    let mut first = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(first_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("2.000"))
+        .contingency_type(contingency_type)
+        .linked_order_ids(vec![unsubmitted_id, third_id])
+        .submit(true)
+        .build();
+    let mut third = OrderTestBuilder::new(OrderType::Limit);
+    third
+        .instrument_id(engine.instrument.id())
+        .client_order_id(third_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1400.00"))
+        .quantity(Quantity::from("2.000"))
+        .submit(true);
+
+    if contingency_type == ContingencyType::Oto {
+        third.parent_order_id(first_id);
+    } else {
+        third
+            .contingency_type(contingency_type)
+            .linked_order_ids(vec![first_id, unsubmitted_id]);
+    }
+    let mut third = third.build();
+
+    process_cached_order(&mut engine, &mut first, account_id);
+    process_cached_order(&mut engine, &mut third, account_id);
+    drain_order_events(&events);
+
+    let first_event = match action {
+        "fill" => {
+            fill_linked_first(&mut engine);
+            "filled 2.000@1500.00"
+        }
+        "cancel" => {
+            let first = engine.cache.borrow().order_owned(&first_id).unwrap();
+            engine.cancel_order(&first, None);
+            "canceled"
+        }
+        _ => {
+            let first = engine.cache.borrow().order_owned(&first_id).unwrap();
+            engine.process_modify(
+                &ModifyOrder::new(
+                    first.trader_id(),
+                    None,
+                    first.strategy_id(),
+                    first.instrument_id(),
+                    first_id,
+                    first.venue_order_id(),
+                    Some(Quantity::from("1.000")),
+                    None,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::from(3),
+                    None,
+                    None,
+                ),
+                account_id,
+            );
+            "updated 1.000"
+        }
+    };
+
+    assert_eq!(
+        drain_order_events(&events),
+        vec![
+            ("LINKED-FIRST".to_string(), first_event.to_string()),
+            ("LINKED-THIRD".to_string(), third_event.to_string()),
+        ]
+    );
+}
+
 #[rstest]
 fn test_parent_modify_does_not_resize_canceled_oto_child() {
     let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);

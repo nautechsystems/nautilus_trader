@@ -3424,7 +3424,8 @@ impl OrderMatchingEngine {
                                         .into(),
                                 );
                             }
-                            None => panic!("Cannot find contingent order for {client_order_id}"),
+                            // A linked order not yet in the cache has not reached the venue,
+                            // and its own submit is checked against this order when it arrives
                             _ => {}
                         }
                     }
@@ -4072,6 +4073,12 @@ impl OrderMatchingEngine {
         self.delete_core_order(client_order_id);
         self.track_post_match_order(order);
         self.core.add_order(new_match_info);
+    }
+
+    // A linked order the cache does not hold has not been submitted, so the venue has not
+    // received it and contingent actions skip it
+    fn is_unsubmitted(&self, client_order_id: ClientOrderId) -> bool {
+        !self.cache.borrow().order_exists(&client_order_id)
     }
 
     fn order_snapshot(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {
@@ -6375,6 +6382,10 @@ impl OrderMatchingEngine {
         };
 
         for id in ids {
+            if self.is_unsubmitted(*id) {
+                continue;
+            }
+
             let mut child = self
                 .order_snapshot(*id)
                 .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
@@ -6472,6 +6483,10 @@ impl OrderMatchingEngine {
         };
 
         for id in ids {
+            if self.is_unsubmitted(*id) {
+                continue;
+            }
+
             let child = self
                 .order_snapshot(*id)
                 .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
@@ -6503,6 +6518,10 @@ impl OrderMatchingEngine {
         excluded.push(order.client_order_id());
 
         for id in ids {
+            if self.is_unsubmitted(*id) {
+                continue;
+            }
+
             let child = self
                 .order_snapshot(*id)
                 .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
@@ -7747,6 +7766,10 @@ impl OrderMatchingEngine {
             let parent_leaves_qty = parent_quantity.saturating_sub(parent_filled_qty);
 
             for client_order_id in linked_order_ids {
+                if self.is_unsubmitted(*client_order_id) {
+                    continue;
+                }
+
                 let child_order = match self.order_snapshot(*client_order_id) {
                     Some(order) => order,
                     None => panic!("Order {client_order_id} not found in cache."),
@@ -7930,7 +7953,7 @@ impl OrderMatchingEngine {
         let mut released = false;
 
         for id in ids {
-            if excluded.contains(id) {
+            if excluded.contains(id) || self.is_unsubmitted(*id) {
                 // The venue has not received this order's submit yet
                 continue;
             }
@@ -8217,7 +8240,7 @@ impl OrderMatchingEngine {
 
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                if excluded.contains(client_order_id) {
+                if excluded.contains(client_order_id) || self.is_unsubmitted(*client_order_id) {
                     continue;
                 }
 
