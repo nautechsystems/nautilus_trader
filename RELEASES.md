@@ -50,6 +50,8 @@ Released on TBD (UTC).
 - Removed CoinAPI ingestion free functions and `CoinApiOhlcvLoader`; register definitions with `CoinApiDataLoader`
 - Changed Parquet consolidation to reject gaps by default; pass `ensure_contiguous_files=False` to allow gaps
 - Changed `BaseAccount.events` to `Arc<Vec<AccountState>>`; use `Arc::make_mut` to edit (#5496), thanks @mi-netizen007
+- Changed `DataEngine::connect` and `ExecutionEngine::connect` to return `Result`; handle connection errors
+- Changed `NautilusKernel::connect_data_clients` and `connect_exec_clients` to return `Result`; handle errors
 - Changed Redis message retries to at-least-once delivery; deduplicate messages (#5491), thanks @Dworf
 - Changed `SubscribeOptionChain::new` to return `Result`; propagate validation errors
 - Changed `DataActor::subscribe_option_chain` and `DataActorCore::subscribe_option_chain` to return `Result`
@@ -167,6 +169,7 @@ Released on TBD (UTC).
 - Fixed `FixedRiskSizer` exceeding risk and quantity limits; sub-increment sizes now raise errors
 - Fixed `FixedRiskSizer` using linear PnL for inverse futures, perpetuals, and futures spreads
 - Fixed cache persistence failures interrupting memory updates, order submission, and event processing
+- Fixed data and execution client connection failures waiting for timeouts instead of aborting node startup
 - Fixed Postgres cache panicking on order-book additions with `save_market_data`
 - Fixed TWAP slice persistence failures interrupting dispatch or skipping quantity
 - Fixed execution algorithm spawns panicking on invalid parameters and reducing the primary before validation

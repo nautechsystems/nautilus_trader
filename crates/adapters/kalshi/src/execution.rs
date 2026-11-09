@@ -356,7 +356,9 @@ impl KalshiExecutionClient {
             && self.core.cache().client_order_id(&venue_order_id).is_none();
 
         if missing_context && !value.fill_count_fp.0.is_zero() {
-            return Err(RecoveryContextError::Order.into());
+            let e = RecoveryContextError::Order;
+            log::error!("Kalshi order recovery failed: {e}");
+            return Err(e.into());
         }
 
         let unfilled_external = recovered

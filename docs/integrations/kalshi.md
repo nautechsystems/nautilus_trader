@@ -980,10 +980,12 @@ explains the rounding mechanics; it does not establish `fee_cost` semantics.
 #### Startup readiness
 
 - **Connection**: `connect()` waits for the current account session and recovered protocol
-  generation. Node startup reconciliation must also finish before order flow.
+  generation. Node startup reconciliation must also finish before order flow. A failed data or execution
+  connection aborts node startup; the startup error names the failed client without provider error text.
 - **Context errors**: `KALSHI_ORDER_CONTEXT_REQUIRED` identifies a filled order without sufficient
   cached context. `KALSHI_OPENING_CONTEXT_REQUIRED` identifies a nonzero position without opening
-  authority. Restore complete cached orders and positions, not only order records.
+  authority. The adapter logs each code with its recovery action. Restore complete cached orders
+  and positions, not only order records.
 - **Concurrent consumption**: Keep the account cache consumer running while `connect()` waits.
   Direct applications must process execution events concurrently; awaiting connection before
   consuming events causes an account-observation timeout.
