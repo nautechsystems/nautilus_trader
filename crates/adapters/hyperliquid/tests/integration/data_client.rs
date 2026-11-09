@@ -59,10 +59,13 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas},
+    data::{
+        BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas, OrderBookDepth,
+    },
     enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
     identifiers::InstrumentId,
     instruments::Instrument,
+    types::Price,
 };
 use nautilus_network::http::{HttpClient, Method};
 use parking_lot::Mutex;
@@ -819,6 +822,29 @@ async fn recv_compact_snapshot(
     })
     .await
     .expect("missing reconstructed compact snapshot")
+}
+
+async fn recv_compact_depth_only(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    instrument_id: InstrumentId,
+) -> Box<OrderBookDepth> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data channel closed") {
+                DataEvent::Data(Data::BookDepth(depth)) if depth.instrument_id == instrument_id => {
+                    return depth;
+                }
+                DataEvent::Data(Data::BookDeltas(deltas))
+                    if deltas.instrument_id == instrument_id =>
+                {
+                    panic!("deltas emitted without a delta subscription");
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("compact depth did not arrive")
 }
 
 fn bbo_message() -> Value {
@@ -2344,8 +2370,12 @@ async fn compact_l2_keeps_multiple_instrument_baselines_independent() {
 }
 
 #[rstest]
+#[case::deltas(false)]
+#[case::depth_only(true)]
 #[tokio::test]
-async fn compact_l2_invalid_index_recovers_with_the_same_feed_and_precision() {
+async fn compact_l2_invalid_index_recovers_with_the_same_feed_and_precision(
+    #[case] depth_only: bool,
+) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2355,16 +2385,25 @@ async fn compact_l2_invalid_index_recovers_with_the_same_feed_and_precision() {
     let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
     let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
-    let mut subscription = book_deltas_subscription(id);
-    subscription.params = Some(Params::new(
+    let params = Params::new(
         [
             ("n_sig_figs".to_owned(), json!(5)),
             ("mantissa".to_owned(), json!(2)),
         ]
         .into(),
-    ));
-    client.subscribe_book_deltas(subscription).unwrap();
-    recv_compact_snapshot(&mut rx, id).await;
+    );
+
+    if depth_only {
+        let mut subscription = book_depth_subscription(id);
+        subscription.params = Some(params);
+        client.subscribe_book_depth(subscription).unwrap();
+        recv_compact_depth_only(&mut rx, id).await;
+    } else {
+        let mut subscription = book_deltas_subscription(id);
+        subscription.params = Some(params);
+        client.subscribe_book_deltas(subscription).unwrap();
+        recv_compact_snapshot(&mut rx, id).await;
+    }
     state.compact_messages.lock().await.push(compact_update(
         "BTC",
         1703875200100,
@@ -2372,8 +2411,14 @@ async fn compact_l2_invalid_index_recovers_with_the_same_feed_and_precision() {
         &json!([[], []]),
     ));
     state.compact_updates.notify_one();
-    let recovered = recv_compact_snapshot(&mut rx, id).await;
-    assert_eq!(recovered.deltas.len(), 41);
+
+    if depth_only {
+        let recovered = recv_compact_depth_only(&mut rx, id).await;
+        assert_eq!(recovered.asks[0].price, Price::from("101"));
+    } else {
+        let recovered = recv_compact_snapshot(&mut rx, id).await;
+        assert_eq!(recovered.deltas.len(), 41);
+    }
     let subscriptions = state.subscriptions.lock().await;
     assert_eq!(
         subscriptions
@@ -2455,7 +2500,6 @@ async fn compact_l2_reconnect_replays_the_source_and_precision(#[case] malformed
 #[tokio::test]
 async fn compact_l2_depth_keeps_the_baseline_after_delta_unsubscribe() {
     use nautilus_common::messages::data::{SubscribeCommand, UnsubscribeCommand};
-    use nautilus_model::types::Price;
 
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -2545,6 +2589,237 @@ async fn compact_l2_depth_keeps_the_baseline_after_delta_unsubscribe() {
             .iter()
             .all(|sub| sub["type"] == "l2")
     );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::depth_remains(true)]
+#[case::last_consumer(false)]
+#[tokio::test]
+async fn compact_l2_delta_unsubscribe_during_recovery(#[case] keep_depth: bool) {
+    use nautilus_common::messages::data::{SubscribeCommand, UnsubscribeCommand};
+    use nautilus_model::types::Quantity;
+
+    use crate::websocket::client::tests::command_sender_lock;
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.book_feed = crate::config::HyperliquidBookFeed::L2;
+    assert!(!config.stale_stream_recovery_enabled);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let mut deltas = book_deltas_subscription(id);
+    deltas.params = Some(Params::new(
+        [
+            ("n_sig_figs".to_owned(), json!(5)),
+            ("mantissa".to_owned(), json!(2)),
+        ]
+        .into(),
+    ));
+    client.subscribe_book_deltas(deltas.clone()).unwrap();
+    recv_compact_snapshot(&mut rx, id).await;
+
+    if keep_depth {
+        client
+            .subscribe_book_depth(book_depth_subscription(id))
+            .unwrap();
+        wait_until_async(
+            || {
+                let complete = client.pending_tasks.all_finished();
+                async move { complete }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Establish that the retained consumer has received depth on the shared stream
+        state.compact_messages.lock().await.push(compact_update(
+            "BTC",
+            1703875200100,
+            &json!([[], []]),
+            &json!([[], []]),
+        ));
+        state.compact_updates.notify_one();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(DataEvent::Data(Data::BookDepth(depth))) = rx.recv().await {
+                    assert_eq!(depth.bids[0].price, Price::from("100"));
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("depth did not receive the baseline update");
+    }
+
+    let unsubscribe = SubscribeCommand::BookDeltas(deltas).into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let UnsubscribeCommand::BookDeltas(unsubscribe) = unsubscribe else {
+        unreachable!()
+    };
+
+    // Hold a read guard so the unsubscribe writer queues before recovery starts
+    {
+        let ws = client.ws_client.clone();
+        let commands = command_sender_lock(&ws);
+        let admission = commands.read().await;
+        assert!(commands.try_read().is_ok());
+        client.unsubscribe_book_deltas(&unsubscribe).unwrap();
+        wait_until_async(
+            || async { commands.try_read().is_err() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        state.compact_messages.lock().await.extend([
+            compact_update(
+                "BTC",
+                1703875200160,
+                &json!([[], []]),
+                &json!([[{"p":"100","s":"2"}], []]),
+            ),
+            compact_update("BTC", 1703875200200, &json!([[20], []]), &json!([[], []])),
+            bbo_message(),
+        ]);
+        state.compact_updates.notify_one();
+        let depth_while_waiting = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut depth_seen = false;
+
+            loop {
+                match rx.recv().await.unwrap() {
+                    DataEvent::Data(Data::Quote(_)) => return depth_seen,
+                    DataEvent::Data(Data::BookDeltas(_)) => {
+                        panic!("deltas emitted while the unsubscribe command was blocked");
+                    }
+                    DataEvent::Data(Data::BookDepth(depth)) => {
+                        assert!(keep_depth);
+                        assert_eq!(depth.ts_event.as_u64(), 1_703_875_200_160_000_000);
+                        assert_eq!(depth.bids[0].size, Quantity::from("2"));
+                        depth_seen = true;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("data client did not process the frame following the invalid update");
+        assert_eq!(depth_while_waiting, keep_depth);
+        assert_eq!(state.subscriptions.lock().await.len(), 1);
+        assert!(state.unsubscriptions.lock().await.is_empty());
+        drop(admission);
+    }
+
+    if keep_depth {
+        let snapshot = recv_compact_depth_only(&mut rx, id).await;
+        assert_eq!(snapshot.ts_event.as_u64(), 1_703_875_200_000_000_000);
+        assert_eq!(snapshot.bids[0].size, Quantity::from("1"));
+
+        state.compact_messages.lock().await.push(compact_update(
+            "BTC",
+            1703875200300,
+            &json!([[], [0]]),
+            &json!([[{"p":"100","s":"3"}], []]),
+        ));
+        state.compact_updates.notify_one();
+        let depth = recv_compact_depth_only(&mut rx, id).await;
+        assert_eq!(depth.ts_event.as_u64(), 1_703_875_200_300_000_000);
+        assert_eq!(depth.bids[0].size, Quantity::from("3"));
+        assert_eq!(depth.asks[0].price, Price::from("102"));
+    } else {
+        wait_until_async(
+            || {
+                let complete = client.pending_tasks.all_finished();
+                async move { complete }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // A quote subscription gives a wire barrier after all queued book commands
+        client.ws_client.subscribe_quotes(id).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match rx.recv().await.unwrap() {
+                    DataEvent::Data(Data::Quote(_)) => break,
+                    DataEvent::Data(Data::BookDeltas(_) | Data::BookDepth(_)) => {
+                        panic!("book emitted after the final consumer left");
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("quote wire barrier did not arrive");
+    }
+
+    let subscriptions = state.subscriptions.lock().await;
+    let compact: Vec<_> = subscriptions
+        .iter()
+        .filter(|sub| sub["type"] == "l2")
+        .collect();
+    assert_eq!(compact.len(), if keep_depth { 2 } else { 1 });
+    assert!(
+        compact
+            .iter()
+            .all(|sub| **sub == json!({"type":"l2","c":"BTC","s":5,"m":2}))
+    );
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(unsubscriptions.as_slice(), std::slice::from_ref(compact[0]));
+    drop(unsubscriptions);
+    drop(subscriptions);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn compact_l2_queued_unsubscribe_retires_the_pending_publication() {
+    use nautilus_common::messages::data::{SubscribeCommand, UnsubscribeCommand};
+
+    use crate::websocket::client::tests::command_sender_lock;
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.book_feed = crate::config::HyperliquidBookFeed::L2;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let mut deltas = book_deltas_subscription(id);
+    let unsubscribe = SubscribeCommand::BookDeltas(deltas.clone()).into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let UnsubscribeCommand::BookDeltas(unsubscribe) = unsubscribe else {
+        unreachable!()
+    };
+
+    {
+        let ws = client.ws_client.clone();
+        let admission = command_sender_lock(&ws).read().await;
+        client.subscribe_book_deltas(deltas.clone()).unwrap();
+        client.unsubscribe_book_deltas(&unsubscribe).unwrap();
+        deltas.params = Some(Params::new([("n_sig_figs".to_owned(), json!(5))].into()));
+        client.subscribe_book_deltas(deltas).unwrap();
+        drop(admission);
+    }
+
+    let snapshot = recv_compact_snapshot(&mut rx, id).await;
+    assert_eq!(snapshot.instrument_id, id);
+    assert_eq!(
+        state.subscriptions.lock().await.as_slice(),
+        &[json!({"type":"l2", "c":"BTC", "s":5})],
+    );
+    assert!(state.unsubscriptions.lock().await.is_empty());
     client.disconnect().await.unwrap();
 }
 

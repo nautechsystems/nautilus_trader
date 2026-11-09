@@ -15,9 +15,10 @@
 
 //! Adapter-local order book synchronization state for Hyperliquid.
 //!
-//! [`BookSyncTracker`] keeps one shared [`BookSync`] per order book delta subscription and maps
-//! book frames onto its lifecycle. Every `l2Book` frame is a snapshot. For compact `l2`, only
-//! wire snapshots establish synchronization; updates advance an already synchronized book.
+//! [`BookSyncTracker`] keeps one [`BookSync`] per tracked book. Compact `l2` deltas and depth
+//! share that state and have separate publication lifetimes. Every `l2Book` frame is a snapshot.
+//! For compact `l2`, only wire snapshots establish synchronization, and updates advance an
+//! already synchronized book.
 //!
 //! A subscribed book is present in the tracker from its subscribe until its unsubscribe, so a
 //! frame for an absent book is suppressed. Claiming and accepting recovery stay under the tracker's
@@ -28,19 +29,49 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use nautilus_common::live::dst::time::{Duration, Instant};
-use nautilus_live::book::{snapshot::SnapshotGate, sync::BookSync};
+use nautilus_live::book::{
+    snapshot::SnapshotGate,
+    sync::{BookPhase, BookSync},
+};
 use nautilus_model::identifiers::InstrumentId;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use super::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind, recovery::BookRecovery};
-use crate::websocket::error::HyperliquidWsError;
+use crate::websocket::{
+    book::{BookStreamRegistration, BookStreamRelease, BookStreamUse},
+    error::HyperliquidWsError,
+};
 
 type Book = BookSync<HyperliquidWsError>;
 
+#[derive(Debug)]
+struct TrackedBook {
+    sync: Book,
+    deltas: Option<CancellationToken>,
+    depth: Option<CancellationToken>,
+}
+
+impl TrackedBook {
+    fn new(now: Instant) -> Self {
+        Self {
+            sync: Book::new(now),
+            deltas: None,
+            depth: None,
+        }
+    }
+
+    fn stream_use(&mut self, stream_use: BookStreamUse) -> &mut Option<CancellationToken> {
+        match stream_use {
+            BookStreamUse::Deltas => &mut self.deltas,
+            BookStreamUse::Depth => &mut self.depth,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BookSyncTracker {
-    books: Arc<Mutex<AHashMap<InstrumentId, Book>>>,
+    books: Arc<Mutex<AHashMap<InstrumentId, TrackedBook>>>,
 }
 
 impl BookSyncTracker {
@@ -53,8 +84,8 @@ impl BookSyncTracker {
         now: Instant,
         gate: SnapshotGate,
     ) -> CancellationToken {
-        let mut book = Book::new(now);
-        let cancel = book.expect_snapshot(gate);
+        let mut book = TrackedBook::new(now);
+        let cancel = book.sync.expect_snapshot(gate);
         self.books.lock().insert(instrument_id, book);
         cancel
     }
@@ -85,34 +116,111 @@ impl BookSyncTracker {
         self.books
             .lock()
             .get_mut(&instrument_id)
-            .is_some_and(|book| book.accept_snapshot((), now))
+            .is_some_and(|book| book.sync.accept_snapshot((), now))
     }
 
-    /// Accepts compact input without allowing an update to complete snapshot recovery.
-    /// Returns `None` when only native depth uses the physical stream.
+    /// Revokes publication without releasing the venue subscription or its recovery.
+    pub(crate) fn retire_compact_publication(&self, publication: &CancellationToken) {
+        let _books = self.books.lock();
+        publication.cancel();
+    }
+
+    /// Commits a new compact use after any required snapshot write is queued.
+    pub(crate) fn register_compact<T>(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: BookStreamUse,
+        registration: BookStreamRegistration,
+        publication: CancellationToken,
+        now: Instant,
+        enqueue: impl FnOnce(CancellationToken, SnapshotGate) -> Result<T, HyperliquidWsError>,
+    ) -> Result<Option<T>, HyperliquidWsError> {
+        if !registration.new_use {
+            return Ok(None);
+        }
+
+        let mut books = self.books.lock();
+        let refresh_for_deltas = stream_use == BookStreamUse::Deltas
+            && books
+                .get(&instrument_id)
+                .is_some_and(|book| matches!(book.sync.phase(), BookPhase::Synced(())));
+        let (next_sync, write) = if registration.subscribe || refresh_for_deltas {
+            let gate = SnapshotGate::default();
+            gate.lock().close();
+            let mut sync = Book::new(now);
+            let cancel = sync.expect_snapshot(gate.clone());
+            let write = enqueue(cancel, gate)?;
+            (Some(sync), Some(write))
+        } else {
+            (None, None)
+        };
+
+        let book = books
+            .entry(instrument_id)
+            .or_insert_with(|| TrackedBook::new(now));
+
+        if let Some(sync) = next_sync {
+            book.sync = sync;
+        }
+        *book.stream_use(stream_use) = Some(publication);
+        Ok(write)
+    }
+
+    /// Removes a compact consumer and retires synchronization when the last use ends.
+    pub(crate) fn release_compact(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: BookStreamUse,
+        release: BookStreamRelease,
+    ) {
+        let mut books = self.books.lock();
+
+        match release {
+            BookStreamRelease::Unsubscribe(_) => {
+                books.remove(&instrument_id);
+            }
+            BookStreamRelease::Retained => {
+                if let Some(book) = books.get_mut(&instrument_id) {
+                    *book.stream_use(stream_use) = None;
+                }
+            }
+        }
+    }
+
+    /// Applies compact synchronization before publishing to the active consumers.
     pub(crate) fn record_compact(
         &self,
         instrument_id: InstrumentId,
         is_snapshot: bool,
         now: Instant,
-    ) -> Option<bool> {
-        self.books.lock().get_mut(&instrument_id).map(|book| {
-            if is_snapshot {
-                book.accept_snapshot((), now)
-            } else {
-                book.advance((), now)
-            }
-        })
-    }
+        publish: impl FnOnce(bool, bool),
+    ) {
+        let mut books = self.books.lock();
 
-    pub(crate) fn is_subscribed(&self, instrument_id: InstrumentId) -> bool {
-        self.books.lock().contains_key(&instrument_id)
+        if let Some(book) = books.get_mut(&instrument_id) {
+            let accepted = if is_snapshot {
+                book.sync.accept_snapshot((), now)
+            } else {
+                book.sync.advance((), now)
+            };
+
+            if accepted {
+                publish(
+                    book.deltas
+                        .as_ref()
+                        .is_some_and(|token| !token.is_cancelled()),
+                    book.depth
+                        .as_ref()
+                        .is_some_and(|token| !token.is_cancelled()),
+                );
+            }
+        }
     }
 
     /// Restarts synchronization for every book after the connection reconnects.
     pub(crate) fn reset_on_reconnect(&self) {
         for book in self.books.lock().values_mut() {
-            book.reset_on_reconnect();
+            book.sync.reset_on_reconnect();
         }
     }
 
@@ -123,7 +231,7 @@ impl BookSyncTracker {
         self.books
             .lock()
             .values_mut()
-            .map(|book| book.arm_deadline(deadline))
+            .map(|book| book.sync.arm_deadline(deadline))
             .filter(|armed| *armed)
             .count()
     }
@@ -134,7 +242,7 @@ impl BookSyncTracker {
             .lock()
             .iter_mut()
             .filter_map(|(instrument_id, book)| {
-                book.take_expired(now).then_some(BookSyncSignal {
+                book.sync.take_expired(now).then_some(BookSyncSignal {
                     instrument_id: *instrument_id,
                     kind: BookSyncSignalKind::SnapshotMissing,
                 })
@@ -159,7 +267,7 @@ impl BookSyncTracker {
             return None;
         }
 
-        books.get_mut(&instrument_id)?.claim()
+        books.get_mut(&instrument_id)?.sync.claim()
     }
 
     /// Marks the book out of sync and claims recovery when nothing owns it.
@@ -169,10 +277,10 @@ impl BookSyncTracker {
         let mut books = self.books.lock();
         let book = books
             .get_mut(&instrument_id)
-            .filter(|book| !book.is_send_pending())?;
+            .filter(|book| !book.sync.is_send_pending())?;
 
-        if book.gap() == BookSequenceOutcome::Recover {
-            book.claim()
+        if book.sync.gap() == BookSequenceOutcome::Recover {
+            book.sync.claim()
         } else {
             None
         }
@@ -190,13 +298,13 @@ impl BookSyncTracker {
         let mut books = self.books.lock();
         let book = books
             .get_mut(&instrument_id)
-            .filter(|book| !book.is_send_pending())?;
+            .filter(|book| !book.sync.is_send_pending())?;
 
-        if book.gap() == BookSequenceOutcome::Recover {
-            return book.claim();
+        if book.sync.gap() == BookSequenceOutcome::Recover {
+            return book.sync.claim();
         }
 
-        book.reject(error);
+        book.sync.reject(error);
         None
     }
 }
@@ -209,9 +317,13 @@ mod tests {
     };
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
+    use tokio_util::sync::CancellationToken;
 
     use super::{BookSyncSignalKind, BookSyncTracker};
-    use crate::websocket::error::HyperliquidWsError;
+    use crate::websocket::{
+        book::{BookStreamRegistry, BookStreamUse},
+        error::HyperliquidWsError,
+    };
 
     fn instrument_id() -> InstrumentId {
         InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
@@ -228,7 +340,7 @@ mod tests {
             .books
             .lock()
             .get(&instrument_id)
-            .map(|book| *book.phase())
+            .map(|book| *book.sync.phase())
     }
 
     #[rstest]
@@ -246,18 +358,86 @@ mod tests {
         let tracker = BookSyncTracker::default();
         let id = instrument_id();
         let now = Instant::now();
-        assert_eq!(tracker.record_compact(id, false, now), None);
-        tracker.record_subscription(id, now, SnapshotGate::default());
-        assert_eq!(tracker.record_compact(id, false, now), Some(false));
-        assert_eq!(tracker.record_compact(id, true, now), Some(true));
-        assert_eq!(tracker.record_compact(id, false, now), Some(true));
+        let record = |snapshot| {
+            let mut published = None;
+            tracker.record_compact(id, snapshot, now, |deltas, depth| {
+                published = Some((deltas, depth));
+            });
+            published
+        };
+        assert_eq!(record(false), None);
+        let registration = BookStreamRegistry::default().register(
+            "BTC".into(),
+            BookStreamUse::Deltas,
+            Default::default(),
+        );
+        let (_, gate) = tracker
+            .register_compact(
+                id,
+                BookStreamUse::Deltas,
+                registration,
+                CancellationToken::new(),
+                now,
+                |cancel, gate| Ok((cancel, gate)),
+            )
+            .unwrap()
+            .unwrap();
+        gate.open();
+        assert_eq!(record(false), None);
+        assert_eq!(record(true), Some((true, false)));
+        assert_eq!(record(false), Some((true, false)));
         let recovery = tracker.claim_recovery(id).unwrap();
         assert!(recovery.begin_replacement());
         recovery.gate.open();
-        assert_eq!(tracker.record_compact(id, false, now), Some(false));
+        assert_eq!(record(false), None);
         assert!(recovery.is_running());
-        assert_eq!(tracker.record_compact(id, true, now), Some(true));
-        assert!(!recovery.is_running());
+        assert_eq!(record(true), Some((true, false)));
+        assert!(recovery.is_accepted());
+    }
+
+    #[rstest]
+    fn failed_compact_refresh_preserves_synchronized_depth() {
+        let tracker = BookSyncTracker::default();
+        let registry = BookStreamRegistry::default();
+        let id = instrument_id();
+        let coin = "BTC".into();
+        let now = Instant::now();
+        let depth = registry.register(coin, BookStreamUse::Depth, Default::default());
+        let gate = tracker
+            .register_compact(
+                id,
+                BookStreamUse::Depth,
+                depth,
+                CancellationToken::new(),
+                now,
+                |_, gate| Ok(gate),
+            )
+            .unwrap()
+            .unwrap();
+        gate.open();
+        assert!(tracker.record_snapshot(id, now));
+
+        let deltas = registry.register(coin, BookStreamUse::Deltas, Default::default());
+        let result = tracker.register_compact(
+            id,
+            BookStreamUse::Deltas,
+            deltas,
+            CancellationToken::new(),
+            now,
+            |_, _| {
+                Err::<(), _>(HyperliquidWsError::ChannelSend(
+                    "closed command channel".into(),
+                ))
+            },
+        );
+
+        assert!(matches!(result, Err(HyperliquidWsError::ChannelSend(_))));
+        assert_eq!(phase(&tracker, id), Some(BookPhase::Synced(())));
+        let mut published = None;
+        tracker.record_compact(id, false, now, |deltas, depth| {
+            published = Some((deltas, depth));
+        });
+        assert_eq!(published, Some((false, true)));
     }
 
     #[rstest]

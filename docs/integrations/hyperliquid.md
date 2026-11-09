@@ -1516,6 +1516,8 @@ follows the web application.
 Reconnect and targeted resubscribe discard the compact baseline and wait for a new snapshot.
 An update cannot finish snapshot recovery. Invalid indices stop that book's output and trigger
 recovery; malformed compact messages with no identifiable coin reconnect the data socket.
+Deltas and depth share this recovery. If one subscription ends during recovery, the remaining
+subscription resumes after the replacement snapshot. The last unsubscribe cancels recovery.
 
 ### Order book recovery
 

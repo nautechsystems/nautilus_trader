@@ -26,9 +26,12 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::cache::{InstrumentLookupError, fifo::FifoCacheMap};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
+use nautilus_common::{
+    cache::{InstrumentLookupError, fifo::FifoCacheMap},
+    live::dst::time::Instant,
+};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{AtomicMap, string::secret::SecretString};
@@ -62,6 +65,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
+    book::sync::BookSyncTracker,
     common::{
         consts::{HEARTBEAT_INTERVAL, HTTP_TIMEOUT, ws_url},
         enums::{HyperliquidBarInterval, HyperliquidEnvironment},
@@ -91,7 +95,7 @@ use crate::{
     websocket::{
         book::{
             BookStreamOptions, BookStreamRegistration, BookStreamRegistry, BookStreamRelease,
-            BookStreamUse,
+            BookStreamUse, PendingBookWrite,
         },
         enums::HyperliquidWsChannel,
         error::HyperliquidWsError,
@@ -1618,7 +1622,6 @@ impl HyperliquidWebSocketClient {
         };
 
         let coin = instrument.raw_symbol().inner();
-        let (completion, receiver) = tokio::sync::oneshot::channel();
         let cmd_tx = self.cmd_tx.read().await;
 
         if cancel.is_cancelled() {
@@ -1633,41 +1636,125 @@ impl HyperliquidWebSocketClient {
             self.register_book_stream(coin, BookStreamUse::Deltas, n_sig_figs, mantissa);
 
         let subscription = self.book_subscription(coin, registration.options);
-
-        let replace = !registration.subscribe;
-        let write_cancel = cancel.clone();
-
-        let write = move |subscription| HandlerCommand::WriteBook {
+        let write = match self.enqueue_book_write(
+            &cmd_tx,
             subscription,
-            replace,
-            cancel: write_cancel,
+            !registration.subscribe,
+            cancel,
             gate,
-            completion,
-        };
+        ) {
+            Ok(write) => write,
+            Err(e) => {
+                if registration.new_use {
+                    self.book_streams.release(&coin, BookStreamUse::Deltas);
+                }
 
-        let sent = if registration.subscribe {
-            self.send_reserved_command(&cmd_tx, subscription, write)
-        } else {
-            cmd_tx
-                .send(write(subscription))
-                .map_err(|e| anyhow::anyhow!("Failed to send book write command: {e}"))
-        };
-
-        if let Err(e) = sent {
-            if registration.subscribe {
-                self.book_streams.release(&coin, BookStreamUse::Deltas);
+                return Err(e);
             }
-
-            return Err(HyperliquidWsError::ChannelSend(e.to_string()));
-        }
+        };
 
         drop(cmd_tx);
+        write.wait().await
+    }
 
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => Ok(()),
-            result = receiver => result.map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?,
+    /// Registers a compact consumer and queues a gated write when it needs a fresh snapshot.
+    pub(crate) async fn subscribe_compact_book(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: BookStreamUse,
+        options: BookStreamOptions,
+        publication: CancellationToken,
+        book_sync: &BookSyncTracker,
+    ) -> anyhow::Result<Option<PendingBookWrite>> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+        let coin = instrument.raw_symbol().inner();
+        let cmd_tx = self.cmd_tx.write().await;
+
+        if publication.is_cancelled() {
+            return Ok(None);
         }
+
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
+        if stream_use == BookStreamUse::Depth {
+            cmd_tx.send(HandlerCommand::SetDepthSub {
+                coin,
+                subscribed: true,
+            })?;
+        }
+
+        let registration =
+            self.register_book_stream(coin, stream_use, options.n_sig_figs, options.mantissa);
+        let subscription = self.book_subscription(coin, registration.options);
+
+        match book_sync.register_compact(
+            instrument_id,
+            stream_use,
+            registration,
+            publication,
+            Instant::now(),
+            |cancel, gate| {
+                self.enqueue_book_write(
+                    &cmd_tx,
+                    subscription,
+                    !registration.subscribe,
+                    cancel,
+                    gate,
+                )
+            },
+        ) {
+            Ok(write) => Ok(write),
+            Err(e) => {
+                self.book_streams.release(&coin, stream_use);
+
+                if stream_use == BookStreamUse::Depth {
+                    let _ = cmd_tx.send(HandlerCommand::SetDepthSub {
+                        coin,
+                        subscribed: false,
+                    });
+                }
+
+                Err(e.into())
+            }
+        }
+    }
+
+    /// Releases a compact consumer under the same command lock that admits replacements.
+    pub(crate) async fn unsubscribe_compact_book(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: BookStreamUse,
+        book_sync: &BookSyncTracker,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+        let coin = instrument.raw_symbol().inner();
+        let cmd_tx = self.cmd_tx.write().await;
+
+        if self.book_streams.options(&coin).is_none() {
+            return Ok(());
+        }
+
+        let release = self.book_streams.release(&coin, stream_use);
+        book_sync.release_compact(instrument_id, stream_use, release);
+
+        if stream_use == BookStreamUse::Depth {
+            cmd_tx.send(HandlerCommand::SetDepthSub {
+                coin,
+                subscribed: false,
+            })?;
+        }
+
+        if let BookStreamRelease::Unsubscribe(options) = release {
+            self.send_unsubscription(&cmd_tx, self.book_subscription(coin, options))?;
+        }
+
+        Ok(())
     }
 
     /// Subscribe to order book depth-10 snapshots.
@@ -2092,7 +2179,6 @@ impl HyperliquidWebSocketClient {
         };
 
         let coin = instrument.raw_symbol().inner();
-        let (completion, receiver) = tokio::sync::oneshot::channel();
 
         // Serialize the registry check with read-locked subscribe/unsubscribe senders
         let cmd_tx = self.cmd_tx.write().await;
@@ -2111,21 +2197,47 @@ impl HyperliquidWebSocketClient {
 
         let subscription = self.book_subscription(coin, options);
 
-        cmd_tx
-            .send(HandlerCommand::WriteBook {
-                subscription,
-                replace: true,
-                cancel,
-                gate,
-                completion,
-            })
-            .map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?;
+        let write = self.enqueue_book_write(&cmd_tx, subscription, true, cancel, gate)?;
 
         drop(cmd_tx);
 
-        receiver
+        write
+            .completion
             .await
             .map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?
+    }
+
+    fn enqueue_book_write(
+        &self,
+        cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        subscription: SubscriptionRequest,
+        replace: bool,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+    ) -> Result<PendingBookWrite, HyperliquidWsError> {
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let write_cancel = cancel.clone();
+        let write = |subscription| HandlerCommand::WriteBook {
+            subscription,
+            replace,
+            cancel: write_cancel,
+            gate,
+            completion,
+        };
+
+        if replace {
+            cmd_tx
+                .send(write(subscription))
+                .map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?;
+        } else {
+            self.send_reserved_command(cmd_tx, subscription, write)
+                .map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?;
+        }
+
+        Ok(PendingBookWrite {
+            cancel,
+            completion: receiver,
+        })
     }
 
     fn book_subscription(&self, coin: Ustr, options: BookStreamOptions) -> SubscriptionRequest {
@@ -2872,7 +2984,7 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use futures_util::StreamExt;
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::{identifiers::ClientId, instruments::stubs::crypto_perpetual_ethusdt};
@@ -2916,6 +3028,12 @@ mod tests {
 
         assert!(observer.is_active());
         assert!(Arc::ptr_eq(&observer.connection_mode.load_full(), &mode));
+    }
+
+    pub(crate) fn command_sender_lock(
+        client: &HyperliquidWebSocketClient,
+    ) -> &tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>> {
+        &client.cmd_tx
     }
 
     #[rstest]
@@ -4047,14 +4165,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case::snapshot(HyperliquidBookFeed::L2Book)]
+    #[case::compact(HyperliquidBookFeed::L2)]
     #[tokio::test]
-    async fn subscribe_book_gated_at_subscription_limit_releases_book_stream() {
-        let client = HyperliquidWebSocketClient::new(
-            Some("wss://gated-book-limit.test/ws".to_string()),
+    async fn subscribe_book_gated_at_subscription_limit_releases_book_stream(
+        #[case] book_feed: HyperliquidBookFeed,
+    ) {
+        let client = HyperliquidWebSocketClient::new_with_book_feed(
+            Some(format!("wss://gated-book-limit-{book_feed:?}.test/ws")),
             HyperliquidEnvironment::Testnet,
             None,
             TransportBackend::default(),
             None,
+            book_feed,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let coin = instrument.raw_symbol().inner();
@@ -4070,18 +4193,31 @@ mod tests {
             client.send_subscription(&cmd_tx, subscription).unwrap();
         }
 
-        let result = client
-            .subscribe_book_gated(
-                instrument.id(),
-                None,
-                None,
-                CancellationToken::new(),
-                SnapshotGate::default(),
-            )
-            .await;
-
-        let error = result.expect_err("subscription limit should reject the book stream");
-        assert!(error.to_string().contains("at most 1000"));
+        let error = match book_feed {
+            HyperliquidBookFeed::L2Book => client
+                .subscribe_book_gated(
+                    instrument.id(),
+                    None,
+                    None,
+                    CancellationToken::new(),
+                    SnapshotGate::default(),
+                )
+                .await
+                .expect_err("subscription limit should reject the book stream")
+                .to_string(),
+            HyperliquidBookFeed::L2 => client
+                .subscribe_compact_book(
+                    instrument.id(),
+                    BookStreamUse::Depth,
+                    BookStreamOptions::default(),
+                    CancellationToken::new(),
+                    &BookSyncTracker::default(),
+                )
+                .await
+                .expect_err("subscription limit should reject the book stream")
+                .to_string(),
+        };
+        assert!(error.contains("at most 1000"));
         assert_eq!(client.book_streams.options(&coin), None);
     }
 

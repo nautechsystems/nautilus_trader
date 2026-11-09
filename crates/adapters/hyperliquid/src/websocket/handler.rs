@@ -2327,9 +2327,23 @@ pub(super) mod tests {
         // A delta subscription replaces an existing depth stream before the old output is read
         let tracker = BookSyncTracker::default();
         let id = btc_perp().id();
-        let gate = SnapshotGate::default();
-        gate.lock().close();
-        let cancel = tracker.record_subscription(id, Instant::now(), gate.clone());
+        let stream_use = crate::websocket::book::BookStreamUse::Deltas;
+        let registration = crate::websocket::book::BookStreamRegistry::default().register(
+            "BTC".into(),
+            stream_use,
+            Default::default(),
+        );
+        let (cancel, gate) = tracker
+            .register_compact(
+                id,
+                stream_use,
+                registration,
+                CancellationToken::new(),
+                Instant::now(),
+                |cancel, gate| Ok((cancel, gate)),
+            )
+            .unwrap()
+            .unwrap();
 
         if reconnect {
             handler.compact_books.clear();
@@ -2372,10 +2386,11 @@ pub(super) mod tests {
             panic!("expected replacement snapshot");
         };
         assert!(!output_gate.lock().is_closed());
-        assert_eq!(
-            tracker.record_compact(id, is_snapshot, Instant::now()),
-            Some(true)
-        );
+        let mut published = false;
+        tracker.record_compact(id, is_snapshot, Instant::now(), |deltas, _| {
+            published = deltas;
+        });
+        assert!(published);
         assert!(cancel.is_cancelled());
     }
 
