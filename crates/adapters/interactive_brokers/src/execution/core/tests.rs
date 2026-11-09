@@ -2797,6 +2797,156 @@ fn prepare_order_list_sets_transmit_per_parent_group() {
     );
 }
 
+fn prepare_test_order_list(orders: &[OrderAny]) -> Vec<(Contract, ibapi::orders::Order)> {
+    let instrument_provider = create_test_instrument_provider();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 12345, 1);
+    let strategy_id = orders[0].strategy_id();
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(*IB_CLIENT_ID),
+        strategy_id,
+        OrderList::new(
+            OrderListId::from("OL-IB-OCA"),
+            orders[0].instrument_id(),
+            strategy_id,
+            orders.iter().map(OrderAny::client_order_id).collect(),
+            UnixNanos::default(),
+        ),
+        orders.iter().map(OrderInitialized::from).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let ib_order_ids: AHashMap<ClientOrderId, i32> = orders
+        .iter()
+        .enumerate()
+        .map(|(index, order)| (order.client_order_id(), 7501 + index as i32))
+        .collect();
+
+    InteractiveBrokersExecutionClient::prepare_order_list(
+        &cmd,
+        orders,
+        &ib_order_ids,
+        &OrderTracker::new(NATIVE_CLIENT_ID),
+        &instrument_provider,
+        Ustr::from("DU001"),
+    )
+    .unwrap()
+}
+
+fn oca_limit_order(client_order_id: &str, parent: Option<&str>, oca_group: &str) -> OrderAny {
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .instrument_id(equity_aapl().id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .price(Price::from("90.00"))
+        .quantity(Quantity::from(1));
+
+    if let Some(parent) = parent {
+        builder
+            .parent_order_id(ClientOrderId::from(parent))
+            .side(OrderSide::Sell);
+    }
+
+    if !oca_group.is_empty() {
+        builder.tags(vec![Ustr::from(&format!(
+            r#"IBOrderTags:{{"ocaGroup":"{oca_group}","ocaType":1}}"#
+        ))]);
+    }
+    builder.build()
+}
+
+#[rstest]
+fn prepare_order_list_transmits_explicit_oca_group_members() {
+    // A parentless order created with transmit=false never reaches IB, OCA group or not
+    let prepared = prepare_test_order_list(&[
+        oca_limit_order("O-OCA-FIRST", None, "OCA-LIST-1"),
+        oca_limit_order("O-OCA-SECOND", None, "OCA-LIST-1"),
+    ]);
+    let sent: Vec<_> = prepared
+        .iter()
+        .map(|(_, o)| (o.transmit, o.parent_id, o.oca_group.as_str(), o.oca_type))
+        .collect();
+    assert_eq!(
+        sent,
+        vec![
+            (true, 0, "OCA-LIST-1", ibapi::orders::OcaType::from(1)),
+            (true, 0, "OCA-LIST-1", ibapi::orders::OcaType::from(1)),
+        ]
+    );
+
+    // An OCA group among bracket children still waits for the final child
+    let prepared = prepare_test_order_list(&[
+        oca_limit_order("O-OCA-ENTRY", None, ""),
+        oca_limit_order("O-OCA-STOP", Some("O-OCA-ENTRY"), "OCA-LIST-2"),
+        oca_limit_order("O-OCA-TARGET", Some("O-OCA-ENTRY"), "OCA-LIST-2"),
+    ]);
+    let sent: Vec<_> = prepared
+        .iter()
+        .map(|(_, o)| (o.transmit, o.parent_id, o.oca_group.as_str()))
+        .collect();
+    assert_eq!(
+        sent,
+        vec![
+            (false, 0, ""),
+            (false, 7501, "OCA-LIST-2"),
+            (true, 7501, "OCA-LIST-2"),
+        ]
+    );
+}
+
+#[rstest]
+#[case::first_group_incomplete(3, vec!["O-OCA-A1", "O-OCA-B1"])]
+#[case::only_second_group_incomplete(4, vec!["O-OCA-B1"])]
+#[case::first_member_failed(0, vec![])]
+fn sent_members_of_incomplete_oca_groups_selects_live_members(
+    #[case] failed_index: usize,
+    #[case] expected: Vec<&str>,
+) {
+    let orders = [
+        oca_limit_order("O-OCA-A1", None, "OCA-A"),
+        oca_limit_order("O-OCA-INDEP", None, ""),
+        oca_limit_order("O-OCA-B1", None, "OCA-B"),
+        oca_limit_order("O-OCA-A2", None, "OCA-A"),
+        oca_limit_order("O-OCA-B2", None, "OCA-B"),
+    ];
+    let prepared = prepare_test_order_list(&orders);
+
+    let selected: Vec<_> =
+        InteractiveBrokersExecutionClient::sent_members_of_incomplete_oca_groups(
+            &orders,
+            &prepared,
+            failed_index,
+        )
+        .into_iter()
+        .map(|order| order.client_order_id().to_string())
+        .collect();
+
+    assert_eq!(selected, expected);
+}
+
+#[rstest]
+fn sent_members_of_incomplete_oca_groups_leaves_parked_members_to_untransmitted_cleanup() {
+    let orders = [
+        oca_limit_order("O-OCA-ENTRY", None, ""),
+        oca_limit_order("O-OCA-STOP", Some("O-OCA-ENTRY"), "OCA-LIST-3"),
+        oca_limit_order("O-OCA-TARGET", Some("O-OCA-ENTRY"), "OCA-LIST-3"),
+    ];
+    let prepared = prepare_test_order_list(&orders);
+
+    // The stop was parked with its parent group, so it is not live at IB
+    assert!(
+        InteractiveBrokersExecutionClient::sent_members_of_incomplete_oca_groups(
+            &orders, &prepared, 2,
+        )
+        .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only() {
     let state = SubmitTrackingState::new();

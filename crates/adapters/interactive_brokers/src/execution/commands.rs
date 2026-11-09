@@ -589,6 +589,16 @@ impl InteractiveBrokersExecutionClient {
                 .submit_order(ib_order_id, order_contract, ib_order)
                 .await
             {
+                // Earlier members are live at IB and can fill, so cancel them first
+                Self::cancel_sent_members_of_incomplete_oca_groups(
+                    orders,
+                    &prepared.orders,
+                    index,
+                    ib_order_ids,
+                    client,
+                )
+                .await;
+
                 // Every order was tracked before the first was sent, so the unsent siblings
                 // leave tracking as they are denied
                 let unsent = &orders[index + 1..];
@@ -916,6 +926,60 @@ impl InteractiveBrokersExecutionClient {
             tracing::error!(
                 "Failed to resolve untransmitted order-list predecessors after sibling failure: {e}"
             );
+        }
+    }
+
+    /// Returns the members sent to IB before `failed_index` whose explicit OCA group has a
+    /// member that was not sent.
+    ///
+    /// Each OCA group member is transmitted as it is sent, because IB never transmits a
+    /// parentless order created with `transmit=false`. IB enforces a group only among the
+    /// members it received, so a list that fails part way cancels its incomplete groups.
+    pub(super) fn sent_members_of_incomplete_oca_groups<'a>(
+        orders: &'a [OrderAny],
+        ib_orders: &[(ibapi::contracts::Contract, ibapi::orders::Order)],
+        failed_index: usize,
+    ) -> Vec<&'a OrderAny> {
+        let group_last_indices = Self::order_list_group_last_indices(orders);
+        let unsent_oca_groups: AHashSet<&str> = ib_orders[failed_index..]
+            .iter()
+            .map(|(_, ib_order)| ib_order.oca_group.as_str())
+            .filter(|oca_group| !oca_group.is_empty())
+            .collect();
+
+        // Members parked with their parent group are canceled with the untransmitted ones
+        orders[..failed_index]
+            .iter()
+            .zip(ib_orders)
+            .enumerate()
+            .filter(|(index, (_, (_, ib_order)))| {
+                group_last_indices[*index] < failed_index
+                    && unsent_oca_groups.contains(ib_order.oca_group.as_str())
+            })
+            .map(|(_, (order, _))| order)
+            .collect()
+    }
+
+    async fn cancel_sent_members_of_incomplete_oca_groups(
+        orders: &[OrderAny],
+        ib_orders: &[(ibapi::contracts::Contract, ibapi::orders::Order)],
+        failed_index: usize,
+        ib_order_ids: &AHashMap<ClientOrderId, i32>,
+        client: &Arc<Client>,
+    ) {
+        // These orders are working at IB, so IB reports each cancel, or the fill that beat it
+        for order in Self::sent_members_of_incomplete_oca_groups(orders, ib_orders, failed_index) {
+            let client_order_id = order.client_order_id();
+
+            let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
+                continue;
+            };
+
+            if let Err(e) = client.cancel_order(ib_order_id, "").await {
+                tracing::error!(
+                    "Failed to cancel order-list member {client_order_id} (IB order ID {ib_order_id}) of an incomplete OCA group: {e}"
+                );
+            }
         }
     }
 

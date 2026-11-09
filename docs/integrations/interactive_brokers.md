@@ -443,6 +443,14 @@ transform for IB, emit coded `OrderDenied` reasons before the adapter sends an o
 Pass `params={"exchange": "IEX"}` to submit, submit-list, or modify commands to override the
 cached contract exchange for that command. An omitted or empty value retains the cached exchange.
 
+In an order list, the adapter holds each bracket's members at IB until its final child is sent,
+which transmits the whole bracket. Every other member is transmitted as it is sent, including
+orders that share an explicit `ocaGroup` tag: IB never transmits a parentless order created with
+`transmit=false`. IB enforces an OCA group among the members it has received and rejects a member
+that arrives after another member filled (error 201). If a member fails to send, the adapter
+cancels the held members of its bracket and the transmitted members of any OCA group that is now
+incomplete.
+
 IB accepts a new trailing stop price only together with a new trailing amount (error 10067). A
 modify that sets a trailing stop's trigger must pass `params={"trailing_offset": <offset>}` in the
 order's offset units: a price amount for `PRICE` offsets, or basis points for `BASIS_POINTS`
