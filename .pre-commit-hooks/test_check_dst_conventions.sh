@@ -38,13 +38,13 @@ create_case() {
   : > "$case_dir/crates/live/src/execution/manager.rs"
   : > "$case_dir/crates/execution/src/matching_engine/mod.rs"
   for adapter_path in \
-    config.rs data.rs \
+    config.rs data.rs loaders.rs \
     http/client.rs http/models.rs http/query.rs \
     websocket/client.rs websocket/messages.rs websocket/parse.rs; do
     : > "$case_dir/crates/adapters/coinapi/src/$adapter_path"
   done
   for adapter_path in \
-    config.rs data.rs data/history.rs data/parse.rs data/poll.rs \
+    config.rs data.rs history.rs parse.rs data/poll.rs loaders.rs \
     http/client.rs http/models.rs http/query.rs instruments.rs; do
     : > "$case_dir/crates/adapters/finfeed/src/$adapter_path"
   done

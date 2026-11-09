@@ -17,7 +17,7 @@
 
 //! Untrusted REST decoding, identity round trips, exact raw values, and bounded OHLCV volume.
 
-#[path = "../../src/data/parse.rs"]
+#[path = "../../src/parse.rs"]
 mod parse;
 
 use nautilus_core::UnixNanos;

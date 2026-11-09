@@ -99,6 +99,7 @@ IN_SCOPE_CRATES=(
 ADAPTER_PATHS=(
   "crates/adapters/coinapi/src/config.rs"
   "crates/adapters/coinapi/src/data.rs"
+  "crates/adapters/coinapi/src/loaders.rs"
   "crates/adapters/coinapi/src/http/client.rs"
   "crates/adapters/coinapi/src/http/models.rs"
   "crates/adapters/coinapi/src/http/query.rs"
@@ -131,13 +132,14 @@ ADAPTER_PATHS=(
 
   "crates/adapters/finfeed/src/config.rs"
   "crates/adapters/finfeed/src/data.rs"
-  "crates/adapters/finfeed/src/data/history.rs"
-  "crates/adapters/finfeed/src/data/parse.rs"
+  "crates/adapters/finfeed/src/history.rs"
+  "crates/adapters/finfeed/src/parse.rs"
   "crates/adapters/finfeed/src/data/poll.rs"
   "crates/adapters/finfeed/src/http/client.rs"
   "crates/adapters/finfeed/src/http/models.rs"
   "crates/adapters/finfeed/src/http/query.rs"
   "crates/adapters/finfeed/src/instruments.rs"
+  "crates/adapters/finfeed/src/loaders.rs"
 
   "crates/adapters/kalshi/src/book/sync.rs"
   "crates/adapters/kalshi/src/config.rs"

@@ -22,18 +22,16 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
-from nautilus_trader.adapters.coinapi import CoinApiOhlcvLoader
-from nautilus_trader.adapters.coinapi import load_coinapi_deltas
-from nautilus_trader.adapters.coinapi import load_coinapi_quotes
-from nautilus_trader.adapters.coinapi import load_coinapi_trades
-from nautilus_trader.adapters.coinapi import stream_coinapi_deltas
-from nautilus_trader.adapters.coinapi import stream_coinapi_quotes
-from nautilus_trader.adapters.coinapi import stream_coinapi_trades
+from nautilus_trader.adapters import coinapi
+from nautilus_trader.adapters.coinapi import CoinApiDataLoader
 from nautilus_trader.model import FIXED_PRECISION
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
+from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
@@ -51,12 +49,38 @@ BOOK_DATE = dt.date(2025, 9, 1)
 DAY_START = 1_756_684_800_000_000_000
 
 
+def _currency_pair(instrument_id: InstrumentId, price_precision: int = 2, size_precision: int = 8):
+    return CurrencyPair(
+        instrument_id=instrument_id,
+        raw_symbol=instrument_id.symbol,
+        base_currency=Currency.from_str("SOL" if str(instrument_id.symbol) == "SOLUSD" else "BTC"),
+        quote_currency=Currency.from_str("USDT" if instrument_id == BINANCE else "USD"),
+        price_precision=price_precision,
+        size_precision=size_precision,
+        price_increment=Price.from_str("0." + "0" * (price_precision - 1) + "1"),
+        size_increment=Quantity.from_str("0." + "0" * (size_precision - 1) + "1"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+@pytest.fixture
+def loader() -> CoinApiDataLoader:
+    """
+    Retain definitions for the captured CoinAPI files.
+    """
+    instance = CoinApiDataLoader()
+    instance.add_instrument(_currency_pair(BINANCE, 2, 5))
+    instance.add_instrument(_currency_pair(COINBASE))
+    return instance
+
+
 @pytest.mark.parametrize("to_path", [str, Path])
-def test_load_trades_accepts_str_and_path(to_path) -> None:
+def test_load_trades_accepts_str_and_path(loader: CoinApiDataLoader, to_path) -> None:
     """
     Test trades load exactly from a str or Path.
     """
-    trades = load_coinapi_trades(
+    trades = loader.load_trades(
         to_path(FIXTURES / "trades_binance_spot_btc_usdt_20250901.csv"),
         BINANCE,
     )
@@ -72,11 +96,11 @@ def test_load_trades_accepts_str_and_path(to_path) -> None:
     assert {trade.size.precision for trade in trades} == {5}
 
 
-def test_load_quotes_converts_every_field() -> None:
+def test_load_quotes_converts_every_field(loader: CoinApiDataLoader) -> None:
     """
     Test quotes convert every field exactly.
     """
-    quotes = load_coinapi_quotes(FIXTURES / "quotes_coinbase_spot_btc_usd_20250901.csv", COINBASE)
+    quotes = loader.load_quotes(FIXTURES / "quotes_coinbase_spot_btc_usd_20250901.csv", COINBASE)
 
     assert len(quotes) == 50
     assert quotes[0].instrument_id == COINBASE
@@ -88,11 +112,11 @@ def test_load_quotes_converts_every_field() -> None:
     assert quotes[0].ts_init == DAY_START + 453_522_400
 
 
-def test_load_deltas_takes_a_date() -> None:
+def test_load_deltas_takes_a_date(loader: CoinApiDataLoader) -> None:
     """
     Test book deltas load with an explicit datetime.date.
     """
-    deltas = load_coinapi_deltas(
+    deltas = loader.load_book_deltas(
         FIXTURES / "limitbook_full_coinbase_spot_btc_usd_20250901.csv",
         COINBASE,
         date=BOOK_DATE,
@@ -114,30 +138,33 @@ def test_load_deltas_takes_a_date() -> None:
     assert [delta.action for delta in deltas].count(BookAction.DELETE) == 19
 
 
-def test_load_deltas_raises_without_a_date_outside_a_partition() -> None:
+def test_load_deltas_raises_without_a_date_outside_a_partition(loader: CoinApiDataLoader) -> None:
     """
     Test a book file outside a date partition needs a date.
     """
     with pytest.raises(ValueError, match="no date given"):
-        load_coinapi_deltas(
+        loader.load_book_deltas(
             FIXTURES / "limitbook_full_coinbase_spot_btc_usd_20250901.csv",
             COINBASE,
         )
 
 
-def test_stream_trades_yields_the_loaded_trades_in_chunks() -> None:
+def test_stream_trades_yields_the_loaded_trades_in_chunks(loader: CoinApiDataLoader) -> None:
     """
     Test a trade stream yields the loaded trades in chunks, then stops.
     """
     path = FIXTURES / "trades_binance_spot_btc_usdt_20250901.csv"
 
-    chunks = list(stream_coinapi_trades(path, BINANCE, chunk_size=7))
+    chunks = list(loader.stream_trades(path, BINANCE, chunk_size=7))
 
     assert [len(chunk) for chunk in chunks] == [7, 7, 7, 7, 7, 7, 7, 1]
-    assert [trade for chunk in chunks for trade in chunk] == load_coinapi_trades(path, BINANCE)
+    assert [trade for chunk in chunks for trade in chunk] == loader.load_trades(path, BINANCE)
 
 
-def test_stream_quotes_preserves_fields_limit_chunks_and_eof(tmp_path: Path) -> None:
+def test_stream_quotes_preserves_fields_limit_chunks_and_eof(
+    loader: CoinApiDataLoader,
+    tmp_path: Path,
+) -> None:
     """
     Test quote streaming binds every field and stops at the requested limit.
     """
@@ -149,12 +176,11 @@ def test_stream_quotes_preserves_fields_limit_chunks_and_eof(tmp_path: Path) -> 
         "2025-09-01T00:00:02;2025-09-01T00:00:03;102;3;101;2\n",
         encoding="utf-8",
     )
-    stream = stream_coinapi_quotes(
+    loader.add_instrument(_currency_pair(COINBASE, 3, 4))
+    stream = loader.stream_quotes(
         path,
         COINBASE,
         chunk_size=1,
-        price_precision=3,
-        size_precision=4,
         limit=2,
     )
 
@@ -193,15 +219,15 @@ def test_stream_quotes_preserves_fields_limit_chunks_and_eof(tmp_path: Path) -> 
         next(stream)
 
 
-def test_stream_quotes_reports_precision_error() -> None:
+def test_stream_quotes_reports_precision_error(loader: CoinApiDataLoader) -> None:
     """
     Test a quote stream exposes a precision failure as ValueError.
     """
-    stream = stream_coinapi_quotes(
+    loader.add_instrument(_currency_pair(BINANCE, 1, 5))
+    stream = loader.stream_quotes(
         FIXTURES / "quotes_binance_spot_btc_usdt_20250901.csv",
         BINANCE,
         chunk_size=1,
-        price_precision=1,
     )
 
     with pytest.raises(
@@ -211,32 +237,32 @@ def test_stream_quotes_reports_precision_error() -> None:
         next(stream)
 
 
-def test_stream_deltas_ends_each_chunk_at_an_event_boundary() -> None:
+def test_stream_deltas_ends_each_chunk_at_an_event_boundary(loader: CoinApiDataLoader) -> None:
     """
     Test a book stream yields the loaded deltas and ends every chunk with F_LAST.
     """
     path = FIXTURES / "limitbook_full_coinbase_spot_btc_usd_20250901.csv"
 
-    chunks = list(stream_coinapi_deltas(path, COINBASE, date=BOOK_DATE, chunk_size=5))
+    chunks = list(loader.stream_book_deltas(path, COINBASE, date=BOOK_DATE, chunk_size=5))
 
     assert len(chunks[0]) == 14
     assert all(chunk[-1].flags & RecordFlag.F_LAST.value for chunk in chunks)
-    assert [delta for chunk in chunks for delta in chunk] == load_coinapi_deltas(
+    assert [delta for chunk in chunks for delta in chunk] == loader.load_book_deltas(
         path,
         COINBASE,
         date=BOOK_DATE,
     )
 
 
-def test_stream_raises_for_a_value_finer_than_its_precision() -> None:
+def test_stream_raises_for_a_value_finer_than_its_precision(loader: CoinApiDataLoader) -> None:
     """
     Test a stream raises ValueError for a value finer than its precision.
     """
-    chunks = stream_coinapi_trades(
+    loader.add_instrument(_currency_pair(BINANCE, 1, 5))
+    chunks = loader.stream_trades(
         FIXTURES / "trades_binance_spot_btc_usdt_20250901.csv",
         BINANCE,
         chunk_size=10,
-        price_precision=1,
     )
 
     with pytest.raises(
@@ -247,23 +273,26 @@ def test_stream_raises_for_a_value_finer_than_its_precision() -> None:
 
 
 @pytest.mark.parametrize("chunk_size", [0, 1_000_001])
-def test_stream_rejects_chunk_size_out_of_range(chunk_size: int) -> None:
+def test_stream_rejects_chunk_size_out_of_range(loader: CoinApiDataLoader, chunk_size: int) -> None:
     """
     Test a stream rejects a chunk size outside its range.
     """
     with pytest.raises(ValueError, match="chunk_size"):
-        stream_coinapi_trades(
+        loader.stream_trades(
             FIXTURES / "trades_binance_spot_btc_usdt_20250901.csv",
             BINANCE,
             chunk_size=chunk_size,
         )
 
 
-def test_ohlcv_loader_maps_symbol_ids_to_instruments() -> None:
+def test_ohlcv_loader_maps_symbol_ids_to_instruments(loader: CoinApiDataLoader) -> None:
     """
     Test the OHLCV loader maps numeric symbol IDs and skips the rest.
     """
-    loader = CoinApiOhlcvLoader({138492: InstrumentId.from_str("SOLUSD.BITSTAMP")})
+    loader.add_instrument(
+        _currency_pair(InstrumentId.from_str("SOLUSD.BITSTAMP")),
+        symbol_id_int=138492,
+    )
 
     bars = loader.load_bars(FIXTURES / "ohlcv_bitstamp_1day_20250911.csv", period_id="1DAY")
 
@@ -284,8 +313,41 @@ def test_ohlcv_loader_maps_symbol_ids_to_instruments() -> None:
     assert bars[0].ts_init == 1_757_635_200_000_000_000
 
 
+@pytest.mark.parametrize("column", ["px_open", "px_high", "px_low", "px_close"])
+def test_ohlcv_loader_rejects_finer_price_without_partial_bars(
+    loader: CoinApiDataLoader,
+    tmp_path: Path,
+    column: str,
+) -> None:
+    """
+    Reject a later symbol's over-precise price without returning earlier bars.
+    """
+    header, valid = (
+        (FIXTURES / "ohlcv_bitstamp_1day_20250911.csv").read_text(encoding="utf-8").splitlines()[:2]
+    )
+    invalid = valid.split(";")
+    invalid[0] = "27576"
+    invalid[header.split(";").index(column)] = "1.234"
+    path = tmp_path / "TP-1DAY.csv"
+    path.write_text(f"{header}\n{valid}\n{';'.join(invalid)}\n", encoding="utf-8")
+    loader.add_instrument(
+        _currency_pair(InstrumentId.from_str("SOLUSD.BITSTAMP")),
+        symbol_id_int=138492,
+    )
+    loader.add_instrument(_currency_pair(COINBASE), symbol_id_int=27576)
+
+    with pytest.raises(ValueError, match=rf"^{column} ") as error:
+        loader.load_bars(path)
+
+    assert str(error.value) == f"{column} 1.234 is finer than instrument precision 2"
+
+
 @pytest.mark.parametrize("negative", [False, True])
-def test_ohlcv_loader_reports_unrepresentable_volume(tmp_path: Path, negative: bool) -> None:
+def test_ohlcv_loader_reports_unrepresentable_volume(
+    loader: CoinApiDataLoader,
+    tmp_path: Path,
+    negative: bool,
+) -> None:
     """
     Test invalid volume errors propagate through the loader binding.
     """
@@ -298,7 +360,10 @@ def test_ohlcv_loader_reports_unrepresentable_volume(tmp_path: Path, negative: b
     )
     path = tmp_path / "TP-1DAY.csv"
     path.write_text(f"{header}\n{row.rsplit(';', 1)[0]};{source}\n", encoding="utf-8")
-    loader = CoinApiOhlcvLoader({138492: InstrumentId.from_str("SOLUSD.BITSTAMP")})
+    loader.add_instrument(
+        _currency_pair(InstrumentId.from_str("SOLUSD.BITSTAMP")),
+        symbol_id_int=138492,
+    )
     expected = (
         f"sx_sum must be non-negative: {source}"
         if negative
@@ -309,3 +374,70 @@ def test_ohlcv_loader_reports_unrepresentable_volume(tmp_path: Path, negative: b
         loader.load_bars(path)
 
     assert str(exc_info.value) == expected
+
+
+def test_data_loader_uses_cached_instrument_precision_without_credentials() -> None:
+    """
+    Reuse registered precision for eager and streamed local data.
+    """
+    loader = CoinApiDataLoader()
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    loader.add_instrument(instrument)
+    path = FIXTURES / "trades_binance_spot_btc_usdt_20250901.csv"
+
+    trades = loader.load_trades(path, instrument.id, limit=2)
+    chunks = list(loader.stream_trades(path, instrument.id, chunk_size=1, limit=2))
+
+    assert loader.instrument(instrument.id) == instrument
+    assert len(trades) == 2
+    assert trades == [record for chunk in chunks for record in chunk]
+    assert trades[0].price.as_decimal() == Decimal("108246.36")
+    assert trades[0].size.as_decimal() == Decimal("0.00023")
+    assert trades[0].price.precision == instrument.price_precision
+    assert trades[0].size.precision == instrument.size_precision
+
+
+def test_data_loader_rejects_missing_metadata_before_opening_files() -> None:
+    """
+    Require definitions before opening a data file.
+    """
+    loader = CoinApiDataLoader()
+
+    with pytest.raises(ValueError, match=r"No loaded instrument BTCUSDT\.BINANCE"):
+        loader.load_trades("missing.csv", BINANCE)
+
+
+def test_data_loader_book_stream_owns_definition_snapshot() -> None:
+    """
+    Retain the stream definition after the loader is dropped.
+    """
+    loader = CoinApiDataLoader()
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    loader.add_instrument(instrument)
+    path = FIXTURES / "limitbook_full_binance_spot_btc_usdt_20250901.csv"
+    stream = loader.stream_book_deltas(path, instrument.id, date=BOOK_DATE, chunk_size=5)
+    expected = loader.load_book_deltas(path, instrument.id, date=BOOK_DATE)
+    del loader
+
+    chunks = list(stream)
+
+    assert [record for chunk in chunks for record in chunk] == expected
+    assert all(RecordFlag.F_LAST.matches(chunk[-1].flags) for chunk in chunks)
+
+
+def test_data_loader_is_the_public_ingestion_interface() -> None:
+    """
+    Keep provider ingestion on the stateful loader.
+    """
+    removed = {
+        "CoinApiOhlcvLoader",
+        "load_coinapi_deltas",
+        "load_coinapi_quotes",
+        "load_coinapi_trades",
+        "stream_coinapi_deltas",
+        "stream_coinapi_quotes",
+        "stream_coinapi_trades",
+    }
+
+    assert not removed.intersection(vars(coinapi))
+    assert "CoinApiDataLoader" in coinapi.__all__

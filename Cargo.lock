@@ -5950,6 +5950,7 @@ dependencies = [
  "nautilus-testkit",
  "parking_lot 0.13.0",
  "pyo3",
+ "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "rstest",
  "rust_decimal",

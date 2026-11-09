@@ -34,8 +34,8 @@
 //! order IDs. Bars publish when a later period arrives, and reconnects discard retained periods to
 //! avoid incomplete bars. Historical book snapshots are unsupported.
 //!
-//! The [`csv`] module loads downloaded book, quote, trade, and OHLCV exports without downloading them.
-//! Optional Python bindings expose provider identity, configuration, factories, and flat-file loaders.
+//! [`loaders::CoinApiDataLoader`] loads local exports and historical REST data with retained metadata.
+//! Optional Python bindings expose provider identity, configuration, factories, and the standalone data loader.
 //!
 //! The official CoinAPI API reference can be found at <https://www.coinapi.io/products/market-data-api/docs?ref=nautilus>.
 //!
@@ -56,7 +56,7 @@
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
-//! - `python`: Enables Python bindings for identity, configuration, factories, and flat-file loaders
+//! - `python`: Enables Python bindings for identity, configuration, factories, and the standalone data loader
 //!   through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes HTTP and WebSocket through deterministic transport when built with
 //!   `cfg(madsim)`.
@@ -85,11 +85,13 @@
 pub mod book;
 pub mod common;
 pub mod config;
-pub mod csv;
 pub mod data;
 pub mod factories;
 pub mod http;
+pub mod loaders;
 pub mod websocket;
+
+mod csv;
 
 #[cfg(feature = "python")]
 pub mod python;

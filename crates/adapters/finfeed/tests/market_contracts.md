@@ -69,7 +69,7 @@ an identity conflict. `NegRisk` fields do not establish FinFeed grouping semanti
 ## Projection decisions
 
 Keep data without a justified domain mapping in the [raw models](../src/http/models.rs).
-The [checked projections](../src/data/parse.rs) enforce these boundaries:
+The [checked projections](../src/parse.rs) enforce these boundaries:
 
 | Field        | Checked behavior                                                  | Remaining limit                                                                  |
 | ------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |

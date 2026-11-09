@@ -30,8 +30,10 @@ Released on TBD (UTC).
 - Added Betfair certificate login through `certs_dir`
 - Added Bybit raw HTTP withdrawal and withdrawal history methods (#5458), thanks @dxwil
 - Added CoinAPI flat-file support for numeric book update codes
+- Added `CoinApiDataLoader` with cached instrument definitions for file and REST ingestion
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
+- Added `FinFeedDataLoader` with cached instrument definitions for historical REST ingestion
 - Added Lighter `accountOrders` targeted lookup, `trades` filters, and `remaining_send_tx` responses
 - Added OKX Python contract filters, execution families, and spot margin configuration
 - Added OKX history request coverage for catalog write-back (#5501), thanks @akarazhev
@@ -45,6 +47,7 @@ Released on TBD (UTC).
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
 - Removed `BookImbalanceActor` and its config; use `OrderBookImbalance` and `OrderBookImbalanceConfig`
 - Removed native `GreeksData` and `PortfolioGreeks` records; use `CustomData` for catalog writes and replay
+- Removed CoinAPI ingestion free functions and `CoinApiOhlcvLoader`; register definitions with `CoinApiDataLoader`
 - Changed Parquet consolidation to reject gaps by default; pass `ensure_contiguous_files=False` to allow gaps
 - Changed `BaseAccount.events` to `Arc<Vec<AccountState>>`; use `Arc::make_mut` to edit (#5496), thanks @mi-netizen007
 - Changed Redis message retries to at-least-once delivery; deduplicate messages (#5491), thanks @Dworf

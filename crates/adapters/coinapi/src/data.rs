@@ -61,7 +61,6 @@ use nautilus_model::{
     enums::{AggregationSource, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
-    types::fixed::check_fixed_precision,
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -73,7 +72,7 @@ use crate::{
         sync::{BookFrame, BookSubscription, BookSubscriptions, BookWrite},
     },
     common::{consts::COINAPI, credential::resolve_api_key, enums::OhlcvPeriod},
-    config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
+    config::{CoinApiDataClientConfig, CoinApiInstrumentSelection, validate_price_precisions},
     http::{
         client::{CoinApiHttpClient, HistoryPages},
         parse::{self as http_parse, CoinApiInstrument},
@@ -1191,24 +1190,6 @@ impl InstrumentIndexState {
                 .insert(symbol_id, loaded.instrument.clone());
         }
     }
-}
-
-fn validate_price_precisions(
-    selections: &[CoinApiInstrumentSelection],
-    price_precisions: &HashMap<InstrumentId, u8>,
-) -> anyhow::Result<()> {
-    for (instrument_id, precision) in price_precisions {
-        anyhow::ensure!(
-            selections
-                .iter()
-                .any(|selection| selection.instrument_ids.contains(instrument_id)),
-            "price precision for {instrument_id}, which is not a selected instrument"
-        );
-        check_fixed_precision(*precision)
-            .with_context(|| format!("invalid price precision for {instrument_id}"))?;
-    }
-
-    Ok(())
 }
 
 // Narrows each selection to the matching instruments and drops selections left empty

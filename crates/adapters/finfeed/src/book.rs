@@ -34,7 +34,7 @@ use strum::FromRepr;
 use super::parse;
 use crate::http::models::BookEvent;
 
-pub(super) fn replay(
+pub(crate) fn replay(
     source: &[BookEvent],
     instrument: &BinaryOption,
     start: UnixNanos,
@@ -56,6 +56,7 @@ pub(super) fn replay(
                         == (source[offset].update_type == UpdateType::Snapshot as i64)
             })
             .count();
+
         let rows = &source[offset..offset + count];
         for row in rows {
             ordering = ordering.max(parse::timestamp(time_ordering(row))?);
@@ -102,7 +103,7 @@ pub(super) fn replay(
     Ok(batches)
 }
 
-pub(super) fn deltas(
+pub(crate) fn deltas(
     batches: Vec<OrderBookDeltas>,
     limit: Option<NonZeroUsize>,
 ) -> anyhow::Result<Vec<OrderBookDelta>> {
@@ -122,7 +123,7 @@ pub(super) fn deltas(
     Ok(deltas)
 }
 
-pub(super) fn depths(
+pub(crate) fn depths(
     batches: &[OrderBookDeltas],
     instrument: &BinaryOption,
     depth: usize,
@@ -162,7 +163,7 @@ pub(super) fn depths(
     Ok(result)
 }
 
-pub(super) fn snapshot(
+pub(crate) fn snapshot(
     batches: &[OrderBookDeltas],
     instrument: &BinaryOption,
     depth: Option<usize>,
@@ -291,7 +292,7 @@ fn parse_delta(
     OrderBookDelta::new_checked(instrument.id, action, order, flags, 0, ts_event, ts_init)
 }
 
-pub(super) fn time_ordering(row: &BookEvent) -> Timestamp {
+pub(crate) fn time_ordering(row: &BookEvent) -> Timestamp {
     row.time_coinapi.unwrap_or(row.time_exchange)
 }
 
@@ -314,12 +315,12 @@ mod tests {
 
     fn instrument() -> BinaryOption {
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         parse_instrument(&market, UnixNanos::default()).unwrap()
     }
 
     fn events() -> Vec<BookEvent> {
-        serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap()
+        serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap()
     }
 
     #[rstest]
@@ -329,6 +330,7 @@ mod tests {
         let start = parse::timestamp(source[0].time_exchange).unwrap();
         let end = parse::timestamp(source[11].time_exchange).unwrap();
         let batches = replay(&source, &instrument, start, end).unwrap();
+
         let expected = [
             (
                 vec![
@@ -393,6 +395,7 @@ mod tests {
                 )],
             ),
         ];
+
         let mut consumer = OrderBook::new(instrument.id, BookType::L2_MBP);
         assert_eq!(batches.len(), expected.len());
 
@@ -467,6 +470,7 @@ mod tests {
         let start = parse::timestamp(source[0].time_exchange).unwrap();
         let end = parse::timestamp(source.last().unwrap().time_exchange).unwrap();
         let batches = replay(&source, &instrument, start, end).unwrap();
+
         let expected = [
             (
                 vec![("0.4", "2"), ("0.3", "5")],

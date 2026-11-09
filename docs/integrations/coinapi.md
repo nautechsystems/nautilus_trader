@@ -11,7 +11,8 @@ flat files. It has no execution client, account management, or order routing.
 ## Overview
 
 The adapter is implemented in Rust with Python bindings and does not require an external CoinAPI
-client library. Configure it through a live node with these Python components:
+client library. Use `CoinApiDataLoader` for standalone ingestion, or configure a live node with these
+Python components:
 
 - `CoinApiDataClientConfig`: Live data client configuration.
 - `CoinApiInstrumentSelection`: Exchanges, instruments, and metadata filters to load.
@@ -559,50 +560,71 @@ CoinAPI `error` emits `CoinApiWsMessage::Error`, clears all subscriptions, and e
 reconnecting. The next subscription opens a new connection. Authentication errors can arrive after a
 successful WebSocket upgrade. Closing or dropping the client closes its connection.
 
+## Standalone data loader
+
+`CoinApiDataLoader` retains instrument definitions and provider symbol mappings for local files and
+REST requests. Construction sends no requests and reads no credentials. The first network request
+creates a shared HTTP client using `CoinApiDataClientConfig`; local file loading needs no key.
+`request_instruments()` validates `price_precisions` before resolving credentials or sending requests.
+
+Register an instrument with `add_instrument(instrument, symbol_id=None, symbol_id_int=None)`, or call
+`await loader.request_instruments()` to fetch the configured selections. `symbol_id` identifies REST
+requests; `symbol_id_int` maps consolidated OHLCV file rows. Calling `add_instrument` again replaces
+both the definition and its provider mappings; supply the IDs again when replacing a definition that
+needs REST or consolidated-file access. Definitions remain cached until explicitly replaced. Tick and book methods use the registered price
+and size precision and reject values requiring rounding. Consolidated bar volumes retain observed precision after export normalization.
+
+- `load_book_deltas`, `load_quotes`, and `load_trades` read local files; matching `stream_*` methods
+  return chunk iterators. `load_bars` reads consolidated OHLCV files for registered numeric IDs.
+- `request_book_snapshot`, `request_quotes`, `request_trades`, and `request_bars` fetch Nautilus objects
+  directly. Historical methods take integer UNIX nanoseconds with `[start, end)` bounds and an optional
+  positive limit. Bars must close within the window and by the current time.
+
+REST history raises if the credit budget truncates retrieval or any record fails conversion. It returns
+no partial result. Each loader shares its configured credit allowance across all REST calls.
+The loader does not download S3 exports or provide historical book deltas through REST.
+
 ## Flat files
 
 CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) are daily or hourly `.csv.gz`
 exports served over an S3-compatible API. The adapter loads downloaded files into Nautilus data. It does not
-list or download them. The loaders follow the Tardis CSV loaders. Each `load_*` function returns a whole file,
-and each `stream_*` function yields it in chunks. Both take optional price and size precisions and a record
+list or download them. `CoinApiDataLoader` reads local files using registered instrument definitions.
+Each `load_*` method returns a whole file, and each `stream_*` method yields chunks. Both accept a record
 `limit`.
 
-| Schema                        | Load                           | Stream                  | Output           |
-| ----------------------------- | ------------------------------ | ----------------------- | ---------------- |
-| `T-TRADES`                    | `load_coinapi_trades`          | `stream_coinapi_trades` | `TradeTick`      |
-| `T-QUOTES`                    | `load_coinapi_quotes`          | `stream_coinapi_quotes` | `QuoteTick`      |
-| `T-LIMITBOOK_FULL`            | `load_coinapi_deltas`          | `stream_coinapi_deltas` | `OrderBookDelta` |
-| `T-OHLCV_ACTIVE_CONSOLIDATED` | `CoinApiOhlcvLoader.load_bars` | None                    | `Bar`            |
-
-In Rust, the same functions are `nautilus_coinapi::csv::{load_trades, stream_trades, ...}` and
-`CoinApiOhlcvLoader::load_bars`.
+| Schema                        | Load               | Stream               | Output           |
+| ----------------------------- | ------------------ | -------------------- | ---------------- |
+| `T-TRADES`                    | `load_trades`      | `stream_trades`      | `TradeTick`      |
+| `T-QUOTES`                    | `load_quotes`      | `stream_quotes`      | `QuoteTick`      |
+| `T-LIMITBOOK_FULL`            | `load_book_deltas` | `stream_book_deltas` | `OrderBookDelta` |
+| `T-OHLCV_ACTIVE_CONSOLIDATED` | `load_bars`        | None                 | `Bar`            |
 
 ### Order book example
 
-The load call derives the date from `D-20250901`. The stream reads a renamed file, so it passes
-`date` explicitly and sets precisions for the instrument's increments instead of inferring them.
-These precisions must fit every value: finer values fail the stream rather than being rounded.
+Start with a checked `instrument` definition for `BTC-USD.COINBASE` loaded from a catalog. Register it
+once before reading files. Definitions fetched with `request_instruments()` are already registered
+with their provider mappings. The load call derives the date from
+`D-20250901`. The stream reads a renamed file, so it passes `date` explicitly. Both use the registered
+price and size precision; finer values fail rather than being rounded.
 
 ```rust tab="Rust"
 use jiff::civil::date;
-use nautilus_coinapi::csv::{load_deltas, stream_deltas};
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_coinapi::loaders::CoinApiDataLoader;
+use nautilus_model::instruments::Instrument;
 
-let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
+let instrument_id = instrument.id();
+let loader = CoinApiDataLoader::new(Default::default());
+loader.add_instrument(instrument, None, Some(27_576))?;
 
 let path = "T-LIMITBOOK_FULL/D-20250901/E-COINBASE/IDDI-27576+SC-COINBASE_SPOT_BTC_USD+S-BTC__002DUSD.csv.gz";
-let deltas = load_deltas(path, instrument_id, None, None, None, None)?;
-
-let chunks = stream_deltas(
+let deltas = loader.load_book_deltas(path, instrument_id, None, None)?;
+let chunks = loader.stream_book_deltas(
     "coinbase_btc_usd_book.csv.gz",
     instrument_id,
     Some(date(2025, 9, 1)),
-    100_000,    // chunk_size
-    Some(2),    // price_precision
-    Some(8),    // size_precision
-    None,       // limit
+    100_000,
+    None,
 )?;
-
 for chunk in chunks {
     let deltas = chunk?;
 }
@@ -611,48 +633,36 @@ for chunk in chunks {
 ```python tab="Python"
 import datetime
 
-from nautilus_trader.adapters.coinapi import load_coinapi_deltas
-from nautilus_trader.adapters.coinapi import stream_coinapi_deltas
-from nautilus_trader.model import InstrumentId
+from nautilus_trader.adapters.coinapi import CoinApiDataLoader
 
-instrument_id = InstrumentId.from_str("BTC-USD.COINBASE")
-
+loader = CoinApiDataLoader()
+loader.add_instrument(instrument, symbol_id_int=27576)
 path = "T-LIMITBOOK_FULL/D-20250901/E-COINBASE/IDDI-27576+SC-COINBASE_SPOT_BTC_USD+S-BTC__002DUSD.csv.gz"
-deltas = load_coinapi_deltas(path, instrument_id)
-
-for chunk in stream_coinapi_deltas(
+deltas = loader.load_book_deltas(path, instrument.id)
+for chunk in loader.stream_book_deltas(
     "coinbase_btc_usd_book.csv.gz",
-    instrument_id,
+    instrument.id,
     date=datetime.date(2025, 9, 1),
-    price_precision=2,
-    size_precision=8,
 ):
     ...
 ```
 
 ### Bars example
 
-`CoinApiOhlcvLoader` maps numeric `symbol_id` values to instruments. `27576` is the REST `symbol_id_int` of
-`COINBASE_SPOT_BTC_USD`. It reads the period from `TP-1MIN` and skips unmapped symbols. Rust also provides
-`CoinApiOhlcvLoader::from_symbols` to build the map from metadata.
+Consolidated OHLCV files require numeric symbol mappings. `27576` is the REST `symbol_id_int` of
+`COINBASE_SPOT_BTC_USD`. `request_instruments()` retains this mapping automatically. For an existing
+checked definition, pass it to `add_instrument` as in the order book example. The loader reads the period
+from `TP-1MIN` and skips unmapped symbols.
 
 ```rust tab="Rust"
-use nautilus_coinapi::csv::CoinApiOhlcvLoader;
-use nautilus_model::identifiers::InstrumentId;
-
-let loader = CoinApiOhlcvLoader::new([(27_576, InstrumentId::from("BTC-USD.COINBASE"))]);
 let bars = loader.load_bars(
     "T-OHLCV_ACTIVE_CONSOLIDATED/D-20250911/E-COINBASE/TP-1MIN.csv.gz",
-    None,   // period_id, read from the file name
-    None,   // limit
+    None,
+    None,
 )?;
 ```
 
 ```python tab="Python"
-from nautilus_trader.adapters.coinapi import CoinApiOhlcvLoader
-from nautilus_trader.model import InstrumentId
-
-loader = CoinApiOhlcvLoader({27576: InstrumentId.from_str("BTC-USD.COINBASE")})
 bars = loader.load_bars("T-OHLCV_ACTIVE_CONSOLIDATED/D-20250911/E-COINBASE/TP-1MIN.csv.gz")
 ```
 
@@ -716,10 +726,12 @@ both.
 
 ### Precision
 
-Prices and sizes convert exactly from text. `load_*` infers unspecified precisions from all rows read,
-stopping at `limit` if set. `stream_*` samples the first 10,000 rows and raises if a later value needs
-rounding. Pass explicit precisions when the file's precision is unknown. The OHLCV loader infers precisions
-per instrument, with the volume exception below.
+Tick and book prices and sizes convert exactly from text at the registered instrument precision.
+Consolidated OHLCV prices use the registered price precision. Their volumes retain the precision of the
+normalized source values because aggregate volume can be finer than a trading lot increment.
+A mapped price finer than its registered precision fails the entire file load without returning any
+bars. Set `price_precisions` before `request_instruments()`, or register a definition with sufficient
+price precision before loading.
 
 CoinAPI uses [high-precision mode](../getting_started/installation.md#precision-mode) by default: 16 decimal
 places rather than 9, to fit cryptocurrency sizes and CoinAPI volumes. OHLCV `sx_sum` can carry numeric tails
@@ -769,7 +781,8 @@ includes both.
 ### Python configuration
 
 The `nautilus_trader.adapters.coinapi` package exports `CoinApiDataClientConfig`,
-`CoinApiInstrumentSelection`, `CoinApiDataClientFactory`, and the `COINAPI` and `COINAPI_CLIENT_ID` constants.
+`CoinApiInstrumentSelection`, `CoinApiDataClientFactory`, `CoinApiDataLoader`, and the `COINAPI` and
+`COINAPI_CLIENT_ID` constants.
 The config takes the fields above as keyword arguments. It exposes each field except `api_key` and `proxy_url`
 as a read-only property. Its representation omits every value. A selection takes the exchange, the instrument
 IDs, and the optional `filter_symbol_id` and `filter_asset_id` filters.

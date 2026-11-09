@@ -24,15 +24,12 @@ use std::{
 
 use jiff::Timestamp;
 use nautilus_core::{UnixNanos, string::secret::SecretString};
-use nautilus_model::{
-    identifiers::InstrumentId, instruments::Instrument, types::fixed::check_fixed_precision,
-};
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{
     backoff::ExponentialBackoff,
     http::{HttpClient, HttpRedirectPolicy, HttpResponse, Method},
     retry::{RetryConfig, RetryManager},
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -40,7 +37,7 @@ use url::Url;
 use super::{
     error::Error,
     models::{Book, Exchange, Ohlcv, Quote, Symbol, Trade},
-    parse::{CoinApiInstrument, parse_instrument, parse_instruments},
+    parse::{CoinApiInstrument, parse_instruments_with_precisions, validate_price_precisions},
     query::{
         BookQuery, ExchangesQuery, HISTORY_LIMIT_MAX, HistoryQuery, HistoryRange, OhlcvQuery,
         SymbolsQuery, TradesQuery, provider_time,
@@ -262,38 +259,10 @@ impl CoinApiHttpClient {
         price_precisions: &HashMap<InstrumentId, u8>,
         ts_init: UnixNanos,
     ) -> Result<Vec<CoinApiInstrument>, Error> {
-        for (instrument_id, precision) in price_precisions {
-            check_fixed_precision(*precision).map_err(|e| {
-                Error::Validation(format!("price precision for {instrument_id}: {e}"))
-            })?;
-        }
+        validate_price_precisions(price_precisions)?;
 
         let symbols = self.get_symbols(exchange_id, query).await?;
-        let (mut instruments, errors) = parse_instruments(&symbols, ts_init);
-
-        for e in errors {
-            log::warn!("Skipping CoinAPI instrument: {e}");
-        }
-
-        for loaded in &mut instruments {
-            let Some(&precision) = price_precisions.get(&loaded.instrument.id()) else {
-                continue;
-            };
-
-            let Some(symbol) = symbols.iter().find(|s| s.symbol_id == loaded.symbol_id) else {
-                continue;
-            };
-
-            let symbol = Symbol {
-                price_precision: Some(Decimal::new(1, u32::from(precision))),
-                ..symbol.clone()
-            };
-
-            match parse_instrument(&symbol, ts_init) {
-                Ok(overridden) => *loaded = overridden,
-                Err(e) => log::warn!("Keeping CoinAPI price resolution: {e}"),
-            }
-        }
+        let instruments = parse_instruments_with_precisions(&symbols, price_precisions, ts_init);
 
         Ok(instruments)
     }

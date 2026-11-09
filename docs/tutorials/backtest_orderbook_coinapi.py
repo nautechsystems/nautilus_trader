@@ -48,7 +48,7 @@ import boto3
 import pandas as pd
 from botocore.config import Config
 
-from nautilus_trader.adapters.coinapi import stream_coinapi_deltas
+from nautilus_trader.adapters.coinapi import CoinApiDataLoader
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
@@ -137,8 +137,8 @@ print(f"Data file: {filepath}")
 # %% [markdown]
 # ## Define the Lighter contract
 #
-# The CSV loader takes an explicit instrument ID. It does not need the
-# CoinAPI live client's instrument mapper, which does not support Lighter.
+# `CoinApiDataLoader` uses a registered instrument definition. It does not
+# need the live client's instrument mapper, which does not support Lighter.
 #
 # Use the native ID `ANTHROPIC-PERP.LIGHTER` and USDC for the quote and
 # settlement currency. `CryptoPerpetual` matches the native Lighter
@@ -185,6 +185,8 @@ book_type = BookType.L2_MBP
 # The loader emits a `CLEAR` and snapshot levels, followed by incremental
 # updates. `F_LAST` marks the end of each complete event.
 #
+# Register the contract with `CoinApiDataLoader` so every chunk uses its
+# price and size precision. Local loading requires no credentials.
 # Stream the entire file in its original order. Do not set a row `limit`:
 # it can cut a snapshot or update event short. Streaming chunks preserve
 # event boundaries and may exceed `chunk_size`. The loader derives the UTC
@@ -212,12 +214,13 @@ top_of_book_rows = []
 delta_count = 0
 nonpositive_spread_count = 0
 
-for chunk in stream_coinapi_deltas(
+loader = CoinApiDataLoader()
+loader.add_instrument(instrument)
+
+for chunk in loader.stream_book_deltas(
     filepath,
     instrument.id,
     chunk_size=100_000,
-    price_precision=instrument.price_precision,
-    size_precision=instrument.size_precision,
 ):
     if delta_count == 0:
         assert chunk[0].action == BookAction.CLEAR

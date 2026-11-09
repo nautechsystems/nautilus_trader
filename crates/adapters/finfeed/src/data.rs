@@ -15,9 +15,6 @@
 
 //! Data client with generation-owned requests, polling subscriptions, and bounded shutdown.
 
-mod book;
-mod history;
-mod parse;
 mod poll;
 
 use std::{collections::HashMap, future::Future, num::NonZeroUsize, sync::Arc, time::Duration};
@@ -47,10 +44,13 @@ use parking_lot::Mutex;
 use serde::{Deserialize, de::IntoDeserializer};
 
 use crate::{
+    book,
     common::{consts::FINFEED, credential::resolve_api_key},
     config::FinFeedDataClientConfig,
+    history,
     http::{client::FinFeedHttpClient, error::Error, models::MarketStatus, query::PAGE_LIMIT_MAX},
     instruments::{FinFeedInstrumentProvider, selected_ids},
+    parse,
 };
 
 const TASK_GRACE: Duration = Duration::from_secs(1);
