@@ -107,7 +107,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderError, OrderList},
     position::{Position, PositionReplayEvent},
     types::{
-        Currency, Money, Price, Quantity,
+        Currency, ERROR_PRICE, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION, check_fixed_precision},
         price::PriceRaw,
     },
@@ -1206,12 +1206,15 @@ impl Cache {
         };
 
         let allows_non_positive = || {
-            self.instrument(instrument_id)
-                .map_or(true, Instrument::allows_negative_price)
+            !position.is_inverse
+                && self
+                    .instrument(instrument_id)
+                    .is_none_or(Instrument::allows_negative_price)
         };
         let is_valid = |price: &Price| {
             !price.is_undefined()
                 && !price.is_error()
+                && price.precision != ERROR_PRICE.precision
                 && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
         };
         let quote_price = || {

@@ -31,15 +31,15 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarSpecification, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
         greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookType, ContingencyType,
-        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookType,
+        ContingencyType, CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType,
+        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
         PositionAdjustmentType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
@@ -58,7 +58,8 @@ use nautilus_model::{
         PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
+        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
+        SyntheticInstrument, stubs::*,
     },
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{
@@ -851,10 +852,7 @@ fn test_calculate_unrealized_pnl_falls_back_to_mark_price(
 }
 
 #[rstest]
-fn test_calculate_unrealized_pnl_falls_back_to_trade(
-    mut cache: Cache,
-    audusd_sim: CurrencyPair,
-) {
+fn test_calculate_unrealized_pnl_falls_back_to_trade(mut cache: Cache, audusd_sim: CurrencyPair) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
@@ -892,10 +890,7 @@ fn test_calculate_unrealized_pnl_falls_back_to_trade(
 }
 
 #[rstest]
-fn test_calculate_unrealized_pnl_falls_back_to_bar(
-    mut cache: Cache,
-    audusd_sim: CurrencyPair,
-) {
+fn test_calculate_unrealized_pnl_falls_back_to_bar(mut cache: Cache, audusd_sim: CurrencyPair) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
@@ -917,11 +912,7 @@ fn test_calculate_unrealized_pnl_falls_back_to_bar(
     let position = Position::new(&instrument, fill.into());
     let bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::Internal,
     );
     let bar = Bar::new(
@@ -943,10 +934,7 @@ fn test_calculate_unrealized_pnl_falls_back_to_bar(
 }
 
 #[rstest]
-fn test_calculate_unrealized_pnl_source_precedence(
-    mut cache: Cache,
-    audusd_sim: CurrencyPair,
-) {
+fn test_calculate_unrealized_pnl_source_precedence(mut cache: Cache, audusd_sim: CurrencyPair) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
@@ -969,11 +957,7 @@ fn test_calculate_unrealized_pnl_source_precedence(
 
     let bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::Internal,
     );
     let bar = Bar::new(
@@ -1044,11 +1028,8 @@ fn test_calculate_unrealized_pnl_source_precedence(
 }
 
 #[rstest]
-fn test_calculate_unrealized_pnl_skips_sentinel_prices(
-    mut cache: Cache,
-    audusd_sim: CurrencyPair,
-) {
-    use nautilus_model::types::price::{PRICE_ERROR, PRICE_UNDEF};
+fn test_calculate_unrealized_pnl_skips_sentinel_prices(mut cache: Cache, audusd_sim: CurrencyPair) {
+    use nautilus_model::types::price::{ERROR_PRICE, PRICE_ERROR, PRICE_UNDEF};
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1072,11 +1053,7 @@ fn test_calculate_unrealized_pnl_skips_sentinel_prices(
 
     let bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::Internal,
     );
     let valid_bar = Bar::new(
@@ -1093,11 +1070,7 @@ fn test_calculate_unrealized_pnl_skips_sentinel_prices(
 
     let undef_bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Second,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Second, PriceType::Last),
         AggregationSource::Internal,
     );
     let undef_bar = Bar::new(
@@ -1165,6 +1138,23 @@ fn test_calculate_unrealized_pnl_skips_sentinel_prices(
         cache.calculate_unrealized_pnl(&position),
         Some(Money::from("25.00 USD"))
     );
+
+    // Quote with ERROR_PRICE is skipped without panic; still falls back to valid bar
+    let error_price_quote = QuoteTick::new(
+        instrument.id(),
+        ERROR_PRICE,
+        ERROR_PRICE,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(110),
+        UnixNanos::from(120),
+    );
+    cache.add_quote(error_price_quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
 }
 
 #[rstest]
@@ -1195,11 +1185,7 @@ fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
     // 1-minute bar stamped at open: ts_event=3480, ts_init=3540, close=1.00010
     let min_bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::Internal,
     );
     let min_bar = Bar::new(
@@ -1217,11 +1203,7 @@ fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
     // 1-hour bar stamped at open: ts_event=0, ts_init=3600, close=1.00050
     let hour_bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Hour,
-            PriceType::Last,
-        ),
+        BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
         AggregationSource::Internal,
     );
     let hour_bar = Bar::new(
@@ -1277,20 +1259,12 @@ fn test_calculate_unrealized_pnl_bar_selection_equal_close_tie_break(
 
     let bid_bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Bid,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
         AggregationSource::Internal,
     );
     let ask_bar_type = BarType::new(
         instrument.id(),
-        BarSpecification::new(
-            1,
-            BarAggregation::Minute,
-            PriceType::Ask,
-        ),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Ask),
         AggregationSource::Internal,
     );
 
@@ -1482,6 +1456,112 @@ fn test_calculate_unrealized_pnl_rejects_negative_quote_when_instrument_forbids_
     );
     cache.add_quote(negative_quote).unwrap();
     assert_eq!(cache.calculate_unrealized_pnl(&position), None);
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_zero_mark_for_inverse_position_without_cached_instrument(
+    mut cache: Cache,
+    btcusd_inverse_perp: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_inverse_perp);
+    // Deliberately do not add instrument to cache to test fallback without cached instrument
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-1")),
+        Some(PositionId::new("P-INV-1")),
+        Some(Price::from("50000.0")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // Zero mark price must be skipped for inverse position rather than masking the valid trade
+    let zero_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("0.0"),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_mark_price(zero_mark).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("50000.0"),
+        Quantity::from(100),
+        AggressorSide::Buy,
+        TradeId::new("TR-INV-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    // With entry 50000.0 and trade 50000.0, unrealized PnL is zero BTC
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("0.00000000 BTC"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_empty_quote_side_and_falls_back(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-EMPTY-SIDE")),
+        Some(PositionId::new("P-EMPTY-SIDE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // Quote with zero price and zero size on the exit side (Bid for Long)
+    let empty_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00000"),
+        Price::from("1.00050"),
+        Quantity::from(0),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_quote(empty_bid_quote).unwrap();
+
+    // Mark price is valid fallback
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("1.00025"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
 }
 
 #[rstest]
