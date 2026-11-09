@@ -25951,7 +25951,16 @@ fn test_execution_client_lifecycle_logging(
     }
 
     take_reconciliation_logs();
-    poll_to_completion(execution_engine.connect());
+    let result = poll_to_completion(execution_engine.connect());
+
+    if error_message.is_some() {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to connect execution clients: FIRST"
+        );
+    } else {
+        result.unwrap();
+    }
 
     let expected = if error_message.is_some() {
         vec![(
@@ -26022,6 +26031,66 @@ fn test_execution_client_lifecycle_logging(
             .get_clients_mut()
             .iter()
             .find(|c| c.client_id() == ClientId::from("SECOND"))
+            .unwrap()
+            .is_connected()
+    );
+}
+
+#[rstest]
+fn test_connect_reports_all_failed_clients_without_provider_errors(
+    mut execution_engine: ExecutionEngine,
+) {
+    capture_reconciliation_logs();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    for (client_id, error_message) in [
+        ("SECOND", Some("password=SYN-password")),
+        ("HEALTHY", None),
+        ("FIRST", Some("https://SYN-user:SYN-token@example.invalid")),
+    ] {
+        execution_engine
+            .register_client(Box::new(LifecycleExecutionClient {
+                requires_authoritative_fills: false,
+                client_id: ClientId::from(client_id),
+                error_message,
+                calls: Rc::clone(&calls),
+                connected: false,
+            }))
+            .unwrap();
+    }
+
+    take_reconciliation_logs();
+    let e = poll_to_completion(execution_engine.connect()).unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        "Failed to connect execution clients: SECOND, FIRST"
+    );
+    assert_eq!(e.chain().count(), 1);
+    assert_eq!(
+        *calls.borrow(),
+        vec![
+            (ClientId::from("SECOND"), "connect"),
+            (ClientId::from("HEALTHY"), "connect"),
+            (ClientId::from("FIRST"), "connect"),
+        ]
+    );
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![
+            (
+                Level::Error,
+                "Failed to connect execution client SECOND: connection failed".into()
+            ),
+            (
+                Level::Error,
+                "Failed to connect execution client FIRST: connection failed".into()
+            ),
+        ]
+    );
+    assert!(
+        execution_engine
+            .get_client(&ClientId::from("HEALTHY"))
             .unwrap()
             .is_connected()
     );

@@ -713,8 +713,14 @@ impl ExecutionEngine {
 
     /// Connects all registered execution clients concurrently.
     ///
-    /// Connection failures are logged but do not prevent the node from running.
-    pub async fn connect(&mut self) {
+    /// Successful clients remain connected if another client fails.
+    /// Logs identify failed clients without provider error text, which can contain credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect, listing failed client IDs without provider
+    /// error text.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
@@ -725,11 +731,22 @@ impl ExecutionEngine {
             .collect();
 
         let results = join_all(futures).await;
+        let mut failed_clients = Vec::new();
 
         for (client_id, result) in results {
             if result.is_err() {
                 log::error!("Failed to connect execution client {client_id}: connection failed");
+                failed_clients.push(client_id.to_string());
             }
+        }
+
+        if failed_clients.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Failed to connect execution clients: {}",
+                failed_clients.join(", ")
+            )
         }
     }
 
