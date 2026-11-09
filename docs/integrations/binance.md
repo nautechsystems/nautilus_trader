@@ -845,7 +845,9 @@ Synchronization starts at the first diff after a subscription or data WebSocket 
 1. Diffs are buffered and a REST snapshot is requested.
 1. Buffered diffs covered by the snapshot's `lastUpdateId` are dropped.
 1. The remaining diffs must continue from the snapshot. Otherwise another snapshot is requested.
-1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs.
+1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs. A buffered
+   diff received before the snapshot takes the snapshot's `ts_init`, so replayed diffs never sort
+   before the snapshot.
 1. Each later diff is validated against the previous one before it is sent.
 
 Each diff must continue from the snapshot or the previous diff:
