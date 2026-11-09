@@ -816,11 +816,27 @@ impl PolymarketExecutionClient {
                 self.order_contexts
                     .register_context(venue_order_id, OrderContext::from(order));
                 self.order_contexts.mark_accepted(venue_order_id);
+
+                // An integer-sized order can receive fractional fills. Recovery uses the
+                // instrument precision, as live reconciliation does, without rounding history.
+                let Some(size_precision) = self
+                    .core
+                    .cache()
+                    .instrument(&order.instrument_id())
+                    .map(|instrument| instrument.size_precision())
+                else {
+                    log::error!(
+                        "Cannot restore Polymarket order {}: instrument {} not cached",
+                        order.client_order_id(),
+                        order.instrument_id(),
+                    );
+                    continue;
+                };
                 let (prior_filled, current_leg_quantity) =
                     match venue_leg_filled_before_and_quantity(
                         order,
                         venue_order_id,
-                        order.quantity().precision,
+                        size_precision,
                     ) {
                         Ok(quantities) => quantities,
                         Err(e) => {
@@ -2221,6 +2237,106 @@ mod tests {
     }
 
     #[rstest]
+    #[case::open_partial("0.200000", false, true, true)]
+    #[case::canceled_partial("0.200000", true, true, true)]
+    #[case::minimum_fill("0.000001", true, true, true)]
+    #[case::unrepresentable_fill("0.0000001", true, true, false)]
+    #[case::missing_instrument("0.200000", false, false, false)]
+    fn load_orders_from_cache_preserves_fractional_fills_of_integer_orders(
+        #[case] filled_quantity: &str,
+        #[case] canceled: bool,
+        #[case] instrument_cached: bool,
+        #[case] restored: bool,
+    ) {
+        let (client, cache) = test_client();
+        let mut instrument = test_binary_option("0xFRACTIONAL-RESTART", false, false);
+        let InstrumentAny::BinaryOption(ref mut binary) = instrument else {
+            unreachable!();
+        };
+        binary.size_precision = 6;
+        binary.size_increment = ModelQuantity::from("0.000001");
+        let venue_order_id = VenueOrderId::from("V-001");
+        let trade_id = TradeId::from("trade-fractional-restart");
+        let filled_quantity = ModelQuantity::from(filled_quantity);
+        let order = {
+            let mut cache = cache.borrow_mut();
+            if instrument_cached {
+                cache.add_instrument(instrument.clone()).unwrap();
+            }
+            let mut order = cache_accepted(
+                &mut cache,
+                OrderTestBuilder::new(OrderType::Limit)
+                    .instrument_id(instrument.id())
+                    .side(OrderSide::Buy)
+                    .price(ModelPrice::from("0.5000"))
+                    .quantity(ModelQuantity::from("5"))
+                    .build(),
+            );
+            let fill = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(trade_id),
+                None,
+                Some(ModelPrice::from("0.5000")),
+                Some(filled_quantity),
+                None,
+                None,
+                None,
+                Some(client.core.account_id),
+            );
+            order = cache.update_order(&fill).unwrap();
+
+            if canceled {
+                let cancel = TestOrderEventStubs::canceled(
+                    &order,
+                    client.core.account_id,
+                    Some(venue_order_id),
+                );
+                order = cache.update_order(&cancel).unwrap();
+            }
+            order
+        };
+        assert_eq!(order.quantity().precision, 0);
+        let before = serde_json::to_value(&order).unwrap();
+
+        client.load_orders_from_cache();
+
+        // Repeating recovery preserves the same quantities and event-derived settlement state
+        client.load_orders_from_cache();
+
+        assert_eq!(
+            client.fill_tracker.get_cumulative_filled(&venue_order_id),
+            restored.then_some(filled_quantity),
+        );
+        assert_eq!(
+            leg_application(&client.settlement, &trade_id),
+            restored.then_some(LegApplication::FillObserved),
+        );
+
+        if restored {
+            assert_eq!(
+                client.fill_tracker.prior_filled(&venue_order_id),
+                Some(ModelQuantity::from("0"))
+            );
+            assert_eq!(
+                client.fill_tracker.submitted_qty(&venue_order_id),
+                Some(ModelQuantity::from("5"))
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(
+                cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .unwrap()
+                    .cloned()
+            )
+            .unwrap(),
+            before,
+        );
+    }
+
+    #[rstest]
     fn load_orders_from_cache_restores_failed_trade_correction_state() {
         let (client, cache) = test_client();
         let instrument = test_binary_option("0xRESTART", false, false);
@@ -2440,7 +2556,14 @@ mod tests {
         #[case] voided_qty: &str,
     ) {
         let (client, cache) = test_client();
-        let instrument = test_binary_option("0xDUST-AFTER-VOID", false, false);
+        let mut instrument = test_binary_option("0xDUST-AFTER-VOID", false, false);
+        let InstrumentAny::BinaryOption(ref mut binary) = instrument else {
+            unreachable!();
+        };
+
+        // Match the adapter's six-decimal instrument precision for the 9.9950 fill below
+        binary.size_precision = 6;
+        binary.size_increment = ModelQuantity::from("0.000001");
         let new_venue_order_id = VenueOrderId::from("V-002");
         let voided_qty = ModelQuantity::from(voided_qty);
 

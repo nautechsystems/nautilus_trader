@@ -1493,6 +1493,12 @@ values, and refreshes the account.
 
 #### Reconnects and restarts
 
+Cached venue-leg fills are restored at the instrument's size precision, not the precision
+of the submitted quantity. An integer-sized order such as `5` can therefore retain a
+`0.200000` partial fill across restart, including after cancellation. Targeted order
+reconciliation uses the same precision. Recovery still rejects quantities that cannot be
+represented exactly; it does not round or rewrite persisted orders or fills.
+
 A provisional status applies a fill only when the trade and all of the account's orders in it
 belong to the current uninterrupted WebSocket session. The stream does not replay updates missed
 while disconnected, so after a reconnect the adapter reads from REST:
