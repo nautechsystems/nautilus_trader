@@ -1,0 +1,91 @@
+{
+  "snapshot": {
+    "market_ticker": "MARKET-A",
+    "yes_dollars_fp": [
+      [
+        "0.123456",
+        "7.25"
+      ],
+      [
+        "0.213456",
+        "4.50"
+      ]
+    ],
+    "no_dollars_fp": [
+      [
+        "0.713456",
+        "9.75"
+      ],
+      [
+        "0.813456",
+        "6.25"
+      ]
+    ]
+  },
+  "empty": {
+    "market_ticker": "MARKET-A",
+    "yes_dollars_fp": [],
+    "no_dollars_fp": []
+  },
+  "steps": [
+    {
+      "market_ticker": "MARKET-A",
+      "side": "yes",
+      "price_dollars": "0.123456",
+      "delta_fp": "2.50",
+      "ts_ms": 1700000000123
+    },
+    {
+      "market_ticker": "MARKET-A",
+      "side": "no",
+      "price_dollars": "0.713456",
+      "delta_fp": "-3.25",
+      "ts_ms": 1700000000124
+    },
+    {
+      "market_ticker": "MARKET-A",
+      "side": "yes",
+      "price_dollars": "0.213456",
+      "delta_fp": "-4.50",
+      "ts_ms": 1700000000125
+    },
+    {
+      "market_ticker": "MARKET-A",
+      "side": "no",
+      "price_dollars": "0.613456",
+      "delta_fp": "8.25",
+      "ts_ms": 1700000000126
+    }
+  ],
+  "rest": {
+    "yes_dollars": [
+      [
+        "0.123456",
+        "7.25"
+      ]
+    ],
+    "no_dollars": [
+      [
+        "0.286544",
+        "9.75"
+      ]
+    ]
+  },
+  "subscribed": {
+    "id": 1,
+    "type": "subscribed",
+    "msg": {
+      "channel": "orderbook_delta",
+      "sid": 7
+    }
+  },
+  "one_sided": {
+    "market_ticker": "MARKET-A",
+    "yes_dollars_fp": [
+      [
+        "0.223456",
+        "1.25"
+      ]
+    ]
+  }
+}

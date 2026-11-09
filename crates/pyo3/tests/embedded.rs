@@ -60,6 +60,7 @@ fn test_embedded_module_shares_host_types_and_selects_adapters() {
             "finfeed",
             "hyperliquid",
             "interactive_brokers",
+            "kalshi",
             "kraken",
             "lighter",
             "okx",

@@ -269,6 +269,37 @@ def _check_file(path: Path) -> list[str]:
                 f'#[pyclass(name = "{expected}")], was {public_name!r}',
             )
 
+    violations.extend(_adapter_module_violations(path, source, masked))
+    return violations
+
+
+def _adapter_module_violations(path: Path, source: str, masked: str) -> list[str]:
+    if "adapters" not in path.parts:
+        return []
+
+    violations = []
+
+    # Existing adapters also use public paths for runtime metadata
+    runtime_prefixes = ("nautilus_trader.adapters.", "nautilus_trader._libnautilus.")
+
+    for start, _, masked_attribute, attribute in _attributes(masked, source, 0, len(source)):
+        is_stub_attribute = re.search(r"\bgen_stub_\w+\b", masked_attribute) is not None
+        for match in re.finditer(
+            r'\b(module|stub_module)\s*=\s*"(nautilus_trader\.[^"]+)"',
+            attribute,
+        ):
+            is_stub = is_stub_attribute or match.group(1) == "stub_module"
+            prefixes = runtime_prefixes[:1] if is_stub else runtime_prefixes
+            module_path = match.group(2)
+            if module_path.startswith(prefixes):
+                continue
+
+            kind = "stub" if is_stub else "runtime"
+            expected = " or ".join(f"{prefix}<adapter_name>" for prefix in prefixes)
+            violations.append(
+                f"{path}:{_line_number(source, start)}: adapter {kind} module path "
+                f"{module_path!r} must use {expected}",
+            )
     return violations
 
 
@@ -281,7 +312,10 @@ def _candidate_paths(root: Path) -> list[Path]:
         [
             rg_path,
             "-l",
-            r"\bfn\s+[A-Za-z_][A-Za-z0-9_]*_py\b|\b(?:struct|enum)\s+Py[A-Z][A-Za-z0-9_]*\b",
+            (
+                r"\bfn\s+[A-Za-z_][A-Za-z0-9_]*_py\b|\b(?:struct|enum)\s+Py[A-Z][A-Za-z0-9_]*\b"
+                r"|\b(?:module|stub_module)\s*="
+            ),
             "--glob",
             "*.rs",
             "--null",

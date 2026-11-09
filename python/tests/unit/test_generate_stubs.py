@@ -1466,6 +1466,39 @@ pub const POLYMARKET: &str = "POLYMARKET";
     assert "polymarket" not in result
 
 
+@pytest.mark.parametrize("python_type", ["str", "model.ClientId", "model.Venue"])
+@pytest.mark.parametrize("has_model_import", [False, True])
+def test_inject_module_constants_imports_model_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    python_type: str,
+    has_model_import: bool,
+) -> None:
+    """
+    Test injected constants import model types without duplicate imports.
+    """
+    stub = tmp_path / "adapters" / "example" / "__init__.pyi"
+    stub.parent.mkdir(parents=True)
+    model_import = "from nautilus_trader import model"
+    imports = f"{model_import}\n\n" if has_model_import else ""
+    stub.write_text(f"{imports}__all__ = []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        generate_stubs,
+        "collect_module_constants",
+        lambda _: {"adapters.example": [generate_stubs.ModuleConstant("EXAMPLE", python_type)]},
+    )
+
+    generate_stubs.inject_module_constants(tmp_path, tmp_path)
+
+    content = stub.read_text(encoding="utf-8")
+    expected_imports = int(has_model_import or python_type.startswith("model."))
+    assert content.count(model_import) == expected_imports
+    assert f"EXAMPLE: {python_type}\n" in content
+    assert ast.literal_eval(
+        next(node.value for node in ast.parse(content).body if isinstance(node, ast.Assign)),
+    ) == ["EXAMPLE"]
+
+
 def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path: Path) -> None:
     """
     Test remove stale top level adapter stubs deletes generated aliases.
@@ -1919,6 +1952,7 @@ DEFERRED_RUNTIME_METHODS = frozenset(
 
 ADAPTER_CONFIG_SECRET_FIELDS = {
     "api_key",
+    "api_key_id",
     "api_secret",
     "api_passphrase",
     "app_key",
@@ -1969,6 +2003,26 @@ ADAPTER_CONFIG_CONSTRUCTOR_ONLY_FIELDS = {
         "nautilus_trader.adapters.interactive_brokers",
         "InteractiveBrokersExecutionClientConfig",
         "dockerized_gateway",
+    ),
+    (
+        "nautilus_trader.adapters.kalshi",
+        "KalshiDataClientConfig",
+        "base_url_http",
+    ),
+    (
+        "nautilus_trader.adapters.kalshi",
+        "KalshiDataClientConfig",
+        "base_url_ws",
+    ),
+    (
+        "nautilus_trader.adapters.kalshi",
+        "KalshiExecutionClientConfig",
+        "base_url_http",
+    ),
+    (
+        "nautilus_trader.adapters.kalshi",
+        "KalshiExecutionClientConfig",
+        "base_url_ws",
     ),
 }
 

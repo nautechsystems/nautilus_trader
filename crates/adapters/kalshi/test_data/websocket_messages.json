@@ -1,0 +1,321 @@
+{
+  "snapshot_rate_limit": {
+    "type": "error",
+    "id": 1,
+    "sid": 7,
+    "msg": {
+      "code": 27,
+      "msg": "rate limit exceeded"
+    }
+  },
+  "managed_snapshot": {
+    "id": 1,
+    "cmd": "update_subscription",
+    "params": {
+      "sid": 7,
+      "market_tickers": [
+        "MARKET-A"
+      ],
+      "action": "get_snapshot"
+    }
+  },
+  "managed_unsubscribe": {
+    "id": 2,
+    "cmd": "unsubscribe",
+    "params": {
+      "sids": [
+        7
+      ]
+    }
+  },
+  "stale_market_update": {
+    "type": "ok",
+    "id": 999,
+    "sid": 2,
+    "seq": 3,
+    "msg": {
+      "market_tickers": [
+        "MARKET-A",
+        "MARKET-B"
+      ]
+    }
+  },
+  "delete_market": {
+    "cmd": "update_subscription",
+    "params": {
+      "sid": 7,
+      "market_tickers": [
+        "MARKET-A"
+      ],
+      "action": "delete_markets"
+    }
+  },
+  "unsubscribe_rate_limit": {
+    "type": "error",
+    "id": 1,
+    "sid": 1,
+    "msg": {
+      "code": 27,
+      "msg": "rate limit exceeded"
+    }
+  },
+  "command_rate_limit": {
+    "type": "error",
+    "id": 1,
+    "msg": {
+      "code": 27,
+      "msg": "rate limit exceeded"
+    }
+  },
+  "stress_snapshot_rejection": {
+    "type": "error",
+    "id": 1,
+    "sid": 7,
+    "msg": {
+      "code": 27,
+      "msg": "stress snapshot rejection"
+    }
+  },
+  "fill_without_market": {
+    "type": "fill",
+    "sid": 3,
+    "msg": {
+      "trade_id": "current-fill",
+      "ts": 1792112523
+    }
+  },
+  "fill": {
+    "type": "fill",
+    "sid": 3,
+    "msg": {
+      "trade_id": "current-fill",
+      "market_ticker": "MARKET-A",
+      "ts": 1792112523
+    }
+  },
+  "position_pending": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.75",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "volume_fp": "3.00"
+    }
+  },
+  "fill_future": {
+    "type": "fill",
+    "sid": 3,
+    "msg": {
+      "trade_id": "current-fill",
+      "market_ticker": "MARKET-A",
+      "ts": 4102444800
+    }
+  },
+  "position_flat": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.00",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "volume_fp": "1.50"
+    }
+  },
+  "order_partial_payload": {
+    "order_id": "order-a",
+    "fill_count_fp": "0.75"
+  },
+  "order_updated_payload": {
+    "order_id": "order-a",
+    "fill_count_fp": "0.75",
+    "last_updated_ts_ms": 1792112523000,
+    "created_ts_ms": 1
+  },
+  "order_created_payload": {
+    "order_id": "order-a",
+    "fill_count_fp": "0.00",
+    "created_ts_ms": 1000
+  },
+  "position_economics": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.75",
+      "realized_pnl_dollars": "-0.0060",
+      "fees_paid_dollars": "0.0023",
+      "volume_fp": "0.00"
+    }
+  },
+  "position_malformed_fees": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.75",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "malformed",
+      "volume_fp": "0.00"
+    }
+  },
+  "position_volume": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "1.50",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "volume_fp": "3.00"
+    }
+  },
+  "position_small": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.01",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "volume_fp": "3.00"
+    }
+  },
+  "position_refreshed": {
+    "type": "market_position",
+    "sid": 3,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.37",
+      "realized_pnl_dollars": "-0.0013",
+      "fees_paid_dollars": "0.0027",
+      "volume_fp": "0.37"
+    }
+  },
+  "order_historical": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "old-resting",
+      "fill_count_fp": "0.00",
+      "created_ts_ms": 1767225600000,
+      "exchange_index": 3,
+      "subaccount": 0
+    }
+  },
+  "order_canceled_partial": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "order-a",
+      "fill_count_fp": "0.75",
+      "last_updated_ts_ms": 1792112523000,
+      "exchange_index": 3,
+      "subaccount": 0
+    }
+  },
+  "order_late_fill": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "order-a",
+      "fill_count_fp": "1.00",
+      "last_updated_ts_ms": 1792112523000,
+      "exchange_index": 3,
+      "subaccount": 0
+    }
+  },
+  "position_notice": {
+    "type": "market_position",
+    "sid": 0,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.75",
+      "volume_fp": "0.75",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "subaccount": 0
+    }
+  },
+  "order_canceled_unfilled": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "order-a",
+      "fill_count_fp": "0.00",
+      "last_updated_ts_ms": 1792112523000,
+      "exchange_index": 3,
+      "subaccount": 0
+    }
+  },
+  "order_newer_fill": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "order-a",
+      "fill_count_fp": "0.25",
+      "last_updated_ts_ms": 1792112523000,
+      "exchange_index": 3,
+      "subaccount": 0
+    }
+  },
+  "order_native": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "native-1",
+      "fill_count_fp": "0.00",
+      "subaccount": 0,
+      "exchange_index": 3
+    }
+  },
+  "fill_native": {
+    "type": "fill",
+    "sid": 0,
+    "msg": {
+      "trade_id": "current-fill",
+      "fill_id": "current-fill",
+      "order_id": "order-a",
+      "market_ticker": "MARKET-A",
+      "subaccount": 0,
+      "exchange_index": 3,
+      "ts_ms": 1792112523000
+    }
+  },
+  "position_native": {
+    "type": "market_position",
+    "sid": 0,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "position_fp": "0.75",
+      "realized_pnl_dollars": "0.000000",
+      "fees_paid_dollars": "0.000000",
+      "volume_fp": "3.00",
+      "subaccount": 0,
+      "exchange_index": 3
+    }
+  },
+  "order_batch": {
+    "type": "user_order",
+    "sid": 0,
+    "msg": {
+      "order_id": "batch-1-0",
+      "fill_count_fp": "0.00",
+      "subaccount": 0,
+      "exchange_index": 3
+    }
+  },
+  "stale_book_delta": {
+    "type": "orderbook_delta",
+    "sid": 99,
+    "seq": 1,
+    "msg": {
+      "market_ticker": "MARKET-A",
+      "side": "yes",
+      "price_dollars": "0.123456",
+      "delta_fp": "1.00"
+    }
+  }
+}

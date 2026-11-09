@@ -1819,19 +1819,22 @@ ExecTesterConfig::builder()
 
 ### TC-E71: ReduceOnly rejection
 
-| Field              | Value                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Prerequisite**   | Adapter connected, no open position for the instrument.                                                                                                            |
-| **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                                                         |
-| **Pass criteria**  | Order rejected. `OrderRejected` event with reason indicating reduce-only violation.                                                                                |
-| **Skip when**      | Adapter does not support reduce-only flag.                                                                                                                         |
+| Field              | Value                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, no open position for the instrument.                                                    |
+| **Action**         | Submit a supported order type with `reduce_only=True` when no position exists to reduce.                   |
+| **Event sequence** | `OrderInitialized` -> `OrderDenied`, or `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.         |
+| **Pass criteria**  | Order denied before submission or rejected by the venue, with a reason indicating a reduce-only violation. |
+| **Skip when**      | Adapter does not support the reduce-only flag.                                                             |
 
 **Considerations**:
 
 - The `test_reject_reduce_only` flag only applies to the opening market order submitted via
-  `open_position_on_start_qty`.
+  `open_position_on_start_qty`. For adapters without market orders, use a manual strategy with
+  a supported marketable limit IOC order.
 - Verify no prior position exists for the instrument before running this test.
+- An unsupported-order-type denial does not prove reduce-only validation. The reason must identify
+  the reduce-only violation.
 
 **Python config**:
 

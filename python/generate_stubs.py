@@ -3116,6 +3116,13 @@ def inject_module_constants(root: Path, workspace_root: Path) -> None:
         if not new_names:
             continue
 
+        model_import = "from nautilus_trader import model"
+        if (
+            any(c.python_type.startswith("model.") for c in const_list)
+            and model_import not in content
+        ):
+            content = content.replace("__all__ =", f"{model_import}\n\n__all__ =", 1)
+
         content = _add_names_to_all(content, new_names)
 
         const_block = "\n".join(f"{c.name}: {c.python_type}" for c in const_list)

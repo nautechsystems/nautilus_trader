@@ -1,0 +1,5 @@
+{
+  "rate_limit": {"error": "too many requests"},
+  "duplicate": {"error": {"code": "duplicate_client_order_id", "message": "synthetic duplicate identity"}},
+  "malformed_success": {"unexpected": "synthetic acknowledgement"}
+}

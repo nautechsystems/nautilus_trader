@@ -60,6 +60,20 @@ IN_SCOPE_CRATES=(
 # classification and retry-delay conversion), http/parse.rs (pure instrument parsing with caller-provided
 # timestamps), and websocket/error.rs (pure error variants).
 #
+# Kalshi gates config, the HTTP client, quota, the data client, book sync,
+# execution collection, account, context, reports, settlement, client, stream,
+# submit, mutation, and batch, and the WebSocket client and handler.
+# Exclusions are module declarations, python/, factories.rs (construction
+# wiring), common/consts.rs, common/enums.rs, common/urls.rs, and
+# common/parse.rs. common/credential.rs takes a caller-provided timestamp;
+# Ed25519 signing is deterministic, but RSA-PSS uses SystemRandom and is not
+# seed-stable, so the file stays excluded rather than pretending the RNG is a
+# gated seam. http/models.rs, http/query.rs, http/parse.rs, http/error.rs,
+# http/history.rs, websocket/messages.rs, websocket/parse.rs,
+# websocket/error.rs, data/parse.rs, data/history.rs, and data/lifecycle.rs
+# are types or pure mapping. WebSocket simulation stays unclaimed: production
+# rejects Tungstenite, and the required Sockudo backend is native-only.
+#
 # Derive additionally gates signing clocks, credentials derived from those clocks,
 # native parsing, rate limits, and instrument collection. Its remaining module
 # declarations, constants, enums, errors, URLs, factories, retry classifiers,
@@ -124,6 +138,25 @@ ADAPTER_PATHS=(
   "crates/adapters/finfeed/src/http/models.rs"
   "crates/adapters/finfeed/src/http/query.rs"
   "crates/adapters/finfeed/src/instruments.rs"
+
+  "crates/adapters/kalshi/src/book/sync.rs"
+  "crates/adapters/kalshi/src/config.rs"
+  "crates/adapters/kalshi/src/data.rs"
+  "crates/adapters/kalshi/src/execution.rs"
+  "crates/adapters/kalshi/src/execution/account.rs"
+  "crates/adapters/kalshi/src/execution/batch.rs"
+  "crates/adapters/kalshi/src/execution/context.rs"
+  "crates/adapters/kalshi/src/execution/mutation.rs"
+  "crates/adapters/kalshi/src/execution/reports.rs"
+  "crates/adapters/kalshi/src/execution/settlement.rs"
+  "crates/adapters/kalshi/src/execution/snapshot.rs"
+  "crates/adapters/kalshi/src/execution/stream.rs"
+  "crates/adapters/kalshi/src/execution/submit.rs"
+  "crates/adapters/kalshi/src/http/client.rs"
+  "crates/adapters/kalshi/src/http/quota.rs"
+  "crates/adapters/kalshi/src/providers.rs"
+  "crates/adapters/kalshi/src/websocket/client.rs"
+  "crates/adapters/kalshi/src/websocket/handler.rs"
 
   "crates/adapters/okx/src/book/mod.rs"
   "crates/adapters/okx/src/book/recovery.rs"

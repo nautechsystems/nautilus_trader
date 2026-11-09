@@ -277,7 +277,7 @@ with `cargo nextest run -p nautilus-live --features test-support --test book`.
 
 **Harness documentation**: Add a `Live recovery validation` heading to the adapter's integration guide.
 Include its checks, injected faults, run command, scenarios, flags, and required endpoints. OKX, Binance,
-Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnesses.
+Kalshi, Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnesses.
 
 ### In-band verification
 

@@ -36,6 +36,7 @@ adapters = [
   "dep:nautilus-finfeed",
   "dep:nautilus-hyperliquid",
   "dep:nautilus-interactive-brokers",
+  "dep:nautilus-kalshi",
   "dep:nautilus-kraken",
   "dep:nautilus-lighter",
   "dep:nautilus-okx",
@@ -82,6 +83,7 @@ extension-module = [
   "nautilus-indicators/extension-module",
   "nautilus-infrastructure/extension-module",
   "nautilus-interactive-brokers?/extension-module",
+  "nautilus-kalshi?/extension-module",
   "nautilus-kraken?/extension-module",
   "nautilus-lighter?/extension-module",
   "nautilus-live/extension-module",
@@ -112,6 +114,7 @@ high-precision = [
   "nautilus-dydx?/high-precision",
   "nautilus-finfeed?/high-precision",
   "nautilus-hyperliquid?/high-precision",
+  "nautilus-kalshi?/high-precision",
   "nautilus-kraken?/high-precision",
   "nautilus-lighter?/high-precision",
   "nautilus-okx?/high-precision",
@@ -185,6 +188,7 @@ nautilus-hyperliquid = { workspace = true, optional = true, features = [
 nautilus-interactive-brokers = { workspace = true, optional = true, features = [
   "python",
 ] }
+nautilus-kalshi = { workspace = true, optional = true, features = ["python"] }
 nautilus-kraken = { workspace = true, optional = true, features = ["python"] }
 nautilus-lighter = { workspace = true, optional = true, features = ["python"] }
 nautilus-okx = { workspace = true, optional = true, features = ["python"] }

@@ -72,6 +72,7 @@ ANNOTATED_ADAPTER_CRATES = [
     "dydx",
     "finfeed",
     "hyperliquid",
+    "kalshi",
     "kraken",
     "okx",
     "polymarket",

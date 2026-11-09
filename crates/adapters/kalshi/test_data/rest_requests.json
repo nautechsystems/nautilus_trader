@@ -1,0 +1,162 @@
+{
+  "create": {
+    "ticker": "TEST-MARKET",
+    "side": "bid",
+    "count": "2.75",
+    "price": "0.1234",
+    "time_in_force": "good_till_canceled",
+    "self_trade_prevention_type": "maker",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "client-a",
+    "post_only": false,
+    "cancel_order_on_pause": true
+  },
+  "amend": {
+    "ticker": "TEST-MARKET",
+    "side": "ask",
+    "price": "0.4321",
+    "count": "3.25",
+    "exchange_index": 3,
+    "client_order_id": "client-a",
+    "updated_client_order_id": "client-b",
+    "expiration_time": 1792112600
+  },
+  "decrease": {
+    "exchange_index": 3,
+    "reduce_to": "0.00",
+    "market_ticker": "TEST-MARKET"
+  },
+  "batch_create": {
+    "orders": [
+      {
+        "ticker": "TEST-MARKET",
+        "side": "bid",
+        "count": "2.75",
+        "price": "0.1234",
+        "time_in_force": "good_till_canceled",
+        "self_trade_prevention_type": "maker",
+        "subaccount": 0,
+        "exchange_index": 3,
+        "client_order_id": "client-a",
+        "post_only": false,
+        "cancel_order_on_pause": true
+      },
+      {
+        "ticker": "TEST-MARKET",
+        "side": "ask",
+        "count": "3.25",
+        "price": "0.4321",
+        "time_in_force": "good_till_canceled",
+        "self_trade_prevention_type": "maker",
+        "subaccount": 0,
+        "exchange_index": 3,
+        "client_order_id": "client-c",
+        "post_only": false,
+        "cancel_order_on_pause": true
+      }
+    ]
+  },
+  "batch_cancel": {
+    "orders": [
+      {
+        "order_id": "order-a",
+        "subaccount": 0,
+        "exchange_index": 3
+      },
+      {
+        "order_id": "order-b",
+        "subaccount": 0,
+        "exchange_index": 3
+      }
+    ]
+  },
+  "limit_matrix": {
+    "ticker": "EVENT-MARKET",
+    "side": "bid",
+    "count": "1.25",
+    "price": "0.4321",
+    "time_in_force": "good_till_canceled",
+    "self_trade_prevention_type": "taker_at_cross",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "matrix-order",
+    "post_only": false,
+    "cancel_order_on_pause": false,
+    "reduce_only": false
+  },
+  "native_gtc": {
+    "ticker": "MARKET-A",
+    "side": "bid",
+    "count": "1.25",
+    "price": "0.6000",
+    "time_in_force": "good_till_canceled",
+    "self_trade_prevention_type": "maker",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "native-gtc",
+    "post_only": false,
+    "cancel_order_on_pause": true,
+    "reduce_only": false
+  },
+  "native_limit_matrix": {
+    "ticker": "MARKET-A",
+    "side": "bid",
+    "count": "1.25",
+    "price": "0.6000",
+    "time_in_force": "good_till_canceled",
+    "self_trade_prevention_type": "taker_at_cross",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "matrix-native",
+    "post_only": false,
+    "cancel_order_on_pause": false,
+    "reduce_only": false
+  },
+  "native_reduce": {
+    "ticker": "MARKET-A",
+    "side": "bid",
+    "count": "0.25",
+    "price": "0.6000",
+    "time_in_force": "immediate_or_cancel",
+    "self_trade_prevention_type": "taker_at_cross",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "reduce-native",
+    "post_only": false,
+    "cancel_order_on_pause": false,
+    "reduce_only": true
+  },
+  "native_batch_create": {
+    "ticker": "MARKET-A",
+    "side": "bid",
+    "count": "1.25",
+    "price": "0.6000",
+    "time_in_force": "good_till_canceled",
+    "self_trade_prevention_type": "taker_at_cross",
+    "subaccount": 0,
+    "exchange_index": 3,
+    "client_order_id": "client-a",
+    "post_only": true,
+    "cancel_order_on_pause": false,
+    "reduce_only": false
+  },
+  "quota_batch": {
+    "orders": [
+      {}
+    ]
+  },
+  "native_decrease": {
+    "exchange_index": 3,
+    "market_ticker": "MARKET-A",
+    "reduce_by": "0.75"
+  },
+  "native_amend": {
+    "client_order_id": "native-change",
+    "count": "1.25",
+    "exchange_index": 3,
+    "price": "0.5000",
+    "side": "bid",
+    "ticker": "MARKET-A"
+  }
+}

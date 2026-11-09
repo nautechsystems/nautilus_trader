@@ -1,0 +1,1676 @@
+{
+  "sources": [
+    {
+      "url": "https://docs.kalshi.com/openapi.yaml",
+      "version": "3.36.0",
+      "sha256": "3dfc9a41c6f759bca1b546216bb5b6d1f45243863ee7b364d25defbdfdc6a41c"
+    },
+    {
+      "url": "https://docs.kalshi.com/asyncapi.yaml",
+      "version": "2.0.0",
+      "sha256": "33fd603e0f7a95acd0da82a70cfc9126c31ddc27528a6e696efb2c3806b56b23"
+    }
+  ],
+  "enums": {
+    "ExitTriggerKind": [
+      "bracket"
+    ],
+    "CandlestickInterval": [
+      1,
+      60,
+      1440
+    ],
+    "EventStatusFilter": [
+      "unopened",
+      "open",
+      "closed",
+      "settled"
+    ],
+    "ForecastInterval": [
+      0,
+      1,
+      60,
+      1440
+    ],
+    "MultivariateCollectionStatus": [
+      "unopened",
+      "open",
+      "closed"
+    ],
+    "IncentiveStatusFilter": [
+      "all",
+      "active",
+      "upcoming",
+      "closed",
+      "paid_out"
+    ],
+    "IncentiveTypeFilter": [
+      "all",
+      "liquidity",
+      "volume",
+      "margin_maker_volume",
+      "margin_taker_volume"
+    ],
+    "PositionSettlementStatus": [
+      "all",
+      "unsettled",
+      "settled"
+    ],
+    "MarketStatusFilter": [
+      "unopened",
+      "open",
+      "paused",
+      "closed",
+      "settled"
+    ],
+    "MveFilter": [
+      "only",
+      "exclude"
+    ],
+    "MveHistoricalFilter": [
+      "exclude"
+    ],
+    "ExitSlippageUnit": [
+      "bps",
+      "cents"
+    ],
+    "ExitTriggerStatus": [
+      "pending_on_entry",
+      "active",
+      "filled",
+      "canceled",
+      "failed",
+      "unknown"
+    ],
+    "ExitTriggerLeg": [
+      "stop_loss",
+      "take_profit"
+    ],
+    "FeeType": [
+      "quadratic",
+      "quadratic_with_maker_fees",
+      "quadratic_with_combo_maker_fees",
+      "flat",
+      "margin_market_maker_program_fees"
+    ],
+    "ExchangeInstance": [
+      "event_contract",
+      "margined"
+    ],
+    "UserFilter": [
+      "self",
+      ""
+    ],
+    "ApiKeyScope": [
+      "read",
+      "write",
+      "read::block_trade_accept",
+      "read::portfolio_balance",
+      "write::trade",
+      "write::transfer",
+      "write::fcm_risk",
+      "write::block_trade_accept"
+    ],
+    "ApiKeyType": [
+      "rsa",
+      "ed25519"
+    ],
+    "MarketIndexStatus": [
+      "open",
+      "closed",
+      "stale"
+    ],
+    "CreditStatus": [
+      "unknown",
+      "pending",
+      "failed",
+      "applied"
+    ],
+    "MarketResult": [
+      "yes",
+      "no",
+      "scalar",
+      ""
+    ],
+    "PaymentStatus": [
+      "pending",
+      "applied",
+      "failed",
+      "returned"
+    ],
+    "PaymentType": [
+      "ach",
+      "wire",
+      "crypto",
+      "debit",
+      "apm"
+    ],
+    "OrderAction": [
+      "buy",
+      "sell",
+      "sell_partial",
+      "sell_to_close",
+      ""
+    ],
+    "OrderType": [
+      "limit",
+      "market"
+    ],
+    "IncentiveType": [
+      "liquidity",
+      "volume",
+      "margin_maker_volume",
+      "margin_taker_volume"
+    ],
+    "RestingMarginReservation": [
+      "none",
+      "max",
+      "sum"
+    ],
+    "TransferStatus": [
+      "pending",
+      "complete"
+    ],
+    "RfqStatus": [
+      "open",
+      "closed"
+    ],
+    "QuoteStatus": [
+      "open",
+      "accepted",
+      "confirmed",
+      "executed",
+      "cancelled"
+    ],
+    "RfqBatchStatus": [
+      "open",
+      "accepted",
+      "closed"
+    ],
+    "RfqBatchQuoteStatus": [
+      "open",
+      "accepted",
+      "confirmed",
+      "executed",
+      "partially_executed",
+      "cancelled"
+    ],
+    "MarketType": [
+      "binary",
+      "scalar"
+    ],
+    "MarketStatus": [
+      "initialized",
+      "inactive",
+      "active",
+      "closed",
+      "determined",
+      "disputed",
+      "amended",
+      "finalized"
+    ],
+    "SettlementBoundsType": [
+      "default",
+      "floor"
+    ],
+    "StrikeType": [
+      "greater",
+      "greater_or_equal",
+      "less",
+      "less_or_equal",
+      "between",
+      "functional",
+      "custom",
+      "structured"
+    ],
+    "OrderUpdateReason": [
+      "Decrease",
+      "Amend",
+      "MarginCancel",
+      "SelfTradeCancel",
+      "ExpiryCancel",
+      "CloseCancel",
+      "HaltCancel",
+      "Trade",
+      "PostOnlyCrossCancel",
+      "ReduceOnlyCancel",
+      "SettlementBoundsCancel"
+    ],
+    "OrderbookUpdateInterval": [
+      0,
+      100,
+      1000
+    ],
+    "CfBenchmarksUpdateAction": [
+      "subscribe_indices",
+      "unsubscribe_indices",
+      "indexlist"
+    ],
+    "PythUpdateAction": [
+      "subscribe_underlyings",
+      "unsubscribe_underlyings",
+      "underlying_list"
+    ],
+    "KalshiWsErrorCode": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ],
+    "MarketLifecycleEvent": [
+      "created",
+      "deactivated",
+      "activated",
+      "close_date_updated",
+      "determined",
+      "settled",
+      "price_level_structure_updated",
+      "metadata_updated"
+    ],
+    "MultivariateMarketLifecycleEvent": [
+      "created",
+      "deactivated",
+      "activated",
+      "close_date_updated",
+      "determined",
+      "settled"
+    ],
+    "PriceLevelStructure": [
+      "banded_centi_cent",
+      "",
+      "linear_cent",
+      "deci_cent",
+      "tapered_deci_cent",
+      "center_whole_edge_half_cent",
+      "center_whole_edge_quint_cent",
+      "center_half_edge_half_cent",
+      "center_half_edge_quint_cent",
+      "center_half_edge_deci_cent",
+      "center_quint_edge_quint_cent",
+      "center_quint_edge_deci_cent",
+      "center_centi_edge_centi_cent",
+      "center_deci_edge_centi_cent"
+    ],
+    "CollateralReturnType": [
+      "MECNET",
+      "DIRECNET",
+      ""
+    ],
+    "OrderGroupEvent": [
+      "created",
+      "triggered",
+      "reset",
+      "deleted",
+      "limit_updated"
+    ],
+    "ApiUsageTier": [
+      "basic",
+      "advanced",
+      "expert",
+      "premier",
+      "paragon",
+      "prime",
+      "prestige"
+    ],
+    "UsageGrantSource": [
+      "volume",
+      "manual"
+    ],
+    "PositionCountFilter": [
+      "position",
+      "total_traded"
+    ],
+    "BookSide": [
+      "bid",
+      "ask"
+    ],
+    "OutcomeSide": [
+      "yes",
+      "no"
+    ],
+    "OrderStatus": [
+      "resting",
+      "canceled",
+      "executed",
+      "unknown"
+    ],
+    "SelfTradePrevention": [
+      "taker_at_cross",
+      "maker"
+    ],
+    "TimeInForce": [
+      "fill_or_kill",
+      "good_till_canceled",
+      "immediate_or_cancel"
+    ],
+    "KalshiChannel": [
+      "orderbook_delta",
+      "ticker",
+      "trade",
+      "fill",
+      "market_positions",
+      "market_lifecycle_v2",
+      "multivariate_market_lifecycle",
+      "communications",
+      "order_group_updates",
+      "user_orders",
+      "cfbenchmarks_value",
+      "cfbenchmarks_value_5hz",
+      "pyth_value"
+    ],
+    "KalshiUpdateAction": [
+      "add_markets",
+      "delete_markets",
+      "get_snapshot"
+    ],
+    "OrderStatusFilter": [
+      "resting",
+      "canceled",
+      "executed"
+    ],
+    "KalshiCommandKind": [
+      "subscribe",
+      "unsubscribe",
+      "update_subscription",
+      "list_subscriptions"
+    ]
+  },
+  "schema_sets": [
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1portfolio~1positions~1{ticker}~1exit_trigger/get/parameters/0/schema",
+      "enum": "ExitTriggerKind",
+      "values": [
+        "bracket"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1portfolio~1positions~1{ticker}~1exit_trigger/delete/parameters/0/schema",
+      "enum": "ExitTriggerKind",
+      "values": [
+        "bracket"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1series~1{series_ticker}~1markets~1{ticker}~1candlesticks/get/parameters/4/schema",
+      "enum": "CandlestickInterval",
+      "values": [
+        1,
+        60,
+        1440
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1series~1{series_ticker}~1events~1{ticker}~1candlesticks/get/parameters/4/schema",
+      "enum": "CandlestickInterval",
+      "values": [
+        1,
+        60,
+        1440
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1events/get/parameters/4/schema",
+      "enum": "EventStatusFilter",
+      "values": [
+        "unopened",
+        "open",
+        "closed",
+        "settled"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1series~1{series_ticker}~1events~1{ticker}~1forecast_percentile_history/get/parameters/5/schema",
+      "enum": "ForecastInterval",
+      "values": [
+        0,
+        1,
+        60,
+        1440
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1multivariate_event_collections/get/parameters/0/schema",
+      "enum": "MultivariateCollectionStatus",
+      "values": [
+        "unopened",
+        "open",
+        "closed"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1incentive_programs/get/parameters/0/schema",
+      "enum": "IncentiveStatusFilter",
+      "values": [
+        "all",
+        "active",
+        "upcoming",
+        "closed",
+        "paid_out"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1incentive_programs/get/parameters/1/schema",
+      "enum": "IncentiveTypeFilter",
+      "values": [
+        "all",
+        "liquidity",
+        "volume",
+        "margin_maker_volume",
+        "margin_taker_volume"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1fcm~1orders/get/parameters/7/schema",
+      "enum": "OrderStatusFilter",
+      "values": [
+        "resting",
+        "canceled",
+        "executed"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1fcm~1positions/get/parameters/4/schema",
+      "enum": "PositionSettlementStatus",
+      "values": [
+        "all",
+        "unsettled",
+        "settled"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/paths/~1historical~1markets~1{ticker}~1candlesticks/get/parameters/3/schema",
+      "enum": "CandlestickInterval",
+      "values": [
+        1,
+        60,
+        1440
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/parameters/PositionSettlementStatusQuery/schema",
+      "enum": "PositionSettlementStatus",
+      "values": [
+        "unsettled",
+        "settled",
+        "all"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/parameters/MarketStatusQuery/schema",
+      "enum": "MarketStatusFilter",
+      "values": [
+        "unopened",
+        "open",
+        "paused",
+        "closed",
+        "settled"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/parameters/MveFilterQuery/schema",
+      "enum": "MveFilter",
+      "values": [
+        "only",
+        "exclude"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/parameters/MveHistoricalFilterQuery/schema",
+      "enum": "MveHistoricalFilter",
+      "values": [
+        "exclude"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitSlippage/properties/unit",
+      "enum": "ExitSlippageUnit",
+      "values": [
+        "bps",
+        "cents"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/SetEventContractExitTriggerRequest/properties/kind",
+      "enum": "ExitTriggerKind",
+      "values": [
+        "bracket"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitTrigger/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitTrigger/properties/kind",
+      "enum": "ExitTriggerKind",
+      "values": [
+        "bracket"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitTrigger/properties/status",
+      "enum": "ExitTriggerStatus",
+      "values": [
+        "pending_on_entry",
+        "active",
+        "filled",
+        "canceled",
+        "failed",
+        "unknown"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitTrigger/properties/triggered_leg",
+      "enum": "ExitTriggerLeg",
+      "values": [
+        "stop_loss",
+        "take_profit"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/FeeType",
+      "enum": "FeeType",
+      "values": [
+        "quadratic",
+        "quadratic_with_maker_fees",
+        "quadratic_with_combo_maker_fees",
+        "flat"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/SelfTradePreventionType",
+      "enum": "SelfTradePrevention",
+      "values": [
+        "taker_at_cross",
+        "maker"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/BookSide",
+      "enum": "BookSide",
+      "values": [
+        "bid",
+        "ask"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/OrderStatus",
+      "enum": "OrderStatus",
+      "values": [
+        "resting",
+        "canceled",
+        "executed"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/ExchangeInstance",
+      "enum": "ExchangeInstance",
+      "values": [
+        "event_contract",
+        "margined"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/UserFilter",
+      "enum": "UserFilter",
+      "values": [
+        "self"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/ApiKeyScope",
+      "enum": "ApiKeyScope",
+      "values": [
+        "read",
+        "write",
+        "read::block_trade_accept",
+        "read::portfolio_balance",
+        "write::trade",
+        "write::transfer",
+        "write::fcm_risk",
+        "write::block_trade_accept"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/ApiKeyType",
+      "enum": "ApiKeyType",
+      "values": [
+        "rsa",
+        "ed25519"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/MarketIndexStatus",
+      "enum": "MarketIndexStatus",
+      "values": [
+        "open",
+        "closed",
+        "stale"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/CreditHistory/properties/status",
+      "enum": "CreditStatus",
+      "values": [
+        "unknown",
+        "pending",
+        "failed",
+        "applied"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Settlement/properties/market_result",
+      "enum": "MarketResult",
+      "values": [
+        "yes",
+        "no",
+        "scalar",
+        ""
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Deposit/properties/status",
+      "enum": "PaymentStatus",
+      "values": [
+        "pending",
+        "applied",
+        "failed",
+        "returned"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Deposit/properties/type",
+      "enum": "PaymentType",
+      "values": [
+        "ach",
+        "wire",
+        "crypto",
+        "debit",
+        "apm"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Withdrawal/properties/status",
+      "enum": "PaymentStatus",
+      "values": [
+        "pending",
+        "applied",
+        "failed",
+        "returned"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Withdrawal/properties/type",
+      "enum": "PaymentType",
+      "values": [
+        "ach",
+        "wire",
+        "crypto",
+        "debit",
+        "apm"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Order/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Order/properties/action",
+      "enum": "OrderAction",
+      "values": [
+        "buy",
+        "sell"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Order/properties/outcome_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Order/properties/type",
+      "enum": "OrderType",
+      "values": [
+        "limit",
+        "market"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Trade/properties/taker_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Trade/properties/taker_outcome_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/IncentiveProgram/properties/incentive_type",
+      "enum": "IncentiveType",
+      "values": [
+        "liquidity",
+        "volume",
+        "margin_maker_volume",
+        "margin_taker_volume"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/OutcomeSide",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Fill/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Fill/properties/action",
+      "enum": "OrderAction",
+      "values": [
+        "buy",
+        "sell"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/RestingMarginReservation",
+      "enum": "RestingMarginReservation",
+      "values": [
+        "none",
+        "max",
+        "sum"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/IntraExchangeInstanceTransferStatus",
+      "enum": "TransferStatus",
+      "values": [
+        "pending",
+        "complete"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/BlockTradeProposal/properties/maker_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/ProposeBlockTradeRequest/properties/maker_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/RFQ/properties/status",
+      "enum": "RfqStatus",
+      "values": [
+        "open",
+        "closed"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Quote/properties/status",
+      "enum": "QuoteStatus",
+      "values": [
+        "open",
+        "accepted",
+        "confirmed",
+        "executed",
+        "cancelled"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Quote/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/AcceptQuoteRequest/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/RFQBatchStatus",
+      "enum": "RfqBatchStatus",
+      "values": [
+        "open",
+        "accepted",
+        "closed"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/RFQBatchQuoteStatus",
+      "enum": "RfqBatchQuoteStatus",
+      "values": [
+        "open",
+        "accepted",
+        "confirmed",
+        "executed",
+        "partially_executed",
+        "cancelled"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/RFQBatchQuote/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/AcceptRFQBatchRequest/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/AcceptRFQBatchResponse/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/CreateOrderRequest/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/CreateOrderRequest/properties/action",
+      "enum": "OrderAction",
+      "values": [
+        "buy",
+        "sell"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/CreateOrderRequest/properties/time_in_force",
+      "enum": "TimeInForce",
+      "values": [
+        "fill_or_kill",
+        "good_till_canceled",
+        "immediate_or_cancel"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/AmendOrderRequest/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/AmendOrderRequest/properties/action",
+      "enum": "OrderAction",
+      "values": [
+        "buy",
+        "sell"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/CreateOrderV2Request/properties/time_in_force",
+      "enum": "TimeInForce",
+      "values": [
+        "fill_or_kill",
+        "good_till_canceled",
+        "immediate_or_cancel"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/TickerPair/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Market/properties/market_type",
+      "enum": "MarketType",
+      "values": [
+        "binary",
+        "scalar"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Market/properties/status",
+      "enum": "MarketStatus",
+      "values": [
+        "initialized",
+        "inactive",
+        "active",
+        "closed",
+        "determined",
+        "disputed",
+        "amended",
+        "finalized"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Market/properties/result",
+      "enum": "MarketResult",
+      "values": [
+        "yes",
+        "no",
+        "scalar",
+        ""
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Market/properties/settlement_bounds_type",
+      "enum": "SettlementBoundsType",
+      "values": [
+        "default",
+        "floor"
+      ]
+    },
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/Market/properties/strike_type",
+      "enum": "StrikeType",
+      "values": [
+        "greater",
+        "greater_or_equal",
+        "less",
+        "less_or_equal",
+        "between",
+        "functional",
+        "custom",
+        "structured"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/marketSide",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/bookSide",
+      "enum": "BookSide",
+      "values": [
+        "bid",
+        "ask"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/lastUpdateReason",
+      "enum": "OrderUpdateReason",
+      "values": [
+        "Decrease",
+        "Amend",
+        "MarginCancel",
+        "SelfTradeCancel",
+        "ExpiryCancel",
+        "CloseCancel",
+        "HaltCancel",
+        "Trade",
+        "PostOnlyCrossCancel",
+        "ReduceOnlyCancel",
+        "SettlementBoundsCancel"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/orderAction",
+      "enum": "OrderAction",
+      "values": [
+        "buy",
+        "sell",
+        "sell_partial",
+        "sell_to_close",
+        ""
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/subscribeCommandPayload/properties/params/properties/channels/items",
+      "enum": "KalshiChannel",
+      "values": [
+        "orderbook_delta",
+        "ticker",
+        "trade",
+        "fill",
+        "market_positions",
+        "market_lifecycle_v2",
+        "multivariate_market_lifecycle",
+        "communications",
+        "order_group_updates",
+        "user_orders",
+        "cfbenchmarks_value",
+        "cfbenchmarks_value_5hz",
+        "pyth_value"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/subscribeCommandPayload/properties/params/properties/update_interval_ms",
+      "enum": "OrderbookUpdateInterval",
+      "values": [
+        0,
+        100,
+        1000
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/subscribeCommandPayload/properties/params/properties/user_filter",
+      "enum": "UserFilter",
+      "values": [
+        "",
+        "self"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/updateSubscriptionCommandPayload/properties/params/properties/action",
+      "enum": "KalshiUpdateAction",
+      "values": [
+        "add_markets",
+        "delete_markets",
+        "get_snapshot"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/cfbenchmarksUpdateSubscriptionCommandPayload/properties/params/properties/action",
+      "enum": "CfBenchmarksUpdateAction",
+      "values": [
+        "subscribe_indices",
+        "unsubscribe_indices",
+        "indexlist"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/pythUpdateSubscriptionCommandPayload/properties/params/properties/action",
+      "enum": "PythUpdateAction",
+      "values": [
+        "subscribe_underlyings",
+        "unsubscribe_underlyings",
+        "underlying_list"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/errorResponsePayload/properties/msg/properties/code",
+      "enum": "KalshiWsErrorCode",
+      "values": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/marketLifecycleV2Payload/properties/msg/properties/event_type",
+      "enum": "MarketLifecycleEvent",
+      "values": [
+        "created",
+        "deactivated",
+        "activated",
+        "close_date_updated",
+        "determined",
+        "settled",
+        "price_level_structure_updated"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/multivariateMarketLifecyclePayload/properties/msg/properties/event_type",
+      "enum": "MultivariateMarketLifecycleEvent",
+      "values": [
+        "created",
+        "deactivated",
+        "activated",
+        "close_date_updated",
+        "determined",
+        "settled"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/lifecyclePriceLevelStructure",
+      "enum": "PriceLevelStructure",
+      "values": [
+        "banded_centi_cent",
+        "",
+        "linear_cent",
+        "deci_cent",
+        "tapered_deci_cent",
+        "center_whole_edge_half_cent",
+        "center_whole_edge_quint_cent",
+        "center_half_edge_half_cent",
+        "center_half_edge_quint_cent",
+        "center_half_edge_deci_cent",
+        "center_quint_edge_quint_cent",
+        "center_quint_edge_deci_cent",
+        "center_centi_edge_centi_cent",
+        "center_deci_edge_centi_cent"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/marketMetadataUpdatedPayload/properties/msg/properties/event_type",
+      "enum": "MarketLifecycleEvent",
+      "values": [
+        "metadata_updated"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/eventLifecyclePayload/properties/msg/properties/collateral_return_type",
+      "enum": "CollateralReturnType",
+      "values": [
+        "MECNET",
+        "DIRECNET",
+        ""
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/eventFeeUpdatePayload/properties/msg/properties/fee_type_override",
+      "enum": "FeeType",
+      "values": [
+        "quadratic",
+        "quadratic_with_maker_fees",
+        "quadratic_with_combo_maker_fees",
+        "flat",
+        "margin_market_maker_program_fees"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/orderGroupUpdatesPayload/properties/msg/properties/event_type",
+      "enum": "OrderGroupEvent",
+      "values": [
+        "created",
+        "triggered",
+        "reset",
+        "deleted",
+        "limit_updated"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/userOrderPayload/properties/msg/properties/status",
+      "enum": "OrderStatus",
+      "values": [
+        "resting",
+        "canceled",
+        "executed",
+        "unknown"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/userOrderPayload/properties/msg/properties/self_trade_prevention_type",
+      "enum": "SelfTradePrevention",
+      "values": [
+        "taker_at_cross",
+        "maker"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/rfqCreatedPayload/properties/msg/properties/mve_selected_legs/items/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/quoteAcceptedPayload/properties/msg/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/rfqBatchCreatedPayload/properties/msg/properties/legs/items/properties/side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "asyncapi.yaml",
+      "pointer": "/components/schemas/batchQuoteAcceptedPayload/properties/msg/properties/accepted_side",
+      "enum": "OutcomeSide",
+      "values": [
+        "yes",
+        "no"
+      ]
+    }
+  ],
+  "excluded_constraints": [
+    {
+      "source": "openapi.yaml",
+      "pointer": "/components/schemas/EventContractExitSlippage/not/properties/unit",
+      "reason": "Negative validation constraint, not an allowed value set."
+    }
+  ],
+  "commands": [
+    "subscribe",
+    "unsubscribe",
+    "update_subscription",
+    "list_subscriptions"
+  ],
+  "message_types": [
+    "subscribed",
+    "unsubscribed",
+    "ok",
+    "error",
+    "cfbenchmarks_value",
+    "cfbenchmarks_value_indexlist",
+    "cfbenchmarks_value_5hz",
+    "cfbenchmarks_value_5hz_indexlist",
+    "pyth_value",
+    "pyth_value_underlying_list",
+    "orderbook_snapshot",
+    "orderbook_delta",
+    "ticker",
+    "trade",
+    "fill",
+    "market_lifecycle_v2",
+    "multivariate_market_lifecycle",
+    "event_lifecycle",
+    "event_fee_update",
+    "market_position",
+    "order_group_updates",
+    "user_order",
+    "rfq_created",
+    "rfq_deleted",
+    "quote_created",
+    "quote_accepted",
+    "quote_executed",
+    "rfq_batch_created",
+    "rfq_batch_deleted",
+    "batch_quote_created",
+    "rfq_batch_best_quotes",
+    "batch_quote_accepted",
+    "rfq_batch_executed",
+    "batch_quote_executed"
+  ],
+  "data_frames": [
+    {
+      "type": "cfbenchmarks_value",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "cfbenchmarks_value_indexlist",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "cfbenchmarks_value_5hz",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "cfbenchmarks_value_5hz_indexlist",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "pyth_value",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "pyth_value_underlying_list",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "orderbook_snapshot",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "orderbook_delta",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "ticker",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "trade",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "fill",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "market_lifecycle_v2",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "multivariate_market_lifecycle",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "event_lifecycle",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "event_fee_update",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "market_position",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "order_group_updates",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "user_order",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_created",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_deleted",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "quote_created",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "quote_accepted",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "quote_executed",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_batch_created",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_batch_deleted",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "batch_quote_created",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_batch_best_quotes",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "batch_quote_accepted",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "rfq_batch_executed",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    },
+    {
+      "type": "batch_quote_executed",
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1234,
+      "msg": {}
+    }
+  ]
+}

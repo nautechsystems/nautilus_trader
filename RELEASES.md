@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added Kalshi initial adapter with market data, limit-order execution, and account reconciliation
 - Added bracket exit reduce-only options (#5563), thanks @programskillforverification
 - Added indexed, count, and presence accessors for cached prices and funding rates (#5560), thanks @dxwil
 - Added Python Parquet funding rate write and query methods (#5555), thanks @chaneyka1
