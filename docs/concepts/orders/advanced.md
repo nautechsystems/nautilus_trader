@@ -255,7 +255,16 @@ support.
 #### Backtest reduce-only resizing
 
 With reduce-only enforcement enabled, a fill can resize resting reduce-only orders to the available
-position quantity, subject to parent caps.
+position quantity. An order shrinks with the position and grows back with it, but never past its ceiling.
+
+- An OTO child's ceiling is its parent's filled quantity.
+- Any other order's ceiling is the quantity it was submitted with. A client modify that sets a quantity
+  replaces it, for the modified order and for the linked orders the modify resizes.
+- A quote quantity ceiling converts to base at the order's price, else its trigger price. Without either,
+  the order has no ceiling.
+
+For example, a reduce-only stop of 1 on a long position of 1 stays at 1 when the position grows to 4.
+Two reduce-only targets of 1 and a stop of 3 on a position of 3 keep those quantities when it grows to 5.
 
 **Eligible siblings**: when contingent-order support is also enabled, a resized OUO order propagates
 its remaining quantity to siblings that meet both conditions.
@@ -267,7 +276,7 @@ its remaining quantity to siblings that meet both conditions.
 follows these rules.
 
 - Add the sibling's prior fills to the propagated remaining quantity to get its total quantity.
-- Apply the sibling's own cached parent's filled-quantity cap, when available.
+- Apply the sibling's own ceiling, as above.
 - Never reduce the total below the sibling's prior fills.
 
 The order already being filled keeps its active fill loop's quantity rules. This propagation does not trigger

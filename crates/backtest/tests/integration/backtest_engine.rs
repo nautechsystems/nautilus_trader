@@ -4662,11 +4662,11 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
 }
 
 #[rstest]
-#[case::venue_update(true, false, 20, OrderStatus::Accepted)]
+#[case::venue_update(true, false, 5, OrderStatus::Accepted)]
 #[case::control(false, false, 10, OrderStatus::Accepted)]
-#[case::pending_cancel(true, true, 20, OrderStatus::Canceled)]
+#[case::pending_cancel(true, true, 5, OrderStatus::Canceled)]
 fn test_stop_modify_rejection_reaches_strategy(
-    #[case] add_entry: bool,
+    #[case] partial_exit: bool,
     #[case] cancel_on_update: bool,
     #[case] expected_quantity: u64,
     #[case] expected_status: OrderStatus,
@@ -4713,7 +4713,7 @@ fn test_stop_modify_rejection_reaches_strategy(
             bar_type,
             bar_count: 0,
             stop_id,
-            add_entry,
+            partial_exit,
             cancel_on_update,
             rejections: Rc::clone(&rejections),
         })
@@ -4756,7 +4756,7 @@ fn test_stop_modify_rejection_reaches_strategy(
         })
         .collect();
 
-    let expected_kinds = match (add_entry, cancel_on_update) {
+    let expected_kinds = match (partial_exit, cancel_on_update) {
         (false, _) => vec![
             OrderEventType::PendingUpdate,
             OrderEventType::ModifyRejected,
@@ -4815,7 +4815,7 @@ struct StopModifyRejection {
     bar_type: BarType,
     bar_count: usize,
     stop_id: ClientOrderId,
-    add_entry: bool,
+    partial_exit: bool,
     cancel_on_update: bool,
     rejections: Rc<RefCell<Vec<(OrderModifyRejected, OrderStatus)>>>,
 }
@@ -4843,11 +4843,17 @@ impl DataActor for StopModifyRejection {
         self.bar_count += 1;
 
         match self.bar_count {
-            1 | 4 if self.bar_count == 1 || self.add_entry => {
+            1 | 4 if self.bar_count == 1 || self.partial_exit => {
+                // The entry, then a partial exit the venue shrinks the reduce-only stop for
+                let (side, quantity) = if self.bar_count == 1 {
+                    (OrderSide::Buy, 10)
+                } else {
+                    (OrderSide::Sell, 5)
+                };
                 let order = self.order().market(
                     self.bar_type.instrument_id(),
-                    OrderSide::Buy,
-                    Quantity::from(10),
+                    side,
+                    Quantity::from(quantity),
                     None,
                     None,
                     None,

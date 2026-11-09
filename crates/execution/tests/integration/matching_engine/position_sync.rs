@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::orders::stubs::TestOrderEventStubs;
+use nautilus_model::{events::OrderUpdated, orders::stubs::TestOrderEventStubs};
 
 use super::*;
 
@@ -461,7 +461,7 @@ fn test_position_fills_sync_reduce_only_orders(
 }
 
 #[rstest]
-#[case(None, "7.000", "11.000", OrderStatus::PartiallyFilled)]
+#[case(None, "7.000", "10.000", OrderStatus::PartiallyFilled)]
 #[case(None, "9.000", "9.000", OrderStatus::PartiallyFilled)]
 #[case(None, "10.000", "10.000", OrderStatus::Canceled)]
 #[case(Some("10.000"), "7.000", "10.000", OrderStatus::PartiallyFilled)]
@@ -679,6 +679,349 @@ fn test_position_sync_accounts_for_prior_fills(
         cache.position(&position_id).unwrap().quantity,
         Quantity::from("10.000") - Quantity::from(closing_quantity)
     );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CeilingStep {
+    Fill(OrderSide, &'static str),
+    Modify(&'static str, &'static str),
+}
+
+// A step, then the quantity updates and the cancellations it emits
+type CeilingStepEvents = (
+    CeilingStep,
+    Vec<(&'static str, &'static str)>,
+    Vec<&'static str>,
+);
+
+// A fill on the position shrinks a resting reduce-only order and grows it back, but never past
+// the quantity it was submitted with or a client modify last gave it
+#[rstest]
+#[case::add_keeps_stop_quantity(
+    "1.000",
+    vec![("SL", "1.000", None, None)],
+    vec![(CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![], vec![])],
+    vec![("SL", "1.000", OrderStatus::Accepted)],
+)]
+#[case::add_keeps_scale_out_targets(
+    "3.000",
+    vec![("TP-1", "1.000", None, None), ("TP-2", "1.000", None, None), ("SL", "3.000", None, None)],
+    vec![(CeilingStep::Fill(OrderSide::Buy, "2.000"), vec![], vec![])],
+    vec![
+        ("TP-1", "1.000", OrderStatus::Accepted),
+        ("TP-2", "1.000", OrderStatus::Accepted),
+        ("SL", "3.000", OrderStatus::Accepted),
+    ],
+)]
+#[case::partial_exit_cuts_then_regrows_to_ceiling(
+    "3.000",
+    vec![("SL", "3.000", None, None)],
+    vec![
+        (CeilingStep::Fill(OrderSide::Sell, "2.000"), vec![("SL", "1.000")], vec![]),
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![("SL", "3.000")], vec![]),
+    ],
+    vec![("SL", "3.000", OrderStatus::Accepted)],
+)]
+#[case::client_modify_replaces_ceiling(
+    "1.000",
+    vec![("SL", "1.000", None, None)],
+    vec![
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![], vec![]),
+        (CeilingStep::Modify("SL", "4.000"), vec![("SL", "4.000")], vec![]),
+        (CeilingStep::Fill(OrderSide::Sell, "2.000"), vec![("SL", "2.000")], vec![]),
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![("SL", "4.000")], vec![]),
+    ],
+    vec![("SL", "4.000", OrderStatus::Accepted)],
+)]
+#[case::ouo_pair_resizes_together_up_to_ceiling(
+    "2.000",
+    vec![("TP", "2.000", Some("SL"), None), ("SL", "2.000", Some("TP"), None)],
+    vec![
+        (
+            CeilingStep::Fill(OrderSide::Sell, "1.000"),
+            vec![("SL", "1.000"), ("TP", "1.000")],
+            vec![],
+        ),
+        (
+            CeilingStep::Fill(OrderSide::Buy, "2.000"),
+            vec![("SL", "2.000"), ("TP", "2.000")],
+            vec![],
+        ),
+    ],
+    vec![
+        ("TP", "2.000", OrderStatus::Accepted),
+        ("SL", "2.000", OrderStatus::Accepted),
+    ],
+)]
+#[case::ouo_modify_replaces_peer_ceiling(
+    "1.000",
+    vec![("TP", "1.000", Some("SL"), None), ("SL", "1.000", Some("TP"), None)],
+    vec![
+        (
+            CeilingStep::Modify("TP", "3.000"),
+            vec![("SL", "3.000"), ("TP", "3.000")],
+            vec![],
+        ),
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![], vec![]),
+        (
+            CeilingStep::Fill(OrderSide::Sell, "2.000"),
+            vec![("SL", "2.000"), ("TP", "2.000")],
+            vec![],
+        ),
+        (
+            CeilingStep::Fill(OrderSide::Buy, "3.000"),
+            vec![("SL", "3.000"), ("TP", "3.000")],
+            vec![],
+        ),
+    ],
+    vec![
+        ("TP", "3.000", OrderStatus::Accepted),
+        ("SL", "3.000", OrderStatus::Accepted),
+    ],
+)]
+#[case::restored_order_keeps_client_modify(
+    "1.000",
+    vec![("SL", "1.000", None, Some("4.000"))],
+    vec![
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![], vec![]),
+        (CeilingStep::Fill(OrderSide::Sell, "2.000"), vec![("SL", "2.000")], vec![]),
+        (CeilingStep::Fill(OrderSide::Buy, "3.000"), vec![("SL", "4.000")], vec![]),
+    ],
+    vec![("SL", "4.000", OrderStatus::Accepted)],
+)]
+#[case::closed_position_cancels(
+    "2.000",
+    vec![("TP", "1.000", None, None), ("SL", "2.000", None, None)],
+    vec![(CeilingStep::Fill(OrderSide::Sell, "2.000"), vec![], vec!["SL", "TP"])],
+    vec![
+        ("TP", "1.000", OrderStatus::Canceled),
+        ("SL", "2.000", OrderStatus::Canceled),
+    ],
+)]
+fn test_position_sync_resizes_reduce_only_up_to_ceiling(
+    #[case] position_quantity: &str,
+    #[case] resting: Vec<(&str, &str, Option<&str>, Option<&str>)>,
+    #[case] steps: Vec<CeilingStepEvents>,
+    #[case] expected: Vec<(&str, &str, OrderStatus)>,
+    #[values(false, true)] deferred: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+    let position_id = PositionId::new(format!(
+        "{}-{}",
+        instrument.id(),
+        StrategyId::test_default()
+    ));
+
+    let (opening, opening_fill) = pending_position_fill(
+        &instrument,
+        position_id,
+        "CEILING-OPEN",
+        OrderSide::Buy,
+        position_quantity,
+    );
+    let position = Position::new(&instrument, opening_fill.clone());
+    cache
+        .borrow_mut()
+        .add_order(opening, Some(position_id), None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(opening_fill))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    for &(id, quantity, ouo_peer, modified) in &resting {
+        let mut builder = if id == "SL" {
+            let mut builder = OrderTestBuilder::new(OrderType::StopMarket);
+            builder.trigger_price(Price::from("500.00"));
+            builder
+        } else {
+            let mut builder = OrderTestBuilder::new(OrderType::Limit);
+            builder.price(Price::from("2000.00"));
+            builder
+        };
+        builder
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(quantity))
+            .reduce_only(true)
+            .submit(true);
+
+        if let Some(peer) = ouo_peer {
+            builder
+                .contingency_type(ContingencyType::Ouo)
+                .linked_order_ids(vec![ClientOrderId::from(peer)]);
+        }
+
+        let mut order = builder.build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), Some(position_id), None, false)
+            .unwrap();
+
+        let Some(modified) = modified else {
+            restore_order(&mut engine, &cache, &mut order, position.account_id);
+            continue;
+        };
+
+        // The order a cache restores after a restart carries the update its client modify caused
+        let venue_order_id = VenueOrderId::from(id);
+        let accepted = TestOrderEventStubs::accepted(&order, position.account_id, venue_order_id);
+        order.apply(accepted.clone()).unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+        let mut updated = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Quantity::from(modified),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+            Some(position.account_id),
+            order.price(),
+            order.trigger_price(),
+            None,
+            false,
+        );
+        updated.causation_id = Some(UUID4::new());
+        let updated = OrderEventAny::Updated(updated);
+        order.apply(updated.clone()).unwrap();
+        cache.borrow_mut().update_order(&updated).unwrap();
+        engine.restore_open_order(&order, position.account_id);
+    }
+
+    // A deferring handler leaves each step's events for the cache to apply after the call
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let events_handler = events.clone();
+    let handler_cache = cache.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        if !deferred {
+            apply_position_event(&handler_cache, position_id, &event);
+        }
+
+        events_handler.borrow_mut().push(event);
+    }));
+
+    for (index, (step, expected_updates, expected_cancels)) in steps.into_iter().enumerate() {
+        let start = events.borrow().len();
+
+        match step {
+            CeilingStep::Fill(side, quantity) => {
+                let (order, _) = pending_position_fill(
+                    &instrument,
+                    position_id,
+                    &format!("CEILING-FILL-{index}"),
+                    side,
+                    quantity,
+                );
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), Some(position_id), None, false)
+                    .unwrap();
+                set_fill_liquidity(&mut engine, side, quantity);
+                engine.fill_market_order(order.client_order_id());
+            }
+            CeilingStep::Modify(id, quantity) => {
+                let modify = ModifyOrder::new(
+                    TraderId::test_default(),
+                    None,
+                    StrategyId::test_default(),
+                    instrument.id(),
+                    ClientOrderId::from(id),
+                    Some(VenueOrderId::from(id)),
+                    Some(Quantity::from(quantity)),
+                    None,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                );
+                engine.process_modify(&modify, position.account_id);
+            }
+        }
+
+        let emitted: Vec<OrderEventAny> = events.borrow()[start..].to_vec();
+        if deferred {
+            for event in &emitted {
+                apply_position_event(&cache, position_id, event);
+            }
+        }
+
+        let mut updates = Vec::new();
+        let mut cancels = Vec::new();
+
+        for event in &emitted {
+            match event {
+                OrderEventAny::Updated(update) => {
+                    updates.push((update.client_order_id.to_string(), update.quantity));
+                }
+                OrderEventAny::Canceled(cancel) => {
+                    cancels.push(cancel.client_order_id.to_string());
+                }
+                OrderEventAny::Filled(fill) => {
+                    assert!(fill.client_order_id.as_str().starts_with("CEILING-FILL"));
+                }
+                other => panic!("Unexpected event {other:?}"),
+            }
+        }
+
+        updates.sort_by(|a, b| a.0.cmp(&b.0));
+        cancels.sort();
+        assert_eq!(
+            updates,
+            expected_updates
+                .into_iter()
+                .map(|(id, qty)| (id.to_string(), Quantity::from(qty)))
+                .collect::<Vec<_>>(),
+            "step {index} {step:?}"
+        );
+        assert_eq!(cancels, expected_cancels, "step {index} {step:?}");
+    }
+
+    let cache = cache.borrow();
+
+    for (id, quantity, status) in expected {
+        let id = ClientOrderId::from(id);
+        let order = cache.order(&id).unwrap();
+        assert_eq!(order.quantity(), Quantity::from(quantity), "{id}");
+        assert_eq!(order.status(), status, "{id}");
+        assert_eq!(engine.order_exists(id), status == OrderStatus::Accepted);
+    }
+}
+
+fn apply_position_event(
+    cache: &Rc<RefCell<Cache>>,
+    position_id: PositionId,
+    event: &OrderEventAny,
+) {
+    cache.borrow_mut().update_order(event).unwrap();
+    if let OrderEventAny::Filled(fill) = event {
+        cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, fill)
+            .unwrap();
+    }
 }
 
 #[rstest]

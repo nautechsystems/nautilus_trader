@@ -135,6 +135,7 @@ pub struct OrderMatchingEngine {
     account_ids: IndexMap<TraderId, AccountId>,
     pending_fills: IndexMap<TradeId, PendingFill>,
     post_match_order_ids: IndexSet<ClientOrderId>,
+    sync_ceilings: IndexMap<ClientOrderId, Quantity>,
     orders: MatchingOrders,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
@@ -234,6 +235,7 @@ impl OrderMatchingEngine {
             account_ids: IndexMap::new(),
             pending_fills: IndexMap::new(),
             post_match_order_ids: IndexSet::new(),
+            sync_ceilings: IndexMap::new(),
             orders: MatchingOrders::default(),
             ids_generator,
             last_trade_size: None,
@@ -309,6 +311,7 @@ impl OrderMatchingEngine {
         self.account_ids.clear();
         self.pending_fills.clear();
         self.post_match_order_ids.clear();
+        self.sync_ceilings.clear();
         self.orders
             .reset(self.instrument.id(), &self.cache.borrow());
         self.core.reset();
@@ -3855,6 +3858,10 @@ impl OrderMatchingEngine {
             return;
         }
 
+        if command.quantity.is_some() {
+            self.set_sync_ceilings(command.client_order_id);
+        }
+
         if !self.core.order_exists(command.client_order_id) {
             return;
         }
@@ -6648,7 +6655,7 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            let leaves = self.parent_capped_leaves(&order, remaining);
+            let leaves = self.sync_capped_leaves(&order, remaining);
 
             let target = order.filled_qty().checked_add(leaves).ok_or_else(|| {
                 anyhow::anyhow!("Reduce-only quantity overflow for order {client_order_id}")
@@ -6688,7 +6695,9 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
-    fn parent_capped_leaves(&self, order: &OrderAny, leaves: Quantity) -> Quantity {
+    // A position sync shrinks an order and grows it back, but never past its ceiling: a contingent
+    // child's is its parent's fills, any other order's is its own (see `sync_ceiling`)
+    fn sync_capped_leaves(&self, order: &OrderAny, leaves: Quantity) -> Quantity {
         let parent = if self.config.support_contingent_orders {
             order
                 .parent_order_id()
@@ -6697,11 +6706,108 @@ impl OrderMatchingEngine {
             None
         };
 
-        parent.map_or(leaves, |parent| {
-            min(
-                leaves,
-                parent.filled_qty().saturating_sub(order.filled_qty()),
-            )
+        let ceiling = match parent {
+            Some(parent) => Some(parent.filled_qty()),
+            None => self.sync_ceiling(order),
+        };
+
+        ceiling.map_or(leaves, |ceiling| {
+            min(leaves, ceiling.saturating_sub(order.filled_qty()))
+        })
+    }
+
+    // The quantity the order was submitted with, or the one a client modify last gave it or its
+    // linked peer (which resizes it). Updates carrying a causation ID are the order's own client
+    // modifies, so a restored order keeps its own. A quote quantity converts at the order's price,
+    // else its trigger price; without either the order has no ceiling.
+    fn sync_ceiling(&self, order: &OrderAny) -> Option<Quantity> {
+        if let Some(ceiling) = self.sync_ceilings.get(&order.client_order_id()) {
+            return Some(*ceiling);
+        }
+
+        let modified = order.events().iter().rev().find_map(|event| match event {
+            OrderEventAny::Updated(update) if update.causation_id.is_some() => Some(update),
+            _ => None,
+        });
+
+        match modified {
+            Some(update) => self.base_quantity(
+                update.quantity,
+                update.is_quote_quantity,
+                update.price.or(update.trigger_price),
+            ),
+            None => {
+                let init = order.init_event();
+                self.base_quantity(
+                    init.quantity,
+                    init.quote_quantity,
+                    init.price.or(init.trigger_price),
+                )
+            }
+        }
+    }
+
+    fn set_sync_ceilings(&mut self, client_order_id: ClientOrderId) {
+        let Some(order) = self.order_snapshot(client_order_id) else {
+            return;
+        };
+
+        // A modify resizes its linked peers, but an OTO parent's children keep its fills as theirs
+        let peers = order.linked_order_ids().filter(|_| {
+            self.config.support_contingent_orders
+                && order.contingency_type() != Some(ContingencyType::Oto)
+        });
+        let ids: Vec<ClientOrderId> = std::iter::once(client_order_id)
+            .chain(peers.into_iter().flatten().copied())
+            .collect();
+
+        // Drops ceilings of closed orders, keeping the map to the working ones
+        let cache = self.cache.borrow();
+        self.sync_ceilings
+            .retain(|id, _| cache.order(id).is_some_and(|order| !order.is_closed()));
+        drop(cache);
+
+        for id in ids {
+            let Some(order) = self.order_snapshot(id) else {
+                continue;
+            };
+
+            if order.is_closed()
+                || !(order.is_reduce_only()
+                    || order.contingency_type() == Some(ContingencyType::Ouo))
+            {
+                continue;
+            }
+
+            match self.base_quantity(
+                order.quantity(),
+                order.is_quote_quantity(),
+                order.price().or(order.trigger_price()),
+            ) {
+                Some(ceiling) => {
+                    self.sync_ceilings.insert(id, ceiling);
+                }
+                None => {
+                    self.sync_ceilings.swap_remove(&id);
+                }
+            }
+        }
+    }
+
+    fn base_quantity(
+        &self,
+        quantity: Quantity,
+        quote: bool,
+        price: Option<Price>,
+    ) -> Option<Quantity> {
+        if !quote || self.instrument.is_inverse() {
+            return Some(quantity);
+        }
+
+        price.and_then(|price| {
+            self.instrument
+                .try_calculate_base_quantity(quantity, price)
+                .ok()
         })
     }
 
@@ -6734,7 +6840,7 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            let leaves = self.parent_capped_leaves(&sibling, leaves);
+            let leaves = self.sync_capped_leaves(&sibling, leaves);
 
             let target = sibling.filled_qty().checked_add(leaves).ok_or_else(|| {
                 anyhow::anyhow!("OUO quantity overflow for order {client_order_id}")
