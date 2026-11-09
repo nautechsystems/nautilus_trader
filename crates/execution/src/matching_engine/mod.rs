@@ -34,7 +34,6 @@ use std::{
     rc::Rc,
 };
 
-use ahash::AHashSet;
 use indexmap::{IndexMap, IndexSet};
 use jiff::SignedDuration;
 use nautilus_common::{
@@ -2395,7 +2394,9 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(bid, 0, self.book.sequence.saturating_add(1), quote.ts_event);
-        self.trailing_reopen_prices.bids.remove(&quote.bid_price);
+        self.trailing_reopen_prices
+            .bids
+            .swap_remove(&quote.bid_price);
     }
 
     fn clear_bar_quote_bid(&mut self, quote: &QuoteTick) {
@@ -2412,7 +2413,9 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(ask, 0, self.book.sequence.saturating_add(1), quote.ts_event);
-        self.trailing_reopen_prices.asks.remove(&quote.ask_price);
+        self.trailing_reopen_prices
+            .asks
+            .swap_remove(&quote.ask_price);
     }
 
     fn clear_bar_quote_ask(&mut self, quote: &QuoteTick) {
@@ -2725,11 +2728,11 @@ impl OrderMatchingEngine {
         }
 
         if let Some(bid) = self.book.best_bid_price() {
-            self.trailing_reopen_prices.bids.remove(&bid);
+            self.trailing_reopen_prices.bids.swap_remove(&bid);
         }
 
         if let Some(ask) = self.book.best_ask_price() {
-            self.trailing_reopen_prices.asks.remove(&ask);
+            self.trailing_reopen_prices.asks.swap_remove(&ask);
         }
     }
 
@@ -2743,7 +2746,7 @@ impl OrderMatchingEngine {
             Some(OrderSide::Sell) => &mut self.trailing_reopen_prices.asks,
             None => return,
         };
-        prices.remove(&delta.order.price);
+        prices.swap_remove(&delta.order.price);
     }
 
     /// Processes an instrument close event.
@@ -8634,8 +8637,8 @@ struct PendingFill {
 /// has stayed open.
 #[derive(Debug, Default)]
 struct ReopenPrices {
-    bids: AHashSet<Price>,
-    asks: AHashSet<Price>,
+    bids: IndexSet<Price>,
+    asks: IndexSet<Price>,
     last: Option<Price>,
     mark: Option<Price>,
 }
