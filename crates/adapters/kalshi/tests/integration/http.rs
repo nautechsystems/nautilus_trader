@@ -118,10 +118,11 @@ async fn http_status_uses_explicit_proxy() {
                 .then_some(value)
         });
 
-        assert_eq!(
-            authorization,
-            Some("Basic cHJveHktdXNlcjpwcm94eS1wYXNzd29yZA==")
+        let expected = format!(
+            "Basic {}",
+            BASE64_STANDARD.encode("proxy-user:proxy-password")
         );
+        assert_eq!(authorization, Some(expected.as_str()));
         assert_eq!(response.status.as_u16(), 204);
         let formatted = format!("{client:?}");
         assert!(!formatted.contains("proxy-user"));
