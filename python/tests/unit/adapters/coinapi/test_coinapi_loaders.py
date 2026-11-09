@@ -16,9 +16,13 @@
 Test the CoinAPI flat file loader bindings against the committed fixtures.
 """
 
+import asyncio
 import datetime as dt
+import threading
 from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -441,3 +445,84 @@ def test_data_loader_is_the_public_ingestion_interface() -> None:
 
     assert not removed.intersection(vars(coinapi))
     assert "CoinApiDataLoader" in coinapi.__all__
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("to_path", [str, Path])
+@pytest.mark.parametrize("object_key", ["", "../export.csv.gz", "archive//export.csv.gz"])
+async def test_download_flat_file_validates_object_key_without_definitions(
+    tmp_path: Path,
+    to_path,
+    object_key: str,
+) -> None:
+    """
+    Validate object selectors through the async binding without instrument metadata.
+    """
+    instance = CoinApiDataLoader(api_key="test-api-key")
+
+    with pytest.raises(RuntimeError, match="path identifiers must not be empty or dot segments"):
+        await instance.download_flat_file(
+            "coinapi",
+            object_key,
+            to_path(tmp_path / "export.csv.gz"),
+        )
+
+    assert await asyncio.to_thread(lambda: list(tmp_path.iterdir())) == []
+
+
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_request_instruments_retains_precision_and_resolves_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    use_environment: bool,
+) -> None:
+    """
+    Retain requested precision with direct or environment credentials.
+    """
+    requests = []
+    body = (FIXTURES.parent / "symbols_spot.json").read_bytes()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            requests.append(
+                (self.path, self.headers.get("X-CoinAPI-Key"), self.headers.get("X-Referrer")),
+            )
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+    monkeypatch.delenv("COINAPI_API_KEY", raising=False)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    loader = CoinApiDataLoader(
+        api_key=None if use_environment else "python-rest-secret",
+        base_url=f"http://127.0.0.1:{server.server_port}/v1/",
+        max_retries=0,
+        timeout_secs=2,
+    )
+
+    monkeypatch.setenv("COINAPI_API_KEY", "python-rest-secret")
+
+    async def collect():
+        return await loader.request_instruments(
+            [coinapi.CoinApiInstrumentSelection("COINBASE", [COINBASE])],
+            price_precisions={COINBASE: 3},
+        )
+
+    try:
+        instruments = asyncio.run(collect())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert len(instruments) == 1
+    assert instruments[0].id == COINBASE
+    assert instruments[0].price_precision == 3
+    assert loader.instrument(COINBASE) == instruments[0]
+    assert requests == [("/v1/symbols/COINBASE/active", "python-rest-secret", "nautilus")]

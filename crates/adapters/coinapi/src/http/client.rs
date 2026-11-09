@@ -13,17 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! CoinAPI REST transport with bounded retries and local admission limits.
+//! CoinAPI REST and Flat Files transport with bounded retries and local admission limits.
 
 use std::{
     collections::HashMap,
     future::Future,
-    sync::atomic::{AtomicU64, Ordering},
+    path::{Path, PathBuf},
+    sync::{
+        LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use jiff::Timestamp;
-use nautilus_core::{UnixNanos, string::secret::SecretString};
+use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{
     backoff::ExponentialBackoff,
@@ -31,6 +35,7 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -50,11 +55,15 @@ use crate::common::{
 /// Primary CoinAPI Market Data REST endpoint, including its version prefix.
 pub const REST_URL: &str = "https://rest.coinapi.io/v1/";
 
-/// Transport configuration for the raw REST client.
+static FLAT_FILES_URL: LazyLock<Url> = LazyLock::new(|| {
+    Url::parse("https://s3.flatfiles.coinapi.io/").expect("valid Flat Files endpoint")
+});
+
+/// Transport configuration for the raw HTTP client.
 ///
 /// # Credit Allowance
 ///
-/// `credit_budget` is shared by all requests on this instance:
+/// `credit_budget` is shared by REST requests on this instance:
 ///
 /// - Each attempt reserves ceil(requested limit / 100) credits, or one credit
 ///   when the request has no record limit.
@@ -63,7 +72,8 @@ pub const REST_URL: &str = "https://rest.coinapi.io/v1/";
 /// - Failed or canceled attempts keep their full reservation.
 ///
 /// This is a local safety limit, not the provider's billing ledger, and it does
-/// not coordinate with other clients.
+/// not coordinate with other clients. Flat Files downloads use separate provider billing and do
+/// not consume this REST allowance. Both services share the concurrency and retry controls.
 #[derive(Debug, Clone)]
 pub struct CoinApiHttpConfig {
     /// Base URL including the version prefix; accepts local simulated peers.
@@ -104,17 +114,19 @@ pub struct HistoryPages<T> {
     pub is_truncated: bool,
 }
 
-/// Authenticated, data-only CoinAPI REST client.
+/// Authenticated, data-only CoinAPI HTTP client.
 ///
-/// Requests return raw protocol models. The single-page historical methods fetch exactly one
+/// REST requests return raw protocol models. The single-page historical methods fetch exactly one
 /// page; callers must not infer completeness from a full page. The range methods page through a
 /// whole window.
 /// Range requests run serially so each sizes its pages after earlier ranges settle their credits.
+/// Flat Files downloads stream raw bytes to disk without requiring instrument definitions.
 #[derive(Debug)]
 pub struct CoinApiHttpClient {
     api_key: SecretString,
     base_url: Url,
     client: HttpClient,
+    flat_files_client: HttpClient,
     concurrency: tokio::sync::Semaphore,
     ranges: tokio::sync::Mutex<()>,
     retry: RetryManager<Error>,
@@ -176,27 +188,13 @@ impl CoinApiHttpClient {
         )
         .map_err(|e| Error::Validation(e.to_string()))?;
 
-        let client = HttpClient::builder()
-            .redirect_policy(HttpRedirectPolicy::Reject)
-            .use_system_proxy(false)
-            .maybe_proxy_url(
-                config
-                    .proxy_url
-                    .as_ref()
-                    .map(|url| url.expose_secret().to_owned()),
-            )
-            .header_keys(vec![
-                "retry-after".into(),
-                "x-credits-used".into(),
-                "x-credits-remaining".into(),
-                "x-credits-limit".into(),
-                "x-ratelimit-request-cost".into(),
-            ])
-            .build()?;
+        let client = build_client(&api_key, &config, "application/json")?;
+        let flat_files_client = build_client(&api_key, &config, "application/xml")?;
         Ok(Self {
             api_key,
             base_url,
             client,
+            flat_files_client,
             concurrency: tokio::sync::Semaphore::new(config.max_concurrent_requests),
             ranges: tokio::sync::Mutex::new(()),
             retry: RetryManager::new(config.retry),
@@ -214,6 +212,29 @@ impl CoinApiHttpClient {
     #[must_use]
     pub fn credits_remaining(&self) -> u64 {
         self.credits_remaining.load(Ordering::Relaxed)
+    }
+
+    /// Downloads one Flat Files object, replacing the destination only after the stream succeeds.
+    ///
+    /// Authentication is automatic. The destination's parent directories are created as needed.
+    /// Downloads share this client's retry, cancellation, proxy, and concurrency controls, and
+    /// reject redirects. Flat Files usage does not consume the local REST credit allowance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bucket or object key contains empty or dot segments, the request
+    /// fails, retry controls stop the download, or a file operation fails.
+    pub async fn download_flat_file(
+        &self,
+        bucket: &str,
+        object_key: &str,
+        filepath: &Path,
+    ) -> Result<(), Error> {
+        let path: Vec<_> = std::iter::once(bucket)
+            .chain(object_key.split('/'))
+            .collect();
+        let url = request_url(&FLAT_FILES_URL, &path)?;
+        self.download_file(url, filepath).await
     }
 
     /// Retrieves exchange metadata with optional filtering.
@@ -553,20 +574,8 @@ impl CoinApiHttpClient {
         cost: u64,
         billed: fn(&T) -> u64,
     ) -> Result<T, Error> {
-        if path
-            .iter()
-            .any(|part| part.trim().is_empty() || matches!(*part, "." | ".."))
-        {
-            return Err(Error::Validation(
-                "path identifiers must not be empty or dot segments".into(),
-            ));
-        }
+        let url = request_url(&self.base_url, path)?;
 
-        let mut url = self.base_url.clone();
-        url.path_segments_mut()
-            .map_err(|()| Error::Validation("base URL cannot contain path segments".into()))?
-            .pop_if_empty()
-            .extend(path);
         self.retry
             .invocation(
                 "CoinAPI GET",
@@ -582,21 +591,13 @@ impl CoinApiHttpClient {
                         })
                         .map_err(|_| Error::CreditBudget)?;
 
-                    let headers = HashMap::from([
-                        (
-                            "X-CoinAPI-Key".into(),
-                            self.api_key.expose_secret().to_owned(),
-                        ),
-                        ("Accept".into(), "application/json".into()),
-                        ("X-Referrer".into(), COINAPI_NAUTILUS_REFERRER.into()),
-                    ]);
                     let response = self
                         .client
                         .request_with_params(
                             Method::GET,
                             url.to_string(),
                             Some(query),
-                            Some(headers),
+                            None,
                             None,
                             None,
                             None,
@@ -606,6 +607,48 @@ impl CoinApiHttpClient {
                     self.credits_remaining
                         .fetch_add(cost.saturating_sub(billed(&value)), Ordering::Relaxed);
                     Ok(value)
+                },
+                Error::is_retryable,
+                Error::Retry,
+            )
+            .retry_delay(&Error::retry_delay)
+            .cancellation_token(&self.cancellation)
+            .execute()
+            .await
+    }
+
+    async fn download_file(&self, url: Url, filepath: &Path) -> Result<(), Error> {
+        self.retry
+            .invocation(
+                "CoinAPI Flat Files GET",
+                || async {
+                    let _permit = self
+                        .concurrency
+                        .acquire()
+                        .await
+                        .map_err(|_| Error::Validation("request admission closed".into()))?;
+                    let (partial, mut file) = PartialDownload::create(filepath).await?;
+                    let mut response = self.flat_files_client.get_stream(url.to_string()).await?;
+                    if !response.status().is_success() {
+                        return Err(Error::Http {
+                            status: response.status().as_u16(),
+                            retry_after_secs: response
+                                .headers()
+                                .get("retry-after")
+                                .and_then(|value| value.to_str().ok())
+                                .and_then(|value| value.parse().ok()),
+                        });
+                    }
+
+                    while let Some(chunk) = response.chunk().await? {
+                        file.write_all(&chunk).await?;
+                    }
+
+                    file.flush().await?;
+                    file.sync_all().await?;
+                    drop(file);
+                    tokio::fs::rename(&partial.path, filepath).await?;
+                    Ok(())
                 },
                 Error::is_retryable,
                 Error::Retry,
@@ -648,6 +691,88 @@ impl CoinApiHttpClient {
     }
 }
 
+#[derive(Debug)]
+struct PartialDownload {
+    path: PathBuf,
+}
+
+impl PartialDownload {
+    async fn create(filepath: &Path) -> Result<(Self, tokio::fs::File), Error> {
+        let mut name = filepath
+            .file_name()
+            .ok_or_else(|| Error::Validation("download destination must name a file".into()))?
+            .to_os_string();
+        name.push(format!(".{}.part", UUID4::new()));
+        let path = filepath.with_file_name(name);
+        if let Some(parent) = filepath
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        Ok((Self { path }, tokio::fs::File::from_std(file)))
+    }
+}
+
+impl Drop for PartialDownload {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn build_client(
+    api_key: &SecretString,
+    config: &CoinApiHttpConfig,
+    accept: &str,
+) -> Result<HttpClient, Error> {
+    HttpClient::builder()
+        .headers(HashMap::from([
+            ("X-CoinAPI-Key".into(), api_key.expose_secret().to_owned()),
+            ("X-Referrer".into(), COINAPI_NAUTILUS_REFERRER.into()),
+            ("Accept".into(), accept.to_owned()),
+        ]))
+        .redirect_policy(HttpRedirectPolicy::Reject)
+        .use_system_proxy(false)
+        .maybe_proxy_url(
+            config
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
+        )
+        .header_keys(vec![
+            "retry-after".into(),
+            "x-credits-used".into(),
+            "x-credits-remaining".into(),
+            "x-credits-limit".into(),
+            "x-ratelimit-request-cost".into(),
+        ])
+        .build()
+        .map_err(Error::from)
+}
+
+fn request_url(base: &Url, path: &[&str]) -> Result<Url, Error> {
+    if path
+        .iter()
+        .any(|part| part.trim().is_empty() || matches!(*part, "." | ".."))
+    {
+        return Err(Error::Validation(
+            "path identifiers must not be empty or dot segments".into(),
+        ));
+    }
+
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .map_err(|()| Error::Validation("base URL cannot contain path segments".into()))?
+        .pop_if_empty()
+        .extend(path);
+    Ok(url)
+}
+
 #[derive(Deserialize)]
 struct VenueError {
     error: String,
@@ -664,4 +789,369 @@ fn credits(points: u32) -> u64 {
 )]
 fn billed<T>(records: &Vec<T>) -> u64 {
     credits(u32::try_from(records.len()).unwrap_or(u32::MAX)).max(1)
+}
+
+#[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{
+        Router,
+        http::{StatusCode, header::LOCATION},
+        routing::get,
+        serve,
+    };
+    use nautilus_network::retry::RetryError;
+    use parking_lot::Mutex;
+    use rstest::rstest;
+    use tempfile::TempDir;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+        sync::Notify,
+    };
+
+    use super::*;
+
+    #[rstest]
+    #[case::nested(vec!["coinapi", "T-TRADES", "D-20261001", "name+symbol.csv.gz"], "/coinapi/T-TRADES/D-20261001/name+symbol.csv.gz")]
+    #[case::reserved(vec!["coinapi", "data ?#.csv.gz"], "/coinapi/data%20%3F%23.csv.gz")]
+    fn file_url_preserves_object_segments(#[case] path: Vec<&str>, #[case] expected_path: &str) {
+        let url = request_url(&FLAT_FILES_URL, &path).unwrap();
+
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("s3.flatfiles.coinapi.io"));
+        assert_eq!(url.path(), expected_path);
+        assert_eq!(url.query(), None);
+        assert_eq!(url.fragment(), None);
+    }
+
+    #[rstest]
+    #[case(vec!["", "data.csv.gz"])]
+    #[case(vec!["coinapi", ""])]
+    #[case(vec!["coinapi", "a", "..", "data.csv.gz"])]
+    #[case(vec!["coinapi", ".", "data.csv.gz"])]
+    fn file_url_rejects_empty_and_dot_segments(#[case] path: Vec<&str>) {
+        let error = request_url(&FLAT_FILES_URL, &path).unwrap_err();
+
+        assert!(
+            matches!(error, Error::Validation(message) if message == "path identifiers must not be empty or dot segments")
+        );
+    }
+
+    #[rstest]
+    #[case::status(false)]
+    #[case::truncated_body(true)]
+    #[tokio::test]
+    async fn download_retries_with_headers_and_preserves_wire_bytes(#[case] truncated: bool) {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("nested").join("export.csv.gz");
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&requests);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body: &[u8] = b"\x1f\x8b\x08\x00opaque-compressed-data\x00";
+
+        let peer = tokio::spawn(async move {
+            for attempt in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut socket).await;
+                captured.lock().push(request);
+
+                if attempt == 0 {
+                    let response: &[u8] = if truncated {
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\nshort"
+                    } else {
+                        b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    };
+
+                    socket.write_all(response).await.unwrap();
+                } else {
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    socket.write_all(head.as_bytes()).await.unwrap();
+                    socket.write_all(body).await.unwrap();
+                }
+
+                socket.shutdown().await.unwrap();
+            }
+        });
+
+        let client = CoinApiHttpClient::new("test-api-key".into(), config()).unwrap();
+        client
+            .download_file(
+                Url::parse(&format!("http://{addr}/archive.csv.gz")).unwrap(),
+                &filepath,
+            )
+            .await
+            .unwrap();
+        peer.await.unwrap();
+
+        let requests = requests.lock();
+        assert_eq!(requests.len(), 2);
+
+        for request in requests.iter() {
+            assert_eq!(request.lines().next(), Some("GET /archive.csv.gz HTTP/1.1"));
+
+            for (name, expected) in [
+                ("x-coinapi-key", "test-api-key"),
+                ("x-referrer", "nautilus"),
+                ("accept", "application/xml"),
+            ] {
+                let values: Vec<_> = request
+                    .lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .filter(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value.trim())
+                    .collect();
+                assert_eq!(values, vec![expected]);
+            }
+        }
+
+        assert_eq!(std::fs::read(&filepath).unwrap(), body);
+        assert_eq!(client.credits_remaining(), 7);
+        assert_eq!(
+            std::fs::read_dir(filepath.parent().unwrap())
+                .unwrap()
+                .count(),
+            1
+        );
+        assert!(!format!("{client:?}").contains("test-api-key"));
+    }
+
+    #[rstest]
+    #[case::redirect(StatusCode::FOUND)]
+    #[case::denied(StatusCode::FORBIDDEN)]
+    #[tokio::test]
+    async fn failed_download_preserves_destination_and_rejects_redirects(
+        #[case] status: StatusCode,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("export.csv.gz");
+        std::fs::write(&filepath, b"existing export").unwrap();
+        let target_calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&target_calls);
+        let target = Router::new().route(
+            "/target",
+            get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async { "must not receive credentials" }
+            }),
+        );
+
+        let target_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_addr = target_listener.local_addr().unwrap();
+        let target_server = tokio::spawn(async move {
+            serve(target_listener, target).await.unwrap();
+        });
+
+        let source_calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&source_calls);
+        let source = Router::new().route(
+            "/archive",
+            get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { (status, [(LOCATION, format!("http://{target_addr}/target"))]) }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let source_server = tokio::spawn(async move { serve(listener, source).await.unwrap() });
+        let client = CoinApiHttpClient::new("test-api-key".into(), config()).unwrap();
+        let error = client
+            .download_file(
+                Url::parse(&format!("http://{addr}/archive")).unwrap(),
+                &filepath,
+            )
+            .await
+            .unwrap_err();
+        source_server.abort();
+        target_server.abort();
+        let _ = source_server.await;
+        let _ = target_server.await;
+
+        let Error::Http {
+            status: actual_status,
+            retry_after_secs,
+        } = error
+        else {
+            panic!("expected HTTP status error, was {error:?}")
+        };
+
+        assert_eq!((actual_status, retry_after_secs), (status.as_u16(), None));
+        assert_eq!(source_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(target_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(std::fs::read(&filepath).unwrap(), b"existing export");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(client.credits_remaining(), 7);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn final_write_failure_preserves_destination() {
+        const CHILD: &str = "NAUTILUS_COINAPI_WRITE_LIMIT_CHILD";
+
+        if let Some(filepath) = std::env::var_os(CHILD) {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let addr = listener.local_addr().unwrap();
+                    let peer = tokio::spawn(async move {
+                        let (mut socket, _) = listener.accept().await.unwrap();
+                        read_request(&mut socket).await;
+                        socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx")
+                            .await
+                            .unwrap();
+                        socket.shutdown().await.unwrap();
+                    });
+
+                    let client = CoinApiHttpClient::new("test-api-key".into(), config()).unwrap();
+                    let result = client
+                        .download_file(
+                            Url::parse(&format!("http://{addr}/archive")).unwrap(),
+                            Path::new(&filepath),
+                        )
+                        .await;
+                    peer.await.unwrap();
+
+                    assert!(
+                        matches!(result, Err(Error::Io(ref error)) if error.kind() == std::io::ErrorKind::FileTooLarge),
+                        "expected final write failure, was {result:?}"
+                    );
+                });
+
+            return;
+        }
+
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("export.csv.gz");
+        std::fs::write(&filepath, b"existing export").unwrap();
+
+        // Isolate the zero-byte file limit and ignored SIGXFSZ from parallel tests
+        let output = std::process::Command::new("bash")
+            .args([
+                "-c",
+                "trap '' XFSZ; ulimit -f 0; exec \"$@\"",
+                "coinapi-write-limit",
+            ])
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "http::client::tests::final_write_failure_preserves_destination",
+                "--nocapture",
+            ])
+            .env(CHILD, &filepath)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        assert_eq!(std::fs::read(&filepath).unwrap(), b"existing export");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[rstest]
+    #[case::timeout(false)]
+    #[case::canceled(true)]
+    #[tokio::test]
+    async fn interrupted_download_removes_partial_file(#[case] cancel: bool) {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("export.csv.gz");
+        let destination = filepath.clone();
+        let started = Arc::new(Notify::new());
+        let signal = Arc::clone(&started);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_request(&mut socket).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nx")
+                .await
+                .unwrap();
+            signal.notify_one();
+            std::future::pending::<()>().await;
+        });
+
+        let mut config = config();
+        config.retry.max_retries = 0;
+        config.retry.operation_timeout_ms = Some(if cancel { 2000 } else { 100 });
+        let client = Arc::new(CoinApiHttpClient::new("test-api-key".into(), config).unwrap());
+        let transfer_client = Arc::clone(&client);
+        let transfer = tokio::spawn(async move {
+            transfer_client
+                .download_file(
+                    Url::parse(&format!("http://{addr}/archive")).unwrap(),
+                    &destination,
+                )
+                .await
+        });
+
+        if cancel {
+            tokio::time::timeout(Duration::from_secs(2), started.notified())
+                .await
+                .unwrap();
+            client.cancel();
+        }
+
+        let error = transfer.await.unwrap().unwrap_err();
+        peer.abort();
+        let _ = peer.await;
+
+        let Error::Retry(actual) = error else {
+            panic!("expected retry control error, was {error:?}")
+        };
+
+        let expected = if cancel {
+            RetryError::Canceled
+        } else {
+            RetryError::OperationTimeout { timeout_ms: 100 }
+        };
+
+        assert_eq!(actual, expected);
+        assert!(!filepath.exists());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(client.credits_remaining(), 7);
+    }
+
+    fn config() -> CoinApiHttpConfig {
+        CoinApiHttpConfig {
+            credit_budget: 7,
+            retry: RetryConfig {
+                max_retries: 1,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(500),
+                max_elapsed_ms: Some(2000),
+                ..RetryConfig::default()
+            },
+            ..CoinApiHttpConfig::default()
+        }
+    }
+
+    async fn read_request(socket: &mut TcpStream) -> String {
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(socket.read_u8().await.unwrap());
+        }
+
+        String::from_utf8(request).unwrap()
+    }
 }

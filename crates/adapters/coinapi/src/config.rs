@@ -183,7 +183,7 @@ impl CoinApiDataClientConfig {
     }
 }
 
-fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
+pub(crate) fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
     let mut seen = AHashSet::new();
 
     for selection in selections {

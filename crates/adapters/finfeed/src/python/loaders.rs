@@ -20,11 +20,13 @@ use std::{num::NonZeroUsize, sync::Arc};
 use nautilus_core::{
     UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
+    string::secret::SecretString,
 };
 use nautilus_model::{data::BarType, identifiers::InstrumentId, instruments::BinaryOption};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::{config::FinFeedDataClientConfig, loaders::FinFeedDataLoader};
+use super::config::http_config;
+use crate::{instruments::FinFeedInstrumentSelection, loaders::FinFeedDataLoader};
 
 /// Standalone ingestion with reusable instrument definitions and lazy credentials.
 ///
@@ -44,12 +46,47 @@ pub struct PyFinFeedDataLoader {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedDataLoader {
-    /// Creates a loader, using default HTTP settings when config is omitted.
+    /// Creates a loader with optional credentials and HTTP controls.
+    ///
+    /// Missing credentials fall back to `FINFEED_API_KEY` on the first network request.
+    /// Construction sends no requests.
     #[new]
-    #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<FinFeedDataClientConfig>) -> Self {
-        let config = config.unwrap_or_default();
-        let loader = FinFeedDataLoader::new(config);
+    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, attempt_budget=None, min_request_interval_ms=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_backoff_factor=None, retry_jitter_ms=None, retry_operation_timeout_ms=None, retry_immediate_first=None, retry_max_elapsed_ms=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_new(
+        api_key: Option<String>,
+        base_url: Option<String>,
+        proxy_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_concurrent_requests: Option<usize>,
+        attempt_budget: Option<u64>,
+        min_request_interval_ms: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_initial_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        retry_backoff_factor: Option<f64>,
+        retry_jitter_ms: Option<u64>,
+        retry_operation_timeout_ms: Option<u64>,
+        retry_immediate_first: Option<bool>,
+        retry_max_elapsed_ms: Option<u64>,
+    ) -> Self {
+        let config = http_config(
+            base_url,
+            proxy_url,
+            timeout_secs,
+            max_concurrent_requests,
+            attempt_budget,
+            min_request_interval_ms,
+            max_retries,
+            retry_delay_initial_ms,
+            retry_delay_max_ms,
+            retry_backoff_factor,
+            retry_jitter_ms,
+            retry_operation_timeout_ms,
+            retry_immediate_first,
+            retry_max_elapsed_ms,
+        );
+        let loader = FinFeedDataLoader::with_http_config(api_key.map(SecretString::from), config);
 
         Self {
             inner: Arc::new(loader),
@@ -84,12 +121,19 @@ impl PyFinFeedDataLoader {
         })
     }
 
-    /// Retrieves and retains the configured outcome selections.
+    /// Retrieves and retains the supplied outcome selections.
     #[gen_stub(override_return_type(type_repr = "typing.Awaitable[list[nautilus_trader.model.BinaryOption]]", imports = ("typing", "nautilus_trader.model")))]
-    fn request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn request_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        instruments: Vec<FinFeedInstrumentSelection>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let loader = Arc::clone(&self.inner);
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            loader.request_instruments().await.map_err(to_pyruntime_err)
+            loader
+                .request_instruments(&instruments)
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 

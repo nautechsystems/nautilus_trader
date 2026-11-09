@@ -110,12 +110,31 @@ class CoinApiTradeStreamIterator:
 
 @typing.final
 class CoinApiDataLoader:
-    def __init__(self, config: CoinApiDataClientConfig | None = None) -> None: ...
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_concurrent_requests: int | None = None,
+        credit_budget: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        retry_max_elapsed_ms: int | None = None,
+    ) -> None: ...
     def add_instrument(
         self, instrument: typing.Any, symbol_id: str | None = None, symbol_id_int: int | None = None
     ) -> None: ...
     def instrument(self, instrument_id: model.InstrumentId) -> typing.Any: ...
-    def request_instruments(self) -> typing.Awaitable[list[typing.Any]]: ...
+    def request_instruments(
+        self,
+        instruments: typing.Sequence[CoinApiInstrumentSelection],
+        price_precisions: typing.Mapping[model.InstrumentId, int] | None = None,
+    ) -> typing.Awaitable[list[typing.Any]]: ...
+    def download_flat_file(
+        self, bucket: str, object_key: str, filepath: str | os.PathLike | pathlib.Path
+    ) -> typing.Awaitable[None]: ...
     def load_book_deltas(
         self,
         filepath: str | os.PathLike | pathlib.Path,

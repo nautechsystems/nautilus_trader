@@ -18,11 +18,9 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.13, 3.14, or 3.15 and NautilusTrader 2.x with the CoinAPI adapter.
-#   For Python 3.13 or 3.14, run `pip install -U --pre nautilus_trader`.
-#   For Python 3.15, use a [source build](../getting_started/installation.md#from-source)
-#   or [development wheel](../getting_started/installation.md#development-wheels).
-#   Install the data packages with `pip install boto3 pandas`.
+# - Python 3.13, 3.14, or 3.15.
+# - NautilusTrader 2.x with the CoinAPI adapter: `pip install -U --pre nautilus_trader`.
+# - pandas: `pip install pandas`.
 # - A CoinAPI key with Flat Files access and sufficient usage credits for
 #   the first download. Listing and downloading files incur charges; see
 #   [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
@@ -31,22 +29,20 @@
 # building the Python extension:
 #
 # ```bash
-# uv run --project python --no-sync --with boto3 --with pandas \
+# uv run --project python --no-sync --with pandas \
 #     python docs/tutorials/backtest_orderbook_coinapi.py
 # ```
 
 # %%
+import asyncio
 import os
-import shutil
 from decimal import Decimal
 from getpass import getpass
 from hashlib import file_digest
 from pathlib import Path
 from tempfile import mkdtemp
 
-import boto3
 import pandas as pd
-from botocore.config import Config
 
 from nautilus_trader.adapters.coinapi import CoinApiDataLoader
 from nautilus_trader.backtest import BacktestNode
@@ -92,13 +88,14 @@ from nautilus_trader.trading import OrderBookImbalanceConfig
 # when selecting another partition.
 #
 # The first run reads `COINAPI_API_KEY` or prompts for the key without
-# echoing it. CoinAPI uses that key as the S3 access key ID and the literal
-# `coinapi` as the secret access key; see
-# [S3 authentication](https://www.coinapi.io/products/flat-files/docs/s3-api/authentication?ref=nautilus).
+# echoing it. `CoinApiDataLoader` handles authentication and streams the
+# file to disk before making it available at the destination.
 # Files go under `NAUTILUS_DATA_DIR/CoinAPI`, which defaults to
 # `~/Downloads/Data/CoinAPI`.
 # The checksum pins the exact export used for the results below. A
 # mismatch stops the run before parsing; verify the file before replacing it.
+# In a notebook with an active event loop, replace
+# `asyncio.run(download_file())` below with `await download_file()`.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "CoinAPI"
@@ -109,24 +106,24 @@ OBJECT_KEY = (
 FILE_SHA256 = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4"
 filepath = DATA_DIR / OBJECT_KEY
 
+api_key = os.environ.get("COINAPI_API_KEY")
+if not filepath.is_file() and not api_key:
+    api_key = getpass("CoinAPI Flat Files API key: ")
+
+loader = CoinApiDataLoader(api_key=api_key)
+
+del api_key
+
+
+async def download_file() -> None:
+    """
+    Download the selected export through the configured loader.
+    """
+    await loader.download_flat_file("coinapi", OBJECT_KEY, filepath)
+
+
 if not filepath.is_file():
-    api_key = os.environ.get("COINAPI_API_KEY") or getpass("CoinAPI Flat Files API key: ")
-    client = boto3.client(
-        "s3",
-        endpoint_url="https://s3.flatfiles.coinapi.io",
-        region_name="us-east-1",
-        aws_access_key_id=api_key,
-        aws_secret_access_key="coinapi",  # noqa: S106 (CoinAPI's public signing constant)
-        config=Config(s3={"addressing_style": "path"}),
-    )
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    response = client.get_object(Bucket="coinapi", Key=OBJECT_KEY)
-    partial_path = filepath.with_suffix(".part")
-    with response["Body"] as source, partial_path.open("wb") as destination:
-        shutil.copyfileobj(source, destination)
-    partial_path.replace(filepath)
-    client.close()
-    del api_key, client, response
+    asyncio.run(download_file())
 
 with filepath.open("rb") as source:
     if file_digest(source, "sha256").hexdigest() != FILE_SHA256:
@@ -214,7 +211,6 @@ top_of_book_rows = []
 delta_count = 0
 nonpositive_spread_count = 0
 
-loader = CoinApiDataLoader()
 loader.add_instrument(instrument)
 
 for chunk in loader.stream_book_deltas(
@@ -435,8 +431,7 @@ node.dispose()
 # Chrome-compatible browser. From a source checkout, run:
 #
 # ```bash
-# uv run --project python --no-sync --with boto3 --with pandas \
-#     --with plotly --with kaleido \
+# uv run --project python --no-sync --with pandas --with plotly --with kaleido \
 #     python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 # ```
 #

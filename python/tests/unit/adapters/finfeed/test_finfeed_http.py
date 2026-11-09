@@ -96,18 +96,24 @@ def _peer(responses, **controls: Any) -> Iterator:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
-    config = ff.FinFeedDataClientConfig(
-        api_key="python-rest-secret",
-        base_url_http=f"http://127.0.0.1:{server.server_port}/v1/",
-        min_request_interval_ms=1,
-        max_concurrent_requests=1,
-        attempt_budget=controls.get("attempt_budget", 30),
-        max_retries=0,
-        http_timeout_secs=2,
-    )
+    base_url = f"http://127.0.0.1:{server.server_port}/v1/"
+
+    options = {
+        "api_key": controls.get("api_key", "python-rest-secret"),
+        "min_request_interval_ms": 1,
+        "max_concurrent_requests": 1,
+        "attempt_budget": controls.get("attempt_budget", 30),
+        "max_retries": 0,
+    }
+
+    if controls.get("client_type") is ff.FinFeedDataLoader:
+        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=2, **options)
+    else:
+        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=2, **options)
+        client = ff.FinFeedHttpClient(config)
 
     try:
-        yield controls.get("client_type", ff.FinFeedHttpClient)(config), requests, entered, release
+        yield client, requests, entered, release
     finally:
         release.set()
         server.shutdown()
@@ -1136,7 +1142,12 @@ def test_historical_research_example_keeps_selected_source(
         asyncio.run(check_canceled())
 
 
-def test_loader_reuses_metadata_and_replays_catalog(tmp_path: Path) -> None:
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_loader_reuses_metadata_and_replays_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_environment: bool,
+) -> None:
     """
     Reuse one definition and preserve deltas through Parquet.
     """
@@ -1150,10 +1161,20 @@ def test_loader_reuses_metadata_and_replays_catalog(tmp_path: Path) -> None:
         (200, _response("book-replay.json")),
     ]
 
-    with _peer(responses, client_type=ff.FinFeedDataLoader) as (loader, requests, *_):
+    monkeypatch.setenv("FINFEED_API_KEY", "python-rest-secret")
+    with _peer(
+        responses,
+        client_type=ff.FinFeedDataLoader,
+        api_key=None if use_environment else "python-rest-secret",
+    ) as (loader, requests, *_):
 
         async def collect():
-            instrument = await loader.request_instrument(instrument_id)
+            instruments = await loader.request_instruments(
+                [
+                    ff.FinFeedInstrumentSelection("POLYMARKET", ["TEST-OUTCOME_NO"]),
+                ],
+            )
+            instrument = instruments[0]
             first = await loader.request_book_deltas(instrument_id, start, end)
             second = await loader.request_book_deltas(instrument_id, start, end)
             return instrument, first, second
@@ -1174,7 +1195,11 @@ def test_loader_reuses_metadata_and_replays_catalog(tmp_path: Path) -> None:
     assert catalog.query_order_book_deltas(identifiers=[str(instrument_id)]) == first
     assert catalog.instruments(instrument_ids=[str(instrument_id)]) == [instrument]
     assert len(requests) == 3
-    assert requests[0][0] == "/v1/markets/POLYMARKET/TEST-OUTCOME_NO"
+    assert requests[0] == (
+        "/v1/markets/POLYMARKET/TEST-OUTCOME_NO",
+        "python-rest-secret",
+        "nautilus",
+    )
     assert requests[1] == requests[2]
 
 
@@ -1203,11 +1228,16 @@ def test_loader_failed_definition_refresh_preserves_metadata() -> None:
     assert len(requests) == 2
 
 
-def test_loader_checks_metadata_and_limit_before_network() -> None:
+@pytest.mark.parametrize("api_key", [None, "invalid key"])
+def test_loader_checks_metadata_and_limit_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
+) -> None:
     """
     Reject missing metadata and zero limits before HTTP admission.
     """
-    loader = ff.FinFeedDataLoader(ff.FinFeedDataClientConfig(api_key="invalid key"))
+    monkeypatch.delenv("FINFEED_API_KEY", raising=False)
+    loader = ff.FinFeedDataLoader(api_key=api_key)
     instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
 
     async def request():

@@ -1558,20 +1558,27 @@ async fn loader_reuses_metadata_for_multiple_requests() {
     .await;
     let id = InstrumentId::from("BTC-USD.COINBASE");
 
-    let config = CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
-        max_retries: 0,
-        instruments: vec![CoinApiInstrumentSelection {
-            exchange_id: "COINBASE".into(),
-            query: SymbolsQuery::default(),
-            instrument_ids: vec![id],
-        }],
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
     };
 
-    let loader = CoinApiDataLoader::new(config);
-    let instruments = loader.request_instruments().await.unwrap();
+    let selections = vec![CoinApiInstrumentSelection {
+        exchange_id: "COINBASE".into(),
+        query: SymbolsQuery::default(),
+        instrument_ids: vec![id],
+    }];
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+    let instruments = loader
+        .request_instruments(&selections, &Default::default())
+        .await
+        .unwrap();
     let start = UnixNanos::from("2026-09-23T09:09:00Z".parse::<Timestamp>().unwrap());
     let end = UnixNanos::from("2026-09-23T09:10:00Z".parse::<Timestamp>().unwrap());
     let first = loader.request_trades(id, start, end, None).await.unwrap();
@@ -1626,13 +1633,18 @@ async fn loader_rejects_credit_truncated_history_without_partial_results() {
     let body = serde_json::to_string(&rows).unwrap();
     let (peer, http) = peer(vec![(200, "", body)]).await;
 
-    let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
         credit_budget: 1,
-        max_retries: 0,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
-    });
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
 
     let symbols: Vec<Symbol> =
         serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
@@ -1670,24 +1682,29 @@ async fn loader_failed_batch_refresh_preserves_registry() {
     let id = InstrumentId::from("BTC-USD.COINBASE");
     let missing = InstrumentId::from("BTCUSDT.BINANCE");
 
-    let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
-        max_retries: 0,
-        instruments: vec![
-            CoinApiInstrumentSelection {
-                exchange_id: "COINBASE".into(),
-                query: SymbolsQuery::default(),
-                instrument_ids: vec![id],
-            },
-            CoinApiInstrumentSelection {
-                exchange_id: "BINANCE".into(),
-                query: SymbolsQuery::default(),
-                instrument_ids: vec![missing],
-            },
-        ],
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
-    });
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+    let selections = vec![
+        CoinApiInstrumentSelection {
+            exchange_id: "COINBASE".into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![id],
+        },
+        CoinApiInstrumentSelection {
+            exchange_id: "BINANCE".into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![missing],
+        },
+    ];
 
     let symbols: Vec<Symbol> =
         serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
@@ -1699,7 +1716,10 @@ async fn loader_failed_batch_refresh_preserves_registry() {
     loader
         .add_instrument(old.instrument.clone(), Some(old.symbol_id), Some(27_576))
         .unwrap();
-    let error = loader.request_instruments().await.unwrap_err();
+    let error = loader
+        .request_instruments(&selections, &Default::default())
+        .await
+        .unwrap_err();
     let requests = peer.await.unwrap();
     assert!(error.to_string().contains("404"), "{error:#}");
     assert_eq!(loader.instrument(id).unwrap(), old.instrument);
@@ -1720,12 +1740,17 @@ async fn loader_rejects_invalid_history_record_without_partial_results() {
     rows[1]["price"] = "85988.491".parse::<serde_json::Number>().unwrap().into();
     let (peer, http) = peer(vec![(200, "", serde_json::to_string(&rows).unwrap())]).await;
 
-    let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
-        max_retries: 0,
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
-    });
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
 
     let symbols: Vec<Symbol> =
         serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
@@ -1777,12 +1802,17 @@ async fn loader_bars_exclude_periods_closing_after_end() {
     rows[1]["time_period_end"] = "2020-09-23T09:11:00Z".into();
     let (peer, http) = peer(vec![(200, "", serde_json::to_string(&rows).unwrap())]).await;
 
-    let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
-        max_retries: 0,
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
-    });
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
 
     let symbols: Vec<Symbol> =
         serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
@@ -1845,22 +1875,31 @@ async fn loader_maps_numeric_symbols_from_requested_metadata() {
         ("KRAKEN", "BTC/USD.KRAKEN"),
     ];
 
-    let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        base_url_http: Some(http.base_url),
-        max_retries: 0,
-        instruments: selections
-            .iter()
-            .map(|(exchange, id)| CoinApiInstrumentSelection {
-                exchange_id: (*exchange).into(),
-                query: SymbolsQuery::default(),
-                instrument_ids: vec![InstrumentId::from(*id)],
-            })
-            .collect(),
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
         ..Default::default()
-    });
+    };
 
-    let instruments = loader.request_instruments().await.unwrap();
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let instrument_selections: Vec<_> = selections
+        .iter()
+        .map(|(exchange, id)| CoinApiInstrumentSelection {
+            exchange_id: (*exchange).into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![InstrumentId::from(*id)],
+        })
+        .collect();
+
+    let instruments = loader
+        .request_instruments(&instrument_selections, &Default::default())
+        .await
+        .unwrap();
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("TP-1MIN.csv");
     let mut lines = vec![

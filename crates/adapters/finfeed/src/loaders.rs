@@ -18,7 +18,7 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use anyhow::Context;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDelta, QuoteTick, TradeTick},
     identifiers::InstrumentId,
@@ -29,10 +29,11 @@ use parking_lot::{Mutex, RwLock};
 use crate::{
     book,
     common::symbol::from_instrument_id,
-    config::FinFeedDataClientConfig,
     history,
-    http::client::FinFeedHttpClient,
-    instruments::{check_duplicate_outcome, fetch_instrument, selected_ids},
+    http::client::{FinFeedHttpClient, FinFeedHttpConfig},
+    instruments::{
+        FinFeedInstrumentSelection, check_duplicate_outcome, fetch_instrument, selected_ids,
+    },
 };
 
 /// Fetches historical Nautilus data using retained outcome definitions.
@@ -43,7 +44,8 @@ use crate::{
 /// a snapshot of its registered definition and returns no partial result on failure.
 #[derive(Debug)]
 pub struct FinFeedDataLoader {
-    config: FinFeedDataClientConfig,
+    api_key: Option<SecretString>,
+    http_config: FinFeedHttpConfig,
     http: Mutex<Option<Arc<FinFeedHttpClient>>>,
     instruments: RwLock<HashMap<InstrumentId, BinaryOption>>,
 }
@@ -51,9 +53,16 @@ pub struct FinFeedDataLoader {
 impl FinFeedDataLoader {
     /// Creates a loader with an empty instrument registry and lazy HTTP transport.
     #[must_use]
-    pub fn new(config: FinFeedDataClientConfig) -> Self {
+    pub fn new(api_key: Option<SecretString>) -> Self {
+        Self::with_http_config(api_key, FinFeedHttpConfig::default())
+    }
+
+    /// Creates a loader with explicit HTTP controls, without resolving credentials or sending requests.
+    #[must_use]
+    pub fn with_http_config(api_key: Option<SecretString>, http_config: FinFeedHttpConfig) -> Self {
         Self {
-            config,
+            api_key,
+            http_config,
             http: Mutex::new(None),
             instruments: RwLock::new(HashMap::new()),
         }
@@ -101,14 +110,17 @@ impl FinFeedDataLoader {
         Ok(instrument)
     }
 
-    /// Fetches the configured outcome selections and retains them atomically.
+    /// Fetches the supplied outcome selections and retains them atomically.
     ///
     /// # Errors
     ///
     /// Returns an error if selections, retrieval, or any definition fails validation.
     /// Failures preserve all previously registered definitions.
-    pub async fn request_instruments(&self) -> anyhow::Result<Vec<BinaryOption>> {
-        let ids = selected_ids(&self.config.instruments)?;
+    pub async fn request_instruments(
+        &self,
+        instruments: &[FinFeedInstrumentSelection],
+    ) -> anyhow::Result<Vec<BinaryOption>> {
+        let ids = selected_ids(instruments)?;
         let http = self.http()?;
         let now = get_atomic_clock_realtime().get_time_ns();
         let mut loaded = Vec::with_capacity(ids.len());
@@ -256,7 +268,7 @@ impl FinFeedDataLoader {
             return Ok(Arc::clone(client));
         }
 
-        let client = FinFeedHttpClient::new(self.config.api_key.clone(), self.config.http.clone())?;
+        let client = FinFeedHttpClient::new(self.api_key.clone(), self.http_config.clone())?;
         let client = Arc::new(client);
         *http = Some(Arc::clone(&client));
         Ok(client)

@@ -128,32 +128,22 @@ impl FinFeedDataClientConfig {
 
         Self {
             api_key: api_key.map(SecretString::from),
-            http: FinFeedHttpConfig {
-                base_url: base_url_http
-                    .map(SecretString::from)
-                    .unwrap_or(defaults.http.base_url),
-                proxy_url: proxy_url.map(SecretString::from),
-                timeout_secs: http_timeout_secs.unwrap_or(defaults.http.timeout_secs),
-                max_concurrent_requests: max_concurrent_requests
-                    .unwrap_or(defaults.http.max_concurrent_requests),
-                attempt_budget: attempt_budget.unwrap_or(defaults.http.attempt_budget),
-                min_request_interval_ms: min_request_interval_ms
-                    .unwrap_or(defaults.http.min_request_interval_ms),
-                retry: RetryConfig {
-                    max_retries: max_retries.unwrap_or(defaults.http.retry.max_retries),
-                    initial_delay_ms: retry_delay_initial_ms
-                        .unwrap_or(defaults.http.retry.initial_delay_ms),
-                    max_delay_ms: retry_delay_max_ms.unwrap_or(defaults.http.retry.max_delay_ms),
-                    backoff_factor: retry_backoff_factor
-                        .unwrap_or(defaults.http.retry.backoff_factor),
-                    jitter_ms: retry_jitter_ms.unwrap_or(defaults.http.retry.jitter_ms),
-                    operation_timeout_ms: retry_operation_timeout_ms
-                        .or(defaults.http.retry.operation_timeout_ms),
-                    immediate_first: retry_immediate_first
-                        .unwrap_or(defaults.http.retry.immediate_first),
-                    max_elapsed_ms: retry_max_elapsed_ms.or(defaults.http.retry.max_elapsed_ms),
-                },
-            },
+            http: http_config(
+                base_url_http,
+                proxy_url,
+                http_timeout_secs,
+                max_concurrent_requests,
+                attempt_budget,
+                min_request_interval_ms,
+                max_retries,
+                retry_delay_initial_ms,
+                retry_delay_max_ms,
+                retry_backoff_factor,
+                retry_jitter_ms,
+                retry_operation_timeout_ms,
+                retry_immediate_first,
+                retry_max_elapsed_ms,
+            ),
             instruments: instruments.unwrap_or(defaults.instruments),
             poll_interval_ms: poll_interval_ms.unwrap_or(defaults.poll_interval_ms),
             poll_limit: poll_limit.unwrap_or(defaults.poll_limit),
@@ -291,6 +281,53 @@ impl FinFeedDataClientConfig {
     /// Returns the constant representation `FinFeedDataClientConfig`.
     fn __repr__(&self) -> &'static str {
         "FinFeedDataClientConfig"
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shared conversion for the typed HTTP constructor options"
+)]
+pub(super) fn http_config(
+    base_url_http: Option<String>,
+    proxy_url: Option<String>,
+    http_timeout_secs: Option<u64>,
+    max_concurrent_requests: Option<usize>,
+    attempt_budget: Option<u64>,
+    min_request_interval_ms: Option<u64>,
+    max_retries: Option<u32>,
+    retry_delay_initial_ms: Option<u64>,
+    retry_delay_max_ms: Option<u64>,
+    retry_backoff_factor: Option<f64>,
+    retry_jitter_ms: Option<u64>,
+    retry_operation_timeout_ms: Option<u64>,
+    retry_immediate_first: Option<bool>,
+    retry_max_elapsed_ms: Option<u64>,
+) -> FinFeedHttpConfig {
+    let defaults = FinFeedHttpConfig::default();
+
+    FinFeedHttpConfig {
+        base_url: base_url_http
+            .map(SecretString::from)
+            .unwrap_or(defaults.base_url),
+        proxy_url: proxy_url.map(SecretString::from),
+        timeout_secs: http_timeout_secs.unwrap_or(defaults.timeout_secs),
+        max_concurrent_requests: max_concurrent_requests
+            .unwrap_or(defaults.max_concurrent_requests),
+        attempt_budget: attempt_budget.unwrap_or(defaults.attempt_budget),
+        min_request_interval_ms: min_request_interval_ms
+            .unwrap_or(defaults.min_request_interval_ms),
+        retry: RetryConfig {
+            max_retries: max_retries.unwrap_or(defaults.retry.max_retries),
+            initial_delay_ms: retry_delay_initial_ms.unwrap_or(defaults.retry.initial_delay_ms),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(defaults.retry.max_delay_ms),
+            backoff_factor: retry_backoff_factor.unwrap_or(defaults.retry.backoff_factor),
+            jitter_ms: retry_jitter_ms.unwrap_or(defaults.retry.jitter_ms),
+            operation_timeout_ms: retry_operation_timeout_ms
+                .or(defaults.retry.operation_timeout_ms),
+            immediate_first: retry_immediate_first.unwrap_or(defaults.retry.immediate_first),
+            max_elapsed_ms: retry_max_elapsed_ms.or(defaults.retry.max_elapsed_ms),
+        },
     }
 }
 

@@ -247,10 +247,14 @@ Do not overwrite one definition with the other or route FinFeed IDs to native ex
 
 `FinFeedDataLoader` retains checked outcome definitions and returns Nautilus market data without a node.
 Construction sends no requests and reads no credentials. The first network operation creates a shared
-HTTP client using `FinFeedDataClientConfig`, including its pacing, retries, and attempt allowance.
+HTTP client. Use `FinFeedDataLoader(api_key=api_key)` or omit the key to use `FINFEED_API_KEY`.
+Optional constructor keywords control HTTP pacing, retries, and the attempt allowance. `base_url`
+selects the REST endpoint, and `proxy_url` sets an explicit HTTP(S) proxy. `timeout_secs` bounds one
+transport request; `retry_operation_timeout_ms` also covers admission and pacing for one attempt.
+`retry_max_elapsed_ms` bounds the entire call, including retries.
 
 Call `await loader.request_instrument(instrument_id)` to fetch and retain one definition, or
-`await loader.request_instruments()` to fetch the configured selections atomically. `add_instrument`
+`await loader.request_instruments(instruments)` to fetch the supplied selections atomically. `add_instrument`
 registers an existing definition. Failed refreshes preserve the retained definitions. Market-data calls
 use cached metadata; they do not refresh it implicitly.
 

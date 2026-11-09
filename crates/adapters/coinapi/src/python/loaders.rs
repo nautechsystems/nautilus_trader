@@ -15,31 +15,35 @@
 
 //! Python access to standalone CoinAPI ingestion.
 
-use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf, sync::Arc};
 
 use jiff::civil::Date;
 use nautilus_core::{
     UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
+    string::secret::SecretString,
 };
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDelta, QuoteTick, TradeTick},
     identifiers::InstrumentId,
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
+use nautilus_network::retry::RetryConfig;
 use pyo3::{IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
 use super::csv::{
     CoinApiDeltaStreamIterator, CoinApiQuoteStreamIterator, CoinApiTradeStreamIterator,
 };
-use crate::{config::CoinApiDataClientConfig, loaders::CoinApiDataLoader};
+use crate::{
+    config::CoinApiInstrumentSelection, http::client::CoinApiHttpConfig, loaders::CoinApiDataLoader,
+};
 
 /// Standalone ingestion with reusable instrument definitions and lazy credentials.
 ///
 /// Register or request definitions before loading market data. Construction sends no requests.
 /// History bounds are integer UNIX nanoseconds; limits must be positive.
-/// Local file and stream failures raise `ValueError`; network failures raise `RuntimeError`.
+/// Local decoding failures raise `ValueError`; downloads and REST failures raise `RuntimeError`.
 /// Requested chunk sizes must be in `[1, 1_000_000]`.
 #[derive(Debug)]
 #[pyclass(
@@ -55,12 +59,47 @@ pub struct PyCoinApiDataLoader {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyCoinApiDataLoader {
-    /// Creates a loader, using default HTTP settings when config is omitted.
+    /// Creates a loader with optional credentials and HTTP controls.
+    ///
+    /// Missing credentials fall back to `COINAPI_API_KEY` on the first network request.
+    /// Local files require no key. Construction sends no requests.
     #[new]
-    #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<CoinApiDataClientConfig>) -> Self {
-        let config = config.unwrap_or_default();
-        let loader = CoinApiDataLoader::new(config);
+    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, credit_budget=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_max_elapsed_ms=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_new(
+        api_key: Option<String>,
+        base_url: Option<String>,
+        proxy_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_concurrent_requests: Option<usize>,
+        credit_budget: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_initial_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        retry_max_elapsed_ms: Option<u64>,
+    ) -> Self {
+        let defaults = CoinApiHttpConfig::default();
+
+        let http_config = CoinApiHttpConfig {
+            base_url: base_url.unwrap_or(defaults.base_url),
+            proxy_url: proxy_url.map(SecretString::from),
+            max_concurrent_requests: max_concurrent_requests
+                .unwrap_or(defaults.max_concurrent_requests),
+            credit_budget: credit_budget.unwrap_or(defaults.credit_budget),
+            retry: RetryConfig {
+                operation_timeout_ms: timeout_secs
+                    .map(|value| value.saturating_mul(1_000))
+                    .or(defaults.retry.operation_timeout_ms),
+                max_retries: max_retries.unwrap_or(defaults.retry.max_retries),
+                initial_delay_ms: retry_delay_initial_ms.unwrap_or(defaults.retry.initial_delay_ms),
+                max_delay_ms: retry_delay_max_ms.unwrap_or(defaults.retry.max_delay_ms),
+                max_elapsed_ms: retry_max_elapsed_ms.or(defaults.retry.max_elapsed_ms),
+                ..defaults.retry
+            },
+        };
+
+        let loader =
+            CoinApiDataLoader::with_http_config(api_key.map(SecretString::from), http_config);
 
         Self {
             inner: Arc::new(loader),
@@ -91,13 +130,20 @@ impl PyCoinApiDataLoader {
         instrument_any_to_pyobject(py, instrument)
     }
 
-    /// Retrieves the configured instrument selections and retains their definitions and mappings.
+    /// Retrieves the supplied selections and retains their definitions and mappings.
+    #[pyo3(signature = (instruments, price_precisions=None))]
     #[gen_stub(override_return_type(type_repr = "typing.Awaitable[list[typing.Any]]", imports = ("typing",)))]
-    fn request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn request_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        instruments: Vec<CoinApiInstrumentSelection>,
+        price_precisions: Option<HashMap<InstrumentId, u8>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let loader = Arc::clone(&self.inner);
+        let price_precisions = price_precisions.unwrap_or_default();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = loader
-                .request_instruments()
+                .request_instruments(&instruments, &price_precisions)
                 .await
                 .map_err(to_pyruntime_err)?;
             Python::attach(|py| {
@@ -106,6 +152,31 @@ impl PyCoinApiDataLoader {
                     .map(|instrument| instrument_any_to_pyobject(py, instrument))
                     .collect::<PyResult<Vec<_>>>()
             })
+        })
+    }
+
+    /// Downloads a Flat Files object without requiring instrument definitions.
+    ///
+    /// Creates parent directories and replaces the destination only after a complete download.
+    /// Uses the configured credentials, proxy, retry, timeout, and concurrency controls.
+    /// `timeout_secs` bounds each attempt, including admission and the complete body; defaults to 30.
+    /// `retry_max_elapsed_ms` bounds the whole call; defaults to 120_000. Raise both for large files.
+    /// Each retry restarts the download and can incur additional billed transfer.
+    /// Flat Files usage does not consume the local REST credit allowance. Failures raise `RuntimeError`.
+    #[gen_stub(override_return_type(type_repr = "typing.Awaitable[None]", imports = ("typing",)))]
+    fn download_flat_file<'py>(
+        &self,
+        py: Python<'py>,
+        bucket: String,
+        object_key: String,
+        filepath: PathBuf,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let loader = Arc::clone(&self.inner);
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            loader
+                .download_flat_file(&bucket, &object_key, &filepath)
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 

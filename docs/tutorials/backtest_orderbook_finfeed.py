@@ -12,15 +12,16 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.13, 3.14, or 3.15 and NautilusTrader 2.x with the FinFeed adapter.
-#   Install a [development wheel](../getting_started/installation.md#development-wheels)
-#   or build from source. Install pandas with `pip install pandas`.
+# - Python 3.13, 3.14, or 3.15.
+# - NautilusTrader 2.x with the FinFeed adapter: `pip install -U --pre nautilus_trader`.
+# - pandas: `pip install pandas`.
 # - A FinFeed key with Prediction Markets historical order book access
-#   and sufficient allowance for three requests on the first run, including
+#   and sufficient allowance for at least three requests on the first run, including
 #   two book pages of up to 10,000 records each.
 #   See [FinFeed authentication](../integrations/finfeed.md#authentication-and-environment).
 #
-# Run from the repository root after building the Python extension:
+# From a source checkout, run the tutorial from the repository root after
+# building the Python extension:
 #
 # ```bash
 # uv run --project python --no-sync --with pandas \
@@ -43,7 +44,6 @@ from tempfile import mkdtemp
 
 import pandas as pd
 
-from nautilus_trader.adapters.finfeed import FinFeedDataClientConfig
 from nautilus_trader.adapters.finfeed import FinFeedDataLoader
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.common import LogLevel
@@ -108,7 +108,8 @@ book_type = BookType.L2_MBP
 # `FinFeedDataLoader` fetches and retains the outcome definition, then
 # converts historical book records into Nautilus deltas. It shares the
 # adapter's pagination and snapshot reconstruction code. No node or actor
-# is needed. The first run uses one metadata request and two book pages.
+# is needed. The first run uses one metadata request and two book pages,
+# plus any retries.
 # The local attempt allowance does not establish provider billing units
 # or remaining account quota.
 #
@@ -119,8 +120,7 @@ book_type = BookType.L2_MBP
 # at or before `START` on that clock. Missing seeds, ambiguous continuation,
 # exhausted allowance, and unsupported actions reject the request. See
 # [historical book limits](../integrations/finfeed.md#historical-books).
-# Exceptions propagate directly to the caller. This run uses the default
-# 300-second HTTP timeout and disables retries.
+# Exceptions propagate directly to the caller.
 
 
 # %%
@@ -128,15 +128,7 @@ async def collect_book(api_key: str) -> tuple[BinaryOption, list[OrderBookDelta]
     """
     Download the outcome definition and its historical book deltas.
     """
-    loader = FinFeedDataLoader(
-        FinFeedDataClientConfig(
-            api_key=api_key,
-            attempt_budget=3,
-            min_request_interval_ms=10_000,
-            max_concurrent_requests=1,
-            max_retries=0,
-        ),
-    )
+    loader = FinFeedDataLoader(api_key=api_key)
 
     instrument = await loader.request_instrument(INSTRUMENT_ID)
     deltas = await loader.request_book_deltas(

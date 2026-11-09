@@ -19,7 +19,7 @@ use std::{collections::HashMap, num::NonZeroUsize, path::Path, sync::Arc};
 
 use anyhow::Context;
 use jiff::civil::Date;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDelta, QuoteTick, TradeTick},
     enums::AggregationSource,
@@ -32,10 +32,10 @@ use ustr::Ustr;
 
 use crate::{
     common::credential::resolve_api_key,
-    config::{CoinApiDataClientConfig, validate_price_precisions},
+    config::{CoinApiInstrumentSelection, validate_price_precisions, validate_selections},
     csv,
     http::{
-        client::{CoinApiHttpClient, HistoryPages},
+        client::{CoinApiHttpClient, CoinApiHttpConfig, HistoryPages},
         parse::{
             parse_bar, parse_instruments_with_precisions, parse_order_book, parse_quote_tick,
             parse_trade_tick,
@@ -49,13 +49,15 @@ use crate::{
 ///
 /// Local file operations require no credentials. The first network request resolves credentials
 /// and creates a shared HTTP client with the configured credit allowance. Register definitions
-/// for file loading, or request the configured selections before REST market-data requests.
+/// for file loading, or request instrument selections before REST market-data requests.
 /// Tick and book values must fit the registered instrument precision without rounding.
 /// Consolidated bar volumes retain observed precision after bounded export normalization. REST history
 /// rejects truncated responses and invalid records rather than returning a partial result.
+/// Flat Files downloads require credentials but no instrument definitions.
 #[derive(Debug)]
 pub struct CoinApiDataLoader {
-    config: CoinApiDataClientConfig,
+    api_key: Option<SecretString>,
+    http_config: CoinApiHttpConfig,
     http: Mutex<Option<Arc<CoinApiHttpClient>>>,
     instruments: RwLock<HashMap<InstrumentId, LoadedInstrument>>,
 }
@@ -63,9 +65,16 @@ pub struct CoinApiDataLoader {
 impl CoinApiDataLoader {
     /// Creates an empty loader without resolving credentials or sending requests.
     #[must_use]
-    pub fn new(config: CoinApiDataClientConfig) -> Self {
+    pub fn new(api_key: Option<SecretString>) -> Self {
+        Self::with_http_config(api_key, CoinApiHttpConfig::default())
+    }
+
+    /// Creates a loader with explicit HTTP controls, without resolving credentials or sending requests.
+    #[must_use]
+    pub fn with_http_config(api_key: Option<SecretString>, http_config: CoinApiHttpConfig) -> Self {
         Self {
-            config,
+            api_key,
+            http_config,
             http: Mutex::new(None),
             instruments: RwLock::new(HashMap::new()),
         }
@@ -105,30 +114,32 @@ impl CoinApiDataLoader {
         Ok(self.loaded(instrument_id)?.instrument)
     }
 
-    /// Fetches the configured selections and retains their metadata atomically.
+    /// Fetches the supplied selections and retains their metadata atomically.
     ///
     /// # Errors
     ///
     /// Returns an error if selections are invalid, a selected definition is unavailable, or
     /// retrieval or mapping validation fails. Failures preserve the existing registry.
-    pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        self.config.validate()?;
-        validate_price_precisions(&self.config.instruments, &self.config.price_precisions)?;
+    pub async fn request_instruments(
+        &self,
+        instruments: &[CoinApiInstrumentSelection],
+        price_precisions: &HashMap<InstrumentId, u8>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        validate_selections(instruments)?;
+        validate_price_precisions(instruments, price_precisions)?;
         anyhow::ensure!(
-            !self.config.instruments.is_empty(),
+            !instruments.is_empty(),
             "CoinAPI loader requires instrument selections"
         );
         let http = self.http()?;
         let now = get_atomic_clock_realtime().get_time_ns();
         let mut loaded = Vec::new();
 
-        for selection in &self.config.instruments {
+        for selection in instruments {
             let symbols = http
                 .get_symbols(&selection.exchange_id, &selection.query)
                 .await?;
-            let parsed =
-                parse_instruments_with_precisions(&symbols, &self.config.price_precisions, now);
-
+            let parsed = parse_instruments_with_precisions(&symbols, price_precisions, now);
             for id in &selection.instrument_ids {
                 let item = parsed
                     .iter()
@@ -154,6 +165,28 @@ impl CoinApiDataLoader {
 
         *instruments = candidate;
         Ok(loaded.into_iter().map(|item| item.instrument).collect())
+    }
+
+    /// Downloads one Flat Files object to disk using this loader's credentials and HTTP controls.
+    ///
+    /// Instrument definitions are not required. Existing files are replaced only after a complete
+    /// download; callers can check for a cached file before invoking this method.
+    /// Flat Files usage is billed separately and does not consume the local REST credit allowance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are unavailable, a selector is invalid, the download fails,
+    /// or a file operation fails.
+    pub async fn download_flat_file(
+        &self,
+        bucket: &str,
+        object_key: &str,
+        filepath: impl AsRef<Path>,
+    ) -> anyhow::Result<()> {
+        self.http()?
+            .download_flat_file(bucket, object_key, filepath.as_ref())
+            .await?;
+        Ok(())
     }
 
     /// Loads deltas from a local file using the retained instrument precision.
@@ -492,8 +525,8 @@ impl CoinApiDataLoader {
             return Ok(Arc::clone(client));
         }
 
-        let key = resolve_api_key(self.config.api_key.clone())?;
-        let client = CoinApiHttpClient::new(key, self.config.http_config())?;
+        let key = resolve_api_key(self.api_key.clone())?;
+        let client = CoinApiHttpClient::new(key, self.http_config.clone())?;
         let client = Arc::new(client);
         *http = Some(Arc::clone(&client));
         Ok(client)
@@ -571,18 +604,25 @@ mod tests {
         let selected = InstrumentId::from("BTCUSDT.BINANCE");
         let overridden = InstrumentId::from("BTC-USD.COINBASE");
 
-        let loader = CoinApiDataLoader::new(CoinApiDataClientConfig {
-            base_url_http: Some("invalid-url".to_owned()),
-            instruments: vec![CoinApiInstrumentSelection {
-                exchange_id: "BINANCE".into(),
-                query: SymbolsQuery::default(),
-                instrument_ids: vec![selected],
-            }],
-            price_precisions: HashMap::from([(overridden, 3)]),
-            ..Default::default()
-        });
+        let loader = CoinApiDataLoader::with_http_config(
+            None,
+            CoinApiHttpConfig {
+                base_url: "invalid-url".to_owned(),
+                ..Default::default()
+            },
+        );
 
-        let error = loader.request_instruments().await.unwrap_err();
+        let instruments = [CoinApiInstrumentSelection {
+            exchange_id: "BINANCE".into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![selected],
+        }];
+
+        let price_precisions = HashMap::from([(overridden, 3)]);
+        let error = loader
+            .request_instruments(&instruments, &price_precisions)
+            .await
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -592,7 +632,7 @@ mod tests {
 
     #[rstest]
     fn local_loads_use_registered_precision_without_credentials() {
-        let loader = CoinApiDataLoader::new(CoinApiDataClientConfig::default());
+        let loader = CoinApiDataLoader::new(None);
         let instrument = instrument();
         let id = instrument.id();
         loader
@@ -619,7 +659,7 @@ mod tests {
 
     #[rstest]
     fn missing_metadata_and_duplicate_mappings_preserve_registry() {
-        let loader = CoinApiDataLoader::new(CoinApiDataClientConfig::default());
+        let loader = CoinApiDataLoader::new(None);
         let instrument = instrument();
         let id = instrument.id();
         let missing = loader.load_trades("absent.csv", id, None).unwrap_err();
@@ -652,7 +692,7 @@ mod tests {
 
     #[rstest]
     fn book_stream_preserves_complete_batches_and_definition_snapshot() {
-        let loader = CoinApiDataLoader::new(CoinApiDataClientConfig::default());
+        let loader = CoinApiDataLoader::new(None);
         let instrument = instrument();
         let id = instrument.id();
         loader.add_instrument(instrument, None, None).unwrap();

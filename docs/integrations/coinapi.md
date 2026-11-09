@@ -49,7 +49,7 @@ Historical data can lag the live feed, so a request for recent bars may return n
 | Quote ticks                              | WebSocket and historical REST | Live streams and historical requests.                |
 | Trade ticks                              | WebSocket and historical REST | Live streams and historical requests.                |
 | OHLCV bars                               | WebSocket and historical REST | Live streams and historical requests.                |
-| Downloaded flat files                    | S3 CSV exports                | Rust and Python loaders.                             |
+| Flat files                               | S3 CSV exports                | Native downloads and Rust/Python decoding.           |
 | Execution, orders, and account reports   | None                          | Out of scope.                                        |
 
 Book types:
@@ -61,12 +61,12 @@ Fixed-depth subscriptions use the smallest channel that covers the requested dep
 individual order IDs: an aggregated `book_l3` entry without an ID fails conversion and starts
 recovery. An L3 book never syncs for a source that reports only aggregated levels.
 
-Options, funding and open-interest metrics, FIX, flat file downloads, Hyperliquid L4 data, and
+Options, funding and open-interest metrics, FIX, Hyperliquid L4 data, and
 tokenized stocks are outside this adapter's scope. CoinAPI EMS execution is a separate product.
 
 ## Integrator attribution
 
-REST requests and WebSocket connections include the fixed referral header `X-Referrer: nautilus`,
+HTTP requests and WebSocket connections include the fixed referral header `X-Referrer: nautilus`,
 including retries and reconnects. It has no configuration override and carries no credential or
 account data.
 
@@ -449,15 +449,14 @@ pairs, but their transfer is still billable. Consider this when combining feeds 
 
 ### Local credit budget
 
-The data client's `credit_budget` caps the credits one client instance may spend and defaults to
+The data client's `credit_budget` caps the REST credits one client instance may spend and defaults to
 100. Each symbol-metadata attempt costs one local credit, regardless of response size. Use `filter_symbol_id`
      to reduce transfer and parsing work. Allow for all historical requests: a range request stops at the
      budget and returns a truncated response. For bulk history, downloaded [flat files](#flat-files) avoid
      repeated REST requests. Compare their transfer cost with REST credits.
 
-`max_concurrent_requests` bounds simultaneous REST requests. The local credit budget applies throughout the
-client's lifetime and is separate from CoinAPI billing. Each attempt reserves `ceil(limit / 100)` credits for
-historical requests, or one credit for requests without a record limit.
+`max_concurrent_requests` bounds simultaneous REST requests. The local REST credit budget applies
+throughout the client's lifetime and is separate from CoinAPI billing. Each REST attempt reserves `ceil(limit / 100)` credits for historical requests, or one credit for requests without a record limit.
 
 CoinAPI bills historical requests per 100 returned records. Thus, a successful historical page refunds the
 unused reservation above `ceil(records / 100)`. The local minimum charge is one credit. Failed, retried, and
@@ -471,12 +470,12 @@ request can reserve the remaining credit budget for its first page and leave non
 requests. Each historical page has its own REST retry budget.
 
 For bulk history, compare REST credit costs with downloaded [flat files](#flat-files). Fewer HTTP calls do not
-necessarily mean fewer billable credits. Download files separately before loading them. The adapter does not
-list or download S3 objects.
+necessarily mean fewer billable credits. Download selected S3 objects with `CoinApiDataLoader` before
+loading their records.
 
 ## Raw HTTP requests
 
-For direct Rust access, `CoinApiHttpClient` accepts a `SecretString` API key and `CoinApiHttpConfig`. The base
+For direct Rust access, `CoinApiHttpClient` accepts a `SecretString` API key and `CoinApiHttpConfig`. The REST base
 URL includes `/v1/`. Authentication uses `X-CoinAPI-Key`. Redirects are rejected. The client ignores system
 proxy environment variables and connects directly unless `proxy_url` is set.
 
@@ -564,11 +563,27 @@ successful WebSocket upgrade. Closing or dropping the client closes its connecti
 
 `CoinApiDataLoader` retains instrument definitions and provider symbol mappings for local files and
 REST requests. Construction sends no requests and reads no credentials. The first network request
-creates a shared HTTP client using `CoinApiDataClientConfig`; local file loading needs no key.
-`request_instruments()` validates `price_precisions` before resolving credentials or sending requests.
+creates a shared HTTP client. Use `CoinApiDataLoader(api_key=api_key)` or omit the key to use
+`COINAPI_API_KEY`; local file loading needs no key.
+`request_instruments(instruments, price_precisions=None)` validates selections and precision overrides
+before resolving credentials or sending requests.
+
+The loader accepts these optional HTTP keywords:
+
+| Keyword                   | Purpose                                                       |
+| ------------------------- | ------------------------------------------------------------- |
+| `base_url`                | REST endpoint, including `/v1/`; does not change Flat Files.  |
+| `proxy_url`               | Explicit HTTP(S) proxy for REST and Flat Files.               |
+| `timeout_secs`            | Per-attempt deadline, including admission and body streaming. |
+| `max_concurrent_requests` | Shared limit for REST requests and file downloads.            |
+| `credit_budget`           | Lifetime local REST credit allowance.                         |
+| `max_retries`             | Maximum retries for each HTTP request or download.            |
+| `retry_delay_initial_ms`  | Initial retry delay.                                          |
+| `retry_delay_max_ms`      | Maximum backoff; provider delays can exceed it.               |
+| `retry_max_elapsed_ms`    | Total call deadline, including admission and retries.         |
 
 Register an instrument with `add_instrument(instrument, symbol_id=None, symbol_id_int=None)`, or call
-`await loader.request_instruments()` to fetch the configured selections. `symbol_id` identifies REST
+`await loader.request_instruments(instruments)` to fetch the supplied selections. `symbol_id` identifies REST
 requests; `symbol_id_int` maps consolidated OHLCV file rows. Calling `add_instrument` again replaces
 both the definition and its provider mappings; supply the IDs again when replacing a definition that
 needs REST or consolidated-file access. Definitions remain cached until explicitly replaced. Tick and book methods use the registered price
@@ -576,21 +591,39 @@ and size precision and reject values requiring rounding. Consolidated bar volume
 
 - `load_book_deltas`, `load_quotes`, and `load_trades` read local files; matching `stream_*` methods
   return chunk iterators. `load_bars` reads consolidated OHLCV files for registered numeric IDs.
+- `download_flat_file(bucket, object_key, filepath)` streams a selected S3 object to disk without
+  requiring instrument definitions. Authentication and HTTP controls come from the loader constructor.
 - `request_book_snapshot`, `request_quotes`, `request_trades`, and `request_bars` fetch Nautilus objects
   directly. Historical methods take integer UNIX nanoseconds with `[start, end)` bounds and an optional
   positive limit. Bars must close within the window and by the current time.
 
 REST history raises if the credit budget truncates retrieval or any record fails conversion. It returns
 no partial result. Each loader shares its configured credit allowance across all REST calls.
-The loader does not download S3 exports or provide historical book deltas through REST.
+The loader does not provide historical book deltas through REST.
 
 ## Flat files
 
 CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) are daily or hourly `.csv.gz`
-exports served over an S3-compatible API. The adapter loads downloaded files into Nautilus data. It does not
-list or download them. `CoinApiDataLoader` reads local files using registered instrument definitions.
+exports served over an S3-compatible API. `CoinApiDataLoader` downloads selected objects and reads local
+files using registered instrument definitions. It does not list S3 objects.
 Each `load_*` method returns a whole file, and each `stream_*` method yields chunks. Both accept a record
 `limit`.
+
+With an existing loader, object key, and destination path:
+
+```python
+await loader.download_flat_file("coinapi", object_key, filepath)
+```
+
+The download creates parent directories, preserves the compressed bytes, and replaces the destination
+only after the complete download. Requests reject redirects and use the configured proxy, retry,
+timeout, and concurrency controls. Flat Files usage is billed separately and does not consume the local REST credit allowance.
+Check for a cached file before calling if it should be reused.
+
+The default `timeout_secs=30` covers a whole attempt, including waiting for a concurrency slot and
+streaming the file. The default `retry_max_elapsed_ms=120_000` bounds the entire call. Raise both for
+large files or queued downloads. Each retry restarts at byte zero and can incur additional billed
+transfer. Cancellation during the final rename can report failure after a complete file is published.
 
 | Schema                        | Load               | Stream               | Output           |
 | ----------------------------- | ------------------ | -------------------- | ---------------- |
@@ -613,7 +646,7 @@ use nautilus_coinapi::loaders::CoinApiDataLoader;
 use nautilus_model::instruments::Instrument;
 
 let instrument_id = instrument.id();
-let loader = CoinApiDataLoader::new(Default::default());
+let loader = CoinApiDataLoader::new(None);
 loader.add_instrument(instrument, None, Some(27_576))?;
 
 let path = "T-LIMITBOOK_FULL/D-20250901/E-COINBASE/IDDI-27576+SC-COINBASE_SPOT_BTC_USD+S-BTC__002DUSD.csv.gz";
@@ -730,7 +763,7 @@ Tick and book prices and sizes convert exactly from text at the registered instr
 Consolidated OHLCV prices use the registered price precision. Their volumes retain the precision of the
 normalized source values because aggregate volume can be finer than a trading lot increment.
 A mapped price finer than its registered precision fails the entire file load without returning any
-bars. Set `price_precisions` before `request_instruments()`, or register a definition with sufficient
+bars. Pass `price_precisions` to `request_instruments()`, or register a definition with sufficient
 price precision before loading.
 
 CoinAPI uses [high-precision mode](../getting_started/installation.md#precision-mode) by default: 16 decimal
@@ -767,7 +800,7 @@ Configuration rejects unknown fields. Unset URL overrides use the production end
 WebSocket backend. Set `transport_backend=TransportBackend.TUNGSTENITE` to use Tungstenite instead, importing
 `TransportBackend` from `nautilus_trader.network`.
 
-`proxy_url` routes both transports through an explicit HTTP(S) proxy. Ambient system proxies remain disabled.
+`proxy_url` routes HTTP and WebSocket requests through an explicit HTTP(S) proxy. Ambient system proxies remain disabled.
 The URL must include `http://` or `https://`. SOCKS URLs fail at client construction. Proxy credentials stay
 redacted in Rust debug output and are not exposed by Python getters. The Python `has_proxy_url` property
 reports whether an explicit proxy is configured.
@@ -865,7 +898,7 @@ IDs for subscriptions.
 - Sandbox access is not verified.
 - Size precision comes only from CoinAPI metadata and has no override.
 - Automatic instrument updates, status events, metrics, and options are not supported.
-- The adapter loads downloaded flat files but does not list or download them from S3.
+- The adapter does not list S3 objects.
 
 ## Contributing
 

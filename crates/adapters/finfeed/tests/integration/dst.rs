@@ -2368,13 +2368,8 @@ async fn loader_reuses_definition_for_historical_books() {
     ])
     .await;
 
-    let config = FinFeedDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        http,
-        ..Default::default()
-    };
-
-    let loader = FinFeedDataLoader::new(config);
+    let loader =
+        FinFeedDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
     let id = to_instrument_id("POLYMARKET", "TEST-OUTCOME_NO").unwrap();
     let instrument = loader.request_instrument(id).await.unwrap();
     let start = UnixNanos::from("2026-10-11T00:00:05Z".parse::<Timestamp>().unwrap());
@@ -2416,21 +2411,19 @@ async fn loader_failed_batch_refresh_preserves_registry() {
     let id = to_instrument_id("POLYMARKET", "TEST-OUTCOME_NO").unwrap();
     let missing = to_instrument_id("POLYMARKET", "MISSING-OUTCOME_YES").unwrap();
 
-    let loader = FinFeedDataLoader::new(FinFeedDataClientConfig {
-        api_key: Some(SecretString::from("test-api-key")),
-        http,
-        instruments: vec![FinFeedInstrumentSelection {
-            exchange_id: "POLYMARKET".into(),
-            market_ids: vec!["TEST-OUTCOME_NO".into(), "MISSING-OUTCOME_YES".into()],
-        }],
-        ..Default::default()
-    });
+    let loader =
+        FinFeedDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let instruments = [FinFeedInstrumentSelection {
+        exchange_id: "POLYMARKET".into(),
+        market_ids: vec!["TEST-OUTCOME_NO".into(), "MISSING-OUTCOME_YES".into()],
+    }];
 
     let market =
         serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
     let old = parse_instrument(&market, UnixNanos::from(17)).unwrap();
     loader.add_instrument(old.clone()).unwrap();
-    let error = loader.request_instruments().await.unwrap_err();
+    let error = loader.request_instruments(&instruments).await.unwrap_err();
     let requests = peer.await.unwrap();
     assert!(error.to_string().contains("unavailable"), "{error:#}");
     assert_eq!(loader.instrument(id).unwrap(), old);

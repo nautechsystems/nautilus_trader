@@ -258,13 +258,32 @@ class FinFeedBookLevel:
 
 @typing.final
 class FinFeedDataLoader:
-    def __init__(self, config: FinFeedDataClientConfig | None = None) -> None: ...
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_concurrent_requests: int | None = None,
+        attempt_budget: int | None = None,
+        min_request_interval_ms: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        retry_backoff_factor: float | None = None,
+        retry_jitter_ms: int | None = None,
+        retry_operation_timeout_ms: int | None = None,
+        retry_immediate_first: bool | None = None,
+        retry_max_elapsed_ms: int | None = None,
+    ) -> None: ...
     def add_instrument(self, instrument: model.BinaryOption) -> None: ...
     def instrument(self, instrument_id: model.InstrumentId) -> model.BinaryOption: ...
     def request_instrument(
         self, instrument_id: model.InstrumentId
     ) -> typing.Awaitable[model.BinaryOption]: ...
-    def request_instruments(self) -> typing.Awaitable[list[model.BinaryOption]]: ...
+    def request_instruments(
+        self, instruments: typing.Sequence[FinFeedInstrumentSelection]
+    ) -> typing.Awaitable[list[model.BinaryOption]]: ...
     def request_book_deltas(
         self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
     ) -> typing.Awaitable[list[model.OrderBookDelta]]: ...

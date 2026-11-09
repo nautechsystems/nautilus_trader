@@ -3,8 +3,7 @@ Render the CoinAPI tutorial's panels from its pinned Lighter ANTHROPIC backtest.
 
 Run from the repository root with the tutorial and visualization dependencies installed:
 
-    uv run --project python --no-sync --with boto3 --with pandas \
-        --with plotly --with kaleido \
+    uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 
 The tutorial reuses its cached export or performs its documented first download.
