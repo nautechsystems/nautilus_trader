@@ -196,6 +196,7 @@ pub struct DataEngine {
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     bar_aggregator_warmups: AHashMap<BarAggregatorKey, BarAggregatorWarmup>,
+    bar_aggregators_pending_stop: AHashSet<BarAggregatorKey>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
     inflight_requests: AHashMap<UUID4, RequestCommand>,
@@ -276,6 +277,7 @@ impl DataEngine {
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             bar_aggregator_warmups: AHashMap::new(),
+            bar_aggregators_pending_stop: AHashSet::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
             inflight_requests: AHashMap::new(),
@@ -775,7 +777,7 @@ impl DataEngine {
         subscribed.extend(
             self.bar_aggregators
                 .keys()
-                .filter(|(_, request_id)| request_id.is_none())
+                .filter(|key| key.1.is_none() && !self.bar_aggregators_pending_stop.contains(*key))
                 .map(|(bar_type, _)| *bar_type),
         );
         subscribed
