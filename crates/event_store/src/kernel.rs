@@ -347,6 +347,9 @@ impl EventStoreSession {
     /// The execution engine installs this callback while the run is open. The callback
     /// records the cache-owned snapshot reference against the writer's durable
     /// high-watermark after flushing earlier captured entries.
+    ///
+    /// This records the anchor, not its snapshot blob. Recovery also requires the referenced blob
+    /// to be available; a successful cache write does not confirm durable blob storage.
     #[must_use]
     pub fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
         let writer = Arc::clone(self.writer.as_ref()?);

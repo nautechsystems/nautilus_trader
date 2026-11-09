@@ -265,6 +265,11 @@ WebSocket library.
 Handler mode is the usual choice for long-lived adapter connections. Stream mode suits adapters
 that need direct stream backpressure or own a protocol-specific reconnect sequence.
 
+Handler-mode builders accept an `InitialConnectRetryPolicy` for the initial connection. Its
+`max_attempts` includes the initial attempt, so a value of 1 disables retries. Without a policy, the
+builder makes one attempt. Retryable failures use the policy's backoff and jitter; permanent failures
+return before the attempt limit. Stream mode does not use this policy.
+
 ### Transport backends
 
 The `WsTransport` abstraction normalizes text, binary, Ping, Pong, and Close frames together with
@@ -323,7 +328,8 @@ A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or 
 moves a handler-mode client into reconnecting state. Reconnect uses exponential backoff with bounded jitter
 and allows unlimited attempts by default. A replacement connection that stays active for at least 10 seconds
 resets the attempt count and backoff. A configured maximum closes the client after that many consecutive
-failed or short-lived attempts.
+failed or short-lived attempts. `reconnect_max_attempts: Some(0)` closes the client instead of
+reconnecting.
 
 ```mermaid
 stateDiagram-v2
@@ -391,6 +397,10 @@ caller-owned.
 
 Application text and binary sends wait for their rate-limit keys and for an active connection. The ordinary
 send methods return after enqueueing the frame, so **success does not prove delivery**.
+
+In handler mode, `connect_timeout_ms` bounds the wait for an active connection and each connection
+attempt, but not the rate-limit wait. Keep it above the normal reconnect backoff so sends do not expire
+during routine recovery. The client has no separate send-wait timeout.
 
 The writer keeps FIFO order for application messages buffered during reconnect or after a failed write and
 replays them on a replacement connection. A control frame belongs to the connection it was issued on, so a
@@ -501,12 +511,13 @@ web PKI roots. A certificate directory can add trusted roots and, when it contai
 certificate and private key, supply a client identity for mutual TLS.
 
 Initial connection establishment makes up to five attempts by default, with a 10-second bound per attempt and
-exponential backoff.
+exponential backoff. Despite its name, `connection_max_retries` bounds total attempts including the first.
+`Some(0)` and `Some(1)` both make one attempt.
 
 Once connected, transport loss uses the configurable reconnect timeout, exponential backoff, bounded jitter,
-and unlimited attempts by default. As with the WebSocket client, 10 seconds of stable uptime resets the
-reconnect cycle. The same reconnect throttling bounds its attempt rate once reconnects flap. An optional state
-sink reports semantic connection loss and recovery.
+and unlimited attempts by default. `reconnect_max_attempts: Some(0)` disables reconnection. As with the
+WebSocket client, 10 seconds of stable uptime resets the reconnect cycle. The same reconnect throttling bounds
+its attempt rate once reconnects flap. An optional state sink reports semantic connection loss and recovery.
 
 ### State reporting and explicit reconnect
 

@@ -5715,31 +5715,26 @@ mod tests {
         let mut position = Position::new(&instrument, opening.clone());
         position.apply(&closing);
 
-        let fill_voided = OrderFillVoided::new(
-            opening.trader_id,
-            opening.strategy_id,
-            opening.instrument_id,
-            opening.client_order_id,
-            opening.venue_order_id,
-            opening.account_id,
-            "C-TRANSFER".into(),
-            opening.trade_id,
-            Quantity::from(1),
-            None,
-            opening.order_side,
-            opening.order_type,
-            opening.last_px,
-            opening.currency,
-            opening.liquidity_side,
-            opening.position_id,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::from(4),
-            UnixNanos::from(4),
-            false,
-            false,
-        );
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trader_id(opening.trader_id)
+            .strategy_id(opening.strategy_id)
+            .instrument_id(opening.instrument_id)
+            .client_order_id(opening.client_order_id)
+            .venue_order_id(opening.venue_order_id)
+            .account_id(opening.account_id)
+            .correction_id("C-TRANSFER".into())
+            .trade_id(opening.trade_id)
+            .voided_qty(Quantity::from(1))
+            .order_side(opening.order_side)
+            .order_type(opening.order_type)
+            .last_px(opening.last_px)
+            .currency(opening.currency)
+            .liquidity_side(opening.liquidity_side)
+            .maybe_position_id(opening.position_id)
+            .event_id(UUID4::new())
+            .ts_event(UnixNanos::from(4))
+            .ts_init(UnixNanos::from(4))
+            .build();
         position.fill_voids.push(PositionFillVoid {
             event: fill_voided,
             voided_qty: Quantity::from(1),

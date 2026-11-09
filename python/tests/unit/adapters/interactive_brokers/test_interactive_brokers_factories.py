@@ -66,6 +66,7 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
     """
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     contract = {"secType": "STK", "symbol": "MSFT", "exchange": "SMART"}
+
     config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
         load_ids={instrument_id},
@@ -81,6 +82,7 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
         filter_callable="package.module:filter_instrument",
         cache_path="cache/instruments.json",
     )
+
     provider = InteractiveBrokersInstrumentProvider(config)
 
     assert config.symbology_method == SymbologyMethod.RAW
@@ -329,10 +331,12 @@ def test_trade_selection_and_idle_config() -> None:
     Test trade selection and idle config.
     """
     default = InteractiveBrokersDataClientConfig()
+
     selected = InteractiveBrokersDataClientConfig(
         all_last_trades=False,
         subscription_idle_timeout_secs=17,
     )
+
     assert default.all_last_trades is True
     assert default.subscription_idle_timeout_secs is None
     assert selected.all_last_trades is False
@@ -376,6 +380,7 @@ def test_subscription_idle_custom_data_preserves_fields(last_received: int | Non
         456,
         789,
     )
+
     custom = CustomData(DataType("InteractiveBrokersSubscriptionIdle"), event)
     payload = custom.data
     assert isinstance(payload, InteractiveBrokersSubscriptionIdle)

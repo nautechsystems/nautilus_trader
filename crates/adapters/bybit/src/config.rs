@@ -77,13 +77,13 @@ pub struct BybitDataClientConfig {
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum retry attempts for REST requests.
+    /// Maximum retry attempts for REST reads.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry backoff in milliseconds.
+    /// Initial retry backoff for REST reads, in milliseconds.
     #[builder(default = 1_000)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry backoff in milliseconds.
+    /// Maximum retry backoff for REST reads, in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
     /// Heartbeat interval in seconds for WebSocket clients.
@@ -255,13 +255,13 @@ pub struct BybitExecutionClientConfig {
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum retry attempts for REST requests.
+    /// Maximum retry attempts for REST reads.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry backoff in milliseconds.
+    /// Initial REST read retry backoff, in milliseconds. Also the cancel-all polling interval.
     #[builder(default = 1_000)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry backoff in milliseconds.
+    /// Maximum retry backoff for REST reads, in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
     /// Heartbeat interval in seconds for WebSocket clients.

@@ -208,6 +208,13 @@ If a submit-time risk check fails, the system generates an `OrderDenied` event w
 standardized [reason code](#order-denied-reasons). If a modify-time risk check fails, it
 generates an `OrderModifyDenied` event.
 
+Risk checks also enforce these funding and position limits:
+
+- Approved submissions reserve quantity for later position-reducing checks before venue acknowledgement.
+  OTO children approved while their parent has no fills reserve no closing quantity before acceptance.
+- Negative-price sells on cash accounts require funding for the disposal cost, including when reducing a position.
+- Betting order lists and batched modifications combine funding requirements across both order sides.
+
 ### Account selection
 
 Balance, margin, and position checks use the account of the execution client that will run the

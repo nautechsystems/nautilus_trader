@@ -89,6 +89,7 @@ def test_importable_config_round_trip_preserves_subclass_and_common_fields() -> 
         routing=RoutingConfig(default=True, venues=["SIM", "EXTERNAL"]),
         instrument_provider=InstrumentProviderConfig(load_all=True, filters={"status": "active"}),
     )
+
     factory = ImportableFactoryConfig(f"{__name__}:Factory")
     descriptor = config.to_importable(factory)
     decoded = ImportableConfig.parse(descriptor.json())
@@ -137,6 +138,7 @@ def test_explicit_factory_precedes_importable_config_factory(explicit) -> None:
         amount=Decimal("17.125"),
         instruments=[InstrumentId.from_str("EUR/USD.SIM")],
     )
+
     descriptor = config.to_importable(ImportableFactoryConfig(f"{__name__}:Factory"))
     selected = object()
 

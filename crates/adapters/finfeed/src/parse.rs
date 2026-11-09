@@ -35,7 +35,7 @@ use crate::{
     http::models::{Book, Ohlcv, OhlcvPeriod, Quote, Trade, TradeSide},
 };
 
-pub(super) fn quote(source: &Quote, instrument: &BinaryOption) -> anyhow::Result<QuoteTick> {
+pub(crate) fn quote(source: &Quote, instrument: &BinaryOption) -> anyhow::Result<QuoteTick> {
     let bid = price(source.bid, instrument)?;
     let ask = price(source.ask, instrument)?;
     let bid_qty = qty(source.bid_volume, instrument)?;
@@ -45,7 +45,7 @@ pub(super) fn quote(source: &Quote, instrument: &BinaryOption) -> anyhow::Result
     QuoteTick::new_checked(instrument.id, bid, ask, bid_qty, ask_qty, ts_event, ts_init)
 }
 
-pub(super) fn trade(source: &Trade, instrument: &BinaryOption) -> anyhow::Result<TradeTick> {
+pub(crate) fn trade(source: &Trade, instrument: &BinaryOption) -> anyhow::Result<TradeTick> {
     anyhow::ensure!(
         source.market_id.as_deref() == Some(instrument.id.symbol.as_str()),
         "FinFeed trade market identity mismatch"
@@ -88,7 +88,7 @@ pub(super) fn trade(source: &Trade, instrument: &BinaryOption) -> anyhow::Result
     )
 }
 
-pub(super) fn bar(
+pub(crate) fn bar(
     source: &Ohlcv,
     bar_type: BarType,
     instrument: &BinaryOption,
@@ -151,7 +151,7 @@ pub(super) fn bar(
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_event).map(Some)
 }
 
-pub(super) fn bar_end(source: &Ohlcv, period: &OhlcvPeriod) -> anyhow::Result<Timestamp> {
+pub(crate) fn bar_end(source: &Ohlcv, period: &OhlcvPeriod) -> anyhow::Result<Timestamp> {
     let expected_end = source
         .time_period_start
         .to_zoned(TimeZone::UTC)
@@ -172,7 +172,7 @@ pub(super) fn bar_end(source: &Ohlcv, period: &OhlcvPeriod) -> anyhow::Result<Ti
     Ok(expected_end)
 }
 
-pub(super) fn book(
+pub(crate) fn book(
     source: &Book,
     instrument: &BinaryOption,
     depth: Option<usize>,
@@ -215,7 +215,6 @@ pub(super) fn book(
     }
 
     book_check_integrity(&book)?;
-
     if let Some(depth) = depth {
         book = limit_depth(&book, depth);
     }
@@ -223,7 +222,7 @@ pub(super) fn book(
     Ok(book)
 }
 
-pub(super) fn limit_depth(book: &OrderBook, depth: usize) -> OrderBook {
+pub(crate) fn limit_depth(book: &OrderBook, depth: usize) -> OrderBook {
     let mut limited = OrderBook::new(book.instrument_id, book.book_type);
     limited.clear(0, book.ts_last);
 
@@ -236,13 +235,13 @@ pub(super) fn limit_depth(book: &OrderBook, depth: usize) -> OrderBook {
     limited
 }
 
-pub(super) fn timestamp(value: Timestamp) -> anyhow::Result<UnixNanos> {
+pub(crate) fn timestamp(value: Timestamp) -> anyhow::Result<UnixNanos> {
     let value = u64::try_from(value.as_nanosecond())
         .context("FinFeed timestamp is outside supported nanoseconds")?;
     Ok(UnixNanos::from(value))
 }
 
-pub(super) fn price(value: Decimal, instrument: &BinaryOption) -> anyhow::Result<Price> {
+pub(crate) fn price(value: Decimal, instrument: &BinaryOption) -> anyhow::Result<Price> {
     anyhow::ensure!(
         value >= Decimal::ZERO && value <= Decimal::ONE,
         "FinFeed prediction price must be in [0, 1]"
@@ -255,7 +254,7 @@ pub(super) fn price(value: Decimal, instrument: &BinaryOption) -> anyhow::Result
     Ok(price)
 }
 
-pub(super) fn qty(value: Decimal, instrument: &BinaryOption) -> anyhow::Result<Quantity> {
+pub(crate) fn qty(value: Decimal, instrument: &BinaryOption) -> anyhow::Result<Quantity> {
     let qty = Quantity::from_decimal_dp(value, instrument.size_precision)?;
     anyhow::ensure!(qty.as_decimal() == value, "FinFeed size requires rounding");
     Ok(qty)
@@ -293,10 +292,10 @@ mod tests {
     #[case(Some(10))]
     fn locked_books_remain_valid_and_crossed_books_fail_before_depth(#[case] depth: Option<usize>) {
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
         let mut source: Book =
-            serde_json::from_str(include_str!("../../test_data/poll-book.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/poll-book.json")).unwrap();
         source.bids.as_mut().unwrap()[2].price = Decimal::new(4, 1);
         let locked = book(&source, &instrument, depth).unwrap();
         source.bids.as_mut().unwrap()[2].price = Decimal::new(6, 1);
@@ -321,17 +320,18 @@ mod tests {
     #[rstest]
     fn bars_normalize_provider_volume_tokens_and_keep_prices_exact() {
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
         let records: Vec<Ohlcv> =
-            serde_json::from_str(include_str!("../../test_data/ohlcv-volume-noise.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/ohlcv-volume-noise.json")).unwrap();
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let period = periods
             .iter()
             .find(|period| period.period_id.as_ref().map(AsRef::as_ref) == Some("1MIN"))
             .unwrap();
         let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id).as_str());
+
         let expected = [
             "28372.630000",
             "1242.046344",
@@ -341,6 +341,7 @@ mod tests {
             "1118.515791",
             "10991.426318",
         ];
+
         assert_eq!(records.len(), expected.len());
 
         for (record, expected) in records.iter().zip(expected) {
@@ -396,7 +397,7 @@ mod tests {
         #[case] expected: Option<&str>,
     ) {
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
         let result = volume(Decimal::from_str_exact(source).unwrap(), &instrument);
         if let Some(expected) = expected {
@@ -417,28 +418,26 @@ mod tests {
     #[case("book")]
     fn raw_sizes_stay_exact_despite_bar_volume_normalization(#[case] kind: &str) {
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
         let size = Decimal::from_str_exact("3601.4359029999996").unwrap();
 
         let result = match kind {
             "quote" => {
                 let mut rows: Vec<Quote> =
-                    serde_json::from_str(include_str!("../../test_data/client-quotes.json"))
-                        .unwrap();
+                    serde_json::from_str(include_str!("../test_data/client-quotes.json")).unwrap();
                 rows[0].bid_volume = size;
                 quote(&rows[0], &instrument).map(|_| ())
             }
             "trade" => {
                 let mut rows: Vec<Trade> =
-                    serde_json::from_str(include_str!("../../test_data/client-trades.json"))
-                        .unwrap();
+                    serde_json::from_str(include_str!("../test_data/client-trades.json")).unwrap();
                 rows[0].quantity = size;
                 trade(&rows[0], &instrument).map(|_| ())
             }
             "book" => {
                 let mut row: Book =
-                    serde_json::from_str(include_str!("../../test_data/poll-book.json")).unwrap();
+                    serde_json::from_str(include_str!("../test_data/poll-book.json")).unwrap();
                 row.bids.as_mut().unwrap()[0].size = size;
                 book(&row, &instrument, None).map(|_| ())
             }

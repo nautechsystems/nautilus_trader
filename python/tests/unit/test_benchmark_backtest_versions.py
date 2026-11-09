@@ -177,6 +177,7 @@ def test_require_fingerprint_match_rejects_mutated_state() -> None:
         "event_counts": {"iterations": 10},
         "digests": {"result_digest": "sha256:expected"},
     }
+
     mutated = {
         "event_counts": {"iterations": 9},
         "digests": {"result_digest": "sha256:expected"},
@@ -285,6 +286,7 @@ def test_require_identity_match_rejects_changed_worker() -> None:
         "generation": "v2",
         "package_version": "2.0.0rc4",
     }
+
     changed = {**expected, "extension_sha256": "modified"}
 
     with pytest.raises(RuntimeError, match="Worker identity field extension_sha256"):
@@ -305,13 +307,16 @@ def test_run_worker_records_and_revalidates_each_sample_identity(
         "source_status_sha256": "status",
         "wheel_extension_sha256": "extension",
     }
+
     fingerprint = {"digests": {"result_digest": "sha256:result"}}
+
     args = benchmark.argparse.Namespace(
         scenario="quote_trade_replay_small",
         boundary="run_preloaded",
         iterations=1,
         expected_identity_digest=benchmark.digest(identity),
     )
+
     identities = iter([identity])
     monkeypatch.setattr(benchmark, "load_bindings", object)
     monkeypatch.setattr(benchmark, "runtime_identity", lambda _args: next(identities))
@@ -340,6 +345,7 @@ def test_run_compare_counterbalances_runtimes_and_deduplicates_fingerprints(
     Test selected cases counterbalance runtimes and store one full fingerprint.
     """
     output_path = tmp_path / "results.json"
+
     args = benchmark.argparse.Namespace(
         v1_python=tmp_path / "v1" / "python",
         v1_artifact=tmp_path / "v1.whl",
@@ -355,6 +361,7 @@ def test_run_compare_counterbalances_runtimes_and_deduplicates_fingerprints(
         iterations=1,
         output=output_path,
     )
+
     identities = {
         "v1": {
             "backend": "cython",
@@ -369,6 +376,7 @@ def test_run_compare_counterbalances_runtimes_and_deduplicates_fingerprints(
             "source_commit": "v2-commit",
         },
     }
+
     fingerprint = {
         "digests": {"result_digest": "sha256:result"},
         "event_counts": {"iterations": 4_000},
@@ -381,6 +389,7 @@ def test_run_compare_counterbalances_runtimes_and_deduplicates_fingerprints(
         assert command[2] == "worker"
         assert command[command.index("--scenario") + 1] == "accumulating_market_large"
         assert command[command.index("--boundary") + 1] in benchmark.BOUNDARIES
+
         return {
             "samples": [
                 {

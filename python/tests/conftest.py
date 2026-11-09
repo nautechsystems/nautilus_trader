@@ -40,6 +40,7 @@ collect_ignore = ["memleak"]
 
 # Add tests/ to sys.path so test strategies are importable by the engine
 _TESTS_DIR = Path(__file__).resolve().parent
+
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
 

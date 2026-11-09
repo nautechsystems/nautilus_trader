@@ -82,6 +82,7 @@ def test_cache_config_accepts_explicit_values() -> None:
         True,
         True,
     )
+
     json_encoding = type(default.encoding).JSON
 
     config = CacheConfig(
@@ -227,6 +228,7 @@ def test_logger_config_readback(tmp_path: Path) -> None:
     Test logger config readback.
     """
     file_config = FileWriterConfig(directory=str(tmp_path), file_name="events.log")
+
     config = LoggerConfig(
         stdout_level=LogLevel.DEBUG,
         fileout_level=LogLevel.ERROR,

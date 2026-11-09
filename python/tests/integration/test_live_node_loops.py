@@ -208,6 +208,7 @@ class TimerBurstActor(DataActor):
         self.fired += 1
         if self.fired == 1:
             self.loop.call_soon(self._record_progress)
+
         if self.fired == self.count:
             self.completed.set()
 

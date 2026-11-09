@@ -48,6 +48,7 @@ def test_catalog_request_callbacks_join_and_follow_up(tmp_path: Path, component_
     Deliver catalog data and chain requests from a joined callback.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     quote = QuoteTick(
         instrument_id=instrument.id,
         bid_price=Price.from_str("0.70001"),
@@ -57,6 +58,7 @@ def test_catalog_request_callbacks_join_and_follow_up(tmp_path: Path, component_
         ts_event=1000,
         ts_init=1000,
     )
+
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.write_instruments([instrument])
     catalog.write_quote_ticks([quote])
@@ -96,6 +98,7 @@ def test_catalog_request_callbacks_join_and_follow_up(tmp_path: Path, component_
             self.late = self.request_join([self.root, self.group], callback=self.complete)
 
     consumer = Consumer()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -103,6 +106,7 @@ def test_catalog_request_callbacks_join_and_follow_up(tmp_path: Path, component_
             catalogs=[DataCatalogConfig(path=str(tmp_path))],
         ),
     )
+
     engine.add_venue(
         instrument.id.venue,
         OmsType.NETTING,

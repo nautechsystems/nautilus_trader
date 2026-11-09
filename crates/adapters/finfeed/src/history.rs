@@ -36,14 +36,14 @@ use crate::http::{
 const DAY_SECONDS: i64 = 86_400;
 
 #[derive(Debug)]
-pub(super) struct Window {
+pub(crate) struct Window {
     start: Timestamp,
     end: Timestamp,
     limit: Option<NonZeroUsize>,
 }
 
 impl Window {
-    pub(super) fn new(
+    pub(crate) fn new(
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -88,7 +88,7 @@ impl Window {
     }
 }
 
-pub(super) async fn books(
+pub(crate) async fn books(
     http: &FinFeedHttpClient,
     instrument: &BinaryOption,
     window: &Window,
@@ -116,7 +116,7 @@ pub(super) async fn books(
     })
 }
 
-pub(super) async fn quotes(
+pub(crate) async fn quotes(
     http: &FinFeedHttpClient,
     instrument: &BinaryOption,
     window: &Window,
@@ -143,7 +143,7 @@ pub(super) async fn quotes(
     window.finish(parsed)
 }
 
-pub(super) async fn trades(
+pub(crate) async fn trades(
     http: &FinFeedHttpClient,
     instrument: &BinaryOption,
     window: &Window,
@@ -170,7 +170,7 @@ pub(super) async fn trades(
     window.finish(parsed)
 }
 
-pub(super) async fn bars(
+pub(crate) async fn bars(
     http: &FinFeedHttpClient,
     instrument: &BinaryOption,
     bar_type: BarType,
@@ -207,7 +207,7 @@ pub(super) async fn bars(
     window.finish(bars)
 }
 
-pub(super) fn period_length(bar_type: BarType) -> anyhow::Result<(i64, i64)> {
+pub(crate) fn period_length(bar_type: BarType) -> anyhow::Result<(i64, i64)> {
     anyhow::ensure!(
         bar_type.spec().price_type == PriceType::Last,
         "FinFeed OHLCV uses last prices"
@@ -240,7 +240,7 @@ pub(super) fn period_length(bar_type: BarType) -> anyhow::Result<(i64, i64)> {
     Ok(length)
 }
 
-pub(super) fn period(
+pub(crate) fn period(
     periods: &[OhlcvPeriod],
     (seconds, months): (i64, i64),
 ) -> anyhow::Result<&OhlcvPeriod> {
@@ -420,7 +420,7 @@ mod tests {
     #[tokio::test]
     async fn book_pages_preserve_overlap_multiplicity_and_late_rows() {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut first = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
         for row in &mut first[9997..] {
             row.time_exchange = "2026-10-11T00:00:10.9502711Z".parse().unwrap();
@@ -469,7 +469,7 @@ mod tests {
     #[tokio::test]
     async fn book_pages_finish_a_split_snapshot_at_the_inclusive_end() {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut first = source[..4].to_vec();
         first.extend(vec![source[4].clone(); 9995]);
         first.push(source[8].clone());
@@ -490,7 +490,7 @@ mod tests {
         .unwrap();
 
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, 0.into()).unwrap();
         let batches = book::replay(
             &rows,
@@ -523,7 +523,7 @@ mod tests {
     #[tokio::test]
     async fn book_short_hour_rejects_a_noncontiguous_overlap() {
         let mut source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         source.truncate(3);
         source[0].time_exchange = "2026-10-11T00:59:58.0000077Z".parse().unwrap();
         source[1].time_exchange = "2026-10-11T00:59:57.9866770Z".parse().unwrap();
@@ -549,7 +549,7 @@ mod tests {
     #[tokio::test]
     async fn final_short_hour_retains_unordered_rows_without_a_continuation_cursor() {
         let mut source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         source.truncate(2);
         source[0].time_exchange = "2026-10-11T00:59:59.500Z".parse().unwrap();
         source[1].time_exchange = "2026-10-11T00:59:57Z".parse().unwrap();
@@ -587,7 +587,7 @@ mod tests {
     #[tokio::test]
     async fn continuation_rejects_a_lower_selector_equal_to_the_hourly_upper_bound() {
         let mut source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         source.truncate(1);
         source[0].time_exchange = "2026-10-11T01:00:01Z".parse().unwrap();
         let start = "2026-10-11T00:00:00Z".parse().unwrap();
@@ -624,7 +624,7 @@ mod tests {
     #[tokio::test]
     async fn book_pages_stop_after_the_ordering_clock_passes_end(#[case] received: bool) {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut page = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
         let after = "2026-10-11T00:00:03Z".parse().unwrap();
         if received {
@@ -651,7 +651,7 @@ mod tests {
     #[tokio::test]
     async fn full_book_page_with_a_cut_post_end_group_replays_the_requested_prefix() {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut page = source[..8].to_vec();
         page.resize(PAGE_LIMIT_MAX as usize - 1, source[7].clone());
         let mut tail = source[4].clone();
@@ -674,7 +674,7 @@ mod tests {
         .unwrap();
 
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, 0.into()).unwrap();
         let batches = book::replay(
             &rows,
@@ -760,7 +760,7 @@ mod tests {
         #[case] expected_error: &str,
     ) {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut first = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
         first[9999].time_exchange = "2026-10-11T00:00:10.0502711Z".parse().unwrap();
         if failure == "suffix" {
@@ -807,7 +807,7 @@ mod tests {
     #[tokio::test]
     async fn book_hour_expansion_checks_overlap_before_appending(#[case] changed: bool) {
         let source: Vec<BookEvent> =
-            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/book-replay.json")).unwrap();
         let mut before = source[0].clone();
         before.time_exchange = "2026-10-11T00:59:59.900Z".parse().unwrap();
         let mut after = source[4].clone();
@@ -865,9 +865,9 @@ mod tests {
     #[tokio::test]
     async fn bars_continue_short_pages_until_the_period_bound_or_an_empty_page() {
         let source: Vec<Ohlcv> =
-            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/client-bars.json")).unwrap();
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let period = super::period(&periods, (60, 0)).unwrap();
         let start = "2020-10-11T00:00:00Z".parse().unwrap();
         let end = "2020-10-11T00:05:00Z".parse().unwrap();
@@ -903,9 +903,9 @@ mod tests {
     #[tokio::test]
     async fn bars_continue_a_valid_full_page_and_finish_at_the_exact_end() {
         let template: Vec<Ohlcv> =
-            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/client-bars.json")).unwrap();
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let period = super::period(&periods, (1, 0)).unwrap();
         let start: Timestamp = "2020-10-11T00:00:00Z".parse().unwrap();
         let end =
@@ -958,9 +958,9 @@ mod tests {
     #[tokio::test]
     async fn bars_reject_a_page_that_cannot_advance_the_lower_selector() {
         let source: Vec<Ohlcv> =
-            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/client-bars.json")).unwrap();
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let period = super::period(&periods, (60, 0)).unwrap();
         let start = "2020-10-11T00:05:00Z".parse().unwrap();
         let end = "2020-10-11T00:10:00Z".parse().unwrap();
@@ -997,9 +997,9 @@ mod tests {
         #[case] expected: &str,
     ) {
         let source: Vec<Ohlcv> =
-            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/client-bars.json")).unwrap();
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let period = super::period(&periods, (60, 0)).unwrap();
         let start = "2020-10-11T00:00:00Z".parse().unwrap();
         let end = "2020-10-11T00:05:00Z".parse().unwrap();
@@ -1055,7 +1055,7 @@ mod tests {
         .unwrap();
 
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, 0.into()).unwrap();
         let start = "2026-10-11T00:00:00Z".parse().unwrap();
         let end = "2026-10-13T00:00:00Z".parse().unwrap();
@@ -1156,16 +1156,16 @@ mod tests {
         let address = listener.local_addr().unwrap();
 
         let body = match failure {
-            "book-seed" => include_str!("../../test_data/empty.json").to_owned(),
+            "book-seed" => include_str!("../test_data/empty.json").to_owned(),
             "book-cap" | "bar-cap" => {
                 let (fixture, count) = if failure == "book-cap" {
                     (
-                        include_str!("../../test_data/book-replay.json"),
+                        include_str!("../test_data/book-replay.json"),
                         PAGE_LIMIT_MAX,
                     )
                 } else {
                     (
-                        include_str!("../../test_data/client-bars.json"),
+                        include_str!("../test_data/client-bars.json"),
                         OHLCV_LIMIT_MAX,
                     )
                 };
@@ -1178,7 +1178,7 @@ mod tests {
 
         let mut bodies = Vec::new();
         if failure == "bar-cap" {
-            bodies.push(include_str!("../../test_data/periods.json").to_owned());
+            bodies.push(include_str!("../test_data/periods.json").to_owned());
         }
 
         bodies.push(body);
@@ -1206,7 +1206,7 @@ mod tests {
         .unwrap();
 
         let market =
-            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
         let instrument = parse_instrument(&market, 0.into()).unwrap();
         let start = "2026-10-11T00:00:00Z".parse().unwrap();
         let end = "2026-10-11T00:30:00Z".parse().unwrap();
@@ -1295,7 +1295,7 @@ mod tests {
     #[rstest]
     fn every_claimed_catalog_period_maps_to_a_valid_specification() {
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let mut claimed = Vec::new();
 
         for period in &periods {
@@ -1317,6 +1317,7 @@ mod tests {
                 spec,
                 AggregationSource::External,
             );
+
             let length = period_length(bar_type).unwrap();
             let actual = super::period(&periods, length).unwrap();
             assert_eq!(actual, period);
@@ -1356,7 +1357,7 @@ mod tests {
     #[case("2-WEEK-LAST-EXTERNAL")]
     fn unlisted_durations_are_rejected_by_the_provider_catalog(#[case] suffix: &str) {
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let bar_type = BarType::from(format!("market_NO.FINFEED_POLYMARKET-{suffix}").as_str());
         assert_eq!(
             period(&periods, period_length(bar_type).unwrap())
@@ -1374,7 +1375,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         let periods: Vec<OhlcvPeriod> =
-            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+            serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
         let bar_type = BarType::from(format!("market_NO.FINFEED_POLYMARKET-{suffix}").as_str());
         assert_eq!(
             period(&periods, period_length(bar_type).unwrap())

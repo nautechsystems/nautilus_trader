@@ -49,6 +49,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     BTC = Currency.from_str("BTC")
     USDT = Currency.from_str("USDT")
     engine.add_venue(

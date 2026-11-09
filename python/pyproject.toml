@@ -50,9 +50,6 @@ python-source = "."
 features = [
   "extension-module",
   "arrow",
-  "betfair",
-  "coinapi",
-  "finfeed",
   "high-precision",
   "mimalloc",
   "redis",
@@ -196,7 +193,15 @@ exclude = [
 preview = true
 explicit-preview-rules = true
 select = ["ALL"]
-extend-select = ["PLW1514"]
+extend-select = [
+  "E301", # Blank lines between methods
+  "E302", # Blank lines before top-level definitions
+  "E303", # Consecutive blank lines
+  "E304", # Decorators stay attached to definitions
+  "E305", # Blank lines after top-level definitions
+  "E306", # Blank lines before nested definitions
+  "PLW1514",
+]
 
 ignore = [
   "COM812", # Ruff formatter controls trailing commas

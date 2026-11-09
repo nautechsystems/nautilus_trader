@@ -4,6 +4,7 @@ set -euo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CHECKER="$REPO_ROOT/.pre-commit-hooks/check_pyo3_names.py"
+HOOK="$REPO_ROOT/.pre-commit-hooks/check_pyo3_conventions.sh"
 
 CASE_ROOT=$(mktemp -d)
 trap 'rm -rf "$CASE_ROOT"' EXIT
@@ -20,6 +21,12 @@ run_checker() {
   local case_dir="$1"
 
   python3 -B "$CHECKER" "$case_dir/crates" > "$case_dir/output.txt" 2>&1
+}
+
+run_hook() {
+  local case_dir="$1"
+
+  (cd "$case_dir" && bash "$HOOK") > "$case_dir/output.txt" 2>&1
 }
 
 valid_case="$CASE_ROOT/valid"
@@ -116,6 +123,48 @@ for expected in \
   if ! rg -Fq "$expected" "$invalid_case/output.txt"; then
     echo "Expected PyO3 convention result not found: $expected"
     cat "$invalid_case/output.txt"
+    exit 1
+  fi
+done
+
+module_case="$CASE_ROOT/adapter-modules"
+write_rs "$module_case/crates/adapters/sample/src/config.rs" \
+  '#[cfg_attr(feature = "python", pyo3::pyclass(' \
+  '    module = "nautilus_trader._libnautilus.sample",' \
+  '))]' \
+  '#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass(' \
+  '    module = "nautilus_trader.adapters.sample",' \
+  '))]' \
+  'pub struct Config;' \
+  '#[pyo3::pyclass(module = "nautilus_trader.adapters.sample")]' \
+  'pub struct LegacyConfig;' \
+  '#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.sample")]' \
+  'pub struct Data;'
+if ! run_hook "$module_case"; then
+  echo "Expected runtime and public stub module paths to pass"
+  cat "$module_case/output.txt"
+  exit 1
+fi
+
+write_rs "$module_case/crates/adapters/sample/src/invalid.rs" \
+  '#[pyo3::pyclass(module = "nautilus_trader.other.sample")]' \
+  'pub struct WrongRuntime;' \
+  '#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass(' \
+  '    module = "nautilus_trader._libnautilus.sample",' \
+  '))]' \
+  'pub struct WrongStub;' \
+  '#[gen_stub_pyclass_enum(module = "nautilus_trader._libnautilus.sample")]' \
+  'pub enum WrongEnum { Value }' \
+  '#[custom_data(pyo3, stub_module = "nautilus_trader._libnautilus.sample")]' \
+  'pub struct WrongData;'
+if run_hook "$module_case"; then
+  echo "Expected invalid runtime and private stub module paths to fail"
+  exit 1
+fi
+for line in 1 3 7 9; do
+  if ! rg -Fq "crates/adapters/sample/src/invalid.rs:$line:" "$module_case/output.txt"; then
+    echo "Expected module path violation on line $line"
+    cat "$module_case/output.txt"
     exit 1
   fi
 done

@@ -164,8 +164,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     let block_number = rpc_log::extract_block_number(log)?;
 
     // Pool address is the PoolManager contract (event emitter)
-    let pool_manager_bytes = rpc_log::decode_hex(&log.address)?;
-    let pool_manager_address = Address::from_slice(&pool_manager_bytes);
+    let pool_manager_address = rpc_log::extract_address(log)?;
 
     // Extract currency0 and currency1 from topics
     // topics[0] = event signature
@@ -180,14 +179,11 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     }
 
     // Extract Pool ID from topics[1] - this is the unique identifier for V4 pools
-    let pool_id_bytes = rpc_log::decode_hex(&log.topics[1])?;
+    let pool_id_bytes = rpc_log::extract_topic_bytes(log, 1)?;
     let pool_identifier = Ustr::from(&hex::encode_prefixed(pool_id_bytes));
 
-    let currency0_bytes = rpc_log::decode_hex(&log.topics[2])?;
-    let currency0 = Address::from_slice(&currency0_bytes[12..32]);
-
-    let currency1_bytes = rpc_log::decode_hex(&log.topics[3])?;
-    let currency1 = Address::from_slice(&currency1_bytes[12..32]);
+    let currency0 = rpc_log::extract_address_from_topic(log, 2, "currency0")?;
+    let currency1 = rpc_log::extract_address_from_topic(log, 3, "currency1")?;
 
     // Extract and decode event data
     let data_bytes = rpc_log::extract_data_bytes(log)?;
@@ -315,6 +311,44 @@ mod tests {
         );
         assert_eq!(event.fee, Some(3000));
         assert_eq!(event.tick_spacing, Some(60));
+    }
+
+    #[rstest]
+    #[case(2, 31)]
+    #[case(3, 31)]
+    #[case(2, 33)]
+    #[case(3, 33)]
+    fn test_parse_initialize_rpc_rejects_noncanonical_currency_topic(
+        mut rpc_log_weth_usdc: RpcLog,
+        #[case] topic_index: usize,
+        #[case] byte_len: usize,
+    ) {
+        let valid_log = rpc_log_weth_usdc.clone();
+        rpc_log_weth_usdc.topics[topic_index] = format!("0x{}", "11".repeat(byte_len));
+
+        let error = parse_initialize_event_rpc(&rpc_log_weth_usdc).unwrap_err();
+        let event = parse_initialize_event_rpc(&valid_log).unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Topic must be 32 bytes, was {byte_len}")
+        );
+        assert_eq!(event.block_number, 298076243);
+    }
+
+    #[rstest]
+    fn test_parse_initialize_rpc_rejects_short_pool_manager_address(mut rpc_log_weth_usdc: RpcLog) {
+        let valid_log = rpc_log_weth_usdc.clone();
+        rpc_log_weth_usdc.address = "0x360e68faccca8ca495c1b759fd9eee466db9fb".to_string();
+
+        let error = parse_initialize_event_rpc(&rpc_log_weth_usdc).unwrap_err();
+        let event = parse_initialize_event_rpc(&valid_log).unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid contract address length: expected 20 bytes, was 19"
+        );
+        assert_eq!(event.block_number, 298076243);
     }
 
     #[rstest]

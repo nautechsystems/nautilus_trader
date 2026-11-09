@@ -16,7 +16,7 @@
 #   Install a [development wheel](../getting_started/installation.md#development-wheels)
 #   or build from source. Install pandas with `pip install pandas`.
 # - A FinFeed key with Prediction Markets historical order book access
-#   and sufficient allowance for four requests on the first run, including
+#   and sufficient allowance for three requests on the first run, including
 #   two book pages of up to 10,000 records each.
 #   See [FinFeed authentication](../integrations/finfeed.md#authentication-and-environment).
 #
@@ -43,13 +43,9 @@ from tempfile import mkdtemp
 
 import pandas as pd
 
-from nautilus_trader.adapters.finfeed import FINFEED_CLIENT_ID
 from nautilus_trader.adapters.finfeed import FinFeedDataClientConfig
-from nautilus_trader.adapters.finfeed import FinFeedDataClientFactory
-from nautilus_trader.adapters.finfeed import FinFeedInstrumentSelection
+from nautilus_trader.adapters.finfeed import FinFeedDataLoader
 from nautilus_trader.backtest import BacktestNode
-from nautilus_trader.common import DataActor
-from nautilus_trader.common import Environment
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -59,7 +55,6 @@ from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
-from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BinaryOption
 from nautilus_trader.model import BookAction
@@ -71,7 +66,6 @@ from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import RecordFlag
-from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.trading import OrderBookImbalanceConfig
@@ -109,14 +103,14 @@ catalog_path = DATA_DIR / "btc-above-76k-nov3-20261102-20"
 book_type = BookType.L2_MBP
 
 # %% [markdown]
-# ## Request historical deltas through the adapter
+# ## Download historical deltas
 #
-# Use a data-only `LiveNode` to load the definition and deliver the
-# historical request. No execution client or live subscription is needed.
-# Bootstrap uses two managed requests for exchange discovery and the
-# outcome definition. History uses at least one more; busy intervals need
-# continuation pages. Size the local attempt allowance for that workload.
-# It does not establish provider billing units or remaining account quota.
+# `FinFeedDataLoader` fetches and retains the outcome definition, then
+# converts historical book records into Nautilus deltas. It shares the
+# adapter's pagination and snapshot reconstruction code. No node or actor
+# is needed. The first run uses one metadata request and two book pages.
+# The local attempt allowance does not establish provider billing units
+# or remaining account quota.
 #
 # Book history starts with covering UTC-hour selectors and reconciles
 # overlapping 10,000-record pages. Source order and exchange timestamps
@@ -125,92 +119,32 @@ book_type = BookType.L2_MBP
 # at or before `START` on that clock. Missing seeds, ambiguous continuation,
 # exhausted allowance, and unsupported actions reject the request. See
 # [historical book limits](../integrations/finfeed.md#historical-books).
-# The caller has its own response deadline because an asynchronous request
-# failure logs an error without delivering a historical response.
-# This run allows 120 seconds for bootstrap and 900 seconds for the full
-# response. It uses the adapter's 300-second HTTP timeout and disables retries.
+# Exceptions propagate directly to the caller. This run uses the default
+# 300-second HTTP timeout and disables retries.
 
 
 # %%
-class HistoricalBook(DataActor):
-    """
-    Collect one complete historical response for the selected outcome.
-    """
-
-    def __init__(self) -> None:
-        """
-        Retain the returned deltas and completion signal.
-        """
-        super().__init__()
-        self.deltas: list[OrderBookDelta] = []
-        self.received = asyncio.Event()
-
-    def on_start(self) -> None:
-        """
-        Request the selected window after the definition loads.
-        """
-        self.request_book_deltas(
-            INSTRUMENT_ID,
-            start=START,
-            end=END,
-            client_id=FINFEED_CLIENT_ID,
-        )
-
-    def on_historical_book_deltas(self, deltas: Sequence[OrderBookDelta]) -> None:
-        """
-        Retain the complete response in its supplied order.
-        """
-        self.deltas.extend(deltas)
-        self.received.set()
-
-
 async def collect_book(api_key: str) -> tuple[BinaryOption, list[OrderBookDelta]]:
     """
-    Retrieve the definition and deltas, then stop and dispose the data node.
+    Download the outcome definition and its historical book deltas.
     """
-    config = FinFeedDataClientConfig(
-        api_key=api_key,
-        instruments=[FinFeedInstrumentSelection("POLYMARKET", [MARKET_ID])],
-        attempt_budget=4,
-        min_request_interval_ms=10_000,
-        max_concurrent_requests=1,
-        max_retries=0,
+    loader = FinFeedDataLoader(
+        FinFeedDataClientConfig(
+            api_key=api_key,
+            attempt_budget=3,
+            min_request_interval_ms=10_000,
+            max_concurrent_requests=1,
+            max_retries=0,
+        ),
     )
-    data_node = (
-        LiveNode.builder("FINFEED-HISTORICAL-BOOK", TraderId("TUTORIAL-001"), Environment.LIVE)
-        .with_load_state(load_state=False)
-        .with_save_state(save_state=False)
-        .with_reconciliation(reconciliation=False)
-        .with_timeout_connection(130)
-        .with_timeout_portfolio(0)
-        .with_logging(LoggerConfig(stdout_level=LogLevel.ERROR))
-        .with_delay_post_stop_secs(0)
-        .with_delay_shutdown_secs(0)
-        .add_data_client(None, FinFeedDataClientFactory(), config)
-        .build()
+
+    instrument = await loader.request_instrument(INSTRUMENT_ID)
+    deltas = await loader.request_book_deltas(
+        INSTRUMENT_ID,
+        start=pd.Timestamp(START).value,
+        end=pd.Timestamp(END).value,
     )
-    collector = HistoricalBook()
-    data_node.add_actor(collector)
-    handle = data_node.handle()
-    task = asyncio.create_task(data_node.run_async())
-    response = asyncio.create_task(collector.received.wait())
-    try:
-        await asyncio.wait([task, response], timeout=900, return_when=asyncio.FIRST_COMPLETED)
-        if not response.done():
-            if task.done():
-                await task
-            raise TimeoutError("FinFeed historical book response did not complete")
-        instrument = collector.cache.instrument(INSTRUMENT_ID)
-        if instrument is None or not collector.deltas:
-            raise RuntimeError("Historical response has no definition or book deltas")
-        return instrument, collector.deltas
-    finally:
-        response.cancel()
-        handle.stop()
-        try:
-            await task
-        finally:
-            data_node.dispose()
+    return instrument, deltas
 
 
 def book_digest(deltas: Sequence[OrderBookDelta], instrument: BinaryOption) -> str:
@@ -263,7 +197,13 @@ if not catalog_path.exists():
         catalog = ParquetDataCatalog(str(partial_path))
         catalog.write_instruments([instrument])
         catalog.write_order_book_deltas(deltas)
-        manifest = {**selection, "deltas": len(deltas), "sha256": book_digest(deltas, instrument)}
+
+        manifest = {
+            **selection,
+            "deltas": len(deltas),
+            "sha256": book_digest(deltas, instrument),
+        }
+
         (partial_path / "manifest.json").write_text(
             json.dumps(manifest, indent=2),
             encoding="utf-8",
@@ -304,6 +244,7 @@ for delta in deltas:
     ask_size = book.best_ask_size()
     if bid is None or ask is None or bid_size is None or ask_size is None:
         continue
+
     if ask <= bid:
         continue
     bid_qty = bid_size.as_decimal()
@@ -382,6 +323,7 @@ config = BacktestRunConfig(
     ],
     dispose_on_completion=False,
 )
+
 strategy_config = OrderBookImbalanceConfig(
     instrument_id=instrument.id,
     book_type=book_type,
@@ -435,7 +377,14 @@ try:
     print(executions[["order_side", "order_type", "last_qty", "last_px", "commission"]].head())
     print(
         positions[
-            ["side", "quantity", "peak_qty", "avg_px_open", "avg_px_close", "realized_pnl"]
+            [
+                "side",
+                "quantity",
+                "peak_qty",
+                "avg_px_open",
+                "avg_px_close",
+                "realized_pnl",
+            ]
         ].to_string(),
     )
     print(account[["total", "locked", "free", "currency"]].tail().to_string())

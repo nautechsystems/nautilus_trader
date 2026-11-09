@@ -69,6 +69,7 @@ def parse_log(path: Path) -> dict:
 
     if not path.exists():
         return out
+
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = SELECTED_CALL.search(line)

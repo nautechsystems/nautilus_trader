@@ -714,6 +714,19 @@ Other gaps mark the set incomplete: closed or historical orders and fills that c
 instruments cannot be resolved. Position records do not contribute to the completeness flag. In-scope position
 failures fail the read.
 
+A venue order ID that is empty, blank, or not ASCII cannot be represented, so a report row carrying one counts as
+unparsable. A stream order update or fill carrying one is dropped and the order waits for a later frame or
+reconciliation. A status report can restore a dropped fill's quantity as an inferred fill, with a synthetic trade ID
+and an inferred price. A fill read supplies the real ones only if it arrives before or with that report. Nothing ties
+a later real fill to the inferred fill, so it can apply as a second fill and overstate the filled quantity until the
+mass status at the next startup corrects it.
+
+A successful submit or edit response naming the order only by such an ID leaves the outcome ambiguous: the command is
+not rejected, and the streams or reconciliation resolve the order. The in-flight check's `query_order` needs a venue
+order ID, so if a submitted order's stream frames are lost too and no open check (`open_check_interval_secs`) reads it
+before the in-flight retries run out, the default `submission_recovery_policy` closes it locally, even while the venue
+holds it.
+
 #### Single-order lookups
 
 A single-order status lookup that finds no report tells reconciliation that the venue
@@ -905,7 +918,8 @@ order ID it already holds, or one too long or otherwise invalid, as a send statu
 that rejects the order.
 
 A cancel or edit names the order by one identifier: its venue order ID when
-known, else its full client order ID.
+known, else its full client order ID. An edit response reads the order ID under the
+documented `orderId` key, and under `order_id` as well.
 
 Open-order and fill reports read the client order ID under the documented
 `cliOrdId` key, and under `cli_ord_id` as well. An echoed ID that is empty or not
@@ -968,6 +982,11 @@ assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
 The order type is the only place the history states a time in force. `IoC` and `HedgeImmediateOrCancel` rows are
 reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
 `GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
+
+The open-order read and order feed deltas for orders the adapter does not track report the `ioc` and `post` order
+types the same way, but Kraken documents neither there, and the orders-status window states no time in force or
+post-only flag. A resting post-only order the venue lists as a plain limit therefore reports as `GTC` and not
+post-only, and an order adopted from such a report keeps those values.
 
 The adapter skips unrepresentable rows with a warning:
 

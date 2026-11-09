@@ -112,6 +112,7 @@ class Client(MarketDataClient):
             ts_event=11,
             ts_init=13,
         )
+
         self._handle_instrument(instrument)
 
     async def _disconnect(self):
@@ -120,6 +121,7 @@ class Client(MarketDataClient):
     async def _subscribe_quotes(self, command):
         self.command = command
         self.callback_thread = threading.get_ident()
+
         for instrument_id in command.instrument_ids:
             self._handle_data(
                 QuoteTick(
@@ -156,6 +158,7 @@ class Factory(DataClientFactory):
             clock=clock,
             venue=Venue("PYTHON"),
         )
+
         return Factory.client
 
 
@@ -248,6 +251,7 @@ def test_unused_node_releases_adapter_cache(cleanup, retain_builder) -> None:
         Environment.SANDBOX,
     ).add_data_client("PYTHON", Factory, Config(label="retained-field"))
     node = builder.build()
+
     if not retain_builder:
         del builder
     cache = Factory.client.cache
@@ -298,11 +302,13 @@ def test_configuration_registration_uses_custom_factory_path(registration) -> No
         builder.add_data_client("PYTHON", descriptor, original.to_importable())
     else:
         client_config = original if registration == "named" else original.to_importable(descriptor)
+
         config = LiveNodeConfig(
             environment=Environment.SANDBOX,
             trader_id=TraderId("CONFIG-001"),
             data_clients={"PYTHON": client_config},
         )
+
         assert config.data_clients["PYTHON"] is client_config
         builder = LiveNodeBuilder.from_config(
             "CONFIG",
@@ -312,6 +318,7 @@ def test_configuration_registration_uses_custom_factory_path(registration) -> No
     node = builder.with_reconciliation(False).build()
     try:
         assert Factory.client.config.label == "configured-client"
+
         if registration in ("named", "instance"):
             assert Factory.client.config is original
         assert Factory.client.client_id == ClientId("PYTHON")
@@ -523,6 +530,7 @@ def test_python_factory_quote_reaches_engine_cache_and_strategy(launch) -> None:
         ts_event=19,
         ts_init=29,
     )
+
     assert consumer.quotes == [expected]
     assert cache.quote(INSTRUMENT_ID) == expected
     assert cache.instrument(INSTRUMENT_ID).id == INSTRUMENT_ID
@@ -687,6 +695,7 @@ async def test_historical_quotes_preserve_request_and_response_correlation(empty
     class HistoricalClient(Client):
         async def _request_quotes(self, request):
             requests.append(request)
+
             response = QuotesResponse(
                 client_id=self.client_id,
                 instrument_id=request.instrument_id,
@@ -697,6 +706,7 @@ async def test_historical_quotes_preserve_request_and_response_correlation(empty
                 end=request.end_ns,
                 params=request.params,
             )
+
             responses.append(response)
             self._handle_response(response)
 
@@ -759,6 +769,7 @@ async def test_mutating_adapter_book_snapshot_cannot_change_core_cache() -> None
     snapshots = []
     price = Price.from_str("1.23456")
     size = Quantity.from_str("107")
+
     delta = OrderBookDelta(
         INSTRUMENT_ID,
         BookAction.ADD,
@@ -894,6 +905,7 @@ def test_python_execution_client_reconciles_and_fills_through_core(launch) -> No
                 account_type=AccountType.CASH,
                 oms_type=OmsType.NETTING,
             )
+
             clients.append(client)
             return client
 
@@ -1051,6 +1063,7 @@ async def test_historical_data_families_preserve_payload_and_correlation(
         assert command.bar_type == bar_type
     else:
         assert command.instrument_id == INSTRUMENT_ID
+
     if kind == "book_depth":
         assert command.depth == 10
     response = responses[0]
@@ -1212,6 +1225,7 @@ async def test_all_subscription_families_preserve_subscribe_and_unsubscribe_fiel
             assert command.instrument_ids == ([INSTRUMENT_ID, second] if batch else [INSTRUMENT_ID])
         with pytest.raises(AttributeError):
             command.ts_init = 131
+
     if kind in ("book_deltas", "book_depth"):
         assert commands[0].book_type == BookType.L2_MBP
         assert commands[0].managed is False
@@ -1312,6 +1326,7 @@ async def test_custom_instrument_and_book_requests_reach_response_callbacks(kind
 
     async def request(self, command):
         requests.append(command)
+
         shared = {
             "client_id": self.client_id,
             "correlation_id": command.request_id,
@@ -1429,6 +1444,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
     bar_type = BarType.from_str("EUR/USD.PYTHON-1-MINUTE-LAST-EXTERNAL")
     bid = BookOrder(OrderSide.BUY, Price.from_str("1.23451"), Quantity.from_str("17"), 31)
     ask = BookOrder(OrderSide.SELL, Price.from_str("1.23459"), Quantity.from_str("23"), 37)
+
     values = {
         "trades": TradeTick(
             INSTRUMENT_ID,
@@ -1477,6 +1493,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
             start_ns + 103,
         ),
     }
+
     return start_ns, bar_type, values
 
 
@@ -1646,6 +1663,7 @@ def test_invalid_data_output_is_rejected_without_interrupting_valid_delivery(
     node.run()
 
     assert rejected == [message]
+
     expected = QuoteTick(
         INSTRUMENT_ID,
         Price.from_str("1.12345"),
@@ -1655,6 +1673,7 @@ def test_invalid_data_output_is_rejected_without_interrupting_valid_delivery(
         19,
         29,
     )
+
     assert node.cache.quote(INSTRUMENT_ID) == expected
     assert consumer.quotes == [expected]
 

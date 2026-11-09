@@ -206,6 +206,7 @@ def test_sandbox_config_accepts_custom_fee_model() -> None:
             return Money.from_str("1.23 USD")
 
     fee_model = CustomFeeModel()
+
     config = SandboxExecutionClientConfig(
         venue=Venue.from_str(SANDBOX),
         starting_balances=[Money(100000.0, Currency.from_str("USD"))],

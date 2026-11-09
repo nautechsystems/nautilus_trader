@@ -65,6 +65,7 @@ def imbalance_engine() -> Iterator[BacktestEngine]:
             data_engine=DataEngineConfig(emit_quotes_from_book=True),
         ),
     )
+
     engine.add_venue(
         venue=Venue("BINANCE"),
         oms_type=OmsType.NETTING,
@@ -151,6 +152,7 @@ def test_imbalance_config_preserves_native_fields() -> None:
     Bind positional configuration values to their native fields.
     """
     instrument_id = TestInstrumentProvider.ethusdt_binance().id
+
     config = OrderBookImbalanceConfig(
         instrument_id,
         Quantity.from_str("3.14259"),
@@ -164,6 +166,7 @@ def test_imbalance_config_preserves_native_fields() -> None:
         7,
         True,
     )
+
     assert config.instrument_id == instrument_id
     assert config.max_trade_size == Quantity.from_str("3.14259")
     assert config.strategy_id == StrategyId("IMBALANCE-123")
@@ -185,6 +188,7 @@ def test_imbalance_config_defaults_to_fok() -> None:
         instrument_id=TestInstrumentProvider.ethusdt_binance().id,
         max_trade_size=Quantity.from_str("1.00000"),
     )
+
     assert config.time_in_force == TimeInForce.FOK
 
 
@@ -222,6 +226,7 @@ def test_imbalance_config_rejects_invalid_fields(field: str, value: object, mess
         "max_trade_size": Quantity.from_str("1.00000"),
         field: value,
     }
+
     with pytest.raises(ValueError, match=message):
         OrderBookImbalanceConfig(**fields)
 
@@ -233,10 +238,12 @@ def test_imbalance_instances_follow_current_books_independently(
     Keep per-instrument throttles independent and ignore a balanced replacement book.
     """
     engine = imbalance_engine
+
     instruments = [
         TestInstrumentProvider.ethusdt_binance(),
         TestInstrumentProvider.btcusdt_binance(),
     ]
+
     data = []
     ts = 1_600_000_000_000_000_000
 
@@ -256,10 +263,12 @@ def test_imbalance_instances_follow_current_books_independently(
 
         for step, ask_size in enumerate(["0.100000", "10.000000", "0.100000"]):
             now = ts + step * 1_000_000_000
+
             levels = [
                 (OrderSide.BUY, "1999.90", "10.000000"),
                 (OrderSide.SELL, "2000.10", ask_size),
             ]
+
             deltas = [
                 OrderBookDelta(
                     instrument.id,
@@ -282,7 +291,6 @@ def test_imbalance_instances_follow_current_books_independently(
     engine.add_data(data)
 
     engine.run()
-
     for index, instrument in enumerate(instruments):
         orders = engine.cache.orders(strategy_id=StrategyId(f"IMBALANCE-{index}"))
         buys = [order for order in orders if order.side == OrderSide.BUY]
@@ -321,6 +329,7 @@ def test_imbalance_registers_on_backtest_node(tmp_path: Path) -> None:
         for i, (side, price, size) in enumerate(levels, start=1)
     ]
     catalog.write_order_book_deltas(deltas)
+
     run = BacktestRunConfig(
         engine=BacktestEngineConfig(
             bypass_logging=True,
@@ -346,6 +355,7 @@ def test_imbalance_registers_on_backtest_node(tmp_path: Path) -> None:
         ],
         dispose_on_completion=False,
     )
+
     node = BacktestNode([run])
     try:
         node.build()
@@ -380,6 +390,7 @@ def test_imbalance_registration_rejects_invalid_order_id_tag(
         max_trade_size=Quantity.from_str("0.01000"),
         order_id_tag="runner-1",
     )
+
     with pytest.raises(
         ValueError,
         match="`order_id_tag` cannot contain the '-' strategy ID separator, was 'runner-1'",

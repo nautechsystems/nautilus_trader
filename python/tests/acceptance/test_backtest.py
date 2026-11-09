@@ -125,6 +125,7 @@ def _engine(
         exec_engine=exec_engine,
         risk_engine=RiskEngineConfig(bypass=True) if risk_bypass else None,
     )
+
     return BacktestEngine(config)
 
 
@@ -155,6 +156,7 @@ def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
 _BACKTEST_PARITY_TS_START = 1_577_836_800_000_000_000
 _BACKTEST_PARITY_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
 _BACKTEST_PARITY_ETH_BID_PRICES = ("2000.00", "2000.00", "2000.50", "2001.00", "2001.00")
+
 _BACKTEST_PARITY_SUMMARY_LINES = [
     "account.SIM.balance.USD.free=1000017.20 USD",
     "account.SIM.balance.USD.locked=0.00 USD",
@@ -177,6 +179,7 @@ _BACKTEST_PARITY_SUMMARY_LINES = [
     "total_events=4",
     "venues.total=1",
 ]
+
 _BACKTEST_CASH_MARGIN_SUMMARY_LINES = [
     "account.BINANCE.balance.ETH.free=10.00000000 ETH",
     "account.BINANCE.balance.ETH.locked=0.00000000 ETH",
@@ -683,6 +686,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         # reduced primary submits as the final slice.
         assert len(spawned_orders) == 3 * len(primary_orders)
         assert all(o.status == OrderStatus.FILLED for o in orders)
+
         # Each sequence conserves the configured trade size across its slices
         for primary in primary_orders:
             children = [o for o in spawned_orders if o.exec_spawn_id == primary.client_order_id]
@@ -921,6 +925,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 def _betfair_betting_instrument(selection_id: int) -> BettingInstrument:
     raw_symbol = Symbol(f"1-166811431-{selection_id}-None")
     gbp = Currency.from_str("GBP")
+
     return BettingInstrument(
         instrument_id=InstrumentId(raw_symbol, Venue("BETFAIR")),
         raw_symbol=raw_symbol,
@@ -952,6 +957,7 @@ def _betfair_betting_instrument(selection_id: int) -> BettingInstrument:
 
 def _betfair_order_book_deltas(instrument: BettingInstrument) -> list[OrderBookDeltas]:
     ts = 1_600_000_000_000_000_000
+
     return [
         OrderBookDeltas(
             instrument_id=instrument.id,
@@ -1470,6 +1476,7 @@ class TestBacktestPnLAlignmentAcceptance:
             [50, "SELL", "100000"],
             [60, "BUY", "100000"],
         ]
+
         engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=TICK_SCHEDULED_STRATEGY,
@@ -1510,6 +1517,7 @@ class TestBacktestPnLAlignmentAcceptance:
             [60, "BUY", "100000"],
             [80, "SELL", "50000"],
         ]
+
         engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=TICK_SCHEDULED_STRATEGY,
@@ -1537,6 +1545,7 @@ class TestBacktestPnLAlignmentAcceptance:
             [20, "SELL", "100000"],
             [30, "BUY", "100000"],
         ]
+
         engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=TICK_SCHEDULED_STRATEGY,
@@ -1588,6 +1597,7 @@ def test_backtest_postrun_realized_pnl_by_oms_type(oms_type: object) -> None:
         [50, "SELL", "100000"],
         [60, "BUY", "100000"],
     ]
+
     engine.add_strategy_from_config(
         ImportableStrategyConfig(
             strategy_path=TICK_SCHEDULED_STRATEGY,

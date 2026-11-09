@@ -1014,6 +1014,7 @@ def _market_order(
         "reduce_only": False,
         "quote_quantity": False,
     }
+
     values.update(metadata)
     return MarketOrder(**values)
 
@@ -1037,6 +1038,7 @@ def _order_initialized(**metadata: object) -> object:
         "ts_init": 0,
         "contingency_type": None,
     }
+
     values.update(metadata)
     return OrderInitialized(**values)
 
@@ -1261,6 +1263,7 @@ def test_order_from_dict_rejects_invalid_domain_strings_subprocess(order_factory
     """
     order = order_factory()
     values = order.to_dict()
+
     invalid_values = {
         "trader_id": ["", "BROKEN", "-001", "TRADER-", "TRÄDER-001"],
         "strategy_id": ["", "BROKEN", "-002", "STRATEGY-", "STRÄTEGY-002"],
@@ -1461,6 +1464,7 @@ def test_apply_submitted() -> None:
     Test apply submitted.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1484,6 +1488,7 @@ def test_apply_accepted() -> None:
     Test apply accepted.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1494,6 +1499,7 @@ def test_apply_accepted() -> None:
         ts_event=1,
         ts_init=1,
     )
+
     accepted = OrderAccepted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1519,6 +1525,7 @@ def test_apply_denied() -> None:
     Test apply denied.
     """
     order = _market_order()
+
     denied = OrderDenied(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1540,6 +1547,7 @@ def test_apply_rejected() -> None:
     Test apply rejected.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1550,6 +1558,7 @@ def test_apply_rejected() -> None:
         ts_event=1,
         ts_init=1,
     )
+
     rejected = OrderRejected(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1574,6 +1583,7 @@ def test_apply_canceled() -> None:
     Test apply canceled.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1584,6 +1594,7 @@ def test_apply_canceled() -> None:
         ts_event=1,
         ts_init=1,
     )
+
     accepted = OrderAccepted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1596,6 +1607,7 @@ def test_apply_canceled() -> None:
         ts_init=2,
         reconciliation=False,
     )
+
     canceled = OrderCanceled(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1621,6 +1633,7 @@ def test_apply_filled() -> None:
     Test apply filled.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1631,6 +1644,7 @@ def test_apply_filled() -> None:
         ts_event=1,
         ts_init=1,
     )
+
     accepted = OrderAccepted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1643,6 +1657,7 @@ def test_apply_filled() -> None:
         ts_init=2,
         reconciliation=False,
     )
+
     filled = OrderFilled(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1688,6 +1703,7 @@ def test_apply_partial_fill() -> None:
     Test apply partial fill.
     """
     order = _market_order()
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1698,6 +1714,7 @@ def test_apply_partial_fill() -> None:
         ts_event=1,
         ts_init=1,
     )
+
     accepted = OrderAccepted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1710,6 +1727,7 @@ def test_apply_partial_fill() -> None:
         ts_init=2,
         reconciliation=False,
     )
+
     partial = OrderFilled(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,

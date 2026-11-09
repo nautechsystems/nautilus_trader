@@ -68,10 +68,12 @@ def _test_workspace_dependency_policy() -> None:
 
 def _test_consumer_classification() -> None:
     check: Callable[..., list[str]] = CHECKER["_check_consumer_features"]
+
     policies = {
         "nautilus-data": frozenset({"transport-sockudo"}),
         "nautilus-http": frozenset(),
     }
+
     manifests = [
         _manifest(
             "crates/adapters/data/Cargo.toml",
@@ -91,6 +93,7 @@ def _test_consumer_classification() -> None:
             {"dependencies": {"nautilus-network": {"workspace": True}}},
         ),
     ]
+
     _assert_equal(
         check(manifests, "nautilus-network", policies),
         [],
@@ -120,6 +123,7 @@ def _test_consumer_classification() -> None:
             },
         },
     }
+
     violations = check(manifests, "nautilus-network", policies)
     _assert_equal(len(violations), 1)
     if "'proxy'" not in violations[0]:
@@ -141,6 +145,7 @@ def _test_consumer_classification() -> None:
 
 def _test_test_support_policy() -> None:
     check: Callable[..., list[str]] = CHECKER["_check_test_support"]
+
     manifests = [
         _manifest(
             "crates/core/Cargo.toml",
@@ -172,12 +177,14 @@ def _test_test_support_policy() -> None:
             {"features": {"test-support": ["nautilus-model/test-support"]}},
         ),
     ]
+
     _assert_equal(check(manifests, frozenset({"nautilus-core"})), [])
 
     manifests[0][1]["dependencies"] = manifests[0][1].pop("dev-dependencies")
     violations = check(manifests, frozenset({"nautilus-core"}))
     if not any("must be a dev dependency" in violation for violation in violations):
         raise AssertionError(f"Production test-support use was not reported: {violations!r}")
+
     if not any(
         "expected test-support dev dependency is missing" in violation for violation in violations
     ):
@@ -232,12 +239,14 @@ def _test_lockfile_metadata_uses_cargo_proxy() -> None:
         lockfile.touch()
         cargo = repo / "bin" / ("cargo.exe" if sys.platform == "win32" else "cargo")
         resolved = repo / "bin" / ("rustup.exe" if sys.platform == "win32" else "rustup")
+
         proxy_result = subprocess.CompletedProcess(
             args=[],
             returncode=1,
             stdout="error: proxy invocation failed\n",
             stderr="",
         )
+
         cargo_result = subprocess.CompletedProcess(
             args=[],
             returncode=1,
@@ -282,6 +291,7 @@ def _test_hook_trigger() -> None:
     ):
         if expected not in hook:
             raise AssertionError(f"Hook trigger is missing {expected!r}")
+
     if "\\.rs" in hook:
         raise AssertionError("Rust source changes must not trigger the dependency feature policy")
 

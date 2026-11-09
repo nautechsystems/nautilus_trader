@@ -1452,6 +1452,22 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_orderbook_empty_snapshot_is_clear() {
+        let instrument = linear_instrument();
+        let mut msg: BybitWsOrderbookDepthMsg =
+            serde_json::from_str(&load_test_json("ws_orderbook_snapshot.json")).unwrap();
+        msg.data.b.clear();
+        msg.data.a.clear();
+
+        let deltas = parse_orderbook_deltas(&msg, &instrument, TS).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[0].flags));
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+    }
+
+    #[rstest]
     fn parse_orderbook_delta_marks_actions() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_orderbook_delta.json");

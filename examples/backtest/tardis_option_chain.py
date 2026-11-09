@@ -211,6 +211,7 @@ class OptionChainBacktest(Strategy):
                 distance = abs(abs(data.greeks.delta) - self._target_delta)
                 if distance > self._delta_tolerance:
                     continue
+
                 selected = SelectedOption(
                     instrument_id=data.quote.instrument_id,
                     strike=strike,
@@ -230,6 +231,7 @@ class OptionChainBacktest(Strategy):
         data = slice.get_call(self._target_strike) or slice.get_put(self._target_strike)
         if data is None:
             return None
+
         return SelectedOption(
             instrument_id=data.quote.instrument_id,
             strike=self._target_strike,
@@ -331,6 +333,7 @@ def main() -> None:
         starting_balances=[starting_balance(selection.settlement_currency)],
         fee_model=option_fee_model(args.fee_model),
     )
+
     data = [
         BacktestDataConfig(
             data_type=NautilusDataType.QuoteTick,
@@ -343,6 +346,7 @@ def main() -> None:
             instrument_ids=selection.instrument_ids,
         ),
     ]
+
     run_config = BacktestRunConfig(
         id="tardis-option-chain",
         engine=BacktestEngineConfig(
@@ -355,6 +359,7 @@ def main() -> None:
     )
 
     module_name = Path(__file__).stem
+
     strategy_config = ImportableStrategyConfig(
         strategy_path=f"{module_name}:OptionChainBacktest",
         config_path=f"{module_name}:OptionChainBacktestConfig",
@@ -407,6 +412,7 @@ def option_metadata(instrument: Any) -> OptionMetadata | None:
             expiration_ns=instrument.expiration_ns,
             strike=instrument.strike_price,
         )
+
     if instrument.type_name == "OptionContract":
         return OptionMetadata(
             instrument_id=instrument.id,
@@ -445,12 +451,14 @@ def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
         },
         key=lambda strike: strike.as_decimal(),
     )
+
     series_id = OptionSeriesId(
         VENUE,
         same_expiry[0].underlying,
         settlement_currency,
         expiration_ns,
     )
+
     return SeriesSelection(series_id, instrument_ids, strikes, settlement_currency)
 
 
@@ -470,6 +478,7 @@ def option_fee_model(name: str) -> CappedOptionFeeModel | TieredNotionalOptionFe
             maker_rate=Decimal("0.0002"),
             taker_rate=Decimal("0.0005"),
         )
+
     return CappedOptionFeeModel(
         maker_rate=Decimal("0.0003"),
         taker_rate=Decimal("0.0003"),

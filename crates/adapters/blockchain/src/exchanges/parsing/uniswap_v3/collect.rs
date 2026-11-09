@@ -294,7 +294,8 @@ mod tests {
     #[case(2, 1)]
     #[case(3, 1)]
     #[case(2, 31)]
-    fn test_parse_collect_event_rpc_rejects_short_tick_topic(
+    #[case(2, 33)]
+    fn test_parse_collect_event_rpc_rejects_noncanonical_tick_topic(
         mut rpc_log: RpcLog,
         #[case] topic_index: usize,
         #[case] byte_len: usize,
@@ -308,7 +309,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            format!("Topic must be at least 32 bytes, was {byte_len}")
+            format!("Topic must be 32 bytes, was {byte_len}")
         );
         assert_eq!(event.block_number, 391799940);
     }

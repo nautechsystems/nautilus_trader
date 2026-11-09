@@ -67,6 +67,7 @@ def parse_log(path: Path) -> pd.DataFrame:
                     "imbalance": (bid - ask) / (bid + ask),
                 },
             )
+
     if not rows:
         raise ValueError(f"No current-book snapshots found in {path}")
     return pd.DataFrame(rows)
@@ -199,6 +200,7 @@ def panel_c_best_sizes(batches: pd.DataFrame) -> go.Figure:
 def main() -> None:
     batches = parse_log(LOG_PATH)
     print(f"snapshots={len(batches)} runners={batches['instrument'].nunique()}")
+
     panels = {
         "panel_a_imbalance_lines.png": panel_a_imbalance_lines(batches),
         "panel_b_ratio_distribution.png": panel_b_ratio_distribution(batches),

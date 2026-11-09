@@ -21,6 +21,7 @@ pub mod inflight;
 pub mod orders;
 
 mod settlement;
+mod spread;
 
 #[cfg(test)]
 mod tests;
@@ -3192,7 +3193,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.process_order_internal(order, account_id, released);
+        self.account_ids.insert(order.trader_id(), account_id);
+        if self.reject_spread_order(order) {
+            return;
+        }
+
+        self.process_order_internal(order, released);
     }
 
     fn prepare_oto_submission(&mut self, order: &mut OrderAny, account_id: AccountId) -> bool {
@@ -3290,21 +3296,13 @@ impl OrderMatchingEngine {
         Some(parent)
     }
 
-    fn process_order_internal(
-        &mut self,
-        order: &mut OrderAny,
-        account_id: AccountId,
-        released: bool,
-    ) {
+    fn process_order_internal(&mut self, order: &mut OrderAny, released: bool) {
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
         // This avoids RefCell re-entrancy panics from synchronous event
         // dispatch that calls back into the execution engine.
         let reject_reason: Option<Ustr> = 'validate: {
             let cache_borrow = self.cache.as_ref().borrow();
-
-            // Index identifiers
-            self.account_ids.insert(order.trader_id(), account_id);
 
             if self.pending_resolution.is_some() {
                 break 'validate Some(
@@ -3755,6 +3753,9 @@ impl OrderMatchingEngine {
         }
 
         self.account_ids.insert(order.trader_id(), account_id);
+        if self.reject_spread_order(order) {
+            return;
+        }
 
         if let Err(e) = self.ids_generator.get_venue_order_id(order) {
             log::error!(
@@ -3798,6 +3799,31 @@ impl OrderMatchingEngine {
                 command.instrument_id,
                 command.client_order_id,
                 Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+                command.venue_order_id,
+                Some(account_id),
+                Some(command.command_id),
+            );
+            return;
+        }
+
+        // Matching is suspended while the market is not open, so an update that makes the
+        // order marketable would fill against the book the market left. Reject it as a
+        // submit is rejected; a cancel is still accepted
+        if self.market_status != MarketStatus::Open {
+            self.generate_order_modify_rejected(
+                command.trader_id,
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                Ustr::from(
+                    format!(
+                        "Market {} is {}, cannot modify order {}",
+                        self.instrument.id(),
+                        self.market_status,
+                        command.client_order_id
+                    )
+                    .as_str(),
+                ),
                 command.venue_order_id,
                 Some(account_id),
                 Some(command.command_id),
@@ -5650,6 +5676,43 @@ impl OrderMatchingEngine {
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
+        if self.instrument.is_spread() {
+            return self.apply_spread_fills(
+                order,
+                fills,
+                liquidity_side,
+                venue_position_id,
+                position,
+                protection_price,
+                from_synthetic,
+            );
+        }
+
+        self.apply_order_fills(
+            order,
+            fills,
+            liquidity_side,
+            venue_position_id,
+            position,
+            protection_price,
+            from_synthetic,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "fill application needs order, position, pricing, and liquidity-source context"
+    )]
+    fn apply_order_fills(
+        &mut self,
+        order: &OrderAny,
+        fills: &[(Price, Quantity)],
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<&Position>,
+        protection_price: Option<Price>,
+        from_synthetic: bool,
+    ) -> anyhow::Result<()> {
         let mut reduce_only_remaining = self.reduce_only_remaining(order, position)?;
         let required_qty = reduce_only_remaining.map_or(order.leaves_qty(), |remaining| {
             order.leaves_qty().min(remaining)
@@ -6163,7 +6226,7 @@ impl OrderMatchingEngine {
             commission_order.set_liquidity_side(liquidity_side);
         }
 
-        let underlying_px = self.fee_underlying_price()?;
+        let underlying_px = self.fee_underlying_price(&self.instrument)?;
         let commission = self.fee_model.get_commission_with_context(
             &commission_order,
             last_qty,
@@ -6173,7 +6236,7 @@ impl OrderMatchingEngine {
         )?;
 
         // Resolve implicit membership before dispatch can close the cached position
-        let mut reduce_only_order_ids = position
+        let reduce_only_order_ids = position
             .map(|position| self.reduce_only_order_ids(position.id))
             .unwrap_or_default();
 
@@ -6194,6 +6257,16 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
+        self.complete_order_fill(order, venue_position_id, position, reduce_only_order_ids)
+    }
+
+    fn complete_order_fill(
+        &mut self,
+        order: &OrderAny,
+        venue_position_id: Option<PositionId>,
+        position: Option<&Position>,
+        mut reduce_only_order_ids: Vec<ClientOrderId>,
+    ) -> anyhow::Result<()> {
         let post_fill_filled_qty = self.engine_filled_qty(order);
 
         let post_fill_quantity = self
@@ -6700,20 +6773,20 @@ impl OrderMatchingEngine {
         true
     }
 
-    fn fee_underlying_price(&self) -> CorrectnessResult<Option<Price>> {
+    fn fee_underlying_price(&self, instrument: &InstrumentAny) -> CorrectnessResult<Option<Price>> {
         if !matches!(
-            self.instrument,
+            instrument,
             InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
         ) {
             return Ok(None);
         }
 
-        let Some(underlying) = self.instrument.underlying() else {
+        let Some(underlying) = instrument.underlying() else {
             return Ok(None);
         };
 
         let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
-        let instrument_id = self.instrument.id();
+        let instrument_id = instrument.id();
 
         let cache = self.cache.borrow();
         if let Some(price) = cache
@@ -7624,6 +7697,11 @@ impl OrderMatchingEngine {
 
         if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
             cached_order.set_liquidity_side(liquidity_side);
+        }
+
+        if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+            self.cancel_order(&order, None);
+            return;
         }
 
         self.resync_core_entry(client_order_id);

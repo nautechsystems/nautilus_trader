@@ -106,6 +106,7 @@ def _log(msg: str) -> None:
 
 def _make_quote(price: float, ts: int = 0) -> QuoteTick:
     p = Price.from_str(f"{price:.1f}")
+
     return QuoteTick(
         instrument_id=BTCUSD.id,
         bid_price=p,
@@ -167,6 +168,7 @@ def run_demo() -> dict:
         _make_quote(ENTRY_PRICE, ts=0),
         _make_quote(CRASH_PRICE, ts=1),
     ]
+
     engine.add_data(ticks)
 
     _log(f"\n[STEP 1] Market opens @ ${ENTRY_PRICE:,.0f}")
@@ -180,6 +182,7 @@ def run_demo() -> dict:
     closed_positions = cache.positions_closed_count()
 
     _log("\n[RESULT]")
+
     if open_positions == 0 and closed_positions >= 1:
         _log("  LIQUIDATION TRIGGERED")
         _log("  All positions closed by engine")

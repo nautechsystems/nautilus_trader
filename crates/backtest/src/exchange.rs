@@ -1623,6 +1623,57 @@ impl SimulatedExchange {
                 return false;
             };
 
+            // A single-currency account holds only its base currency, so the cash
+            // adjustment is converted there; position PnL keeps the settlement currency
+            if let Some(base_currency) = account.base_currency() {
+                for adjustment in &mut account_adjustments {
+                    if adjustment.currency == base_currency {
+                        continue;
+                    }
+                    let xrate = match cache.try_get_xrate(
+                        account_venue,
+                        adjustment.currency,
+                        base_currency,
+                        PriceType::Mid,
+                    ) {
+                        Ok(Some(xrate)) => xrate,
+                        Ok(None) => {
+                            log::warn!(
+                                "Cannot settle funding for {}: no exchange rate from {} to {base_currency}",
+                                funding_rate.instrument_id,
+                                adjustment.currency
+                            );
+                            return false;
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Cannot settle funding for {}: exchange rate from {} to {base_currency}: {e}",
+                                funding_rate.instrument_id,
+                                adjustment.currency
+                            );
+                            return false;
+                        }
+                    };
+                    let Some(amount) = adjustment.as_decimal().checked_mul(xrate) else {
+                        log::error!(
+                            "Cannot settle funding for {}: currency conversion overflow",
+                            funding_rate.instrument_id
+                        );
+                        return false;
+                    };
+                    *adjustment = match Money::from_decimal(amount, base_currency) {
+                        Ok(money) => money,
+                        Err(e) => {
+                            log::error!(
+                                "Cannot settle funding for {}: invalid converted adjustment: {e}",
+                                funding_rate.instrument_id
+                            );
+                            return false;
+                        }
+                    };
+                }
+            }
+
             for adjustment in &account_adjustments {
                 let Some(balance) = account.balance(Some(adjustment.currency)) else {
                     log::error!(
@@ -1688,9 +1739,8 @@ impl SimulatedExchange {
                         original.id
                     );
 
-                    // Inclusive of `index`: the failed update applies the adjustment to the
-                    // cached position before attempting to persist it, so the position whose
-                    // update returned the error also needs reverting.
+                    // Include the failing position in case its adjustment was applied before
+                    // a backing integrity check rejected it.
                     revert_funding_adjustments(
                         &mut cache,
                         &adjusted_positions[..=index],

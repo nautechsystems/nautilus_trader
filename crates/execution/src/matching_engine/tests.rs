@@ -41,7 +41,7 @@ use nautilus_model::{
         Instrument, InstrumentAny,
         stubs::{
             crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
-            futures_contract_es, tokenized_asset_aaplx,
+            futures_contract_es, futures_spread_es, tokenized_asset_aaplx,
         },
     },
     orderbook::OrderBook,
@@ -2238,6 +2238,25 @@ fn test_l1_depth_skips_padding_for_last_quote_tracking() {
 #[case::historical_gtc((None, TimeInForce::Gtc, "3.000", OrderStatus::Filled))]
 #[case::historical_ioc((None, TimeInForce::Ioc, "3.000", OrderStatus::Filled))]
 #[case::historical_fok((None, TimeInForce::Fok, "3.000", OrderStatus::Filled))]
+fn test_l2_historical_book_order_lifecycle(
+    #[case] scenario: (Option<&str>, TimeInForce, &str, OrderStatus),
+    #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] liquidity_consumption: bool,
+    #[values(false, true)] use_market_order_acks: bool,
+    #[values(false, true)] one_sided: bool,
+) {
+    assert_l2_book_order_lifecycle(
+        scenario,
+        order_type,
+        side,
+        liquidity_consumption,
+        use_market_order_acks,
+        one_sided,
+    );
+}
+
+#[rstest]
 #[case::custom_fok((Some("3.000"), TimeInForce::Fok, "3.000", OrderStatus::Filled))]
 #[case::empty_gtc((Some("0.000"), TimeInForce::Gtc, "0.000", OrderStatus::Accepted))]
 #[case::empty_ioc((Some("0.000"), TimeInForce::Ioc, "0.000", OrderStatus::Canceled))]
@@ -2252,6 +2271,24 @@ fn test_l2_custom_book_order_lifecycle(
     #[values(false, true)] liquidity_consumption: bool,
     #[values(false, true)] use_market_order_acks: bool,
     #[values(false, true)] one_sided: bool,
+) {
+    assert_l2_book_order_lifecycle(
+        scenario,
+        order_type,
+        side,
+        liquidity_consumption,
+        use_market_order_acks,
+        one_sided,
+    );
+}
+
+fn assert_l2_book_order_lifecycle(
+    scenario: (Option<&str>, TimeInForce, &str, OrderStatus),
+    order_type: OrderType,
+    side: OrderSide,
+    liquidity_consumption: bool,
+    use_market_order_acks: bool,
+    one_sided: bool,
 ) {
     let (custom_size, time_in_force, expected_qty, expected_status) = scenario;
     let (mut engine, events) = custom_book_engine(
@@ -2762,7 +2799,7 @@ fn test_fee_underlying_price_uses_valid_cached_greeks_price() {
     );
 
     let price = engine
-        .fee_underlying_price()
+        .fee_underlying_price(&engine.instrument)
         .unwrap()
         .expect("expected underlying price");
 
@@ -2800,7 +2837,7 @@ fn test_fee_underlying_price_rejects_invalid_cached_greeks_price() {
         Default::default(),
     );
 
-    let error = engine.fee_underlying_price().unwrap_err();
+    let error = engine.fee_underlying_price(&engine.instrument).unwrap_err();
 
     assert_eq!(
         error,
@@ -8639,4 +8676,726 @@ fn test_mark_price_limit_if_touched_rests_as_maker(
     assert_eq!(order.liquidity_side(), Some(LiquiditySide::Maker));
     assert_eq!(order.filled_qty(), Quantity::from("1.000"));
     assert_eq!(order.avg_px(), Some(Price::from(limit).as_decimal()));
+}
+
+#[rstest]
+fn test_spread_consumption_rejection_preserves_reservations(
+    #[values(BookType::L1_MBP, BookType::L2_MBP, BookType::L3_MBO)] book_type: BookType,
+    #[values(false, true)] restored: bool,
+) {
+    let instrument = InstrumentAny::FuturesSpread(futures_spread_es());
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        book_type,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache,
+        OrderMatchingEngineConfig {
+            liquidity_consumption: true,
+            ..Default::default()
+        },
+    );
+
+    engine.bid_consumption.insert(
+        Price::from("1.00").raw(),
+        (Quantity::from(10).raw(), Quantity::from(3).raw()),
+    );
+    engine.ask_consumption.insert(
+        Price::from("2.00").raw(),
+        (Quantity::from(12).raw(), Quantity::from(4).raw()),
+    );
+    engine.trade_consumption = Quantity::from(2).raw();
+    let bids = engine.bid_consumption.clone();
+    let asks = engine.ask_consumption.clone();
+    let trade = engine.trade_consumption;
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let saved = events.clone();
+    engine.set_event_handler(Rc::new(move |event| saved.borrow_mut().push(event)));
+
+    let mut builder = OrderTestBuilder::new(if restored {
+        OrderType::Limit
+    } else {
+        OrderType::Market
+    });
+
+    builder
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(5))
+        .submit(true);
+
+    if restored {
+        builder.price(Price::from("2.00"));
+    }
+
+    let mut order = builder.build();
+    let account_id = AccountId::from("ACCOUNT-001");
+
+    if restored {
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-SPREAD"));
+        order.apply(accepted).unwrap();
+        engine
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        engine.restore_open_order(&order, account_id);
+    } else {
+        process_cached_order(&mut engine, &mut order, account_id);
+    }
+
+    let events = events.borrow();
+    assert_eq!(events.len(), 1);
+
+    let expected_event = if restored {
+        OrderEventType::Canceled
+    } else {
+        OrderEventType::Rejected
+    };
+
+    assert_eq!(events[0].event_type(), expected_event);
+    assert_eq!(events[0].client_order_id(), order.client_order_id());
+    order.apply(events[0].clone()).unwrap();
+    assert_eq!(
+        order.status(),
+        if restored {
+            OrderStatus::Canceled
+        } else {
+            OrderStatus::Rejected
+        }
+    );
+
+    if let OrderEventAny::Rejected(rejected) = &events[0] {
+        assert_eq!(
+            rejected.reason.as_str(),
+            "Simulated spread orders do not support liquidity_consumption=true"
+        );
+    }
+
+    assert!(!engine.core.order_exists(order.client_order_id()));
+    assert_eq!(engine.bid_consumption, bids);
+    assert_eq!(engine.ask_consumption, asks);
+    assert_eq!(engine.trade_consumption, trade);
+    assert_eq!(engine.orders.cached_filled_qty.borrow().len(), 0);
+}
+
+mod spread_price_allocator {
+    use nautilus_model::{
+        accounts::MarginAccount,
+        events::account::stubs::margin_account_state,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{
+            CryptoFuture, CryptoFuturesSpread, TickScheme, TieredTickScheme, register_tick_scheme,
+            stubs::futures_spread_es,
+        },
+    };
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::models::fee::FixedFeeModel;
+
+    #[derive(Clone)]
+    struct Leg {
+        ratio: i64,
+        bid: Price,
+        ask: Price,
+        tick: Price,
+        scheme: Option<&'static str>,
+        min: Option<Price>,
+        max: Option<Price>,
+    }
+
+    impl Leg {
+        fn new(ratio: i64, bid: &str, ask: &str, tick: &str) -> Self {
+            Self {
+                ratio,
+                bid: Price::from(bid),
+                ask: Price::from(ask),
+                tick: Price::from(tick),
+                scheme: None,
+                min: None,
+                max: None,
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::named(Some("FIXED_PRECISION_2"), ["1.01", "0.51"])]
+    #[case::unnamed(None, ["1.02", "0.52"])]
+    fn test_spread_price_allocator_fixed_midpoint(
+        #[case] scheme: Option<&'static str>,
+        #[case] expected: [&str; 2],
+    ) {
+        let mut legs = [
+            Leg::new(1, "1.01", "1.02", "0.01"),
+            Leg::new(-1, "0.51", "0.52", "0.01"),
+        ];
+
+        for leg in &mut legs {
+            leg.scheme = scheme;
+        }
+
+        assert_eq!(execute(&legs, "0.50").unwrap(), expected.map(Price::from));
+    }
+
+    #[rstest]
+    #[case::precision_nine(
+        "FIXED_PRECISION_9", "0.000000001",
+        ["1000000000.000000001", "1000000000.000000002", "1.000000001", "1.000000002"],
+        "999999999.000000000", ["1000000000.000000001", "1.000000001"]
+    )]
+    #[case::negative(
+        "FIXED_PRECISION_2", "0.01", ["-1.01", "-1.00", "-1.51", "-1.50"],
+        "0.50", ["-1.01", "-1.51"]
+    )]
+    fn test_spread_price_allocator_named_decimal_rounding(
+        #[case] scheme: &'static str,
+        #[case] tick: &str,
+        #[case] quotes: [&str; 4],
+        #[case] target: &str,
+        #[case] expected: [&str; 2],
+    ) {
+        let mut legs = [
+            Leg::new(1, quotes[0], quotes[1], tick),
+            Leg::new(-1, quotes[2], quotes[3], tick),
+        ];
+
+        for leg in &mut legs {
+            leg.scheme = Some(scheme);
+        }
+
+        assert_eq!(execute(&legs, target).unwrap(), expected.map(Price::from));
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_respects_maximum() {
+        let mut legs = [
+            Leg::new(1, "0.99", "1.00", "0.01"),
+            Leg::new(-1, "0.50", "0.51", "0.01"),
+        ];
+
+        legs[0].max = Some(Price::from("1.00"));
+        assert_eq!(
+            execute(&legs, "0.51").unwrap(),
+            [Price::from("1.00"), Price::from("0.49")]
+        );
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_selects_best_fixed_pair() {
+        let legs = [
+            Leg::new(2, "100.00", "100.00", "0.01"),
+            Leg::new(5, "50.00", "50.00", "0.01"),
+            Leg::new(-3, "80.00", "80.00", "0.01"),
+        ];
+
+        assert_eq!(
+            execute(&legs, "210.01").unwrap(),
+            [
+                Price::from("99.99"),
+                Price::from("50.00"),
+                Price::from("79.99")
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_large_quadratic_intermediates() {
+        let legs = [
+            Leg::new(18_000_000_000, "1.00", "1.00", "1.00"),
+            Leg::new(-17_999_999_999, "1.00", "1.00", "1.00"),
+        ];
+
+        let step = 18_000_000_000_i128;
+        let tick = 1_000_000_000_i128;
+        assert_eq!((step * step).checked_mul(tick * tick), None);
+        assert_eq!(
+            execute(&legs, "2.000000000").unwrap(),
+            [Price::from("2.00"), Price::from("2.00")]
+        );
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_rejects_grid_intermediate_overflow() {
+        let ratios = [i64::MAX, -(i64::MAX - 1)];
+        let prices = [Price::from("0.999999999"); 2];
+        let quantity = Quantity::from("0.000000001");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache_fractional_legs(&cache, &ratios, &prices, quantity);
+        let mut leg = cache
+            .borrow()
+            .instrument(&InstrumentId::from("L1.SIM"))
+            .unwrap()
+            .clone();
+
+        let InstrumentAny::CryptoFuture(instrument) = &mut leg else {
+            panic!("Expected a crypto future");
+        };
+
+        instrument.price_increment = Price::from("0.000000003");
+        cache.borrow_mut().add_instrument(leg).unwrap();
+
+        let error = execute_prepared(cache, &fractional_spread(&ratios), quantity, "1.999999998")
+            .unwrap_err();
+
+        assert_eq!(
+            exact_weighted_units(&[Price::from("1.999999998"); 2], &ratios),
+            1_999_999_998
+        );
+        assert_eq!(
+            error.to_string(),
+            "Spread execution price 1.999999998 cannot be allocated exactly on leg price grids"
+        );
+    }
+
+    #[rstest]
+    #[case::within_tier("ALLOC_GAP", &[(0.01, 3.0, 0.01), (3.0, 10.0, 0.05)], ["3.45", "3.55", "1.19", "1.21"], "1.11", ["3.55", "1.22"], 2)]
+    #[case::cross_tier("ALLOC_CROSS", &[(0.05, 3.0, 0.05), (3.0, 10.0, 0.10)], ["3.20", "3.20", "1.00", "1.00"], "1.05", ["2.95", "0.95"], 2)]
+    #[case::native_precision("ALLOC_PRECISION", &[(0.01, 3.0, 0.01), (3.0, 10.0, 0.05)], ["3.45", "3.55", "1.19", "1.21"], "1.11", ["3.55", "1.22"], 4)]
+    fn test_spread_price_allocator_variable_pair(
+        #[case] name: &'static str,
+        #[case] tiers: &[(f64, f64, f64)],
+        #[case] quotes: [&str; 4],
+        #[case] target: &str,
+        #[case] expected: [&str; 2],
+        #[case] precision: u8,
+    ) {
+        register_tick_scheme(
+            name,
+            TickScheme::Tiered(TieredTickScheme::new(tiers, precision, 1000).unwrap()),
+        )
+        .unwrap();
+
+        let mut legs = [
+            Leg::new(1, quotes[0], quotes[1], "0.01"),
+            Leg::new(-2, quotes[2], quotes[3], "0.01"),
+        ];
+
+        for leg in &mut legs {
+            leg.scheme = Some(name);
+        }
+
+        let prices = execute(&legs, target).unwrap();
+        assert_eq!(prices, expected.map(Price::from));
+        assert_eq!([prices[0].precision, prices[1].precision], [2, 2]);
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_finite_ladder_without_solution() {
+        register_tick_scheme(
+            "ALLOC_NO_SOLUTION",
+            TickScheme::Tiered(TieredTickScheme::new(&[(0.02, 0.66, 0.02)], 2, 32).unwrap()),
+        )
+        .unwrap();
+
+        let mut legs = [
+            Leg::new(1, "0.32", "0.32", "0.02"),
+            Leg::new(-1, "0.32", "0.32", "0.02"),
+        ];
+
+        for leg in &mut legs {
+            leg.scheme = Some("ALLOC_NO_SOLUTION");
+        }
+
+        assert_eq!(
+            execute(&legs, "0.01").unwrap_err().to_string(),
+            "Spread execution price 0.01 cannot be allocated exactly on leg price grids"
+        );
+    }
+
+    #[rstest]
+    #[case::fixed(None)]
+    #[case::variable(Some("ALLOC_ORACLE"))]
+    fn test_spread_price_allocator_matches_tiny_grid_oracle(#[case] scheme: Option<&'static str>) {
+        if let Some(name) = scheme {
+            register_tick_scheme(
+                name,
+                TickScheme::Tiered(TieredTickScheme::new(&[(0.02, 0.62, 0.02)], 2, 30).unwrap()),
+            )
+            .unwrap();
+        }
+
+        let mut legs = [
+            Leg::new(2, "0.30", "0.30", "0.02"),
+            Leg::new(-3, "0.20", "0.20", "0.02"),
+        ];
+
+        for leg in &mut legs {
+            leg.scheme = scheme;
+            leg.min = Some(Price::from("0.02"));
+            leg.max = Some(Price::from("0.60"));
+        }
+
+        for target in ["0.02", "0.10", "0.14", "0.22", "0.26", "0.34"] {
+            assert_tiny_grid_objective(&legs, target);
+        }
+    }
+
+    #[rstest]
+    #[case::upper(1)]
+    #[case::lower(-1)]
+    fn test_spread_price_allocator_implicit_domain_bounds(#[case] sign: i64) {
+        let sign = Decimal::from(sign);
+        let boundary = Price::max(0).as_decimal() * sign;
+        let reference = (dec!(999999) * sign).to_string();
+
+        let legs = [
+            Leg::new(1, &boundary.to_string(), &boundary.to_string(), "2"),
+            Leg::new(-1, &reference, &reference, "3"),
+        ];
+
+        let target = boundary - dec!(499996) * sign;
+
+        let expected = [
+            Price::from_decimal_dp(boundary - dec!(4) * sign, 0).unwrap(),
+            Price::from_decimal_dp(dec!(499992) * sign, 0).unwrap(),
+        ];
+
+        assert_eq!(execute(&legs, &target.to_string()).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_checks_exact_large_ratio_sum() {
+        let ratios = [7_540_113_804_746_346_429, -4_660_046_610_375_530_309, 1];
+
+        let prices = [
+            Price::from("2880067194.370816120"),
+            Price::from("4660046610.375530309"),
+            Price::from("1.000000000"),
+        ];
+
+        let quantity = Quantity::from("0.000000001");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache_fractional_legs(&cache, &ratios, &prices, quantity);
+        let spread = fractional_spread(&ratios);
+        assert_eq!(spread.try_normalize_qty(quantity).unwrap(), quantity);
+        let allocated = execute_prepared(cache, &spread, quantity, "1.000000000").unwrap();
+
+        assert_eq!(exact_weighted_units(&prices, &ratios), 999_999_999);
+        assert_eq!(
+            allocated,
+            [prices[0], prices[1], Price::from("1.000000001")]
+        );
+        assert_eq!(exact_weighted_units(&allocated, &ratios), 1_000_000_000);
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_preserves_highest_anchor_with_large_ratios() {
+        let ratios = [7_540_113_804_746_346_429, -4_660_046_610_375_530_309, 1, 2];
+
+        let prices = [
+            Price::from("2880067194.370816120"),
+            Price::from("4660046610.375530309"),
+            Price::from("5000000000.000000000"),
+            Price::from("100.000000000"),
+        ];
+
+        let quantity = Quantity::from("0.000000001");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache_fractional_legs(&cache, &ratios, &prices, quantity);
+        let allocated = execute_prepared(
+            cache,
+            &fractional_spread(&ratios),
+            quantity,
+            "5000000200.000000009",
+        )
+        .unwrap();
+        assert_eq!(
+            allocated,
+            [
+                prices[0],
+                prices[1],
+                Price::from("5000000000.000000010"),
+                prices[3]
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_spread_price_allocator_mixed_precision() {
+        let legs = [
+            Leg::new(1, "1.0", "1.0", "0.1"),
+            Leg::new(-1, "0.50", "0.50", "0.01"),
+        ];
+
+        let prices = execute(&legs, "0.50").unwrap();
+        assert_eq!(prices, [Price::from("1.0"), Price::from("0.50")]);
+        assert_eq!(
+            prices
+                .iter()
+                .map(|price| price.precision)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_spread_price_allocator_rejects_inexact_decimal_target() {
+        let legs = [
+            Leg::new(1, "8000000000001.0", "8000000000001.0", "1.0"),
+            Leg::new(-1, "1.0", "1.0", "1.0"),
+        ];
+
+        let target = "8000000000000.0000000000000001";
+        assert_eq!(
+            execute(&legs, target).unwrap_err().to_string(),
+            format!("Spread execution price {target} cannot use exact Decimal arithmetic")
+        );
+    }
+
+    fn assert_tiny_grid_objective(legs: &[Leg], target: &str) {
+        let target = Price::from(target).as_decimal();
+        let prices = execute(legs, &target.to_string()).unwrap();
+        let actual = prices[0].as_decimal() * dec!(2) - prices[1].as_decimal() * dec!(3);
+        let objective = square(prices[0].as_decimal() - dec!(0.30))
+            + square(prices[1].as_decimal() - dec!(0.20));
+
+        let minimum = (1..=30)
+            .flat_map(|left| {
+                (1..=30).map(move |right| (Decimal::new(left * 2, 2), Decimal::new(right * 2, 2)))
+            })
+            .filter(|(left, right)| *left * dec!(2) - *right * dec!(3) == target)
+            .map(|(left, right)| square(left - dec!(0.30)) + square(right - dec!(0.20)))
+            .min()
+            .unwrap();
+
+        assert_eq!(actual, target);
+        assert_eq!(objective, minimum);
+    }
+
+    fn execute(legs: &[Leg], target: &str) -> anyhow::Result<Vec<Price>> {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let mut spread = futures_spread_es();
+        spread.id = spread_id(legs.iter().map(|leg| leg.ratio));
+        spread.raw_symbol = Symbol::from("SPREAD");
+        let target_price = Price::from(target);
+        spread.price_precision = target_price.precision;
+        spread.price_increment = Price::from_decimal_dp(
+            Decimal::new(1, u32::from(target_price.precision)),
+            target_price.precision,
+        )?;
+        cache_legs(&cache, legs)?;
+        let instrument = InstrumentAny::FuturesSpread(spread);
+
+        execute_prepared(cache, &instrument, Quantity::from(1), target)
+    }
+
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Fixture validity and unexpected events must fail independently of expected execution errors"
+    )]
+    fn execute_prepared(
+        cache: Rc<RefCell<Cache>>,
+        instrument: &InstrumentAny,
+        quantity: Quantity,
+        target: &str,
+    ) -> anyhow::Result<Vec<Price>> {
+        assert_eq!(instrument.try_normalize_qty(quantity).unwrap(), quantity);
+        assert_eq!(
+            instrument.try_normalize_price(Price::from(target)).unwrap(),
+            Price::from(target)
+        );
+        let mut state = margin_account_state();
+        state.account_id = AccountId::from("ACCOUNT-001");
+        cache
+            .borrow_mut()
+            .add_account(MarginAccount::new(state, false).into())?;
+
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::Fixed(FixedFeeModel::new(Money::from("0 USD"), Some(false))?).into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache,
+            Default::default(),
+        );
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let saved = events.clone();
+        engine.set_event_handler(Rc::new(move |event| saved.borrow_mut().push(event)));
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .submit(true)
+            .build();
+        let prepared = engine.prepare_spread_leg_fills(
+            &order,
+            quantity,
+            Price::from(target),
+            LiquiditySide::Taker,
+            Quantity::from(0),
+        )?;
+        engine.dispatch_spread_leg_fills(
+            &order,
+            VenueOrderId::from("ALLOC"),
+            prepared,
+            LiquiditySide::Taker,
+        );
+
+        let prices = events
+            .borrow()
+            .iter()
+            .map(|event| match event {
+                OrderEventAny::Filled(fill) => fill.last_px,
+                other => panic!("Unexpected allocator event {other:?}"),
+            })
+            .collect();
+
+        Ok(prices)
+    }
+
+    fn cache_legs(cache: &Rc<RefCell<Cache>>, legs: &[Leg]) -> anyhow::Result<()> {
+        for (index, leg) in legs.iter().enumerate() {
+            let mut instrument = futures_contract_es(None, None);
+            instrument.id = InstrumentId::from(format!("L{index}.SIM"));
+            instrument.raw_symbol = Symbol::from(format!("L{index}"));
+            instrument.price_precision = leg.tick.precision;
+            instrument.price_increment = leg.tick;
+            instrument.min_price = leg.min;
+            instrument.max_price = leg.max;
+            instrument.tick_scheme = leg.scheme.map(Ustr::from);
+            let id = instrument.id;
+            cache
+                .borrow_mut()
+                .add_instrument(InstrumentAny::FuturesContract(instrument))?;
+            cache.borrow_mut().add_quote(QuoteTick::new(
+                id,
+                leg.bid,
+                leg.ask,
+                Quantity::from(100),
+                Quantity::from(100),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))?;
+        }
+
+        Ok(())
+    }
+
+    fn cache_fractional_legs(
+        cache: &Rc<RefCell<Cache>>,
+        ratios: &[i64],
+        prices: &[Price],
+        quantity: Quantity,
+    ) {
+        for index in 0..ratios.len() {
+            let id = InstrumentId::from(format!("L{index}.SIM"));
+            let instrument = CryptoFuture::builder()
+                .instrument_id(id)
+                .raw_symbol(Symbol::from(format!("L{index}")))
+                .underlying(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .settlement_currency(Currency::USDT())
+                .is_inverse(false)
+                .activation_ns(0.into())
+                .expiration_ns(100000000000.into())
+                .price_precision(9)
+                .size_precision(9)
+                .price_increment(Price::from("0.000000001"))
+                .size_increment(quantity)
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap();
+            let leg_quantity = Quantity::from_decimal_dp(
+                quantity.as_decimal() * Decimal::from(ratios[index].unsigned_abs()),
+                9,
+            )
+            .unwrap();
+            assert_eq!(
+                instrument.try_normalize_qty(leg_quantity).unwrap(),
+                leg_quantity
+            );
+            assert_eq!(
+                instrument.try_normalize_price(prices[index]).unwrap(),
+                prices[index]
+            );
+            cache
+                .borrow_mut()
+                .add_instrument(InstrumentAny::CryptoFuture(instrument))
+                .unwrap();
+            cache
+                .borrow_mut()
+                .add_quote(QuoteTick::new(
+                    id,
+                    prices[index],
+                    prices[index],
+                    leg_quantity,
+                    leg_quantity,
+                    0.into(),
+                    0.into(),
+                ))
+                .unwrap();
+        }
+    }
+
+    fn fractional_spread(ratios: &[i64]) -> InstrumentAny {
+        InstrumentAny::CryptoFuturesSpread(
+            CryptoFuturesSpread::builder()
+                .instrument_id(spread_id(ratios.iter().copied()))
+                .raw_symbol(Symbol::from("SPREAD"))
+                .underlying(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .settlement_currency(Currency::USDT())
+                .is_inverse(false)
+                .strategy_type(Ustr::from("SPREAD"))
+                .activation_ns(0.into())
+                .expiration_ns(100000000000.into())
+                .price_precision(9)
+                .size_precision(9)
+                .price_increment(Price::from("0.000000001"))
+                .size_increment(Quantity::from("0.000000001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn spread_id(ratios: impl IntoIterator<Item = i64>) -> InstrumentId {
+        let symbols = ratios
+            .into_iter()
+            .enumerate()
+            .map(|(index, ratio)| {
+                if ratio > 0 {
+                    format!("({ratio})L{index}")
+                } else {
+                    format!("(({}))L{index}", ratio.unsigned_abs())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("___");
+
+        InstrumentId::from(format!("{symbols}.SIM"))
+    }
+
+    fn exact_weighted_units(prices: &[Price], ratios: &[i64]) -> i128 {
+        prices
+            .iter()
+            .zip(ratios)
+            .fold(0_i128, |sum, (price, ratio)| {
+                let value = price.as_decimal();
+                assert_eq!(value.scale(), 9);
+                sum.checked_add(value.mantissa().checked_mul(i128::from(*ratio)).unwrap())
+                    .unwrap()
+            })
+    }
+
+    fn square(value: Decimal) -> Decimal {
+        value * value
+    }
 }

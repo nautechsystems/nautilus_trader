@@ -267,6 +267,7 @@ def test_calculate_rejects_invalid_values(
     Test calculate rejects invalid values.
     """
     sizer = FixedRiskSizer(GBPUSD)
+
     arguments = {
         "entry": ENTRY,
         "stop_loss": STOP_LOSS,
@@ -295,6 +296,7 @@ def test_calculate_rejects_non_decimal_numeric_parameters(parameter: object, val
     Test calculate rejects non decimal numeric parameters.
     """
     sizer = FixedRiskSizer(GBPUSD)
+
     arguments = {
         "entry": ENTRY,
         "stop_loss": STOP_LOSS,
@@ -316,6 +318,7 @@ def test_calculate_rejects_none_for_required_decimal_parameters(parameter: objec
     Test calculate rejects none for required decimal parameters.
     """
     sizer = FixedRiskSizer(GBPUSD)
+
     arguments = {
         "entry": ENTRY,
         "stop_loss": STOP_LOSS,

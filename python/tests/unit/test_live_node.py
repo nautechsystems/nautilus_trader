@@ -501,6 +501,7 @@ def test_builder_accepts_supported_runtime_configs() -> None:
     Test builder accepts supported runtime configs.
     """
     trader_id = TraderId("TESTER-002")
+
     cache_config = CacheConfig(
         None,
         False,
@@ -562,6 +563,7 @@ def test_add_actor_from_config_accepts_required_subclass_kwargs(live_node: LiveN
     """
     RequiredConfigLiveActor.received_actor_id = None
     RequiredConfigLiveActor.received_label = None
+
     config = ImportableActorConfig(
         actor_path="tests.unit.test_live_node:RequiredConfigLiveActor",
         config_path="tests.unit.test_live_node:RequiredConfigLiveActorConfig",
@@ -610,6 +612,7 @@ def test_add_actor_from_empty_config_preserves_class_derived_id(live_node: LiveN
     Test add actor from empty config preserves class derived ID.
     """
     InternalConfigLiveActor.instances.clear()
+
     config = ImportableActorConfig(
         actor_path="tests.unit.test_live_node:InternalConfigLiveActor",
         config_path="",
@@ -629,6 +632,7 @@ def test_add_actor_registers_constructed_instance(live_node: LiveNode) -> None:
     Test add actor registers constructed instance.
     """
     actor_id = ActorId("PY-LIVE-CONSTRUCTED-ACTOR")
+
     actor = DataActor(
         DataActorConfig(
             actor_id=actor_id,
@@ -702,6 +706,7 @@ def test_add_strategy_from_config_accepts_string_strategy_id(live_node: LiveNode
     Test add strategy from config accepts a string strategy ID.
     """
     ConfiguredIdProbeStrategy.reset()
+
     config = ImportableStrategyConfig(
         strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
         config_path="tests.unit.common.actor:CustomFieldStrategyConfig",
@@ -762,6 +767,7 @@ def test_add_exec_algorithm_registers_constructed_instance(live_node: LiveNode) 
     """
     exec_algorithm_id = ExecAlgorithmId("PY-LIVE-CONSTRUCTED")
     LifecycleExecutionAlgorithm.start_observations = []
+
     exec_algorithm = LifecycleExecutionAlgorithm(
         ExecutionAlgorithmConfig(
             exec_algorithm_id=exec_algorithm_id,
@@ -849,6 +855,7 @@ def test_add_strategy_from_config_derives_class_derived_id() -> None:
     """
     node = LiveNode.builder("TEST", TraderId("TESTER-021"), Environment.SANDBOX).build()
     DefaultIdLiveStrategy.instances.clear()
+
     config = ImportableStrategyConfig(
         strategy_path="tests.unit.test_live_node:DefaultIdLiveStrategy",
         config_path="nautilus_trader.trading:StrategyConfig",
@@ -943,6 +950,7 @@ async def test_add_exec_algorithm_rejects_running_node() -> None:
             timeout_shutdown_secs=0,
         ),
     )
+
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-LIVE-RUNNING")),
     )

@@ -845,10 +845,12 @@ pub trait DataActor {
     // panics-doc-ok
     /// Adds the `synthetic` instrument to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist it.
+    /// Returns an error if a synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error.
     ///
     /// # Panics
     ///
@@ -863,10 +865,12 @@ pub trait DataActor {
     // panics-doc-ok
     /// Updates the `synthetic` instrument in the cache, replacing the existing entry.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if no synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist the replacement.
+    /// Returns an error if no synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error.
     ///
     /// # Panics
     ///
@@ -4655,10 +4659,12 @@ impl DataActorCore {
 
     /// Adds the `synthetic` instrument to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist it. Panics if the actor is not registered
+    /// Returns an error if a synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error. Panics if the actor is not registered
     /// with a trader. // panics-doc-ok
     pub fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         self.check_registered();
@@ -4672,11 +4678,13 @@ impl DataActorCore {
 
     /// Updates the `synthetic` instrument in the cache, replacing the existing entry.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if no synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist the replacement. Panics if the actor is not
-    /// registered with a trader. // panics-doc-ok
+    /// Returns an error if no synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error. Panics if the actor is not registered
+    /// with a trader. // panics-doc-ok
     pub fn update_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         self.check_registered();
 

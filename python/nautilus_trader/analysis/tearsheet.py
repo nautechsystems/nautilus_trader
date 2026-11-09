@@ -203,6 +203,7 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     code = hex_color.lstrip("#")
     if len(code) == _HEX_SHORT_LENGTH:
         code = "".join(char * 2 for char in code)
+
     if len(code) != _HEX_FULL_LENGTH:
         raise ValueError(f"Color must be a hex code like '#rrggbb', was {hex_color!r}")
     try:
@@ -299,10 +300,13 @@ def _format_info_value(value: Any) -> str:
     """
     if isinstance(value, bool):
         return str(value)
+
     if isinstance(value, int):
         return f"{value:,}"
+
     if isinstance(value, float):
         return _group_thousands(str(value))
+
     if isinstance(value, str):
         return _group_thousands(value)
     return str(value)
@@ -340,6 +344,7 @@ def _monthly_pivot(returns: pd.Series, *, compounding: bool) -> Any:
     Pivot period returns into a year-by-month table for heatmaps.
     """
     monthly = _aggregate_period_returns(returns, "ME", compounding=compounding)
+
     pivot = pd.DataFrame(
         {
             "Year": monthly.index.year,
@@ -347,6 +352,7 @@ def _monthly_pivot(returns: pd.Series, *, compounding: bool) -> Any:
             "Return": monthly.to_numpy(),
         },
     )
+
     return pivot.pivot_table(index="Year", columns="Month", values="Return")
 
 
@@ -372,6 +378,7 @@ def _heatmap_trace(
     colors = theme_config["colors"]
     zmin, zmax = _symmetric_heatmap_range(heatmap_data.values)
     colorbar: dict[str, Any] | None = None
+
     if showscale:
         colorbar = {
             "thickness": 12,
@@ -379,6 +386,7 @@ def _heatmap_trace(
             "outlinewidth": 0,
             "tickfont": {"family": _FONT_MONO, "size": 10, "color": colors["muted"]},
         }
+
     return go.Heatmap(
         z=heatmap_data.values,
         x=[_MONTH_ABBR[int(m) - 1] for m in heatmap_data.columns],
@@ -419,19 +427,24 @@ def _normalize_theme_config(theme_config: dict[str, Any]) -> dict[str, Any]:
     colors = theme_config.get("colors", {})
     bg = colors.get("background", "#ffffff")
     is_light = _is_light_background(bg)
-
     if "text" not in colors:
         colors["text"] = "#333333" if is_light else "#e5e7eb"
+
     if "muted" not in colors:
         colors["muted"] = "#737373" if is_light else "#9ca3af"
+
     if "table_header" not in colors:
         colors["table_header"] = colors.get("table_section", colors.get("grid", "#e0e0e0"))
+
     if "table_section" not in colors:
         colors["table_section"] = colors.get("grid", "#e0e0e0")
+
     if "table_row_odd" not in colors:
         colors["table_row_odd"] = colors.get("grid", "#f0f0f0")
+
     if "table_row_even" not in colors:
         colors["table_row_even"] = colors.get("background", "#ffffff")
+
     if "table_text" not in colors:
         colors["table_text"] = "#000000" if is_light else "#eeeeee"
 
@@ -478,6 +491,7 @@ def _base_layout(theme_config: dict[str, Any]) -> dict[str, Any]:
     Shared theme template, fonts, legend, and hover styling for all figures.
     """
     colors = theme_config["colors"]
+
     return {
         "template": theme_config["template"],
         "paper_bgcolor": colors["background"],
@@ -937,8 +951,10 @@ def _create_tearsheet_from_result(
     needs_engine = config is not None and "bars_with_fills" in config.chart_names
     if needs_engine and node is None:
         raise ValueError("A BacktestNode is required for the bars_with_fills chart")
+
     if node is not None and resolved_run_config_id is None:
         raise ValueError("run_config_id is required when a BacktestNode is provided")
+
     if node is not None and resolved_run_config_id is not None:
         _validate_result_node_state(node, resolved_run_config_id)
 
@@ -950,7 +966,6 @@ def _create_tearsheet_from_result(
     returns = _result_returns_series(result)
     run_info = _result_run_info(result)
     account_info = _result_account_info(result, node, resolved_run_config_id, currency)
-
     if title == "NautilusTrader Backtest Results":
         run_started = _format_optional_iso8601(result.run_started)
         title = f"<b>NautilusTrader</b> v{NAUTILUS_VERSION} - Backtest Results"
@@ -976,6 +991,7 @@ def _validate_result_node_state(node: BacktestNode, run_config_id: str) -> None:
     for run_config in node.configs:
         if run_config.id != run_config_id:
             continue
+
         if run_config.dispose_on_completion:
             raise ValueError(
                 "BacktestNode state is unavailable when dispose_on_completion=True; "
@@ -1218,6 +1234,7 @@ def _snapshot_equity_series(
         dtype=float,
         name=account_id,
     )
+
     return series.sort_index().groupby(level=0).last(), observed_currencies
 
 
@@ -1623,7 +1640,6 @@ def create_equity_curve(
     fig.update_layout(hovermode="x unified", showlegend=benchmark is not None)
     fig.update_xaxes(title_text="Date")
     fig.update_yaxes(title_text="Equity")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -1670,7 +1686,6 @@ def create_drawdown_chart(
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
     colors = theme_config["colors"]
-
     if returns.empty:
         fig = _empty_figure(theme_config, title)
         if output_path:
@@ -1697,7 +1712,6 @@ def create_drawdown_chart(
     fig.update_layout(hovermode="x unified", showlegend=False)
     fig.update_xaxes(title_text="Date")
     fig.update_yaxes(title_text="Drawdown (%)")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -1752,7 +1766,6 @@ def create_monthly_returns_heatmap(
 
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
-
     if returns.empty:
         fig = _empty_figure(theme_config, title)
         if output_path:
@@ -1765,7 +1778,6 @@ def create_monthly_returns_heatmap(
     _style_figure(fig, theme_config, title, height=400)
     fig.update_xaxes(title_text="Month")
     fig.update_yaxes(title_text="Year")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -1812,7 +1824,6 @@ def create_returns_distribution(
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
     colors = theme_config["colors"]
-
     if returns.empty:
         fig = _empty_figure(theme_config, title)
         if output_path:
@@ -1844,7 +1855,6 @@ def create_returns_distribution(
     fig.update_layout(bargap=0.1, showlegend=False)
     fig.update_xaxes(title_text="Return (%)")
     fig.update_yaxes(title_text="Frequency")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -1935,7 +1945,6 @@ def create_rolling_sharpe(
     fig.update_layout(hovermode="x unified", showlegend=False)
     fig.update_xaxes(title_text="Date")
     fig.update_yaxes(title_text="Sharpe Ratio")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -1991,7 +2000,6 @@ def create_yearly_returns(
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
     colors = theme_config["colors"]
-
     if returns.empty:
         fig = _empty_figure(theme_config, title)
         if output_path:
@@ -2024,7 +2032,6 @@ def create_yearly_returns(
     fig.update_layout(bargap=0.35, showlegend=False)
     fig.update_xaxes(title_text="Year", type="category")
     fig.update_yaxes(title_text="Return (%)")
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -2280,6 +2287,7 @@ def _create_stats_table(  # noqa: C901
             else:
                 formatted_value = str(value)
             values.append(formatted_value)
+
             if len(fill_colors) % 2 == 0:
                 fill_colors.append(theme_config["colors"]["table_row_odd"])
             else:
@@ -2349,6 +2357,7 @@ def _render_run_info(
 
     if run_info:
         add_section("Run Information", run_info)
+
     if account_info:
         add_section("Account Summary", account_info)
 
@@ -2730,7 +2739,6 @@ def create_bars_with_fills(
 
     _style_figure(fig, theme_config, title or f"{bar_type} - Bars with Order Fills", height=800)
     fig.update_layout(showlegend=True)
-
     if output_path:
         _write_figure(fig, output_path)
 
@@ -2810,7 +2818,6 @@ def _render_bars_with_fills(  # noqa: C901
     colors = theme_config["colors"]
     bars_df = pd.DataFrame(bar.to_dict() for bar in bars)
     bars_df["ts_init"] = pd.to_datetime(bars_df["ts_init"])
-
     for column in ("open", "high", "low", "close"):
         bars_df[column] = bars_df[column].astype(float)
 
@@ -2819,7 +2826,6 @@ def _render_bars_with_fills(  # noqa: C901
     if not fills_df.empty:
         instrument_id = bar_type.instrument_id
         fills_df = fills_df[fills_df["instrument_id"] == str(instrument_id)].copy()
-
         if not fills_df.empty:
             fills_df["ts_init"] = pd.to_datetime(fills_df["ts_init"])
             fills_df["last_qty"] = pd.to_numeric(fills_df["last_qty"], errors="coerce")
@@ -2909,6 +2915,7 @@ def _add_fill_scatter_trace(
         "order_side",
         "last_qty",
     ]
+
     has_all_cols = all(col in fills_df.columns for col in required_cols)
 
     fig.add_trace(

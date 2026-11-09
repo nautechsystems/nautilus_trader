@@ -13,8 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Display, fs, io::Write, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    fs,
+    io::Write,
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
+use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::{Params, UUID4, UnixNanos};
@@ -41,6 +52,7 @@ use nautilus_persistence::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         delete::DeleteOperationKind,
+        io::write_batches_to_object_store,
         paths::{make_object_store_path, timestamps_to_filename, urisafe_instrument_id},
     },
     catalog::{
@@ -3040,7 +3052,7 @@ fn test_consolidation_workflow_end_to_end() {
             Some(bar_type.as_str()),
             None,
             None,
-            None,
+            Some(false),
             None,
         )
         .unwrap();
@@ -3813,25 +3825,43 @@ fn test_delete_data_range_removes_replay_identity_suffix() {
 }
 
 #[derive(Debug)]
-struct RejectDeleteStore {
+struct FailingStore {
     inner: Arc<dyn object_store::ObjectStore>,
+    failure: StoreFailure,
 }
 
-impl Display for RejectDeleteStore {
+impl Display for FailingStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("reject-delete")
     }
 }
 
 #[async_trait::async_trait]
-impl object_store::ObjectStore for RejectDeleteStore {
+impl object_store::ObjectStore for FailingStore {
     async fn put_opts(
         &self,
         location: &object_store::path::Path,
         payload: object_store::PutPayload,
         opts: object_store::PutOptions,
     ) -> object_store::Result<object_store::PutResult> {
-        self.inner.put_opts(location, payload, opts).await
+        let publishing = location.as_ref().ends_with(".parquet");
+        if publishing && matches!(self.failure, StoreFailure::PublishBefore) {
+            return Err(object_store::Error::Generic {
+                store: "fail-store",
+                source: Box::new(std::io::Error::other("injected publish failure")),
+            });
+        }
+
+        let result = self.inner.put_opts(location, payload, opts).await?;
+
+        if publishing && matches!(self.failure, StoreFailure::PublishAfter) {
+            return Err(object_store::Error::Generic {
+                store: "fail-store",
+                source: Box::new(std::io::Error::other("injected publish failure")),
+            });
+        }
+
+        Ok(result)
     }
 
     async fn put_multipart_opts(
@@ -3845,16 +3875,48 @@ impl object_store::ObjectStore for RejectDeleteStore {
     async fn get_opts(
         &self,
         location: &object_store::path::Path,
-        options: object_store::GetOptions,
+        mut options: object_store::GetOptions,
     ) -> object_store::Result<object_store::GetResult> {
-        self.inner.get_opts(location, options).await
+        if let StoreFailure::ReadOutside(root) = &self.failure
+            && !location.prefix_matches(root)
+        {
+            return Err(object_store::Error::Generic {
+                store: "scoped-store",
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "outside catalog prefix",
+                )),
+            });
+        }
+
+        let versioned = matches!(self.failure, StoreFailure::VersionedDeleteAfter(_));
+        if versioned {
+            options.version = None;
+        }
+
+        let mut result = self.inner.get_opts(location, options).await?;
+        if versioned {
+            result.meta.version = Some("synthetic-version".to_string());
+        }
+
+        Ok(result)
     }
 
     fn list(
         &self,
         prefix: Option<&object_store::path::Path>,
     ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
-        self.inner.list(prefix)
+        let objects = self.inner.list(prefix);
+        if matches!(self.failure, StoreFailure::ListReversed) {
+            return Box::pin(futures::stream::once(objects.collect::<Vec<_>>()).flat_map(
+                |mut objects| {
+                    objects.reverse();
+                    futures::stream::iter(objects)
+                },
+            ));
+        }
+
+        objects
     }
 
     async fn list_with_delimiter(
@@ -3871,14 +3933,37 @@ impl object_store::ObjectStore for RejectDeleteStore {
             object_store::Result<object_store::path::Path>,
         >,
     ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
-        use futures::StreamExt;
-        Box::pin(locations.map(|item| {
-            item.and_then(|_| {
+        let inner = self.inner.clone();
+        let failure = self.failure.clone();
+        Box::pin(locations.then(move |item| {
+            let inner = inner.clone();
+            let failure = failure.clone();
+            async move {
+                let path = item?;
+
+                let permitted = match failure {
+                    StoreFailure::DeleteAfter(left) | StoreFailure::VersionedDeleteAfter(left) => {
+                        left.try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                            left.checked_sub(1)
+                        })
+                        .is_ok()
+                    }
+                    StoreFailure::PublishBefore
+                    | StoreFailure::PublishAfter
+                    | StoreFailure::ReadOutside(_)
+                    | StoreFailure::ListReversed => true,
+                };
+
+                if permitted {
+                    inner.delete(&path).await?;
+                    return Ok(path);
+                }
+
                 Err(object_store::Error::Generic {
                     store: "reject-delete",
                     source: Box::new(std::io::Error::other("injected delete failure")),
                 })
-            })
+            }
         }))
     }
 
@@ -3890,6 +3975,16 @@ impl object_store::ObjectStore for RejectDeleteStore {
     ) -> object_store::Result<()> {
         self.inner.copy_opts(from, to, opts).await
     }
+}
+
+#[derive(Debug, Clone)]
+enum StoreFailure {
+    DeleteAfter(Arc<AtomicUsize>),
+    VersionedDeleteAfter(Arc<AtomicUsize>),
+    PublishBefore,
+    PublishAfter,
+    ReadOutside(ObjectPath),
+    ListReversed,
 }
 
 #[rstest]
@@ -3905,8 +4000,9 @@ fn test_delete_data_range_returns_error_when_file_cannot_be_removed() {
 
     let inner = catalog.object_store.clone();
 
-    catalog.object_store = Arc::new(RejectDeleteStore {
+    catalog.object_store = Arc::new(FailingStore {
         inner: inner.clone(),
+        failure: StoreFailure::DeleteAfter(Arc::new(AtomicUsize::new(0))),
     });
 
     let error = catalog
@@ -8379,7 +8475,7 @@ fn test_instrument_family_file_operations_span_every_class() {
             None,
             None,
             None,
-            None,
+            Some(false),
             None,
         )
         .unwrap();
@@ -9865,6 +9961,7 @@ fn test_delta_batches_share_catalog_write_dispatch(#[case] enum_writer: bool) {
 }
 
 #[rstest]
+#[case::data_prefix("data/catalog")]
 #[case::bucket_root("")]
 #[case::catalog_prefix("catalog")]
 fn test_filtered_remote_instrument_query_retains_object_store(#[case] prefix: &str) {
@@ -10205,7 +10302,7 @@ fn test_consolidation_of_non_ascii_identifier_replaces_source_files(
             Some(NON_ASCII_IDENTIFIER),
             None,
             None,
-            None,
+            Some(false),
             None,
         ),
         "data_by_period" => catalog.consolidate_data_by_period(
@@ -10216,7 +10313,7 @@ fn test_consolidation_of_non_ascii_identifier_replaces_source_files(
             None,
             Some(false),
         ),
-        "catalog" => catalog.consolidate_catalog(None, None, None, None),
+        "catalog" => catalog.consolidate_catalog(None, None, Some(false), None),
         "catalog_by_period" => {
             catalog.consolidate_catalog_by_period(Some(1_000_000), None, None, Some(false))
         }
@@ -10476,4 +10573,677 @@ fn test_reset_data_file_names_without_identifier_keeps_identifier_directories(
     keys.sort();
 
     assert_eq!(keys, expected);
+}
+
+#[rstest]
+#[case::data(false)]
+#[case::catalog(true)]
+fn test_raw_consolidation_rejects_coverage_gaps(#[case] whole_catalog: bool) {
+    let (directory, mut catalog) = create_temp_catalog();
+    let first = [1, 2].map(create_quote_tick);
+    let second = [5, 6].map(create_quote_tick);
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+    let before = snapshot_catalog_files(&directory);
+    let data_type = NautilusDataType::QuoteTick.into();
+    let identifier = first[0].instrument_id.to_string();
+
+    let error = if whole_catalog {
+        catalog.consolidate_catalog(None, None, Some(true), None)
+    } else {
+        catalog.consolidate_data(&data_type, Some(&identifier), None, None, Some(true), None)
+    }
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Intervals are not contiguous before consolidating a directory"
+    );
+    assert_eq!(snapshot_catalog_files(&directory), before);
+    assert_eq!(
+        catalog
+            .get_missing_intervals_for_request(1, 6, &data_type, Some(&identifier))
+            .unwrap(),
+        vec![(3, 4)]
+    );
+}
+
+#[rstest]
+fn test_raw_consolidation_orders_overlaps_and_keeps_equal_timestamp_rows() {
+    let (_directory, mut catalog) = create_temp_catalog();
+    let first = [1, 3].map(create_quote_tick);
+    let mut second = [2, 3, 4].map(create_quote_tick);
+    second[1].bid_size = Quantity::from("123");
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog
+        .write_to_parquet(&second, None, None, Some(true))
+        .unwrap();
+    let identifier = first[0].instrument_id.to_string();
+    catalog
+        .consolidate_data(
+            &NautilusDataType::QuoteTick.into(),
+            Some(&identifier),
+            None,
+            None,
+            Some(false),
+            None,
+        )
+        .unwrap();
+    let query = CatalogQuery::new(NautilusDataType::QuoteTick);
+    let mut session = CatalogReader::query_batch_session(&mut catalog, &query, Some(2)).unwrap();
+    let mut actual = Vec::new();
+
+    while let Some(batch) = session.next_batch().unwrap() {
+        let DataBatch::Quote(rows) = batch else {
+            panic!("expected quote batch");
+        };
+
+        actual.extend_from_slice(rows.as_ref());
+    }
+
+    assert_eq!(
+        actual,
+        vec![first[0], second[0], first[1], second[1], second[2]]
+    );
+}
+
+#[rstest]
+#[case::root("")]
+#[case::nested("archive")]
+#[case::data_segment("data/archive")]
+fn test_instrument_queries_strip_remote_catalog_prefix(#[case] prefix: &str) {
+    let (_directory, mut catalog) = create_temp_catalog();
+    catalog.base_path = prefix.to_string();
+    catalog.original_uri = format!("s3://test-bucket/{prefix}");
+    catalog.object_store = Arc::new(InMemory::new());
+    let expected = InstrumentAny::Equity(equity_aapl());
+    catalog.write_instruments(vec![expected.clone()]).unwrap();
+    let actual = catalog.query_instruments(None).unwrap();
+
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(vec![expected]).unwrap()
+    );
+}
+
+#[rstest]
+#[case::first_source(0)]
+#[case::later_source(1)]
+#[case::marker_cleanup(2)]
+fn test_raw_consolidation_delete_failure_keeps_rows_and_retries(
+    #[case] deletes_left: usize,
+    #[values(false, true)] identical_rows: bool,
+    #[values(false, true)] encoded_identifier: bool,
+) {
+    let (directory, mut catalog) = create_temp_catalog();
+
+    let times = if identical_rows {
+        [1, 2, 2, 3]
+    } else {
+        [1, 2, 3, 4]
+    };
+
+    let mut rows = times.map(create_quote_tick);
+    if encoded_identifier {
+        for row in &mut rows {
+            row.instrument_id = InstrumentId::from(NON_ASCII_IDENTIFIER);
+        }
+    }
+
+    catalog
+        .write_to_parquet(&rows[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[2..], None, None, Some(true))
+        .unwrap();
+    let store = catalog.object_store.clone();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store.clone(),
+        failure: StoreFailure::DeleteAfter(Arc::new(AtomicUsize::new(deletes_left))),
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let identifier = rows[0].instrument_id.to_string();
+    let error = catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
+        .unwrap_err();
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let query = CatalogQuery::new(NautilusDataType::QuoteTick);
+    let mut session = CatalogReader::query_batch_session(&mut catalog, &query, Some(1)).unwrap();
+    let mut streamed = Vec::new();
+
+    while let Some(batch) = session.next_batch().unwrap() {
+        let DataBatch::Quote(batch) = batch else {
+            panic!("expected quote batch");
+        };
+
+        streamed.extend_from_slice(batch.as_ref());
+    }
+
+    drop(session);
+    catalog.object_store = store;
+    catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, None, None)
+        .unwrap();
+    let retried = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let files = catalog
+        .list_parquet_files(&catalog.make_path("quotes", Some(&identifier)).unwrap())
+        .unwrap();
+
+    assert!(error.to_string().contains("injected delete failure"));
+    assert_eq!(actual, rows);
+    assert_eq!(streamed, rows);
+    assert_eq!(retried, rows);
+    assert_eq!(files.len(), 1);
+    assert!(
+        !snapshot_catalog_files(&directory)
+            .iter()
+            .any(|(path, _)| path.ends_with(".consolidation.json"))
+    );
+}
+
+#[rstest]
+#[case::before(StoreFailure::PublishBefore)]
+#[case::acknowledgement(StoreFailure::PublishAfter)]
+fn test_raw_consolidation_publish_failure_preserves_rows(
+    #[case] failure: StoreFailure,
+    #[values(false, true)] target_is_input: bool,
+) {
+    let (_directory, mut catalog) = create_temp_catalog();
+    let rows = [1, 2, 3, 4].map(create_quote_tick);
+
+    if target_is_input {
+        catalog
+            .write_to_parquet(&[rows[0], rows[3]], None, None, None)
+            .unwrap();
+        catalog
+            .write_to_parquet(&rows[1..3], None, None, Some(true))
+            .unwrap();
+    } else {
+        catalog
+            .write_to_parquet(&rows[..2], None, None, None)
+            .unwrap();
+        catalog
+            .write_to_parquet(&rows[2..], None, None, None)
+            .unwrap();
+    }
+
+    let store = catalog.object_store.clone();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store.clone(),
+        failure,
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let identifier = rows[0].instrument_id.to_string();
+    let error = catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
+        .unwrap_err();
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    catalog.object_store = store;
+    catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
+        .unwrap();
+    let retried = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert!(error.to_string().contains("injected publish failure"));
+    assert_eq!(actual, rows);
+    assert_eq!(retried, rows);
+}
+
+#[rstest]
+fn test_raw_consolidation_retry_when_target_is_an_input() {
+    let (_directory, mut catalog) = create_temp_catalog();
+    let rows = [1, 2, 3, 4].map(create_quote_tick);
+    catalog
+        .write_to_parquet(&[rows[0], rows[3]], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[1..3], None, None, Some(true))
+        .unwrap();
+    let store = catalog.object_store.clone();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store.clone(),
+        failure: StoreFailure::DeleteAfter(Arc::new(AtomicUsize::new(0))),
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let identifier = rows[0].instrument_id.to_string();
+    let error = catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
+        .unwrap_err();
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    catalog.object_store = store;
+    catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, None, None)
+        .unwrap();
+    let retried = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert!(error.to_string().contains("injected delete failure"));
+    assert_eq!(actual, rows);
+    assert_eq!(retried, rows);
+}
+
+#[rstest]
+#[case::write("write")]
+#[case::delete("delete")]
+#[case::rename("rename")]
+fn test_raw_consolidation_pending_cleanup_precedes_mutations(
+    #[case] operation: &str,
+    #[values(false, true)] remote: bool,
+) {
+    let (_directory, mut catalog) = create_temp_catalog_on_store(remote);
+    let mut rows = [1, 2, 3, 4].map(create_quote_tick);
+    for row in &mut rows {
+        row.instrument_id = InstrumentId::from(NON_ASCII_IDENTIFIER);
+    }
+
+    catalog
+        .write_to_parquet(&rows[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[2..], None, None, None)
+        .unwrap();
+    let store = catalog.object_store.clone();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store.clone(),
+        failure: StoreFailure::DeleteAfter(Arc::new(AtomicUsize::new(0))),
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let identifier = rows[0].instrument_id.to_string();
+    let error = catalog
+        .consolidate_data(&data_type, None, None, None, None, None)
+        .unwrap_err();
+    let visible = catalog
+        .query::<QuoteTick>(Some(vec![identifier.clone()]), None, None, None, None, true)
+        .unwrap();
+    catalog.object_store = store;
+    let mut added = create_quote_tick(10);
+    added.instrument_id = rows[0].instrument_id;
+
+    let expected = match operation {
+        "write" => {
+            catalog
+                .write_to_parquet(&[added], None, None, None)
+                .unwrap();
+            [rows.to_vec(), vec![added]].concat()
+        }
+        "delete" => {
+            catalog
+                .delete_data_range(&NautilusDataType::QuoteTick, Some(&identifier), None, None)
+                .unwrap();
+            Vec::new()
+        }
+        "rename" => {
+            catalog
+                .extend_file_name(
+                    &data_type,
+                    Some(&identifier),
+                    UnixNanos::from(5),
+                    UnixNanos::from(6),
+                )
+                .unwrap();
+            rows.to_vec()
+        }
+        _ => unreachable!(),
+    };
+
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    let objects = catalog
+        .execute_async(|| async {
+            Ok(catalog
+                .object_store
+                .list(None)
+                .try_collect::<Vec<_>>()
+                .await?)
+        })
+        .unwrap();
+
+    assert!(error.to_string().contains("injected delete failure"));
+    assert_eq!(visible, rows);
+    assert_eq!(actual, expected);
+    assert!(
+        !objects
+            .iter()
+            .any(|object| object.location.filename() == Some(".consolidation.json"))
+    );
+}
+
+#[rstest]
+fn test_raw_consolidation_recovery_preserves_replaced_source() {
+    let (_directory, mut catalog) = create_temp_catalog();
+    let rows = [1, 2, 3, 4].map(create_quote_tick);
+    catalog
+        .write_to_parquet(&rows[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[2..], None, None, None)
+        .unwrap();
+    let store = catalog.object_store.clone();
+    let identifier = rows[0].instrument_id.to_string();
+    let path = catalog.make_path("quotes", Some(&identifier)).unwrap();
+    let mut sources = catalog.list_parquet_files(&path).unwrap();
+    sources.sort();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store.clone(),
+        failure: StoreFailure::DeleteAfter(Arc::new(AtomicUsize::new(0))),
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let error = catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, None, None)
+        .unwrap_err();
+    let mut replaced = [rows[0], rows[1]];
+    for row in &mut replaced {
+        row.bid_size = Quantity::from("987");
+    }
+
+    let batches = catalog.data_to_record_batches(&replaced).unwrap();
+    catalog
+        .execute_async(|| async {
+            write_batches_to_object_store(
+                &batches,
+                store.clone(),
+                &ObjectPath::parse(&sources[0]).unwrap(),
+                None,
+                None,
+                None,
+            )
+            .await
+        })
+        .unwrap();
+
+    let mut before = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    catalog.object_store = store;
+    catalog
+        .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
+        .unwrap();
+    let mut after = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let mut expected = [rows.to_vec(), replaced.to_vec()].concat();
+    for values in [&mut expected, &mut before, &mut after] {
+        values.sort_by_key(|row| (row.ts_init, row.bid_size.as_decimal()));
+    }
+
+    assert!(error.to_string().contains("injected delete failure"));
+    assert_eq!(before, expected);
+    assert_eq!(after, expected);
+}
+
+#[rstest]
+#[case::prefix("catalog")]
+#[case::data_prefix("data/catalog")]
+fn test_raw_consolidation_respects_catalog_storage_prefix(#[case] prefix: &str) {
+    let (_directory, mut catalog) = create_temp_catalog();
+    catalog.base_path = prefix.to_string();
+    catalog.original_uri = format!("s3://test-bucket/{prefix}");
+    let store: Arc<dyn object_store::ObjectStore> = Arc::new(InMemory::new());
+    catalog.object_store = store.clone();
+    let rows = [1, 2, 3, 4].map(create_quote_tick);
+    catalog
+        .write_to_parquet(&rows[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[2..], None, None, None)
+        .unwrap();
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: store,
+        failure: StoreFailure::ReadOutside(ObjectPath::from(prefix)),
+    });
+
+    let before = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    catalog
+        .consolidate_data(
+            &NautilusDataType::QuoteTick.into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let after = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(before, rows);
+    assert_eq!(after, rows);
+}
+
+#[rstest]
+fn test_raw_consolidation_recovers_versioned_sources() {
+    let (_directory, mut catalog) = create_temp_catalog();
+    catalog.base_path = "catalog".to_string();
+    catalog.original_uri = "s3://test-bucket/catalog".to_string();
+    catalog.object_store = Arc::new(InMemory::new());
+    let rows = [1, 2, 3, 4].map(create_quote_tick);
+    catalog
+        .write_to_parquet(&rows[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&rows[2..], None, None, None)
+        .unwrap();
+    let deletes_left = Arc::new(AtomicUsize::new(0));
+
+    catalog.object_store = Arc::new(FailingStore {
+        inner: catalog.object_store.clone(),
+        failure: StoreFailure::VersionedDeleteAfter(deletes_left.clone()),
+    });
+
+    let data_type = NautilusDataType::QuoteTick.into();
+    let error = catalog
+        .consolidate_data(&data_type, None, None, None, None, None)
+        .unwrap_err();
+    let before = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    deletes_left.store(usize::MAX, Ordering::SeqCst);
+    catalog
+        .consolidate_data(&data_type, None, None, None, None, None)
+        .unwrap();
+    let after = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let files = catalog
+        .list_parquet_files(&catalog.make_path("quotes", None).unwrap())
+        .unwrap();
+
+    assert!(error.to_string().contains("injected delete failure"));
+    assert_eq!(before, rows);
+    assert_eq!(after, rows);
+    assert_eq!(files.len(), 1);
+}
+
+#[rstest]
+#[case::uri("uri")]
+#[case::relative("relative")]
+#[case::current("current")]
+#[case::parent("parent")]
+#[case::absolute("absolute")]
+#[case::absolute_current("absolute_current")]
+#[case::absolute_parent("absolute_parent")]
+fn test_query_with_explicit_local_paths(
+    #[case] form: &str,
+    #[values(false, true)] optimize_file_loading: bool,
+) {
+    let directory = TempDir::new().unwrap();
+    let root = directory.path().join("catalog space");
+    fs::create_dir_all(&root).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&root, None, None, None, None);
+    let mut rows = [1, 2].map(create_quote_tick);
+    for row in &mut rows {
+        row.instrument_id = InstrumentId::from(NON_ASCII_IDENTIFIER);
+    }
+
+    catalog.write_to_parquet(&rows, None, None, None).unwrap();
+    let files = catalog
+        .list_parquet_files(&catalog.make_path("quotes", None).unwrap())
+        .unwrap();
+
+    let uris = files
+        .iter()
+        .map(|file| match form {
+            "uri" => url::Url::from_file_path(root.join(file))
+                .unwrap()
+                .to_string(),
+            "relative" => file.clone(),
+            "current" => format!("./{file}"),
+            "parent" => format!("../{file}"),
+            "absolute" => root.join(file).to_string_lossy().to_string(),
+            "absolute_current" => root.join(".").join(file).to_string_lossy().to_string(),
+            "absolute_parent" => root
+                .join("data")
+                .join("..")
+                .join(file)
+                .to_string_lossy()
+                .to_string(),
+            _ => unreachable!("unexpected path form"),
+        })
+        .collect();
+
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, Some(uris), optimize_file_loading)
+        .unwrap();
+
+    assert_eq!(actual, rows);
+}
+
+#[rstest]
+fn test_raw_consolidation_same_start_order(#[values(false, true)] reverse_listing: bool) {
+    let (_directory, mut catalog) = create_temp_catalog_on_store(true);
+    let mut first = [1, 3].map(create_quote_tick);
+    let mut second = [1, 5].map(create_quote_tick);
+    first[0].bid_size = Quantity::from("11");
+    second[0].bid_size = Quantity::from("21");
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog
+        .write_to_parquet(&second, None, None, Some(true))
+        .unwrap();
+
+    if reverse_listing {
+        catalog.object_store = Arc::new(FailingStore {
+            inner: catalog.object_store.clone(),
+            failure: StoreFailure::ListReversed,
+        });
+    }
+
+    catalog
+        .consolidate_data(
+            &NautilusDataType::QuoteTick.into(),
+            None,
+            None,
+            None,
+            Some(false),
+            None,
+        )
+        .unwrap();
+    let query = CatalogQuery::new(NautilusDataType::QuoteTick);
+    let mut session = CatalogReader::query_batch_session(&mut catalog, &query, Some(2)).unwrap();
+    let mut actual = Vec::new();
+
+    while let Some(batch) = session.next_batch().unwrap() {
+        let DataBatch::Quote(rows) = batch else {
+            panic!("expected quote batch");
+        };
+
+        actual.extend_from_slice(rows.as_ref());
+    }
+
+    assert_eq!(actual, vec![first[0], second[0], first[1], second[1]]);
+}
+
+#[rstest]
+fn test_raw_consolidation_preserves_identifier_partitions(#[values(false, true)] remote: bool) {
+    let (_directory, mut catalog) = create_temp_catalog_on_store(remote);
+    let identifiers = ["ETH/USDT.BINANCE", NON_ASCII_IDENTIFIER];
+
+    let expected = identifiers.map(|identifier| {
+        [1, 2, 3, 4].map(|timestamp| {
+            let mut row = create_quote_tick(timestamp);
+            row.instrument_id = InstrumentId::from(identifier);
+            row
+        })
+    });
+
+    for rows in &expected {
+        catalog
+            .write_to_parquet(&rows[..2], None, None, None)
+            .unwrap();
+        catalog
+            .write_to_parquet(&rows[2..], None, None, None)
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data(
+            &NautilusDataType::QuoteTick.into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let mut actual_files = catalog
+        .list_parquet_files(&catalog.make_path("quotes", None).unwrap())
+        .unwrap();
+    let mut expected_files = Vec::new();
+    let mut actual_rows = Vec::new();
+
+    for identifier in identifiers {
+        let directory = catalog.make_path("quotes", Some(identifier)).unwrap();
+        let path = catalog
+            .to_object_path(&directory)
+            .unwrap()
+            .join(timestamps_to_filename(
+                UnixNanos::from(1),
+                UnixNanos::from(4),
+            ));
+        expected_files.push(path.to_string());
+        actual_rows.push(
+            catalog
+                .query::<QuoteTick>(
+                    Some(vec![identifier.to_string()]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    true,
+                )
+                .unwrap(),
+        );
+    }
+
+    actual_files.sort();
+    expected_files.sort();
+
+    assert_eq!(actual_files, expected_files);
+    assert_eq!(actual_rows, expected.map(Vec::from));
 }

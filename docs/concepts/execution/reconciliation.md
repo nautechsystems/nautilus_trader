@@ -145,13 +145,14 @@ An origin is recorded:
 An origin may be absent for:
 
 - Cache data written before resolved origins were persisted.
+- Orders restored after an origin write failed or the process exited before it committed.
 - External orders whose runtime report does not identify exactly one registered client by account
   and instrument venue.
 - Synthetic reconciliation orders.
 
-The built-in cache backends enqueue a resolved origin for persistence before transport. Their writes stay
-asynchronous, so enqueue order does not guarantee that the origin is durable before the order reaches the
-client.
+The built-in cache backends attempt to enqueue a resolved origin for persistence before transport.
+Enqueue failures are logged without blocking transport. These writes are asynchronous, so enqueue order
+does not guarantee that the origin is durable before the order reaches the client.
 
 At startup, each client's mass status is checked against the cached origins. An order the client reports is
 expected to be bound to that same client.

@@ -157,8 +157,10 @@ def encode_config_value(value: object) -> object:
     """
     if isinstance(value, (RoutingConfig, InstrumentProviderConfig)):
         return config_values(value)
+
     if isinstance(value, Decimal):
         return str(value)
+
     if callable(getattr(type(value), "from_str", None)):
         return str(value)
     raise TypeError(f"Unsupported configuration value type: {type(value).__qualname__}")
@@ -169,13 +171,13 @@ def construct_config(cls: type, values: dict[str, object]) -> object:
     Restore typed fields before constructing the config class.
     """
     values = dict(values)
-
     for name, native_type in (
         ("routing", RoutingConfig),
         ("instrument_provider", InstrumentProviderConfig),
     ):
         if isinstance(values.get(name), dict):
             values[name] = native_type(**values[name])
+
     for name, hint in get_type_hints(cls).items():
         if name in values:
             values[name] = decode_config_value(hint, values[name])
@@ -197,17 +199,22 @@ def decode_config_value(hint: object, value: object) -> object:  # noqa: PLR0911
             except (TypeError, ValueError, InvalidOperation):
                 pass
         raise TypeError(f"Configuration value does not match {hint}")
+
     if origin is list and isinstance(value, list):
         return [decode_config_value(args[0], item) for item in value]
+
     if origin is dict and isinstance(value, dict):
         return {
             decode_config_value(args[0], key): decode_config_value(args[1], item)
             for key, item in value.items()
         }
+
     if isinstance(hint, type) and isinstance(value, hint):
         return value
+
     if hint is Decimal and isinstance(value, str):
         return Decimal(value)
+
     if isinstance(value, str) and callable(getattr(hint, "from_str", None)):
         return hint.from_str(value)
     raise TypeError(f"Unsupported configuration value for {hint}")
@@ -220,6 +227,7 @@ def resolve_client_registration(factory: object, config: object) -> tuple[object
     if isinstance(config, ImportableConfig):
         factory = factory if factory is not None else config.factory
         config = config.create()
+
     if isinstance(factory, ImportableFactoryConfig):
         factory = factory.create()
     return factory, config

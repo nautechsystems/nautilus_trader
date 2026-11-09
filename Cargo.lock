@@ -5950,6 +5950,7 @@ dependencies = [
  "nautilus-testkit",
  "parking_lot 0.13.0",
  "pyo3",
+ "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "rstest",
  "rust_decimal",
@@ -6578,6 +6579,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-kalshi"
+version = "0.68.0"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "async-trait",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.23.1",
+ "bon",
+ "codspeed-criterion-compat",
+ "futures-util",
+ "jiff",
+ "log",
+ "madsim",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "nautilus-trading",
+ "parking_lot 0.13.0",
+ "pyo3",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "strum 0.28.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "url",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-kraken"
 version = "0.68.0"
 dependencies = [
@@ -7037,6 +7084,7 @@ dependencies = [
  "nautilus-indicators",
  "nautilus-infrastructure",
  "nautilus-interactive-brokers",
+ "nautilus-kalshi",
  "nautilus-kraken",
  "nautilus-lighter",
  "nautilus-live",

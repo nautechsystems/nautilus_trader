@@ -74,7 +74,7 @@ use crate::{
             parse_futures_fill_report, parse_futures_instrument,
             parse_futures_order_event_status_report, parse_futures_order_status_details_report,
             parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution,
+            parse_futures_public_execution, parse_venue_order_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -1919,7 +1919,12 @@ impl KrakenFuturesHttpClient {
                         order.symbol
                     );
                     coverage.skip(&order.order_id);
-                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
+
+                    // No history row can carry an invalid ID, and `skip` has marked the set
+                    // unidentified, so an invalid ID needs no entry here.
+                    if let Ok(venue_order_id) = VenueOrderId::new_checked(order.order_id.as_str()) {
+                        skipped_open_order_ids.insert(venue_order_id);
+                    }
                     continue;
                 }
 
@@ -2676,6 +2681,7 @@ impl KrakenFuturesHttpClient {
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - The edit fails on the exchange.
+    /// - The response carries an invalid order ID.
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
@@ -2725,10 +2731,16 @@ impl KrakenFuturesHttpClient {
         let new_venue_order_id = response
             .edit_status
             .order_id
+            .or(response.edit_status.order_id_snake_case)
             .or(original_order_id)
             .ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
-        Ok(VenueOrderId::new(&new_venue_order_id))
+        parse_venue_order_id(&new_venue_order_id, "futures edit response").map_err(|e| {
+            KrakenModifyOrderError::InvalidOrderId {
+                detail: format!("{e:#}"),
+            }
+            .into()
+        })
     }
 
     /// Cancels an order on the Kraken Futures exchange.
@@ -5267,6 +5279,179 @@ mod tests {
         let before_the_cut = UnixNanos::from((HISTORY_T1 as u64 - 120_000) * 1_000_000);
         assert!(coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(after_the_cut)));
         assert!(!coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(before_the_cut)));
+    }
+
+    const DOCUMENTED_EDIT_RESPONSE: &str =
+        include_str!("../../../test_data/http_edit_order_futures.json");
+    const DOCUMENTED_EDIT_ORDER_ID: &str = "022774bc-2c4a-4f26-9317-436c8d85746d";
+
+    /// Kraken's documented edit response with its `orderId` replaced or removed, and the send
+    /// response's `order_id` key added.
+    fn edit_response(
+        order_id: Option<serde_json::Value>,
+        order_id_snake_case: Option<serde_json::Value>,
+    ) -> String {
+        let mut response: serde_json::Value =
+            serde_json::from_str(DOCUMENTED_EDIT_RESPONSE).unwrap();
+        let edit_status = response["editStatus"].as_object_mut().unwrap();
+        match order_id {
+            Some(order_id) => edit_status.insert("orderId".to_string(), order_id),
+            None => edit_status.remove("orderId"),
+        };
+
+        if let Some(order_id) = order_id_snake_case {
+            edit_status.insert("order_id".to_string(), order_id);
+        }
+        response.to_string()
+    }
+
+    /// Sends an edit naming the order by `venue_order_id`, or by client order ID alone, to a venue
+    /// that answers with `body`.
+    async fn modify_order_answered_with(
+        body: String,
+        venue_order_id: Option<&str>,
+    ) -> anyhow::Result<VenueOrderId> {
+        use axum::{Router, http::header, routing::any};
+
+        let app = Router::new().route(
+            "/derivatives/api/v3/editorder",
+            any(move || {
+                let body = body.clone();
+                async move { ([(header::CONTENT_TYPE, "application/json")], body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_futures_instrument(&client);
+        let client_order_id = venue_order_id
+            .is_none()
+            .then(|| ClientOrderId::from("O-EDIT"));
+
+        client
+            .modify_order(
+                instrument_id,
+                client_order_id,
+                venue_order_id.map(VenueOrderId::from),
+                Some(Quantity::from("1")),
+                None,
+                None,
+            )
+            .await
+    }
+
+    /// Kraken's documented response names the order whichever identifier the request used.
+    #[rstest]
+    #[case::by_venue_id(Some(DOCUMENTED_EDIT_ORDER_ID))]
+    #[case::by_client_id(None)]
+    #[tokio::test]
+    async fn test_modify_order_returns_the_documented_order_id(
+        #[case] request_venue_order_id: Option<&str>,
+    ) {
+        let venue_order_id = modify_order_answered_with(
+            DOCUMENTED_EDIT_RESPONSE.to_string(),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from(DOCUMENTED_EDIT_ORDER_ID));
+    }
+
+    /// The send response's key is read after the documented one, and a response naming no order
+    /// falls back to the request's venue order ID.
+    #[rstest]
+    #[case::snake_case_key(None, Some(serde_json::json!("V-SNAKE")), None, "V-SNAKE")]
+    #[case::both_keys(
+        Some(serde_json::json!("V-DOC")),
+        Some(serde_json::json!("V-SNAKE")),
+        None,
+        "V-DOC"
+    )]
+    #[case::absent(None, None, Some("V-EDIT"), "V-EDIT")]
+    #[case::null(Some(serde_json::Value::Null), None, Some("V-EDIT"), "V-EDIT")]
+    #[case::response_over_request(Some(serde_json::json!("V-DOC")), None, Some("V-EDIT"), "V-DOC")]
+    #[tokio::test]
+    async fn test_modify_order_resolves_the_order_id_by_key_then_request(
+        #[case] order_id: Option<serde_json::Value>,
+        #[case] order_id_snake_case: Option<serde_json::Value>,
+        #[case] request_venue_order_id: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let venue_order_id = modify_order_answered_with(
+            edit_response(order_id, order_id_snake_case),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from(expected));
+    }
+
+    /// An edit the venue applied, answered with an order ID the model cannot hold, returns the typed
+    /// error: an untyped one would read as a command never sent. An invalid ID differs from an
+    /// absent one, which falls back to the request's venue order ID.
+    #[rstest]
+    #[case::by_venue_id(Some(serde_json::json!("")), None, Some("V-EDIT"))]
+    #[case::by_client_id(Some(serde_json::json!("")), None, None)]
+    #[case::snake_case_key(None, Some(serde_json::json!("")), Some("V-EDIT"))]
+    #[tokio::test]
+    async fn test_modify_order_returns_a_typed_error_for_an_invalid_order_id(
+        #[case] order_id: Option<serde_json::Value>,
+        #[case] order_id_snake_case: Option<serde_json::Value>,
+        #[case] request_venue_order_id: Option<&str>,
+    ) {
+        let error = modify_order_answered_with(
+            edit_response(order_id, order_id_snake_case),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::InvalidOrderId { detail })
+                    if detail.starts_with("Invalid order_id '' in Kraken futures edit response")
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A response naming no order leaves nothing to name it on a request by client order ID alone.
+    #[rstest]
+    #[case::absent(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    #[tokio::test]
+    async fn test_modify_order_by_client_id_fails_without_an_order_id(
+        #[case] order_id: Option<serde_json::Value>,
+    ) {
+        let error = modify_order_answered_with(edit_response(order_id, None), None)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::MissingOrderId)
+            ),
+            "{error:#}"
+        );
     }
 
     /// A contract the listing spells two ways in different cases cannot be told apart by a

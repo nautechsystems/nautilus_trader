@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use nautilus_common::messages::ExecutionEvent;
+use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
 use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_kraken::{
     common::enums::{KrakenFillType, KrakenFuturesOrderType},
@@ -497,6 +497,226 @@ fn test_futures_open_orders_cancel_fill_driven_skipped() {
     );
 
     assert!(drain_events(&mut rx).is_empty());
+}
+
+/// A delta whose venue order ID the model cannot hold reaches neither the side caches nor a route,
+/// and a tracked order stays tracked so a later frame or reconciliation can still advance it.
+#[rstest]
+#[case::tracked_update(false, None, Some("uuid-invalid-1"), false)]
+#[case::tracked_cancel(true, Some("cancelled_by_user"), Some("uuid-invalid-1"), false)]
+#[case::tracked_partial_fill_removal(true, Some("partial_fill"), Some("uuid-invalid-1"), false)]
+#[case::tracked_full_fill_removal(true, Some("full_fill"), Some("uuid-invalid-1"), false)]
+#[case::tracked_already_filled(false, None, Some("uuid-invalid-1"), true)]
+#[case::external_update(false, None, None, false)]
+#[case::external_cancel(true, Some("cancelled_by_user"), None, false)]
+#[case::external_partial_fill_removal(true, Some("partial_fill"), None, false)]
+fn test_futures_delta_drops_an_invalid_venue_order_id_before_the_side_caches(
+    #[case] is_cancel: bool,
+    #[case] reason: Option<&str>,
+    #[case] cli_ord_id: Option<&str>,
+    #[case] already_filled: bool,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-1");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    if already_filled {
+        state.insert_filled(cid);
+    }
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_client_map = empty_string_map();
+    let venue_order_qty = empty_quantity_map();
+
+    let delta = make_open_orders_delta(
+        is_cancel,
+        reason,
+        dec!(0.0001),
+        Decimal::ZERO,
+        cli_ord_id,
+        "",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(order_instrument_map.load().is_empty());
+    assert!(venue_client_map.load().is_empty());
+    assert!(venue_order_qty.load().is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+    assert!(!state.emitted_accepted.contains(&cid));
+}
+
+/// A valid delta fills the side caches a cancel-only frame reads, and the tracked route reports the
+/// ID the delta carried.
+#[rstest]
+fn test_futures_delta_caches_a_valid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-valid-1");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_client_map = empty_string_map();
+    let venue_order_qty = empty_quantity_map();
+
+    let delta = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-valid-1"),
+        "v-valid-1",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert_eq!(
+        order_instrument_map.load().get("v-valid-1"),
+        Some(&InstrumentId::from(FUTURES_INSTRUMENT_ID))
+    );
+    assert_eq!(venue_client_map.load().get("v-valid-1"), Some(&cid));
+    assert_eq!(
+        venue_order_qty.load().get("v-valid-1"),
+        Some(&Quantity::from("0.0001"))
+    );
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = &events[0] else {
+        panic!("expected Accepted, was {:?}", events[0]);
+    };
+    assert_eq!(accepted.venue_order_id, VenueOrderId::from("v-valid-1"));
+}
+
+/// A cancel delta on the tracked route reports the ID the delta carried.
+#[rstest]
+fn test_futures_cancel_delta_tracked_reports_the_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-valid-2");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let delta = make_open_orders_delta(
+        true,
+        Some("cancelled_by_user"),
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-valid-2"),
+        "v-valid-2",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[1] else {
+        panic!("expected Canceled, was {:?}", events[1]);
+    };
+    assert_eq!(
+        canceled.venue_order_id,
+        Some(VenueOrderId::from("v-valid-2"))
+    );
+}
+
+/// A cancel-only frame is dropped before routing, so an invalid ID can neither cancel a tracked
+/// order nor report an external one.
+#[rstest]
+#[case::tracked(Some("uuid-invalid-2"))]
+#[case::external(None)]
+fn test_futures_open_orders_cancel_drops_an_invalid_venue_order_id(
+    #[case] cli_ord_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-2");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let cancel = make_open_orders_cancel(Some("cancelled_by_user"), cli_ord_id, "");
+    dispatch::futures::open_orders_cancel(
+        &cancel,
+        &state,
+        &emitter,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+}
+
+/// A fill with an invalid venue order ID is dropped on its own, and its sibling in the frame still
+/// reports.
+#[rstest]
+fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let mut fills = make_fills_delta(None, "", "trade-invalid");
+    let sibling = make_fills_delta(None, "v-sibling", "trade-sibling");
+    fills.fills.extend(sibling.fills);
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    let ExecutionEvent::Report(ExecutionReport::Fill(report)) = &events[0] else {
+        panic!("expected a fill report, was {:?}", events[0]);
+    };
+    assert_eq!(report.venue_order_id, VenueOrderId::from("v-sibling"));
+    assert_eq!(report.trade_id, TradeId::from("trade-sibling"));
 }
 
 #[rstest]

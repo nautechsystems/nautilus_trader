@@ -164,6 +164,7 @@ class EMACrossTWAP(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.exec_algorithm_id = ExecAlgorithmId("TWAP")
+
         self.exec_algorithm_params = {
             "horizon_secs": str(config.twap_horizon_secs),
             "interval_secs": str(config.twap_interval_secs),

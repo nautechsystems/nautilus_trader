@@ -25,14 +25,8 @@ __all__ = [
     "COINAPI_CLIENT_ID",
     "CoinApiDataClientConfig",
     "CoinApiDataClientFactory",
+    "CoinApiDataLoader",
     "CoinApiInstrumentSelection",
-    "CoinApiOhlcvLoader",
-    "load_coinapi_deltas",
-    "load_coinapi_quotes",
-    "load_coinapi_trades",
-    "stream_coinapi_deltas",
-    "stream_coinapi_quotes",
-    "stream_coinapi_trades",
 ]
 
 fixup_module_names(globals(), __name__)

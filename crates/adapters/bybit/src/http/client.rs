@@ -704,6 +704,9 @@ impl BybitRawHttpClient {
             }
         };
 
+        // Writes are sent once. No POST in this client has a proven idempotency
+        // key that covers a later retry, including a withdraw requestId.
+        let retry = retry && Self::method_may_retry(&method);
         let should_retry = |e: &BybitHttpError| retry && should_retry_http(e);
 
         let create_error = |error: RetryError| -> BybitHttpError {
@@ -722,6 +725,10 @@ impl BybitRawHttpClient {
             .cancellation_token(&token)
             .execute()
             .await
+    }
+
+    fn method_may_retry(method: &Method) -> bool {
+        matches!(method, &Method::GET | &Method::HEAD)
     }
 
     #[cfg(test)]
@@ -1630,7 +1637,8 @@ impl BybitRawHttpClient {
 
     /// Withdraws coins from the account.
     ///
-    /// Retries only when `request_id` is set.
+    /// The request is sent once. Bybit's `requestId` is a client identifier, not
+    /// a proven duplicate-detection window, so it is not a retry key.
     ///
     /// # Errors
     ///
@@ -1648,15 +1656,14 @@ impl BybitRawHttpClient {
         params: &BybitWithdrawParams,
     ) -> Result<BybitWithdrawResponse, BybitHttpError> {
         let body = serde_json::to_vec(params)?;
-        let endpoint = "/v5/asset/withdraw/create";
-
-        if params.request_id.is_some() {
-            self.send_request::<_, ()>(Method::POST, endpoint, None, Some(body), true)
-                .await
-        } else {
-            self.send_request_once::<_, ()>(Method::POST, endpoint, None, Some(body), true)
-                .await
-        }
+        self.send_request_once::<_, ()>(
+            Method::POST,
+            "/v5/asset/withdraw/create",
+            None,
+            Some(body),
+            true,
+        )
+        .await
     }
 
     /// Fetches withdrawal records.
@@ -3614,7 +3621,13 @@ impl BybitHttpClient {
                     product_type,
                     &symbol,
                     base_coin,
-                    |def| parse_spot_instrument(def, ts_init, ts_init).ok(),
+                    |def| {
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_spot_instrument(def, ts_init, ts_init),
+                        )
+                    },
                 )
                 .await?
             }
@@ -3623,7 +3636,13 @@ impl BybitHttpClient {
                     product_type,
                     &symbol,
                     base_coin,
-                    |def| parse_linear_instrument(def, ts_init, ts_init).ok(),
+                    |def| {
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_linear_instrument(def, ts_init, ts_init),
+                        )
+                    },
                 )
                 .await?
             }
@@ -3632,7 +3651,13 @@ impl BybitHttpClient {
                     product_type,
                     &symbol,
                     base_coin,
-                    |def| parse_inverse_instrument(def, ts_init, ts_init).ok(),
+                    |def| {
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_inverse_instrument(def, ts_init, ts_init),
+                        )
+                    },
                 )
                 .await?
             }
@@ -3641,7 +3666,13 @@ impl BybitHttpClient {
                     product_type,
                     &symbol,
                     base_coin,
-                    |def| parse_option_instrument(def, ts_init, ts_init).ok(),
+                    |def| {
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_option_instrument(def, ts_init, ts_init),
+                        )
+                    },
                 )
                 .await?
             }
@@ -3683,7 +3714,11 @@ impl BybitHttpClient {
                             *BYBIT_VENUE,
                         );
                         statuses.insert(id, MarketStatusAction::from(def.status));
-                        parse_spot_instrument(def, ts_init, ts_init).ok()
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_spot_instrument(def, ts_init, ts_init),
+                        )
                     },
                 )
                 .await?
@@ -3701,7 +3736,11 @@ impl BybitHttpClient {
                         let scheduled = def.contract_type == BybitContractType::LinearPerpetual
                             && def.delivery_time != "0";
                         statuses.insert(id, perp_status(def.status.into(), scheduled));
-                        parse_linear_instrument(def, ts_init, ts_init).ok()
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_linear_instrument(def, ts_init, ts_init),
+                        )
                     },
                 )
                 .await?
@@ -3719,7 +3758,11 @@ impl BybitHttpClient {
                         let scheduled = def.contract_type == BybitContractType::InversePerpetual
                             && def.delivery_time != "0";
                         statuses.insert(id, perp_status(def.status.into(), scheduled));
-                        parse_inverse_instrument(def, ts_init, ts_init).ok()
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_inverse_instrument(def, ts_init, ts_init),
+                        )
                     },
                 )
                 .await?
@@ -3735,7 +3778,11 @@ impl BybitHttpClient {
                             *BYBIT_VENUE,
                         );
                         statuses.insert(id, MarketStatusAction::from(def.status));
-                        parse_option_instrument(def, ts_init, ts_init).ok()
+                        instrument_or_warn(
+                            product_type,
+                            def.symbol,
+                            parse_option_instrument(def, ts_init, ts_init),
+                        )
                     },
                 )
                 .await?
@@ -4925,6 +4972,19 @@ fn instrument_base_coin(
     base_coin.map(|coin| coin.to_string()).or_else(|| {
         (product_type == BybitProductType::Option && symbol.is_none()).then(|| "All".to_string())
     })
+}
+
+fn instrument_or_warn(
+    product_type: BybitProductType,
+    symbol: Ustr,
+    result: anyhow::Result<InstrumentAny>,
+) -> Option<InstrumentAny> {
+    result
+        .inspect_err(|e| {
+            let symbol = make_bybit_symbol(symbol, product_type);
+            log::warn!("Failed to parse instrument {symbol}: {e}");
+        })
+        .ok()
 }
 
 fn perp_status(status: MarketStatusAction, is_scheduled_perp: bool) -> MarketStatusAction {

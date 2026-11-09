@@ -529,6 +529,33 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn closed_stream_reports_failure() {
+        let http = OKXHttpClient::new(
+            Some("http://127.0.0.1:1".into()),
+            1,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let (worker, state, mut events) = stream_with_http(http);
+
+        worker
+            .run(futures_util::stream::empty(), CancellationToken::new())
+            .await;
+
+        assert!(!state.is_healthy());
+        assert_eq!(
+            state.take_failure().as_deref(),
+            Some("execution streams closed unexpectedly")
+        );
+        assert!(events.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn recovery_rejects_missing_numeric_instrument_code() {
         let (http, server) = metadata_server(false).await;
         let (_worker, state, _events) = stream_with_http(http);

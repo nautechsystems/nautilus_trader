@@ -21,6 +21,7 @@
 )]
 
 use anyhow::Context;
+use datafusion::datasource::listing::ListingTableUrl;
 use nautilus_common::live::block_on_nautilus_with;
 use nautilus_model::data::NautilusDataType;
 use object_store::ObjectMeta;
@@ -34,6 +35,7 @@ use super::{
     urisafe_instrument_id,
 };
 use crate::{
+    backend::parquet::consolidation_state,
     catalog::types::{
         CatalogDataType, catalog_data_type_from_path, parquet_catalog_data_type_path_prefixes,
     },
@@ -398,7 +400,7 @@ impl ParquetDataCatalog {
     }
 
     /// Recursively lists all objects under `{dir}/` in the object store.
-    pub(super) fn list_objects(&self, dir: &str) -> anyhow::Result<Vec<ObjectMeta>> {
+    pub(crate) fn list_objects(&self, dir: &str) -> anyhow::Result<Vec<ObjectMeta>> {
         self.execute_async(|| async {
             let prefix = ObjectPath::from(format!("{dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
@@ -407,7 +409,30 @@ impl ParquetDataCatalog {
                 objects.push(object?);
             }
 
-            Ok(objects)
+            consolidation_state::visible_objects(&self.object_store, objects).await
+        })
+    }
+
+    pub(crate) fn recover_consolidation(&self, directory: &ObjectPath) -> anyhow::Result<()> {
+        self.execute_async(|| async {
+            consolidation_state::recover(&self.object_store, directory).await
+        })
+    }
+
+    pub(super) fn has_pending_consolidation(&self, directory: &str) -> anyhow::Result<bool> {
+        let directory = if self.is_remote_uri() {
+            self.to_object_path_parsed(directory)?
+        } else {
+            let uri = self.resolve_directory_for_datafusion(directory);
+            let path = ListingTableUrl::parse(&uri)?
+                .get_url()
+                .to_file_path()
+                .map_err(|()| anyhow::anyhow!("Invalid local file URI: {directory}"))?;
+            self.to_object_path_parsed(&path.to_string_lossy())?
+        };
+
+        self.execute_async(|| async {
+            consolidation_state::has_pending(&self.object_store, &directory).await
         })
     }
 
@@ -785,6 +810,9 @@ impl ParquetDataCatalog {
         if old_path == new_path {
             return Ok(());
         }
+
+        self.recover_consolidation(&old_path.parent().unwrap_or_default())?;
+        self.recover_consolidation(&new_path.parent().unwrap_or_default())?;
 
         self.execute_async(|| async {
             self.object_store

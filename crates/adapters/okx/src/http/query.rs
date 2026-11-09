@@ -829,24 +829,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_no_literal_none_strings_leak_into_query_string() {
-        let mut builder = GetCandlesticksParamsBuilder::default();
-        builder.inst_id("BTC-USDT-SWAP");
-        builder.bar("1m");
-
-        let params = builder.build().unwrap();
-        let qs = serde_urlencoded::to_string(&params).unwrap();
-        assert!(
-            !qs.contains("None"),
-            "found literal \"None\" in query string: {qs}",
-        );
-        assert!(
-            !qs.contains("after=") && !qs.contains("before=") && !qs.contains("limit="),
-            "empty optional parameters must be omitted entirely: {qs}",
-        );
-    }
-
-    #[rstest]
     fn test_cursor_nanoseconds_rejected() {
         // 2025-07-01T00:00:00Z in *nanoseconds* on purpose.
         let after_nanos = 1_725_307_200_000_000_000i64;

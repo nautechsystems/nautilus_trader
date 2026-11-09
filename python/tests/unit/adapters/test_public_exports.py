@@ -45,6 +45,7 @@ VENUE_ADAPTERS = {
     "derive": "DERIVE",
     "dydx": "DYDX",
     "hyperliquid": "HYPERLIQUID",
+    "kalshi": "KALSHI",
     "kraken": "KRAKEN",
     "lighter": "LIGHTER",
     "okx": "OKX",
@@ -81,12 +82,14 @@ FORBIDDEN_SUFFIXES = (
     "HTTP_URL",
     "WS_URL",
 )
+
 FORBIDDEN_NAMES = {"annotations"}
 
 
 def _is_forbidden(name: str) -> bool:
     if name in FORBIDDEN_NAMES:
         return True
+
     if name.endswith(FORBIDDEN_SUFFIXES):
         return True
     # Endpoint URL resolvers such as get_<adapter>_http_base_url / get_<adapter>_ws_url,
@@ -239,6 +242,7 @@ def test_known_adapter_set_is_complete() -> None:
         "finfeed",
         "hyperliquid",
         "interactive_brokers",
+        "kalshi",
         "kraken",
         "lighter",
         "okx",
@@ -246,4 +250,5 @@ def test_known_adapter_set_is_complete() -> None:
         "sandbox",
         "tardis",
     }
+
     assert set(ADAPTERS) == expected

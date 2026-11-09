@@ -45,6 +45,8 @@ use ustr::Ustr;
 struct FailNthAddOrderState {
     fail_add_order_on: Option<usize>,
     add_order_calls: usize,
+    fail_index_order_position_on: Option<usize>,
+    index_order_position_calls: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,6 +59,17 @@ impl FailNthAddOrderDatabaseControl {
         let mut state = self.state.lock().unwrap();
         state.fail_add_order_on = call;
         state.add_order_calls = 0;
+    }
+
+    pub(crate) fn set_fail_index_order_position_on(&self, call: Option<usize>) {
+        let mut state = self.state.lock().unwrap();
+        state.fail_index_order_position_on = call;
+        state.index_order_position_calls = 0;
+    }
+
+    pub(crate) fn calls(&self) -> (usize, usize) {
+        let state = self.state.lock().unwrap();
+        (state.add_order_calls, state.index_order_position_calls)
     }
 }
 
@@ -338,6 +351,12 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         _client_order_id: ClientOrderId,
         _position_id: PositionId,
     ) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock().unwrap();
+        state.index_order_position_calls += 1;
+        if state.fail_index_order_position_on == Some(state.index_order_position_calls) {
+            anyhow::bail!("test index order position failure");
+        }
+
         Ok(())
     }
 

@@ -3954,99 +3954,59 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_conventions_returns_both_when_params_missing() {
-        let result = parse_greeks_conventions_from_params(None);
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_returns_both_when_key_absent() {
-        let params = Params::new([("other_key".to_string(), json!("value"))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    #[case("BLACK_SCHOLES", OKXGreeksType::Bs)]
-    #[case("PRICE_ADJUSTED", OKXGreeksType::Pa)]
-    #[case("black_scholes", OKXGreeksType::Bs)]
-    #[case("price_adjusted", OKXGreeksType::Pa)]
-    fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
-        let params = Params::new([("greeks_convention".to_string(), json!(raw))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(expected));
-    }
-
-    #[rstest]
-    fn parse_conventions_accepts_list_of_strings() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_accepts_single_entry_list() {
-        let params =
-            Params::new([("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Pa));
-    }
-
-    #[rstest]
-    fn parse_conventions_deduplicates_list_entries() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BLACK_SCHOLES", "black_scholes"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Bs));
-    }
-
-    #[rstest]
-    fn parse_conventions_skips_unknown_list_entries() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BOGUS", "PRICE_ADJUSTED"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Pa));
-    }
-
-    #[rstest]
-    fn parse_conventions_falls_back_to_both_on_all_unknown() {
-        let params = Params::new([("greeks_convention".to_string(), json!(["BOGUS"]))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    #[case(json!(1))]
-    #[case(json!(null))]
-    #[case(json!(true))]
-    #[case(json!({"nested": "object"}))]
-    fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
-        let params = Params::new([("greeks_convention".to_string(), value)].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_falls_back_on_unknown_single_string() {
-        let params = Params::new([("greeks_convention".to_string(), json!("BOGUS"))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
+    #[case(None, both())]
+    #[case(Some(("other_key", json!("value"))), both())]
+    #[case(
+        Some(("greeks_convention", json!("BLACK_SCHOLES"))),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("PRICE_ADJUSTED"))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("black_scholes"))),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("price_adjusted"))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some((
+            "greeks_convention",
+            json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"])
+        )),
+        both()
+    )]
+    #[case(
+        Some(("greeks_convention", json!(["PRICE_ADJUSTED"]))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some((
+            "greeks_convention",
+            json!(["BLACK_SCHOLES", "black_scholes"])
+        )),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!(["BOGUS", "PRICE_ADJUSTED"]))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(Some(("greeks_convention", json!(["BOGUS"]))), both())]
+    #[case(Some(("greeks_convention", json!(1))), both())]
+    #[case(Some(("greeks_convention", json!(null))), both())]
+    #[case(Some(("greeks_convention", json!(true))), both())]
+    #[case(Some(("greeks_convention", json!({"nested": "object"}))), both())]
+    #[case(Some(("greeks_convention", json!("BOGUS"))), both())]
+    fn parse_conventions(
+        #[case] entry: Option<(&str, Value)>,
+        #[case] expected: AHashSet<OKXGreeksType>,
+    ) {
+        let params = entry.map(|(key, value)| Params::new([(key.to_string(), value)].into()));
+        let result = parse_greeks_conventions_from_params(params.as_ref());
+        assert_eq!(result, expected);
     }
 
     fn rpi_book_message(filename: &str) -> OKXWsMessage {

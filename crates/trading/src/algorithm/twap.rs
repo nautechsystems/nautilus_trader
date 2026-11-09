@@ -661,14 +661,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::initial(2, 0)]
-    #[case::intermediate(3, 1)]
-    #[case::final_slice(4, 2)]
-    fn test_twap_retries_failed_slice_persistence(
+    #[case::initial(2, false)]
+    #[case::intermediate(3, false)]
+    #[case::final_slice(4, false)]
+    #[case::every_slice(2, true)]
+    fn test_twap_slice_persistence_failure_keeps_dispatch(
         #[case] fail_on: usize,
-        #[case] submitted_before_failure: usize,
+        #[case] repeated_failure: bool,
         #[values(false, true)] stopped: bool,
-        #[values(false, true)] repeated_failure: bool,
     ) {
         let mut algo = create_twap_algorithm();
         let clock = register_algorithm_with_clock(&mut algo);
@@ -724,45 +724,14 @@ mod tests {
         let submit_params = Params::new(
             [(
                 "routing_profile".to_string(),
-                serde_json::Value::String("retry-route".to_string()),
+                serde_json::Value::String("persistence-route".to_string()),
             )]
             .into(),
         );
 
         algo.core
             .remember_submit_params(primary_id, Some(submit_params.clone()));
-        let mut result = algo.on_order(order);
-        let mut timestamp = 0;
-        while result.is_ok() {
-            timestamp += 20_000_000_000_u64;
-            let events = clock.borrow_mut().advance_time(timestamp.into(), true);
-            assert_eq!(events.len(), 1);
-            result = ExecutionAlgorithm::on_time_event(&mut algo, &events[0]);
-        }
-
-        assert_eq!(result.unwrap_err().to_string(), "test add order failure");
-        assert_eq!(commands.borrow().len(), submitted_before_failure);
-        assert_eq!(
-            algo.core.submit_params(&primary_id),
-            Some(submit_params.clone())
-        );
-        assert_eq!(
-            algo.scheduled_orders[&primary_id].remaining_sizes,
-            vec![Quantity::from("0.4"); 3 - submitted_before_failure],
-        );
-        assert_eq!(algo.clock().timer_names(), vec![primary_id.as_str()]);
-
-        let expected_primary = if submitted_before_failure == 0 {
-            "0.8"
-        } else {
-            "0.4"
-        };
-
-        assert_eq!(
-            algo.cache().order(&primary_id).unwrap().quantity(),
-            Quantity::from(expected_primary)
-        );
-
+        algo.on_order(order).unwrap();
         if stopped {
             Component::stop(&mut algo).unwrap();
             assert!(algo.clock().timer_names().is_empty());
@@ -770,28 +739,14 @@ mod tests {
             assert_eq!(algo.clock().timer_names(), vec![primary_id.as_str()]);
         }
 
-        if repeated_failure {
-            control.set_fail_add_order_on(Some(1));
-            timestamp += 20_000_000_000_u64;
-            let events = clock.borrow_mut().advance_time(timestamp.into(), true);
-            assert_eq!(events.len(), 1);
-            let result = ExecutionAlgorithm::on_time_event(&mut algo, &events[0]);
-            assert_eq!(result.unwrap_err().to_string(), "test add order failure");
-            assert_eq!(commands.borrow().len(), submitted_before_failure);
-            assert_eq!(
-                algo.scheduled_orders[&primary_id].remaining_sizes,
-                vec![Quantity::from("0.4"); 3 - submitted_before_failure]
-            );
-            assert_eq!(
-                algo.cache().order(&primary_id).unwrap().quantity(),
-                Quantity::from(expected_primary)
-            );
-            assert_eq!(algo.clock().timer_names(), vec![primary_id.as_str()]);
-        }
+        for step in 1..3 {
+            if repeated_failure {
+                control.set_fail_add_order_on(Some(1));
+            }
 
-        for _ in submitted_before_failure..3 {
-            timestamp += 20_000_000_000_u64;
-            let events = clock.borrow_mut().advance_time(timestamp.into(), true);
+            let events = clock
+                .borrow_mut()
+                .advance_time((step * 20_000_000_000_u64).into(), true);
             assert_eq!(events.len(), 1);
             ExecutionAlgorithm::on_time_event(&mut algo, &events[0]).unwrap();
         }
@@ -837,7 +792,7 @@ mod tests {
     #[case::pre_cache("60", "1.2", 3)]
     #[case::single_interval("20", "1.2", 1)]
     #[case::whole_size("60", "0.001", 1)]
-    fn test_twap_retries_before_schedule_creation(
+    fn test_twap_pre_schedule_persistence_failure_keeps_dispatch(
         #[case] horizon: &str,
         #[case] quantity: &str,
         #[case] expected_submissions: usize,
@@ -877,18 +832,6 @@ mod tests {
         ]);
         let quantity = Quantity::from(quantity);
         let order = create_market_order_with_params_and_qty(params, quantity);
-        let primary_id = order.client_order_id();
-        let result = algo.on_order(order.clone());
-
-        assert_eq!(result.unwrap_err().to_string(), "test add order failure");
-        assert!(commands.borrow().is_empty());
-        assert!(algo.scheduled_orders.is_empty());
-        assert!(algo.clock().timer_names().is_empty());
-        assert_eq!(
-            algo.cache().order(&primary_id).unwrap().quantity(),
-            quantity
-        );
-
         algo.on_order(order).unwrap();
 
         for i in 1..expected_submissions {
@@ -1818,10 +1761,10 @@ mod tests {
     #[rstest]
     #[case::cancel(false, Quantity::from("1.2"), false, 2)]
     #[case::late_fill(true, Quantity::from("1.0"), false, 2)]
-    #[case::cancel_final_retry(false, Quantity::from("1.2"), true, 2)]
-    #[case::late_fill_final_retry(true, Quantity::from("1.0"), true, 2)]
-    #[case::cancel_intermediate_retry(false, Quantity::from("0.8"), true, 3)]
-    #[case::late_fill_intermediate_retry(true, Quantity::from("0.6"), true, 3)]
+    #[case::cancel_final_persistence_failure(false, Quantity::from("1.2"), true, 2)]
+    #[case::late_fill_final_persistence_failure(true, Quantity::from("1.0"), true, 2)]
+    #[case::cancel_intermediate_persistence_failure(false, Quantity::from("0.8"), true, 3)]
+    #[case::late_fill_intermediate_persistence_failure(true, Quantity::from("0.6"), true, 3)]
     fn test_twap_resume_preserves_spawn_accounting(
         #[case] late_fill: bool,
         #[case] expected_primary_qty: Quantity,
@@ -1851,7 +1794,6 @@ mod tests {
         let mut params = IndexMap::new();
 
         let horizon = if slices == 3 { "60" } else { "40" };
-        let slice_qty = Quantity::from(if slices == 3 { "0.4" } else { "0.6" });
         let interval_ns = 20_000_000_000_u64;
         params.insert(Ustr::from("horizon_secs"), Ustr::from(horizon));
         params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
@@ -1887,19 +1829,6 @@ mod tests {
 
         if persistence_failure {
             control.set_fail_add_order_on(Some(1));
-            let events = clock.borrow_mut().advance_time(interval_ns.into(), true);
-            assert_eq!(events.len(), 1);
-            let result = ExecutionAlgorithm::on_time_event(&mut algo, &events[0]);
-            assert_eq!(result.unwrap_err().to_string(), "test add order failure");
-            assert_eq!(received.borrow().len(), 1);
-            assert_eq!(
-                algo.scheduled_orders[&primary_id].remaining_sizes,
-                vec![slice_qty; slices - 1]
-            );
-            assert_eq!(
-                algo.cache().order(&primary_id).unwrap().quantity(),
-                slice_qty
-            );
         }
 
         if !late_fill {
@@ -1939,12 +1868,7 @@ mod tests {
 
         Component::resume(&mut algo).unwrap();
 
-        let timestamp = if persistence_failure {
-            2 * interval_ns
-        } else {
-            interval_ns
-        };
-
+        let timestamp = interval_ns;
         for step in 0..slices - 1 {
             let timestamp = timestamp + step as u64 * interval_ns;
             let events = clock.borrow_mut().advance_time(timestamp.into(), true);

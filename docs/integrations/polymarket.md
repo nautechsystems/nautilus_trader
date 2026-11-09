@@ -1283,9 +1283,17 @@ market-order type.
 a pUSD maker budget, so price improvement can return more shares.
 
 When `quantity * price` is not an exact cent amount, the adapter truncates that budget to two
-decimal places. It signs the share quantity derived from that budget, rounded up to the market
-amount precision, so the signed ratio does not exceed the limit price. It updates the local order
-to that signed quantity before posting. This applies to single and batch submissions.
+decimal places. It signs the share quantity derived from that budget, rounded down to the market
+amount precision, so the order can match at the limit price. It updates the local order to that
+signed quantity before posting. This applies to single and batch submissions.
+
+For example, buying 75.82 shares at 0.999 signs a 75.74 pUSD budget and 75.81581 shares. Rounding
+the shares up to 75.81582 would put the signed price below 0.999 and prevent matching at that price.
+
+For both these immediate BUYs and market BUYs, the signed amount ratio must remain strictly below
+the limit plus 0.0001, the finest supported tick. This prevents matching at a higher legal price even
+if the cached market tick becomes finer. The adapter blocks unsafe orders before signing. Immediate
+limit BUYs emit `OrderSubmitted` followed by `OrderRejected`; market BUYs emit `OrderDenied`.
 
 A later fill can still raise the quantity to the actual matched size. A budget that truncates to
 zero is denied before signing.
@@ -1484,6 +1492,12 @@ The adapter emits any of the account's fills that the engine has not applied, us
 values, and refreshes the account.
 
 #### Reconnects and restarts
+
+Cached venue-leg fills are restored at the instrument's size precision, not the precision
+of the submitted quantity. An integer-sized order such as `5` can therefore retain a
+`0.200000` partial fill across restart, including after cancellation. Targeted order
+reconciliation uses the same precision. Recovery still rejects quantities that cannot be
+represented exactly; it does not round or rewrite persisted orders or fills.
 
 A provisional status applies a fill only when the trade and all of the account's orders in it
 belong to the current uninterrupted WebSocket session. The stream does not replay updates missed

@@ -75,6 +75,7 @@ async def main() -> None:
         poll_limit=POLL_LIMIT,
         connect_timeout_secs=CONNECT_TIMEOUT_SECS,
     )
+
     node = (
         LiveNode.builder("FINFEED-DATA-TESTER", TraderId("TESTER-001"), Environment.LIVE)
         .with_load_state(False)

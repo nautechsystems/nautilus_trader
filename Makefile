@@ -208,8 +208,8 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
-SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed
-SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed)
+SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi
+SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed) + package(nautilus-kalshi)
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
@@ -288,7 +288,7 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-blockchain nautilus-bybit nautilus-cli \
     nautilus-coinapi nautilus-coinbase nautilus-databento nautilus-deribit nautilus-derive \
-    nautilus-dydx nautilus-finfeed nautilus-hyperliquid nautilus-interactive-brokers \
+    nautilus-dydx nautilus-finfeed nautilus-hyperliquid nautilus-interactive-brokers nautilus-kalshi \
     nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket nautilus-pyo3 \
     nautilus-sandbox nautilus-tardis
 
@@ -442,6 +442,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
 	VIRTUAL_ENV= uv run --project python --no-sync ruff format . --config python/pyproject.toml --force-exclude
+	VIRTUAL_ENV= uv run --project python --no-sync python scripts/format-python.py --fix .
 
 .PHONY: pre-commit
 pre-commit: check-cargo-cooldown  #-- Run all pre-commit hooks on all files
@@ -1130,7 +1131,7 @@ cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-cargo-cooldown check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
-	$(TEST_ENV) cargo llvm-cov nextest run --locked --workspace --lib --tests --features "$(CARGO_FEATURES)"
+	$(TEST_ENV) cargo llvm-cov nextest --locked --workspace --lib --tests --features "$(CARGO_FEATURES)"
 
 # -----------------------------------------------------------------------------
 # Library tests for a single crate

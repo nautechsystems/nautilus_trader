@@ -50,13 +50,13 @@ use nautilus_lighter::{
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountActiveOrdersQueryBuilder,
             LighterAccountInactiveOrdersQuery, LighterAccountInactiveOrdersQueryBuilder,
-            LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery,
-            LighterCandlesQueryBuilder, LighterFundingsQuery, LighterMakerOnlyApiKeysQueryBuilder,
-            LighterNextNonceQuery, LighterOrderBookDetailsQuery,
-            LighterOrderBookDetailsQueryBuilder, LighterOrderBookOrdersQuery,
-            LighterOrderBooksQuery, LighterOrderBooksQueryBuilder, LighterRecentTradesQuery,
-            LighterSortDirection, LighterTradeQueryType, LighterTradeRole, LighterTradeSortBy,
-            LighterTradesQuery, LighterTradesQueryBuilder,
+            LighterAccountLookup, LighterAccountOrdersQuery, LighterAccountOrdersQueryBuilder,
+            LighterAccountQuery, LighterCandlesQuery, LighterCandlesQueryBuilder,
+            LighterFundingsQuery, LighterMakerOnlyApiKeysQueryBuilder, LighterNextNonceQuery,
+            LighterOrderBookDetailsQuery, LighterOrderBookDetailsQueryBuilder,
+            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterOrderBooksQueryBuilder,
+            LighterRecentTradesQuery, LighterSortDirection, LighterTradeQueryType,
+            LighterTradeRole, LighterTradeSortBy, LighterTradesQuery, LighterTradesQueryBuilder,
         },
     },
 };
@@ -335,6 +335,82 @@ async fn raw_client_get_account_orders_sends_auth_queries_and_parses_response() 
 
     assert_eq!(active.orders.len(), 1);
     assert_eq!(inactive.next_cursor.as_deref(), Some("cursor-1"));
+}
+
+#[rstest]
+#[case::single(vec![42])]
+#[case::multiple(vec![42, 43, 44])]
+#[tokio::test]
+async fn raw_client_get_account_orders_serializes_client_order_indexes(#[case] indexes: Vec<i64>) {
+    let expected_indexes = indexes.clone();
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/accountOrders",
+        get(move |Query(query): Query<LighterAccountOrdersQuery>| {
+            let expected_indexes = expected_indexes.clone();
+            async move {
+                assert_eq!(
+                    query.auth.as_ref().map(SecretString::expose_secret),
+                    Some("auth-token")
+                );
+                assert_eq!(query.account_index, 712_440);
+                assert_eq!(query.client_order_indexes, expected_indexes);
+                (StatusCode::OK, HTTP_ORDERS).into_response()
+            }
+        }),
+    ))
+    .await;
+
+    let client = raw_client(base_url);
+    let query = LighterAccountOrdersQueryBuilder::default()
+        .auth("auth-token")
+        .account_index(712_440)
+        .client_order_indexes(indexes)
+        .build()
+        .unwrap();
+
+    let response = client.get_account_orders(&query).await.unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.message, None);
+    assert_eq!(response.next_cursor.as_deref(), Some("cursor-1"));
+    assert_eq!(response.orders.len(), 1);
+    assert_eq!(response.orders[0].client_order_index, 42);
+}
+
+#[rstest]
+#[case::empty(vec![])]
+#[case::too_many((1..=21).collect::<Vec<i64>>())]
+#[tokio::test]
+async fn raw_client_get_account_orders_rejects_invalid_index_counts_before_request(
+    #[case] indexes: Vec<i64>,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/accountOrders",
+        get(move || {
+            let calls = Arc::clone(&requests);
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (StatusCode::OK, HTTP_ORDERS).into_response()
+            }
+        }),
+    ))
+    .await;
+
+    let client = raw_client(base_url);
+    let query = LighterAccountOrdersQueryBuilder::default()
+        .account_index(712_440)
+        .client_order_indexes(indexes)
+        .build()
+        .unwrap();
+
+    let error = client.get_account_orders(&query).await.unwrap_err();
+
+    assert!(
+        matches!(error, LighterHttpError::Parse(message) if message.contains("between 1 and 20"))
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

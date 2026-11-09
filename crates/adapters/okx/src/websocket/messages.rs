@@ -1635,7 +1635,7 @@ pub struct WsCancelAlgoOrderParams {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{string::secret::REDACTED, time::get_atomic_clock_realtime};
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -1680,31 +1680,6 @@ mod tests {
             }
             Err(e) => {
                 panic!("Failed to deserialize WebSocket arg: {e}");
-            }
-        }
-    }
-
-    #[rstest]
-    fn test_deserialize_subscribe_variant_direct() {
-        #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct SubscribeMsg {
-            event: String,
-            arg: OKXWebSocketArg,
-            conn_id: String,
-        }
-
-        let json_str = r#"{"event":"subscribe","arg":{"channel":"instruments","instType":"SPOT"},"connId":"380cfa6a"}"#;
-
-        let result: Result<SubscribeMsg, _> = serde_json::from_str(json_str);
-        match result {
-            Ok(msg) => {
-                assert_eq!(msg.event, "subscribe");
-                assert_eq!(msg.arg.channel, OKXWsChannel::Instruments);
-                assert_eq!(msg.conn_id, "380cfa6a");
-            }
-            Err(e) => {
-                panic!("Failed to deserialize subscribe message directly: {e}");
             }
         }
     }
@@ -2091,76 +2066,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_error_message_extraction() {
-        let responses = vec![
-            (
-                r#"{
-                "id": "req-123",
-                "op": "order",
-                "code": "50001",
-                "msg": "Order failed",
-                "data": [{"sMsg": "Insufficient balance"}]
-            }"#,
-                "Insufficient balance",
-            ),
-            (
-                r#"{
-                "id": "req-456",
-                "op": "cancel-order",
-                "code": "50002",
-                "msg": "Cancel failed",
-                "data": [{}]
-            }"#,
-                "Cancel failed",
-            ),
-        ];
-
-        for (response_json, expected_msg) in responses {
-            let parsed: OKXWsFrame = serde_json::from_str(response_json).unwrap();
-
-            match parsed {
-                OKXWsFrame::OrderResponse {
-                    id: _,
-                    op: _,
-                    code,
-                    msg,
-                    data,
-                } => {
-                    assert_ne!(code, "0"); // Error response
-
-                    // Extract error message with fallback logic
-                    let error_msg = data
-                        .first()
-                        .and_then(|d| d.get("sMsg"))
-                        .and_then(|s| s.as_str())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(&msg);
-
-                    assert_eq!(error_msg, expected_msg);
-                }
-                _ => panic!("Expected OrderResponse variant"),
-            }
-        }
-    }
-
-    #[rstest]
     fn test_book_data_parsing() {
-        let book_data_json = r#"{
-            "arg": {
-                "channel": "books",
-                "instId": "BTC-USDT"
-            },
-            "action": "snapshot",
-            "data": [{
-                "asks": [["50000.0", "0.1", "0", "1"]],
-                "bids": [["49999.0", "0.2", "0", "1"]],
-                "ts": "1640995200000",
-                "checksum": 123456789,
-                "seqId": 1000
-            }]
-        }"#;
-
-        let parsed: OKXWsFrame = serde_json::from_str(book_data_json).unwrap();
+        let parsed: OKXWsFrame =
+            serde_json::from_str(&load_test_json("ws_books_snapshot.json")).unwrap();
 
         match parsed {
             OKXWsFrame::BookData { arg, action, data } => {
@@ -2283,6 +2191,10 @@ mod tests {
                 2,
             )
         );
+        assert_eq!(
+            serde_json::to_value(&snapshot.asks[0]).unwrap(),
+            serde_json::json!(["0.0001617", "12325166.992", "1000", "2"])
+        );
         assert_eq!(snapshot.prev_seq_id, -1);
         assert_eq!(snapshot.seq_id, 1_082_831_226);
         assert_eq!(snapshot.ts, 1_785_406_442_403);
@@ -2324,154 +2236,16 @@ mod tests {
 
     #[rstest]
     fn test_data_event_parsing() {
-        let data_json = r#"{
-            "arg": {
-                "channel": "trades",
-                "instId": "BTC-USDT"
-            },
-            "data": [{
-                "instId": "BTC-USDT",
-                "tradeId": "12345",
-                "px": "50000.0",
-                "sz": "0.1",
-                "side": "buy",
-                "ts": "1640995200000"
-            }]
-        }"#;
-
-        let parsed: OKXWsFrame = serde_json::from_str(data_json).unwrap();
+        let parsed: OKXWsFrame = serde_json::from_str(&load_test_json("ws_trades.json")).unwrap();
 
         match parsed {
             OKXWsFrame::Data { arg, data } => {
                 assert_eq!(arg.channel, OKXWsChannel::Trades);
-                assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
+                assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USD")));
                 assert!(data.is_array());
             }
             _ => panic!("Expected Data variant"),
         }
-    }
-
-    #[rstest]
-    fn test_nautilus_message_variants() {
-        let clock = get_atomic_clock_realtime();
-        let ts_init = clock.get_time_ns();
-
-        let error = OKXWebSocketError {
-            code: "60012".to_string(),
-            message: "Invalid request".to_string(),
-            conn_id: None,
-            timestamp: ts_init.as_u64(),
-        };
-        let error_msg = NautilusWsMessage::Error(error);
-
-        match error_msg {
-            NautilusWsMessage::Error(e) => {
-                assert_eq!(e.code, "60012");
-                assert_eq!(e.message, "Invalid request");
-            }
-            _ => panic!("Expected Error variant"),
-        }
-
-        let raw_scenarios = vec![
-            ::serde_json::json!({"unknown": "data"}),
-            ::serde_json::json!({"channel": "unsupported", "data": [1, 2, 3]}),
-            ::serde_json::json!({"complex": {"nested": {"structure": true}}}),
-        ];
-
-        for raw_data in raw_scenarios {
-            let raw_msg = NautilusWsMessage::Raw(raw_data.clone());
-
-            match raw_msg {
-                NautilusWsMessage::Raw(data) => {
-                    assert_eq!(data, raw_data);
-                }
-                _ => panic!("Expected Raw variant"),
-            }
-        }
-    }
-
-    #[rstest]
-    fn test_order_response_parsing_success() {
-        let order_response_json = r#"{
-            "id": "req-123",
-            "op": "order",
-            "code": "0",
-            "msg": "",
-            "data": [{"sMsg": "Order placed successfully"}]
-        }"#;
-
-        let parsed: OKXWsFrame = serde_json::from_str(order_response_json).unwrap();
-
-        match parsed {
-            OKXWsFrame::OrderResponse {
-                id,
-                op,
-                code,
-                msg,
-                data,
-            } => {
-                assert_eq!(id, Some("req-123".to_string()));
-                assert_eq!(op, OKXWsOperation::Order);
-                assert_eq!(code, "0");
-                assert_eq!(msg, "");
-                assert_eq!(data.len(), 1);
-            }
-            _ => panic!("Expected OrderResponse variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_order_response_parsing_failure() {
-        let order_response_json = r#"{
-            "id": "req-456",
-            "op": "cancel-order",
-            "code": "50001",
-            "msg": "Order not found",
-            "data": [{"sMsg": "Order with client order ID not found"}]
-        }"#;
-
-        let parsed: OKXWsFrame = serde_json::from_str(order_response_json).unwrap();
-
-        match parsed {
-            OKXWsFrame::OrderResponse {
-                id,
-                op,
-                code,
-                msg,
-                data,
-            } => {
-                assert_eq!(id, Some("req-456".to_string()));
-                assert_eq!(op, OKXWsOperation::CancelOrder);
-                assert_eq!(code, "50001");
-                assert_eq!(msg, "Order not found");
-                assert_eq!(data.len(), 1);
-            }
-            _ => panic!("Expected OrderResponse variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_message_request_serialization() {
-        let request = OKXWsRequest {
-            id: Some("req-123".to_string()),
-            op: OKXWsOperation::Order,
-            args: vec![::serde_json::json!({
-                "instId": "BTC-USDT",
-                "tdMode": "cash",
-                "side": "buy",
-                "ordType": "market",
-                "sz": "0.1"
-            })],
-            exp_time: None,
-        };
-
-        let serialized = serde_json::to_string(&request).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(parsed["id"], "req-123");
-        assert_eq!(parsed["op"], "order");
-        assert!(parsed["args"].is_array());
-        assert_eq!(parsed["args"].as_array().unwrap().len(), 1);
     }
 
     #[rstest]

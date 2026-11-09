@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    sync::Arc,
+};
 
 use alloy::primitives::Address;
 use nautilus_core::{
@@ -61,8 +65,10 @@ pub struct CoreBlockchainRpcClient {
     wss_rpc_url: String,
     /// Auto-incrementing counter for generating unique RPC request IDs.
     request_id: u64,
-    /// Tracks in-flight subscription requests by mapping request IDs to their event types.
-    pending_subscription_request: HashMap<u64, RpcEventType>,
+    /// Tracks in-flight subscription requests by request ID with event type and connection epoch.
+    pending_subscription_request: HashMap<u64, (RpcEventType, u64)>,
+    /// Request ids pruned by reconnect whose confirmations arrive too late to act on.
+    dead_subscription_requests: HashSet<u64>,
     /// Maps active subscription IDs to their corresponding event types for message
     /// deserialization.
     subscription_event_types: HashMap<String, RpcEventType>,
@@ -88,6 +94,10 @@ impl Debug for CoreBlockchainRpcClient {
             .field(
                 "pending_subscription_request",
                 &self.pending_subscription_request,
+            )
+            .field(
+                "dead_subscription_requests",
+                &self.dead_subscription_requests,
             )
             .field("subscription_event_types", &self.subscription_event_types)
             .field(
@@ -151,6 +161,7 @@ impl CoreBlockchainRpcClient {
             request_id: 1,
             wss_client: None,
             pending_subscription_request: HashMap::new(),
+            dead_subscription_requests: HashSet::new(),
             subscription_event_types: HashMap::new(),
             wss_consumer_rx: None,
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
@@ -273,17 +284,30 @@ impl CoreBlockchainRpcClient {
                 "jsonrpc": "2.0",
                 "params": subscription.params()
             });
-            self.pending_subscription_request
-                .insert(self.request_id, event_type);
+            let request_id = self.request_id;
+            let connection_epoch = client.connection_epoch();
             self.request_id += 1;
 
-            if let Err(e) = client.send_text(msg.to_string(), None).await {
-                log::error!("Error sending subscribe message: {e:?}");
-            }
+            // Track desired first so a cancelled send is still retried by recovery
+            self.subscriptions
+                .write()
+                .await
+                .insert(event_type, subscription);
 
-            // Track subscription for re-establishment on reconnect
-            let mut confirmed = self.subscriptions.write().await;
-            confirmed.insert(event_type, subscription);
+            // Yield before recording: the send below must not suspend before queueing
+            tokio::task::yield_now().await;
+
+            // Record before sending: a cancelled send still wrote its frame
+            self.pending_subscription_request
+                .insert(request_id, (event_type, connection_epoch));
+
+            if let Err(e) = client
+                .send_text_on_connection(msg.to_string(), None, connection_epoch)
+                .await
+            {
+                log::error!("Error sending subscribe message: {e:?}");
+                self.pending_subscription_request.remove(&request_id);
+            }
 
             Ok(())
         } else {
@@ -294,36 +318,97 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Re-establishes all confirmed subscriptions after reconnection.
-    async fn resubscribe_all(&mut self) -> Result<(), BlockchainRpcClientError> {
-        let subscriptions = self.subscriptions.read().await;
+    async fn resubscribe_all(&mut self) {
+        // Prior connection is dead so its server ids stay stale
+        self.subscription_event_types.clear();
 
-        if subscriptions.is_empty() {
-            log::debug!(
-                "No subscriptions to re-establish for chain '{}'",
+        // Stale requests must not block their resend
+        if let Some(client) = &self.wss_client {
+            let connection_epoch = client.connection_epoch();
+            let dead: Vec<u64> = self
+                .pending_subscription_request
+                .iter()
+                .filter(|(_, (_, pending_epoch))| *pending_epoch != connection_epoch)
+                .map(|(request_id, _)| *request_id)
+                .collect();
+            self.dead_subscription_requests.extend(dead);
+            self.pending_subscription_request
+                .retain(|_, (_, pending_epoch)| *pending_epoch == connection_epoch);
+        } else {
+            self.pending_subscription_request.clear();
+        }
+
+        self.ensure_subscribed().await;
+    }
+
+    /// Sends every desired subscription lacking a live id or fresh request.
+    ///
+    /// Runs after reconnect recovery and at the start of every receive so a
+    /// cancelled restore still converges on the next call.
+    async fn ensure_subscribed(&mut self) {
+        let (is_active, connection_epoch) = match &self.wss_client {
+            Some(client) => (client.is_active(), client.connection_epoch()),
+            None => return,
+        };
+
+        if !is_active {
+            return;
+        }
+
+        let missing = self.missing_subscriptions(connection_epoch).await;
+
+        if !missing.is_empty() {
+            log::info!(
+                "Re-establishing {} subscription(s) for chain '{}'",
+                missing.len(),
                 self.chain.name
             );
-            return Ok(());
         }
 
-        log::info!(
-            "Re-establishing {} subscription(s) for chain '{}'",
-            subscriptions.len(),
-            self.chain.name
-        );
+        for (event_type, subscription) in missing {
+            let active = self
+                .wss_client
+                .as_ref()
+                .is_some_and(|client| client.is_active());
 
-        let subs_to_restore: Vec<(RpcEventType, RpcSubscription)> = subscriptions
+            if !active {
+                break;
+            }
+
+            if self
+                .send_subscription_request(event_type, subscription)
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    }
+
+    /// Desired subscriptions with neither a live id nor a fresh request on this connection.
+    async fn missing_subscriptions(
+        &self,
+        connection_epoch: u64,
+    ) -> Vec<(RpcEventType, RpcSubscription)> {
+        let subscriptions = self.subscriptions.read().await;
+
+        subscriptions
             .iter()
+            .filter(|(event_type, _)| {
+                let live = self
+                    .subscription_event_types
+                    .values()
+                    .any(|live_type| live_type == *event_type);
+                let fresh = self.pending_subscription_request.values().any(
+                    |(pending_type, pending_epoch)| {
+                        pending_type == *event_type && *pending_epoch == connection_epoch
+                    },
+                );
+
+                !live && !fresh
+            })
             .map(|(event_type, subscription)| (*event_type, subscription.clone()))
-            .collect();
-
-        drop(subscriptions);
-
-        for (event_type, subscription) in subs_to_restore {
-            self.send_subscription_request(event_type, subscription)
-                .await?;
-        }
-
-        Ok(())
+            .collect()
     }
 
     /// Terminates a subscription with the blockchain node using the provided subscription ID.
@@ -344,7 +429,13 @@ impl CoreBlockchainRpcClient {
                 "params": [subscription_id]
             });
 
-            if let Err(e) = client.send_text(msg.to_string(), None).await {
+            // Yield first so pre-queue suspension cannot drop this untracked send
+            tokio::task::yield_now().await;
+
+            if let Err(e) = client
+                .send_text_on_connection(msg.to_string(), None, client.connection_epoch())
+                .await
+            {
                 log::error!("Error sending unsubscribe message: {e:?}");
             }
             Ok(())
@@ -371,9 +462,102 @@ impl CoreBlockchainRpcClient {
             self.subscription_event_types.remove(&id);
         }
 
-        self.pending_subscription_request
-            .retain(|_, pending_event_type| *pending_event_type != event_type);
+        // Forget only current-connection requests outright: older ones died with
+        // their connection, so record them instead of cleaning up the new session.
+        let current_epoch = self
+            .wss_client
+            .as_ref()
+            .map(|client| client.connection_epoch());
+        let dead_requests = &mut self.dead_subscription_requests;
+        self.pending_subscription_request.retain(
+            |request_id, (pending_event_type, pending_epoch)| {
+                if *pending_event_type != event_type {
+                    return true;
+                }
+
+                if current_epoch.is_some_and(|current| *pending_epoch != current) {
+                    dead_requests.insert(*request_id);
+                }
+
+                false
+            },
+        );
+
         self.subscriptions.write().await.remove(&event_type);
+
+        Ok(())
+    }
+
+    /// Routes a subscribe confirmation to its pending request, replacement, or cleanup.
+    ///
+    /// Confirmations for reconnect-pruned requests are ignored because their server
+    /// subscription died with the old connection, and a result colliding with a live
+    /// id is never unsubscribed; anything else unknown is unsubscribed so the node
+    /// holds no orphan subscription.
+    async fn handle_subscription_confirmation(
+        &mut self,
+        json: &serde_json::Value,
+    ) -> Result<(), BlockchainRpcClientError> {
+        let subscription_request_id = json
+            .get("id")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                BlockchainRpcClientError::InternalRpcClientError(
+                    "Missing subscription request id".to_string(),
+                )
+            })?;
+
+        let result = json
+            .get("result")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                BlockchainRpcClientError::InternalRpcClientError(
+                    "Missing subscription id".to_string(),
+                )
+            })?;
+
+        let Some((event_type, _)) = self
+            .pending_subscription_request
+            .remove(&subscription_request_id)
+        else {
+            // Requests pruned by reconnect died with their connection,
+            // their server subscription is already gone
+            if self
+                .dead_subscription_requests
+                .remove(&subscription_request_id)
+            {
+                log::debug!(
+                    "Ignoring confirmation for request '{subscription_request_id}' pruned by reconnect on chain '{}'",
+                    self.chain.name
+                );
+                return Ok(());
+            }
+
+            // Never unsubscribe an id that is live: under
+            // connection-local id reuse the stale result can collide
+            // with the replacement subscription.
+            if self.subscription_event_types.contains_key(result) {
+                log::debug!(
+                    "Skipping unsubscribe for stale confirmation colliding with live id '{result}' on chain '{}'",
+                    self.chain.name
+                );
+                return Ok(());
+            }
+
+            log::debug!(
+                "Unsubscribing from stale subscription confirmation '{result}' on chain '{}'",
+                self.chain.name
+            );
+            self.unsubscribe_events(result.to_string()).await?;
+            return Ok(());
+        };
+
+        if self.subscriptions.read().await.contains_key(&event_type) {
+            self.subscription_event_types
+                .insert(result.to_string(), event_type);
+        } else {
+            self.unsubscribe_events(result.to_string()).await?;
+        }
 
         Ok(())
     }
@@ -393,15 +577,16 @@ impl CoreBlockchainRpcClient {
     pub async fn next_rpc_message(
         &mut self,
     ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
+        // Repair any restore a cancelled call left behind
+        self.ensure_subscribed().await;
+
         while let Some(msg) = self.wait_on_rpc_channel().await {
             match msg {
                 Message::Text(text) => {
                     if text == RECONNECTED {
                         log::info!("Detected reconnection for chain '{}'", self.chain.name);
 
-                        if let Err(e) = self.resubscribe_all().await {
-                            log::error!("Failed to re-establish subscriptions: {e:?}");
-                        }
+                        self.resubscribe_all().await;
                         continue;
                     }
 
@@ -414,41 +599,7 @@ impl CoreBlockchainRpcClient {
                                 );
                                 continue;
                             } else if is_subscription_confirmation_response(&json) {
-                                let subscription_request_id = json
-                                    .get("id")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .ok_or_else(|| {
-                                        BlockchainRpcClientError::InternalRpcClientError(
-                                            "Missing subscription request id".to_string(),
-                                        )
-                                    })?;
-                                let result = json
-                                    .get("result")
-                                    .and_then(serde_json::Value::as_str)
-                                    .ok_or_else(|| {
-                                        BlockchainRpcClientError::InternalRpcClientError(
-                                            "Missing subscription id".to_string(),
-                                        )
-                                    })?;
-                                let Some(event_type) = self
-                                    .pending_subscription_request
-                                    .remove(&subscription_request_id)
-                                else {
-                                    log::debug!(
-                                        "Unsubscribing from stale subscription confirmation '{}' on chain '{}'",
-                                        result,
-                                        self.chain.name
-                                    );
-                                    self.unsubscribe_events(result.to_string()).await?;
-                                    continue;
-                                };
-
-                                if self.subscriptions.read().await.contains_key(&event_type) {
-                                    self.subscription_event_types
-                                        .insert(result.to_string(), event_type);
-                                } else {
-                                    self.unsubscribe_events(result.to_string()).await?;
-                                }
+                                self.handle_subscription_confirmation(&json).await?;
                                 continue;
                             } else if is_subscription_event(&json) {
                                 let subscription_id = match extract_rpc_subscription_id(&json) {
@@ -989,5 +1140,68 @@ mod tests {
         assert_eq!(block.chain(), Blockchain::Base);
         assert_eq!(block.number, 16);
         assert_eq!(block.hash, "0xabc");
+    }
+
+    #[tokio::test]
+    async fn stale_confirmation_matching_live_id_skips_unsubscribe() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        client
+            .subscription_event_types
+            .insert("0x1".to_string(), RpcEventType::NewBlock);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({"jsonrpc": "2.0", "id": 999, "result": "0x1"})
+                .to_string()
+                .into(),
+        ))
+        .expect("stale confirmation should enqueue");
+        drop(tx);
+
+        // Without a connection an unsubscribe attempt fails, so reaching the
+        // drained channel proves the live id was left alone
+        let error = client
+            .next_rpc_message()
+            .await
+            .expect_err("live id collision should skip unsubscribe");
+
+        assert!(matches!(error, BlockchainRpcClientError::NoMessageReceived));
+    }
+
+    #[tokio::test]
+    async fn stale_confirmation_for_unknown_id_attempts_unsubscribe() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({"jsonrpc": "2.0", "id": 998, "result": "0xdead"})
+                .to_string()
+                .into(),
+        ))
+        .expect("stale confirmation should enqueue");
+        drop(tx);
+
+        let error = client
+            .next_rpc_message()
+            .await
+            .expect_err("unknown id should attempt unsubscribe");
+
+        let BlockchainRpcClientError::ClientError(message) = error else {
+            panic!("expected client error from unsubscribe attempt");
+        };
+
+        assert_eq!(message, "Client not connected");
     }
 }

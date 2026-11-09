@@ -1883,9 +1883,11 @@ impl Cache {
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the database deletion cannot be queued.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
     fn py_purge_closed_orders(
         &mut self,
@@ -1901,9 +1903,11 @@ impl Cache {
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the database deletion cannot be queued.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
     fn py_purge_closed_positions(
         &mut self,
@@ -1917,9 +1921,11 @@ impl Cache {
 
     /// Deletes persisted actor state. Does nothing without a database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if deleting the state fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "delete_actor")]
     fn py_delete_actor(&self, actor_id: ActorId) -> PyResult<()> {
         self.delete_actor(&actor_id).map_err(to_pyvalue_err)
@@ -1927,9 +1933,11 @@ impl Cache {
 
     /// Deletes persisted strategy state. Does nothing without a database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if deleting the state fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "delete_strategy")]
     fn py_delete_strategy(&self, strategy_id: StrategyId) -> PyResult<()> {
         self.delete_strategy(&strategy_id).map_err(to_pyvalue_err)
@@ -1937,9 +1945,11 @@ impl Cache {
 
     /// Persists the heartbeat timestamp. Does nothing without a database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the timestamp fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "heartbeat")]
     fn py_heartbeat(&self, timestamp: u64) -> PyResult<()> {
         self.heartbeat(timestamp.into()).map_err(to_pyvalue_err)
@@ -1983,9 +1993,11 @@ impl Cache {
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the database deletion cannot be queued.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "purge_order", signature = (client_order_id, purge_from_database=false))]
     fn py_purge_order(
         &mut self,
@@ -2002,9 +2014,11 @@ impl Cache {
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the database deletion cannot be queued.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "purge_position", signature = (position_id, purge_from_database=false))]
     fn py_purge_position(
         &mut self,
@@ -2032,9 +2046,11 @@ impl Cache {
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     /// Redis and PostgreSQL log the request and retain the full account history for replay.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the database deletion cannot be queued.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0, purge_from_database=false))]
     fn py_purge_account_events(
         &mut self,
@@ -2048,9 +2064,12 @@ impl Cache {
 
     /// Adds the `currency` to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the currency to the backing database fails.
+    /// Returns an error if the currency definition conflicts with existing state or the backing
+    /// reports a DeFi currency integrity error.
     #[pyo3(name = "add_currency")]
     fn py_add_currency(&mut self, currency: Currency) -> PyResult<()> {
         self.add_currency(currency).map_err(to_pyvalue_err)
@@ -2058,9 +2077,12 @@ impl Cache {
 
     /// Adds the `instrument` to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the instrument to the backing database fails.
+    /// Returns an error if the instrument or its currency identities conflict with existing state,
+    /// or the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -2113,6 +2135,8 @@ impl Cache {
 
     /// Adds the `order` to the cache indexed with any given identifiers.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Parameters
     ///
     /// `replace_existing`: Replaces an existing order with the same client order ID. Emulated
@@ -2121,9 +2145,8 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if the client order ID exists and `replace_existing` is false, a
-    /// replacement claims another order's venue order ID, or persistence fails. The order and
-    /// every index are committed to memory before persistence is attempted, so a persistence
-    /// error leaves the cache internally consistent.
+    /// replacement claims another order's venue order ID, or the backing reports a DeFi currency
+    /// integrity error.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -2290,11 +2313,12 @@ impl Cache {
     /// For `OmsType.Unspecified`, IDs matching `{instrument_id}-{strategy_id}` resolve to
     /// `OmsType.Netting`. Other IDs retain the supplied OMS type.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails. After
-    /// serialization succeeds, the complete operation is committed to memory before persistence
-    /// is attempted, so a persistence error leaves the cache internally consistent.
+    /// Returns an error if validating or serializing the position metadata fails, or the backing
+    /// reports a DeFi currency integrity error.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(
@@ -2316,9 +2340,12 @@ impl Cache {
     /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
     /// unless a backing database has to persist the frame.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     #[pyo3(name = "snapshot_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
@@ -2415,9 +2442,11 @@ impl Cache {
 
     /// Adds the `quote` tick to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the quote tick to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_quote")]
     fn py_add_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         self.add_quote(quote).map_err(to_pyvalue_err)
@@ -2425,9 +2454,11 @@ impl Cache {
 
     /// Adds the `trade` tick to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the trade tick to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_trade")]
     fn py_add_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         self.add_trade(trade).map_err(to_pyvalue_err)
@@ -2438,9 +2469,11 @@ impl Cache {
     /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
     /// `ts_event` replaces the front bar for time bars.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the bar to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_bar")]
     fn py_add_bar(&mut self, bar: Bar) -> PyResult<()> {
         self.add_bar(bar).map_err(to_pyvalue_err)

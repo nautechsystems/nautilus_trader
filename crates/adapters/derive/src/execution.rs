@@ -2871,10 +2871,9 @@ impl DeriveReconciliationContext {
         self.ensure_order_context()?;
         self.resolve_pending_modifies(cmd.instrument_id).await?;
         if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
-            log::warn!(
+            anyhow::bail!(
                 "Derive generate_order_status_report requires venue_order_id or client_order_id"
             );
-            return Ok(None);
         }
 
         let order = self.resolve_order_record(cmd).await?;
@@ -2919,13 +2918,12 @@ impl DeriveReconciliationContext {
         if let Some(instrument_id) = cmd.instrument_id
             && format_instrument_id(order.instrument_name)? != instrument_id
         {
-            log::warn!(
+            anyhow::bail!(
                 "Derive order {} is for {} but report requested {}",
                 order.order_id,
                 order.instrument_name.as_str(),
                 instrument_id,
             );
-            return Ok(None);
         }
 
         let instrument_id = format_instrument_id(order.instrument_name)?;
@@ -7128,12 +7126,13 @@ mod tests {
             None,
             None,
         );
-        assert!(
-            fresh
-                .generate_order_status_report(&empty_query)
-                .await
-                .unwrap()
-                .is_none()
+        let error = fresh
+            .generate_order_status_report(&empty_query)
+            .await
+            .expect_err("missing order identity must not report venue absence");
+        assert_eq!(
+            error.to_string(),
+            "Derive generate_order_status_report requires venue_order_id or client_order_id",
         );
     }
 

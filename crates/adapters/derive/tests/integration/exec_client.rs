@@ -8666,7 +8666,7 @@ async fn test_generate_order_status_report_finds_trigger_order_by_label_before_h
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_report_returns_none_on_instrument_mismatch() {
+async fn test_generate_order_status_report_errors_on_instrument_mismatch() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     // Default get_order response has instrument_name = "ETH-PERP"; ask for BTC.
@@ -8682,12 +8682,78 @@ async fn test_generate_order_status_report_returns_none_on_instrument_mismatch()
         None,
         None,
     );
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("instrument mismatch must not report venue absence");
+    assert_eq!(
+        error.to_string(),
+        "Derive order ord-mock-1 is for ETH-PERP but report requested BTC-PERP.DERIVE",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_errors_without_order_identity() {
+    let mut tc = build_report_client(RestState::default(), WsState::default()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+    );
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("missing order identity must not report venue absence");
+    assert_eq!(
+        error.to_string(),
+        "Derive generate_order_status_report requires venue_order_id or client_order_id",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_returns_none_when_order_is_absent() {
+    let rest_state = RestState::default();
+    let mut tc = build_report_client(rest_state.clone(), WsState::default()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        Some(ClientOrderId::from("ABSENT-LABEL")),
+        None,
+        None,
+        None,
+    );
     let report = tc
         .client
         .generate_order_status_report(&cmd)
         .await
-        .expect("report");
-    assert!(report.is_none());
+        .expect("venue absence is not a lookup failure");
+    assert_eq!(report, None);
+    assert_eq!(
+        *rest_state.order_history_calls.lock().await,
+        vec![json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "page": 1,
+            "page_size": 500,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -14854,7 +14920,11 @@ fn reconcile_replacement_reports(
 #[case::different_id("different_id", Some("Does not exist"), 1)]
 #[case::different_error("different_error", Some("Permission error"), 0)]
 #[case::foreign_account("foreign_account", Some("subaccount"), 1)]
-#[case::foreign_instrument("foreign_instrument", None, 1)]
+#[case::foreign_instrument(
+    "foreign_instrument",
+    Some("is for BTC-PERP but report requested ETH-PERP.DERIVE"),
+    1
+)]
 #[case::bad_pagination("bad_pagination", Some("Invalid Derive page count"), 1)]
 #[tokio::test]
 async fn test_order_lookup_falls_back_to_exact_scoped_history(
@@ -14938,8 +15008,6 @@ async fn test_order_lookup_falls_back_to_exact_scoped_history(
 
     if let Some(expected) = expected_error {
         assert!(format!("{:#}", result.unwrap_err()).contains(expected));
-    } else if scenario == "foreign_instrument" {
-        assert!(result.unwrap().is_none());
     } else {
         let report = result.unwrap().unwrap();
         assert_eq!(report.venue_order_id, native_id);
@@ -18500,7 +18568,11 @@ async fn test_report_task_matches_inline(
 
     match (inline, worker) {
         (Ok(inline), Ok(worker)) => {
-            assert!(matches!(response, "valid" | "filtered"));
+            assert!(
+                matches!(response, "valid" | "filtered")
+                    && !(request == 0 && response == "filtered"),
+                "single-order instrument mismatch must not report absence",
+            );
             assert_eq!(worker, inline);
 
             if response == "filtered" {
@@ -18510,8 +18582,18 @@ async fn test_report_task_matches_inline(
             }
         }
         (Err(inline), Err(worker)) => {
-            assert!(matches!(response, "malformed" | "venue_error"));
+            assert!(
+                matches!(response, "malformed" | "venue_error")
+                    || (request == 0 && response == "filtered")
+            );
             assert_eq!(format!("{worker:#}"), format!("{inline:#}"));
+
+            if request == 0 && response == "filtered" {
+                assert!(
+                    format!("{inline:#}")
+                        .contains("is for ETH-PERP but report requested SOL-PERP.DERIVE")
+                );
+            }
         }
         result => panic!("inline and task results differ: {result:?}"),
     }

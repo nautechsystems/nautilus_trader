@@ -210,7 +210,7 @@ use nautilus_model::{
         perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, QUANTITY_MAX, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -218,11 +218,12 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
-            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus,
-            BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitPositionSide,
-            BybitProductType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
-            BybitTriggerDirection, BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginAction,
+            BybitMarginTrading, BybitMarketUnit, BybitOptionType, BybitOrderSide,
+            BybitOrderSmpType, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
+            BybitSymbolType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -378,10 +379,10 @@ pub fn parse_spot_instrument(
         "lotSizeFilter.basePrecision",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -506,10 +507,10 @@ pub fn parse_linear_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -699,10 +700,10 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -854,10 +855,10 @@ pub fn parse_option_instrument(
         &definition.lot_size_filter.qty_step,
         "lotSizeFilter.qtyStep",
     )?;
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -1388,6 +1389,15 @@ pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantit
     Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
+/// Parses an order size limit, returning `None` when it exceeds [`QUANTITY_MAX`].
+pub(crate) fn parse_max_quantity(value: &str, field: &str) -> anyhow::Result<Option<Quantity>> {
+    if parse_decimal(value, field)? > Decimal::try_from(QUANTITY_MAX)? {
+        return Ok(None);
+    }
+
+    parse_quantity(value, field).map(Some)
+}
+
 pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(value)
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {e}"))
@@ -1829,6 +1839,18 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
     }
 }
 
+/// Parses a Bybit margin action from a `query_account` parameter, accepting the
+/// `BybitMarginAction` enum's snake_case and Python variant spellings.
+#[must_use]
+pub fn parse_margin_action(s: &str) -> Option<BybitMarginAction> {
+    match s.to_ascii_lowercase().as_str() {
+        "borrow" => Some(BybitMarginAction::Borrow),
+        "repay" => Some(BybitMarginAction::Repay),
+        "get_borrow_amount" => Some(BybitMarginAction::GetBorrowAmount),
+        _ => None,
+    }
+}
+
 /// Parses a Bybit self-match prevention type from an order parameter or configuration value.
 ///
 /// # Errors
@@ -2112,6 +2134,28 @@ mod tests {
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
+    #[rstest]
+    #[case::snake("borrow", BybitMarginAction::Borrow)]
+    #[case::python_variant("BORROW", BybitMarginAction::Borrow)]
+    #[case::repay_snake("repay", BybitMarginAction::Repay)]
+    #[case::repay_variant("REPAY", BybitMarginAction::Repay)]
+    #[case::query_snake("get_borrow_amount", BybitMarginAction::GetBorrowAmount)]
+    #[case::query_variant("GET_BORROW_AMOUNT", BybitMarginAction::GetBorrowAmount)]
+    fn test_parse_margin_action_accepts_param_spellings(
+        #[case] action: &str,
+        #[case] expected: BybitMarginAction,
+    ) {
+        assert_eq!(parse_margin_action(action), Some(expected));
+    }
+
+    #[rstest]
+    #[case("lend")]
+    #[case("")]
+    #[case("borrow_all")]
+    fn test_parse_margin_action_rejects_unknown_actions(#[case] action: &str) {
+        assert_eq!(parse_margin_action(action), None);
+    }
+
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
@@ -2175,6 +2219,16 @@ mod tests {
 
         assert_eq!(quantity, Quantity::from(expected));
         assert_eq!(quantity.precision, precision);
+    }
+
+    #[rstest]
+    #[case::in_range("100.0".to_string(), Some("100.0".to_string()))]
+    #[case::at_max(QUANTITY_MAX.to_string(), Some(QUANTITY_MAX.to_string()))]
+    #[case::above_max(format!("{QUANTITY_MAX}.5"), None)]
+    fn test_parse_max_quantity(#[case] value: String, #[case] expected: Option<String>) {
+        let quantity = parse_max_quantity(&value, "test.quantity").unwrap();
+
+        assert_eq!(quantity, expected.as_deref().map(Quantity::from));
     }
 
     #[rstest]

@@ -70,6 +70,7 @@ def test_config_defaults(values: dict) -> None:
     Expose every default without resolving credentials.
     """
     config = FinFeedDataClientConfig(**values)
+
     expected = {
         "base_url_http": "https://api.prediction-markets.finfeedapi.com/v1/",
         "http_timeout_secs": 300,
@@ -91,6 +92,7 @@ def test_config_defaults(values: dict) -> None:
         "has_api_key": False,
         "has_proxy_url": False,
     }
+
     assert {name: getattr(config, name) for name in expected} == expected
 
 
@@ -116,12 +118,14 @@ def test_config_distinct_values_and_secret_redaction() -> None:
         "poll_limit": 23,
         "connect_timeout_secs": 43,
     }
+
     config = FinFeedDataClientConfig(
         api_key="projection-secret",
         proxy_url="http://user:proxy-secret@localhost:8124",
         instruments=[_selection()],
         **expected,
     )
+
     assert {name: getattr(config, name) for name in expected} == expected
     assert config.has_api_key is True
     assert config.has_proxy_url is True
@@ -159,6 +163,7 @@ def test_polling_capacity_reaches_client_construction(limit: int) -> None:
         instruments=[_selection()],
         poll_limit=limit,
     )
+
     assert config.poll_limit == limit
     node = _build_node(config)
     assert node.trader_id == TraderId("TESTER-001")

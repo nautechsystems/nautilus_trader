@@ -153,7 +153,6 @@ catalog.instruments()[0]
 # Query quote ticks from catalog to determine the data range
 all_ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value])
 print(f"Total ticks in catalog: {len(all_ticks)}")
-
 if all_ticks:
     # Get timestamps from the data
     first_tick_time = pd.Timestamp(all_ticks[0].ts_init, unit="ns", tz="UTC")

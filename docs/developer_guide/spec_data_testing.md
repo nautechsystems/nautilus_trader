@@ -232,9 +232,9 @@ not a WebSocket URL, it relays CRLF-delimited lines over raw TCP. A line route s
 alone, and the venue's `WireCodec::connect` opens its upstream connection, for example over TLS.
 
 The proxy applies per-book `Fault` rules (drop snapshots or updates, corrupt, hold, silence, cut on
-unsubscribe, reject subscribes) and connection-wide cuts and freezes. `Session` passes each emitted batch
-through `BookStreamChecker` and the oracle. It waits for books to heal. At shutdown, it checks that all
-sockets and reconnect handles are released.
+unsubscribe, reject subscribes) and connection-wide cuts and freezes. `Session` passes emitted batches
+for requested books through `BookStreamChecker` and the oracle. It waits for books to heal. At shutdown,
+it checks that all sockets and reconnect handles are released.
 
 Each harness accepts the same flags, and venues add their own. `--help` lists them:
 
@@ -277,7 +277,7 @@ with `cargo nextest run -p nautilus-live --features test-support --test book`.
 
 **Harness documentation**: Add a `Live recovery validation` heading to the adapter's integration guide.
 Include its checks, injected faults, run command, scenarios, flags, and required endpoints. OKX, Binance,
-Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnesses.
+Kalshi, Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnesses.
 
 ### In-band verification
 

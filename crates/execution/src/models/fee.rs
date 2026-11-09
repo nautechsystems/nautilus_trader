@@ -664,6 +664,7 @@ mod tests {
 
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
+        fees::MakerTakerFeeRates,
         identifiers::InstrumentId,
         instruments::{
             BinaryOption, CryptoOption, Instrument, InstrumentAny, OptionContract,
@@ -1135,7 +1136,11 @@ mod tests {
     #[rstest]
     fn test_per_contract_fee_model_negative_commission_fails() {
         let result = PerContractFeeModel::new(Money::new(-1.0, Currency::USD()));
-        assert!(result.is_err());
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Commission must be greater than or equal to zero"
+        );
     }
 
     #[rstest]
@@ -1191,6 +1196,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission, Money::from("0.00250 USDC"));
+    }
+
+    #[rstest]
+    fn test_probability_price_fee_model_uses_instrument_override(binary_option: BinaryOption) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
+        let mut fee_model = ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02));
+        let default_commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("1.00"),
+                Price::from("0.500"),
+                &instrument,
+            )
+            .unwrap();
+        fee_model.set_override(
+            instrument.id(),
+            MakerTakerFeeRates::new(dec!(0.03), dec!(0.04)),
+        );
+
+        let override_commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("1.00"),
+                Price::from("0.500"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(default_commission, Money::from("0.005 USDC"));
+        assert_eq!(override_commission, Money::from("0.010 USDC"));
     }
 
     #[rstest]
@@ -1306,12 +1342,18 @@ mod tests {
             &instrument,
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "ProbabilityPriceFeeModel requires a binary option instrument"
+        );
     }
 
     #[rstest]
+    #[case::negative("-0.001")]
+    #[case::above_one("1.5")]
     fn test_probability_price_fee_model_rejects_fill_price_out_of_range(
         binary_option: BinaryOption,
+        #[case] price: &str,
     ) {
         let instrument = InstrumentAny::BinaryOption(binary_option);
         let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
@@ -1320,7 +1362,7 @@ mod tests {
         let result = fee_model.get_commission(
             &fill,
             Quantity::from("1.00"),
-            Price::from("1.5"),
+            Price::from(price),
             &instrument,
         );
 
@@ -1328,6 +1370,29 @@ mod tests {
             result.unwrap_err().to_string(),
             "ProbabilityPriceFeeModel requires a fill price in [0, 1]"
         );
+    }
+
+    #[rstest]
+    #[case::zero("0.000")]
+    #[case::one("1.000")]
+    fn test_probability_price_fee_model_boundary_prices_have_zero_commission(
+        binary_option: BinaryOption,
+        #[case] price: &str,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, price);
+        let fee_model = ProbabilityPriceFeeModel::new(dec!(0.01), dec!(0.02));
+
+        let commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("1.00"),
+                Price::from(price),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::zero(Currency::USDC()));
     }
 
     #[rstest]
@@ -1397,6 +1462,66 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), dec!(10.00));
+    }
+
+    #[rstest]
+    fn test_capped_option_fee_model_uses_instrument_override(
+        crypto_option_btc_deribit: CryptoOption,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Maker);
+        let mut fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
+        let default_commission = fee_model
+            .get_commission_with_context(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("100.00"),
+                &instrument,
+                Some(Price::from("50000.00")),
+            )
+            .unwrap();
+        fee_model
+            .set_override(
+                instrument.id(),
+                MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0004)),
+            )
+            .unwrap();
+
+        let override_commission = fee_model
+            .get_commission_with_context(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("100.00"),
+                &instrument,
+                Some(Price::from("50000.00")),
+            )
+            .unwrap();
+
+        assert_eq!(default_commission, Money::from("10 USD"));
+        assert_eq!(override_commission, Money::from("20 USD"));
+    }
+
+    #[rstest]
+    #[case::maker(dec!(-0.0002), dec!(0.0004), "maker_rate")]
+    #[case::taker(dec!(0.0002), dec!(-0.0004), "taker_rate")]
+    fn test_capped_option_fee_model_rejects_negative_override(
+        crypto_option_btc_deribit: CryptoOption,
+        #[case] maker_rate: Decimal,
+        #[case] taker_rate: Decimal,
+        #[case] expected_field: &str,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let mut fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
+
+        let result = fee_model.set_override(
+            instrument.id(),
+            MakerTakerFeeRates::new(maker_rate, taker_rate),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("`{expected_field}` must be greater than or equal to zero")
+        );
     }
 
     #[rstest]
@@ -1503,7 +1628,10 @@ mod tests {
             &instrument,
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Underlying price is required"
+        );
     }
 
     #[rstest]
@@ -1520,7 +1648,10 @@ mod tests {
             Some(Price::from("50000.00")),
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "CappedOptionFeeModel requires an option instrument"
+        );
     }
 
     #[rstest]
@@ -1548,6 +1679,41 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_tiered_notional_option_fee_model_uses_instrument_override(
+        crypto_option_btc_deribit: CryptoOption,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Maker);
+        let mut fee_model = TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap();
+        let default_commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("100.00"),
+                &instrument,
+            )
+            .unwrap();
+        fee_model
+            .set_override(
+                instrument.id(),
+                MakerTakerFeeRates::new(dec!(0.0004), dec!(0.0010)),
+            )
+            .unwrap();
+
+        let override_commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("100.00"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(default_commission, Money::from("0.04 USD"));
+        assert_eq!(override_commission, Money::from("0.08 USD"));
     }
 
     #[rstest]
@@ -1606,7 +1772,10 @@ mod tests {
             &instrument,
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "TieredNotionalOptionFeeModel requires an option instrument"
+        );
     }
 
     #[rstest]
@@ -1618,6 +1787,29 @@ mod tests {
         #[case] expected_field: &str,
     ) {
         let result = TieredNotionalOptionFeeModel::new(maker_rate, taker_rate);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("`{expected_field}` must be greater than or equal to zero")
+        );
+    }
+
+    #[rstest]
+    #[case::maker(dec!(-0.0004), dec!(0.0010), "maker_rate")]
+    #[case::taker(dec!(0.0004), dec!(-0.0010), "taker_rate")]
+    fn test_tiered_notional_option_fee_model_rejects_negative_override(
+        crypto_option_btc_deribit: CryptoOption,
+        #[case] maker_rate: Decimal,
+        #[case] taker_rate: Decimal,
+        #[case] expected_field: &str,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let mut fee_model = TieredNotionalOptionFeeModel::new(dec!(0.0002), dec!(0.0005)).unwrap();
+
+        let result = fee_model.set_override(
+            instrument.id(),
+            MakerTakerFeeRates::new(maker_rate, taker_rate),
+        );
 
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -1645,7 +1837,7 @@ mod tests {
             &instrument,
         );
 
-        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Liquidity side not set");
     }
 
     fn option_fill_order(instrument: &InstrumentAny, liquidity_side: LiquiditySide) -> OrderAny {

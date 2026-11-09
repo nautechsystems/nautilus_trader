@@ -113,10 +113,14 @@ impl Debug for PostgresCacheConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::cache::Cache;
+    use nautilus_model::enums::BookType;
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+    #[cfg(feature = "defi")]
+    use crate::defi::IntegrityError;
 
     #[rstest]
     fn test_default_postgres_cache_config() {
@@ -146,6 +150,72 @@ mod tests {
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert_eq!(config.database, Some("nautilus".to_string()));
+    }
+
+    #[cfg(feature = "defi")]
+    #[tokio::test]
+    async fn test_defi_write_closed_channel_preserves_transport_error() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").port(1));
+        pool.close().await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+
+        let handle = tokio::spawn(async {});
+
+        let database = PostgresCacheDatabase {
+            pool,
+            trader_id: TraderId::from("TRADER-001"),
+            tx,
+            handle,
+        };
+
+        let error = database
+            .write_defi(|reply| DatabaseQuery::DefiCurrency(Currency::USD(), reply))
+            .unwrap_err();
+        assert!(!error.is::<IntegrityError>());
+        assert_eq!(error.to_string(), "channel closed");
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_order_book_persistence_keeps_memory_current() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").port(1));
+        pool.close().await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+
+        let handle = tokio::spawn(async {});
+
+        let database = PostgresCacheDatabase {
+            pool,
+            trader_id: TraderId::from("TRADER-001"),
+            tx,
+            handle,
+        };
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let book_type = BookType::L2_MBP;
+        let book = OrderBook::new(instrument_id, book_type);
+        let error = database.add_order_book(&book).unwrap_err();
+
+        let mut cache = Cache::new(
+            Some(CacheConfig {
+                save_market_data: true,
+                ..Default::default()
+            }),
+            Some(Box::new(database)),
+        );
+
+        cache.add_order_book(book).unwrap();
+        let book = cache.order_book(&instrument_id).unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            "Postgres order book persistence is not supported"
+        );
+        assert_eq!(book.instrument_id, instrument_id);
+        assert_eq!(book.book_type, book_type);
     }
 
     #[tokio::test]
@@ -290,16 +360,14 @@ impl PostgresCacheDatabase {
         query: impl FnOnce(std::sync::mpsc::SyncSender<anyhow::Result<()>>) -> DatabaseQuery,
     ) -> anyhow::Result<()> {
         let (reply, receiver) = std::sync::mpsc::sync_channel(1);
-        self.tx
-            .send(query(reply))
-            .map_err(crate::defi::integrity_error)?;
+        self.tx.send(query(reply))?;
         let on_runtime = tokio::runtime::Handle::try_current()
             .is_ok_and(|handle| handle.id() == get_runtime().handle().id());
 
         if on_runtime {
-            tokio::task::block_in_place(|| receiver.recv()).map_err(crate::defi::integrity_error)?
+            tokio::task::block_in_place(|| receiver.recv())?
         } else {
-            receiver.recv().map_err(crate::defi::integrity_error)?
+            receiver.recv()?
         }
     }
 
@@ -1224,7 +1292,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
-        todo!()
+        anyhow::bail!("Postgres order book persistence is not supported")
     }
 
     fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {

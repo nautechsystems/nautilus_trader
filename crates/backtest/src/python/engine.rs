@@ -1901,14 +1901,14 @@ mod lifecycle_tests {
     use indexmap::IndexMap;
     use nautilus_model::identifiers::ActorId;
     use nautilus_testkit::{cache::TestCacheDatabaseControl, components::StateActor};
-    use pyo3::{Python, exceptions::PyRuntimeError};
+    use pyo3::Python;
     use rstest::rstest;
 
     use super::PyBacktestEngine;
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
     #[rstest]
-    fn test_end_reports_state_persistence_error() {
+    fn test_end_continues_after_state_persistence_error() {
         Python::initialize();
 
         let actor_id = ActorId::from("PY-END-FAIL-SAVE-ACTOR");
@@ -1938,17 +1938,9 @@ mod lifecycle_tests {
         engine.0.kernel_mut().start_trader().unwrap();
         engine.0.kernel_mut().stop_trader();
 
-        let error = engine.py_end().unwrap_err();
+        engine.py_end().unwrap();
         engine.0.dispose();
 
-        Python::attach(|py| {
-            assert!(error.is_instance_of::<PyRuntimeError>(py));
-        });
-        assert_eq!(
-            error.to_string(),
-            "RuntimeError: Failed to save component state: actor PY-END-FAIL-SAVE-ACTOR \
-             persistence: test actor update failure"
-        );
         assert_eq!(
             control.events(),
             vec![

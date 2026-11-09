@@ -20,6 +20,7 @@
 
 mod account_bills;
 mod book_lifecycle;
+mod common;
 mod config;
 mod data_client;
 mod dst;

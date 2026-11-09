@@ -166,6 +166,7 @@ def test_instrument_close_equality(audusd_id: InstrumentId) -> None:
         0,
         0,
     )
+
     c2 = InstrumentClose(
         audusd_id,
         Price.from_str("0.75000"),
@@ -188,6 +189,7 @@ def test_instrument_close_repr(audusd_id: InstrumentId) -> None:
         0,
         0,
     )
+
     r = repr(close)
 
     assert "0.75000" in r

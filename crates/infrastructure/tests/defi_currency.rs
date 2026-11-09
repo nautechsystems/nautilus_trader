@@ -17,7 +17,7 @@
 
 use std::{process::Command, sync::Arc};
 
-use nautilus_common::cache::{Cache, CacheSnapshotRef, database::CacheDatabaseAdapter};
+use nautilus_common::cache::{Cache, CacheSnapshotRef};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     defi::{
@@ -25,13 +25,15 @@ use nautilus_model::{
         currency::{self, TokenCurrency},
     },
     enums::{CurrencyType, OmsType, OrderSide, OrderType},
-    events::{OrderSnapshot, PositionSnapshot, order::spec::OrderFilledSpec},
-    identifiers::{ClientId, InstrumentId, PositionId, Symbol, TradeId, TraderId},
+    events::{PositionSnapshot, order::spec::OrderFilledSpec},
+    identifiers::{ClientId, InstrumentId, PositionId, Symbol, TradeId},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
-    orders::{Order, builder::OrderTestBuilder},
+    orders::builder::OrderTestBuilder,
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
+#[cfg(feature = "postgres")]
+use nautilus_model::{identifiers::TraderId, orders::Order};
 
 const READER_CASE: &str = "NAUTILUS_DEFI_CURRENCY_READER_CASE";
 
@@ -375,12 +377,16 @@ fn assert_writer_results(outputs: [std::process::Output; 2]) {
 
 #[cfg(feature = "redis")]
 mod redis_tests {
-    use nautilus_common::{cache::CacheConfig, enums::SerializationEncoding};
+    use nautilus_common::{
+        cache::{CacheConfig, database::CacheDatabaseAdapter},
+        defi::cache::IntegrityError,
+        enums::SerializationEncoding,
+    };
     use nautilus_infrastructure::redis::{
         cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
         queries::DatabaseQueries,
     };
-    use nautilus_model::identifiers::TraderId;
+    use nautilus_model::{events::OrderSnapshot, identifiers::TraderId};
     use redis::AsyncCommands;
     use rstest::rstest;
 
@@ -405,6 +411,58 @@ mod redis_tests {
             .await
             .unwrap(),
         }
+    }
+
+    #[rstest]
+    #[case::currency("currency")]
+    #[case::contract("contract")]
+    #[case::instrument("instrument")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn wrong_type_token_key_rejects_cache_mutation(#[case] key_kind: &str) {
+        let key = format!("DEFI-{}", UUID4::new());
+        let database = adapter(&key, SerializationEncoding::Json).await;
+        let mut con = database.database.con.clone();
+        let trader_key = database.database.trader_key.clone();
+        let chain_id = 823_155;
+        let instrument = instrument(chain_id, true);
+        let token = &definitions(chain_id)[0];
+        let currency = token.currency().unwrap();
+
+        let target = match key_kind {
+            "currency" => format!("{trader_key}:currencies:{}", currency.code),
+            "contract" => format!(
+                "{trader_key}:defi:contracts:{}:{:#x}",
+                token.chain.chain_id, token.address
+            ),
+            "instrument" => format!("{trader_key}:instruments:{}", instrument.id()),
+            _ => unreachable!(),
+        };
+
+        let _: usize = con.lpush(&target, b"malformed".as_slice()).await.unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(database)));
+        let result = if key_kind == "instrument" {
+            cache.add_instrument(instrument.clone())
+        } else {
+            cache.add_currency(currency)
+        };
+
+        let instrument_cached = cache.instrument(&instrument.id()).is_some();
+        let currency_cached = cache.currency(&currency.code).is_some();
+        let preserved: Vec<Vec<u8>> = con.lrange(&target, 0, -1).await.unwrap();
+        cache.dispose();
+        let keys: Vec<String> = con.keys(format!("{trader_key}:*")).await.unwrap();
+        let _: usize = con.del(keys).await.unwrap();
+
+        let error = result.unwrap_err();
+        assert!(error.is::<IntegrityError>());
+        assert!(error.to_string().contains("WRONGTYPE"), "{error:#}");
+        assert!(!instrument_cached);
+
+        if key_kind != "instrument" {
+            assert!(!currency_cached);
+        }
+
+        assert_eq!(preserved, vec![b"malformed".to_vec()]);
     }
 
     #[rstest]

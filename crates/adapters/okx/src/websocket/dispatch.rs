@@ -2828,8 +2828,9 @@ mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType, TimeInForce, TriggerType},
+        events::order::spec::OrderUpdatedSpec,
         identifiers::Symbol,
-        instruments::{CryptoPerpetual, CurrencyPair},
+        instruments::CurrencyPair,
         orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
     };
@@ -2841,6 +2842,7 @@ mod tests {
         common::{
             enums::{OKXInstrumentType, OKXSide, OKXTargetCurrency},
             parse::parse_spread_instrument,
+            testing::create_stub_instrument,
         },
         websocket::{error::OKXWsError, messages::OKXWsFrame},
     };
@@ -2890,21 +2892,7 @@ mod tests {
     }
 
     fn test_algo_instruments() -> AtomicMap<Ustr, InstrumentAny> {
-        let instrument = CryptoPerpetual::builder()
-            .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
-            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USDT())
-            .settlement_currency(Currency::USDT())
-            .is_inverse(false)
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.01"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
+        let instrument = create_stub_instrument();
         let instruments = AtomicMap::new();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
@@ -3152,23 +3140,20 @@ mod tests {
                     panic!("expected terminal amendment and status report, was {events:?}");
                 };
 
-                let expected = OrderUpdated::new(
-                    emitter.trader_id(),
-                    order.strategy_id(),
-                    instrument_id,
-                    cid,
-                    Quantity::from("0.01"),
-                    updated.event_id,
-                    UnixNanos::from(1_781_827_200_123_000_000),
-                    updated.ts_init,
-                    true,
-                    Some(vid),
-                    Some(emitter.account_id()),
-                    Some(Price::from("1.00")),
-                    None,
-                    None,
-                    false,
-                );
+                let expected = OrderUpdatedSpec::builder()
+                    .trader_id(emitter.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(instrument_id)
+                    .client_order_id(cid)
+                    .quantity(Quantity::from("0.01"))
+                    .event_id(updated.event_id)
+                    .ts_event(UnixNanos::from(1_781_827_200_123_000_000))
+                    .ts_init(updated.ts_init)
+                    .reconciliation(true)
+                    .venue_order_id(vid)
+                    .account_id(emitter.account_id())
+                    .price(Price::from("1.00"))
+                    .build();
                 assert_eq!(*updated, expected);
                 assert_eq!(report.order_status, OrderStatus::Filled);
                 assert_eq!(report.quantity, Quantity::from("0.01"));

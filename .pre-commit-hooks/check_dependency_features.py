@@ -75,6 +75,7 @@ NETWORK_PACKAGE_FEATURES = {
     "nautilus-finfeed": frozenset(),
     "nautilus-hyperliquid": frozenset({"transport-sockudo"}),
     "nautilus-interactive-brokers": frozenset(),
+    "nautilus-kalshi": frozenset({"transport-sockudo"}),
     "nautilus-kraken": frozenset({"transport-sockudo"}),
     "nautilus-lighter": frozenset({"transport-sockudo"}),
     "nautilus-live": frozenset(),
@@ -133,6 +134,7 @@ QUICKSTART_DEPENDENCY_POLICIES: dict[str, DependencyPolicy] = {
 def _dependency_state(declaration: object) -> DependencyPolicy:
     if isinstance(declaration, str):
         return True, frozenset()
+
     if not isinstance(declaration, dict):
         raise TypeError(f"dependency declaration has unsupported type {type(declaration).__name__}")
 
@@ -161,6 +163,7 @@ def _check_dependency_policies(
         return [f"{manifest_path}: dependency table is missing or invalid"]
 
     violations = []
+
     for dependency, expected in policies.items():
         declaration = dependencies.get(dependency)
         if declaration is None:
@@ -171,6 +174,7 @@ def _check_dependency_policies(
         except TypeError as e:
             violations.append(f"{manifest_path}: dependency {dependency!r}: {e}")
             continue
+
         if actual != expected:
             violations.append(
                 f"{manifest_path}: dependency {dependency!r} must use "
@@ -199,6 +203,7 @@ def _check_consumer_features(  # noqa: C901
         for section, dependencies in _dependency_sections(data):
             if section != "dependencies" and not section.endswith(".dependencies"):
                 continue
+
             if not isinstance(dependencies, dict) or dependency not in dependencies:
                 continue
             package_name = _package_name((path, data))
@@ -211,6 +216,7 @@ def _check_consumer_features(  # noqa: C901
             except TypeError as e:
                 violations.append(f"{path}: {section} dependency {dependency!r}: {e}")
                 continue
+
             if (
                 isinstance(declaration, dict)
                 and declaration.get("workspace") is True
@@ -221,11 +227,13 @@ def _check_consumer_features(  # noqa: C901
                 package_name,
                 (path, False, set()),
             )
+
             consumers[package_name] = (
                 consumer_path,
                 consumer_defaults or uses_default_features,
                 consumer_features,
             )
+
             consumer_features.update(features)
 
     for package_name in sorted(consumers.keys() - expected_features.keys()):
@@ -237,6 +245,7 @@ def _check_consumer_features(  # noqa: C901
         f"{package_name}: expected {dependency!r} dependency declaration is missing"
         for package_name in sorted(expected_features.keys() - consumers.keys())
     )
+
     for package_name in sorted(consumers.keys() & expected_features.keys()):
         path, uses_default_features, actual_features = consumers[package_name]
         actual = uses_default_features, frozenset(actual_features)
@@ -255,9 +264,11 @@ def _dependency_sections(data: dict[str, Any]) -> list[tuple[str, object]]:
         ("dev-dependencies", data.get("dev-dependencies", {})),
         ("build-dependencies", data.get("build-dependencies", {})),
     ]
+
     targets = data.get("target", {})
     if not isinstance(targets, dict):
         return sections
+
     for target, target_data in targets.items():
         if not isinstance(target_data, dict):
             continue
@@ -306,8 +317,10 @@ def _check_test_support(  # noqa: C901, PLR0912
             except TypeError as e:
                 violations.append(f"{path}: dependency 'nautilus-model': {e}")
                 continue
+
             if "test-support" not in dependency_features:
                 continue
+
             if section.endswith("dev-dependencies"):
                 dev_packages.add(package_name)
             elif package_name == "nautilus-testkit" and section == "dependencies":
@@ -325,6 +338,7 @@ def _check_test_support(  # noqa: C901, PLR0912
         f"{package_name}: expected test-support dev dependency is missing"
         for package_name in sorted(expected_dev_packages - dev_packages)
     )
+
     if not testkit_has_support:
         violations.append("nautilus-testkit: normal dependency must enable test-support")
 
@@ -333,6 +347,7 @@ def _check_test_support(  # noqa: C901, PLR0912
         violations.append(
             f"{package_name}: feature {feature!r} must not forward nautilus-model/test-support",
         )
+
     for package_name, feature in sorted(expected_forwarders - forwarders):
         violations.append(
             f"{package_name}: feature {feature!r} must forward nautilus-model/test-support",
@@ -362,6 +377,7 @@ def _tracked_paths(repo_root: Path, filename: str) -> list[Path]:
         stdout=subprocess.PIPE,
     )
     paths = []
+
     for raw_path in result.stdout.split(b"\0"):
         if not raw_path:
             continue
@@ -373,6 +389,7 @@ def _tracked_paths(repo_root: Path, filename: str) -> list[Path]:
 
 def _load_manifests(repo_root: Path) -> list[Manifest]:
     manifests = []
+
     for path in _tracked_paths(repo_root, "Cargo.toml"):
         with path.open("rb") as file:
             data = tomllib.load(file)
@@ -386,6 +403,7 @@ def _check_lockfiles(repo_root: Path) -> list[str]:
         raise FileNotFoundError("cargo is required")
     cargo = str(Path(cargo).absolute())
     violations = []
+
     for lockfile in _tracked_paths(repo_root, "Cargo.lock"):
         manifest = lockfile.with_name("Cargo.toml")
         relative_lockfile = lockfile.relative_to(repo_root)
@@ -408,6 +426,7 @@ def _check_lockfiles(repo_root: Path) -> list[str]:
             capture_output=True,
             text=True,
         )
+
         if result.returncode == 0:
             continue
         stderr = result.stderr.strip().splitlines()
@@ -462,6 +481,7 @@ def _check_repository(repo_root: Path) -> list[str]:
         manifests,
         "examples/quickstarts/lighter-rust-data-client/Cargo.toml",
     )
+
     if quickstart is None:
         violations.append("Lighter Rust quickstart manifest is missing")
     else:

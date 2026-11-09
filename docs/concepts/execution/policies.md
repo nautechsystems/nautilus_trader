@@ -16,7 +16,7 @@ transitions, see [Orders](../orders/index.md#order-state-flow).
 | Command outcome         | Adapters distinguish definitive local failures, definitive venue results, and unknown outcomes. | A transport result does not necessarily prove what the venue did.                               |
 | Command delivery        | The contract retries a state-changing command only when repeating the same request is safe.     | Not all adapters follow that contract, and delivery is not exactly once.                        |
 | Event application       | Order identity and transition checks reject invalid events. Fills reject a repeated `trade_id`. | No blanket exactly-once guarantee applies across all event types or across lost retained state. |
-| Persistence before send | The cache enqueues the order and resolved execution-client origin before calling the client.    | The built-in cache backends do not wait for durable storage before the client can send.         |
+| Persistence before send | The cache attempts to enqueue the order and resolved origin before calling the client.          | Persistence failures are logged; sending does not wait for durable storage.                     |
 | Bounded recovery        | Reconciliation recovers reported order state without applying unsupported fill economics.       | Partial history does not prove historical position economics, realized PnL, or average price.   |
 | Terminal policy         | Reconciliation may resolve missing or timed-out orders after configured retries.                | A policy resolution is not a venue-confirmed rejection or cancellation.                         |
 
@@ -182,15 +182,15 @@ For a submission handled by the built-in execution engine:
 1. The order exists in the cache with its `ClientOrderId` and `OrderInitialized` event before the
    final execution-client call.
 1. The engine selects and validates the execution client.
-1. The cache enqueues the resolved order-to-client origin for persistence, then updates the
+1. The cache attempts to enqueue the resolved order-to-client origin for persistence, then updates the
    in-memory origin index.
 1. The engine calls the selected `ExecutionClient`.
 1. The cache backend processes its queued writes independently of venue transport and
    acknowledgement.
 
-The enqueue steps fail before the client call when the cache backend cannot accept them. Successful
-enqueue does not mean the backing store has committed the order or origin. The built-in Redis and
-PostgreSQL cache backends process these writes asynchronously.
+Enqueue failures are logged without blocking the client call. Successful enqueue does not mean the
+backing store has committed the order or origin. The built-in Redis and PostgreSQL cache backends process
+these writes asynchronously. See the [cache persistence failure policy](../cache.md#persistence-failure-policy).
 
 The final step is only the call into the adapter's `ExecutionClient`. The adapter owns the later
 wire send and maps venue responses or stream updates to order events. Neither a successful client

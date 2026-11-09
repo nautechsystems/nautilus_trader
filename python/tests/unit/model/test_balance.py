@@ -149,6 +149,7 @@ def test_account_balance_exact_usd_dict_roundtrip() -> None:
         locked=Money.from_str_exact("0.000001 USD"),
         free=Money.from_str_exact("1.000099 USD"),
     )
+
     values = balance.to_dict()
     restored = AccountBalance.from_dict(values)
 
@@ -189,11 +190,13 @@ def test_margin_balance_exact_usd_dict_roundtrip(
     Preserve sub-cent margin amounts in Python dictionaries.
     """
     expected_id = InstrumentId.from_str(instrument_id) if instrument_id is not None else None
+
     balance = MarginBalance(
         Money.from_str_exact("1.0001 USD"),
         Money.from_str_exact("0.000001 USD"),
         expected_id,
     )
+
     serialized = balance.to_dict()
     values = serialized.copy()
     if omit_instrument_id:
@@ -263,6 +266,7 @@ def test_account_balance_dict_preserves_amounts_beyond_decimal_capacity(
         Money.from_str_exact(f"{locked} USD"),
         Money.from_str_exact(f"{free} USD"),
     )
+
     values = balance.to_dict()
 
     assert values == {
@@ -283,11 +287,13 @@ def test_margin_balance_dict_preserves_amounts_beyond_decimal_capacity() -> None
     initial = "17014118346045.1234567891234567"
     maintenance = "17014118346044.9876543219876543"
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
     balance = MarginBalance(
         Money.from_str_exact(f"{initial} USD"),
         Money.from_str_exact(f"{maintenance} USD"),
         instrument_id,
     )
+
     values = balance.to_dict()
 
     assert values == {
@@ -315,6 +321,7 @@ def test_account_balance_hash_differs() -> None:
     Test account balance hash differs.
     """
     b1 = _account_balance()
+
     b2 = AccountBalance(
         total=Money(100.00, USD),
         locked=Money(0.00, USD),

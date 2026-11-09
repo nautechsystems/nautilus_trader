@@ -359,6 +359,7 @@ def _make_position(position_id: str = "P-SNAP-1", account_id: str = "SIM-000") -
         position_id=PositionId(position_id),
         commission=Money.from_str("2.00 USD"),
     )
+
     return Position(instrument=AUDUSD_SIM, fill=fill)
 
 

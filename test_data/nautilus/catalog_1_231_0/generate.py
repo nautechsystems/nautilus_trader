@@ -45,6 +45,7 @@ root.mkdir(parents=True, exist_ok=True)
 catalog = ParquetDataCatalog(str(root))
 instrument_id = InstrumentId.from_str("AUD/USD.SIM")
 ts = 1_700_000_000_000_000_123
+
 quotes = [
     QuoteTick(
         instrument_id,
@@ -65,6 +66,7 @@ quotes = [
         ts + 3,
     ),
 ]
+
 instrument = CurrencyPair(
     instrument_id=instrument_id,
     raw_symbol=Symbol("AUD/USD"),
@@ -87,6 +89,7 @@ instrument = CurrencyPair(
     ts_event=ts + 10,
     ts_init=ts + 11,
 )
+
 custom = BinanceFuturesMarkPriceUpdate(
     instrument_id,
     Price.from_str("1.45678"),
@@ -97,6 +100,7 @@ custom = BinanceFuturesMarkPriceUpdate(
     ts + 20,
     ts + 21,
 )
+
 catalog.write_data(quotes)
 quote_file = next((root / "data" / "quote_tick").rglob("*.parquet"))
 precision_bytes = pq.read_schema(quote_file).field("bid_price").type.byte_width
@@ -104,11 +108,13 @@ assert precision_bytes == PRECISION_BYTES
 catalog.write_data([instrument])
 catalog.write_data([custom])
 catalog.write_data([], start=ts - 100, end=ts, data_cls=QuoteTick, identifier=str(instrument_id))
+
 expected = {
     "quotes": [QuoteTick.to_dict(q) for q in quotes],
     "instrument": CurrencyPair.to_dict(catalog.instruments()[0]),
     "custom": BinanceFuturesMarkPriceUpdate.to_dict(custom),
 }
+
 (root / "expected.json").write_text(json.dumps(expected, indent=2) + "\n")
 print(
     precision_bytes,

@@ -497,8 +497,24 @@ process.
 ### Consolidate catalog
 
 Combine small Parquet files to reduce file count and query overhead. With no bounds, `consolidate_catalog()`
-processes each leaf data directory in the catalog. `consolidate_data(...)` operates on one directory. Supply
-an instrument ID for data types partitioned by instrument.
+processes each leaf data directory in the catalog. `consolidate_data(...)` processes each directory for
+the selected data type and preserves instrument partitions. Supply an identifier to select one directory;
+for bars, use the bar type.
+
+Both methods reject gaps and overlaps before replacing files in each directory. If a directory fails
+validation, earlier directories stay consolidated and later ones are not processed. Set
+`ensure_contiguous_files=False` to merge gaps or overlaps intentionally. The combined filename marks the
+full span as covered, including gaps. Instrument snapshots can contain gaps, so a strict catalog-wide
+call can stop at an instrument directory.
+
+Consolidation writes the combined file before deleting its source files. If source deletion fails,
+queries use the combined file and exclude its superseded sources, so the error does not duplicate data.
+Catalog writes, deletions, and renames finish pending cleanup before changing files.
+
+- Retry the same consolidation call after resolving the storage error.
+- Leave the directory's `.consolidation.json` marker in place; cleanup removes it.
+- Serialize mutations within a directory and its subdirectories.
+- Finish pending cleanup before copying or backing up the catalog.
 
 ```python
 catalog.consolidate_catalog()

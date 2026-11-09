@@ -624,6 +624,7 @@ def test_importable_controller_creates_strategy_on_start() -> None:
     """
     StrategyCreatingController.reset()
     ControllerCreatedStrategy.reset()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -650,6 +651,7 @@ def test_importable_controller_creates_strategy_with_string_id() -> None:
     """
     CustomFieldStrategyCreatingController.reset()
     ConfiguredIdProbeStrategy.reset()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -703,6 +705,7 @@ def test_importable_controller_preserves_strategy_start_flag_on_start() -> None:
     """
     NonStartingStrategyCreatingController.reset()
     ControllerCreatedStrategy.reset()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -732,6 +735,7 @@ def test_importable_controller_drives_actor_lifecycle_through_id_aliases() -> No
     """
     ActorLifecycleController.reset()
     ControllerCreatedActor.reset()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -766,6 +770,7 @@ def test_importable_controller_drives_strategy_lifecycle() -> None:
     """
     StrategyLifecycleController.reset()
     ControllerCreatedStrategy.reset()
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -903,6 +908,7 @@ def test_importable_strategy_routes_synthetic_bars_through_native_twap() -> None
         Decimal("50200.00"),
         Decimal("50300.00"),
     ]
+
     engine.add_data(_btc_bars(instrument, bar_type, closes))
     engine.run()
     result = engine.get_result()
@@ -1207,11 +1213,13 @@ def test_importable_strategy_processes_bars_trades_and_reference_data() -> None:
     Test importable strategy processes bars trades and reference data.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     bar_type = BarType(
         instrument.id,
         BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
         AggregationSource.EXTERNAL,
     )
+
     engine = _signal_harvest_engine(instrument, bar_type)
 
     engine.add_data(_reference_data(instrument))
@@ -1232,11 +1240,13 @@ def test_importable_strategy_reruns_after_reset_and_report_generation() -> None:
     Test importable strategy reruns after reset and report generation.
     """
     instrument = TestInstrumentProvider.audusd_sim()
+
     bar_type = BarType(
         instrument.id,
         BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
         AggregationSource.EXTERNAL,
     )
+
     engine = _signal_harvest_engine(instrument, bar_type)
     engine.add_data(_reference_data(instrument))
     engine.add_data(_audusd_trades(instrument, count=6))
@@ -1291,6 +1301,7 @@ def test_importable_strategy_runs_from_l2_book_deltas(monkeypatch: pytest.Monkey
             risk_engine=RiskEngineConfig(bypass=True),
         ),
     )
+
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
         venue=Venue("BINANCE"),
@@ -1556,6 +1567,7 @@ def test_add_exec_algorithm_and_strategy_instances_route_orders() -> None:
             log_commands=False,
         ),
     )
+
     engine.add_exec_algorithm(algo)
 
     probe = RoutedOrderProbe(
@@ -1565,6 +1577,7 @@ def test_add_exec_algorithm_and_strategy_instances_route_orders() -> None:
             exec_algorithm_id=str(algo_id),
         ),
     )
+
     engine.add_strategy(probe)
 
     engine.add_data(_crypto_quotes(instrument, count=3, mid_start=Decimal("2000.00")))
@@ -1753,7 +1766,6 @@ def _audusd_bars(instrument: object, bar_type: BarType, count: int) -> list[Bar]
 def _btc_bars(instrument: object, bar_type: BarType, closes: list[Decimal]) -> list[Bar]:
     base_ns = 1_600_000_020_000_000_000
     bars = []
-
     for i, close in enumerate(closes):
         bars.append(
             Bar(
@@ -1793,6 +1805,7 @@ def _audusd_trades(instrument: object, count: int) -> list[TradeTick]:
 def _reference_data(instrument: object) -> list:
     base_ns = 1_600_000_000_000_000_000
     price = Price.from_str("0.70000")
+
     return [
         InstrumentStatus(instrument.id, MarketStatusAction.TRADING, base_ns, base_ns),
         MarkPriceUpdate(instrument.id, price, base_ns + 1, base_ns + 1),

@@ -12,13 +12,14 @@ FinFeed's currencies, stock, SEC, MCP, and JSON-RPC products are outside scope.
 The Rust adapter includes Python bindings and needs no external FinFeed library.
 `nautilus_trader.adapters.finfeed` exports:
 
-| Export                         | Purpose                                         |
-| ------------------------------ | ----------------------------------------------- |
-| `FinFeedDataClientConfig`      | Startup selections, HTTP controls, polling.     |
-| `FinFeedInstrumentSelection`   | Exact outcome IDs from one exchange.            |
-| `FinFeedDataClientFactory`     | `LiveNode` factory registration.                |
-| `FinFeedHttpClient`            | Async read-only REST queries and typed results. |
-| `FINFEED`, `FINFEED_CLIENT_ID` | Default client name and routing ID.             |
+| Export                         | Purpose                                             |
+| ------------------------------ | --------------------------------------------------- |
+| `FinFeedDataClientConfig`      | Startup selections, HTTP controls, polling.         |
+| `FinFeedInstrumentSelection`   | Exact outcome IDs from one exchange.                |
+| `FinFeedDataClientFactory`     | `LiveNode` factory registration.                    |
+| `FinFeedDataLoader`            | Cached definitions and standalone Nautilus history. |
+| `FinFeedHttpClient`            | Async read-only REST queries and typed results.     |
+| `FINFEED`, `FINFEED_CLIENT_ID` | Default client name and routing ID.                 |
 
 Start with [Python configuration](#python-configuration) or the [examples](#examples).
 
@@ -242,6 +243,26 @@ identity. Register each factory separately, retain both definitions, and route F
 Do not overwrite one definition with the other or route FinFeed IDs to native execution.
 :::
 
+## Standalone data loader
+
+`FinFeedDataLoader` retains checked outcome definitions and returns Nautilus market data without a node.
+Construction sends no requests and reads no credentials. The first network operation creates a shared
+HTTP client using `FinFeedDataClientConfig`, including its pacing, retries, and attempt allowance.
+
+Call `await loader.request_instrument(instrument_id)` to fetch and retain one definition, or
+`await loader.request_instruments()` to fetch the configured selections atomically. `add_instrument`
+registers an existing definition. Failed refreshes preserve the retained definitions. Market-data calls
+use cached metadata; they do not refresh it implicitly.
+
+`request_book_deltas`, `request_quotes`, `request_trades`, and `request_bars` take integer UNIX nanosecond
+`start` and `end` bounds and an optional positive limit. Bounds are inclusive on the adapter's ordering
+clock. These methods share the native client's historical processing and return no partial result on
+failure. Book limits preserve complete batches. See [historical books](#historical-books) for snapshot
+requirements, replay clocks, and continuation limits.
+
+The [Polymarket backtest tutorial](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py) shows definition retrieval,
+book download, catalog writes, and replay with `BacktestNode`.
+
 ## Python REST access
 
 `FinFeedHttpClient(config)` uses `FinFeedDataClientConfig` credentials, endpoint, proxy, HTTP limits,
@@ -272,7 +293,8 @@ Query objects and result properties have no setters.
 
 All methods return awaitables. Collection methods use `bounds: FinFeedPagination` and return a complete
 bounded traversal or raise without partial results. Raw history methods return **one response**;
-[automatic historical pagination](#coverage-and-truncation) belongs to the native data client.
+[automatic historical pagination](#coverage-and-truncation) is available through `FinFeedDataLoader`
+and the native data client.
 
 | Method                                                       | Query type                  | Awaited result             |
 | ------------------------------------------------------------ | --------------------------- | -------------------------- |

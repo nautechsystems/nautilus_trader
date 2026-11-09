@@ -145,6 +145,7 @@ from nautilus_trader.model import Venue
 # Create a EUR/USD instrument on the SIM venue
 EUR = Currency.from_str("EUR")
 USD = Currency.from_str("USD")
+
 EURUSD = CurrencyPair(
     instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     raw_symbol=Symbol("EUR/USD"),
@@ -166,6 +167,7 @@ rng = np.random.default_rng(42)
 n = 10_000
 price = 1.10 + np.cumsum(rng.normal(0, 0.0002, n))
 spread = np.abs(rng.normal(0, 0.0003, n))
+
 bars_df = pd.DataFrame(
     {
         "open": price,
@@ -175,6 +177,7 @@ bars_df = pd.DataFrame(
     },
     index=pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC"),
 )
+
 bars_df["high"] = bars_df[["open", "high", "close"]].max(axis=1)
 bars_df["low"] = bars_df[["open", "low", "close"]].min(axis=1)
 
@@ -237,6 +240,7 @@ strategy = EMACross(
         trade_size=Decimal(100000),
     ),
 )
+
 engine.add_strategy(strategy)
 
 # Run the backtest

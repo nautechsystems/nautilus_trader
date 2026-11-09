@@ -110,6 +110,14 @@ pub struct LighterTradesQuery {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_index: Option<i64>,
+    /// Venue gives this precedence over [`Self::order_index`]; use for indexes above `i64::MAX`.
+    #[builder(default)]
+    #[builder(setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_index_str: Option<String>,
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integrator_account_index: Option<i64>,
     #[builder(default)]
     pub sort_by: LighterTradeSortBy,
     #[builder(default)]
@@ -138,6 +146,26 @@ pub struct LighterTradesQuery {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregate: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
+#[builder(setter(strip_option))]
+pub struct LighterAccountOrdersQuery {
+    #[builder(default)]
+    #[builder(setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<SecretString>,
+    #[builder(default)]
+    #[builder(setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<SecretString>,
+    pub account_index: i64,
+    /// Client order indexes encoded as one to 20 comma-separated values.
+    #[serde(
+        serialize_with = "serialize_client_order_indexes",
+        deserialize_with = "deserialize_client_order_indexes"
+    )]
+    pub client_order_indexes: Vec<i64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Builder, PartialEq, Eq)]
@@ -233,6 +261,7 @@ impl_auth_query_zeroize!(LighterTradesQuery);
 impl_auth_query_zeroize!(LighterMakerOnlyApiKeysQuery);
 impl_auth_query_zeroize!(LighterAccountActiveOrdersQuery);
 impl_auth_query_zeroize!(LighterAccountInactiveOrdersQuery);
+impl_auth_query_zeroize!(LighterAccountOrdersQuery);
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -290,6 +319,8 @@ impl Default for LighterTradesQuery {
             market_id: None,
             account_index: None,
             order_index: None,
+            order_index_str: None,
+            integrator_account_index: None,
             sort_by: LighterTradeSortBy::default(),
             sort_dir: None,
             cursor: None,
@@ -300,6 +331,44 @@ impl Default for LighterTradesQuery {
             limit: 100,
             aggregate: None,
         }
+    }
+}
+
+fn serialize_client_order_indexes<S>(values: &[i64], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    validate_client_order_indexes(values).map_err(serde::ser::Error::custom)?;
+    let joined = values
+        .iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    serializer.serialize_str(&joined)
+}
+
+fn deserialize_client_order_indexes<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    let values = value
+        .split(',')
+        .map(str::parse::<i64>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(serde::de::Error::custom)?;
+    validate_client_order_indexes(&values).map_err(serde::de::Error::custom)?;
+    Ok(values)
+}
+
+pub(crate) fn validate_client_order_indexes(values: &[i64]) -> Result<(), String> {
+    if (1..=20).contains(&values.len()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "client_order_indexes must contain between 1 and 20 values, was {}",
+            values.len()
+        ))
     }
 }
 
@@ -445,6 +514,8 @@ mod tests {
             market_id: Some(0),
             account_index: Some(1234),
             order_index: Some(5678),
+            order_index_str: Some("18446744073709551615".to_string()),
+            integrator_account_index: Some(723_813),
             sort_by: LighterTradeSortBy::Timestamp,
             sort_dir: Some(LighterSortDirection::Desc),
             cursor: Some("cursor-1".to_string()),
@@ -464,6 +535,8 @@ mod tests {
         assert_eq!(value["market_id"], 0);
         assert_eq!(value["account_index"], 1234);
         assert_eq!(value["order_index"], 5678);
+        assert_eq!(value["order_index_str"], "18446744073709551615");
+        assert_eq!(value["integrator_account_index"], 723_813);
         assert_eq!(value["sort_by"], "timestamp");
         assert_eq!(value["sort_dir"], "desc");
         assert_eq!(
@@ -483,6 +556,67 @@ mod tests {
         query.zeroize();
         assert!(query.authorization.is_none());
         assert!(query.auth.is_none());
+    }
+
+    #[rstest]
+    fn test_trades_query_omits_announced_filters_when_unset() {
+        let query = LighterTradesQuery::default();
+
+        let value = serde_json::to_value(query).unwrap();
+
+        assert!(value.get("integrator_account_index").is_none());
+        assert!(value.get("order_index_str").is_none());
+    }
+
+    #[rstest]
+    #[case::single(vec![42], "42")]
+    #[case::multiple(vec![42, 43, 44], "42,43,44")]
+    fn test_account_orders_query_serializes_client_order_indexes(
+        #[case] indexes: Vec<i64>,
+        #[case] expected: &str,
+    ) {
+        let query = LighterAccountOrdersQueryBuilder::default()
+            .authorization("bearer-token")
+            .account_index(123)
+            .client_order_indexes(indexes.clone())
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(&query).unwrap();
+        let decoded: LighterAccountOrdersQuery = serde_json::from_value(value.clone()).unwrap();
+
+        assert_eq!(value["authorization"], "bearer-token");
+        assert_eq!(value["account_index"], 123);
+        assert_eq!(value["client_order_indexes"], expected);
+        assert!(value.get("auth").is_none());
+        assert_eq!(decoded.client_order_indexes, indexes);
+    }
+
+    #[rstest]
+    #[case::empty(vec![])]
+    #[case::too_many((1..=21).collect::<Vec<i64>>())]
+    fn test_account_orders_query_rejects_invalid_index_counts(#[case] indexes: Vec<i64>) {
+        let query = LighterAccountOrdersQueryBuilder::default()
+            .account_index(123)
+            .client_order_indexes(indexes)
+            .build()
+            .unwrap();
+
+        assert!(serde_json::to_value(query).is_err());
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::too_many((1..=21).map(|index| index.to_string()).collect::<Vec<_>>().join(","))]
+    fn test_account_orders_query_rejects_invalid_index_count_deserialization(
+        #[case] indexes: String,
+    ) {
+        let value = serde_json::json!({
+            "account_index": 123,
+            "client_order_indexes": indexes,
+        });
+
+        assert!(serde_json::from_value::<LighterAccountOrdersQuery>(value).is_err());
     }
 
     #[rstest]

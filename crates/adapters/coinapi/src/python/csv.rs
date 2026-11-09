@@ -13,29 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for the CoinAPI flat file loaders.
+//! Python iterators for CoinAPI flat-file streams.
 
-use std::{collections::HashMap, fmt::Debug, path::PathBuf};
+use std::fmt::Debug;
 
-use jiff::civil::Date;
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    data::{Bar, OrderBookDelta, QuoteTick, TradeTick},
-    identifiers::InstrumentId,
-};
+use nautilus_model::data::{OrderBookDelta, QuoteTick, TradeTick};
 use pyo3::prelude::*;
-
-use crate::csv::{
-    CoinApiOhlcvLoader, load_deltas, load_quotes, load_trades, stream_deltas, stream_quotes,
-    stream_trades,
-};
 
 macro_rules! impl_coinapi_stream_iterator {
     ($struct_name:ident, $data_type:ty) => {
         #[pyclass(unsendable)]
         #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinapi")]
         pub struct $struct_name {
-            stream: Box<dyn Iterator<Item = anyhow::Result<Vec<$data_type>>>>,
+            pub(crate) stream: Box<dyn Iterator<Item = anyhow::Result<Vec<$data_type>>>>,
         }
 
         impl Debug for $struct_name {
@@ -66,232 +57,21 @@ impl_coinapi_stream_iterator!(CoinApiTradeStreamIterator, TradeTick);
 impl_coinapi_stream_iterator!(CoinApiQuoteStreamIterator, QuoteTick);
 impl_coinapi_stream_iterator!(CoinApiDeltaStreamIterator, OrderBookDelta);
 
-/// Loads trade ticks from a CoinAPI `T-TRADES` flat file, inferring each precision not given.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read or a row is invalid. Python receives a `ValueError`.
-#[pyfunction(name = "load_coinapi_trades")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, price_precision=None, size_precision=None, limit=None))]
-pub fn py_load_coinapi_trades(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<Vec<TradeTick>> {
-    load_trades(
-        filepath,
-        instrument_id,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)
-}
-
-/// Loads quote ticks from a CoinAPI `T-QUOTES` flat file, inferring each precision not given.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read or a row is invalid. Python receives a `ValueError`.
-#[pyfunction(name = "load_coinapi_quotes")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, price_precision=None, size_precision=None, limit=None))]
-pub fn py_load_coinapi_quotes(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<Vec<QuoteTick>> {
-    load_quotes(
-        filepath,
-        instrument_id,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)
-}
-
-/// Loads order book deltas from a CoinAPI `T-LIMITBOOK_FULL` flat file.
-///
-/// Rows fall on `date`, or on the date of the file's `D-YYYYMMDD` partition when `date` is
-/// `None`. Infers each precision not given.
-///
-/// # Errors
-///
-/// Returns an error if no date is known, the file cannot be read, or a row is invalid. Python
-/// receives a `ValueError`.
-#[pyfunction(name = "load_coinapi_deltas")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, date=None, price_precision=None, size_precision=None, limit=None))]
-pub fn py_load_coinapi_deltas(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    date: Option<Date>,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<Vec<OrderBookDelta>> {
-    load_deltas(
-        filepath,
-        instrument_id,
-        date,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)
-}
-
-/// Streams trade ticks from a CoinAPI `T-TRADES` flat file in chunks.
-///
-/// Infers each precision not given from the leading rows, and raises for a later value that would
-/// need rounding.
-///
-/// # Errors
-///
-/// Returns an error if `chunk_size` is outside [1, 1_000_000] or the file cannot be opened. Python
-/// receives a `ValueError`.
-#[pyfunction(name = "stream_coinapi_trades")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, chunk_size=100_000, price_precision=None, size_precision=None, limit=None))]
-pub fn py_stream_coinapi_trades(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    chunk_size: usize,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<CoinApiTradeStreamIterator> {
-    let stream = stream_trades(
-        filepath,
-        instrument_id,
-        chunk_size,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-
-    Ok(CoinApiTradeStreamIterator {
-        stream: Box::new(stream),
-    })
-}
-
-/// Streams quote ticks from a CoinAPI `T-QUOTES` flat file in chunks.
-///
-/// Infers each precision not given from the leading rows, and raises for a later value that would
-/// need rounding.
-///
-/// # Errors
-///
-/// Returns an error if `chunk_size` is outside [1, 1_000_000] or the file cannot be opened. Python
-/// receives a `ValueError`.
-#[pyfunction(name = "stream_coinapi_quotes")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, chunk_size=100_000, price_precision=None, size_precision=None, limit=None))]
-pub fn py_stream_coinapi_quotes(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    chunk_size: usize,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<CoinApiQuoteStreamIterator> {
-    let stream = stream_quotes(
-        filepath,
-        instrument_id,
-        chunk_size,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-
-    Ok(CoinApiQuoteStreamIterator {
-        stream: Box::new(stream),
-    })
-}
-
-/// Streams order book deltas from a CoinAPI `T-LIMITBOOK_FULL` flat file in chunks.
-///
-/// A chunk ends only at the end of an event, so it can exceed `chunk_size`, unless a `limit` ends
-/// it partway through one. Dates rows as
-/// `load_coinapi_deltas` does, infers each precision not given from the leading rows, and raises
-/// for a later value that would need rounding.
-///
-/// # Errors
-///
-/// Returns an error if `chunk_size` is outside [1, 1_000_000], no date is known, or the file cannot
-/// be opened. Python receives a `ValueError`.
-#[pyfunction(name = "stream_coinapi_deltas")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.coinapi")]
-#[pyo3(signature = (filepath, instrument_id, date=None, chunk_size=100_000, price_precision=None, size_precision=None, limit=None))]
-pub fn py_stream_coinapi_deltas(
-    filepath: PathBuf,
-    instrument_id: InstrumentId,
-    date: Option<Date>,
-    chunk_size: usize,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    limit: Option<usize>,
-) -> PyResult<CoinApiDeltaStreamIterator> {
-    let stream = stream_deltas(
-        filepath,
-        instrument_id,
-        date,
-        chunk_size,
-        price_precision,
-        size_precision,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-
-    Ok(CoinApiDeltaStreamIterator {
-        stream: Box::new(stream),
-    })
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl CoinApiOhlcvLoader {
-    /// Loads bars from exchange-wide CoinAPI OHLCV flat files.
-    ///
-    /// `instrument_ids` maps each numeric `symbol_id` (the REST `symbol_id_int`) to an instrument.
-    #[new]
-    fn py_new(instrument_ids: HashMap<u64, InstrumentId>) -> Self {
-        Self::new(instrument_ids)
-    }
-
-    /// Loads the bars of mapped symbols, taking the period from `period_id` or the file's `TP-`
-    /// name.
-    #[pyo3(name = "load_bars", signature = (filepath, period_id=None, limit=None))]
-    fn py_load_bars(
-        &self,
-        filepath: PathBuf,
-        period_id: Option<&str>,
-        limit: Option<usize>,
-    ) -> PyResult<Vec<Bar>> {
-        self.load_bars(filepath, period_id, limit)
-            .map_err(to_pyvalue_err)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, path::PathBuf};
+
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        data::BarType,
+        data::{Bar, BarType},
+        identifiers::InstrumentId,
         types::{Price, Quantity},
     };
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
 
     use super::*;
+    use crate::csv::{load_bars, stream_quotes};
 
     #[rstest]
     fn quote_iterator_preserves_chunks_limit_values_and_eof() {
@@ -306,8 +86,11 @@ mod tests {
         )
         .unwrap();
         let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
-        let mut stream =
-            py_stream_coinapi_quotes(path, instrument_id, 1, Some(3), Some(4), Some(2)).unwrap();
+        let decoder = stream_quotes(path, instrument_id, 1, Some(3), Some(4), Some(2)).unwrap();
+
+        let mut stream = CoinApiQuoteStreamIterator {
+            stream: Box::new(decoder),
+        };
 
         let first = stream.__next__().unwrap();
         let second = stream.__next__().unwrap();
@@ -361,7 +144,7 @@ mod tests {
         Python::initialize();
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_data/csv/quotes_binance_spot_btc_usdt_20250901.csv");
-        let mut stream = py_stream_coinapi_quotes(
+        let decoder = stream_quotes(
             path,
             InstrumentId::from("BTCUSDT.BINANCE"),
             1,
@@ -370,6 +153,10 @@ mod tests {
             None,
         )
         .unwrap();
+
+        let mut stream = CoinApiQuoteStreamIterator {
+            stream: Box::new(decoder),
+        };
 
         let error = stream.__next__().unwrap_err();
 
@@ -383,7 +170,7 @@ mod tests {
     }
 
     #[rstest]
-    fn ohlcv_constructor_retains_symbol_mapping() {
+    fn ohlcv_decoding_retains_symbol_mapping() {
         let directory = tempfile::TempDir::new().unwrap();
         let path = directory.path().join("TP-1MIN.csv");
         std::fs::write(
@@ -393,12 +180,8 @@ mod tests {
             7;2025-09-01T00:02:00;101.25;103.5;99.75;102.5;4.125\n",
         )
         .unwrap();
-        let loader = CoinApiOhlcvLoader::py_new(HashMap::from([(
-            7,
-            InstrumentId::from("BTC-USD.COINBASE"),
-        )]));
-
-        let bars = loader.py_load_bars(path, None, Some(1)).unwrap();
+        let symbols = HashMap::from([(7, (InstrumentId::from("BTC-USD.COINBASE"), 2))]);
+        let bars = load_bars(path, &symbols, None, Some(1)).unwrap();
 
         let timestamp = UnixNanos::from(1_756_684_920_000_000_000);
         assert_eq!(

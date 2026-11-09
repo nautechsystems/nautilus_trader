@@ -743,13 +743,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_order_bid_side() {
+    #[case::bid(OrderSide::Buy)]
+    #[case::ask(OrderSide::Sell)]
+    fn test_add_order_routes_to_side(#[case] side: OrderSide) {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
-            .side(OrderSide::Buy)
+            .side(side)
             .price(Price::from("100.00"))
             .quantity(Quantity::from("100"))
             .build();
@@ -757,33 +759,25 @@ mod tests {
         let match_info = RestingOrder::from(&PassiveOrderAny::try_from(order).unwrap());
         matching_core.add_order(match_info);
 
-        assert!(matching_core.get_orders_bid().contains(&match_info));
-        assert!(!matching_core.get_orders_ask().contains(&match_info));
-        assert_eq!(matching_core.get_orders_bid().len(), 1);
-        assert!(matching_core.get_orders_ask().is_empty());
+        let (expected_bids, expected_asks) = match side {
+            OrderSide::Buy => (vec![match_info], vec![]),
+            OrderSide::Sell => (vec![], vec![match_info]),
+        };
+
+        assert_eq!(matching_core.get_orders_bid(), expected_bids);
+        assert_eq!(matching_core.get_orders_ask(), expected_asks);
         assert!(matching_core.order_exists(match_info.client_order_id));
     }
 
+    #[cfg(debug_assertions)]
     #[rstest]
-    fn test_add_order_ask_side() {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+    #[should_panic(expected = "duplicate add_order")]
+    fn test_add_order_with_duplicate_id_panics() {
+        let mut core = create_matching_core(InstrumentId::from("AAPL.XNAS"), Price::from("0.01"));
+        let order = limit_order(OrderSide::Buy, "100.00", "O-DUPLICATE");
 
-        let order = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument_id)
-            .side(OrderSide::Sell)
-            .price(Price::from("100.00"))
-            .quantity(Quantity::from("100"))
-            .build();
-
-        let match_info = RestingOrder::from(&PassiveOrderAny::try_from(order).unwrap());
-        matching_core.add_order(match_info);
-
-        assert!(matching_core.get_orders_ask().contains(&match_info));
-        assert!(!matching_core.get_orders_bid().contains(&match_info));
-        assert_eq!(matching_core.get_orders_ask().len(), 1);
-        assert!(matching_core.get_orders_bid().is_empty());
-        assert!(matching_core.order_exists(match_info.client_order_id));
+        core.add_order(order);
+        core.add_order(order);
     }
 
     #[rstest]
@@ -1097,35 +1091,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_iterate_returns_fill_limit_for_matched_buy() {
+    #[case::buy(OrderSide::Buy)]
+    #[case::sell(OrderSide::Sell)]
+    fn test_iterate_returns_fill_limit_for_matched_order(#[case] side: OrderSide) {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
-        matching_core.set_ask_raw(Price::from("100.00"));
+        match side {
+            OrderSide::Buy => matching_core.set_ask_raw(Price::from("100.00")),
+            OrderSide::Sell => matching_core.set_bid_raw(Price::from("100.00")),
+        }
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
-            .side(OrderSide::Buy)
-            .price(Price::from("100.00"))
-            .quantity(Quantity::from("100"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let match_info = RestingOrder::from(&PassiveOrderAny::try_from(order).unwrap());
-        matching_core.add_order(match_info);
-
-        let actions = matching_core.iterate();
-
-        assert_eq!(actions, vec![MatchAction::FillLimit(client_order_id)]);
-    }
-
-    #[rstest]
-    fn test_iterate_returns_fill_limit_for_matched_sell() {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
-        matching_core.set_bid_raw(Price::from("100.00"));
-
-        let order = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument_id)
-            .side(OrderSide::Sell)
+            .side(side)
             .price(Price::from("100.00"))
             .quantity(Quantity::from("100"))
             .build();
@@ -1159,37 +1137,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_iterate_returns_trigger_stop_for_matched_buy() {
+    #[case::buy(OrderSide::Buy, "101.00")]
+    #[case::sell(OrderSide::Sell, "99.00")]
+    fn test_iterate_returns_trigger_stop_for_matched_order(
+        #[case] side: OrderSide,
+        #[case] price: &str,
+    ) {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
-        matching_core.set_ask_raw(Price::from("101.00"));
+        match side {
+            OrderSide::Buy => matching_core.set_ask_raw(Price::from(price)),
+            OrderSide::Sell => matching_core.set_bid_raw(Price::from(price)),
+        }
 
         let order = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_id)
-            .side(OrderSide::Buy)
-            .trigger_price(Price::from("101.00"))
+            .side(side)
+            .trigger_price(Price::from(price))
             .trigger_type(TriggerType::Default)
-            .quantity(Quantity::from("100"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let match_info = RestingOrder::from(&PassiveOrderAny::try_from(order).unwrap());
-        matching_core.add_order(match_info);
-
-        let actions = matching_core.iterate();
-
-        assert_eq!(actions, vec![MatchAction::TriggerStop(client_order_id)]);
-    }
-
-    #[rstest]
-    fn test_iterate_returns_trigger_stop_for_matched_sell() {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
-        matching_core.set_bid_raw(Price::from("99.00"));
-
-        let order = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(instrument_id)
-            .side(OrderSide::Sell)
-            .trigger_price(Price::from("99.00"))
             .quantity(Quantity::from("100"))
             .build();
         let client_order_id = order.client_order_id();
@@ -1295,29 +1260,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_is_limit_fillable_inside_spread_buy_at_bid() {
+    #[case::buy_at_bid(OrderSide::Buy, "100.00", "99.00")]
+    #[case::sell_at_ask(OrderSide::Sell, "101.00", "102.00")]
+    fn test_is_limit_fillable_inside_spread_at_best_quote(
+        #[case] side: OrderSide,
+        #[case] best_quote: &str,
+        #[case] outside_price: &str,
+    ) {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut core = create_matching_core(instrument_id, Price::from("0.01"));
         core.set_bid_raw(Price::from("100.00"));
         core.set_ask_raw(Price::from("101.00"));
         core.set_fill_limit_inside_spread(true);
 
-        assert!(core.is_limit_fillable(OrderSide::Buy, Price::from("100.00")));
-        assert!(core.is_limit_fillable(OrderSide::Buy, Price::from("100.50")));
-        assert!(!core.is_limit_fillable(OrderSide::Buy, Price::from("99.00")));
-    }
-
-    #[rstest]
-    fn test_is_limit_fillable_inside_spread_sell_at_ask() {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
-        core.set_bid_raw(Price::from("100.00"));
-        core.set_ask_raw(Price::from("101.00"));
-        core.set_fill_limit_inside_spread(true);
-
-        assert!(core.is_limit_fillable(OrderSide::Sell, Price::from("101.00")));
-        assert!(core.is_limit_fillable(OrderSide::Sell, Price::from("100.50")));
-        assert!(!core.is_limit_fillable(OrderSide::Sell, Price::from("102.00")));
+        assert!(core.is_limit_fillable(side, Price::from(best_quote)));
+        assert!(core.is_limit_fillable(side, Price::from("100.50")));
+        assert!(!core.is_limit_fillable(side, Price::from(outside_price)));
     }
 
     #[rstest]
@@ -1915,8 +1873,11 @@ mod tests {
     #[rstest]
     fn test_delete_unknown_order_returns_not_found() {
         let mut core = create_matching_core(InstrumentId::from("AAPL.XNAS"), Price::from("0.01"));
-        let result = core.delete_order(ClientOrderId::from("O-MISSING"));
-        assert!(matches!(result, Err(OrderError::NotFound(_))));
+        let missing_id = ClientOrderId::from("O-MISSING");
+
+        let result = core.delete_order(missing_id);
+
+        assert!(matches!(result, Err(OrderError::NotFound(id)) if id == missing_id));
     }
 
     #[rstest]

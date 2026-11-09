@@ -43,6 +43,7 @@ def main() -> None:
     book = run["top_of_book"]
     executions = run["executions"].sort_values("ts_event", kind="stable")
     account = run["account"]
+
     panels = {
         "panel_a_top_book.png": _book_figure(book, executions),
         "panel_b_liquidity.png": _liquidity_figure(book),
@@ -66,7 +67,6 @@ def main() -> None:
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     figure = go.Figure()
-
     for column, label, color in [
         ("bid", "Best bid", COLORS["positive"]),
         ("ask", "Best ask", COLORS["negative"]),
@@ -80,6 +80,7 @@ def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
                 line={"color": color, "shape": "hv", "width": 1},
             ),
         )
+
     for side, symbol, color in [
         ("BUY", "triangle-up", COLORS["positive"]),
         ("SELL", "triangle-down", COLORS["negative"]),
@@ -163,6 +164,7 @@ def _position_series(book: pd.DataFrame, executions: pd.DataFrame) -> pd.Series:
 
 def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     position = _position_series(book, executions)
+
     figure = go.Figure(
         go.Scatter(
             x=position.index,
@@ -173,6 +175,7 @@ def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             fill="tozeroy",
         ),
     )
+
     figure.update_layout(
         title={
             "text": "Yes-share inventory and final close",
@@ -201,6 +204,7 @@ def _equity_figure(
     balance = cash.reindex(index).ffill()
     marks = midpoint.reindex(index).ffill()
     pnl = balance + shares * marks - cash.iloc[0]
+
     figure = go.Figure(
         go.Scatter(
             x=pnl.index,
@@ -210,6 +214,7 @@ def _equity_figure(
             line={"color": COLORS["primary"], "shape": "hv"},
         ),
     )
+
     figure.update_layout(
         title={
             "text": "Cash plus Yes shares marked at the midpoint",

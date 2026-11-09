@@ -2681,7 +2681,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::nautilus_strategy;
+    use crate::{cache_database::FailNthAddOrderDatabase, nautilus_strategy};
 
     #[derive(Debug)]
     struct TestStrategy {
@@ -4531,6 +4531,125 @@ mod tests {
             OrderEventAny::Initialized(orders[1].init_event().clone())
         );
         assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
+    }
+
+    #[rstest]
+    fn test_submission_persistence_failure_does_not_block_dispatch(
+        #[values(false, true)] fail_position_index: bool,
+        #[values(false, true)] list: bool,
+    ) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let (database, control) = FailNthAddOrderDatabase::create();
+        let cache_rc = strategy.core.cache_rc();
+        cache_rc.borrow_mut().set_database(Box::new(database));
+
+        let order_count = if list { 2 } else { 1 };
+        if fail_position_index {
+            control.set_fail_index_order_position_on(Some(order_count));
+        } else {
+            control.set_fail_add_order_on(Some(order_count));
+        }
+
+        let position_id = PositionId::from("P-LIST-RETRY");
+        let client_id = ClientId::from("EXEC-LIST-RETRY");
+        let order_list_id = OrderListId::from("OL-LIST-RETRY");
+        let mut orders = vec![
+            make_initialized_market_order("O-LIST-RETRY-001"),
+            make_initialized_market_order("O-LIST-RETRY-002"),
+        ];
+
+        orders.truncate(order_count);
+        if list {
+            for order in &mut orders {
+                order.set_order_list_id(order_list_id);
+            }
+        }
+
+        let topic = format!("events.order.{}", orders[0].strategy_id());
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.list_retry")));
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("risk.list_retry")));
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        if list {
+            strategy
+                .submit_order_list(orders.clone(), Some(position_id), Some(client_id), None)
+                .unwrap();
+        } else {
+            strategy
+                .submit_order(orders[0].clone(), Some(position_id), Some(client_id), None)
+                .unwrap();
+        }
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        let cache = cache_rc.borrow();
+        assert_eq!(control.calls(), (order_count, order_count));
+        assert_eq!(
+            cache.order_lists(None, None, None, None).len(),
+            usize::from(list)
+        );
+
+        if list {
+            assert_eq!(
+                cache.order_list(&order_list_id).unwrap().client_order_ids,
+                orders
+                    .iter()
+                    .map(Order::client_order_id)
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        for order in &orders {
+            let cached = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(
+                serde_json::to_value(&*cached).unwrap(),
+                serde_json::to_value(order).unwrap()
+            );
+            assert_eq!(
+                cache.position_id(&order.client_order_id()),
+                Some(&position_id)
+            );
+            assert_eq!(cache.client_id(&order.client_order_id()), Some(&client_id));
+        }
+
+        assert_eq!(cache.orders_for_position(&position_id).len(), order_count);
+        assert_eq!(
+            event_messages.get_messages(),
+            orders
+                .iter()
+                .map(|order| OrderEventAny::Initialized(order.init_event().clone()))
+                .collect::<Vec<_>>()
+        );
+        let commands = risk_messages.get_messages();
+        assert_eq!(commands.len(), 1);
+
+        match (&commands[0], list) {
+            (TradingCommand::SubmitOrderList(command), true) => {
+                assert_eq!(command.order_list.id, order_list_id);
+                assert_eq!(command.position_id, Some(position_id));
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(
+                    command.order_inits,
+                    orders
+                        .iter()
+                        .map(|order| order.init_event().clone())
+                        .collect::<Vec<_>>()
+                );
+            }
+            (TradingCommand::SubmitOrder(command), false) => {
+                assert_eq!(command.position_id, Some(position_id));
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.order_init, orders[0].init_event().clone());
+            }
+            _ => panic!("unexpected submission command"),
+        }
     }
 
     #[rstest]

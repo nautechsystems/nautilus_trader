@@ -1647,15 +1647,17 @@ impl Trader {
         Ok(())
     }
 
-    /// Saves actor and strategy state in registration order.
+    /// Collects actor and strategy state in registration order and attempts persistence.
     ///
-    /// Empty state is persisted, while a cache without database backing does not invoke
-    /// component callbacks. All callbacks and updates receive an attempt before errors return.
+    /// Empty state is submitted too, while a cache without database backing does not invoke
+    /// component callbacks. All callbacks and updates receive an attempt before collected errors
+    /// return. Persistence write failures are logged by the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if any component callback or persistence operation fails. The error
-    /// contains every such failure.
+    /// Returns an error if preparing callbacks or collecting component state fails, or the backing
+    /// reports a DeFi currency integrity error. Save-time errors are aggregated across all attempted
+    /// components.
     pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
         let (cache, actor_callbacks, strategy_callbacks) = {
             let trader = trader.borrow();

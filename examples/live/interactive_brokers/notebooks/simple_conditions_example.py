@@ -86,6 +86,7 @@ class ConditionsExample(IbV2OrderStrategy):
             "isMore": True,
             "conjunction": ib.IbConditionConjunction.AND.as_str(),
         }
+
         time_order = self.limit_order(
             self.client_order_id("TIME-CONDITION"),
             OrderSide.SELL,
@@ -127,6 +128,7 @@ class ConditionsExample(IbV2OrderStrategy):
             ),
             "conjunction": ib.IbConditionConjunction.AND.as_str(),
         }
+
         price_order = self.limit_order(
             self.client_order_id("PRICE-CONDITION"),
             OrderSide.BUY,
@@ -170,6 +172,7 @@ def main() -> None:
     node.add_strategy(ConditionsExample())
 
     print(f"Built conditional-order node for {INSTRUMENT_ID}.", flush=True)
+
     if env_bool("IB_V2_RUN_NODE"):
         schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 20))
         node.run()

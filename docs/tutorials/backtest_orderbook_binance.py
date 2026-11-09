@@ -183,6 +183,7 @@ deltas[:10]
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"
+
 if CATALOG_PATH.exists():
     shutil.rmtree(CATALOG_PATH)
 CATALOG_PATH.mkdir()

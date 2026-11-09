@@ -631,6 +631,10 @@ impl AsyncRunner {
                     account,
                 );
             }
+            ExecutionEvent::Data(ref data) => {
+                let topic = msgbus::switchboard::get_custom_topic(&data.data_type);
+                msgbus::publish_any(topic, data);
+            }
         }
     }
 
