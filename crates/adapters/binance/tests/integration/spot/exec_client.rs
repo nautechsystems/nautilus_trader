@@ -111,6 +111,7 @@ use rstest::rstest;
 use serde_json::json;
 
 const SEED_CLIENT_ORDER_ID: &str = "completed-seed";
+const ORDER_RATE_LIMIT_CODE: i64 = -1015;
 
 // SBE template IDs and block lengths from Binance schema
 const PING_TEMPLATE_ID: u16 = 101;
@@ -573,8 +574,14 @@ fn ambiguous_failure_response() -> Response {
 }
 
 fn venue_reject_response(code: i64, msg: &str) -> Response {
+    let status = if code == ORDER_RATE_LIMIT_CODE {
+        StatusCode::TOO_MANY_REQUESTS
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+
     (
-        StatusCode::BAD_REQUEST,
+        status,
         [(header::CONTENT_TYPE, "application/json")],
         json!({"code": code, "msg": msg}).to_string(),
     )
@@ -5086,6 +5093,89 @@ async fn test_ambiguous_submit_failure_does_not_emit_order_rejected() {
         )
     })
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_rate_limit_rejection_emits_order_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: ORDER_RATE_LIMIT_CODE,
+                msg: "Too many new orders; current limit is 100 orders per 10 SECOND.",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("order-rate-limit-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let rejected = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Order(OrderEventAny::Rejected(event))) = rx.recv().await {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("Rate-limit rejection should emit OrderRejected immediately");
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.account_id, AccountId::from("BINANCE-001"));
+    assert_eq!(
+        rejected.reason.as_str(),
+        "submit-order-error: Binance error -1015 (HTTP 429): Too many new orders; current limit is 100 orders per 10 SECOND."
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_list_rate_limit_rejection_emits_order_rejected_for_each_child() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: ORDER_RATE_LIMIT_CODE,
+                msg: "Too many new orders; current limit is 100 orders per 10 SECOND.",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let orders = add_spot_oco_orders_to_cache(&cache);
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let mut rejected = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while rejected.len() < 2 {
+            if let Some(ExecutionEvent::Order(OrderEventAny::Rejected(event))) = rx.recv().await {
+                rejected.push(event);
+            }
+        }
+    })
+    .await
+    .expect("OCO rate-limit rejection should emit OrderRejected for each child");
+
+    assert_eq!(rejected.len(), 2);
+    let ids: std::collections::BTreeSet<_> =
+        rejected.iter().map(|event| event.client_order_id).collect();
+    let expected: std::collections::BTreeSet<_> =
+        orders.iter().map(|order| order.client_order_id()).collect();
+    assert_eq!(ids, expected);
+    assert!(rejected.iter().all(|event| {
+        event.reason.as_str()
+            == "submit-order-list-error: Binance error -1015 (HTTP 429): Too many new orders; current limit is 100 orders per 10 SECOND."
+    }));
 }
 
 #[rstest]
