@@ -111,6 +111,7 @@ Released on TBD (UTC).
 - Changed Interactive Brokers futures IDs to two-digit years by default; use `futures_year_digits=1`, thanks @faysou
 - Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
 - Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
+- Changed Kraken `FuturesEditStatus` literals; add `order_id_snake_case: None` (#5567), thanks @zhaow-de
 - Changed OKX options to require non-blank families; set `instrument_families` before connecting
 - Changed OKX filtered `EVENTS` and derivatives to require separate clients
 - Changed OKX VIP4+ data configs to require complete API credentials
@@ -144,6 +145,9 @@ Released on TBD (UTC).
 - Fixed remote Parquet instrument queries under catalog prefixes containing a `data` segment
 - Fixed L1 trade-only matching using stale passive-side prices (#5573), thanks @chaneyka1
 - Fixed relative catalog paths with the `file` protocol (#5562), thanks @madebymlai
+- Fixed simulated order modifications filling while markets are not open (#5610), thanks @chaneyka1
+- Fixed unmatched triggered limit-style `IOC` and `FOK` orders resting on the book (#5608), thanks @ngarid
+- Fixed backtest funding settlement for single-currency accounts (#5581), thanks @chaneyka1
 - Fixed Python `open_check_lookback_mins=None` ignoring unbounded lookback (#5540), thanks @SoYuCry
 - Fixed orders losing the initialization event's reconciliation flag (#5523), thanks @costajohnt
 - Fixed binary option expiry revisions during replay (#5511), thanks @imbolc
@@ -246,6 +250,7 @@ Released on TBD (UTC).
 - Fixed Bybit HTTP rate limits rejecting orders that may have been sent
 - Fixed Bybit option instrument loading and status updates covering only BTC instead of all listed base coins
 - Fixed Bybit option order book subscriptions defaulting to unsupported depth 50 and rejecting depths 25 and 100
+- Fixed Bybit instruments dropped on oversized `maxOrderQty` (#5592), thanks @abhijeetvichare76
 - Fixed CoinAPI dropping first book snapshots before subscription writes complete
 - Fixed CoinAPI L2 flat-file book loaders accepting unknown update types
 - Fixed CoinAPI OHLCV pagination stopping before the record limit after filtering leading periods
@@ -283,6 +288,8 @@ Released on TBD (UTC).
 - Fixed Kraken Futures history skipping unreadable rows and using stale states (#5559), thanks @zhaow-de
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed Kraken Spot startup recovery for emptied wallet balances (#5527), thanks @zhaow-de
+- Fixed Kraken panics on malformed venue order IDs (#5567), thanks @zhaow-de
+- Fixed Kraken Futures edits reporting missing order IDs after success (#5567), thanks @zhaow-de
 - Fixed Lighter modification confirmation delay (#5517), thanks for reporting @AlphaTraderK
 - Fixed Lighter slippage overrides silently accepting invalid types and overflowing integers
 - Fixed Lighter public data startup failing on unused malformed credentials
@@ -312,6 +319,7 @@ Released on TBD (UTC).
 - Fixed Polymarket open-order checks failing while an admitted fill awaits application
 - Fixed Polymarket Gamma requests not retrying transient HTTP failures (#5508), thanks @imbolc
 - Fixed Polymarket Gamma `condition_ids` lookups failing with HTTP 414 (#5433), thanks for reporting @gingeard
+- Fixed Polymarket immediate BUY share rounding and unsafe signed prices (#5582), thanks @SoYuCry
 - Fixed Sandbox open-order checks rejecting resting orders (#5366), thanks for reporting @awss1i
 - Fixed Sandbox execution panic on non-time bars (#5271), thanks for reporting @chaneyka1
 
