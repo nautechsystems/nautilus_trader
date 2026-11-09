@@ -70,10 +70,11 @@ use crate::{
         },
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
-            LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
-            LighterMakerOnlyApiKeysQuery, LighterNextNonceQuery, LighterOrderBookDetailsQuery,
-            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterRecentTradesQuery,
-            LighterTradesQuery, LighterTxLookup, LighterTxQuery,
+            LighterAccountLookup, LighterAccountOrdersQuery, LighterAccountQuery,
+            LighterCandlesQuery, LighterFundingsQuery, LighterMakerOnlyApiKeysQuery,
+            LighterNextNonceQuery, LighterOrderBookDetailsQuery, LighterOrderBookOrdersQuery,
+            LighterOrderBooksQuery, LighterRecentTradesQuery, LighterTradesQuery, LighterTxLookup,
+            LighterTxQuery, validate_client_order_indexes,
         },
     },
 };
@@ -82,6 +83,7 @@ const API_V1: &str = "/api/v1";
 const ENDPOINT_ACCOUNT: &str = "/api/v1/account";
 const ENDPOINT_ACCOUNT_ACTIVE_ORDERS: &str = "/api/v1/accountActiveOrders";
 const ENDPOINT_ACCOUNT_INACTIVE_ORDERS: &str = "/api/v1/accountInactiveOrders";
+const ENDPOINT_ACCOUNT_ORDERS: &str = "/api/v1/accountOrders";
 const ENDPOINT_CANDLES: &str = "/api/v1/candles";
 const ENDPOINT_FUNDINGS: &str = "/api/v1/fundings";
 const ENDPOINT_MAKER_ONLY_API_KEYS: &str = "/api/v1/getMakerOnlyApiKeys";
@@ -379,6 +381,21 @@ impl LighterRawHttpClient {
         query: &LighterAccountInactiveOrdersQuery,
     ) -> LighterHttpResult<LighterOrders> {
         self.send_get_request(ENDPOINT_ACCOUNT_INACTIVE_ORDERS, Some(query))
+            .await
+    }
+
+    /// Calls `GET /api/v1/accountOrders`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_account_orders(
+        &self,
+        query: &LighterAccountOrdersQuery,
+    ) -> LighterHttpResult<LighterOrders> {
+        validate_client_order_indexes(&query.client_order_indexes)
+            .map_err(LighterHttpError::Parse)?;
+        self.send_get_request(ENDPOINT_ACCOUNT_ORDERS, Some(query))
             .await
     }
 
@@ -967,6 +984,18 @@ impl LighterHttpClient {
         query: &LighterAccountInactiveOrdersQuery,
     ) -> LighterHttpResult<LighterOrders> {
         self.inner.get_account_inactive_orders(query).await
+    }
+
+    /// Calls `GET /api/v1/accountOrders`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_account_orders(
+        &self,
+        query: &LighterAccountOrdersQuery,
+    ) -> LighterHttpResult<LighterOrders> {
+        self.inner.get_account_orders(query).await
     }
 
     /// Calls `GET /api/v1/nextNonce` for `(account_index, api_key_index)`.

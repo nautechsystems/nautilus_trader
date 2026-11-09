@@ -212,6 +212,9 @@ struct TestServerState {
     referral_use_requests: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     next_referral_use_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_calls: Arc<AtomicUsize>,
+    account_orders_calls: Arc<AtomicUsize>,
+    account_orders_response_blocked: Arc<AtomicBool>,
+    account_orders_response_release: Arc<tokio::sync::Notify>,
     active_orders_response_blocked: Arc<AtomicBool>,
     active_orders_response_release: Arc<tokio::sync::Notify>,
     tx_calls: Arc<AtomicUsize>,
@@ -221,6 +224,7 @@ struct TestServerState {
     trades_calls: Arc<AtomicUsize>,
     trades_queries: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    account_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses_by_nonce: Arc<tokio::sync::Mutex<std::collections::HashMap<i64, Value>>>,
@@ -275,6 +279,9 @@ impl Default for TestServerState {
             referral_use_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             next_referral_use_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
+            account_orders_calls: Arc::new(AtomicUsize::new(0)),
+            account_orders_response_blocked: Arc::new(AtomicBool::new(false)),
+            account_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             active_orders_response_blocked: Arc::new(AtomicBool::new(false)),
             active_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             tx_calls: Arc::new(AtomicUsize::new(0)),
@@ -284,6 +291,7 @@ impl Default for TestServerState {
             trades_calls: Arc::new(AtomicUsize::new(0)),
             trades_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            account_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses_by_nonce: Arc::new(tokio::sync::Mutex::new(
@@ -482,6 +490,31 @@ async fn account_active_orders(
         release.await;
     }
 
+    (StatusCode::OK, body.to_string()).into_response()
+}
+
+async fn account_orders(
+    State(state): State<Arc<TestServerState>>,
+    Query(_query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let release = state.account_orders_response_release.notified();
+    tokio::pin!(release);
+    release.as_mut().enable();
+    let blocked = state
+        .account_orders_response_blocked
+        .load(Ordering::Acquire);
+    state.account_orders_calls.fetch_add(1, Ordering::Release);
+
+    if blocked {
+        release.await;
+    }
+
+    let body = state
+        .account_orders_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| json!({"code":200,"orders":[]}));
     (StatusCode::OK, body.to_string()).into_response()
 }
 
@@ -871,6 +904,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/nextNonce", get(next_nonce))
         .route("/api/v1/getMakerOnlyApiKeys", get(maker_only_api_keys))
         .route("/api/v1/referral/use", post(referral_use))
+        .route("/api/v1/accountOrders", get(account_orders))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
             "/api/v1/accountInactiveOrders",
@@ -12504,7 +12538,9 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
     row["price"] = json!("2400.00");
     row["initial_base_amount"] = json!("0.0100");
     row["remaining_base_amount"] = json!("0.0100");
-    *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+    let orders_body = http_orders_payload(&[row], None);
+    *state.account_orders_response.lock().await = Some(orders_body.clone());
+    *state.active_orders_response.lock().await = Some(orders_body);
     state
         .tx_responses
         .lock()
@@ -12549,7 +12585,8 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
     assert_eq!(cached.quantity(), Quantity::from("0.0100"));
     assert_eq!(cached.leaves_qty(), Quantity::from("0.0100"));
     assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
-    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 1);
+    assert_eq!(state.account_orders_calls.load(Ordering::Acquire), 1);
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 0);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Acquire), 0);
     assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
 }
@@ -12558,6 +12595,7 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
 #[case::transaction(0)]
 #[case::active_orders(1)]
 #[case::inactive_page(2)]
+#[case::account_orders(3)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) {
     let (addr, state) = start_server().await;
@@ -12603,6 +12641,9 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     state
         .inactive_orders_response_blocked
         .store(stage == 2, Ordering::Release);
+    state
+        .account_orders_response_blocked
+        .store(stage == 3, Ordering::Release);
     client
         .cancel_order(CancelOrder::new(
             trader_id(),
@@ -12624,6 +12665,7 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
                 match stage {
                     0 => state.tx_calls.load(Ordering::Acquire) == 1,
                     1 => state.active_orders_calls.load(Ordering::Acquire) == 1,
+                    3 => state.account_orders_calls.load(Ordering::Acquire) == 1,
                     _ => state.inactive_orders_calls.load(Ordering::Acquire) == 1,
                 }
             }
@@ -12652,6 +12694,10 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     state
         .inactive_orders_response_blocked
         .store(false, Ordering::Release);
+    state
+        .account_orders_response_blocked
+        .store(false, Ordering::Release);
+    state.account_orders_response_release.notify_one();
     state.tx_response_release.notify_one();
     state.active_orders_response_release.notify_one();
     state.inactive_orders_response_release.notify_one();
@@ -12669,8 +12715,12 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     );
     assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
     assert_eq!(
+        state.account_orders_calls.load(Ordering::Acquire),
+        usize::from(stage != 0)
+    );
+    assert_eq!(
         state.active_orders_calls.load(Ordering::Acquire),
-        usize::from(stage >= 1)
+        usize::from(matches!(stage, 1 | 2))
     );
     assert_eq!(
         state.inactive_orders_calls.load(Ordering::Acquire),

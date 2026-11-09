@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Added CoinAPI flat-file support for numeric book update codes
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
+- Added Lighter `accountOrders` targeted lookup, `trades` filters, and `remaining_send_tx` responses
 - Added OKX Python contract filters, execution families, and spot margin configuration
 - Added OKX history request coverage for catalog write-back (#5501), thanks @akarazhev
 - Added OKX instrument request completion for catalog write-back (#5564), thanks @madebymlai
