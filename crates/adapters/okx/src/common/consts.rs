@@ -144,6 +144,8 @@ pub(crate) fn okx_reduce_only_wire_value(
         OKXInstrumentType::Spot | OKXInstrumentType::Margin => {
             if td_mode == OKXTradeMode::Cash {
                 Err("OKX cash orders do not support reduce-only instructions".to_string())
+            } else if instrument_type == OKXInstrumentType::Spot {
+                Err("OKX spot orders do not support reduce-only instructions".to_string())
             } else {
                 Ok(Some(true))
             }
@@ -938,8 +940,22 @@ mod tests {
         None,
         Err("OKX cash orders do not support reduce-only instructions".to_string()),
     )]
-    #[case::margin(
+    #[case::spot_cross(
         OKXInstrumentType::Spot,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        None,
+        Err("OKX spot orders do not support reduce-only instructions".to_string()),
+    )]
+    #[case::spot_isolated(
+        OKXInstrumentType::Spot,
+        OKXTradeMode::Isolated,
+        OrderSide::Sell,
+        None,
+        Err("OKX spot orders do not support reduce-only instructions".to_string()),
+    )]
+    #[case::margin(
+        OKXInstrumentType::Margin,
         OKXTradeMode::Cross,
         OrderSide::Sell,
         None,

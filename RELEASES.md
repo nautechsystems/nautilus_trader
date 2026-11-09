@@ -117,6 +117,7 @@ Released on TBD (UTC).
 - Changed `OKXRawHttpClient` constructors to `anyhow::Result`; use downcasts for typed error handling
 - Changed OKX `use_mm_mass_cancel` to reject `true`; use ordinary cancellation for non-MMP orders
 - Changed OKX WebSocket batch order tuples; add `quote_quantity` after `reduce_only`
+- Changed OKX spot reduce-only orders to local denials; pass `reduce_only=False` for spot closes
 - Changed Polymarket `AssetType` with `ConditionalV2`; update exhaustive matches
 - Changed Polymarket `build_limit_order` expiry to `Option<UnixNanos>`; pass `None` for no expiry
 - Changed Polymarket reports to require instruments for in-scope V2 orders and positions; set `load_ids`

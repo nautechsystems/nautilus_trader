@@ -4927,16 +4927,28 @@ async fn test_submit_spread_order_denies_reduce_only() {
 }
 
 #[rstest]
+#[case::cash(None)]
+#[case::cross(Some(OKXMarginMode::Cross))]
+#[case::isolated(Some(OKXMarginMode::Isolated))]
 #[tokio::test]
-async fn test_submit_cash_order_denies_reduce_only() {
+async fn test_submit_spot_order_denies_reduce_only(
+    #[case] margin_mode: Option<OKXMarginMode>,
+    #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+) {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
-    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&base_url, |config| {
+            config.margin_mode = margin_mode;
+            config.use_spot_margin = margin_mode.is_some();
+        });
+
     client.start().unwrap();
     let _ = drain_events(&mut rx);
     let instrument_id = InstrumentId::from("BTC-USDT.OKX");
     let client_order_id = ClientOrderId::from("OREDUCECASH1");
-    let order = OrderTestBuilder::new(OrderType::Limit)
+    let order = OrderTestBuilder::new(order_type)
         .trader_id(TraderId::from("TESTER-001"))
         .strategy_id(StrategyId::from("STRATEGY-001"))
         .instrument_id(instrument_id)
