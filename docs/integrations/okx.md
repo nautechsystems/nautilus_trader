@@ -1801,7 +1801,7 @@ The OKX execution client provides the following Python configuration options.
 | `margin_mode`                      | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
 | `spot_trade_quote_ccy`             | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
 | `http_timeout_secs`                | `60`                       | Timeout per REST attempt; see [HTTP retries](#http-retries).                             |
-| `max_retries`                      | `3`                        | Recoverable REST retries; order submissions and algo amendments send once.               |
+| `max_retries`                      | `3`                        | Recoverable REST retries; see [HTTP retries](#http-retries).                             |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                           |
 | `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                                       |
 | `auth_timeout_secs`                | `None`                     | Override WebSocket authentication timeout.                                               |
@@ -1822,7 +1822,7 @@ See [USD to USDC spot migration](#usd-to-usdc-spot-migration) for `spot_trade_qu
 
 `http_timeout_secs` bounds each attempt. The total retry budget, including requests and backoff, is
 `max(180, http_timeout_secs)` seconds. The budget can end before `max_retries` is reached. Order
-submissions and algo amendments still send once.
+submissions, algo amendments and cancels, and spread cancels send once.
 
 `retry_delay_initial_ms` must be positive, and `retry_delay_max_ms` must be at least the initial delay
 and fit the supported backoff duration. These constraints also apply when `max_retries=0`.

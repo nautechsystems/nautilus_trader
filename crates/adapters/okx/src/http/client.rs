@@ -1434,6 +1434,7 @@ impl OKXRawHttpClient {
         // outcome is left for stream updates and reconciliation to resolve.
         // Algo amendments also run once: a retry can reject after an earlier
         // attempt applied and the order triggered, leaving the original outcome ambiguous.
+        // Cancel retries can reject after the first attempt applied, obscuring its outcome.
         let is_order_mutation = method == Method::POST
             && matches!(
                 path,
@@ -1441,7 +1442,11 @@ impl OKXRawHttpClient {
                     | "/api/v5/trade/batch-orders"
                     | "/api/v5/trade/order-algo"
                     | "/api/v5/trade/amend-algos"
+                    | "/api/v5/trade/cancel-algos"
+                    | "/api/v5/trade/cancel-advance-algos"
                     | "/api/v5/sprd/order"
+                    | "/api/v5/sprd/cancel-order"
+                    | "/api/v5/sprd/mass-cancel"
             );
         let should_retry = |error: &OKXHttpError| !is_order_mutation && error.is_retryable();
 

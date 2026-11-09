@@ -68,8 +68,8 @@ use nautilus_okx::{
         client::{OKXHistoryCoverage, OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
         models::{
-            OKXAmendOrderRequest, OKXAttachAlgoOrdRequest, OKXCancelOrderRequest,
-            OKXPlaceOrderRequest,
+            OKXAmendOrderRequest, OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest,
+            OKXCancelOrderRequest, OKXCancelSpreadOrderRequest, OKXPlaceOrderRequest,
         },
         query::{
             ActivateFeatureParams, GetAlgoOrdersParamsBuilder,
@@ -86,7 +86,10 @@ use nautilus_testkit::http::assert_http_redirect_rejected;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 use ustr::Ustr;
 
 #[derive(Clone, Default)]
@@ -7027,38 +7030,112 @@ async fn test_amend_algo_order_preserves_ambiguous_first_attempt() {
 }
 
 #[rstest]
+#[case::algo("/api/v5/trade/cancel-algos")]
+#[case::advance_algo("/api/v5/trade/cancel-advance-algos")]
+#[case::spread("/api/v5/sprd/cancel-order")]
+#[case::spread_mass("/api/v5/sprd/mass-cancel")]
+#[tokio::test]
+async fn test_cancel_http_commands_send_once_on_transient_failure(
+    #[case] path: &'static str,
+    #[values(None, Some(429), Some(503))] status: Option<u16>,
+) {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempts);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let received = read_post_request(&mut stream).await;
+            let request_line = format!("POST {path} HTTP/1.1\r\n");
+            assert!(received.starts_with(request_line.as_bytes()));
+            counter.fetch_add(1, Ordering::SeqCst);
+
+            if let Some(status) = status {
+                let response = format!(
+                    "HTTP/1.1 {status} Transient failure\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        }
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        2,
+        2,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let request = OKXCancelAlgoOrderRequest {
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        inst_id_code: None,
+        algo_id: Some("7003".to_string()),
+        algo_cl_ord_id: None,
+    };
+
+    let error = match path {
+        "/api/v5/trade/cancel-algos" => client.cancel_algo_orders(vec![request]).await.unwrap_err(),
+        "/api/v5/trade/cancel-advance-algos" => client
+            .cancel_advance_algo_orders(vec![request])
+            .await
+            .unwrap_err(),
+        "/api/v5/sprd/cancel-order" => client
+            .cancel_spread_order(OKXCancelSpreadOrderRequest {
+                ord_id: Some("7004".to_string()),
+                cl_ord_id: None,
+            })
+            .await
+            .unwrap_err(),
+        "/api/v5/sprd/mass-cancel" => client
+            .cancel_all_spread_orders(InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX"))
+            .await
+            .unwrap_err(),
+        _ => unreachable!(),
+    };
+
+    server.abort();
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+
+    match (&error, status) {
+        (OKXHttpError::HttpClientError(HttpClientError::TransportError(_)), None) => {}
+        (
+            OKXHttpError::RetryableStatus {
+                status: actual,
+                body,
+                retry_after,
+            },
+            Some(expected),
+        ) => {
+            assert_eq!(actual.as_u16(), expected);
+            assert_eq!(body, "");
+            assert_eq!(*retry_after, None);
+        }
+        _ => panic!("unexpected failure: {error:?}"),
+    }
+
+    assert_eq!(
+        classify_okx_http_failure(&error),
+        CommandFailure::Ambiguous(error.to_string())
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let mut received = Vec::new();
-        let mut buffer = [0; 4096];
-
-        loop {
-            let count = stream.read(&mut buffer).await.unwrap();
-            assert_ne!(count, 0, "request ended before its declared body");
-            received.extend_from_slice(&buffer[..count]);
-
-            let Some(header_end) = received.windows(4).position(|window| window == b"\r\n\r\n")
-            else {
-                continue;
-            };
-            let headers = std::str::from_utf8(&received[..header_end]).unwrap();
-            let content_length = headers
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().unwrap())
-                })
-                .unwrap();
-
-            if received.len() >= header_end + 4 + content_length {
-                break;
-            }
-        }
+        let received = read_post_request(&mut stream).await;
 
         assert!(received.starts_with(b"POST /api/v5/trade/order HTTP/1.1\r\n"));
         stream
@@ -7117,6 +7194,37 @@ async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
         classify_okx_http_failure(&error),
         CommandFailure::Ambiguous(_)
     ));
+}
+
+async fn read_post_request(stream: &mut TcpStream) -> Vec<u8> {
+    let mut received = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
+        let count = stream.read(&mut buffer).await.unwrap();
+        assert_ne!(count, 0, "request ended before its declared body");
+        received.extend_from_slice(&buffer[..count]);
+
+        let Some(header_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+
+        let headers = std::str::from_utf8(&received[..header_end]).unwrap();
+
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().unwrap())
+            })
+            .unwrap();
+
+        if received.len() >= header_end + 4 + content_length {
+            break;
+        }
+    }
+
+    received
 }
 
 #[rstest]

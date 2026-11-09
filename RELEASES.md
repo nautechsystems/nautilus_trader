@@ -302,6 +302,7 @@ Released on TBD (UTC).
 - Fixed OKX TIF, RPI, and event parameter failures emitting `OrderRejected` instead of `OrderDenied`
 - Fixed OKX VIP4+ book subscriptions failing without public WebSocket login
 - Fixed OKX HTTP retries ignoring `http_timeout_secs`
+- Fixed OKX algo and spread cancels retrying after ambiguous HTTP failures
 - Fixed OKX rejected WebSocket logins waiting for the authentication timeout
 - Fixed OKX private updates being dropped when their instrument definitions are missing
 - Fixed OKX empty execution discovery failures omitting the selected scope from startup logs
