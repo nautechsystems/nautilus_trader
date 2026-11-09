@@ -1001,8 +1001,9 @@ pub fn parse_fill_report(
     })
 }
 
-/// Returns the time in force and post-only flag a Kraken futures order type states: `ioc` is
-/// `IOC`, `post` is post-only `GTC`, and every other type is `GTC` and not post-only.
+/// Returns the time in force and post-only flag the adapter reports for a Kraken futures order
+/// type: `ioc` is `IOC`, `post` is post-only `GTC`, and every other type is reported as `GTC` and
+/// not post-only.
 pub(crate) fn parse_futures_order_type_time_in_force(
     order_type: KrakenFuturesOrderType,
 ) -> (TimeInForce, bool) {

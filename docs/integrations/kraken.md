@@ -959,19 +959,18 @@ than taking a row or reporting the order missing.
 The adapter returns open orders and, when `open_only=False`, historical closed and
 filled orders. Historical reads have the limits below.
 
-Kraken states an order's time in force and post-only flag only through its order type. It documents the `ioc` and
-`post` types in the send-order response and the order history (`IoC` and `Post`), but not in the open-order read
-(`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the orders-status window
-states no time in force or post-only flag (its type is only `ORDER` or `TRIGGER_ORDER`). Reports take these values
-as follows:
+Kraken has no time in force or post-only field: apart from a rejection reason, only an order's type states them. It
+documents the `ioc` and `post` types in the send-order response and the order history (`IoC` and `Post`), but not in
+the open-order read (`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the
+orders-status window states no time in force or post-only flag (its type is only `ORDER` or `TRIGGER_ORDER`). Reports
+take these values as follows:
 
 - A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
   history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
 - The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
-  send-order response's first order event, where `ioc` is `IOC` and `post` is post-only `GTC`, and from the order
-  history when the response carries no event. A resting post-only order the open-order read lists with a documented
-  type therefore reports as `GTC` and not post-only, since that read documents no `post` type; a read with
-  `open_only=False` that finds a readable history row of the order on the page reports it post-only.
+  send-order response's first order event, and from the order history when the response carries no event. When the
+  response carries an event, the time in force and post-only flag come from that event's type, where `ioc` is `IOC`
+  and `post` is post-only `GTC`.
 - An open-only read, an open order with no readable row on the page, and an order feed delta for an order the adapter
   does not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not
   post-only.
@@ -991,8 +990,9 @@ An order-history page costs one token, so a page that hands back a continuation 
 single-order status lookup can still report a cached order absent when it was placed after the page's oldest
 event by more than the clock skew allowance. See [Single-order lookups](#single-order-lookups).
 
-The history lists every lifecycle event. The read returns one report per order: the open-order snapshot if the
-venue still lists it. Otherwise, it returns the latest history state. A closed order is not reopened by an
+The history lists every lifecycle event. The read returns one report per order: the open-order snapshot, its time in
+force and post-only flag taken as described above, if the venue still lists it. Otherwise, it returns the latest
+history state. A closed order is not reopened by an
 open state stamped later, such as a refused edit logged after a cancel.
 
 The contract name is resolved as the venue spells it, exactly first and then case-insensitively. A spelling that

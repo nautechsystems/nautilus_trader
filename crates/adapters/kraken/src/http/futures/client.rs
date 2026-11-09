@@ -2001,8 +2001,9 @@ impl KrakenFuturesHttpClient {
             let mut unread_ms: AHashMap<VenueOrderId, i64> = AHashMap::new();
             // Kraken documents the `IoC` and `Post` types on history rows but not on the open-order
             // snapshot, so a snapshot report takes its time in force and post-only from the newest
-            // readable row of its order, the first listed on a tie. An edit cannot change the order
-            // type, so an older row states what an unread newer one would.
+            // readable row of its order, the first listed on a tie. Kraken's edit takes no order
+            // type, and a stop reports `GTC` before and after it triggers, so an older row states
+            // what an unread newer one would.
             let mut open_time_in_force: AHashMap<VenueOrderId, (i64, TimeInForce, bool)> =
                 AHashMap::new();
             let mut skipped_in_scope = 0usize;
@@ -2584,13 +2585,36 @@ impl KrakenFuturesHttpClient {
                 .iter()
                 .find(|o| o.order_id == venue_order_id)
             {
-                return parse_futures_order_status_report(
+                let mut report = parse_futures_order_status_report(
                     order,
                     &instrument,
                     account_id,
                     Some(quantity.as_decimal()),
                     ts_init,
-                );
+                )?;
+
+                // Kraken documents the `ioc` and `post` types on the send status but not on the
+                // open-order read, so the send status's type states the time in force and post-only.
+                let send_order_type = send_status
+                    .order_events
+                    .as_ref()
+                    .and_then(|events| events.first())
+                    .and_then(|event| {
+                        event
+                            .order
+                            .as_ref()
+                            .map(|order| order.order_type)
+                            .or_else(|| event.order_trigger.as_ref().map(|t| t.order_type))
+                            .or_else(|| event.order_prior_execution.as_ref().map(|p| p.order_type))
+                    });
+
+                if let Some(order_type) = send_order_type {
+                    let (time_in_force, post_only) =
+                        parse_futures_order_type_time_in_force(order_type);
+                    report.time_in_force = time_in_force;
+                    report.post_only = post_only;
+                }
+                return Ok(report);
             }
 
             // Order not in open orders - may have filled immediately (market order or aggressive limit)
@@ -5659,79 +5683,40 @@ mod tests {
         include_str!("../../../test_data/http_send_order_futures_unknown_trigger.json");
 
     /// `response` with the type of its first event's `payload` replaced by `order_type` and the
-    /// send status naming that payload's order, returned with the payload's contract.
-    fn send_response(response: &str, payload: &str, order_type: &str) -> (String, String) {
+    /// send status naming that payload's order, returned with the order's ID and contract.
+    fn send_response(response: &str, payload: &str, order_type: &str) -> (String, String, String) {
         let mut response: serde_json::Value = serde_json::from_str(response).unwrap();
         let order = &mut response["sendStatus"]["orderEvents"][0][payload];
         order["type"] = serde_json::json!(order_type);
         let order_id = order
             .get("orderId")
             .or_else(|| order.get("uid"))
-            .cloned()
-            .unwrap();
+            .and_then(|id| id.as_str())
+            .unwrap()
+            .to_string();
         let symbol = order["symbol"].as_str().unwrap().to_string();
-        response["sendStatus"]["order_id"] = order_id;
-        (response.to_string(), symbol)
+        response["sendStatus"]["order_id"] = serde_json::json!(order_id);
+        (response.to_string(), order_id, symbol)
     }
 
-    /// A submit answered from the send status reports the time in force and post-only its order
-    /// type states, whichever payload carries the order.
-    #[rstest]
-    #[case::order_ioc(DOCUMENTED_SEND_PLACED, "order", "ioc", TimeInForce::Ioc, false)]
-    #[case::order_post(DOCUMENTED_SEND_PLACED, "order", "post", TimeInForce::Gtc, true)]
-    #[case::order_lmt(DOCUMENTED_SEND_PLACED, "order", "lmt", TimeInForce::Gtc, false)]
-    #[case::order_stp(DOCUMENTED_SEND_PLACED, "order", "stp", TimeInForce::Gtc, false)]
-    #[case::trigger_ioc(SEND_TRIGGER, "orderTrigger", "ioc", TimeInForce::Ioc, false)]
-    #[case::trigger_post(SEND_TRIGGER, "orderTrigger", "post", TimeInForce::Gtc, true)]
-    #[case::trigger_lmt(SEND_TRIGGER, "orderTrigger", "lmt", TimeInForce::Gtc, false)]
-    #[case::trigger_stp(SEND_TRIGGER, "orderTrigger", "stp", TimeInForce::Gtc, false)]
-    #[case::prior_execution_ioc(
-        DOCUMENTED_SEND_EXECUTED,
-        "orderPriorExecution",
-        "ioc",
-        TimeInForce::Ioc,
-        false
-    )]
-    #[case::prior_execution_lmt(
-        DOCUMENTED_SEND_EXECUTED,
-        "orderPriorExecution",
-        "lmt",
-        TimeInForce::Gtc,
-        false
-    )]
-    #[case::prior_execution_stp(
-        DOCUMENTED_SEND_EXECUTED,
-        "orderPriorExecution",
-        "stp",
-        TimeInForce::Gtc,
-        false
-    )]
-    #[tokio::test]
-    async fn test_submit_order_send_status_fallback_reads_the_time_in_force_of_the_order_type(
-        #[case] response: &str,
-        #[case] payload: &str,
-        #[case] order_type: &str,
-        #[case] expected_time_in_force: TimeInForce,
-        #[case] expected_post_only: bool,
-    ) {
+    /// The report of a buy limit submitted on `symbol` to a venue answering the send with `send`
+    /// and the open-order read with `open_orders`.
+    async fn submit_report(send: String, open_orders: String, symbol: &str) -> OrderStatusReport {
         use axum::{Router, http::header, routing::any};
 
-        let (body, symbol) = send_response(response, payload, order_type);
         let app = Router::new()
             .route(
                 "/derivatives/api/v3/sendorder",
                 any(move || {
-                    let body = body.clone();
-                    async move { ([(header::CONTENT_TYPE, "application/json")], body) }
+                    let send = send.clone();
+                    async move { ([(header::CONTENT_TYPE, "application/json")], send) }
                 }),
             )
             .route(
                 "/derivatives/api/v3/openorders",
-                any(|| async {
-                    (
-                        [(header::CONTENT_TYPE, "application/json")],
-                        r#"{"result":"success","openOrders":[]}"#,
-                    )
+                any(move || {
+                    let open_orders = open_orders.clone();
+                    async move { ([(header::CONTENT_TYPE, "application/json")], open_orders) }
                 }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -5752,9 +5737,9 @@ mod tests {
             10,
         )
         .unwrap();
-        cache_futures_contract(&client, &symbol);
+        cache_futures_contract(&client, symbol);
 
-        let result = client
+        client
             .submit_order(
                 AccountId::from("KRAKEN-001"),
                 InstrumentId::from(format!("{symbol}.KRAKEN").as_str()),
@@ -5769,9 +5754,103 @@ mod tests {
                 false,
                 false,
             )
-            .await;
+            .await
+            .unwrap()
+    }
 
-        let report = result.unwrap();
+    /// An open-orders response listing `order_id` on `symbol` with the order type `listed_as`.
+    fn listed_open_orders(order_id: &str, symbol: &str, listed_as: &str) -> String {
+        open_orders_json(&[(order_id, symbol)]).replace(
+            r#""orderType":"lmt""#,
+            &format!(r#""orderType":"{listed_as}""#),
+        )
+    }
+
+    /// A submit reports the time in force and post-only its send status's order type states,
+    /// whichever payload carries the order, whether or not the open-order read lists the order.
+    #[rstest]
+    #[case::order_ioc(DOCUMENTED_SEND_PLACED, "order", "ioc", None, TimeInForce::Ioc, false)]
+    #[case::order_post(DOCUMENTED_SEND_PLACED, "order", "post", None, TimeInForce::Gtc, true)]
+    #[case::order_lmt(DOCUMENTED_SEND_PLACED, "order", "lmt", None, TimeInForce::Gtc, false)]
+    #[case::order_stp(DOCUMENTED_SEND_PLACED, "order", "stp", None, TimeInForce::Gtc, false)]
+    #[case::trigger_ioc(SEND_TRIGGER, "orderTrigger", "ioc", None, TimeInForce::Ioc, false)]
+    #[case::trigger_post(SEND_TRIGGER, "orderTrigger", "post", None, TimeInForce::Gtc, true)]
+    #[case::trigger_lmt(SEND_TRIGGER, "orderTrigger", "lmt", None, TimeInForce::Gtc, false)]
+    #[case::trigger_stp(SEND_TRIGGER, "orderTrigger", "stp", None, TimeInForce::Gtc, false)]
+    #[case::prior_execution_ioc(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "ioc",
+        None,
+        TimeInForce::Ioc,
+        false
+    )]
+    #[case::prior_execution_lmt(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "lmt",
+        None,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::prior_execution_stp(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "stp",
+        None,
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::listed_post(
+        DOCUMENTED_SEND_PLACED,
+        "order",
+        "post",
+        Some("lmt"),
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::listed_lmt(
+        DOCUMENTED_SEND_PLACED,
+        "order",
+        "lmt",
+        Some("lmt"),
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::listed_trigger_stp(
+        SEND_TRIGGER,
+        "orderTrigger",
+        "stp",
+        Some("stop"),
+        TimeInForce::Gtc,
+        false
+    )]
+    #[case::listed_prior_execution_lmt(
+        DOCUMENTED_SEND_EXECUTED,
+        "orderPriorExecution",
+        "lmt",
+        Some("lmt"),
+        TimeInForce::Gtc,
+        false
+    )]
+    #[tokio::test]
+    async fn test_submit_order_reads_the_time_in_force_of_the_send_status_order_type(
+        #[case] response: &str,
+        #[case] payload: &str,
+        #[case] order_type: &str,
+        #[case] listed_as: Option<&str>,
+        #[case] expected_time_in_force: TimeInForce,
+        #[case] expected_post_only: bool,
+    ) {
+        let (send, order_id, symbol) = send_response(response, payload, order_type);
+        let open_orders = match listed_as {
+            Some(listed_as) => listed_open_orders(&order_id, &symbol, listed_as),
+            None => r#"{"result":"success","openOrders":[]}"#.to_string(),
+        };
+
+        let report = submit_report(send, open_orders, &symbol).await;
+
+        assert_eq!(report.venue_order_id.as_str(), order_id);
         assert_eq!(report.time_in_force, expected_time_in_force);
         assert_eq!(report.post_only, expected_post_only);
     }
@@ -5890,6 +5969,24 @@ mod tests {
         TimeInForce::Gtc,
         true
     )]
+    #[case::closing_row(
+        "lmt",
+        vec![typed_row("OrderCancelled", "H-OPEN", "Post", HISTORY_T2)],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
+    #[case::unresolved_contract(
+        "lmt",
+        vec![history_element(
+            "OrderPlaced",
+            HISTORY_T1,
+            &history_order("H-OPEN", "PF_NOPE", HISTORY_T1, r#""quantity":"5","orderType":"Post""#),
+        )],
+        false,
+        TimeInForce::Gtc,
+        true
+    )]
     #[case::no_row(
         "lmt",
         vec![typed_row("OrderPlaced", "H-SIBLING", "Post", HISTORY_T1)],
@@ -5942,6 +6039,7 @@ mod tests {
             .collect();
         assert_eq!(open_reports.len(), 1, "{reports:?}");
         let report = open_reports[0];
+        assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.quantity, Quantity::from("3"));
         assert_eq!(report.time_in_force, expected_time_in_force);
         assert_eq!(report.post_only, expected_post_only);
@@ -5979,6 +6077,54 @@ mod tests {
         assert_eq!(reports[0].time_in_force, TimeInForce::Gtc);
         assert!(reports[0].post_only);
         assert!(!coverage.is_complete());
+    }
+
+    /// Each open order takes its time in force and post-only from its own rows, and a closed order
+    /// keeps the values of its own state, on a scoped read as on an unscoped one.
+    #[rstest]
+    #[case::unscoped(None)]
+    #[case::scoped(Some("PF_XBTUSD"))]
+    #[tokio::test]
+    async fn test_request_order_status_reports_take_each_open_order_time_in_force_from_its_rows(
+        #[case] scope: Option<&str>,
+    ) {
+        let rows = [
+            typed_row("OrderCancelled", "H-DONE", "IoC", HISTORY_T3),
+            typed_row("OrderUpdated", "H-OTHER", "Limit", HISTORY_T2),
+            typed_row("OrderPlaced", "H-OPEN", "Post", HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(
+            &[("H-OPEN", "PF_XBTUSD"), ("H-OTHER", "PF_XBTUSD")],
+            &rows,
+            scope,
+        )
+        .await;
+
+        let values: Vec<_> = reports
+            .iter()
+            .map(|report| {
+                (
+                    report.venue_order_id.as_str(),
+                    report.time_in_force,
+                    report.post_only,
+                )
+            })
+            .collect();
+        assert_eq!(values.len(), 3, "{reports:?}");
+        assert!(
+            values.contains(&("H-OPEN", TimeInForce::Gtc, true)),
+            "{values:?}"
+        );
+        assert!(
+            values.contains(&("H-OTHER", TimeInForce::Gtc, false)),
+            "{values:?}"
+        );
+        assert!(
+            values.contains(&("H-DONE", TimeInForce::Ioc, false)),
+            "{values:?}"
+        );
+        assert!(coverage.is_complete());
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {
