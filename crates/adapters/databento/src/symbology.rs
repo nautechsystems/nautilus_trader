@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::borrow::Cow;
+
 use ahash::{AHashMap, AHashSet};
 use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
@@ -196,8 +198,10 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
         return SType::Parent;
     }
 
-    let parts: Vec<&str> = symbol.split('.').collect();
-    if parts.len() == 3 && parts[2].chars().all(|c| c.is_ascii_digit()) {
+    // Three dot-separated parts with an all-digit rank (`ES.c.0`), without a part vector
+    if let Some(rank) = continuous_rank(symbol)
+        && rank.chars().all(|c| c.is_ascii_digit())
+    {
         return SType::Continuous;
     }
 
@@ -206,6 +210,17 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
     }
 
     SType::RawSymbol
+}
+
+/// Returns the third `.`-separated part when `symbol` has exactly three parts.
+fn continuous_rank(symbol: &str) -> Option<&str> {
+    let mut parts = symbol.split('.');
+    if parts.next().is_none() || parts.next().is_none() {
+        return None;
+    }
+
+    let rank = parts.next()?;
+    parts.next().is_none().then_some(rank)
 }
 
 /// # Errors
@@ -252,14 +267,24 @@ pub(crate) fn dataset_uses_futures_symbology(dataset: &str) -> bool {
 /// a space. Parent (`ES.FUT`) and continuous (`ES.c.0`) symbols keep their dots.
 #[must_use]
 pub fn nautilus_symbol(raw_symbol: &str, share_class_space: bool) -> Symbol {
-    if share_class_space
-        && infer_symbology_type(raw_symbol) == SType::RawSymbol
-        && is_share_class_symbol(raw_symbol, '.')
-    {
-        Symbol::from_str_unchecked(raw_symbol.replace('.', " "))
-    } else {
-        Symbol::from_str_unchecked(raw_symbol)
+    Symbol::from_str_unchecked(nautilus_symbol_str(raw_symbol, share_class_space))
+}
+
+/// Borrows `raw_symbol` when its spelling does not change.
+///
+/// A dotted letter-only share class is recognized before symbology inference, so ordinary
+/// symbols such as `AAPL` return without allocating on the historical and DBN record path.
+fn nautilus_symbol_str<'a>(raw_symbol: &'a str, share_class_space: bool) -> Cow<'a, str> {
+    if !share_class_space || !is_share_class_symbol(raw_symbol, '.') {
+        return Cow::Borrowed(raw_symbol);
     }
+
+    // Parent symbols (`ES.FUT`, `SPX.OPT`) are dotted and letter-only, but keep their dots
+    if infer_symbology_type(raw_symbol) != SType::RawSymbol {
+        return Cow::Borrowed(raw_symbol);
+    }
+
+    Cow::Owned(raw_symbol.replace('.', " "))
 }
 
 /// Returns whether `symbol` is a share class: uppercase-letter parts joined by single
@@ -421,6 +446,8 @@ fn select_requested_futures_symbol(
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use rstest::*;
 
     use super::*;
@@ -428,17 +455,22 @@ mod tests {
     #[rstest]
     #[case("1", "instrument_id")]
     #[case("123456789", "instrument_id")]
+    #[case("", "instrument_id")]
     #[case("AAPL", "raw_symbol")]
     #[case("ESM4", "raw_symbol")]
     #[case("BRN FMM0024!", "raw_symbol")]
     #[case("BRN  99   5617289", "raw_symbol")]
     #[case("SPY   240319P00511000", "raw_symbol")]
+    #[case("ES.c.0.1", "raw_symbol")]
     #[case("ES.FUT", "parent")]
     #[case("ES.OPT", "parent")]
     #[case("BRN.FUT", "parent")]
     #[case("SPX.OPT", "parent")]
     #[case("ES.c.0", "continuous")]
     #[case("SPX.n.0", "continuous")]
+    #[case("ES.c.", "continuous")]
+    #[case("..", "continuous")]
+    #[case("12.34.56", "continuous")]
     fn test_infer_symbology_type(#[case] symbol: String, #[case] expected: SType) {
         let result = infer_symbology_type(&symbol);
         assert_eq!(result, expected);
@@ -511,6 +543,37 @@ mod tests {
             nautilus_symbol(raw, share_class_space),
             Symbol::from(expected)
         );
+    }
+
+    #[rstest]
+    #[case("AAPL", true)]
+    #[case("AAPL", false)]
+    #[case("ESM4", true)]
+    #[case("123456", true)]
+    #[case("SPY   240319P00511000", true)]
+    #[case("ES.FUT", true)]
+    #[case("SPX.OPT", true)]
+    #[case("ES.c.0", true)]
+    #[case("ES.n.0", true)]
+    #[case("BRK.B", false)]
+    fn test_nautilus_symbol_borrows_when_unchanged(
+        #[case] raw: &str,
+        #[case] share_class_space: bool,
+    ) {
+        assert!(matches!(
+            nautilus_symbol_str(raw, share_class_space),
+            Cow::Borrowed(value) if value == raw
+        ));
+    }
+
+    #[rstest]
+    #[case("BRK.B", "BRK B")]
+    #[case("BF.B", "BF B")]
+    fn test_nautilus_symbol_owns_spelled_share_class(#[case] raw: &str, #[case] expected: &str) {
+        assert!(matches!(
+            nautilus_symbol_str(raw, true),
+            Cow::Owned(value) if value == expected
+        ));
     }
 
     #[rstest]
