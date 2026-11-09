@@ -67,9 +67,18 @@ RotationConfig.scheduled_dates(
 `scheduled_dates` takes an interval duration in nanoseconds and a time of day in nanoseconds since
 midnight, in its IANA `timezone`, which defaults to `UTC`. Sizes and intervals must be positive.
 
-Rotation and interval-based promotion seal open Feather files and can split rows with the same `ts_init` across files.
-Unless the later rows are exact bar replays, promotion rejects the overlapping catalog interval and retains that source.
-Use no rotation and leave `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
+Rotation follows the rows' `ts_init` rather than the wall clock. A file's first row sets its boundary:
+one interval after its `ts_init`, or the next scheduled time after it. The first row at or after the
+boundary opens the next file. Size rotation is deferred: a file that reaches its size limit stays open
+until a row with a later `ts_init` arrives, and that row opens the next file. A row whose `ts_init` is
+not later than the open file's latest row stays in that file whatever rotation is due, and rows
+written in one batch share one decision, so rotation never splits rows with the same `ts_init`.
+
+Interval-based promotion and explicit seals, such as the Rust `FeatherWriter::seal`, do not follow
+`ts_init`: they seal every open file when they run, so a row written afterward with the same
+`ts_init` as a sealed file's last row starts the next file. Unless the later rows are exact bar
+replays, promotion rejects the overlapping catalog interval and retains that source. Leave
+`promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
 
 ## Understand query visibility
 
