@@ -1205,7 +1205,8 @@ async fn test_exec_client_submit_order_sends_configured_smp_type(
 
 #[rstest]
 #[tokio::test]
-async fn test_exec_client_trade_rate_limit_emits_order_rejected() {
+async fn test_exec_client_trade_rate_limit_emits_no_terminal_rejection() {
+    let _capture = client_logging::capture_logs().await;
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
@@ -1278,20 +1279,40 @@ async fn test_exec_client_trade_rate_limit_emits_order_rejected() {
         "Expected OrderSubmitted for {client_order_id}, was {submitted:?}",
     );
     wait_until_async(
-        || async { state.trade_order_requests.load(Ordering::Relaxed) == 1 },
+        || async {
+            client_logging::messages().iter().any(|(_, message)| {
+                message.contains("Ambiguous order response failure") && message.contains("10006")
+            })
+        },
         Duration::from_secs(5),
     )
     .await;
+
+    assert_eq!(state.trade_order_requests.load(Ordering::Relaxed), 1);
     assert!(state.trade_order_req_id_present.load(Ordering::Relaxed));
-    let rejected = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("timed out waiting for OrderRejected")
-        .expect("channel closed");
-    let ExecutionEvent::Order(OrderEventAny::Rejected(event)) = rejected else {
-        panic!("Expected OrderRejected, was {rejected:?}");
-    };
-    assert_eq!(event.client_order_id, client_order_id);
-    assert_eq!(event.reason.to_string(), "Too many visits.");
+
+    let reject_window = tokio::time::sleep(Duration::from_millis(200));
+    tokio::pin!(reject_window);
+
+    loop {
+        tokio::select! {
+            () = &mut reject_window => break,
+            event = rx.recv() => {
+                let event = event.expect("channel closed");
+                assert!(
+                    !matches!(
+                        event,
+                        ExecutionEvent::Order(
+                            OrderEventAny::Rejected(_)
+                                | OrderEventAny::CancelRejected(_)
+                                | OrderEventAny::ModifyRejected(_)
+                        )
+                    ),
+                    "Rate-limit response must not emit a terminal rejection: {event:?}",
+                );
+            }
+        }
+    }
 
     client.disconnect().await.unwrap();
 }

@@ -4022,26 +4022,65 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_single_cancel_rate_limit_emits_cancel_rejected() {
+    fn test_dispatch_single_place_rejection_emits_order_rejected() {
         let mut ctx = DispatchTestContext::new();
-        let cid = ClientOrderId::from("cancel-rate-limit-1");
-        let venue_order_id = VenueOrderId::from("venue-cancel-rate-limit-1");
+        let cid = ClientOrderId::from("place-reject-1");
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
-            "req-cancel-rate-limit".to_string(),
-            (
-                vec![cid],
-                vec![Some(venue_order_id)],
-                PendingOperation::Cancel,
-                Vec::new(),
-            ),
+            "req-place".to_string(),
+            (vec![cid], vec![None], PendingOperation::Place, Vec::new()),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL,
-            10429,
-            "System level frequency protection.",
-            "req-cancel-rate-limit",
+            BYBIT_OP_ORDER_CREATE,
+            110017,
+            "orderQty will be truncated to zero",
+            "req-place",
+            serde_json::json!({
+                "orderLinkId": cid.to_string(),
+            }),
+            None,
+        );
+
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+
+        let event = ctx.rx.try_recv().expect("expected OrderRejected event");
+        assert!(
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(ref rejected))
+                if rejected.client_order_id == cid
+                    && rejected.reason == "orderQty will be truncated to zero"),
+            "Expected OrderRejected for {cid}, found {event:?}"
+        );
+        assert!(ctx.rx.try_recv().is_err());
+        assert!(!ctx.state.order_identities.contains_key(&cid));
+    }
+
+    #[rstest]
+    #[case::place_frequency(PendingOperation::Place, BYBIT_OP_ORDER_CREATE, 10429)]
+    #[case::amend_frequency(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND, 10429)]
+    #[case::cancel_frequency(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL, 10429)]
+    #[case::place_visits(PendingOperation::Place, BYBIT_OP_ORDER_CREATE, 10006)]
+    #[case::amend_visits(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND, 10006)]
+    #[case::cancel_visits(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL, 10006)]
+    fn test_dispatch_single_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] ret_code: i64,
+    ) {
+        let mut ctx = DispatchTestContext::new();
+        let cid = ClientOrderId::from("rate-limit-1");
+        let venue_order_id = VenueOrderId::from("venue-rate-limit-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-rate-limit".to_string(),
+            (vec![cid], vec![Some(venue_order_id)], operation, Vec::new()),
+        );
+
+        let response = order_response(
+            op,
+            ret_code,
+            "rate limit",
+            "req-rate-limit",
             serde_json::json!({
                 "orderId": venue_order_id.to_string(),
                 "orderLinkId": cid.to_string(),
@@ -4051,13 +4090,12 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
-            "Expected CancelRejected for {cid}, found {event:?}"
+            ctx.rx.try_recv().is_err(),
+            "Rate-limit response must not emit a terminal rejection"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
+        assert!(!ctx.state.pending_requests.contains_key("req-rate-limit"));
     }
 
     #[rstest]
@@ -4170,28 +4208,36 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_top_level_rate_limit_emits_cancel_rejected() {
+    #[case::place(PendingOperation::Place, BYBIT_OP_ORDER_CREATE_BATCH, 10429)]
+    #[case::amend(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND_BATCH, 10429)]
+    #[case::cancel(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL_BATCH, 10006)]
+    fn test_dispatch_batch_top_level_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] ret_code: i64,
+    ) {
         let mut ctx = DispatchTestContext::new();
         let cid_1 = ClientOrderId::from("batch-rate-1");
         let cid_2 = ClientOrderId::from("batch-rate-2");
-        let venue_1 = VenueOrderId::from("venue-rate-1");
-        let venue_2 = VenueOrderId::from("venue-rate-2");
         ctx.state.order_identities.insert(cid_1, default_identity());
         ctx.state.order_identities.insert(cid_2, default_identity());
         ctx.state.pending_requests.insert(
             "req-batch-rate".to_string(),
             (
                 vec![cid_1, cid_2],
-                vec![Some(venue_1), Some(venue_2)],
-                PendingOperation::Cancel,
+                vec![
+                    Some(VenueOrderId::from("venue-rate-1")),
+                    Some(VenueOrderId::from("venue-rate-2")),
+                ],
+                operation,
                 Vec::new(),
             ),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL_BATCH,
-            10006,
-            "Too many visits.",
+            op,
+            ret_code,
+            "rate limit",
             "req-batch-rate",
             serde_json::json!({}),
             None,
@@ -4199,16 +4245,13 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let first = ctx.rx.try_recv().expect("expected first CancelRejected");
-        let second = ctx.rx.try_recv().expect("expected second CancelRejected");
         assert!(
-            matches!(first, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid_1 && rejected.venue_order_id == Some(venue_1))
+            ctx.rx.try_recv().is_err(),
+            "Batch rate-limit response must not emit a terminal rejection"
         );
-        assert!(
-            matches!(second, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid_2 && rejected.venue_order_id == Some(venue_2))
-        );
+        assert!(ctx.state.order_identities.contains_key(&cid_1));
+        assert!(ctx.state.order_identities.contains_key(&cid_2));
+        assert!(!ctx.state.pending_requests.contains_key("req-batch-rate"));
     }
 
     #[rstest]
@@ -4272,26 +4315,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_per_item_rate_limit_emits_cancel_rejected() {
+    #[case::place(PendingOperation::Place, BYBIT_OP_ORDER_CREATE_BATCH, 10006)]
+    #[case::amend(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND_BATCH, 10429)]
+    #[case::cancel(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL_BATCH, 10006)]
+    fn test_dispatch_batch_per_item_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] code: i64,
+    ) {
         let mut ctx = DispatchTestContext::new();
-        let cid = ClientOrderId::from("batch-cancel-rate-limit");
+        let cid = ClientOrderId::from("batch-item-rate-limit");
         let venue_order_id = VenueOrderId::from("venue-batch-rate-limit");
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
-            "req-batch-rate-limit".to_string(),
-            (
-                vec![cid],
-                vec![Some(venue_order_id)],
-                PendingOperation::Cancel,
-                Vec::new(),
-            ),
+            "req-batch-item-rate-limit".to_string(),
+            (vec![cid], vec![Some(venue_order_id)], operation, Vec::new()),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL_BATCH,
+            op,
             0,
             "OK",
-            "req-batch-rate-limit",
+            "req-batch-item-rate-limit",
             serde_json::json!({
                 "list": [
                     {"orderId": venue_order_id.to_string(), "orderLinkId": cid.to_string()}
@@ -4299,20 +4344,23 @@ mod tests {
             }),
             Some(serde_json::json!({
                 "list": [
-                    {"code": 10006, "msg": "Too many visits."}
+                    {"code": code, "msg": "rate limit"}
                 ]
             })),
         );
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
-            "Expected CancelRejected for {cid}, found {event:?}"
+            ctx.rx.try_recv().is_err(),
+            "Per-item rate-limit response must not emit a terminal rejection"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
+        assert!(
+            !ctx.state
+                .pending_requests
+                .contains_key("req-batch-item-rate-limit")
+        );
     }
 
     #[rstest]

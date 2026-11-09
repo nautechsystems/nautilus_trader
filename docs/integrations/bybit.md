@@ -1032,11 +1032,15 @@ consume venue quota that this adapter cannot reserve in advance. Response header
 gap for UID limits, but separate processes still require operational coordination.
 :::
 
-A WebSocket rate-limit response is a terminal rejection for the affected order operation.
-An HTTP `retCode` `10006` on submit, modify, or cancel does not prove rejection, so reconciliation
-must resolve it. Transport timeouts, service restarts, and duplicate request identifiers also
-remain subject to order reconciliation because they do not prove whether the venue accepted the
-order.
+The following outcomes do not prove whether Bybit accepted the command. The adapter emits no
+`OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected`. The order stays in flight until
+a later order update or reconciliation resolves it:
+
+- HTTP or WebSocket `retCode` `10006` ("Too many visits") or `10429` ("System level frequency
+  protection") on submit, modify, or cancel
+- Transport timeouts
+- Service restarts
+- Duplicate request identifiers
 
 :::info
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.

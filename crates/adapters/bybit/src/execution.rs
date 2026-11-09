@@ -2914,7 +2914,7 @@ fn classify_modify_http_failure(error: &anyhow::Error) -> CommandFailure {
 }
 
 fn http_order_error_is_ambiguous(code: i32) -> bool {
-    code == 10006 || is_bybit_ambiguous_order_error_code(i64::from(code))
+    is_bybit_ambiguous_order_error_code(i64::from(code))
 }
 
 fn classify_http_failure(error: &anyhow::Error) -> CommandFailure {
@@ -3345,6 +3345,22 @@ mod tests {
             classify_modify_http_failure(&status),
             CommandFailure::Ambiguous(status.to_string()),
         );
+    }
+
+    #[rstest]
+    #[case::visits(10006)]
+    #[case::frequency_protection(10429)]
+    fn test_rate_limit_http_order_failures_stay_ambiguous(#[case] code: i32) {
+        let error = anyhow::Error::from(BybitHttpError::BybitError {
+            error_code: code,
+            message: "Too many visits".to_string(),
+        });
+
+        let expected = CommandFailure::Ambiguous(error.to_string());
+
+        assert_eq!(classify_cancel_http_failure(&error), expected);
+        assert_eq!(classify_modify_http_failure(&error), expected);
+        assert!(submit_rejection_reason(&error).is_none());
     }
 
     #[rstest]

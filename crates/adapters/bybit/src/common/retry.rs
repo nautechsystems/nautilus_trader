@@ -62,6 +62,7 @@ mod tests {
     #[rstest]
     #[case(10006, true)]
     #[case(10001, false)]
+    #[case(10429, false)]
     fn http_error_code_classification(#[case] error_code: i32, #[case] expected: bool) {
         let error = BybitHttpError::BybitError {
             error_code,
