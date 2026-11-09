@@ -382,4 +382,18 @@ mod tests {
             CommandFailure::NotSent("Request not started: request encoding failed".to_string())
         );
     }
+
+    /// A venue `EOrder` rate-limit refusal is a rejection, not an ambiguous retry failure:
+    /// Kraken definitively refused the cancel and the order remains live. The error text is
+    /// retryable-class for reads, so pin the deliberate classification difference.
+    #[rstest]
+    fn test_spot_cancel_venue_rate_limit_refusal_is_a_rejection() {
+        let error = KrakenHttpError::ApiError(vec!["EOrder:Rate limit exceeded".to_string()]);
+
+        assert!(crate::http::error::kraken_http_should_retry(&error));
+        assert_eq!(
+            command_failure_from_spot_cancel_error(error),
+            CommandFailure::VenueRejected("EOrder:Rate limit exceeded".to_string())
+        );
+    }
 }

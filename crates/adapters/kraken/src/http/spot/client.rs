@@ -1059,7 +1059,7 @@ impl KrakenSpotRawHttpClient {
         let body = Some(param_string.into_bytes());
 
         let response: KrakenResponse<SpotCancelOrderResponse> = self
-            .send_request(Method::POST, "/0/private/CancelOrder", body, true)
+            .send_request_once(Method::POST, "/0/private/CancelOrder", body, true)
             .await?;
 
         response
@@ -1168,7 +1168,7 @@ impl KrakenSpotRawHttpClient {
         }
 
         let response: KrakenResponse<SpotCancelOrderResponse> = self
-            .send_request(Method::POST, "/0/private/CancelAll", None, true)
+            .send_request_once(Method::POST, "/0/private/CancelAll", None, true)
             .await?;
 
         response
@@ -1193,7 +1193,7 @@ impl KrakenSpotRawHttpClient {
         let body = Some(param_string.into_bytes());
 
         let response: KrakenResponse<SpotEditOrderResponse> = self
-            .send_request(Method::POST, "/0/private/EditOrder", body, true)
+            .send_request_once(Method::POST, "/0/private/EditOrder", body, true)
             .await?;
 
         response
@@ -3696,7 +3696,13 @@ fn compute_time_in_force(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
     use nautilus_model::instruments::CurrencyPair;
     use nautilus_testkit::http::assert_http_redirect_rejected;
@@ -4218,6 +4224,280 @@ mod tests {
             ),
             "{error:#}"
         );
+    }
+
+    /// A spot command that can change venue state, with the endpoint it writes to.
+    #[derive(Clone, Copy, Debug)]
+    enum StateChangingSpotCommand {
+        CancelOrder,
+        CancelAll,
+        EditOrder,
+    }
+
+    impl StateChangingSpotCommand {
+        fn endpoint(self) -> &'static str {
+            match self {
+                Self::CancelOrder => "/0/private/CancelOrder",
+                Self::CancelAll => "/0/private/CancelAll",
+                Self::EditOrder => "/0/private/EditOrder",
+            }
+        }
+
+        async fn send(
+            self,
+            client: &KrakenSpotRawHttpClient,
+        ) -> anyhow::Result<(), KrakenHttpError> {
+            match self {
+                Self::CancelOrder => {
+                    let params = KrakenSpotCancelOrderParamsBuilder::default()
+                        .txid("V-001".to_string())
+                        .build()
+                        .expect("cancel params should build");
+                    client.cancel_order(&params).await.map(|_| ())
+                }
+                Self::CancelAll => client.cancel_all_orders().await.map(|_| ()),
+                Self::EditOrder => {
+                    let params = KrakenSpotEditOrderParamsBuilder::default()
+                        .pair(Ustr::from("XXBTZUSD"))
+                        .txid("V-001".to_string())
+                        .volume("0.00100000".to_string())
+                        .build()
+                        .expect("edit params should build");
+                    client.edit_order(&params).await.map(|_| ())
+                }
+            }
+        }
+    }
+
+    /// A retryable transport failure as the mock venue presents it.
+    #[derive(Clone, Copy, Debug)]
+    enum RetryableTransportFailure {
+        /// Accepted connections are dropped before any response, failing at the transport layer.
+        DroppedConnection,
+        /// HTTP 429, which the client classifies as a retryable network error.
+        Http429,
+        /// HTTP 500, which the client classifies as a retryable network error.
+        Http500,
+        /// HTTP 200 carrying a rate-limit error array, Kraken's other retryable class.
+        ApiRateLimit,
+    }
+
+    /// Serves `endpoint` with the given failure and counts the requests that reach it.
+    async fn spawn_failing_spot_mock(
+        endpoint: &'static str,
+        failure: RetryableTransportFailure,
+    ) -> (String, Arc<AtomicUsize>) {
+        use axum::{Router, http::StatusCode, routing::post};
+
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        match failure {
+            RetryableTransportFailure::DroppedConnection => {
+                let handler_count = request_count.clone();
+
+                tokio::spawn(async move {
+                    loop {
+                        match listener.accept().await {
+                            Ok((socket, _)) => {
+                                handler_count.fetch_add(1, Ordering::Relaxed);
+                                drop(socket);
+                            }
+                            Err(_) => return,
+                        }
+                    }
+                });
+            }
+            RetryableTransportFailure::ApiRateLimit => {
+                let handler_count = request_count.clone();
+                let router = Router::new().route(
+                    endpoint,
+                    post(move || {
+                        let handler_count = handler_count.clone();
+
+                        async move {
+                            use axum::response::IntoResponse;
+
+                            handler_count.fetch_add(1, Ordering::Relaxed);
+
+                            (
+                                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                                r#"{"error":["EAPI:Rate limit exceeded"],"result":null}"#,
+                            )
+                                .into_response()
+                        }
+                    }),
+                );
+
+                tokio::spawn(async move {
+                    axum::serve(listener, router).await.unwrap();
+                });
+            }
+            RetryableTransportFailure::Http429 | RetryableTransportFailure::Http500 => {
+                let status = match failure {
+                    RetryableTransportFailure::Http429 => StatusCode::TOO_MANY_REQUESTS,
+                    RetryableTransportFailure::Http500 => StatusCode::INTERNAL_SERVER_ERROR,
+                    RetryableTransportFailure::DroppedConnection
+                    | RetryableTransportFailure::ApiRateLimit => unreachable!(),
+                };
+
+                let handler_count = request_count.clone();
+                let router = Router::new().route(
+                    endpoint,
+                    post(move || {
+                        let handler_count = handler_count.clone();
+                        async move {
+                            handler_count.fetch_add(1, Ordering::Relaxed);
+                            status
+                        }
+                    }),
+                );
+
+                tokio::spawn(async move {
+                    axum::serve(listener, router).await.unwrap();
+                });
+            }
+        }
+
+        (format!("http://{addr}"), request_count)
+    }
+
+    /// Builds a client with retries enabled (three retries, millisecond backoff) so send-once
+    /// behavior comes from the command's transport, not from the retry configuration.
+    fn retry_enabled_spot_client(base_url: String) -> KrakenSpotRawHttpClient {
+        KrakenSpotRawHttpClient::with_credentials(
+            "test".to_string(),
+            "c2VjcmV0".to_string(),
+            KrakenEnvironment::Live,
+            Some(base_url),
+            10,
+            Some(3),
+            Some(1),
+            Some(2),
+            None,
+            100,
+        )
+        .unwrap()
+    }
+
+    /// A spot command that can change venue state reaches the venue exactly once on a retryable
+    /// failure: a retransmitted cancel or edit may act on venue state twice.
+    #[rstest]
+    #[case::cancel_order_dropped_connection(
+        StateChangingSpotCommand::CancelOrder,
+        RetryableTransportFailure::DroppedConnection
+    )]
+    #[case::cancel_order_http_429(
+        StateChangingSpotCommand::CancelOrder,
+        RetryableTransportFailure::Http429
+    )]
+    #[case::cancel_order_http_500(
+        StateChangingSpotCommand::CancelOrder,
+        RetryableTransportFailure::Http500
+    )]
+    #[case::cancel_order_api_rate_limit(
+        StateChangingSpotCommand::CancelOrder,
+        RetryableTransportFailure::ApiRateLimit
+    )]
+    #[case::cancel_all_dropped_connection(
+        StateChangingSpotCommand::CancelAll,
+        RetryableTransportFailure::DroppedConnection
+    )]
+    #[case::cancel_all_http_429(
+        StateChangingSpotCommand::CancelAll,
+        RetryableTransportFailure::Http429
+    )]
+    #[case::cancel_all_http_500(
+        StateChangingSpotCommand::CancelAll,
+        RetryableTransportFailure::Http500
+    )]
+    #[case::cancel_all_api_rate_limit(
+        StateChangingSpotCommand::CancelAll,
+        RetryableTransportFailure::ApiRateLimit
+    )]
+    #[case::edit_order_dropped_connection(
+        StateChangingSpotCommand::EditOrder,
+        RetryableTransportFailure::DroppedConnection
+    )]
+    #[case::edit_order_http_429(
+        StateChangingSpotCommand::EditOrder,
+        RetryableTransportFailure::Http429
+    )]
+    #[case::edit_order_http_500(
+        StateChangingSpotCommand::EditOrder,
+        RetryableTransportFailure::Http500
+    )]
+    #[case::edit_order_api_rate_limit(
+        StateChangingSpotCommand::EditOrder,
+        RetryableTransportFailure::ApiRateLimit
+    )]
+    #[tokio::test]
+    async fn test_state_changing_spot_command_sends_once_on_retryable_failure(
+        #[case] command: StateChangingSpotCommand,
+        #[case] failure: RetryableTransportFailure,
+    ) {
+        let (base_url, request_count) = spawn_failing_spot_mock(command.endpoint(), failure).await;
+        let client = retry_enabled_spot_client(base_url);
+
+        let result = command.send(&client).await;
+
+        // The failing attempt must be retryable-class, so the single request count below
+        // proves the command's transport is send-once rather than the failure being final.
+        assert!(
+            result.as_ref().is_err_and(kraken_http_should_retry),
+            "{command:?} on {failure:?} must fail retryably, received {result:?}"
+        );
+        assert_eq!(
+            request_count.load(Ordering::Relaxed),
+            1,
+            "{command:?} on {failure:?} must reach the venue exactly once"
+        );
+    }
+
+    /// Reads keep the retrying transport: a transient HTTP 500 is retried and then succeeds.
+    #[tokio::test]
+    async fn test_spot_read_request_still_retries_transient_failure() {
+        use axum::{
+            Router,
+            http::{StatusCode, header},
+            routing::any,
+        };
+
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let handler_count = request_count.clone();
+        let body = include_str!("../../../test_data/http_server_time.json").to_string();
+
+        let router = Router::new().route(
+            "/0/public/Time",
+            any(move || {
+                let handler_count = handler_count.clone();
+                let body = body.clone();
+                async move {
+                    use axum::response::IntoResponse;
+
+                    if handler_count.fetch_add(1, Ordering::Relaxed) == 0 {
+                        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    } else {
+                        ([(header::CONTENT_TYPE, "application/json")], body).into_response()
+                    }
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let client = retry_enabled_spot_client(format!("http://{addr}"));
+
+        let server_time = client.get_server_time().await.unwrap();
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 2);
+        assert_eq!(server_time.unixtime, 1_762_820_224);
+        assert_eq!(server_time.rfc1123, "Tue, 11 Nov 25 00:17:04 +0000");
     }
 
     fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {
