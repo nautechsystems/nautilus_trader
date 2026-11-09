@@ -2003,7 +2003,8 @@ impl KrakenFuturesHttpClient {
             // snapshot, so a snapshot report takes its time in force and post-only from the newest
             // readable row of its order, the first listed on a tie. Kraken's edit takes no order
             // type, and a stop reports `GTC` before and after it triggers, so an older row states
-            // what an unread newer one would.
+            // the time in force an unread newer one would; at worst it misses a post-only order a
+            // trigger fired, which the snapshot misses too.
             let mut open_time_in_force: AHashMap<VenueOrderId, (i64, TimeInForce, bool)> =
                 AHashMap::new();
             let mut skipped_in_scope = 0usize;
@@ -2593,8 +2594,9 @@ impl KrakenFuturesHttpClient {
                     ts_init,
                 )?;
 
-                // Kraken documents the `ioc` and `post` types on the send status but not on the
-                // open-order read, so the send status's type states the time in force and post-only.
+                // Kraken documents the `ioc` and `post` types in the send status's order events but
+                // not in the open-order read, so the first event's order type states the time in
+                // force and post-only.
                 let send_order_type = send_status
                     .order_events
                     .as_ref()
@@ -5833,6 +5835,14 @@ mod tests {
         TimeInForce::Gtc,
         false
     )]
+    #[case::listed_trigger_post(
+        SEND_TRIGGER,
+        "orderTrigger",
+        "post",
+        Some("stop"),
+        TimeInForce::Gtc,
+        true
+    )]
     #[tokio::test]
     async fn test_submit_order_reads_the_time_in_force_of_the_send_status_order_type(
         #[case] response: &str,
@@ -5851,6 +5861,9 @@ mod tests {
         let report = submit_report(send, open_orders, &symbol).await;
 
         assert_eq!(report.venue_order_id.as_str(), order_id);
+        if listed_as.is_some() {
+            assert_eq!(report.quantity, Quantity::from("3"));
+        }
         assert_eq!(report.time_in_force, expected_time_in_force);
         assert_eq!(report.post_only, expected_post_only);
     }
@@ -6079,8 +6092,9 @@ mod tests {
         assert!(!coverage.is_complete());
     }
 
-    /// Each open order takes its time in force and post-only from its own rows, and a closed order
-    /// keeps the values of its own state, on a scoped read as on an unscoped one.
+    /// An open order takes its time in force and post-only from its own rows, never from another
+    /// order's, and a closed order keeps the values of its own state, on a scoped read as on an
+    /// unscoped one.
     #[rstest]
     #[case::unscoped(None)]
     #[case::scoped(Some("PF_XBTUSD"))]

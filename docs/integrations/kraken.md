@@ -959,18 +959,18 @@ than taking a row or reporting the order missing.
 The adapter returns open orders and, when `open_only=False`, historical closed and
 filled orders. Historical reads have the limits below.
 
-Kraken has no time in force or post-only field: apart from a rejection reason, only an order's type states them. It
-documents the `ioc` and `post` types in the send-order response and the order history (`IoC` and `Post`), but not in
-the open-order read (`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the
+Kraken Futures has no time in force or post-only field: apart from a rejection reason, only an order's type states
+them. It documents the `ioc` and `post` types in the send-order response and the order history (`IoC` and `Post`), but
+not in the open-order read (`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the
 orders-status window states no time in force or post-only flag (its type is only `ORDER` or `TRIGGER_ORDER`). Reports
 take these values as follows:
 
 - A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
   history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
 - The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
-  send-order response's first order event, and from the order history when the response carries no event. When the
-  response carries an event, the time in force and post-only flag come from that event's type, where `ioc` is `IOC`
-  and `post` is post-only `GTC`.
+  send-order response's first order event, or from the order history when the response carries no event. Whichever
+  source reports, the order type in that event's `order`, `orderTrigger` or `orderPriorExecution` sets the time in
+  force and post-only flag, where `ioc` is `IOC` and `post` is post-only `GTC`.
 - An open-only read, an open order with no readable row on the page, and an order feed delta for an order the adapter
   does not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not
   post-only.
