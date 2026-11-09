@@ -468,11 +468,17 @@ impl PyStreamingFeatherWriter {
 
 fn run_environment_and_instance_id_from_path(path: &str) -> Option<(Environment, String)> {
     let normalized = normalize_path_separators(path);
-    let parsed_url = url::Url::parse(&normalized).ok();
 
-    let path = parsed_url.as_ref().map_or(normalized.as_str(), |url| {
-        url.path().trim_start_matches('/')
-    });
+    // A local path or file:// URI holds its path as written, so only a remote URI is parsed
+    let parsed_url = normalized
+        .split_once("://")
+        .filter(|(scheme, _)| *scheme != "file")
+        .and_then(|_| url::Url::parse(&normalized).ok());
+
+    let path = parsed_url.as_ref().map_or_else(
+        || normalized.strip_prefix("file://").unwrap_or(&normalized),
+        |url| url.path().trim_start_matches('/'),
+    );
 
     let components: Vec<&str> = path
         .trim_matches('/')
@@ -503,6 +509,10 @@ mod tests {
     #[case(r"\\server\share\live\run-2", Environment::Live, "run-2")]
     #[case("/tmp/catalog/sandbox/run-3", Environment::Sandbox, "run-3")]
     #[case("file:///C:/catalog/backtest/run-1", Environment::Backtest, "run-1")]
+    #[case(r"C:\C# work\backtest\run-1", Environment::Backtest, "run-1")]
+    #[case("file:///C:/C# work/backtest/run-1", Environment::Backtest, "run-1")]
+    #[case("file:///tmp/a?b/live/run-2", Environment::Live, "run-2")]
+    #[case("s3://bucket/catalog/sandbox/run-3", Environment::Sandbox, "run-3")]
     fn run_environment_and_instance_id_handles_platform_paths(
         #[case] path: &str,
         #[case] environment: Environment,

@@ -34,7 +34,10 @@ use crate::{
         ensure_planned_file_unchanged, prepare_migration_parts, read_planned_migration_file,
     },
     catalog::types::instrument_path_prefix,
-    common::{metadata::record_batch_ts_init_range, storage::normalize_storage_location},
+    common::{
+        metadata::record_batch_ts_init_range, paths::escape_local_file_uri,
+        storage::normalize_storage_location,
+    },
 };
 
 /// Settings for converting a legacy Parquet catalog into a separate native catalog.
@@ -75,9 +78,8 @@ pub fn migrate_parquet_catalog(
         return Ok(CatalogMigrationReport::from_plan(&plan, true));
     }
 
-    let url = url::Url::parse(&target_uri)?;
-    if url.scheme() == "file" {
-        let path = url
+    if target_uri.starts_with("file://") {
+        let path = url::Url::parse(&escape_local_file_uri(&target_uri))?
             .to_file_path()
             .map_err(|()| anyhow::anyhow!("Invalid destination file URI"))?;
         std::fs::create_dir_all(path)?;

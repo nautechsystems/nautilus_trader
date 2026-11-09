@@ -1634,6 +1634,35 @@ fn test_query_round_trip_non_ascii_instrument_id() {
     }
 }
 
+// URL syntax characters in the catalog root are part of a directory name, not URL syntax
+#[rstest]
+#[case::hash("C# work")]
+#[case::percent_escape("a%20b")]
+#[cfg_attr(not(windows), case::question_mark("a?b"))]
+fn test_query_round_trip_with_url_syntax_in_catalog_root(#[case] directory: &str) {
+    let temp_dir = TempDir::new().unwrap();
+    let root = temp_dir.path().join(directory).join("catalog");
+    fs::create_dir_all(&root).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&root, None, None, None, None);
+    let bars = vec![create_bar(1), create_bar(2)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+    let ids = Some(vec![bars[0].bar_type.to_string()]);
+
+    for optimize in [true, false] {
+        for identifiers in [None, ids.clone()] {
+            let loaded: Vec<Bar> = catalog
+                .query(identifiers, None, None, None, None, optimize)
+                .unwrap();
+            assert_eq!(loaded, bars, "optimize={optimize}");
+        }
+    }
+
+    assert_eq!(
+        catalog.reconstruct_full_uri("data/bars/file.parquet"),
+        make_object_store_path(&root.to_string_lossy(), ["data/bars/file.parquet"]),
+    );
+}
+
 // filter_files must match a non-ASCII id against the percent-encoded on-disk directory.
 #[rstest]
 fn test_filter_files_non_ascii_instrument_id() {

@@ -1696,6 +1696,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case::hash(
+        "file:///C:/data/C# work",
+        "file:///C:/data/C%23%20work/data/bars/file.parquet"
+    )]
+    #[case::percent_escape("file:///tmp/a%20b", "file:///tmp/a%2520b/data/bars/file.parquet")]
+    #[case::question_mark("file:///tmp/a?b", "file:///tmp/a%3Fb/data/bars/file.parquet")]
+    fn append_path_to_file_uri_keeps_escaped_local_root(#[case] base: &str, #[case] url: &str) {
+        let base = crate::common::paths::escape_local_file_uri(base);
+
+        assert_eq!(
+            append_path_to_file_uri(&base, "data/bars/file.parquet"),
+            url
+        );
+    }
+
+    #[rstest]
     #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_s3() {
         let mut options = AHashMap::new();

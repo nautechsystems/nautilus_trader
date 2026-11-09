@@ -653,6 +653,27 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
     }
 }
 
+// URL syntax characters in the destination path are part of a directory name
+#[rstest]
+#[case::hash("C# work")]
+#[case::percent_escape("a%20b")]
+#[cfg_attr(not(windows), case::question_mark("a?b"))]
+fn migration_into_target_with_url_syntax_in_path(#[case] directory: &str) {
+    ensure_custom_data_registered::<RustTestCustomData>();
+    let temporary = TempDir::new().unwrap();
+    let target = temporary.path().join(directory).join("migrated");
+    let report = migrate_parquet_catalog(config(&fixture_path(), &target, false)).unwrap();
+    assert_eq!(report.migrated_files, 7);
+
+    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let bars = catalog
+        .query::<Bar>(None, None, None, None, None, true)
+        .unwrap();
+    assert_eq!(bars.len(), 1);
+    // Nothing was created under a path cut at the URL syntax
+    assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 1);
+}
+
 #[rstest]
 fn migrated_catalog_consolidates_with_fresh_writes() {
     ensure_custom_data_registered::<RustTestCustomData>();

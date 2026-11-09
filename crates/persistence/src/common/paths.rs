@@ -312,6 +312,18 @@ pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     uri.strip_prefix("file://").unwrap_or(uri).to_string()
 }
 
+/// Escapes the characters a URL parser reads as syntax in a local `file://` URI.
+///
+/// A local catalog URI keeps its path as written, the way [`file_uri_to_native_path`] reads
+/// it, so a `%`, `#` or `?` in a directory name is part of that name. Parsing the URI as a
+/// URL without escaping them would decode `%20` to a space and cut the path at `#` or `?`.
+#[must_use]
+pub(crate) fn escape_local_file_uri(uri: &str) -> String {
+    uri.replace('%', "%25")
+        .replace('#', "%23")
+        .replace('?', "%3F")
+}
+
 /// Returns the catalog type staged by a Feather session path like
 /// `backtest/{run_id}/{type}/{...}/file.feather`.
 ///

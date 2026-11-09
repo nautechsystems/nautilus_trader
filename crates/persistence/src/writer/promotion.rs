@@ -37,7 +37,10 @@ use object_store::path::Path as ObjectPath;
 use crate::{
     common::{
         conversion::FeatherConversionSummary,
-        paths::{environment_directory, environment_from_directory, normalize_path_separators},
+        paths::{
+            environment_directory, environment_from_directory, escape_local_file_uri,
+            normalize_path_separators,
+        },
         storage::StorageBackend,
     },
     writer::{
@@ -67,12 +70,9 @@ pub(crate) struct PromotionSession {
 
 impl PromotionSession {
     pub(crate) fn from_uri(uri: &str) -> Option<Self> {
-        let uri_local_encoded = uri.starts_with("file://").then(|| {
-            normalize_path_separators(uri)
-                .replace('%', "%25")
-                .replace('#', "%23")
-                .replace('?', "%3F")
-        });
+        let uri_local_encoded = uri
+            .starts_with("file://")
+            .then(|| escape_local_file_uri(&normalize_path_separators(uri)));
 
         if let Ok(url) = url::Url::parse(uri_local_encoded.as_deref().unwrap_or(uri))
             && let Some(session) = Self::from_url(url)

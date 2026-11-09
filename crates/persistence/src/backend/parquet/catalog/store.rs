@@ -39,7 +39,10 @@ use crate::{
     catalog::types::{
         CatalogDataType, catalog_data_type_from_path, parquet_catalog_data_type_path_prefixes,
     },
-    common::{paths::normalize_path_separators, storage::StorageBackend},
+    common::{
+        paths::{escape_local_file_uri, normalize_path_separators},
+        storage::StorageBackend,
+    },
 };
 
 impl ParquetDataCatalog {
@@ -454,7 +457,7 @@ impl ParquetDataCatalog {
         // For local paths, extract the directory from the original URI
         if self.original_uri.starts_with("file://") {
             // Extract the path from the file:// URI
-            if let Ok(url) = url::Url::parse(&self.original_uri)
+            if let Ok(url) = url::Url::parse(&escape_local_file_uri(&self.original_uri))
                 && let Ok(base_path) = url.to_file_path()
             {
                 // Use platform-appropriate path separator for display
@@ -502,7 +505,7 @@ impl ParquetDataCatalog {
         }
 
         if self.original_uri.starts_with("file://") {
-            return append_path_to_file_uri(&self.original_uri, path);
+            return append_path_to_file_uri(&escape_local_file_uri(&self.original_uri), path);
         }
 
         self.reconstruct_full_uri(path)
