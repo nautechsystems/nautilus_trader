@@ -62,6 +62,17 @@ If you use AI tools, you remain responsible for every submission. Read and follo
 [AI Policy](AI_POLICY.md), which explains the requirements for human direction, review,
 communication, and attribution.
 
+## Limit open issues and pull requests
+
+**Keep at most one open issue and one open pull request in this repository at a time, unless a
+maintainer explicitly agrees to or requests more.** This keeps maintainer time from becoming
+concentrated on one contributor's work. Maintainers may close additional issues or pull requests.
+
+**Do not comment across many issues or pull requests.** Comment only where you have relevant,
+verified information to add. Even useful comments, spread widely, can concentrate maintainer time
+on one contributor's activity. Ping maintainers only when the work is blocked on their input, and
+allow at least a week before pinging again.
+
 ## Start with an issue
 
 **Before starting a substantial change, such as a new feature, integration, or design change,
