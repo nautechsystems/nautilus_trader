@@ -6045,7 +6045,7 @@ async fn test_withdraw_sends_optional_fields() {
 
 #[rstest]
 #[tokio::test]
-async fn test_withdraw_retry_resends_same_request_id() {
+async fn test_withdraw_with_request_id_is_sent_once() {
     let (addr, state) = start_withdraw_server(1).await;
     let client = BybitRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -6070,18 +6070,17 @@ async fn test_withdraw_retry_resends_same_request_id() {
         .request_id("retry123".to_string())
         .build()
         .unwrap();
-    let response = client.withdraw(&params).await.unwrap();
+    let result = client.withdraw(&params).await;
 
-    assert_eq!(response.result.id, "10195");
-
+    assert!(result.is_err());
     let bodies = state.bodies.lock().await.clone();
-    assert_eq!(bodies.len(), 2);
-    assert_eq!(bodies[0], bodies[1]);
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0]["requestId"], "retry123");
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_withdraw_without_request_id_does_not_retry() {
+async fn test_withdraw_without_request_id_is_sent_once() {
     let (addr, state) = start_withdraw_server(1).await;
     let client = BybitRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -6524,4 +6523,110 @@ async fn start_position_report_server(
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     wait_for_server(addr, "/v5/market/time").await;
     (addr, state)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_state_changing_http_commands_are_sent_once() {
+    let hits = Arc::new(tokio::sync::Mutex::new(HashMap::<String, usize>::new()));
+
+    let app = Router::new().fallback({
+        let hits = hits.clone();
+        move |request: axum::extract::Request| {
+            let hits = hits.clone();
+            async move {
+                let path = request.uri().path().to_string();
+                *hits.lock().await.entry(path).or_insert(0) += 1;
+                (StatusCode::INTERNAL_SERVER_ERROR, "unavailable")
+            }
+        }
+    });
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        5,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instruments: BybitInstrumentLinearResponse =
+        serde_json::from_value(load_test_data("http_get_instruments_linear.json")).unwrap();
+    let definition = instruments
+        .result
+        .list
+        .into_iter()
+        .find(|definition| definition.symbol == "BTCUSDT")
+        .unwrap();
+    let instrument = parse_linear_instrument(&definition, 0.into(), 0.into()).unwrap();
+    let instrument_id = instrument.id();
+    client.cache_instrument(instrument);
+
+    let account_id = AccountId::new("BYBIT-001");
+
+    let assert_one = |path: &str, counts: &HashMap<String, usize>| {
+        assert_eq!(counts.get(path).copied().unwrap_or(0), 1, "{path}");
+    };
+
+    client
+        .place_order(&json!({"category": "linear", "symbol": "BTCUSDT"}))
+        .await
+        .unwrap_err();
+    client
+        .cancel_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            Some(ClientOrderId::from("O-1")),
+            Some(VenueOrderId::from("venue-1")),
+        )
+        .await
+        .unwrap_err();
+    client
+        .modify_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            Some(ClientOrderId::from("O-1")),
+            Some(VenueOrderId::from("venue-1")),
+            Some(Quantity::from("0.001")),
+            Some(Price::from("100")),
+            None,
+        )
+        .await
+        .unwrap_err();
+    client
+        .cancel_all_orders(account_id, BybitProductType::Linear, instrument_id)
+        .await
+        .unwrap_err();
+    client
+        .borrow_spot("USDT", Quantity::from("1"))
+        .await
+        .unwrap_err();
+    client
+        .repay_spot_borrow("USDT", Some(Quantity::from("1")))
+        .await
+        .unwrap_err();
+    client.get_server_time().await.unwrap_err();
+
+    let counts = hits.lock().await;
+    assert_one("/v5/order/create", &counts);
+    assert_one("/v5/order/cancel", &counts);
+    assert_one("/v5/order/amend", &counts);
+    assert_one("/v5/order/cancel-all", &counts);
+    assert_one("/v5/account/borrow", &counts);
+    assert_one("/v5/account/no-convert-repay", &counts);
+    assert!(
+        counts.get("/v5/market/time").copied().unwrap_or(0) > 1,
+        "a read must still retry, counts={counts:?}"
+    );
 }

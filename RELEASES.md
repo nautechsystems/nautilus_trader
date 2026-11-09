@@ -242,6 +242,8 @@ Released on TBD (UTC).
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
 - Fixed Bybit demo cancels remaining pending cancel without an order stream update
 - Fixed Bybit HTTP order reports dropping venue reject reasons and `due_post_only`
+- Fixed Bybit HTTP writes being retried after a possible transmission
+- Fixed Bybit HTTP rate limits rejecting orders that may have been sent
 - Fixed Bybit option instrument loading and status updates covering only BTC instead of all listed base coins
 - Fixed Bybit option order book subscriptions defaulting to unsupported depth 50 and rejecting depths 25 and 100
 - Fixed CoinAPI dropping first book snapshots before subscription writes complete

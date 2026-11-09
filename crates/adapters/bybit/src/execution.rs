@@ -505,7 +505,7 @@ impl BybitExecutionClient {
             // Manual repayment uses no-convert repayment, so a balance shortfall fails
             // instead of spending other assets, and only the repay endpoints are blocked
             // by the hourly interest-calculation window. The check runs in the task
-            // directly before the request; throttling or a retry after it can still
+            // directly before the request; throttling after the check can still
             // carry a request into the window, which the docs disclose as a venue error.
             let now_ns = clock.get_time_ns();
 
@@ -1084,7 +1084,7 @@ fn submit_rejection_reason(error: &anyhow::Error) -> Option<&str> {
             error_code,
             message,
         }) = cause.downcast_ref()
-            && !is_bybit_ambiguous_order_error_code(i64::from(*error_code))
+            && !http_order_error_is_ambiguous(*error_code)
         {
             return Some(message.as_str());
         }
@@ -2913,6 +2913,10 @@ fn classify_modify_http_failure(error: &anyhow::Error) -> CommandFailure {
     classify_http_failure(error)
 }
 
+fn http_order_error_is_ambiguous(code: i32) -> bool {
+    code == 10006 || is_bybit_ambiguous_order_error_code(i64::from(code))
+}
+
 fn classify_http_failure(error: &anyhow::Error) -> CommandFailure {
     let reason = error.to_string();
 
@@ -2923,7 +2927,7 @@ fn classify_http_failure(error: &anyhow::Error) -> CommandFailure {
 
         return match http_error {
             BybitHttpError::BybitError { error_code, .. }
-                if is_bybit_ambiguous_order_error_code(i64::from(*error_code)) =>
+                if http_order_error_is_ambiguous(*error_code) =>
             {
                 CommandFailure::Ambiguous(reason)
             }
@@ -3243,8 +3247,9 @@ mod tests {
         });
         assert_eq!(
             classify_cancel_http_failure(&rate_limit),
-            CommandFailure::VenueRejected(rate_limit.to_string()),
+            CommandFailure::Ambiguous(rate_limit.to_string()),
         );
+        assert!(submit_rejection_reason(&rate_limit).is_none());
 
         let post_lookup = anyhow::Error::from(BybitCancelOrderError::PostCancelLookup {
             source: anyhow::anyhow!("history lookup failed"),

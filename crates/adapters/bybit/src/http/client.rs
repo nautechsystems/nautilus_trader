@@ -704,6 +704,9 @@ impl BybitRawHttpClient {
             }
         };
 
+        // Writes are sent once. No POST in this client has a proven idempotency
+        // key that covers a later retry, including a withdraw requestId.
+        let retry = retry && Self::method_may_retry(&method);
         let should_retry = |e: &BybitHttpError| retry && should_retry_http(e);
 
         let create_error = |error: RetryError| -> BybitHttpError {
@@ -722,6 +725,10 @@ impl BybitRawHttpClient {
             .cancellation_token(&token)
             .execute()
             .await
+    }
+
+    fn method_may_retry(method: &Method) -> bool {
+        matches!(method, &Method::GET | &Method::HEAD)
     }
 
     #[cfg(test)]
@@ -1630,7 +1637,8 @@ impl BybitRawHttpClient {
 
     /// Withdraws coins from the account.
     ///
-    /// Retries only when `request_id` is set.
+    /// The request is sent once. Bybit's `requestId` is a client identifier, not
+    /// a proven duplicate-detection window, so it is not a retry key.
     ///
     /// # Errors
     ///
@@ -1648,15 +1656,14 @@ impl BybitRawHttpClient {
         params: &BybitWithdrawParams,
     ) -> Result<BybitWithdrawResponse, BybitHttpError> {
         let body = serde_json::to_vec(params)?;
-        let endpoint = "/v5/asset/withdraw/create";
-
-        if params.request_id.is_some() {
-            self.send_request::<_, ()>(Method::POST, endpoint, None, Some(body), true)
-                .await
-        } else {
-            self.send_request_once::<_, ()>(Method::POST, endpoint, None, Some(body), true)
-                .await
-        }
+        self.send_request_once::<_, ()>(
+            Method::POST,
+            "/v5/asset/withdraw/create",
+            None,
+            Some(body),
+            true,
+        )
+        .await
     }
 
     /// Fetches withdrawal records.

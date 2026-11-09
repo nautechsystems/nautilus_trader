@@ -1032,9 +1032,11 @@ consume venue quota that this adapter cannot reserve in advance. Response header
 gap for UID limits, but separate processes still require operational coordination.
 :::
 
-Explicit venue rate-limit responses are terminal rejections for the affected order operation.
-Transport timeouts, service restarts, and duplicate request identifiers remain subject to order
-reconciliation because they do not prove whether the venue accepted the order.
+A WebSocket rate-limit response is a terminal rejection for the affected order operation.
+An HTTP `retCode` `10006` on submit, modify, or cancel does not prove rejection, so reconciliation
+must resolve it. Transport timeouts, service restarts, and duplicate request identifiers also
+remain subject to order reconciliation because they do not prove whether the venue accepted the
+order.
 
 :::info
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
@@ -1172,9 +1174,9 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_private`              | `None`     | Override for the private WebSocket URL.                                                                         |
 | `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
 | `http_timeout_secs`                | `60`       | Timeout (seconds) for REST requests.                                                                            |
-| `max_retries`                      | `3`        | Maximum retry attempts for REST requests.                                                                       |
-| `retry_delay_initial_ms`           | `1,000`    | Initial retry delay (milliseconds).                                                                             |
-| `retry_delay_max_ms`               | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
+| `max_retries`                      | `3`        | Maximum retry attempts for REST reads.                                                                          |
+| `retry_delay_initial_ms`           | `1,000`    | Initial retry delay for REST reads (milliseconds).                                                              |
+| `retry_delay_max_ms`               | `10,000`   | Maximum retry delay for REST reads (milliseconds).                                                              |
 | `heartbeat_interval_secs`          | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                             |
 | `recv_window_ms`                   | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument catalog refreshes.                                                        |
@@ -1196,9 +1198,9 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                                                 |
 | `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                                                      |
 | `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                                                 |
-| `max_retries`               | `3`        | Maximum retry attempts for REST requests.                                                                                                  |
-| `retry_delay_initial_ms`    | `1,000`    | Initial REST retry delay and cancel-all polling interval (milliseconds).                                                                   |
-| `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                                                        |
+| `max_retries`               | `3`        | Maximum retry attempts for REST reads.                                                                                                     |
+| `retry_delay_initial_ms`    | `1,000`    | Initial REST read retry delay and cancel-all polling interval (milliseconds).                                                              |
+| `retry_delay_max_ms`        | `10,000`   | Maximum REST read retry delay (milliseconds).                                                                                              |
 | `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                                                        |
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                                                       |
 | `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                                                |
