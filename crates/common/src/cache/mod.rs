@@ -1206,7 +1206,9 @@ impl Cache {
         };
 
         let allows_non_positive = || {
-            !position.is_inverse
+            !position
+                .instrument_class
+                .divides_notional_by_price(position.is_inverse)
                 && self
                     .instrument(instrument_id)
                     .is_none_or(Instrument::allows_negative_price)

@@ -58,7 +58,7 @@ use nautilus_model::{
         PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
+        CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         SyntheticInstrument, stubs::*,
     },
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -1561,6 +1561,99 @@ fn test_calculate_unrealized_pnl_skips_empty_quote_side_and_falls_back(
     assert_eq!(
         cache.calculate_unrealized_pnl(&position),
         Some(Money::from("25.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_quote_for_inverse_option_without_cached_instrument(
+    mut cache: Cache,
+    mut crypto_option_btc_deribit: CryptoOption,
+) {
+    crypto_option_btc_deribit.is_inverse = true;
+    crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+    let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-OPT-1")),
+        Some(PositionId::new("P-INV-OPT-1")),
+        Some(Price::from("0.020")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // Without instrument cached: valid zero bid quote with positive size is accepted for inverse option
+    let zero_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.000"),
+        Price::from("0.005"),
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_bid_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-0.002 BTC"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_quote_for_inverse_option_with_cached_instrument(
+    mut cache: Cache,
+    mut crypto_option_btc_deribit: CryptoOption,
+) {
+    crypto_option_btc_deribit.is_inverse = true;
+    crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+    let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-OPT-2")),
+        Some(PositionId::new("P-INV-OPT-2")),
+        Some(Price::from("0.020")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // With inverse option cached: valid zero bid quote with positive size is accepted
+    let zero_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.000"),
+        Price::from("0.005"),
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_bid_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-0.002 BTC"))
     );
 }
 
