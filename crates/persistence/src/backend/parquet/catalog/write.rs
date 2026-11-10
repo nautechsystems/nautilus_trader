@@ -1072,6 +1072,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let batch = RecordBatch::try_new(
@@ -1122,6 +1123,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let batch = RecordBatch::try_new(
@@ -1167,6 +1169,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let batch = RecordBatch::try_new(
@@ -1219,6 +1222,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let result = catalog.file_exists("quotes/TEST/missing.parquet");
@@ -1249,6 +1253,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let batch = RecordBatch::try_new(
@@ -1309,6 +1314,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let quote = |ts: u64| {
@@ -1362,6 +1368,7 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
+            is_windows_local_override: None,
         };
 
         let quote = QuoteTick::new(
