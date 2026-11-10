@@ -2890,7 +2890,23 @@ impl HyperliquidHttpClient {
                 .is_some_and(|c| cached_cloid_hex.as_ref() == Some(c) || c == &cloid_hex)
         }) {
             Some(o) => o,
-            None => return Ok(None),
+            None => {
+                // Fallback for IOC and immediately filled/canceled orders: query historical orders
+                let entries = self.info_historical_orders(user).await?;
+                if let Some(entry) = entries.into_iter().find(|e| {
+                    e.order
+                        .cloid
+                        .as_ref()
+                        .is_some_and(|c| cached_cloid_hex.as_ref() == Some(c) || c == &cloid_hex)
+                }) {
+                    let sweep = self.historical_order_status_reports_from_response(vec![entry], None)?;
+                    if let Some(mut report) = sweep.reports.into_iter().next() {
+                        report.client_order_id = Some(*client_order_id);
+                        return Ok(Some(report));
+                    }
+                }
+                return Ok(None);
+            }
         };
 
         let instrument = match self.get_or_create_instrument(&order.coin, None) {
