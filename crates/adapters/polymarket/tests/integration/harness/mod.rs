@@ -23,13 +23,15 @@ use std::{
     time::Duration,
 };
 
-use nautilus_common::clients::ExecutionClient;
+use nautilus_common::{
+    clients::ExecutionClient, live::runner::replace_data_event_sender, messages::DataEvent,
+};
 use nautilus_core::{UUID4, UnixNanos};
 pub(crate) use nautilus_live::testing::invariants;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, testing::ExecutionHarness};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
-    data::QuoteTick,
+    data::{Data, QuoteTick},
     enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
@@ -57,6 +59,7 @@ pub(crate) struct Harness {
     execution: ExecutionHarness,
     pub(crate) mock_state: TestServerState,
     pub(crate) sockets: SocketReconnectRegistry,
+    _data_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 }
 
 impl Harness {
@@ -70,6 +73,8 @@ impl Harness {
         let instrument = instrument();
         let execution =
             ExecutionHarness::new(trader_id, *POLYMARKET_CLIENT_ID, account_id, instrument);
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(data_tx);
         add_account(&execution, account_id);
         seed(&execution);
 
@@ -99,6 +104,14 @@ impl Harness {
         client.on_instrument(cached_instrument);
         client.start().unwrap();
         client.connect().await.unwrap();
+
+        while let Ok(DataEvent::Data(Data::Instrument(instrument))) = data_rx.try_recv() {
+            execution
+                .cache()
+                .borrow_mut()
+                .add_instrument(*instrument)
+                .unwrap();
+        }
         nautilus_common::testing::wait_until_async(
             || async { client.is_connected() },
             Duration::from_secs(2),
@@ -110,6 +123,7 @@ impl Harness {
             execution,
             mock_state,
             sockets,
+            _data_rx: data_rx,
         }
     }
 }

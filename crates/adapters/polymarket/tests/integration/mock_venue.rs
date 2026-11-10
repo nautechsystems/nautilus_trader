@@ -75,6 +75,7 @@ pub(super) fn execution_config_with_retries(
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         base_url_data_api: Some(format!("http://{addr}")),
+        base_url_gamma: Some(format!("http://{addr}")),
         http_timeout_secs: 5,
         max_retries,
         retry_delay_initial_ms: 1,
@@ -140,6 +141,7 @@ pub(super) struct TestServerState {
     pub(super) trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) gamma_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
     pub(super) market_responses: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
     pub(super) market_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -215,6 +217,16 @@ pub(super) struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         let (user_frames, _) = tokio::sync::broadcast::channel(32);
+        let orders = load_json("http_open_orders_page.json");
+        let tokens: Vec<_> = orders["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|order| order["asset_id"].clone())
+            .collect();
+        let mut market = load_json("gamma_market_past_end_date_open.json");
+        market["conditionId"] = json!(TEST_CONDITION_ID);
+        market["clobTokenIds"] = json!(serde_json::to_string(&tokens).unwrap());
 
         Self {
             market_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -225,7 +237,8 @@ impl Default for TestServerState {
             last_query: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_response: Arc::new(tokio::sync::Mutex::new(Some(json!([market])))),
+            gamma_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
             ))),
@@ -824,7 +837,11 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
     }
 }
 
-async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Response {
+async fn handle_gamma_markets_keyset(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    state.gamma_queries.lock().await.push(query);
     let markets = state
         .gamma_response
         .lock()

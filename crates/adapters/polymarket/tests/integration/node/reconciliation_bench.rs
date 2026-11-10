@@ -247,7 +247,7 @@ async fn run_scenario(mode: CollectionMode, orders: usize, cycles: usize, sample
     assert_eq!(probe.completed, expected_cycles);
     assert_eq!(
         state.orders_get_count.load(Ordering::Acquire),
-        expected_cycles * orders.div_ceil(PAGE_SIZE)
+        (expected_cycles + 1) * orders.div_ceil(PAGE_SIZE)
     );
     let cache = node.kernel().cache();
     let cache = cache.borrow();
