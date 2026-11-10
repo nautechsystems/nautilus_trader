@@ -113,6 +113,8 @@ class DeriveExecutionClientConfig:
     def max_per_instrument_matching_requests_per_second(self) -> int | None: ...
     @property
     def cancel_on_disconnect(self) -> bool: ...
+    @property
+    def load_ids(self) -> list[model.InstrumentId] | None: ...
     def __init__(
         self,
         account_id: model.AccountId | None = None,
@@ -138,6 +140,7 @@ class DeriveExecutionClientConfig:
         max_per_instrument_matching_requests_per_second: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         cancel_on_disconnect: bool | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
     ) -> None: ...
     @property
     def base_url_rest(self) -> str | None: ...

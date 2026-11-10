@@ -1320,6 +1320,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
         max_matching_requests_per_second: None,
         max_per_instrument_matching_requests_per_second: None,
         cancel_on_disconnect: false,
+        load_ids: None,
     }
 }
 
@@ -1644,6 +1645,7 @@ fn make_subscription_frame(channel: &str, data: &Value) -> Value {
 #[tokio::test]
 async fn test_connect_observes_native_portfolio_instruments_before_private_stream(
     #[case] source: &str,
+    #[values(false, true)] scoped: bool,
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
@@ -1666,8 +1668,33 @@ async fn test_connect_observes_native_portfolio_instruments_before_private_strea
             json!({"orders": [order], "subaccount_id": TEST_SUBACCOUNT});
     }
 
+    if scoped {
+        snapshot["open_orders"]
+            .as_array_mut()
+            .unwrap()
+            .push(order_json_with(
+                "excluded-order",
+                "EXCLUDED",
+                "buy",
+                "UNLOADED-PERP",
+                1_700_000_001_000,
+                "open",
+            ));
+        snapshot["positions"]
+            .as_array_mut()
+            .unwrap()
+            .push(sample_position_json("UNLOADED-PERP", "1.25"));
+    }
+
     *rest_state.subaccount_response.lock().await = snapshot;
-    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.load_ids = scoped.then(|| vec![InstrumentId::from("ETH-PERP.DERIVE")]);
+            config
+        })
+        .await;
+
     let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_data_event_sender(data_tx);
     let cache = tc.cache.clone();
@@ -8125,7 +8152,15 @@ async fn test_balance_subscription_refreshes_authoritative_account_state(
 }
 
 async fn build_report_client(rest_state: RestState, ws_state: WsState) -> TestClient {
-    let tc = build_client(rest_state, ws_state).await;
+    build_report_client_with_config(rest_state, ws_state, |config| config).await
+}
+
+async fn build_report_client_with_config(
+    rest_state: RestState,
+    ws_state: WsState,
+    configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
+) -> TestClient {
+    let tc = build_client_with_config(rest_state, ws_state, None, configure).await;
     let mut definitions = Vec::new();
 
     for symbol in ["ETH-PERP", "BTC-PERP", "SOL-PERP"] {
@@ -8154,7 +8189,11 @@ async fn build_report_client(rest_state: RestState, ws_state: WsState) -> TestCl
 #[case(true)]
 #[case(false)]
 #[tokio::test]
-async fn test_report_request_rejects_missing_active_metadata(#[case] order_report: bool) {
+async fn test_report_request_rejects_missing_active_metadata(
+    #[case] order_report: bool,
+    #[values(None, Some(vec![]), Some(vec![InstrumentId::from("UNLOADED-PERP.DERIVE")]))]
+    load_ids: Option<Vec<InstrumentId>>,
+) {
     let rest_state = RestState::default();
     *rest_state.open_orders_response.lock().await = json!({
         "orders": [order_json_with("ord-missing-metadata", "L-MISSING", "buy", "UNLOADED-PERP", 1_700_000_001_000, "open")],
@@ -8163,7 +8202,39 @@ async fn test_report_request_rejects_missing_active_metadata(#[case] order_repor
     *rest_state.positions_response.lock().await = json!({
         "positions": [sample_position_json("UNLOADED-PERP", "0.3")], "subaccount_id": TEST_SUBACCOUNT,
     });
-    let mut tc = build_client(rest_state.clone(), WsState::default()).await;
+
+    if load_ids.as_ref().is_some_and(|ids| !ids.is_empty()) {
+        rest_state.open_orders_response.lock().await["orders"]
+            .as_array_mut()
+            .unwrap()
+            .insert(
+                0,
+                order_json_with(
+                    "outside-active",
+                    "OUTSIDE-ACTIVE",
+                    "sell",
+                    "OUTSIDE-PERP",
+                    1_700_000_001_001,
+                    "open",
+                ),
+            );
+        rest_state.positions_response.lock().await["positions"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, sample_position_json("OUTSIDE-PERP", "0.7"));
+    }
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = load_ids;
+            config
+        },
+    )
+    .await;
+
     tc.client.connect().await.unwrap();
     let error = if order_report {
         tc.client
@@ -8203,11 +8274,266 @@ async fn test_report_request_rejects_missing_active_metadata(#[case] order_repor
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_load_ids_targeted_probe_does_not_infer_absence() {
+    let rest_state = RestState::default();
+    *rest_state.open_orders_response.lock().await = json!({
+        "orders": [
+            order_json_with("outside", "SHARED-LABEL", "buy", "UNLOADED-PERP", 1_700_000_001_000, "open"),
+            order_json_with("inside", "SHARED-LABEL", "buy", "ETH-PERP", 1_700_000_001_001, "open"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = Some(vec![InstrumentId::from("ETH-PERP.DERIVE")]);
+            config
+        },
+    )
+    .await;
+
+    tc.client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        Some(ClientOrderId::from("SHARED-LABEL")),
+        None,
+        None,
+        None,
+    );
+
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Derive order probe returned an instrument outside reconciliation scope"
+    );
+    assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 0);
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::unbounded(None)]
+#[case::bounded(Some(10_000_000))]
+#[tokio::test]
+async fn test_mass_status_load_ids_filters_mixed_records(
+    #[case] lookback: Option<u64>,
+    #[values(false, true)] missing_history: bool,
+) {
+    let rest_state = RestState::default();
+    *rest_state.open_orders_response.lock().await = json!({
+        "orders": [
+            order_json_with("outside-open", "SHARED", "sell", "UNLOADED-PERP", 1_700_000_001_000, "open"),
+            order_json_with("inside-open", "SHARED", "buy", "ETH-PERP", 1_700_000_001_001, "open"),
+            order_json_with("cached-outside", "CACHED", "sell", "BTC-PERP", 1_700_000_001_002, "open"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut history = vec![
+        order_json_with(
+            "outside-history",
+            "OUTSIDE-HISTORY",
+            "buy",
+            "UNLOADED-PERP",
+            1_700_000_002_000,
+            "filled",
+        ),
+        order_json_with(
+            "inside-history",
+            "INSIDE-HISTORY",
+            "buy",
+            "ETH-PERP",
+            1_700_000_002_001,
+            "filled",
+        ),
+    ];
+    let mut trades = vec![
+        trade_json_with_label(
+            "outside-trade",
+            "outside-history",
+            "UNLOADED-PERP",
+            "OUTSIDE-HISTORY",
+        ),
+        trade_json_with_label(
+            "inside-trade",
+            "inside-history",
+            "ETH-PERP",
+            "INSIDE-HISTORY",
+        ),
+    ];
+
+    if missing_history {
+        history.push(order_json_with(
+            "missing-history",
+            "MISSING-HISTORY",
+            "buy",
+            "EXPIRED-PERP",
+            1_700_000_002_002,
+            "filled",
+        ));
+        trades.push(trade_json_with_label(
+            "missing-trade",
+            "missing-history",
+            "EXPIRED-PERP",
+            "MISSING-HISTORY",
+        ));
+    }
+
+    *rest_state.order_history_response.lock().await = json!({
+        "pagination": {"count": history.len(), "num_pages": 1},
+        "orders": history, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.trade_history_response.lock().await = json!({
+        "pagination": {"count": trades.len(), "num_pages": 1},
+        "trades": trades, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.positions_response.lock().await = json!({
+        "positions": [
+            sample_position_json("UNLOADED-PERP", "1.2"),
+            sample_position_json("ETH-PERP", "0.3"),
+            sample_position_json("BTC-PERP", "0.4"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = Some(vec![
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                InstrumentId::from("EXPIRED-PERP.DERIVE"),
+            ]);
+            config
+        },
+    )
+    .await;
+
+    for symbol in ["ETH-PERP", "BTC-PERP"] {
+        let mut definition = sample_instrument_json();
+        definition["instrument_name"] = json!(symbol);
+        let raw = serde_json::from_value(definition).unwrap();
+        tc.client.cache_instrument(raw).unwrap();
+    }
+
+    tc.client.connect().await.unwrap();
+    let open = tc
+        .client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let positions = tc
+        .client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let mass = tc
+        .client
+        .generate_mass_status(lookback)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].venue_order_id, VenueOrderId::from("inside-open"));
+    assert_eq!(open[0].client_order_id, Some(ClientOrderId::from("SHARED")));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(
+        positions[0].instrument_id,
+        InstrumentId::from("ETH-PERP.DERIVE")
+    );
+    assert_eq!(positions[0].quantity.as_decimal(), dec!(0.3));
+    assert_eq!(
+        mass.reports_complete(),
+        !missing_history || lookback.is_none()
+    );
+    assert_eq!(
+        mass.order_reports().len(),
+        if missing_history { 3 } else { 2 }
+    );
+    assert_eq!(
+        mass.fill_reports().len(),
+        if missing_history { 2 } else { 1 }
+    );
+    let inside = &mass.order_reports()[&VenueOrderId::from("inside-history")];
+    assert_eq!(inside.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+    assert_eq!(
+        inside.client_order_id,
+        Some(ClientOrderId::from("INSIDE-HISTORY"))
+    );
+    let fill = &mass.fill_reports()[&VenueOrderId::from("inside-history")][0];
+    assert_eq!(fill.trade_id, TradeId::from("inside-trade"));
+    assert_eq!(fill.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("outside-open"))
+    );
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("cached-outside"))
+    );
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("outside-history"))
+    );
+    assert!(
+        !mass
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("outside-history"))
+    );
+    let mass_positions: Vec<_> = mass
+        .position_reports()
+        .values()
+        .flatten()
+        .map(|report| (report.instrument_id, report.quantity.as_decimal()))
+        .collect();
+    assert_eq!(
+        mass_positions,
+        vec![(InstrumentId::from("ETH-PERP.DERIVE"), dec!(0.3))]
+    );
+    assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 0);
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::unbounded(None)]
 #[case::bounded(Some(10_000_000))]
 #[tokio::test]
 async fn test_mass_status_missing_historical_metadata_preserves_rows_incomplete(
     #[case] lookback: Option<u64>,
+    #[values(None, Some(vec![]), Some(vec![InstrumentId::from("EXPIRED-PERP.DERIVE")]))]
+    load_ids: Option<Vec<InstrumentId>>,
 ) {
     let rest_state = RestState::default();
     *rest_state.open_orders_response.lock().await =
@@ -8222,7 +8548,18 @@ async fn test_mass_status_missing_historical_metadata_preserves_rows_incomplete(
         "trades": [sample_trade_json("trade-unloaded-history", "ord-unloaded-history", "EXPIRED-PERP")],
         "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
     });
-    let mut tc = build_client(rest_state.clone(), WsState::default()).await;
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = load_ids;
+            config
+        },
+    )
+    .await;
+
     tc.client.connect().await.unwrap();
     let mass = tc
         .client
@@ -15045,6 +15382,7 @@ async fn test_order_lookup_falls_back_to_exact_scoped_history(
 async fn test_startup_refuses_unproved_replacement_before_private_connection(
     #[case] scenario: &str,
     #[case] pending: bool,
+    #[values(false, true)] scoped: bool,
 ) {
     let state = RestState::default();
     let ws = WsState::default();
@@ -15072,7 +15410,13 @@ async fn test_startup_refuses_unproved_replacement_before_private_connection(
 
     *state.open_orders_response.lock().await = json!({"orders": if scenario == "open" { children.clone() } else { vec![] }, "subaccount_id": TEST_SUBACCOUNT});
     *state.order_history_response.lock().await = json!({"orders": if scenario == "open" { vec![] } else { children.clone() }, "pagination": {"count": if scenario == "open" { 0 } else { children.len() }, "num_pages": i32::from(scenario != "open" && !children.is_empty())}, "subaccount_id": TEST_SUBACCOUNT});
-    let mut tc = build_report_client(state.clone(), ws.clone()).await;
+
+    let mut tc = build_report_client_with_config(state.clone(), ws.clone(), |mut config| {
+        config.load_ids = scoped.then(|| vec![InstrumentId::from("BTC-PERP.DERIVE")]);
+        config
+    })
+    .await;
+
     let mut restored = accepted_order(
         build_limit_order(
             instrument_id,
