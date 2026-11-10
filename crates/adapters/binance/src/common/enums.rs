@@ -747,6 +747,28 @@ impl Display for BinanceWsEventType {
     }
 }
 
+/// Trade type in the `X` field of USD-M Futures `<symbol>@trade` stream messages.
+///
+/// Binance does not document the USD-M raw trade stream. Its aggregate trade stream
+/// excludes insurance fund and ADL trades.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BinanceFuturesTradeType {
+    /// Order book trade.
+    Market,
+    /// Order book trade against a Retail Price Improvement order.
+    Rpi,
+    /// Insurance fund trade.
+    InsuranceFund,
+    /// Auto-deleveraging trade.
+    Adl,
+    /// Not a trade; the message carries zero price and quantity.
+    Na,
+    /// Unknown or undocumented value.
+    #[serde(other)]
+    Unknown,
+}
+
 /// WebSocket request method (operation type).
 ///
 /// Used for subscription requests on both Spot and Futures WebSocket APIs.
@@ -984,6 +1006,21 @@ mod tests {
         #[case] expected: BinanceRateLimitType,
     ) {
         let value: BinanceRateLimitType = serde_json::from_str(raw).unwrap();
+        assert_eq!(value, expected);
+    }
+
+    #[rstest]
+    #[case("\"MARKET\"", BinanceFuturesTradeType::Market)]
+    #[case("\"RPI\"", BinanceFuturesTradeType::Rpi)]
+    #[case("\"INSURANCE_FUND\"", BinanceFuturesTradeType::InsuranceFund)]
+    #[case("\"ADL\"", BinanceFuturesTradeType::Adl)]
+    #[case("\"NA\"", BinanceFuturesTradeType::Na)]
+    #[case("\"UNDOCUMENTED\"", BinanceFuturesTradeType::Unknown)]
+    fn test_futures_trade_type_deserializes(
+        #[case] raw: &str,
+        #[case] expected: BinanceFuturesTradeType,
+    ) {
+        let value: BinanceFuturesTradeType = serde_json::from_str(raw).unwrap();
         assert_eq!(value, expected);
     }
 

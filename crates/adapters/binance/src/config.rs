@@ -235,6 +235,14 @@ pub struct BinanceDataClientConfig {
     /// - `Json` forces public JSON streams with no credentials.
     #[builder(default)]
     pub spot_market_data_mode: BinanceSpotMarketDataMode,
+    /// Whether USD-M Futures trade subscriptions use the raw `<symbol>@trade` stream.
+    ///
+    /// When false, trades come from `<symbol>@aggTrade`. When true, each order book trade
+    /// emits one `TradeTick` with the venue trade ID instead of the aggregate trade ID.
+    /// Binance serves the raw stream on the public route but does not list it in the
+    /// USD-M market stream documentation. Supported for USD-M Futures clients only.
+    #[builder(default)]
+    pub use_usdm_raw_trades: bool,
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
@@ -280,6 +288,7 @@ nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
     spot_market_data_mode: BinanceSpotMarketDataMode,
+    use_usdm_raw_trades: bool,
     instrument_provider: BinanceInstrumentProviderConfig,
     instrument_refresh_interval_secs: u64,
     instrument_status_poll_secs: u64,
@@ -303,11 +312,19 @@ impl BinanceDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if the receive-window, provider, or Binance US settings are invalid.
+    /// Returns an error if the receive-window, provider, raw trade, or Binance US settings are
+    /// invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
         validate_retry_config(&self.retry_config())?;
         self.instrument_provider.validate(self.product_type)?;
+
+        if self.use_usdm_raw_trades {
+            anyhow::ensure!(
+                self.product_type == BinanceProductType::UsdM,
+                "use_usdm_raw_trades supports USD-M Futures clients only"
+            );
+        }
 
         if self.us {
             anyhow::ensure!(
@@ -612,6 +629,7 @@ instrument_status_poll_secs = 600
         assert_eq!(config.environment, BinanceEnvironment::Testnet);
         assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.spot_market_data_mode, BinanceSpotMarketDataMode::Sbe);
+        assert!(!config.use_usdm_raw_trades);
         assert_eq!(config.instrument_status_poll_secs, 600);
         assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
@@ -628,6 +646,36 @@ spot_market_data_mode = "Json"
         assert_eq!(
             config.spot_market_data_mode,
             BinanceSpotMarketDataMode::Json
+        );
+    }
+
+    #[rstest]
+    fn test_data_config_toml_use_usdm_raw_trades_override() {
+        let config: BinanceDataClientConfig = toml::from_str(
+            r#"
+product_type = "USD_M"
+use_usdm_raw_trades = true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.use_usdm_raw_trades);
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case(BinanceProductType::Spot)]
+    #[case(BinanceProductType::CoinM)]
+    fn test_data_config_rejects_raw_trades_outside_usdm(#[case] product_type: BinanceProductType) {
+        let config = BinanceDataClientConfig {
+            product_type,
+            use_usdm_raw_trades: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.validate().unwrap_err().to_string(),
+            "use_usdm_raw_trades supports USD-M Futures clients only"
         );
     }
 

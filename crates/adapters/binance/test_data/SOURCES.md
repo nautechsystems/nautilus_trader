@@ -50,11 +50,14 @@ for cases where a docs example is missing or stale.
   `load_event_fixture` loader in tests.
 - For SBE coverage, the docs define the expected fields. Live capture supplies
   the canonical wire bytes.
-- As of March 12, 2026, Binance does not appear to publish a separate USD-M
-  individual trade stream example on the market-stream docs pages. The fixture
-  `futures/market_data_json/trade_stream.json` is derived from the published
-  aggregate trade example and should be replaced with a live sample if we
-  capture one.
+- As of November 10, 2026, Binance does not list a USD-M individual trade
+  stream on the market-stream docs pages. The fixtures
+  `futures/market_data_json/trade_stream.json` and
+  `futures/market_data_json/trade_stream_na.json` are the `data` objects of
+  live `btcusdt@trade` messages captured from the combined stream at
+  `wss://fstream.binance.com/public/stream` on that date. The first is an
+  order book trade (`X="MARKET"`). The second is an `X="NA"` message with zero
+  price and quantity, which the stream interleaves with trades.
 - The fixtures `futures/market_data_json/kline_stream_closed.json`,
   `futures/user_data_json/order_update_trade.json`, and
   `futures/user_data_json/algo_update_new.json` are narrow derived variants of
