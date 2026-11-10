@@ -40,7 +40,7 @@ renamed-serde = {{ package = "serde", version = "1" }}
     fs::write(temp_dir.path().join("Cargo.toml"), manifest).unwrap();
     fs::write(
         source_dir.join("main.rs"),
-        include_str!("../test_data/serde_renamed/main.rs"),
+        include_str!("../../test_data/serde_renamed/main.rs"),
     )
     .unwrap();
 

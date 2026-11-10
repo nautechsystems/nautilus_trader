@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![cfg(feature = "defi")]
-
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashSet, hash_map::DefaultHasher},

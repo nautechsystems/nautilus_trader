@@ -20,5 +20,8 @@ mod test_cache_postgres;
 mod test_cache_redis;
 mod test_redis_queries;
 
+#[cfg(all(feature = "defi", any(feature = "redis", feature = "postgres")))]
+mod defi_currency;
+
 #[cfg(all(target_os = "linux", any(feature = "redis", feature = "postgres")))]
 mod position_flip;

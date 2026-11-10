@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![cfg(feature = "arrow")]
-
 use std::sync::Arc;
 
 use arrow::{array::StringArray, datatypes::DataType as ArrowDataType, record_batch::RecordBatch};

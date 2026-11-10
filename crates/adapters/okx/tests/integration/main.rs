@@ -29,4 +29,5 @@ mod factories;
 mod http;
 mod node;
 mod python;
+mod reconnect;
 mod websocket;

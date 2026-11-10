@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![cfg(all(feature = "defi", any(feature = "redis", feature = "postgres")))]
-
 use std::{process::Command, sync::Arc};
 
 use nautilus_common::cache::{Cache, CacheSnapshotRef};
@@ -41,7 +39,7 @@ fn definitions(chain_id: u32) -> [Token; 2] {
     let chain = Arc::new(Chain::new(Blockchain::Ethereum, chain_id));
     [
         Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             "0x1122334455667788990011223344556677889900"
                 .parse()
                 .unwrap(),
@@ -316,7 +314,7 @@ fn assert_token(actual: Currency, expected: &Token) {
 
 fn reader(test: &str, case: &str, marker: &str) {
     let mut command = Command::new(std::env::current_exe().unwrap());
-    if test.starts_with("postgres_tests::") {
+    if test.starts_with("defi_currency::postgres_tests::") {
         command.env("PGOPTIONS", format!("-c search_path={case}"));
     }
 
@@ -526,9 +524,9 @@ mod redis_tests {
         }
 
         let test = if old_record {
-            "redis_tests::renamed_contract_is_rejected::case_2"
+            "defi_currency::redis_tests::renamed_contract_is_rejected::case_2"
         } else {
-            "redis_tests::renamed_contract_is_rejected::case_1"
+            "defi_currency::redis_tests::renamed_contract_is_rejected::case_1"
         };
 
         reader(test, &key, "RENAMED_WRITE_REJECTED");
@@ -572,7 +570,7 @@ mod redis_tests {
         }
 
         let outputs = concurrent_writers(
-            "redis_tests::independent_writers_reject_symbol_aliases",
+            "defi_currency::redis_tests::independent_writers_reject_symbol_aliases",
             &key,
             false,
         );
@@ -730,7 +728,7 @@ mod redis_tests {
         let pair = instrument(823_101, true);
         database.add_instrument(&pair).unwrap();
         reader(
-            "redis_tests::fresh_process",
+            "defi_currency::redis_tests::fresh_process",
             &key,
             "fresh process restored token definitions",
         );
@@ -818,7 +816,7 @@ mod redis_tests {
         }
 
         let outputs = concurrent_writers(
-            "redis_tests::independent_writers_reject_precision_conflict",
+            "defi_currency::redis_tests::independent_writers_reject_precision_conflict",
             &key,
             false,
         );
@@ -1060,15 +1058,15 @@ mod postgres_tests {
                 .unwrap();
 
             let test = if missing_table {
-                "postgres_tests::startup_requires_defi_schema::case_1"
+                "defi_currency::postgres_tests::startup_requires_defi_schema::case_1"
             } else {
-                "postgres_tests::startup_requires_defi_schema::case_2"
+                "defi_currency::postgres_tests::startup_requires_defi_schema::case_2"
             };
 
             reader(test, &schema, "UNMIGRATED_SCHEMA_REJECTED");
 
             for _ in 0..2 {
-                sqlx::raw_sql(include_str!("../../../schema/sql/tables.sql"))
+                sqlx::raw_sql(include_str!("../../../../schema/sql/tables.sql"))
                     .execute(&pool)
                     .await
                     .unwrap();
@@ -1110,7 +1108,7 @@ mod postgres_tests {
                 .await
                 .unwrap();
             reader(
-                "postgres_tests::cold_cache_rejects_legacy_downgrade",
+                "defi_currency::postgres_tests::cold_cache_rejects_legacy_downgrade",
                 &schema,
                 "DOWNGRADE_REJECTED",
             );
@@ -1176,7 +1174,7 @@ mod postgres_tests {
                 .await
                 .unwrap();
             reader(
-                "postgres_tests::renamed_contract_is_rejected",
+                "defi_currency::postgres_tests::renamed_contract_is_rejected",
                 &schema,
                 "RENAMED_WRITE_REJECTED",
             );
@@ -1208,7 +1206,7 @@ mod postgres_tests {
             }
         } else {
             let outputs = concurrent_writers(
-                "postgres_tests::independent_writers_reject_symbol_aliases",
+                "defi_currency::postgres_tests::independent_writers_reject_symbol_aliases",
                 &schema,
                 true,
             );
@@ -1341,7 +1339,7 @@ mod postgres_tests {
         }
 
         let outputs = concurrent_writers(
-            "postgres_tests::independent_writers_reject_precision_conflict",
+            "defi_currency::postgres_tests::independent_writers_reject_precision_conflict",
             &schema,
             true,
         );
@@ -1394,11 +1392,11 @@ mod postgres_tests {
             .unwrap();
 
         if create {
-            sqlx::raw_sql(include_str!("../../../schema/sql/types.sql"))
+            sqlx::raw_sql(include_str!("../../../../schema/sql/types.sql"))
                 .execute(&pool)
                 .await
                 .unwrap();
-            let tables = include_str!("../../../schema/sql/tables.sql");
+            let tables = include_str!("../../../../schema/sql/tables.sql");
             sqlx::raw_sql(tables).execute(&pool).await.unwrap();
             sqlx::raw_sql(tables).execute(&pool).await.unwrap();
         }
@@ -1470,7 +1468,7 @@ mod postgres_tests {
             .await
             .unwrap();
         reader(
-            "postgres_tests::fresh_process",
+            "defi_currency::postgres_tests::fresh_process",
             &schema,
             "fresh process restored token definitions",
         );
@@ -1606,7 +1604,7 @@ mod postgres_tests {
             let output = Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "postgres_tests::historical_replacement",
+                    "defi_currency::postgres_tests::historical_replacement",
                     "--nocapture",
                     "--test-threads=1",
                 ])

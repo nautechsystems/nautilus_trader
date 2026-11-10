@@ -14,3 +14,5 @@
 // -------------------------------------------------------------------------------------------------
 
 mod test_feather;
+mod test_parquet_catalog;
+mod test_parquet_migration;

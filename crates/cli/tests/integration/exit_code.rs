@@ -18,7 +18,6 @@
 //! The `blockchain` subcommands only exist with the `defi` feature, so these tests compile only
 //! under `--features defi`.
 
-#![cfg(feature = "defi")]
 #![warn(clippy::clone_on_ref_ptr)]
 
 use std::process::Command;
