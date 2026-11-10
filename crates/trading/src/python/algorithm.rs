@@ -1205,6 +1205,7 @@ impl PyExecutionAlgorithm {
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
         let order = pyobject_to_order_any(py, order)?;
+        let order = self.resolve_order(order)?;
         ExecutionAlgorithm::submit_order(self, order, position_id, client_id).map_err(|e| {
             if e.downcast_ref::<EmulatedOrderSubmissionError>().is_some() {
                 to_pyvalue_err(e)
@@ -2637,6 +2638,109 @@ class CallbackAlgorithm:
                 serde_json::to_value(&before).unwrap()
             );
             assert!(messages.get_messages().is_empty());
+        });
+    }
+
+    #[rstest]
+    fn test_submit_order_after_modify_in_place_submits_current_values(
+        registered_algorithm: PyExecutionAlgorithm,
+        #[values(true, false)] in_cache: bool,
+    ) {
+        Python::attach(|py| {
+            let cache = registered_algorithm.cache_rc();
+            let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(None);
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                handler,
+            );
+            let order = OrderTestBuilder::new(OrderType::StopLimit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("S-SUBMIT-001"))
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .client_order_id(ClientOrderId::from("O-SUBMIT-001"))
+                .quantity(Quantity::from(123))
+                .price(Price::from("1.23456"))
+                .trigger_price(Price::from("1.23400"))
+                .build();
+            let argument =
+                nautilus_model::python::orders::order_any_to_pyobject(py, order.clone()).unwrap();
+            let new_qty = Quantity::from(100);
+            let new_price = Price::from("1.23500");
+            let new_trigger_price = Price::from("1.23450");
+
+            if in_cache {
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, false)
+                    .unwrap();
+            }
+
+            let instance = Py::new(py, registered_algorithm).unwrap();
+
+            if in_cache {
+                instance
+                    .call_method1(
+                        py,
+                        "modify_order_in_place",
+                        (
+                            argument.clone_ref(py),
+                            new_qty,
+                            new_price,
+                            new_trigger_price,
+                        ),
+                    )
+                    .unwrap();
+            }
+
+            instance
+                .call_method1(py, "submit_order", (argument.clone_ref(py),))
+                .unwrap();
+
+            let cached = cache
+                .borrow()
+                .order_owned(&order.client_order_id())
+                .unwrap();
+            let commands = messages.get_messages();
+            let [TradingCommand::SubmitOrder(command)] = commands.as_slice() else {
+                panic!("Expected exactly one SubmitOrder command, was {commands:?}");
+            };
+            let (expected_qty, expected_price, expected_trigger_price) = if in_cache {
+                (new_qty, new_price, new_trigger_price)
+            } else {
+                (
+                    Quantity::from(123),
+                    Price::from("1.23456"),
+                    Price::from("1.23400"),
+                )
+            };
+
+            assert_eq!(command.client_order_id, order.client_order_id());
+            assert_eq!(command.order_init.order_type, OrderType::StopLimit);
+            assert_eq!(command.order_init.quantity, expected_qty);
+            assert_eq!(command.order_init.price, Some(expected_price));
+            assert_eq!(
+                command.order_init.trigger_price,
+                Some(expected_trigger_price)
+            );
+            assert_eq!(cached.status(), OrderStatus::Initialized);
+            assert_eq!(cached.quantity(), expected_qty);
+            assert_eq!(cached.price(), Some(expected_price));
+            assert_eq!(cached.trigger_price(), Some(expected_trigger_price));
+
+            if in_cache {
+                assert_eq!(cached.events().len(), 2);
+            } else {
+                assert_eq!(
+                    serde_json::to_value(&cached).unwrap(),
+                    serde_json::to_value(&order).unwrap()
+                );
+            }
+
+            let retained = pyobject_to_order_any(py, argument).unwrap();
+            assert_eq!(retained.quantity(), order.quantity());
+            assert_eq!(retained.price(), order.price());
+            assert_eq!(retained.trigger_price(), order.trigger_price());
         });
     }
 

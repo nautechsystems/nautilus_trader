@@ -208,8 +208,8 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
-SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed
-SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed)
+SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi
+SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed) + package(nautilus-kalshi)
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
@@ -288,7 +288,7 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-blockchain nautilus-bybit nautilus-cli \
     nautilus-coinapi nautilus-coinbase nautilus-databento nautilus-deribit nautilus-derive \
-    nautilus-dydx nautilus-finfeed nautilus-hyperliquid nautilus-interactive-brokers \
+    nautilus-dydx nautilus-finfeed nautilus-hyperliquid nautilus-interactive-brokers nautilus-kalshi \
     nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket nautilus-pyo3 \
     nautilus-sandbox nautilus-tardis
 

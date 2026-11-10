@@ -957,7 +957,7 @@ async fn test_rejected_subscription_emits_subscription_failed_message() {
 }
 
 #[tokio::test]
-async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
+async fn test_submit_margin_cross_order_without_reduce_only() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -985,7 +985,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
             None,
             None,
             Some(false),
-            Some(true),
+            Some(false),
             None,
             None,
             None,
@@ -1014,7 +1014,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
 
     assert_eq!(messages[0]["op"], "order");
     assert_eq!(arg["tdMode"], "cross");
-    assert_eq!(arg["reduceOnly"], true);
+    assert!(arg.get("reduceOnly").is_none());
 
     client.close().await.expect("close failed");
 }
@@ -1244,8 +1244,24 @@ async fn test_order_operations_during_reconnect_are_replayed(
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::cash(
+    OKXTradeMode::Cash,
+    "Client error: OKX cash orders do not support reduce-only instructions"
+)]
+#[case::cross(
+    OKXTradeMode::Cross,
+    "Client error: OKX spot orders do not support reduce-only instructions"
+)]
+#[case::isolated(
+    OKXTradeMode::Isolated,
+    "Client error: OKX spot orders do not support reduce-only instructions"
+)]
 #[tokio::test]
-async fn test_submit_cash_spot_order_rejects_reduce_only() {
+async fn test_submit_spot_order_rejects_reduce_only(
+    #[case] trade_mode: OKXTradeMode,
+    #[case] expected_reason: &str,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1264,7 +1280,7 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
             TraderId::from("TRADER-001"),
             StrategyId::from("STRATEGY-001"),
             InstrumentId::from("BTC-USD.OKX"),
-            OKXTradeMode::Cash,
+            trade_mode,
             ClientOrderId::from("Ocashspotnoreduceonly00001"),
             OrderSide::Sell,
             OrderType::Limit,
@@ -1288,10 +1304,7 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
         .await
         .unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        "Client error: OKX cash orders do not support reduce-only instructions"
-    );
+    assert_eq!(error.to_string(), expected_reason);
     assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");

@@ -444,6 +444,7 @@ impl DeriveExecutionClient {
                     .iter()
                     .map(|position| position.instrument_name),
             )
+            .filter(|name| instrument_in_scope(name.as_str(), self.config.load_ids.as_deref()))
             .collect();
         {
             let cache = self.core.cache();
@@ -550,6 +551,7 @@ impl DeriveExecutionClient {
             orders,
             terminal_revision,
             report_observations: None,
+            load_ids: self.config.load_ids.clone(),
         }
     }
 
@@ -2778,6 +2780,7 @@ struct DeriveReconciliationContext {
     orders: AHashMap<ClientOrderId, OrderBinding>,
     terminal_revision: Arc<()>,
     report_observations: Option<Arc<Mutex<ReportObservations>>>,
+    load_ids: Option<Vec<InstrumentId>>,
 }
 
 impl DeriveReconciliationContext {
@@ -2871,10 +2874,9 @@ impl DeriveReconciliationContext {
         self.ensure_order_context()?;
         self.resolve_pending_modifies(cmd.instrument_id).await?;
         if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
-            log::warn!(
+            anyhow::bail!(
                 "Derive generate_order_status_report requires venue_order_id or client_order_id"
             );
-            return Ok(None);
         }
 
         let order = self.resolve_order_record(cmd).await?;
@@ -2882,6 +2884,11 @@ impl DeriveReconciliationContext {
         let Some(mut order) = order else {
             return Ok(None);
         };
+
+        anyhow::ensure!(
+            instrument_in_scope(order.instrument_name.as_str(), self.load_ids.as_deref()),
+            "Derive order probe returned an instrument outside reconciliation scope",
+        );
 
         let client_order_id = ClientOrderId::new_checked(order.label)
             .ok()
@@ -2919,13 +2926,12 @@ impl DeriveReconciliationContext {
         if let Some(instrument_id) = cmd.instrument_id
             && format_instrument_id(order.instrument_name)? != instrument_id
         {
-            log::warn!(
+            anyhow::bail!(
                 "Derive order {} is for {} but report requested {}",
                 order.order_id,
                 order.instrument_name.as_str(),
                 instrument_id,
             );
-            return Ok(None);
         }
 
         let instrument_id = format_instrument_id(order.instrument_name)?;
@@ -2968,7 +2974,7 @@ impl DeriveReconciliationContext {
 
     async fn prime_order_bindings(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         for open_only in [true, false] {
-            self.generate_order_status_reports(&GenerateOrderStatusReports::new(
+            let cmd = GenerateOrderStatusReports::new(
                 UUID4::new(),
                 self.clock.get_time_ns(),
                 open_only,
@@ -2977,7 +2983,19 @@ impl DeriveReconciliationContext {
                 (!open_only).then(|| self.clock.get_time_ns()),
                 None,
                 None,
-            ))
+            );
+
+            self.ensure_order_context()?;
+            self.resolve_pending_modifies(cmd.instrument_id).await?;
+            let orders = self.collect_order_records(&cmd).await?;
+            self.generate_order_status_reports_from_records(
+                &cmd,
+                orders,
+                &AHashSet::new(),
+                false,
+                &[],
+                false,
+            )
             .await?;
         }
 
@@ -3091,7 +3109,7 @@ impl DeriveReconciliationContext {
     ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
         self.ensure_order_context()?;
         self.resolve_pending_modifies(cmd.instrument_id).await?;
-        let orders = self.collect_order_records(cmd).await?;
+        let orders = self.collect_scoped_order_records(cmd).await?;
 
         let mut reports = self
             .generate_order_status_reports_from_records(
@@ -3281,6 +3299,18 @@ impl DeriveReconciliationContext {
         }
 
         Ok(())
+    }
+
+    async fn collect_scoped_order_records(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<DeriveOrder>> {
+        let mut orders = self.collect_order_records(cmd).await?;
+        orders.retain(|order| {
+            instrument_in_scope(order.instrument_name.as_str(), self.load_ids.as_deref())
+        });
+
+        Ok(orders)
     }
 
     async fn collect_order_records(
@@ -3544,48 +3574,10 @@ impl DeriveReconciliationContext {
         retain_untracked: bool,
     ) -> anyhow::Result<CollectedReports<FillReport>> {
         self.resolve_pending_modifies(cmd.instrument_id).await?;
+        let (all_trades, mut records_complete) = self.collect_trade_records(&cmd).await?;
         let mut complete = true;
-        let mut records_complete = true;
-        let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
-        let mut pages = PaginationCursor::new();
-        let mut all_trades: Vec<DeriveTrade> = Vec::new();
-
-        loop {
-            let mut params = DeriveGetTradeHistoryParams::new(
-                self.subaccount_id,
-                pages.page(),
-                DERIVE_PRIVATE_PAGE_SIZE,
-            )
-            .with_window(
-                cmd.start.map(|t| t.as_millis() as i64),
-                cmd.end.map(|t| t.as_millis() as i64),
-            );
-
-            if let Some(name) = instrument_name.as_deref() {
-                params = params.with_instrument_name(name);
-            }
-
-            let result = self.http_client.get_private_trade_history(&params).await?;
-            if pages.restart_if_changed(&result.pagination)? {
-                all_trades.clear();
-                records_complete = true;
-                continue;
-            }
-
-            records_complete &= result.records_complete;
-            let more = pages.advance(
-                &result.pagination,
-                result.trades.iter().map(|trade| trade.trade_id.as_str()),
-            )?;
-            all_trades.extend(result.trades);
-
-            if !more {
-                break;
-            }
-        }
 
         let ts_init = self.clock.get_time_ns();
-        records_complete &= pages.is_complete();
         let venue_order_id_filter = cmd
             .venue_order_id
             .as_ref()
@@ -3595,6 +3587,10 @@ impl DeriveReconciliationContext {
         let mut seen_trade_ids = AHashSet::new();
 
         for trade in all_trades {
+            if !instrument_in_scope(trade.instrument_name.as_str(), self.load_ids.as_deref()) {
+                continue;
+            }
+
             if let Some(target) = venue_order_id_filter.as_deref()
                 && !trade.order_id.is_empty()
                 && trade.order_id != target
@@ -3667,6 +3663,52 @@ impl DeriveReconciliationContext {
         })
     }
 
+    async fn collect_trade_records(
+        &self,
+        cmd: &GenerateFillReports,
+    ) -> anyhow::Result<(Vec<DeriveTrade>, bool)> {
+        let mut records_complete = true;
+        let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
+        let mut pages = PaginationCursor::new();
+        let mut all_trades: Vec<DeriveTrade> = Vec::new();
+
+        loop {
+            let mut params = DeriveGetTradeHistoryParams::new(
+                self.subaccount_id,
+                pages.page(),
+                DERIVE_PRIVATE_PAGE_SIZE,
+            )
+            .with_window(
+                cmd.start.map(|t| t.as_millis() as i64),
+                cmd.end.map(|t| t.as_millis() as i64),
+            );
+
+            if let Some(name) = instrument_name.as_deref() {
+                params = params.with_instrument_name(name);
+            }
+
+            let result = self.http_client.get_private_trade_history(&params).await?;
+            if pages.restart_if_changed(&result.pagination)? {
+                all_trades.clear();
+                records_complete = true;
+                continue;
+            }
+
+            records_complete &= result.records_complete;
+            let more = pages.advance(
+                &result.pagination,
+                result.trades.iter().map(|trade| trade.trade_id.as_str()),
+            )?;
+            all_trades.extend(result.trades);
+
+            if !more {
+                break;
+            }
+        }
+
+        Ok((all_trades, records_complete && pages.is_complete()))
+    }
+
     async fn generate_position_status_snapshot(
         &self,
         cmd: &GeneratePositionStatusReports,
@@ -3681,6 +3723,10 @@ impl DeriveReconciliationContext {
         let mut instruments = AHashSet::with_capacity(positions.len());
 
         for position in positions {
+            if !instrument_in_scope(position.instrument_name.as_str(), self.load_ids.as_deref()) {
+                continue;
+            }
+
             let instrument_id = format_instrument_id(position.instrument_name)?;
 
             if let Some(target) = cmd.instrument_id
@@ -3752,7 +3798,7 @@ impl DeriveReconciliationContext {
             async {
                 self.ensure_order_context()?;
                 self.resolve_pending_modifies(None).await?;
-                self.collect_order_records(&history_order_cmd)
+                self.collect_scoped_order_records(&history_order_cmd)
                     .await
                     .map(|reports| CollectedReports {
                         reports,
@@ -3763,7 +3809,7 @@ impl DeriveReconciliationContext {
             async {
                 self.ensure_order_context()?;
                 self.resolve_pending_modifies(None).await?;
-                self.collect_order_records(&open_order_cmd)
+                self.collect_scoped_order_records(&open_order_cmd)
                     .await
                     .map(|reports| CollectedReports {
                         reports,
@@ -4387,6 +4433,18 @@ impl DeriveReconciliationContext {
             observe_trigger_fill(&self.dispatch_state, report);
         }
     }
+}
+
+fn instrument_in_scope(instrument_name: &str, load_ids: Option<&[InstrumentId]>) -> bool {
+    let included = load_ids
+        .filter(|ids| !ids.is_empty())
+        .is_none_or(|ids| ids.iter().any(|id| id.symbol.as_str() == instrument_name));
+
+    if !included {
+        log::debug!("Skipping Derive record for out-of-scope instrument {instrument_name}");
+    }
+
+    included
 }
 
 #[derive(Debug, Default)]
@@ -6524,6 +6582,42 @@ mod tests {
         websocket::WsSubscriptionPayload,
     };
 
+    #[tokio::test]
+    async fn test_report_precision_warns_for_historical_miss() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let context = client.reconciliation_context();
+        let _capture = client_logging::capture_logs().await;
+        let precision = context.report_precision("EXPIRED-PERP", false).unwrap();
+
+        assert_eq!(precision, (None, None));
+        assert_eq!(client_logging::messages(), vec![(
+            log::Level::Warn,
+            "Missing Derive instrument metadata for historical record on EXPIRED-PERP; coverage is incomplete".to_string(),
+        )]);
+    }
+
+    #[tokio::test]
+    async fn test_instrument_scope_logs_only_excluded_records_at_debug() {
+        let _capture = client_logging::capture_logs().await;
+        let ids = [InstrumentId::from("ETH-PERP.DERIVE")];
+        let included = instrument_in_scope("ETH-PERP", Some(&ids));
+        let excluded = instrument_in_scope("BTC-PERP", Some(&ids));
+        let unset = instrument_in_scope("BTC-PERP", None);
+        let empty = instrument_in_scope("BTC-PERP", Some(&[]));
+
+        assert!(included);
+        assert!(!excluded);
+        assert!(unset);
+        assert!(empty);
+        assert_eq!(
+            client_logging::messages(),
+            vec![(
+                log::Level::Debug,
+                "Skipping Derive record for out-of-scope instrument BTC-PERP".to_string(),
+            )]
+        );
+    }
+
     #[derive(Debug)]
     struct ReconciliationTimeSender(tokio::sync::mpsc::UnboundedSender<TimeEventMessage>);
 
@@ -7128,12 +7222,13 @@ mod tests {
             None,
             None,
         );
-        assert!(
-            fresh
-                .generate_order_status_report(&empty_query)
-                .await
-                .unwrap()
-                .is_none()
+        let error = fresh
+            .generate_order_status_report(&empty_query)
+            .await
+            .expect_err("missing order identity must not report venue absence");
+        assert_eq!(
+            error.to_string(),
+            "Derive generate_order_status_report requires venue_order_id or client_order_id",
         );
     }
 

@@ -50,9 +50,6 @@ python-source = "."
 features = [
   "extension-module",
   "arrow",
-  "betfair",
-  "coinapi",
-  "finfeed",
   "high-precision",
   "mimalloc",
   "redis",

@@ -26,10 +26,10 @@ use super::{
         BINANCE_FUTURES_USD_WS_PUBLIC_URL, BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL,
         BINANCE_OPTIONS_TESTNET_HTTP_URL, BINANCE_OPTIONS_TESTNET_WS_PRIVATE_URL,
         BINANCE_OPTIONS_TESTNET_WS_PUBLIC_URL, BINANCE_OPTIONS_TESTNET_WS_URL,
-        BINANCE_OPTIONS_WS_URL, BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL,
-        BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL,
-        BINANCE_SPOT_WS_URL, BINANCE_US_SPOT_HTTP_URL, BINANCE_US_SPOT_USER_WS_URL,
-        BINANCE_US_SPOT_WS_URL,
+        BINANCE_OPTIONS_WS_URL, BINANCE_PAPI_HTTP_URL, BINANCE_SPOT_DEMO_HTTP_URL,
+        BINANCE_SPOT_DEMO_WS_URL, BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL,
+        BINANCE_SPOT_TESTNET_WS_URL, BINANCE_SPOT_WS_URL, BINANCE_US_SPOT_HTTP_URL,
+        BINANCE_US_SPOT_USER_WS_URL, BINANCE_US_SPOT_WS_URL,
     },
     enums::{BinanceEnvironment, BinanceProductType},
 };
@@ -96,6 +96,23 @@ pub fn get_http_base_url_with_us(
 pub fn get_sapi_base_url(environment: BinanceEnvironment) -> Option<&'static str> {
     match environment {
         BinanceEnvironment::Live => Some(BINANCE_SPOT_HTTP_URL),
+        BinanceEnvironment::Testnet | BinanceEnvironment::Demo => None,
+    }
+}
+
+/// Returns the Portfolio Margin (PAPI) base URL for the given environment, or `None` where PAPI
+/// is unavailable.
+///
+/// Binance documents only a production PAPI host; no testnet or demo environment exists. Callers
+/// must treat `None` as unavailable rather than redirecting to a standard Futures testnet, which
+/// does not serve `/papi/v1`.
+///
+/// References:
+/// - <https://developers.binance.com/docs/derivatives/portfolio-margin/general-info>
+#[must_use]
+pub fn get_papi_base_url(environment: BinanceEnvironment) -> Option<&'static str> {
+    match environment {
+        BinanceEnvironment::Live => Some(BINANCE_PAPI_HTTP_URL),
         BinanceEnvironment::Testnet | BinanceEnvironment::Demo => None,
     }
 }
@@ -590,6 +607,15 @@ mod tests {
     #[case(BinanceEnvironment::Demo, None)]
     fn test_sapi_base_url(#[case] environment: BinanceEnvironment, #[case] expected: Option<&str>) {
         let url = get_sapi_base_url(environment);
+        assert_eq!(url, expected);
+    }
+
+    #[rstest]
+    #[case(BinanceEnvironment::Live, Some("https://papi.binance.com"))]
+    #[case(BinanceEnvironment::Testnet, None)]
+    #[case(BinanceEnvironment::Demo, None)]
+    fn test_papi_base_url(#[case] environment: BinanceEnvironment, #[case] expected: Option<&str>) {
+        let url = get_papi_base_url(environment);
         assert_eq!(url, expected);
     }
 }

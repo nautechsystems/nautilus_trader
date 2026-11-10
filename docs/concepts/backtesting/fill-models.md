@@ -14,7 +14,8 @@ With an L1 book, including books updated from quotes, trades, or bars:
 
 - `prob_fill_on_limit` controls whether a limit order fills when its price is touched.
 - `prob_slippage` is evaluated for each fill, regardless of order type or liquidity side.
-- A successful slippage draw moves the fill one tick against the order direction.
+- A successful slippage draw moves the fill one tick against the order direction, but never past
+  an existing limit price or price protection boundary.
 - A model may provide a synthetic L2 book to represent liquidity beyond the best bid and ask.
 
 For example, with `prob_slippage=0.5`, each BUY fill has a 50% chance of moving one tick higher.
@@ -183,7 +184,12 @@ For L1 books, this value controls a one-tick adverse move on each fill:
 
 The draw applies to maker and taker fills. It does not apply to L2 or L3 books. A slip keeps the original fill
 price if it would cross the instrument's `min_price` or `max_price`. It also keeps that price if it would
-reach a zero or negative price that the instrument does not allow.
+reach a zero or negative price that the instrument does not allow, or if it would fill the order
+worse than its limit price or price protection boundary. A limit order filled at its limit price
+therefore never slips.
+
+The initial `MARKET_TO_LIMIT` fill is an exception: it can slip past the assigned limit price.
+The engine sets this limit before slippage and applies it to subsequent fills.
 
 ## Synthetic order books
 

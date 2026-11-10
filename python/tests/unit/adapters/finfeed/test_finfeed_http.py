@@ -35,6 +35,10 @@ import pytest
 from pandas import Timestamp
 
 from nautilus_trader.adapters import finfeed as ff
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import RecordFlag
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
 TEST_DATA = Path(__file__).resolve().parents[5] / "crates/adapters/finfeed/test_data"
@@ -92,18 +96,24 @@ def _peer(responses, **controls: Any) -> Iterator:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
-    config = ff.FinFeedDataClientConfig(
-        api_key="python-rest-secret",
-        base_url_http=f"http://127.0.0.1:{server.server_port}/v1/",
-        min_request_interval_ms=1,
-        max_concurrent_requests=1,
-        attempt_budget=controls.get("attempt_budget", 30),
-        max_retries=0,
-        http_timeout_secs=2,
-    )
+    base_url = f"http://127.0.0.1:{server.server_port}/v1/"
+
+    options = {
+        "api_key": controls.get("api_key", "python-rest-secret"),
+        "min_request_interval_ms": 1,
+        "max_concurrent_requests": 1,
+        "attempt_budget": controls.get("attempt_budget", 30),
+        "max_retries": 0,
+    }
+
+    if controls.get("client_type") is ff.FinFeedDataLoader:
+        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=2, **options)
+    else:
+        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=2, **options)
+        client = ff.FinFeedHttpClient(config)
 
     try:
-        yield ff.FinFeedHttpClient(config), requests, entered, release
+        yield client, requests, entered, release
     finally:
         release.set()
         server.shutdown()
@@ -1130,3 +1140,110 @@ def test_historical_research_example_keeps_selected_source(
                 await client.get_exchanges()
 
         asyncio.run(check_canceled())
+
+
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_loader_reuses_metadata_and_replays_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_environment: bool,
+) -> None:
+    """
+    Reuse one definition and preserve deltas through Parquet.
+    """
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    start = Timestamp("2026-10-11T00:00:05Z").value
+    end = Timestamp("2026-10-11T00:00:10Z").value
+
+    responses = [
+        (200, _response("polymarket-market.json")),
+        (200, _response("book-replay.json")),
+        (200, _response("book-replay.json")),
+    ]
+
+    monkeypatch.setenv("FINFEED_API_KEY", "python-rest-secret")
+    with _peer(
+        responses,
+        client_type=ff.FinFeedDataLoader,
+        api_key=None if use_environment else "python-rest-secret",
+    ) as (loader, requests, *_):
+
+        async def collect():
+            instruments = await loader.request_instruments(
+                [
+                    ff.FinFeedInstrumentSelection("POLYMARKET", ["TEST-OUTCOME_NO"]),
+                ],
+            )
+            instrument = instruments[0]
+            first = await loader.request_book_deltas(instrument_id, start, end)
+            second = await loader.request_book_deltas(instrument_id, start, end)
+            return instrument, first, second
+
+        instrument, first, second = asyncio.run(collect())
+
+    (tmp_path / "catalog").mkdir()
+    catalog = ParquetDataCatalog(str(tmp_path / "catalog"))
+    catalog.write_instruments([instrument])
+    catalog.write_order_book_deltas(first)
+
+    assert loader.instrument(instrument_id) == instrument
+    assert first == second
+    assert first[0].instrument_id == instrument_id
+    assert first[0].action == BookAction.CLEAR
+    assert first[0].ts_init == start
+    assert RecordFlag.F_LAST.matches(first[-1].flags)
+    assert catalog.query_order_book_deltas(identifiers=[str(instrument_id)]) == first
+    assert catalog.instruments(instrument_ids=[str(instrument_id)]) == [instrument]
+    assert len(requests) == 3
+    assert requests[0] == (
+        "/v1/markets/POLYMARKET/TEST-OUTCOME_NO",
+        "python-rest-secret",
+        "nautilus",
+    )
+    assert requests[1] == requests[2]
+
+
+def test_loader_failed_definition_refresh_preserves_metadata() -> None:
+    """
+    Preserve the accepted definition after a failed refresh.
+    """
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    with _peer(
+        [
+            (200, _response("polymarket-market.json")),
+            (404, b"{}"),
+        ],
+        client_type=ff.FinFeedDataLoader,
+    ) as (loader, requests, *_):
+
+        async def refresh():
+            instrument = await loader.request_instrument(instrument_id)
+            with pytest.raises(RuntimeError):
+                await loader.request_instrument(instrument_id)
+            return instrument
+
+        instrument = asyncio.run(refresh())
+
+    assert loader.instrument(instrument_id) == instrument
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("api_key", [None, "invalid key"])
+def test_loader_checks_metadata_and_limit_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
+) -> None:
+    """
+    Reject missing metadata and zero limits before HTTP admission.
+    """
+    monkeypatch.delenv("FINFEED_API_KEY", raising=False)
+    loader = ff.FinFeedDataLoader(api_key=api_key)
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+
+    async def request():
+        with pytest.raises(RuntimeError, match="No loaded instrument"):
+            await loader.request_trades(instrument_id, 1, 2)
+        with pytest.raises(ValueError, match="number would be zero for non-zero type"):
+            await loader.request_book_deltas(instrument_id, 1, 2, limit=0)
+
+    asyncio.run(request())

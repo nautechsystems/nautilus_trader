@@ -60,7 +60,10 @@ use crate::{
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient},
         models::LighterOrder,
-        query::{LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery},
+        query::{
+            LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
+            LighterAccountOrdersQuery,
+        },
     },
     signing::{auth_token::build_auth_token_for, nonce::NonceManager},
     websocket::parse::{ParsedOrderEvent, parse_ws_order_status_report},
@@ -2841,6 +2844,24 @@ pub(crate) async fn collect_order_while_pending(
     };
 
     let auth = mint_auth_token(credential)?;
+
+    if let Some(order) = collect_account_order(
+        http_client,
+        credential,
+        lookup,
+        market_index,
+        &auth,
+        &is_pending,
+    )
+    .await?
+    {
+        return Ok(Some(order));
+    }
+
+    if !is_pending() {
+        return Ok(None);
+    }
+
     let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
         authorization: None,
         auth: Some(auth.clone()),
@@ -2872,7 +2893,8 @@ pub(crate) async fn collect_order_while_pending(
     }
 
     if lookup.target_venue_index.is_none() {
-        // Lighter reuses client indexes, so they cannot identify terminal history
+        // Lighter reuses client indexes, so paginated inactive history cannot safely
+        // identify an order by client index alone.
         return Ok(None);
     }
 
@@ -2928,6 +2950,72 @@ pub(crate) async fn collect_order_while_pending(
             }
             _ => break,
         }
+    }
+
+    Ok(None)
+}
+
+async fn collect_account_order(
+    http_client: &LighterHttpClient,
+    credential: &Credential,
+    lookup: &OrderReportLookup,
+    market_index: i64,
+    auth: &SecretString,
+    is_pending: impl Fn() -> bool,
+) -> anyhow::Result<Option<LighterOrder>> {
+    let Some(client_order_index) = lookup.target_client_index else {
+        return Ok(None);
+    };
+
+    let query = Zeroizing::new(LighterAccountOrdersQuery {
+        authorization: None,
+        auth: Some(auth.clone()),
+        account_index: credential.account_index(),
+        client_order_indexes: vec![client_order_index],
+    });
+
+    let response = match http_client.get_account_orders(&query).await {
+        Ok(response) => response,
+        Err(_) => {
+            log::debug!(
+                "Lighter accountOrders lookup failed, falling back to per-market order queries"
+            );
+            return Ok(None);
+        }
+    };
+
+    if !is_pending() {
+        return Ok(None);
+    }
+
+    let mut matches = response.orders.iter().filter(|order| {
+        if order.market_index != market_index {
+            return false;
+        }
+
+        if lookup.target_venue_index.is_none() && order.status.is_terminal() {
+            return false;
+        }
+
+        order_matches_lookup(
+            order.order_index,
+            order.client_order_index,
+            lookup.target_venue_index,
+            lookup.target_client_index,
+        )
+    });
+
+    let account_match = matches.next();
+
+    if lookup.target_venue_index.is_none() {
+        anyhow::ensure!(
+            matches.next().is_none(),
+            "ambiguous Lighter account-order lookup for client_order_index {client_order_index}",
+        );
+    }
+
+    if let Some(order) = account_match {
+        return Ok(Some(order.clone()));
     }
 
     Ok(None)

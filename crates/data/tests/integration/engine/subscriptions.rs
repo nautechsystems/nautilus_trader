@@ -1113,7 +1113,8 @@ fn test_stopped_engine_blocks_new_physical_subscriptions(
     tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap()
-        .block_on(data_engine.connect());
+        .block_on(data_engine.connect())
+        .unwrap();
 
     let subscribe = || {
         SubscribeCommand::Quotes(SubscribeQuotes::new(

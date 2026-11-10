@@ -69,7 +69,7 @@ use nautilus_model::{
     data::Data,
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderEventAny, OrderInitialized,
@@ -2395,6 +2395,106 @@ async fn test_cancel_algo_order_venue_rejection_emits_order_cancel_rejected() {
         }
         other => panic!("Expected OrderCancelRejected event, was {other:?}"),
     }
+}
+
+#[rstest]
+#[case::regular(OrderType::StopMarket, "/api/v5/trade/cancel-algos")]
+#[case::advance(OrderType::TrailingStopMarket, "/api/v5/trade/cancel-advance-algos")]
+#[tokio::test]
+async fn test_cancel_algo_order_transient_failure_emits_no_rejection(
+    #[case] order_type: OrderType,
+    #[case] path: &'static str,
+    #[values(StatusCode::TOO_MANY_REQUESTS, StatusCode::SERVICE_UNAVAILABLE)] status: StatusCode,
+) {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempts);
+
+    let router = Router::new()
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        )
+        .route(
+            path,
+            post(move || {
+                let counter = Arc::clone(&counter);
+                async move {
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        status.into_response()
+                    } else {
+                        Json(load_test_data("http_cancel_algo_order_rejected.json")).into_response()
+                    }
+                }
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let base_url = format!("http://{addr}");
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&base_url, |config| {
+            config.max_retries = 2;
+            config.retry_delay_initial_ms = 1;
+            config.retry_delay_max_ms = 1;
+        });
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let client_order_id = ClientOrderId::new("OALGOCANCELAMBIGUOUS1");
+    let order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .cancel_order(CancelOrder {
+            trader_id: order.trader_id(),
+            client_id: Some(*OKX_CLIENT_ID),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id,
+            venue_order_id: Some(VenueOrderId::new("algo-1")),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .unwrap();
+
+    wait_until_async(
+        || async { attempts.load(Ordering::SeqCst) != 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+    client.disconnect().await.unwrap();
+    server.abort();
+    assert!(
+        event.is_err(),
+        "ambiguous cancel emitted an event: {event:?}"
+    );
+    assert!(drain_events(&mut rx).is_empty());
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]
@@ -4927,16 +5027,28 @@ async fn test_submit_spread_order_denies_reduce_only() {
 }
 
 #[rstest]
+#[case::cash(None)]
+#[case::cross(Some(OKXMarginMode::Cross))]
+#[case::isolated(Some(OKXMarginMode::Isolated))]
 #[tokio::test]
-async fn test_submit_cash_order_denies_reduce_only() {
+async fn test_submit_spot_order_denies_reduce_only(
+    #[case] margin_mode: Option<OKXMarginMode>,
+    #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+) {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
-    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&base_url, |config| {
+            config.margin_mode = margin_mode;
+            config.use_spot_margin = margin_mode.is_some();
+        });
+
     client.start().unwrap();
     let _ = drain_events(&mut rx);
     let instrument_id = InstrumentId::from("BTC-USDT.OKX");
     let client_order_id = ClientOrderId::from("OREDUCECASH1");
-    let order = OrderTestBuilder::new(OrderType::Limit)
+    let order = OrderTestBuilder::new(order_type)
         .trader_id(TraderId::from("TESTER-001"))
         .strategy_id(StrategyId::from("STRATEGY-001"))
         .instrument_id(instrument_id)

@@ -18,10 +18,11 @@
 use std::collections::HashMap;
 
 use ahash::AHashSet;
+use anyhow::Context;
 use nautilus_common::config::ConfigError;
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{identifiers::InstrumentId, types::fixed::check_fixed_precision};
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -182,7 +183,7 @@ impl CoinApiDataClientConfig {
     }
 }
 
-fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
+pub(crate) fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
     let mut seen = AHashSet::new();
 
     for selection in selections {
@@ -204,6 +205,24 @@ fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Res
                 anyhow::bail!(ConfigError::duplicate("instruments", None));
             }
         }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_price_precisions(
+    selections: &[CoinApiInstrumentSelection],
+    price_precisions: &HashMap<InstrumentId, u8>,
+) -> anyhow::Result<()> {
+    for (instrument_id, precision) in price_precisions {
+        anyhow::ensure!(
+            selections
+                .iter()
+                .any(|selection| selection.instrument_ids.contains(instrument_id)),
+            "price precision for {instrument_id}, which is not a selected instrument"
+        );
+        check_fixed_precision(*precision)
+            .with_context(|| format!("invalid price precision for {instrument_id}"))?;
     }
 
     Ok(())

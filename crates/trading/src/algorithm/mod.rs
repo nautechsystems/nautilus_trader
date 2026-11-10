@@ -1020,6 +1020,9 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Submits an order to the execution engine via the risk engine.
     ///
+    /// The command's `order_init` carries the order's current values, so a quantity,
+    /// price or trigger price changed in place before submission reaches the venue.
+    ///
     /// Orders carrying a live emulation trigger are refused before submission.
     /// For new or locally active spawned orders with a pending primary reduction,
     /// emulation refusal restores unfilled quantity to a locally active primary
@@ -1092,7 +1095,7 @@ pub trait ExecutionAlgorithm: DataActor {
             strategy_id,
             order.instrument_id(),
             order.client_order_id(),
-            order.init_event().clone(),
+            OrderInitialized::from(&order),
             order.exec_algorithm_id(),
             position_id,
             params,
@@ -5145,10 +5148,9 @@ mod tests {
             panic!("Expected exactly one SubmitOrder command");
         };
         assert_eq!(command.client_order_id, client_order_id);
-        // The command embeds the immutable OrderInitialized event, so its
-        // quantity is the pre-reduction 1.0; consumers resolve the cached
-        // order, which carries the reduced quantity asserted below.
-        assert_eq!(command.order_init.quantity, Quantity::from("1.0"));
+        // The command carries the primary's reduced quantity at submission,
+        // matching the cached order asserted below.
+        assert_eq!(command.order_init.quantity, Quantity::from("0.5"));
         assert_eq!(
             algo.cache().order(&client_order_id).unwrap().quantity(),
             Quantity::from("0.5"),
@@ -5217,8 +5219,8 @@ mod tests {
             panic!("Expected exactly one SubmitOrder command");
         };
         assert_eq!(command.client_order_id, client_order_id);
-        // The command embeds the immutable OrderInitialized event; here the
-        // cancellation already restored the cache to 1.0, so the two agree.
+        // The cancellation restored the primary to 1.0 before submission, so
+        // the command carries the full quantity.
         assert_eq!(command.order_init.quantity, Quantity::from("1.0"));
         assert_eq!(
             algo.cache().order(&client_order_id).unwrap().quantity(),

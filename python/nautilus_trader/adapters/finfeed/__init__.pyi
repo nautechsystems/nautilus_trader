@@ -19,6 +19,7 @@ __all__ = [
     "FinFeedBookLevel",
     "FinFeedDataClientConfig",
     "FinFeedDataClientFactory",
+    "FinFeedDataLoader",
     "FinFeedExchange",
     "FinFeedFlatFileOhlcvQuery",
     "FinFeedHistoryQuery",
@@ -254,6 +255,47 @@ class FinFeedBookLevel:
     def price(self) -> decimal.Decimal: ...
     @property
     def size(self) -> decimal.Decimal: ...
+
+@typing.final
+class FinFeedDataLoader:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_concurrent_requests: int | None = None,
+        attempt_budget: int | None = None,
+        min_request_interval_ms: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        retry_backoff_factor: float | None = None,
+        retry_jitter_ms: int | None = None,
+        retry_operation_timeout_ms: int | None = None,
+        retry_immediate_first: bool | None = None,
+        retry_max_elapsed_ms: int | None = None,
+    ) -> None: ...
+    def add_instrument(self, instrument: model.BinaryOption) -> None: ...
+    def instrument(self, instrument_id: model.InstrumentId) -> model.BinaryOption: ...
+    def request_instrument(
+        self, instrument_id: model.InstrumentId
+    ) -> typing.Awaitable[model.BinaryOption]: ...
+    def request_instruments(
+        self, instruments: typing.Sequence[FinFeedInstrumentSelection]
+    ) -> typing.Awaitable[list[model.BinaryOption]]: ...
+    def request_book_deltas(
+        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.OrderBookDelta]]: ...
+    def request_quotes(
+        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.QuoteTick]]: ...
+    def request_trades(
+        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.TradeTick]]: ...
+    def request_bars(
+        self, bar_type: model.BarType, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.Bar]]: ...
 
 @typing.final
 class FinFeedExchange:

@@ -41,7 +41,7 @@ Venue names and wire field names identify the protocol being tested.
   fields check that instrument conversion ignores unrecognized token fields. Other venue listings
   exercise identity preservation and explicit rejection of unsupported definitions.
 - `polymarket-book.json` constructs ten asks and 36 bids with distinct sizes. The period catalog
-  uses the 43 IDs asserted by `data::history::tests::every_claimed_catalog_period_maps_to_a_valid_specification`.
+  uses the 43 IDs asserted by `history::tests::every_claimed_catalog_period_maps_to_a_valid_specification`.
   Lengths are calculated from each ID's unit/count; display labels are authored. This catalog tests
   fixed and calendar period mapping, not the provider's returned catalog or advertised coverage.
 - `polymarket-quotes-day.json` checks every quote field and separate event/receive clocks.

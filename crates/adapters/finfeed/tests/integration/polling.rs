@@ -868,7 +868,7 @@ impl log::Log for SaturationLogs {
             && matches!(
                 metadata.target(),
                 "nautilus_finfeed::data::poll"
-                    | "nautilus_finfeed::data::parse"
+                    | "nautilus_finfeed::parse"
                     | "nautilus_finfeed::http::parse"
             )
     }

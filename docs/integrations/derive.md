@@ -504,15 +504,28 @@ averages are available, and the earliest native creation timestamp as the accept
 
 ### Startup reconciliation
 
+Set execution-client `load_ids` to restrict reconciliation to specific instrument IDs. `None` or an empty
+list includes every instrument. Bulk-load their currencies through data-client `currencies`, and set
+`reconciliation_instrument_ids` to the same set so continuous checks do not treat omitted positions as flat.
+
 Before private streaming starts, the execution client publishes account state. It loads instrument definitions
-required by the native portfolio and cached active orders. It waits for the engine cache to observe those
-definitions before private streaming starts. It restores owned active order context from cached order events,
+required by the in-scope native portfolio and this client's cached active orders, including owned orders outside
+`load_ids`. It waits for the engine cache to observe those definitions before private streaming starts.
+It restores owned active order context from cached order events,
 including known venue IDs and processed trade IDs, then verifies active orders against native open orders and
 history for their instruments. Historical metadata gaps do not prevent this binding check.
 
 After private subscription confirmation, it refreshes account state and required instrument definitions again
 before processing stream updates. This closes the interval between the initial portfolio snapshot and
 subscription confirmation.
+
+- Excluded records log at debug and do not make history incomplete.
+- An included active order or position with missing metadata fails the report request.
+- Included historical metadata gaps warn and fail direct report requests. Mass-status coverage follows the
+  snapshot rules below.
+
+Report generation does not fetch missing definitions. A single-order query fails if the venue returns an excluded
+record. Private WebSocket streams remain subaccount-wide.
 
 When `private/get_order` returns `11006` for a known venue ID, the adapter searches paginated
 `private/get_order_history` for that exact ID. It does not infer an unproved replacement binding
@@ -552,7 +565,7 @@ keep their IDs.
 
 **Recovery limits**:
 
-- Startup validates all labeled uncached replacement chains on the subaccount before engine filters apply,
+- Startup validates all labeled uncached replacement chains on in-scope instruments before engine filters apply,
   including other bots' chains. Invalid chains can prevent startup. Long chains extend history reads and can
   exceed the reconciliation timeout.
 - Do not let another process replace orders adopted by this node. Startup registers all adopted open orders
@@ -1256,7 +1269,7 @@ trades, bars, or funding rates, bulk-load the instrument's currency or subscribe
 
 Class/struct: `DeriveExecutionClientConfig`.
 
-#### Account and credentials
+#### Account, credentials, and instrument scope
 
 | Option           | Default      | Description                                                      |
 | ---------------- | ------------ | ---------------------------------------------------------------- |
@@ -1264,6 +1277,7 @@ Class/struct: `DeriveExecutionClientConfig`.
 | `wallet_address` | `None`       | Owner EOA or multisig address. Falls back to env vars below.     |
 | `session_key`    | `None`       | secp256k1 session-key private key. Falls back to env vars below. |
 | `subaccount_id`  | `None`       | Derive subaccount id. Falls back to env vars below.              |
+| `load_ids`       | `None`       | Reconciliation instrument IDs. `None` or empty includes all.     |
 
 #### Connectivity and retries
 

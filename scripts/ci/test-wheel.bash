@@ -20,7 +20,11 @@ unset PYTHONPATH
 unset VIRTUAL_ENV
 unset UV_PROJECT_ENVIRONMENT
 cd "$pkg_dir"
-project_python="$(uv python find)"
+if [ -n "${UV_PYTHON:-}" ]; then
+  project_python="$(uv python find "$UV_PYTHON")"
+else
+  project_python="$(uv python find)"
+fi
 
 # A separate project preserves uv's default .venv layout and the development installation
 wheel_project="$neutral_dir/python"

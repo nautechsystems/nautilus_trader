@@ -14,14 +14,8 @@ __all__ = [
     "COINAPI_CLIENT_ID",
     "CoinApiDataClientConfig",
     "CoinApiDataClientFactory",
+    "CoinApiDataLoader",
     "CoinApiInstrumentSelection",
-    "CoinApiOhlcvLoader",
-    "load_coinapi_deltas",
-    "load_coinapi_quotes",
-    "load_coinapi_trades",
-    "stream_coinapi_deltas",
-    "stream_coinapi_quotes",
-    "stream_coinapi_trades",
 ]
 
 COINAPI: str
@@ -105,16 +99,6 @@ class CoinApiInstrumentSelection:
     def filter_asset_id(self) -> str | None: ...
 
 @typing.final
-class CoinApiOhlcvLoader:
-    def __init__(self, instrument_ids: typing.Mapping[int, model.InstrumentId]) -> None: ...
-    def load_bars(
-        self,
-        filepath: str | os.PathLike | pathlib.Path,
-        period_id: str | None = None,
-        limit: int | None = None,
-    ) -> list[model.Bar]: ...
-
-@typing.final
 class CoinApiQuoteStreamIterator:
     def __iter__(self) -> CoinApiQuoteStreamIterator: ...
     def __next__(self) -> list[model.QuoteTick] | None: ...
@@ -124,50 +108,89 @@ class CoinApiTradeStreamIterator:
     def __iter__(self) -> CoinApiTradeStreamIterator: ...
     def __next__(self) -> list[model.TradeTick] | None: ...
 
-def load_coinapi_deltas(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    date: datetime.date | None = None,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> list[model.OrderBookDelta]: ...
-def load_coinapi_quotes(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> list[model.QuoteTick]: ...
-def load_coinapi_trades(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> list[model.TradeTick]: ...
-def stream_coinapi_deltas(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    date: datetime.date | None = None,
-    chunk_size: int = 100000,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> CoinApiDeltaStreamIterator: ...
-def stream_coinapi_quotes(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    chunk_size: int = 100000,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> CoinApiQuoteStreamIterator: ...
-def stream_coinapi_trades(
-    filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId,
-    chunk_size: int = 100000,
-    price_precision: int | None = None,
-    size_precision: int | None = None,
-    limit: int | None = None,
-) -> CoinApiTradeStreamIterator: ...
+@typing.final
+class CoinApiDataLoader:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_concurrent_requests: int | None = None,
+        credit_budget: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        retry_max_elapsed_ms: int | None = None,
+    ) -> None: ...
+    def add_instrument(
+        self, instrument: typing.Any, symbol_id: str | None = None, symbol_id_int: int | None = None
+    ) -> None: ...
+    def instrument(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def request_instruments(
+        self,
+        instruments: typing.Sequence[CoinApiInstrumentSelection],
+        price_precisions: typing.Mapping[model.InstrumentId, int] | None = None,
+    ) -> typing.Awaitable[list[typing.Any]]: ...
+    def download_flat_file(
+        self, bucket: str, object_key: str, filepath: str | os.PathLike | pathlib.Path
+    ) -> typing.Awaitable[None]: ...
+    def load_book_deltas(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        date: datetime.date | None = None,
+        limit: int | None = None,
+    ) -> list[model.OrderBookDelta]: ...
+    def stream_book_deltas(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        date: datetime.date | None = None,
+        chunk_size: int = 100000,
+        limit: int | None = None,
+    ) -> CoinApiDeltaStreamIterator: ...
+    def load_quotes(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        limit: int | None = None,
+    ) -> list[model.QuoteTick]: ...
+    def stream_quotes(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        chunk_size: int = 100000,
+        limit: int | None = None,
+    ) -> CoinApiQuoteStreamIterator: ...
+    def load_trades(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        limit: int | None = None,
+    ) -> list[model.TradeTick]: ...
+    def stream_trades(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        instrument_id: model.InstrumentId,
+        chunk_size: int = 100000,
+        limit: int | None = None,
+    ) -> CoinApiTradeStreamIterator: ...
+    def load_bars(
+        self,
+        filepath: str | os.PathLike | pathlib.Path,
+        period_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[model.Bar]: ...
+    def request_book_snapshot(
+        self, instrument_id: model.InstrumentId, depth: int | None = None
+    ) -> typing.Awaitable[model.OrderBook]: ...
+    def request_quotes(
+        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.QuoteTick]]: ...
+    def request_trades(
+        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.TradeTick]]: ...
+    def request_bars(
+        self, bar_type: model.BarType, start: int, end: int, limit: int | None = None
+    ) -> typing.Awaitable[list[model.Bar]]: ...

@@ -29,8 +29,9 @@
 //! snapshot seed and relies on source action and continuity assumptions. OHLCV `LAST` does not
 //! establish trade-only prices, and no authoritative settlement event is inferred.
 //!
-//! Optional Python bindings expose provider identity, configuration, factories, and read-only REST
-//! access with typed queries and results.
+//! [`loaders::FinFeedDataLoader`] retrieves historical data with retained instrument definitions.
+//! Optional Python bindings expose provider identity, configuration, factories, the standalone data
+//! loader, and read-only REST access with typed queries and results.
 //!
 //! The official FinFeedAPI API reference can be found at
 //! <https://www.finfeedapi.com/products/prediction-markets-api/docs?ref=nautilus>.
@@ -51,8 +52,8 @@
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
-//! - `python`: Enables Python bindings for identity, configuration, factories, and read-only REST access
-//!   with typed queries and results through [PyO3](https://pyo3.rs).
+//! - `python`: Enables Python bindings for identity, configuration, factories, the standalone data
+//!   loader, and read-only REST access with typed queries and results through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes time and HTTP transport through deterministic simulation with `cfg(madsim)`.
 //!   Simulated transport supports plaintext local peers; HTTPS and explicit proxies require native tests.
 //!
@@ -83,6 +84,11 @@ pub mod data;
 pub mod factories;
 pub mod http;
 pub mod instruments;
+pub mod loaders;
+
+mod book;
+mod history;
+mod parse;
 
 #[cfg(feature = "python")]
 pub mod python;

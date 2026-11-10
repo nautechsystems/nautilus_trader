@@ -1352,6 +1352,8 @@ async fn streamed_response_does_not_negotiate_encoding() {
         .get_stream(format!("http://{addr}/stream-gzip"))
         .await
         .unwrap();
+    assert_eq!(response.headers()["content-encoding"], "gzip");
+    assert_eq!(response.headers()["content-length"], body.len().to_string());
     let mut got = Vec::new();
     while let Some(chunk) = response.chunk().await.unwrap() {
         got.extend_from_slice(&chunk);

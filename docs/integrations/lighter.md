@@ -992,6 +992,7 @@ Create, cancel, modify, grouped orders, and leverage updates include market IDs 
 | Feature              | Perpetuals | Spot | Notes                                                        |
 | -------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Query open orders    | ✓          | ✓    | REST `accountActiveOrders` scoped by market.                 |
+| Targeted lookup      | ✓          | ✓    | REST `accountOrders` with active/inactive fallback.          |
 | Query order history  | ✓          | ✓    | REST `accountInactiveOrders` with cursor pagination.         |
 | Order status updates | ✓          | ✓    | Private WebSocket order streams plus status reports.         |
 | Trade history        | ✓          | ✓    | REST `trades`; credentials are required for account history. |
@@ -999,6 +1000,16 @@ Create, cancel, modify, grouped orders, and leverage updates include market IDs 
 | Position reports     | ✓          | -    | Perp only; replays cached position stream.                   |
 | Account state        | ✓          | ✓    | Replays the cached merged account state snapshot.            |
 | Mass status          | ✓          | ✓    | Combines orders, fills, and cached positions.                |
+
+- **Targeted lookup**: with a client order ID, the adapter queries `accountOrders` first. If the request
+  fails or finds no match, it queries `accountActiveOrders`, then paginated `accountInactiveOrders` only
+  when the venue order ID is known. A direct response with no match adds one request before fallback;
+  a failed request can also use the shared REST retry policy.
+- **`accountOrders` query**: the raw `LighterAccountOrdersQuery` takes 1 to 20 client-order indexes (the
+  venue limit); targeted lookups send one. Invalid counts are rejected before any HTTP request.
+- **`trades` filters**: the raw `LighterTradesQuery` also accepts `integrator_account_index` and
+  `order_index_str` (Lighter Core, per [API update 184](https://t.me/lighter_api_updates/184)). The venue
+  gives `order_index_str` precedence over `order_index`; use it for indexes above `i64::MAX`.
 
 Authenticated inactive-order and fill pagination rejects repeated cursors and stops after 1,000 pages.
 Fill reconciliation is repeatable across calls and suppresses fills already emitted by WebSocket.
@@ -1252,6 +1263,10 @@ non-transaction traffic. Reconcile pending outcomes; do not resend blindly.
 One execution limiter enforces `sendtx_quota_per_min` across WebSocket `sendTx`/`sendTxBatch` trading,
 including account-wide cancellation and schedule control, and startup HTTP `sendTx` integrator approval.
 Raw calls use it when configured, falling back to the raw client's REST limiter otherwise.
+HTTP `sendTx` and `sendTxBatch` responses expose optional `remaining_send_tx`, the transactions still
+available in the venue's rolling minute (Lighter Core, per
+[`sendTx`](https://docs.lighter.xyz/api/transactions/sendtx)). Premium accounts return it; the adapter does
+not use it for pacing, which still uses `sendtx_quota_per_min`.
 
 Clients with identical WebSocket URL strings share a 200-message/minute non-transaction control limiter. The default
 data URL's `readonly=true` separates it from execution. Budget combined control traffic within the per-IP limit.

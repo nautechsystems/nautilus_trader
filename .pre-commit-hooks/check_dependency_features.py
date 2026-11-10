@@ -75,6 +75,7 @@ NETWORK_PACKAGE_FEATURES = {
     "nautilus-finfeed": frozenset(),
     "nautilus-hyperliquid": frozenset({"transport-sockudo"}),
     "nautilus-interactive-brokers": frozenset(),
+    "nautilus-kalshi": frozenset({"transport-sockudo"}),
     "nautilus-kraken": frozenset({"transport-sockudo"}),
     "nautilus-lighter": frozenset({"transport-sockudo"}),
     "nautilus-live": frozenset(),

@@ -37,6 +37,7 @@ use std::{
     cell::RefCell,
     collections::VecDeque,
     net::SocketAddr,
+    num::NonZeroU32,
     path::PathBuf,
     process::Command,
     rc::Rc,
@@ -117,7 +118,8 @@ use crate::{
         enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
-    execution::LighterExecutionClient,
+    execution::{ACKED_ORDER_LOOKUP_DELAY, LighterExecutionClient},
+    http::client::{LighterHttpClient, LighterRawHttpClient},
     signing::{
         field::Fp5,
         schnorr::Signature,
@@ -146,6 +148,7 @@ const ETH_SPOT_SYMBOL: &str = "ETH/USDC-SPOT";
 const TEST_MARKET_INDEX: i64 = 0;
 const TEST_NEXT_NONCE: i64 = 9_999;
 const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
+const TEST_REST_REFILL_PERIOD: Duration = ACKED_ORDER_LOOKUP_DELAY.saturating_mul(6);
 const INTEGRATOR_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
 
 fn data_path() -> PathBuf {
@@ -212,6 +215,9 @@ struct TestServerState {
     referral_use_requests: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     next_referral_use_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_calls: Arc<AtomicUsize>,
+    account_orders_calls: Arc<AtomicUsize>,
+    account_orders_response_blocked: Arc<AtomicBool>,
+    account_orders_response_release: Arc<tokio::sync::Notify>,
     active_orders_response_blocked: Arc<AtomicBool>,
     active_orders_response_release: Arc<tokio::sync::Notify>,
     tx_calls: Arc<AtomicUsize>,
@@ -221,6 +227,7 @@ struct TestServerState {
     trades_calls: Arc<AtomicUsize>,
     trades_queries: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    account_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses_by_nonce: Arc<tokio::sync::Mutex<std::collections::HashMap<i64, Value>>>,
@@ -275,6 +282,9 @@ impl Default for TestServerState {
             referral_use_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             next_referral_use_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
+            account_orders_calls: Arc::new(AtomicUsize::new(0)),
+            account_orders_response_blocked: Arc::new(AtomicBool::new(false)),
+            account_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             active_orders_response_blocked: Arc::new(AtomicBool::new(false)),
             active_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             tx_calls: Arc::new(AtomicUsize::new(0)),
@@ -284,6 +294,7 @@ impl Default for TestServerState {
             trades_calls: Arc::new(AtomicUsize::new(0)),
             trades_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            account_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses_by_nonce: Arc::new(tokio::sync::Mutex::new(
@@ -482,6 +493,31 @@ async fn account_active_orders(
         release.await;
     }
 
+    (StatusCode::OK, body.to_string()).into_response()
+}
+
+async fn account_orders(
+    State(state): State<Arc<TestServerState>>,
+    Query(_query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let release = state.account_orders_response_release.notified();
+    tokio::pin!(release);
+    release.as_mut().enable();
+    let blocked = state
+        .account_orders_response_blocked
+        .load(Ordering::Acquire);
+    state.account_orders_calls.fetch_add(1, Ordering::Release);
+
+    if blocked {
+        release.await;
+    }
+
+    let body = state
+        .account_orders_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| json!({"code":200,"orders":[]}));
     (StatusCode::OK, body.to_string()).into_response()
 }
 
@@ -871,6 +907,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/nextNonce", get(next_nonce))
         .route("/api/v1/getMakerOnlyApiKeys", get(maker_only_api_keys))
         .route("/api/v1/referral/use", post(referral_use))
+        .route("/api/v1/accountOrders", get(account_orders))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
             "/api/v1/accountInactiveOrders",
@@ -1120,6 +1157,33 @@ fn build_client_mainnet(
     config.deployment = deployment;
     config.venue = Some(*LIGHTER_VENUE);
     build_client_with(config)
+}
+
+fn build_client_with_rest_quota(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let (mut client, rx, cache) = build_client(addr);
+
+    // Cover setup in the burst so throttling starts at the cancel probe
+    let quota = Quota::with_period(TEST_REST_REFILL_PERIOD)
+        .unwrap()
+        .allow_burst(NonZeroU32::new(10).unwrap());
+    let raw = LighterRawHttpClient::new_with_quotas(
+        client.config.environment,
+        Some(client.config.http_url()),
+        client.config.http_timeout_secs,
+        None,
+        quota,
+        Some(Arc::clone(&client.tx_rate_limiter)),
+    )
+    .unwrap();
+    client.http_client =
+        LighterHttpClient::from_raw_with_registry(raw, Arc::clone(&client.registry));
+    (client, rx, cache)
 }
 
 fn build_client_with(
@@ -12504,7 +12568,9 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
     row["price"] = json!("2400.00");
     row["initial_base_amount"] = json!("0.0100");
     row["remaining_base_amount"] = json!("0.0100");
-    *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+    let orders_body = http_orders_payload(&[row], None);
+    *state.account_orders_response.lock().await = Some(orders_body.clone());
+    *state.active_orders_response.lock().await = Some(orders_body);
     state
         .tx_responses
         .lock()
@@ -12549,7 +12615,8 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
     assert_eq!(cached.quantity(), Quantity::from("0.0100"));
     assert_eq!(cached.leaves_qty(), Quantity::from("0.0100"));
     assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
-    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 1);
+    assert_eq!(state.account_orders_calls.load(Ordering::Acquire), 1);
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 0);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Acquire), 0);
     assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
 }
@@ -12558,6 +12625,7 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
 #[case::transaction(0)]
 #[case::active_orders(1)]
 #[case::inactive_page(2)]
+#[case::account_orders(3)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) {
     let (addr, state) = start_server().await;
@@ -12603,6 +12671,9 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     state
         .inactive_orders_response_blocked
         .store(stage == 2, Ordering::Release);
+    state
+        .account_orders_response_blocked
+        .store(stage == 3, Ordering::Release);
     client
         .cancel_order(CancelOrder::new(
             trader_id(),
@@ -12624,6 +12695,7 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
                 match stage {
                     0 => state.tx_calls.load(Ordering::Acquire) == 1,
                     1 => state.active_orders_calls.load(Ordering::Acquire) == 1,
+                    3 => state.account_orders_calls.load(Ordering::Acquire) == 1,
                     _ => state.inactive_orders_calls.load(Ordering::Acquire) == 1,
                 }
             }
@@ -12652,6 +12724,10 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     state
         .inactive_orders_response_blocked
         .store(false, Ordering::Release);
+    state
+        .account_orders_response_blocked
+        .store(false, Ordering::Release);
+    state.account_orders_response_release.notify_one();
     state.tx_response_release.notify_one();
     state.active_orders_response_release.notify_one();
     state.inactive_orders_response_release.notify_one();
@@ -12669,8 +12745,12 @@ async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) 
     );
     assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
     assert_eq!(
+        state.account_orders_calls.load(Ordering::Acquire),
+        usize::from(stage != 0)
+    );
+    assert_eq!(
         state.active_orders_calls.load(Ordering::Acquire),
-        usize::from(stage >= 1)
+        usize::from(matches!(stage, 1 | 2))
     );
     assert_eq!(
         state.inactive_orders_calls.load(Ordering::Acquire),
@@ -12826,10 +12906,8 @@ async fn test_executed_single_cancel_retries_until_terminal_status(#[case] worki
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconnect: bool) {
     let (addr, state) = start_server().await;
-    let mut config = build_config(addr);
-    config.rest_quota_per_min = Some(5);
     let registry = SocketReconnectRegistry::default();
-    let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
+    let (mut client, mut rx, cache) = registry.scope(|| build_client_with_rest_quota(addr));
     client.connect().await.unwrap();
     let id = ClientOrderId::from("O-CANCEL-QUEUED-REST");
     let (index, venue) = seed_open_order(
@@ -12924,7 +13002,8 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         cache.borrow_mut().update_order(&event).unwrap();
     }
 
-    tokio::time::sleep(Duration::from_secs(if reconnect { 26 } else { 12 })).await;
+    let refill_cycles = if reconnect { 2 } else { 1 };
+    tokio::time::sleep(TEST_REST_REFILL_PERIOD * refill_cycles).await;
     client.disconnect().await.unwrap();
     assert_eq!(
         cache.borrow().order(&id).unwrap().status(),

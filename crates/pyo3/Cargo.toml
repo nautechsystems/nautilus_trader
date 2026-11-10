@@ -24,15 +24,19 @@ crate-type = ["rlib", "cdylib"]
 default = ["adapters"]
 adapters = [
   "dep:nautilus-architect-ax",
+  "dep:nautilus-betfair",
   "dep:nautilus-binance",
   "dep:nautilus-bybit",
+  "dep:nautilus-coinapi",
   "dep:nautilus-coinbase",
   "dep:nautilus-databento",
   "dep:nautilus-deribit",
   "dep:nautilus-derive",
   "dep:nautilus-dydx",
+  "dep:nautilus-finfeed",
   "dep:nautilus-hyperliquid",
   "dep:nautilus-interactive-brokers",
+  "dep:nautilus-kalshi",
   "dep:nautilus-kraken",
   "dep:nautilus-lighter",
   "dep:nautilus-okx",
@@ -48,8 +52,6 @@ arrow = [
   "nautilus-hyperliquid?/arrow",
   "nautilus-serialization/arrow",
 ]
-betfair = ["dep:nautilus-betfair", "nautilus-betfair/python"]
-coinapi = ["dep:nautilus-coinapi", "nautilus-coinapi/python"]
 defi = [
   "dep:nautilus-blockchain",
   "nautilus-backtest/defi",
@@ -81,6 +83,7 @@ extension-module = [
   "nautilus-indicators/extension-module",
   "nautilus-infrastructure/extension-module",
   "nautilus-interactive-brokers?/extension-module",
+  "nautilus-kalshi?/extension-module",
   "nautilus-kraken?/extension-module",
   "nautilus-lighter?/extension-module",
   "nautilus-live/extension-module",
@@ -97,7 +100,6 @@ extension-module = [
   "nautilus-trading/extension-module",
   "pyo3/extension-module",
 ]
-finfeed = ["dep:nautilus-finfeed", "nautilus-finfeed/python"]
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
@@ -112,6 +114,7 @@ high-precision = [
   "nautilus-dydx?/high-precision",
   "nautilus-finfeed?/high-precision",
   "nautilus-hyperliquid?/high-precision",
+  "nautilus-kalshi?/high-precision",
   "nautilus-kraken?/high-precision",
   "nautilus-lighter?/high-precision",
   "nautilus-okx?/high-precision",
@@ -163,13 +166,13 @@ nautilus-trading = { workspace = true, features = ["python"] }
 nautilus-architect-ax = { workspace = true, optional = true, features = [
   "python",
 ] }
-nautilus-betfair = { workspace = true, optional = true }
+nautilus-betfair = { workspace = true, optional = true, features = ["python"] }
 nautilus-binance = { workspace = true, optional = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = [
   "python",
 ], optional = true }
 nautilus-bybit = { workspace = true, optional = true, features = ["python"] }
-nautilus-coinapi = { workspace = true, optional = true }
+nautilus-coinapi = { workspace = true, optional = true, features = ["python"] }
 nautilus-coinbase = { workspace = true, optional = true, features = ["python"] }
 nautilus-databento = { workspace = true, optional = true, features = [
   "python",
@@ -178,13 +181,14 @@ nautilus-databento = { workspace = true, optional = true, features = [
 nautilus-deribit = { workspace = true, optional = true, features = ["python"] }
 nautilus-derive = { workspace = true, optional = true, features = ["python"] }
 nautilus-dydx = { workspace = true, optional = true, features = ["python"] }
-nautilus-finfeed = { workspace = true, optional = true }
+nautilus-finfeed = { workspace = true, optional = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, optional = true, features = [
   "python",
 ] }
 nautilus-interactive-brokers = { workspace = true, optional = true, features = [
   "python",
 ] }
+nautilus-kalshi = { workspace = true, optional = true, features = ["python"] }
 nautilus-kraken = { workspace = true, optional = true, features = ["python"] }
 nautilus-lighter = { workspace = true, optional = true, features = ["python"] }
 nautilus-okx = { workspace = true, optional = true, features = ["python"] }

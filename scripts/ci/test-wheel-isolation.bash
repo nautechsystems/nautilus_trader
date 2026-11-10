@@ -3,6 +3,7 @@ set -euo pipefail
 
 main() {
   repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+  real_uv=$(command -v uv)
   case_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-wheel-test.XXXXXX")
   trap 'rm -rf "$case_root"' EXIT
 
@@ -27,8 +28,16 @@ source "$CASE_ROOT/source/scripts/native-path.bash"
 case_root_native="$(native_path "$CASE_ROOT")"
 
 [[ -z "${PYTHONPATH:-}" && -z "${VIRTUAL_ENV:-}" ]] || exit 80
-if [[ "$*" == 'python find' ]]; then
+if [[ "$1 $2" == 'python find' ]]; then
   [[ -z "${UV_PROJECT_ENVIRONMENT:-}" ]] || exit 87
+  if [[ -n "${REAL_UV:-}" ]]; then
+    exec "$REAL_UV" "$@"
+  fi
+  if [[ -n "${UV_PYTHON:-}" ]]; then
+    [[ "$#" -eq 3 && "$3" == "$UV_PYTHON" ]] || exit 94
+  else
+    [[ "$#" -eq 2 ]] || exit 94
+  fi
   echo "$case_root_native/source/python/.venv/bin/python"
   exit 0
 fi
@@ -42,7 +51,8 @@ fi
 
 case "$1" in
   sync)
-    [[ "$*" == "sync --project $3 --python $case_root_native/source/python/.venv/bin/python --frozen --group test --extra visualization --no-install-package nautilus-trader" ]] || exit 82
+    expected_python=${EXPECTED_PYTHON:-"$case_root_native/source/python/.venv/bin/python"}
+    [[ "$*" == "sync --project $3 --python $expected_python --frozen --group test --extra visualization --no-install-package nautilus-trader" ]] || exit 82
     mkdir -p "$environment"
     ;;
   pip)
@@ -80,6 +90,10 @@ MOCK
   chmod +x "$case_root/bin/uv"
 
   run_checks
+  check_interpreter_selection
+  for python_request in 3.13 3.15 'C:/Python 3.15/python.exe'; do
+    run_case success 0 "$python_request"
+  done
   case "$(uname -s)" in
     Linux | Darwin)
       cat > "$case_root/bin/uname" << 'MOCK'
@@ -106,6 +120,35 @@ MOCK
   echo 'Wheel isolation script tests passed'
 }
 
+check_interpreter_selection() {
+  local selected_python
+  selected_python=$(
+    python3 - "$case_root" << 'PY'
+from pathlib import Path
+import os
+import sys
+import venv
+
+root = Path(sys.argv[1])
+environment = root / "selected python" / ".venv"
+venv.EnvBuilder(with_pip=False).create(environment)
+project = root / "source" / "python"
+(project / ".python-version").write_text(
+    f"{sys.version_info.major}.{sys.version_info.minor}\n", encoding="utf-8",
+)
+(project / "pyproject.toml").write_text(
+    '[project]\nname = "wheel-test"\nversion = "0.0.0"\nrequires-python = ">=3.10"\n',
+    encoding="utf-8",
+)
+print(environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python"), end="")
+PY
+  )
+  REAL_UV="$real_uv" UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never UV_CACHE_DIR="$case_root/uv-cache" \
+    run_case success 0 "$selected_python" "$selected_python"
+  REAL_UV="$real_uv" UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never UV_CACHE_DIR="$case_root/uv-cache" \
+    run_case invalid-interpreter 2 "$case_root/missing-python"
+}
+
 run_checks() {
   run_case success 0
   grep -Fq -- '--import-mode=importlib' "$case_root/uv.log" || fail 'Missing isolated pytest run'
@@ -124,13 +167,15 @@ run_checks() {
 run_case() {
   local stage="$1"
   local expected="$2"
+  local python_request=${3:-}
   local status=0
   : > "$case_root/uv.log"
   (
     cd "$case_root/source/python"
     PATH="$case_root/bin:$PATH" CASE_ROOT="$case_root" RUNNER_TEMP="$case_root/temp" \
       FAIL_STAGE="$stage" PYTHONPATH=contaminated VIRTUAL_ENV=contaminated \
-      UV_PROJECT_ENVIRONMENT=contaminated bash ../scripts/ci/test-wheel.bash
+      UV_PROJECT_ENVIRONMENT=contaminated UV_PYTHON="$python_request" \
+      EXPECTED_PYTHON="${4:-}" bash ../scripts/ci/test-wheel.bash
   ) > "$case_root/output" 2>&1 || status=$?
   [[ "$status" -eq "$expected" ]] || {
     cat "$case_root/output" >&2

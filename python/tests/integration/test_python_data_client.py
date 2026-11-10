@@ -1730,7 +1730,7 @@ def test_failed_lifecycle_releases_background_tasks_and_cache(operation, launch)
             asyncio.run(hosted())
 
     message = (
-        "readiness timeout while waiting for engine connections"
+        r"\AFailed to connect data clients: PYTHON\Z"
         if operation == "connect"
         else "Failed to disconnect data clients: PYTHON"
     )

@@ -17,6 +17,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use jiff::Timestamp;
 use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_finfeed::{
     common::symbol::to_instrument_id,
@@ -30,8 +31,12 @@ use nautilus_finfeed::{
         query::*,
     },
     instruments::{FinFeedInstrumentProvider, FinFeedInstrumentSelection},
+    loaders::FinFeedDataLoader,
 };
-use nautilus_model::identifiers::ClientId;
+use nautilus_model::{
+    enums::{BookAction, RecordFlag},
+    identifiers::ClientId,
+};
 use nautilus_network::{
     dst::{
         net::{TcpListener, TcpStream},
@@ -2346,4 +2351,85 @@ async fn paginated_discovery_loads_only_the_explicit_outcome() {
     ]) {
         assert_request(request, &target, &config);
     }
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_reuses_definition_for_historical_books() {
+    let (peer, http) = start_peer(vec![
+        (
+            200,
+            "",
+            include_str!("../../test_data/polymarket-market.json"),
+        ),
+        (200, "", include_str!("../../test_data/book-replay.json")),
+        (200, "", include_str!("../../test_data/book-replay.json")),
+    ])
+    .await;
+
+    let loader =
+        FinFeedDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+    let id = to_instrument_id("POLYMARKET", "TEST-OUTCOME_NO").unwrap();
+    let instrument = loader.request_instrument(id).await.unwrap();
+    let start = UnixNanos::from("2026-10-11T00:00:05Z".parse::<Timestamp>().unwrap());
+    let end = UnixNanos::from("2026-10-11T00:00:10Z".parse::<Timestamp>().unwrap());
+    let first = loader
+        .request_book_deltas(id, start, end, None)
+        .await
+        .unwrap();
+    let second = loader
+        .request_book_deltas(id, start, end, None)
+        .await
+        .unwrap();
+    let requests = peer.await.unwrap();
+    assert_eq!(loader.instrument(id).unwrap(), instrument);
+    assert_eq!(first, second);
+    assert_eq!(first[0].action, BookAction::Clear);
+    assert_eq!(first[0].instrument_id, id);
+    assert_eq!(first[0].ts_init, start);
+    assert!(RecordFlag::F_LAST.matches(first.last().unwrap().flags));
+    assert_eq!(requests.len(), 3);
+    assert!(requests[0].starts_with("GET /v1/markets/POLYMARKET/TEST-OUTCOME_NO "));
+    assert!(requests[1].starts_with("GET /v1/orderbook/POLYMARKET/TEST-OUTCOME_NO/history?"));
+    assert_eq!(requests[1].lines().next(), requests[2].lines().next());
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_failed_batch_refresh_preserves_registry() {
+    let (peer, http) = start_peer(vec![
+        (
+            200,
+            "",
+            include_str!("../../test_data/polymarket-market.json"),
+        ),
+        (404, "", include_str!("../../test_data/empty.json")),
+    ])
+    .await;
+    let id = to_instrument_id("POLYMARKET", "TEST-OUTCOME_NO").unwrap();
+    let missing = to_instrument_id("POLYMARKET", "MISSING-OUTCOME_YES").unwrap();
+
+    let loader =
+        FinFeedDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let instruments = [FinFeedInstrumentSelection {
+        exchange_id: "POLYMARKET".into(),
+        market_ids: vec!["TEST-OUTCOME_NO".into(), "MISSING-OUTCOME_YES".into()],
+    }];
+
+    let market =
+        serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+    let old = parse_instrument(&market, UnixNanos::from(17)).unwrap();
+    loader.add_instrument(old.clone()).unwrap();
+    let error = loader.request_instruments(&instruments).await.unwrap_err();
+    let requests = peer.await.unwrap();
+    assert!(error.to_string().contains("unavailable"), "{error:#}");
+    assert_eq!(loader.instrument(id).unwrap(), old);
+    assert_eq!(
+        loader.instrument(missing).unwrap_err().to_string(),
+        format!("No loaded instrument {missing}")
+    );
+    assert_eq!(requests.len(), 2);
 }
