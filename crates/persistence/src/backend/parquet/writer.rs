@@ -211,10 +211,13 @@ impl ParquetWriter {
     }
 
     fn prepare_promotion(&self) -> anyhow::Result<Option<PromotionWork<ParquetPromotionBackend>>> {
-        let backend =
-            ParquetPromotionBackend::new(&self.catalog, Arc::clone(&self.legacy_manifest_missing))?;
         self.core.prepare_promotion(
-            backend,
+            || {
+                ParquetPromotionBackend::new(
+                    &self.catalog,
+                    Arc::clone(&self.legacy_manifest_missing),
+                )
+            },
             self.source.clone(),
             self.use_ts_event_for_ts_init,
             self.delete_feather_after_commit,
@@ -284,19 +287,25 @@ impl StagedWriter for ParquetWriter {
             return Ok(());
         };
 
-        if self
+        if !self
             .core
             .promotion_driver
             .is_due(self.core.clock.timestamp_ns(), interval_ns)
-            && let Some(work) = self.prepare_promotion()?
         {
+            return Ok(());
+        }
+
+        if let Some(work) = self.prepare_promotion()? {
             self.core
                 .promotion_driver
                 .submit(work, "parquet-promotion")?;
-            self.core
-                .promotion_driver
-                .mark_committed_at(self.core.clock.timestamp_ns());
         }
+
+        // A due check that finds nothing to promote still starts the next interval,
+        // otherwise every later message would seal and check again
+        self.core
+            .promotion_driver
+            .mark_committed_at(self.core.clock.timestamp_ns());
 
         Ok(())
     }
@@ -1093,6 +1102,42 @@ mod tests {
             error.to_string(),
             "Unknown Parquet catalog param 'compression': this catalog takes no params"
         );
+    }
+
+    #[rstest]
+    fn due_promotion_without_staged_files_skips_catalog_and_waits_for_next_interval() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-idle");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promotion_interval_ms = Some(1);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::clone(&clock))).unwrap();
+
+        // Any catalog open fails from here, so an empty promotion must not open one
+        writer.catalog.params = Some(Params::new(
+            [("compression".to_string(), serde_json::json!(0))].into(),
+        ));
+
+        clock.store(1_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        assert!(
+            !writer
+                .core
+                .promotion_driver
+                .is_due(UnixNanos::from(1_000_000), 1_000_000)
+        );
+
+        // Data staged during the idle interval promotes once the next interval is due
+        writer.catalog.params = None;
+        writer.core.write_data(Data::Quote(sample_quote())).unwrap();
+        writer.maybe_promote().unwrap();
+        assert!(writer.wait().unwrap().is_empty());
+
+        clock.store(2_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        assert_eq!(writer.wait().unwrap().len(), 1);
     }
 
     fn quote_file_schema(catalog: &ParquetDataCatalog) -> SchemaRef {
