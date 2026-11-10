@@ -1582,9 +1582,9 @@ macro_rules! cursor_page {
 cursor_page!(MarketsResponse => markets: Market, EventsResponse => events: Event, TradesResponse => trades: Trade, FillsResponse => fills: Fill, OrdersResponse => orders: Order, SettlementsResponse => settlements: Settlement);
 
 fn validate_primary(subaccount: u32) -> Result<(), KalshiHttpError> {
-    if subaccount != 0 {
+    if subaccount > 63 {
         return Err(KalshiHttpError::Validation(
-            "only primary subaccount 0 is supported",
+            "subaccount must be between 0 and 63",
         ));
     }
 
