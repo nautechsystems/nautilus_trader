@@ -25,8 +25,7 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{
-    live::runner::{get_exec_event_sender, try_get_data_event_sender},
-    messages::DataEvent,
+    live::runner::get_exec_event_sender,
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
@@ -46,13 +45,12 @@ use ustr::Ustr;
 
 use super::PolymarketExecutionClient;
 use crate::{
-    common::enums::{PolymarketOrderStatus, PolymarketSignerType},
+    common::enums::PolymarketOrderStatus,
     config::PolymarketInstrumentProviderConfig,
     execution::{
         collateral::CollateralLocks,
         context::OrderContextRegistry,
         reconciliation::{
-            ResolvedBalanceScope, filter_unsupported_orders, filter_unsupported_positions,
             polymarket_instrument_ids_equivalent, venue_leg_filled_before_and_quantity,
         },
         reports::{fetch_and_emit_account_state, get_pusd_currency},
@@ -63,7 +61,7 @@ use crate::{
         error::Error as HttpError,
         gamma::PolymarketGammaHttpClient,
         models::PolymarketTradeReport,
-        query::{GetOrdersParams, GetTradesParams},
+        query::GetTradesParams,
     },
     providers::fetch_configured_instruments,
     websocket::{
@@ -783,42 +781,12 @@ impl PolymarketExecutionClient {
         }
     }
 
-    async fn load_wallet_instruments(&self) -> anyhow::Result<()> {
-        let ctx = self.fill_context();
-        let load_ids = self.config.reconciliation_load_ids();
-        let mut orders = self
-            .http_client
-            .get_orders(GetOrdersParams::default())
-            .await?;
-        let mut required = filter_unsupported_orders(
-            &self.http_client,
-            &mut orders,
-            &self.shared_token_instruments,
-            &ctx,
-            None,
-            load_ids,
-        )
-        .await?;
-
-        if self.config.signer_type != PolymarketSignerType::Session {
-            let mut positions = self.data_api_client.get_positions(ctx.user_address).await?;
-            let scope = ResolvedBalanceScope::from_cache(
-                &self.core.cache(),
-                self.core.venue,
-                self.core.account_id,
-            );
-            required.extend(
-                filter_unsupported_positions(
-                    &self.http_client,
-                    &mut positions,
-                    &self.shared_token_instruments,
-                    None,
-                    load_ids,
-                    &scope,
-                )
-                .await?,
-            );
-        }
+    pub(super) async fn load_wallet_instruments(
+        &self,
+        mut required: Vec<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        required.sort_unstable();
+        required.dedup();
 
         if required.is_empty() {
             return Ok(());
@@ -841,22 +809,6 @@ impl PolymarketExecutionClient {
                 .iter()
                 .any(|id| polymarket_instrument_ids_equivalent(instrument.id(), *id))
         });
-
-        for id in required {
-            anyhow::ensure!(
-                instruments
-                    .iter()
-                    .any(|instrument| polymarket_instrument_ids_equivalent(instrument.id(), id)),
-                "unmapped in-scope wallet instrument {id}; required metadata unavailable"
-            );
-        }
-
-        let sender = try_get_data_event_sender().context("Data event sender is not initialized")?;
-        for instrument in &instruments {
-            sender
-                .send(DataEvent::Data(instrument.clone().into()))
-                .map_err(|e| anyhow::anyhow!("Failed to send wallet instrument: {e}"))?;
-        }
 
         upsert_execution_lookups(
             &self.shared_token_instruments,
@@ -1087,12 +1039,11 @@ impl PolymarketExecutionClient {
             );
         }
 
-        self.load_instruments_from_cache();
-        self.load_wallet_instruments().await?;
         self.settlement.mark_hydrating();
         self.ensure_order_event_subscription();
         // Application observation must be active before buffered user messages drain.
         self.ensure_settlement_observers();
+        self.load_instruments_from_cache();
         self.load_orders_from_cache();
         self.core.set_instruments_initialized();
         self.settlement.begin_session();

@@ -62,7 +62,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
@@ -455,6 +455,16 @@ impl ExecutionClient for PolymarketExecutionClient {
         _strategy_id: StrategyId,
         _ts_init: UnixNanos,
     ) {
+    }
+
+    fn reconciliation_instruments(&self) -> Vec<InstrumentAny> {
+        let cache = self.core.cache();
+        self.shared_token_instruments
+            .load()
+            .values()
+            .filter(|instrument| cache.instrument(&instrument.id()).is_none())
+            .cloned()
+            .collect()
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {

@@ -482,6 +482,13 @@ pub trait ExecutionClient {
         // Default no-op implementation
     }
 
+    /// Returns instrument definitions collected for reconciliation but absent from the core cache.
+    ///
+    /// The execution engine caches these without publishing market-data instrument events.
+    fn reconciliation_instruments(&self) -> Vec<InstrumentAny> {
+        Vec::new()
+    }
+
     /// Handles an instrument update received via the message bus.
     ///
     /// Exec clients that need live instrument updates (e.g. for internal maps)

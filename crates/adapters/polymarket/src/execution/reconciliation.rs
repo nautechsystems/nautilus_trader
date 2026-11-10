@@ -1413,6 +1413,7 @@ pub(crate) async fn generate_mass_status(
     resolved_balances: &ResolvedBalanceScope,
     retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
     cached_orders: &AHashMap<VenueOrderId, Vec<CachedOrderScope>>,
+    load_instruments: impl AsyncFnOnce(Vec<InstrumentId>) -> anyhow::Result<()>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let client_id = core.client_id;
     let venue = core.venue;
@@ -1427,10 +1428,9 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch orders for mass status")?;
 
-    filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids).await?;
-
-    let (mut order_reports, orders_filtered) =
-        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
+    let mut required =
+        filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids)
+            .await?;
 
     let trades = http_client
         .get_trades(trades_params_for_window(
@@ -1449,15 +1449,21 @@ pub(crate) async fn generate_mass_status(
             .context("failed to fetch positions for mass status")?
     };
 
-    filter_unsupported_positions(
-        http_client,
-        &mut positions,
-        instruments,
-        None,
-        load_ids,
-        resolved_balances,
-    )
-    .await?;
+    required.extend(
+        filter_unsupported_positions(
+            http_client,
+            &mut positions,
+            instruments,
+            None,
+            load_ids,
+            resolved_balances,
+        )
+        .await?,
+    );
+    load_instruments(required).await?;
+
+    let (mut order_reports, orders_filtered) =
+        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
 
     let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,

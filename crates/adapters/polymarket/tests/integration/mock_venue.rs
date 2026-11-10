@@ -217,12 +217,6 @@ pub(super) struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         let (user_frames, _) = tokio::sync::broadcast::channel(32);
-        let orders = load_json("http_open_orders_page.json");
-        let orders = orders["data"].as_array().unwrap();
-        let tokens: Vec<_> = orders.iter().map(|order| &order["asset_id"]).collect();
-        let mut market = load_json("gamma_market_past_end_date_open.json");
-        market["conditionId"] = json!(TEST_CONDITION_ID);
-        market["clobTokenIds"] = json!(serde_json::to_string(&tokens).unwrap());
 
         Self {
             market_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -233,7 +227,7 @@ impl Default for TestServerState {
             last_query: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            gamma_response: Arc::new(tokio::sync::Mutex::new(Some(json!([market])))),
+            gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
@@ -837,13 +831,22 @@ async fn handle_gamma_markets_keyset(
     State(state): State<TestServerState>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
-    state.gamma_queries.lock().await.push(query);
-    let markets = state
+    state.gamma_queries.lock().await.push(query.clone());
+    let mut markets = state
         .gamma_response
         .lock()
         .await
         .clone()
         .unwrap_or_else(|| json!([]));
+
+    if let Some(end_date_min) = query.get("end_date_min") {
+        markets.as_array_mut().unwrap().retain(|market| {
+            market["endDate"]
+                .as_str()
+                .is_some_and(|end_date| end_date >= end_date_min.as_str())
+        });
+    }
+
     Json(json!({"markets": markets, "next_cursor": null})).into_response()
 }
 

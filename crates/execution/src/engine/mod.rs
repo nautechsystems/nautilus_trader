@@ -502,11 +502,34 @@ impl ExecutionEngine {
         client_id: &ClientId,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        if let Some(client) = self.get_client_adapter_mut(client_id) {
-            client.generate_mass_status(lookback_mins).await
+        let mass_status = if let Some(client) = self.get_client_adapter_mut(client_id) {
+            client.generate_mass_status(lookback_mins).await?
         } else {
             anyhow::bail!("Client {client_id} not found")
+        };
+        self.cache_reconciliation_instruments(client_id)?;
+        Ok(mass_status)
+    }
+
+    /// Caches instrument definitions collected by a client without publishing market-data events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is not registered or an instrument cannot be cached.
+    pub fn cache_reconciliation_instruments(&self, client_id: &ClientId) -> anyhow::Result<()> {
+        let client = self
+            .get_client(client_id)
+            .ok_or_else(|| anyhow::anyhow!("Client {client_id} not found"))?;
+        let instruments = client.reconciliation_instruments();
+        let mut cache = self.cache.borrow_mut();
+
+        for instrument in instruments {
+            if cache.instrument(&instrument.id()).is_none() {
+                cache.add_instrument(instrument)?;
+            }
         }
+
+        Ok(())
     }
 
     /// Registers an external order with the execution client for tracking.

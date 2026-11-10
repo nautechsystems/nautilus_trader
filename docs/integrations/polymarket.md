@@ -3265,10 +3265,14 @@ is in scope.
 
 For unmapped open orders and positions inside either scope, the adapter checks the market protocol on
 CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
-exclusions. It skips rows for unsupported markets with a warning. During connection, missing supported
-`v1` or `v2` instruments are loaded by condition ID from Gamma, independently of discovery filters and
-without market-data subscriptions. Missing metadata or a failed lookup prevents connection. Report
-generation still fails for an unmapped in-scope record.
+exclusions. It skips rows for unsupported markets with a warning. Mass status collection loads missing
+supported `v1` or `v2` instruments by condition ID from Gamma for the same wallet records used to build
+reports, independently of discovery filters. The execution engine caches those definitions without
+publishing instrument events or subscribing to market data. Missing metadata or a failed lookup still
+fails reconciliation. Disabling reconciliation does not add wallet queries during connection.
+
+The cache includes metadata needed to understand existing exposure. Strategies must apply their own
+entry scope rather than treating every cached instrument as an entry candidate.
 
 Cached open orders and positions without explicit supported protocol metadata are skipped with a warning.
 Confirmed trades on those instruments fail fill-report generation. Reload old cached instruments before trading.
