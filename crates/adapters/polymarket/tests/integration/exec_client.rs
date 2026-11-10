@@ -24,7 +24,7 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     clock::VirtualClock,
     enums::LogLevel,
-    live::runner::{replace_system_event_sender, set_exec_event_sender},
+    live::runner::{replace_system_event_sender, set_data_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
@@ -329,6 +329,13 @@ fn create_test_execution_client_from_config(
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
+
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(data_tx);
+
+        runtime.spawn(async move { while data_rx.recv().await.is_some() {} });
+    }
 
     let client = PolymarketExecutionClient::new(core, config).unwrap();
 
@@ -23653,7 +23660,7 @@ async fn test_account_refresh_uses_own_order_reservations(#[case] fill_remaining
     };
 
     assert_eq!(event.balances, vec![expected_balance]);
-    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 1);
     client.disconnect().await.unwrap();
 }
 

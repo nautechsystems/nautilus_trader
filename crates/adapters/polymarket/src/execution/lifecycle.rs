@@ -25,7 +25,8 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{
-    live::runner::get_exec_event_sender,
+    live::runner::{get_exec_event_sender, try_get_data_event_sender},
+    messages::DataEvent,
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
@@ -38,26 +39,33 @@ use nautilus_model::{
     orders::Order,
     types::{Money, Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::PolymarketExecutionClient;
 use crate::{
-    common::enums::PolymarketOrderStatus,
+    common::enums::{PolymarketOrderStatus, PolymarketSignerType},
+    config::PolymarketInstrumentProviderConfig,
     execution::{
         collateral::CollateralLocks,
         context::OrderContextRegistry,
-        reconciliation::venue_leg_filled_before_and_quantity,
+        reconciliation::{
+            ResolvedBalanceScope, filter_unsupported_orders, filter_unsupported_positions,
+            polymarket_instrument_ids_equivalent, venue_leg_filled_before_and_quantity,
+        },
         reports::{fetch_and_emit_account_state, get_pusd_currency},
         settlement::{SettlementRegistry, UncertainOrder, UncertainOrderKind},
     },
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
         error::Error as HttpError,
+        gamma::PolymarketGammaHttpClient,
         models::PolymarketTradeReport,
-        query::GetTradesParams,
+        query::{GetOrdersParams, GetTradesParams},
     },
+    providers::fetch_configured_instruments,
     websocket::{
         dispatch::{
             WsDispatchContext, WsDispatchState, apply_rest_trade_evidence,
@@ -775,6 +783,90 @@ impl PolymarketExecutionClient {
         }
     }
 
+    async fn load_wallet_instruments(&self) -> anyhow::Result<()> {
+        let ctx = self.fill_context();
+        let load_ids = self.config.reconciliation_load_ids();
+        let mut orders = self
+            .http_client
+            .get_orders(GetOrdersParams::default())
+            .await?;
+        let mut required = filter_unsupported_orders(
+            &self.http_client,
+            &mut orders,
+            &self.shared_token_instruments,
+            &ctx,
+            None,
+            load_ids,
+        )
+        .await?;
+
+        if self.config.signer_type != PolymarketSignerType::Session {
+            let mut positions = self.data_api_client.get_positions(ctx.user_address).await?;
+            let scope = ResolvedBalanceScope::from_cache(
+                &self.core.cache(),
+                self.core.venue,
+                self.core.account_id,
+            );
+            required.extend(
+                filter_unsupported_positions(
+                    &self.http_client,
+                    &mut positions,
+                    &self.shared_token_instruments,
+                    None,
+                    load_ids,
+                    &scope,
+                )
+                .await?,
+            );
+        }
+
+        if required.is_empty() {
+            return Ok(());
+        }
+
+        let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
+            Some(self.config.gamma_url()),
+            self.config.http_timeout_secs,
+            RetryConfig::default(),
+            self.config.validated_proxy_url()?,
+        )?;
+        let config = PolymarketInstrumentProviderConfig {
+            load_ids: Some(required.clone()),
+            ..Default::default()
+        };
+        let mut instruments =
+            Box::pin(fetch_configured_instruments(&gamma_client, &config, &[])).await?;
+        instruments.retain(|instrument| {
+            required
+                .iter()
+                .any(|id| polymarket_instrument_ids_equivalent(instrument.id(), *id))
+        });
+
+        for id in required {
+            anyhow::ensure!(
+                instruments
+                    .iter()
+                    .any(|instrument| polymarket_instrument_ids_equivalent(instrument.id(), id)),
+                "unmapped in-scope wallet instrument {id}; required metadata unavailable"
+            );
+        }
+
+        let sender = try_get_data_event_sender().context("Data event sender is not initialized")?;
+        for instrument in &instruments {
+            sender
+                .send(DataEvent::Data(instrument.clone().into()))
+                .map_err(|e| anyhow::anyhow!("Failed to send wallet instrument: {e}"))?;
+        }
+
+        upsert_execution_lookups(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &instruments,
+        );
+
+        Ok(())
+    }
+
     pub(super) fn load_orders_from_cache(&self) {
         let cache = self.core.cache();
         let orders: Vec<_> = cache
@@ -995,11 +1087,12 @@ impl PolymarketExecutionClient {
             );
         }
 
+        self.load_instruments_from_cache();
+        self.load_wallet_instruments().await?;
         self.settlement.mark_hydrating();
         self.ensure_order_event_subscription();
         // Application observation must be active before buffered user messages drain.
         self.ensure_settlement_observers();
-        self.load_instruments_from_cache();
         self.load_orders_from_cache();
         self.core.set_instruments_initialized();
         self.settlement.begin_session();

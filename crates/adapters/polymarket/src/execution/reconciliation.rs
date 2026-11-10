@@ -1602,7 +1602,7 @@ pub(crate) async fn filter_unsupported_orders(
     ctx: &FillContext<'_>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     orders.retain(|order| {
         instruments
             .get_cloned(&order.asset_id)
@@ -1644,7 +1644,13 @@ pub(crate) async fn filter_unsupported_orders(
         true
     });
 
-    Ok(())
+    Ok(orders
+        .iter()
+        .filter(|order| requires_lookup(order))
+        .map(|order| {
+            instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str())
+        })
+        .collect())
 }
 
 pub(crate) async fn filter_unsupported_positions(
@@ -1654,7 +1660,7 @@ pub(crate) async fn filter_unsupported_positions(
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
 
     positions.retain(|position| {
@@ -1690,7 +1696,11 @@ pub(crate) async fn filter_unsupported_positions(
         true
     });
 
-    Ok(())
+    Ok(positions
+        .iter()
+        .filter(|position| requires_lookup(position))
+        .map(|position| instrument_id_from_market_token(&position.condition_id, &position.asset))
+        .collect())
 }
 
 fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
@@ -2367,7 +2377,10 @@ fn instrument_in_load_ids_scope(
     }
 }
 
-fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId) -> bool {
+pub(super) fn polymarket_instrument_ids_equivalent(
+    left: InstrumentId,
+    right: InstrumentId,
+) -> bool {
     if left == right {
         return true;
     }
