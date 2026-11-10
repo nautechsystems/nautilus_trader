@@ -97,6 +97,9 @@ audit-as-crates-io = false
 [policy.nautilus-interactive-brokers]
 audit-as-crates-io = false
 
+[policy.nautilus-kalshi]
+audit-as-crates-io = false
+
 [policy.nautilus-kraken]
 audit-as-crates-io = false
 
