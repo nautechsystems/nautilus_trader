@@ -456,7 +456,7 @@ async fn confirmed_buy_releases_collateral_after_offsetting_credit(
         h.mock_state
             .orders_get_count
             .load(std::sync::atomic::Ordering::Acquire),
-        1
+        0
     );
 }
 

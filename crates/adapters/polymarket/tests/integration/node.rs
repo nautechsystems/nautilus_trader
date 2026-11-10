@@ -29,7 +29,10 @@ use std::{
 use nautilus_common::{
     actor::DataActor,
     enums::Environment,
-    msgbus::{self, MessagingSwitchboard, stubs::get_any_saving_handler},
+    msgbus::{
+        self, MessagingSwitchboard,
+        stubs::{get_any_saving_handler, get_typed_message_saving_handler},
+    },
     testing::wait_until_async,
 };
 use nautilus_live::{
@@ -41,8 +44,8 @@ use nautilus_live::{
 use nautilus_model::{
     enums::OrderStatus,
     events::{OrderAccepted, OrderCanceled, OrderFillVoided, OrderFilled, OrderRejected},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    instruments::Instrument,
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    instruments::{Instrument, InstrumentAny},
     orders::Order,
     types::Quantity,
 };
@@ -206,10 +209,9 @@ fn build_node_with_execution_config(
 #[case::missing(false, false)]
 #[case::out_of_scope(true, true)]
 #[tokio::test]
-async fn startup_loads_wallet_instruments_outside_discovery(
+async fn startup_loads_wallet_instruments(
     #[case] metadata_available: bool,
     #[case] scoped_out: bool,
-    #[values(false, true)] open_order: bool,
 ) {
     let state = TestServerState::default();
     let market = load_json("gamma_market_past_end_date_open.json");
@@ -221,12 +223,13 @@ async fn startup_loads_wallet_instruments_outside_discovery(
     order["asset_id"] = json!(tokens[0]);
     order["maker_address"] = json!(super::mock_venue::TEST_SIGNER_ADDRESS);
     order["size_matched"] = json!("0");
-    let orders = if open_order { vec![order] } else { vec![] };
+    let mut second_order = order.clone();
+    second_order["id"] = json!("wallet-order-2");
     *state.orders_response_override.lock().await =
-        Some(json!({"data": orders, "next_cursor": "LTE="}));
+        Some(json!({"data": [order, second_order], "next_cursor": "LTE="}));
     *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
     *state.positions_response_override.lock().await = Some(json!([{
-        "token_id": tokens[1], "condition_id": condition,
+        "token_id": tokens[0], "condition_id": condition,
         "current_size": "7.1234", "avg_price": "0.321",
     }]));
 
@@ -234,12 +237,10 @@ async fn startup_loads_wallet_instruments_outside_discovery(
 
     let addr = start_mock_server(state.clone()).await;
     let mut exec_config = execution_config(addr);
-    exec_config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        filters: Some(std::collections::HashMap::from([(
-            "end_date_min".to_string(),
-            "2100-01-01T00:00:00Z".to_string(),
-        )])),
-        load_ids: scoped_out.then(|| vec![InstrumentId::from(format!("{condition}-1.POLYMARKET"))]),
+    exec_config.instrument_config = scoped_out.then(|| PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![InstrumentId::from(format!(
+            "{condition}-1.POLYMARKET"
+        ))]),
         ..Default::default()
     });
     let mut node = LiveNodeBuilder::from_config(LiveNodeConfig {
@@ -275,8 +276,10 @@ async fn startup_loads_wallet_instruments_outside_discovery(
             .await
             .unwrap();
 
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 1);
+
     if !metadata_available && !scoped_out {
-        result.expect_err("Missing wallet metadata must prevent connection");
+        result.expect_err("Missing wallet metadata must prevent reconciliation");
         return;
     }
 
@@ -286,7 +289,7 @@ async fn startup_loads_wallet_instruments_outside_discovery(
     let cache = node.kernel().cache.borrow();
     assert_eq!(
         cache.orders_open(None, None, None, None, None).len(),
-        usize::from(open_order && !scoped_out)
+        2 * usize::from(!scoped_out)
     );
     assert_eq!(
         cache.positions_open(None, None, None, None, None).len(),
@@ -296,7 +299,6 @@ async fn startup_loads_wallet_instruments_outside_discovery(
 
     for query in queries.iter() {
         assert_eq!(query.get("condition_ids"), Some(&condition));
-        assert!(!query.contains_key("end_date_min"));
     }
 }
 
@@ -340,7 +342,10 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         base_url_data_api: Some(base_url),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         instrument_config: Some(PolymarketInstrumentProviderConfig {
-            load_ids: Some(vec![instrument_id]),
+            filters: Some(std::collections::HashMap::from([(
+                "end_date_min".to_string(),
+                "2100-01-01T00:00:00Z".to_string(),
+            )])),
             ..Default::default()
         }),
         resolve_poll_enabled: false,
@@ -365,7 +370,15 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         .build()
         .unwrap();
 
+    harness::add_account(
+        &mut node.kernel().cache.borrow_mut(),
+        AccountId::from(harness::ACCOUNT_ID),
+    );
     let handle = node.handle();
+    let data_engine = node.kernel().data_engine.clone();
+    let (handler, instruments) = get_typed_message_saving_handler::<InstrumentAny>(None);
+    let pattern = msgbus::switchboard::get_instruments_pattern(instrument_id.venue);
+    msgbus::subscribe_instruments(pattern, handler, None);
 
     let driver = async move {
         wait_until_async(
@@ -374,15 +387,25 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         )
         .await;
         let running = handle.state();
+        assert!(data_engine.borrow().subscribed_book_deltas().is_empty());
+        assert!(data_engine.borrow().subscribed_quotes().is_empty());
+        assert!(data_engine.borrow().subscribed_trades().is_empty());
         handle.stop();
         running
     };
 
     let (result, running) =
-        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
+        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.start(), driver) })
             .await
             .unwrap();
     result.expect("startup mass status");
+    node.stop().await.unwrap();
+    assert!(instruments.get_messages().is_empty());
+    let queries = state.gamma_queries.lock().await;
+    assert_eq!(queries.len(), 2);
+    assert_eq!(queries[0]["end_date_min"], "2100-01-01T00:00:00Z");
+    assert_eq!(queries[1]["condition_ids"], condition_id);
+    drop(queries);
     let cached = node
         .kernel()
         .cache
@@ -413,7 +436,7 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         positions[0].avg_px_open,
         Some(Decimal::from_str_exact("0.321").unwrap())
     );
-    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 3);
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 2);
 }
 
 #[rstest]

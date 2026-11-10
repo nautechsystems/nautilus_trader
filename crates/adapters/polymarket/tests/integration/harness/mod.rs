@@ -23,15 +23,13 @@ use std::{
     time::Duration,
 };
 
-use nautilus_common::{
-    clients::ExecutionClient, live::runner::replace_data_event_sender, messages::DataEvent,
-};
+use nautilus_common::{cache::Cache, clients::ExecutionClient};
 use nautilus_core::{UUID4, UnixNanos};
 pub(crate) use nautilus_live::testing::invariants;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, testing::ExecutionHarness};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
-    data::{Data, QuoteTick},
+    data::QuoteTick,
     enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
@@ -59,7 +57,6 @@ pub(crate) struct Harness {
     execution: ExecutionHarness,
     pub(crate) mock_state: TestServerState,
     pub(crate) sockets: SocketReconnectRegistry,
-    _data_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 }
 
 impl Harness {
@@ -73,9 +70,7 @@ impl Harness {
         let instrument = instrument();
         let execution =
             ExecutionHarness::new(trader_id, *POLYMARKET_CLIENT_ID, account_id, instrument);
-        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(data_tx);
-        add_account(&execution, account_id);
+        add_account(&mut execution.cache().borrow_mut(), account_id);
         seed(&execution);
 
         let mock_state = TestServerState::default();
@@ -104,14 +99,6 @@ impl Harness {
         client.on_instrument(cached_instrument);
         client.start().unwrap();
         client.connect().await.unwrap();
-
-        while let Ok(DataEvent::Data(Data::Instrument(instrument))) = data_rx.try_recv() {
-            execution
-                .cache()
-                .borrow_mut()
-                .add_instrument(*instrument)
-                .unwrap();
-        }
         nautilus_common::testing::wait_until_async(
             || async { client.is_connected() },
             Duration::from_secs(2),
@@ -123,7 +110,6 @@ impl Harness {
             execution,
             mock_state,
             sockets,
-            _data_rx: data_rx,
         }
     }
 }
@@ -195,7 +181,7 @@ pub(crate) fn quote(instrument_id: InstrumentId) -> QuoteTick {
     )
 }
 
-fn add_account(execution: &ExecutionHarness, account_id: AccountId) {
+pub(crate) fn add_account(cache: &mut Cache, account_id: AccountId) {
     let state = AccountState::new(
         account_id,
         AccountType::Cash,
@@ -211,9 +197,7 @@ fn add_account(execution: &ExecutionHarness, account_id: AccountId) {
         UnixNanos::default(),
         None,
     );
-    execution
-        .cache()
-        .borrow_mut()
+    cache
         .add_account(AccountAny::Cash(CashAccount::new(state, true, false)))
         .unwrap();
 }

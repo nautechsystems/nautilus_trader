@@ -975,6 +975,7 @@ impl PolymarketExecutionClient {
             &self.resolved_balance_scope(),
             &retained_trade_ids,
             &cached_orders,
+            async |ids| self.load_wallet_instruments(ids).await,
         )
         .await
     }
