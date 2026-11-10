@@ -37,6 +37,7 @@ use std::{
     cell::RefCell,
     collections::VecDeque,
     net::SocketAddr,
+    num::NonZeroU32,
     path::PathBuf,
     process::Command,
     rc::Rc,
@@ -117,7 +118,8 @@ use crate::{
         enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
-    execution::LighterExecutionClient,
+    execution::{ACKED_ORDER_LOOKUP_DELAY, LighterExecutionClient},
+    http::client::{LighterHttpClient, LighterRawHttpClient},
     signing::{
         field::Fp5,
         schnorr::Signature,
@@ -146,6 +148,7 @@ const ETH_SPOT_SYMBOL: &str = "ETH/USDC-SPOT";
 const TEST_MARKET_INDEX: i64 = 0;
 const TEST_NEXT_NONCE: i64 = 9_999;
 const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
+const TEST_REST_REFILL_PERIOD: Duration = ACKED_ORDER_LOOKUP_DELAY.saturating_mul(6);
 const INTEGRATOR_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
 
 fn data_path() -> PathBuf {
@@ -1154,6 +1157,33 @@ fn build_client_mainnet(
     config.deployment = deployment;
     config.venue = Some(*LIGHTER_VENUE);
     build_client_with(config)
+}
+
+fn build_client_with_rest_quota(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let (mut client, rx, cache) = build_client(addr);
+
+    // Cover setup in the burst so throttling starts at the cancel probe
+    let quota = Quota::with_period(TEST_REST_REFILL_PERIOD)
+        .unwrap()
+        .allow_burst(NonZeroU32::new(10).unwrap());
+    let raw = LighterRawHttpClient::new_with_quotas(
+        client.config.environment,
+        Some(client.config.http_url()),
+        client.config.http_timeout_secs,
+        None,
+        quota,
+        Some(Arc::clone(&client.tx_rate_limiter)),
+    )
+    .unwrap();
+    client.http_client =
+        LighterHttpClient::from_raw_with_registry(raw, Arc::clone(&client.registry));
+    (client, rx, cache)
 }
 
 fn build_client_with(
@@ -12876,10 +12906,8 @@ async fn test_executed_single_cancel_retries_until_terminal_status(#[case] worki
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconnect: bool) {
     let (addr, state) = start_server().await;
-    let mut config = build_config(addr);
-    config.rest_quota_per_min = Some(5);
     let registry = SocketReconnectRegistry::default();
-    let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
+    let (mut client, mut rx, cache) = registry.scope(|| build_client_with_rest_quota(addr));
     client.connect().await.unwrap();
     let id = ClientOrderId::from("O-CANCEL-QUEUED-REST");
     let (index, venue) = seed_open_order(
@@ -12974,7 +13002,8 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         cache.borrow_mut().update_order(&event).unwrap();
     }
 
-    tokio::time::sleep(Duration::from_secs(if reconnect { 26 } else { 12 })).await;
+    let refill_cycles = if reconnect { 2 } else { 1 };
+    tokio::time::sleep(TEST_REST_REFILL_PERIOD * refill_cycles).await;
     client.disconnect().await.unwrap();
     assert_eq!(
         cache.borrow().order(&id).unwrap().status(),

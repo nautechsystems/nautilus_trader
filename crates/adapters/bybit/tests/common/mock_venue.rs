@@ -36,11 +36,9 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
-use nautilus_bybit::{
-    common::enums::{BybitEnvironment, BybitProductType},
-    config::BybitExecutionClientConfig,
-};
 use serde_json::{Value, json};
+
+use super::{BybitEnvironment, BybitExecutionClientConfig, BybitProductType};
 
 #[derive(Clone)]
 pub(super) struct TestServerState {

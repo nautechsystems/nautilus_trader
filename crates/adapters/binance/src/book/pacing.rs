@@ -222,29 +222,63 @@ mod tests {
     }
 
     #[rstest]
+    #[case::full_burst(3_000, 250, 7, 10)]
+    #[case::spot(1_200, 250, 5, 15)]
+    #[case::futures(1_200, 20, 70, 2)]
     #[tokio::test(start_paused = true)]
-    async fn queued_reservations_do_not_refill_before_transmission() {
-        let pacer = Arc::new(SnapshotPacer::new(NonZeroU32::new(3_000).unwrap()));
+    async fn queued_reservations_do_not_refill_before_transmission(
+        #[case] budget: u32,
+        #[case] weight: u32,
+        #[case] request_count: usize,
+        #[case] first_refill_secs: u64,
+    ) {
+        let pacer = Arc::new(SnapshotPacer::new(NonZeroU32::new(budget).unwrap()));
+        let burst_count = (budget / 2 / weight) as usize;
         let mut permits = Vec::new();
-        for _ in 0..6 {
-            permits.push(pacer.acquire(250).await);
+        for _ in 0..burst_count {
+            permits.push(pacer.acquire(weight).await);
         }
 
-        let next = pacer.acquire(250);
+        let next = pacer.acquire(weight);
         tokio::pin!(next);
+        let started = Instant::now();
 
         tokio::time::advance(Duration::from_secs(21)).await;
         assert!(futures_util::poll!(&mut next).is_pending());
 
+        let mut times = Vec::new();
+
         for permit in permits {
             permit.commit();
+            times.push(Instant::now());
         }
 
         assert!(futures_util::poll!(&mut next).is_pending());
-        tokio::time::advance(Duration::from_secs(10)).await;
+        tokio::time::advance(Duration::from_secs(first_refill_secs)).await;
         let permit = futures_util::poll!(&mut next).map(|permit| permit.commit());
-
         assert!(permit.is_ready());
+        times.push(Instant::now());
+
+        for _ in times.len()..request_count {
+            pacer.acquire(weight).await.commit();
+            times.push(Instant::now());
+        }
+
+        assert_eq!(times.len(), request_count);
+        assert!(
+            times
+                .iter()
+                .all(|time| *time >= started + Duration::from_secs(21))
+        );
+
+        for start in &times {
+            let spent = times
+                .iter()
+                .filter(|time| **time >= *start && **time < *start + Duration::from_secs(60))
+                .count() as u32
+                * weight;
+            assert!(spent <= budget, "snapshot weight exceeded budget: {spent}");
+        }
     }
 
     #[rstest]

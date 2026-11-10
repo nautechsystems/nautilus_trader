@@ -34,8 +34,11 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use nautilus_bybit::{
-    common::{enums::BybitProductType, parse::parse_linear_instrument},
-    config::BybitDataClientConfig,
+    common::{
+        enums::{BybitEnvironment, BybitProductType},
+        parse::parse_linear_instrument,
+    },
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
     http::models::BybitInstrumentLinearResponse,
 };

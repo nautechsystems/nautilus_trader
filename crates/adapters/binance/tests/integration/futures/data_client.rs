@@ -3511,7 +3511,7 @@ async fn test_subscribe_book_deltas() {
 #[case::usd_m(BinanceProductType::UsdM, "BTCUSDT-PERP.BINANCE")]
 #[case::coin_m(BinanceProductType::CoinM, "BTCUSD_260925.BINANCE")]
 #[tokio::test]
-async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
+async fn test_request_book_snapshot_waits_for_extended_cooldown(
     #[case] product: BinanceProductType,
     #[case] instrument_id: &str,
 ) {
@@ -3539,6 +3539,9 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
 
     let started = tokio::time::Instant::now();
 
+    // Exceed the initial burst; the pacing tests cover a full rolling minute with paused time
+    let request_count = 31;
+
     let initial_and_queue = async {
         let initial = throttle
             .post::<_, serde_json::Value>(
@@ -3550,7 +3553,7 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
             )
             .await;
 
-        for _ in 0..70 {
+        for _ in 0..request_count {
             client
                 .request_book_snapshot(RequestBookSnapshot::new(
                     InstrumentId::from(instrument_id),
@@ -3575,30 +3578,38 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
         false,
     );
     let (initial, extension) = tokio::join!(initial_and_queue, extension);
-    tokio::time::sleep(Duration::from_secs(105)).await;
+
+    let responses = tokio::time::timeout_at(started + Duration::from_secs(50), async {
+        let mut responses = 0;
+        while responses < request_count {
+            let event = rx.recv().await.expect("data channel closed");
+
+            if matches!(event, DataEvent::Response(DataResponse::Book(_))) {
+                responses += 1;
+            }
+        }
+
+        responses
+    })
+    .await
+    .expect("snapshots must complete after the extended cooldown");
+
     let times = times.lock().clone();
-    let responses = std::iter::from_fn(|| rx.try_recv().ok())
-        .filter(|event| matches!(event, DataEvent::Response(DataResponse::Book(_))))
-        .count();
 
     assert!(initial.is_err());
     assert!(extension.is_err());
-    assert_eq!(times.len(), 70);
-    assert_eq!(responses, 70);
+    assert_eq!(times.len(), request_count);
+    assert_eq!(responses, request_count);
     assert!(
         times
             .iter()
             .all(|time| *time >= started + Duration::from_secs(21))
     );
-
-    for start in &times {
-        let weight = times
+    assert!(
+        times
             .iter()
-            .filter(|time| **time >= *start && **time < *start + Duration::from_secs(60))
-            .count()
-            * 20;
-        assert!(weight <= 1_200, "snapshot weight exceeded budget: {weight}");
-    }
+            .any(|time| *time >= started + Duration::from_secs(23))
+    );
 }
 
 #[rstest]

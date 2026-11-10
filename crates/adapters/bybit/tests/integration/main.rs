@@ -15,7 +15,6 @@
 
 mod catalog;
 mod data_client;
-mod exec_client;
 mod http;
 mod pagination;
 mod python;

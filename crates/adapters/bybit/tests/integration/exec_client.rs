@@ -19,23 +19,14 @@
 //! order submission, cancellation, and event handling.
 
 use std::{
-    cell::RefCell, collections::VecDeque, net::SocketAddr, rc::Rc, sync::atomic::Ordering,
+    cell::RefCell,
+    collections::VecDeque,
+    net::SocketAddr,
+    rc::Rc,
+    sync::{LazyLock, atomic::Ordering},
     time::Duration,
 };
 
-use nautilus_bybit::{
-    common::{
-        consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
-        enums::{
-            BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode,
-            BybitProductType,
-        },
-    },
-    config::BybitExecutionClientConfig,
-    data_types::{BybitMarginBorrowResult, BybitMarginRepayResult, BybitMarginStatusResult},
-    execution::BybitExecutionClient,
-    http::{client::BybitHttpClient, error::BybitCancelOrderError},
-};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -51,7 +42,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos, params::Params};
+use nautilus_core::{UUID4, UnixNanos, params::Params, time::AtomicTime};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -82,6 +73,20 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+use crate::{
+    common::{
+        consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
+        enums::{
+            BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode,
+            BybitProductType,
+        },
+    },
+    config::BybitExecutionClientConfig,
+    data_types::{BybitMarginBorrowResult, BybitMarginRepayResult, BybitMarginStatusResult},
+    execution::BybitExecutionClient,
+    http::{client::BybitHttpClient, error::BybitCancelOrderError},
+};
 
 #[path = "../../../../network/tests/integration/common/client_logging.rs"]
 #[allow(dead_code, reason = "these tests reuse only the shared log capture")]
@@ -1570,24 +1575,6 @@ async fn test_query_account_borrow_action_without_coin_publishes_no_result() {
     client.disconnect().await.unwrap();
 }
 
-async fn wait_out_repay_blackout() {
-    // Manual repay is rejected inside Bybit's hourly mm:04:00-mm:05:30 UTC blackout
-    // window (see repay.rs BLACKOUT_START_SEC/BLACKOUT_END_SEC), so wait the window
-    // out before issuing one against the mock venue.
-    loop {
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after the UNIX epoch")
-            .as_secs();
-        let sec_of_hour = now_secs % 3600;
-        if !(240..=330).contains(&sec_of_hour) {
-            return;
-        }
-
-        tokio::time::sleep(Duration::from_secs(331 - sec_of_hour)).await;
-    }
-}
-
 #[rstest]
 #[case::explicit_amount_su(Some("0.500"), json!("0.500"), "SU")]
 #[case::repay_all_processing(None, Value::Null, "P")]
@@ -1597,7 +1584,12 @@ async fn test_query_account_repay_action_uses_no_convert_repay(
     #[case] expected_body_amount: Value,
     #[case] result_status: &'static str,
 ) {
+    static CLOCK: LazyLock<AtomicTime> =
+        LazyLock::new(|| AtomicTime::new(false, UnixNanos::new(1_704_067_200_000_000_000)));
     let (mut client, mut rx, state) = start_connected_client().await;
+
+    // Keep repayment outside the hourly blackout without waiting for wall-clock time
+    client.clock = &CLOCK;
 
     *state.no_convert_result_status.lock().await = result_status;
 
@@ -1605,8 +1597,6 @@ async fn test_query_account_repay_action_uses_no_convert_repay(
         .await
         .is_ok()
     {}
-
-    wait_out_repay_blackout().await;
 
     let mut entries = vec![("action", json!("REPAY")), ("coin", json!("ETH"))];
     if let Some(amount) = amount {
@@ -1632,6 +1622,9 @@ async fn test_query_account_repay_action_uses_no_convert_repay(
     assert!(result.success, "repay failed: {}", result.message);
     assert_eq!(result.result_status, result_status);
     assert_eq!(result.amount.as_deref(), amount);
+    assert_eq!(result.message, "");
+    assert_eq!(result.ts_event, CLOCK.get_time_ns());
+    assert_eq!(result.ts_init, CLOCK.get_time_ns());
 
     let bodies = state.no_convert_repay_bodies.lock().await;
     assert_eq!(bodies.len(), 1, "expected exactly one no-convert repay");
@@ -4333,8 +4326,6 @@ async fn test_query_account_repay_action_rejects_invalid_amount(
         .await
         .is_ok()
     {}
-
-    wait_out_repay_blackout().await;
 
     let params = margin_params(&[
         ("action", json!("REPAY")),
