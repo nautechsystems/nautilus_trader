@@ -33,6 +33,7 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import Quantity
 from nautilus_trader.model import TraderId
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
@@ -40,14 +41,15 @@ from nautilus_trader.testkit.providers import TestInstrumentProvider
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "docs" / "tutorials"))
 
 from orderbook_data import deltas_from_frame
-from orderbook_imbalance import OrderBookImbalance
-from orderbook_imbalance import OrderBookImbalanceConfig
+
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 if __name__ == "__main__":
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     BTC = Currency.from_str("BTC")
     USDT = Currency.from_str("USDT")
     engine.add_venue(
@@ -74,17 +76,17 @@ if __name__ == "__main__":
     deltas.sort(key=lambda delta: delta.ts_init)
     engine.add_data(deltas)
 
-    strategy = OrderBookImbalance(
+    engine.add_builtin_strategy(
+        "OrderBookImbalance",
         OrderBookImbalanceConfig(
-            instrument_id=str(BTCUSDT_BINANCE.id),
-            max_trade_size="1.000",
-            trigger_min_size=20.0,
-            trigger_imbalance_ratio=0.20,
+            instrument_id=BTCUSDT_BINANCE.id,
+            max_trade_size=Quantity.from_str("1.000"),
+            trigger_min_size=Decimal("20.0"),
+            trigger_imbalance_ratio=Decimal("0.20"),
             min_seconds_between_triggers=1.0,
-            book_type="L2_MBP",
+            book_type=BookType.L2_MBP,
         ),
     )
-    engine.add_strategy(strategy)
     engine.run()
 
     with pd.option_context(

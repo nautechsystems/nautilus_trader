@@ -82,15 +82,16 @@
     )
 )]
 
+pub mod connection;
+pub mod events;
+pub mod http;
+
 #[cfg(feature = "testers")]
 pub mod cache;
 #[cfg(feature = "datasets")]
 pub mod common;
 #[cfg(feature = "testers")]
 pub mod components;
-pub mod connection;
-pub mod events;
-pub mod http;
 
 #[cfg(feature = "datasets")]
 pub mod files;

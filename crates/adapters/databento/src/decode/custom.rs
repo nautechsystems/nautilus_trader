@@ -17,10 +17,14 @@ use std::ffi::c_char;
 
 use databento::dbn;
 use nautilus_core::UnixNanos;
-use nautilus_model::{enums::FromU8, identifiers::InstrumentId, types::Quantity};
+use nautilus_model::{
+    enums::FromU8,
+    identifiers::InstrumentId,
+    types::{Quantity, fixed::FIXED_PRECISION_STANDARD},
+};
 
 use super::primitives::{
-    decode_optional_price, decode_optional_quantity, decode_price_or_undef, parse_order_side,
+    decode_optional_price, decode_optional_quantity, decode_price_field, parse_order_side,
 };
 use crate::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
@@ -43,9 +47,19 @@ pub fn decode_imbalance_msg(
 
     Ok(DatabentoImbalance::new(
         instrument_id,
-        decode_price_or_undef(msg.ref_price, price_precision),
-        decode_price_or_undef(msg.cont_book_clr_price, price_precision),
-        decode_price_or_undef(msg.auct_interest_clr_price, price_precision),
+        decode_price_field(msg.ref_price, price_precision, instrument_id, "ref_price")?,
+        decode_price_field(
+            msg.cont_book_clr_price,
+            price_precision,
+            instrument_id,
+            "cont_book_clr_price",
+        )?,
+        decode_price_field(
+            msg.auct_interest_clr_price,
+            price_precision,
+            instrument_id,
+            "auct_interest_clr_price",
+        )?,
         Quantity::from_mantissa_exponent(u64::from(msg.paired_qty), 0, 0),
         Quantity::from_mantissa_exponent(u64::from(msg.total_imbalance_qty), 0, 0),
         parse_order_side(msg.side),
@@ -57,6 +71,9 @@ pub fn decode_imbalance_msg(
 }
 
 /// Decodes a Databento statistics message into a `DatabentoStatistics` event.
+///
+/// The decoded price uses at least the nine-decimal wire precision, preserving statistics such as
+/// VWAP, volatility, and delta independently of the instrument tick size.
 ///
 /// # Errors
 ///
@@ -88,12 +105,14 @@ pub fn decode_statistics_msg(
         })?;
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
+    let price_precision = price_precision.max(FIXED_PRECISION_STANDARD);
 
     Ok(Some(DatabentoStatistics::new(
         instrument_id,
         stat_type,
         update_action,
-        decode_optional_price(msg.price, price_precision),
+        decode_optional_price(msg.price, price_precision)
+            .map_err(|e| anyhow::anyhow!("Invalid `price` for {instrument_id}: {e}"))?,
         decode_optional_quantity(msg.quantity)?,
         msg.channel_id,
         msg.stat_flags,

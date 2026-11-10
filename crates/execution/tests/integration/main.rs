@@ -16,5 +16,6 @@
 #[path = "matching_engine/cache_database.rs"]
 mod cache_database;
 mod exec_engine;
+mod manager;
 mod matching_engine;
 mod order_emulator;

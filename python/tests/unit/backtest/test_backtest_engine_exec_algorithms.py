@@ -17,6 +17,7 @@ Test backtest engine exec algorithms behavior.
 """
 
 import inspect
+import re
 
 import pytest
 
@@ -36,6 +37,7 @@ from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderDenied
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TimeInForce
@@ -213,7 +215,9 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("on_order_triggered", ["self", "event"]),
         ("on_order_pending_update", ["self", "event"]),
         ("on_order_pending_cancel", ["self", "event"]),
+        ("on_order_modify_denied", ["self", "event"]),
         ("on_order_modify_rejected", ["self", "event"]),
+        ("on_order_cancel_denied", ["self", "event"]),
         ("on_order_cancel_rejected", ["self", "event"]),
         ("on_order_updated", ["self", "event"]),
         ("on_order_filled", ["self", "event"]),
@@ -452,9 +456,11 @@ def test_execution_algorithm_data_publishing_succeeds_when_registered() -> None:
     Test execution algorithm data publishing succeeds when registered.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PUBLISH")),
     )
+
     custom_data = _custom_data()
     engine.add_exec_algorithm(exec_algorithm)
 
@@ -518,6 +524,7 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
     Test execution algorithm to importable config round trips custom config.
     """
     CustomExecutionAlgorithm.received_config = None
+
     config = CustomExecutionAlgorithmConfig(
         horizon_secs="91.5",
         interval_secs="3.75",
@@ -525,6 +532,7 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
         log_events=False,
         log_commands=True,
     )
+
     exec_algorithm = CustomExecutionAlgorithm(config)
 
     importable = exec_algorithm.to_importable_config()
@@ -602,6 +610,7 @@ def test_execution_algorithm_derives_default_id_from_runtime_class() -> None:
     """
     base = ExecutionAlgorithm()
     first = FirstDefaultExecutionAlgorithm()
+
     second = SecondDefaultExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=None),
     )
@@ -616,6 +625,7 @@ def test_execution_algorithm_preserves_explicit_id_without_forwarding_config() -
     Test execution algorithm preserves explicit id without forwarding config.
     """
     exec_algorithm_id = ExecAlgorithmId("NON-FORWARDING")
+
     exec_algorithm = NonForwardingExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
     )
@@ -673,9 +683,11 @@ def test_execution_algorithm_deny_order_updates_cache_once() -> None:
     Test execution algorithm deny order updates cache once.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-DENY")),
     )
+
     engine.add_exec_algorithm(exec_algorithm)
     order = create_market_order()
     reason = "VALIDATION_FAILED: invalid Python execution schedule"
@@ -737,6 +749,7 @@ def test_add_exec_algorithm_from_config_registers_importable_algorithm() -> None
     """
     RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
@@ -763,6 +776,7 @@ def test_add_exec_algorithm_from_config_rejects_invalid_path() -> None:
     Test add exec algorithm from config rejects invalid path.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="invalid_path_no_colon",
         config_path="module:Config",
@@ -780,6 +794,7 @@ def test_add_exec_algorithm_from_config_rejects_nonexistent_module() -> None:
     Test add exec algorithm from config rejects nonexistent module.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
@@ -797,11 +812,13 @@ def test_add_exec_algorithm_from_config_rejects_duplicate_registration() -> None
     Test add exec algorithm from config rejects duplicate registration.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
         config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={"actor_id": "BACKTEST-ALGO-DUPLICATE"},
     )
+
     engine.add_exec_algorithm_from_config(config)
 
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-DUPLICATE' is already registered"):
@@ -816,6 +833,7 @@ def test_add_exec_algorithm_from_config_rejects_running_engine() -> None:
     """
     RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
@@ -843,6 +861,7 @@ def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_
     Register a non-forwarding subclass under the config id.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
@@ -854,6 +873,7 @@ def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_
         ),
         config={"exec_algorithm_id": "BACKTEST-ALGO-NOFORWARD"},
     )
+
     engine.add_exec_algorithm_from_config(config)
 
     # Subclass omits forwarding config to super().__init__(); __new__ still retains it, so
@@ -870,6 +890,7 @@ def test_add_exec_algorithm_registers_constructed_v2_instance() -> None:
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     exec_algorithm_id = ExecAlgorithmId("BACKTEST-V2-INSTANCE")
+
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
     )
@@ -915,6 +936,7 @@ def test_add_exec_algorithm_from_config_rejects_disposed_engine() -> None:
     Test add exec algorithm from config rejects disposed engine.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
@@ -939,6 +961,7 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms() -> Non
     Test add exec algorithms from configs registers multiple algorithms.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     configs = [
         ImportableExecutionAlgorithmConfig(
             exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
@@ -959,6 +982,82 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms() -> Non
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-B' is already registered"):
         engine.add_exec_algorithm_from_config(configs[1])
     engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("method_name", "quantity", "kwargs", "error_message"),
+    [
+        (
+            "spawn_market",
+            "10",
+            {"time_in_force": TimeInForce.GTD},
+            "GTD not supported for Market orders",
+        ),
+        ("spawn_market", "0", {}, "invalid `Quantity` for 'quantity' not positive, was 0"),
+        (
+            "spawn_limit",
+            "0",
+            {"price": Price.from_str("1.25")},
+            "invalid `Quantity` for 'quantity' not positive, was 0",
+        ),
+        (
+            "spawn_limit",
+            "10",
+            {"price": Price.from_str("1.25"), "time_in_force": TimeInForce.GTD},
+            "`expire_time` is required for `GTD` order",
+        ),
+        (
+            "spawn_limit",
+            "10",
+            {"price": Price.from_str("1.25"), "display_qty": Quantity.from_str("11")},
+            "`display_qty` may not exceed `quantity`",
+        ),
+        ("spawn_market_to_limit", "0", {}, "invalid `Quantity` for 'quantity' not positive, was 0"),
+        (
+            "spawn_market_to_limit",
+            "10",
+            {"time_in_force": TimeInForce.GTD},
+            "`expire_time` is required for `GTD` order",
+        ),
+        (
+            "spawn_market_to_limit",
+            "10",
+            {"display_qty": Quantity.from_str("11")},
+            "`display_qty` may not exceed `quantity`",
+        ),
+    ],
+)
+def test_execution_algorithm_spawn_constructor_errors_raise_value_error(
+    method_name: str,
+    quantity: str,
+    kwargs: dict,
+    error_message: str,
+) -> None:
+    """
+    Test invalid spawn parameters raise ValueError through the Python binding.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    algo = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-SPAWN")),
+    )
+
+    engine.add_exec_algorithm(algo)
+    primary = create_market_order()
+
+    try:
+        with pytest.raises(ValueError, match=re.escape(error_message)) as exc_info:
+            getattr(algo, method_name)(
+                primary,
+                Quantity.from_str(quantity),
+                reduce_primary=False,
+                **kwargs,
+            )
+
+        assert str(exc_info.value) == error_message
+        assert primary.quantity == Quantity.from_int(100_000)
+    finally:
+        engine.dispose()
 
 
 def create_market_order() -> object:

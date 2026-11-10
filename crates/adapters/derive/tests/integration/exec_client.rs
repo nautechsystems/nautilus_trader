@@ -46,7 +46,7 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::{
     cache::{Cache, ORDER_NOT_FOUND},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     clock::VirtualClock,
     live::runner::{
         replace_data_event_sender, replace_exec_event_sender, replace_system_event_sender,
@@ -91,8 +91,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{Data, QuoteTick},
     enums::{
-        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSide, TimeInForce, TriggerType,
+        AccountType, AvgPxReconciliation, ContingencyType, LiquiditySide, OmsType, OrderSide,
+        OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
@@ -109,6 +109,7 @@ use nautilus_model::{
 };
 use nautilus_network::{http::HttpClient, websocket::TransportBackend};
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
@@ -1300,8 +1301,8 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
         wallet_address: Some(TEST_WALLET.to_string()),
         session_key: Some(TEST_SESSION_KEY.into()),
         subaccount_id: Some(TEST_SUBACCOUNT),
-        base_url_rest: Some(rest_url(rest)),
-        base_url_ws: Some(ws_url(ws)),
+        base_url_rest: Some(rest_url(rest).into()),
+        base_url_ws: Some(ws_url(ws).into()),
         proxy_url: None,
         environment: DeriveEnvironment::Testnet,
         http_timeout_secs: 5,
@@ -1319,6 +1320,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
         max_matching_requests_per_second: None,
         max_per_instrument_matching_requests_per_second: None,
         cancel_on_disconnect: false,
+        load_ids: None,
     }
 }
 
@@ -1643,6 +1645,7 @@ fn make_subscription_frame(channel: &str, data: &Value) -> Value {
 #[tokio::test]
 async fn test_connect_observes_native_portfolio_instruments_before_private_stream(
     #[case] source: &str,
+    #[values(false, true)] scoped: bool,
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
@@ -1665,8 +1668,33 @@ async fn test_connect_observes_native_portfolio_instruments_before_private_strea
             json!({"orders": [order], "subaccount_id": TEST_SUBACCOUNT});
     }
 
+    if scoped {
+        snapshot["open_orders"]
+            .as_array_mut()
+            .unwrap()
+            .push(order_json_with(
+                "excluded-order",
+                "EXCLUDED",
+                "buy",
+                "UNLOADED-PERP",
+                1_700_000_001_000,
+                "open",
+            ));
+        snapshot["positions"]
+            .as_array_mut()
+            .unwrap()
+            .push(sample_position_json("UNLOADED-PERP", "1.25"));
+    }
+
     *rest_state.subaccount_response.lock().await = snapshot;
-    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.load_ids = scoped.then(|| vec![InstrumentId::from("ETH-PERP.DERIVE")]);
+            config
+        })
+        .await;
+
     let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_data_event_sender(data_tx);
     let cache = tc.cache.clone();
@@ -3858,6 +3886,82 @@ async fn test_submit_order_jsonrpc_rejection_emits_order_rejected() {
 }
 
 #[rstest]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::MarketIfTouched)]
+#[case(OrderType::LimitIfTouched)]
+#[tokio::test]
+async fn test_submit_trigger_session_key_expiry_emits_actionable_rejection(
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let ws_state = WsState::default();
+    let response: Value = serde_json::from_str(include_str!(
+        "../../test_data/ws_error_session_key_expiry.json"
+    ))
+    .unwrap();
+    *ws_state.trigger_order_reply.lock().await = Some(response);
+    let mut tc = build_client(RestState::default(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-KEY-EXPIRY");
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("3600.00"))
+        .trigger_type(TriggerType::MarkPrice);
+
+    if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
+        builder.price(Price::from("3600.00"));
+    }
+
+    let order = builder.build();
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted",
+    )
+    .await;
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(_)),
+        "expiry rejection",
+    )
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+        panic!("expected rejection: {event:?}")
+    };
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.instrument_id, instrument_id);
+    assert_eq!(rejected.strategy_id, StrategyId::from("S-1"));
+    assert_eq!(rejected.trader_id, TraderId::from("TRADER-001"));
+    assert_eq!(rejected.account_id, AccountId::from("DERIVE-001"));
+    assert_eq!(
+        rejected.reason.as_str(),
+        "14038: Signature expires at 1796263075s, session key expires at 1793728835s; use a key valid through the signature expiry",
+    );
+    assert!(!rejected.due_post_only);
+    assert!(!rejected.reconciliation);
+    assert_eq!(rejected.causation_id, None);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 1);
+    assert!(ws_state.submitted_orders.lock().await.is_empty());
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::ioc(TimeInForce::Ioc, "ioc")]
 #[case::fok(TimeInForce::Fok, "fok")]
 #[tokio::test]
@@ -5289,7 +5393,7 @@ async fn test_cancel_trigger_order_without_venue_id_resolves_label() {
     2
 )]
 #[tokio::test]
-async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
+async fn test_cancel_trigger_order_without_venue_id_denies_lookup_failure(
     #[case] trigger_orders_response: Value,
     #[case] expected_reason: &str,
     #[case] expected_calls: usize,
@@ -5331,13 +5435,8 @@ async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
 
     let event = drain_until(
         &mut tc.rx,
-        |event| {
-            matches!(
-                event,
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
-            )
-        },
-        "OrderCancelRejected from trigger lookup",
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(_))),
+        "OrderCancelDenied from trigger lookup",
     )
     .await;
 
@@ -5350,7 +5449,7 @@ async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
     assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
     assert!(ws_state.cancelled_labels.lock().await.is_empty());
 
-    if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) = event {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert!(rejected.venue_order_id.is_none());
         assert!(rejected.reason.contains(expected_reason));
@@ -6313,7 +6412,7 @@ async fn test_modify_order_posts_replace_and_emits_order_updated(
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() {
+async fn test_modify_order_denies_missing_cached_order_with_canonical_reason() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state).await;
@@ -6340,12 +6439,12 @@ async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() 
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason, ORDER_NOT_FOUND);
         assert_eq!(
@@ -6370,7 +6469,7 @@ async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() 
 )]
 #[case(i64::MAX as u64, "exceeds the Derive maximum")]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
+async fn test_modify_order_denies_invalid_signature_ttl_before_posting_replace(
     #[case] signature_expiry_secs: u64,
     #[case] reason_fragment: &str,
 ) {
@@ -6424,12 +6523,12 @@ async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         let reason = rejected.reason.as_str();
         assert!(
             reason.contains("replace expiry validation failed") && reason.contains(reason_fragment),
@@ -7280,7 +7379,7 @@ async fn test_modify_order_jsonrpc_ambiguous_does_not_emit_modify_rejected(#[cas
 #[case::no_venue_order_id(None, true, "venue_order_id is required")]
 #[case::order_not_in_cache(Some(VenueOrderId::from("ord-x")), false, "order not found in cache")]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_command(
+async fn test_modify_order_denies_invalid_command(
     #[case] venue_order_id: Option<VenueOrderId>,
     #[case] pre_insert_order: bool,
     #[case] reason_fragment: &str,
@@ -7333,12 +7432,12 @@ async fn test_modify_order_rejects_invalid_command(
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert!(
             rejected.reason.contains(reason_fragment),
             "expected reason to contain `{reason_fragment}`, was `{}`",
@@ -7358,7 +7457,7 @@ async fn test_modify_order_rejects_invalid_command(
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_rejects_trigger_order() {
+async fn test_modify_order_denies_trigger_order() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state.clone()).await;
@@ -7398,12 +7497,12 @@ async fn test_modify_order_rejects_trigger_order() {
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert_eq!(
             rejected.reason,
             "Derive trigger orders cannot be modified; cancel and resubmit",
@@ -8053,7 +8152,15 @@ async fn test_balance_subscription_refreshes_authoritative_account_state(
 }
 
 async fn build_report_client(rest_state: RestState, ws_state: WsState) -> TestClient {
-    let tc = build_client(rest_state, ws_state).await;
+    build_report_client_with_config(rest_state, ws_state, |config| config).await
+}
+
+async fn build_report_client_with_config(
+    rest_state: RestState,
+    ws_state: WsState,
+    configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
+) -> TestClient {
+    let tc = build_client_with_config(rest_state, ws_state, None, configure).await;
     let mut definitions = Vec::new();
 
     for symbol in ["ETH-PERP", "BTC-PERP", "SOL-PERP"] {
@@ -8082,7 +8189,11 @@ async fn build_report_client(rest_state: RestState, ws_state: WsState) -> TestCl
 #[case(true)]
 #[case(false)]
 #[tokio::test]
-async fn test_report_request_rejects_missing_active_metadata(#[case] order_report: bool) {
+async fn test_report_request_rejects_missing_active_metadata(
+    #[case] order_report: bool,
+    #[values(None, Some(vec![]), Some(vec![InstrumentId::from("UNLOADED-PERP.DERIVE")]))]
+    load_ids: Option<Vec<InstrumentId>>,
+) {
     let rest_state = RestState::default();
     *rest_state.open_orders_response.lock().await = json!({
         "orders": [order_json_with("ord-missing-metadata", "L-MISSING", "buy", "UNLOADED-PERP", 1_700_000_001_000, "open")],
@@ -8091,7 +8202,39 @@ async fn test_report_request_rejects_missing_active_metadata(#[case] order_repor
     *rest_state.positions_response.lock().await = json!({
         "positions": [sample_position_json("UNLOADED-PERP", "0.3")], "subaccount_id": TEST_SUBACCOUNT,
     });
-    let mut tc = build_client(rest_state.clone(), WsState::default()).await;
+
+    if load_ids.as_ref().is_some_and(|ids| !ids.is_empty()) {
+        rest_state.open_orders_response.lock().await["orders"]
+            .as_array_mut()
+            .unwrap()
+            .insert(
+                0,
+                order_json_with(
+                    "outside-active",
+                    "OUTSIDE-ACTIVE",
+                    "sell",
+                    "OUTSIDE-PERP",
+                    1_700_000_001_001,
+                    "open",
+                ),
+            );
+        rest_state.positions_response.lock().await["positions"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, sample_position_json("OUTSIDE-PERP", "0.7"));
+    }
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = load_ids;
+            config
+        },
+    )
+    .await;
+
     tc.client.connect().await.unwrap();
     let error = if order_report {
         tc.client
@@ -8131,11 +8274,266 @@ async fn test_report_request_rejects_missing_active_metadata(#[case] order_repor
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_load_ids_targeted_probe_does_not_infer_absence() {
+    let rest_state = RestState::default();
+    *rest_state.open_orders_response.lock().await = json!({
+        "orders": [
+            order_json_with("outside", "SHARED-LABEL", "buy", "UNLOADED-PERP", 1_700_000_001_000, "open"),
+            order_json_with("inside", "SHARED-LABEL", "buy", "ETH-PERP", 1_700_000_001_001, "open"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = Some(vec![InstrumentId::from("ETH-PERP.DERIVE")]);
+            config
+        },
+    )
+    .await;
+
+    tc.client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        Some(ClientOrderId::from("SHARED-LABEL")),
+        None,
+        None,
+        None,
+    );
+
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Derive order probe returned an instrument outside reconciliation scope"
+    );
+    assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 0);
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::unbounded(None)]
+#[case::bounded(Some(10_000_000))]
+#[tokio::test]
+async fn test_mass_status_load_ids_filters_mixed_records(
+    #[case] lookback: Option<u64>,
+    #[values(false, true)] missing_history: bool,
+) {
+    let rest_state = RestState::default();
+    *rest_state.open_orders_response.lock().await = json!({
+        "orders": [
+            order_json_with("outside-open", "SHARED", "sell", "UNLOADED-PERP", 1_700_000_001_000, "open"),
+            order_json_with("inside-open", "SHARED", "buy", "ETH-PERP", 1_700_000_001_001, "open"),
+            order_json_with("cached-outside", "CACHED", "sell", "BTC-PERP", 1_700_000_001_002, "open"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut history = vec![
+        order_json_with(
+            "outside-history",
+            "OUTSIDE-HISTORY",
+            "buy",
+            "UNLOADED-PERP",
+            1_700_000_002_000,
+            "filled",
+        ),
+        order_json_with(
+            "inside-history",
+            "INSIDE-HISTORY",
+            "buy",
+            "ETH-PERP",
+            1_700_000_002_001,
+            "filled",
+        ),
+    ];
+    let mut trades = vec![
+        trade_json_with_label(
+            "outside-trade",
+            "outside-history",
+            "UNLOADED-PERP",
+            "OUTSIDE-HISTORY",
+        ),
+        trade_json_with_label(
+            "inside-trade",
+            "inside-history",
+            "ETH-PERP",
+            "INSIDE-HISTORY",
+        ),
+    ];
+
+    if missing_history {
+        history.push(order_json_with(
+            "missing-history",
+            "MISSING-HISTORY",
+            "buy",
+            "EXPIRED-PERP",
+            1_700_000_002_002,
+            "filled",
+        ));
+        trades.push(trade_json_with_label(
+            "missing-trade",
+            "missing-history",
+            "EXPIRED-PERP",
+            "MISSING-HISTORY",
+        ));
+    }
+
+    *rest_state.order_history_response.lock().await = json!({
+        "pagination": {"count": history.len(), "num_pages": 1},
+        "orders": history, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.trade_history_response.lock().await = json!({
+        "pagination": {"count": trades.len(), "num_pages": 1},
+        "trades": trades, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.positions_response.lock().await = json!({
+        "positions": [
+            sample_position_json("UNLOADED-PERP", "1.2"),
+            sample_position_json("ETH-PERP", "0.3"),
+            sample_position_json("BTC-PERP", "0.4"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = Some(vec![
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                InstrumentId::from("EXPIRED-PERP.DERIVE"),
+            ]);
+            config
+        },
+    )
+    .await;
+
+    for symbol in ["ETH-PERP", "BTC-PERP"] {
+        let mut definition = sample_instrument_json();
+        definition["instrument_name"] = json!(symbol);
+        let raw = serde_json::from_value(definition).unwrap();
+        tc.client.cache_instrument(raw).unwrap();
+    }
+
+    tc.client.connect().await.unwrap();
+    let open = tc
+        .client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let positions = tc
+        .client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let mass = tc
+        .client
+        .generate_mass_status(lookback)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].venue_order_id, VenueOrderId::from("inside-open"));
+    assert_eq!(open[0].client_order_id, Some(ClientOrderId::from("SHARED")));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(
+        positions[0].instrument_id,
+        InstrumentId::from("ETH-PERP.DERIVE")
+    );
+    assert_eq!(positions[0].quantity.as_decimal(), dec!(0.3));
+    assert_eq!(
+        mass.reports_complete(),
+        !missing_history || lookback.is_none()
+    );
+    assert_eq!(
+        mass.order_reports().len(),
+        if missing_history { 3 } else { 2 }
+    );
+    assert_eq!(
+        mass.fill_reports().len(),
+        if missing_history { 2 } else { 1 }
+    );
+    let inside = &mass.order_reports()[&VenueOrderId::from("inside-history")];
+    assert_eq!(inside.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+    assert_eq!(
+        inside.client_order_id,
+        Some(ClientOrderId::from("INSIDE-HISTORY"))
+    );
+    let fill = &mass.fill_reports()[&VenueOrderId::from("inside-history")][0];
+    assert_eq!(fill.trade_id, TradeId::from("inside-trade"));
+    assert_eq!(fill.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("outside-open"))
+    );
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("cached-outside"))
+    );
+    assert!(
+        !mass
+            .order_reports()
+            .contains_key(&VenueOrderId::from("outside-history"))
+    );
+    assert!(
+        !mass
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("outside-history"))
+    );
+    let mass_positions: Vec<_> = mass
+        .position_reports()
+        .values()
+        .flatten()
+        .map(|report| (report.instrument_id, report.quantity.as_decimal()))
+        .collect();
+    assert_eq!(
+        mass_positions,
+        vec![(InstrumentId::from("ETH-PERP.DERIVE"), dec!(0.3))]
+    );
+    assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 0);
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::unbounded(None)]
 #[case::bounded(Some(10_000_000))]
 #[tokio::test]
 async fn test_mass_status_missing_historical_metadata_preserves_rows_incomplete(
     #[case] lookback: Option<u64>,
+    #[values(None, Some(vec![]), Some(vec![InstrumentId::from("EXPIRED-PERP.DERIVE")]))]
+    load_ids: Option<Vec<InstrumentId>>,
 ) {
     let rest_state = RestState::default();
     *rest_state.open_orders_response.lock().await =
@@ -8150,7 +8548,18 @@ async fn test_mass_status_missing_historical_metadata_preserves_rows_incomplete(
         "trades": [sample_trade_json("trade-unloaded-history", "ord-unloaded-history", "EXPIRED-PERP")],
         "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
     });
-    let mut tc = build_client(rest_state.clone(), WsState::default()).await;
+
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        WsState::default(),
+        None,
+        |mut config| {
+            config.load_ids = load_ids;
+            config
+        },
+    )
+    .await;
+
     tc.client.connect().await.unwrap();
     let mass = tc
         .client
@@ -8594,7 +9003,7 @@ async fn test_generate_order_status_report_finds_trigger_order_by_label_before_h
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_report_returns_none_on_instrument_mismatch() {
+async fn test_generate_order_status_report_errors_on_instrument_mismatch() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     // Default get_order response has instrument_name = "ETH-PERP"; ask for BTC.
@@ -8610,12 +9019,78 @@ async fn test_generate_order_status_report_returns_none_on_instrument_mismatch()
         None,
         None,
     );
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("instrument mismatch must not report venue absence");
+    assert_eq!(
+        error.to_string(),
+        "Derive order ord-mock-1 is for ETH-PERP but report requested BTC-PERP.DERIVE",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_errors_without_order_identity() {
+    let mut tc = build_report_client(RestState::default(), WsState::default()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+    );
+    let error = tc
+        .client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("missing order identity must not report venue absence");
+    assert_eq!(
+        error.to_string(),
+        "Derive generate_order_status_report requires venue_order_id or client_order_id",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_returns_none_when_order_is_absent() {
+    let rest_state = RestState::default();
+    let mut tc = build_report_client(rest_state.clone(), WsState::default()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        Some(ClientOrderId::from("ABSENT-LABEL")),
+        None,
+        None,
+        None,
+    );
     let report = tc
         .client
         .generate_order_status_report(&cmd)
         .await
-        .expect("report");
-    assert!(report.is_none());
+        .expect("venue absence is not a lookup failure");
+    assert_eq!(report, None);
+    assert_eq!(
+        *rest_state.order_history_calls.lock().await,
+        vec![json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "page": 1,
+            "page_size": 500,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -10237,41 +10712,63 @@ async fn test_generate_mass_status_normalizes_duplicate_labels() {
 }
 
 #[rstest]
-#[case::current_lifecycle(false)]
-#[case::prior_closed_lifecycle(true)]
+#[case::perp("ETH-PERP", dec!(2553.01), dec!(2553.87589666777), dec!(0.086589666777), dec!(2552.59), dec!(0.08658522))]
+#[case::option("ETH-20261106-2225-C", dec!(98.8), dec!(104.48782069511), dec!(0.56878207), dec!(98.4), dec!(0.5))]
 #[tokio::test]
 async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
-    #[case] prior_closed_lifecycle: bool,
+    #[case] symbol: &str,
+    #[case] entry_px: Decimal,
+    #[case] venue_average: Decimal,
+    #[case] opening_fee: Decimal,
+    #[case] close_px: Decimal,
+    #[case] closing_fee: Decimal,
+    #[values(false, true)] prior_closed_lifecycle: bool,
 ) {
     let state = RestState::default();
     let cid = ClientOrderId::from("FEE-AVERAGE-ENTRY");
-    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let instrument_id = InstrumentId::from(format!("{symbol}.DERIVE"));
+
+    let quantity = if symbol == "ETH-PERP" {
+        Quantity::from("0.100")
+    } else {
+        Quantity::from("0.10")
+    };
+
+    let entry_price = Price::from(entry_px.to_string());
+    let close_price = Price::from(close_px.to_string());
+    let opening_commission = Money::from_decimal(opening_fee, Currency::USDC()).unwrap();
+    let closing_commission = Money::from_decimal(closing_fee, Currency::USDC()).unwrap();
+    let total_commission = opening_commission + closing_commission;
     let venue_order_id = VenueOrderId::from("fee-average-entry");
     let trade_id = TradeId::from("fee-average-fill");
     let mut order = order_json_with(
         venue_order_id.as_str(),
         cid.as_str(),
         "buy",
-        "ETH-PERP",
+        symbol,
         1_700_000_002_000,
         "filled",
     );
     order["amount"] = json!("0.1");
     order["filled_amount"] = json!("0.1");
-    order["average_price"] = json!("2553.01");
-    order["limit_price"] = json!("2554.00");
-    order["order_fee"] = json!("0.086589666777");
+    order["average_price"] = json!(entry_px.to_string());
+    order["limit_price"] = json!(entry_px.to_string());
+    order["order_fee"] = json!(opening_fee.to_string());
     let mut trade = trade_json_with_label(
         trade_id.as_str(),
         venue_order_id.as_str(),
-        "ETH-PERP",
+        symbol,
         cid.as_str(),
     );
     trade["trade_amount"] = json!("0.1");
-    trade["trade_price"] = json!("2553.01");
+    trade["trade_price"] = json!(entry_px.to_string());
     trade["trade_fee"] = order["order_fee"].clone();
-    let mut position = sample_position_json("ETH-PERP", "0.1");
-    position["average_price"] = json!("2553.87589666777");
+    let mut position = sample_position_json(symbol, "0.1");
+    position["average_price"] = json!(venue_average.to_string());
+    if symbol != "ETH-PERP" {
+        position["instrument_type"] = json!("option");
+    }
+
     position["average_price_excl_fees"] = trade["trade_price"].clone();
     position["total_fees"] = trade["trade_fee"].clone();
     *state.open_orders_response.lock().await =
@@ -10297,14 +10794,14 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             ),
         ] {
             let mut previous =
-                order_json_with(label, label, direction, "ETH-PERP", timestamp, "filled");
+                order_json_with(label, label, direction, symbol, timestamp, "filled");
             previous["amount"] = json!("0.2");
             previous["filled_amount"] = json!("0.2");
             previous["average_price"] = json!(price);
             previous["limit_price"] = json!(price);
             previous["order_fee"] = json!(fee);
             orders.push(previous);
-            let mut previous = trade_json_with_label(label, label, "ETH-PERP", label);
+            let mut previous = trade_json_with_label(label, label, symbol, label);
             previous["direction"] = json!(direction);
             previous["trade_amount"] = json!("0.2");
             previous["trade_price"] = json!(price);
@@ -10321,6 +10818,18 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     *state.positions_response.lock().await =
         json!({"positions": [position], "subaccount_id": TEST_SUBACCOUNT});
     let mut tc = build_report_client(state, WsState::default()).await;
+
+    if symbol != "ETH-PERP" {
+        let mut definition = option_instrument_json(symbol, "C", "2225");
+        definition["tick_size"] = json!("0.1");
+        let raw: DeriveInstrument = serde_json::from_value(definition).unwrap();
+        let instrument = parse_derive_instrument_any(&raw, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        tc.client.cache_instrument(raw).unwrap();
+        tc.cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+
     tc.client.connect().await.unwrap();
     let mass = tc.client.generate_mass_status(None).await.unwrap().unwrap();
     tc.client.disconnect().await.unwrap();
@@ -10368,7 +10877,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
 
         assert_eq!(
             mass.position_reports()[&instrument_id][0].avg_px_open,
-            Some(dec!(2553.87589666777))
+            Some(venue_average)
         );
         assert_eq!(
             cache.orders(None, None, None, None, None).len(),
@@ -10379,38 +10888,34 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             }
         );
         assert_eq!(order.status(), OrderStatus::Filled);
-        assert_eq!(order.quantity(), Quantity::from("0.100"));
-        assert_eq!(order.filled_qty(), Quantity::from("0.100"));
-        assert_eq!(order.avg_px(), Some(dec!(2553.01)));
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(order.filled_qty(), quantity);
+        assert_eq!(order.avg_px(), Some(entry_px));
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].venue_order_id, venue_order_id);
         assert_eq!(fills[0].trade_id, trade_id);
         assert_eq!(fills[0].order_side, OrderSide::Buy);
-        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
-        assert_eq!(fills[0].last_px, Price::from("2553.01"));
-        assert_eq!(fills[0].commission, Some(Money::from("0.08658967 USDC")));
+        assert_eq!(fills[0].last_qty, quantity);
+        assert_eq!(fills[0].last_px, entry_price);
+        assert_eq!(fills[0].commission, Some(opening_commission));
         assert_eq!(
             fills[0].ts_event,
             UnixNanos::from(1_700_000_002_000_000_000_u64)
         );
         assert_eq!(positions.len(), 1);
-        assert_eq!(positions[0].quantity, Quantity::from("0.100"));
+        assert_eq!(positions[0].instrument_id, instrument_id);
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(positions[0].quantity, quantity);
         assert_eq!(positions[0].signed_decimal_qty(), dec!(0.1));
-        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
+        assert_eq!(positions[0].avg_px_open, entry_px);
         assert_eq!(
             positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
             vec![trade_id]
         );
+        assert_eq!(positions[0].commissions(), vec![opening_commission]);
+        assert_eq!(positions[0].realized_pnl, Some(-opening_commission));
         assert_eq!(
-            positions[0].commissions(),
-            vec![Money::from("0.08658967 USDC")]
-        );
-        assert_eq!(
-            positions[0].realized_pnl,
-            Some(Money::from("-0.08658967 USDC"))
-        );
-        assert_eq!(
-            positions[0].unrealized_pnl(Price::from("2553.01")).unwrap(),
+            positions[0].unrealized_pnl(entry_price).unwrap(),
             Money::from("0.00000000 USDC")
         );
     }
@@ -10423,8 +10928,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     close_order.client_order_id = Some(close_cid);
     close_order.venue_order_id = close_order_id;
     close_order.order_side = Some(OrderSide::Sell);
-    close_order.price = Some(Price::from("2552.59"));
-    close_order.avg_px = Some(dec!(2552.59));
+    close_order.price = Some(close_price);
+    close_order.avg_px = Some(close_px);
     close_order.ts_accepted = close_ts;
     close_order.ts_last = close_ts;
     let mut close_fill = mass.fill_reports()[&venue_order_id][0].clone();
@@ -10432,8 +10937,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     close_fill.venue_order_id = close_order_id;
     close_fill.trade_id = close_trade_id;
     close_fill.order_side = OrderSide::Sell;
-    close_fill.last_px = Price::from("2552.59");
-    close_fill.commission = Money::from("0.08658522 USDC");
+    close_fill.last_px = close_price;
+    close_fill.commission = closing_commission;
     close_fill.ts_event = close_ts;
 
     let flat = PositionStatusReport::new(
@@ -10480,26 +10985,26 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         );
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.000"));
-        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
-        assert_eq!(positions[0].avg_px_close, Some(dec!(2552.59)));
+        assert_eq!(positions[0].avg_px_open, entry_px);
+        assert_eq!(positions[0].avg_px_close, Some(close_px));
         assert_eq!(
             positions[0].trade_ids,
             [trade_id, close_trade_id].into_iter().collect()
         );
-        assert_eq!(
-            positions[0].commissions(),
-            vec![Money::from("0.17317489 USDC")]
-        );
+        assert_eq!(positions[0].commissions(), vec![total_commission]);
         assert_eq!(
             positions[0].realized_pnl,
-            Some(Money::from("-0.21517489 USDC"))
+            Some(
+                Money::from_decimal((close_px - entry_px) * dec!(0.1), Currency::USDC()).unwrap()
+                    - total_commission
+            )
         );
-        assert_eq!(close_order.filled_qty(), Quantity::from("0.100"));
-        assert_eq!(close_order.avg_px(), Some(dec!(2552.59)));
+        assert_eq!(close_order.filled_qty(), quantity);
+        assert_eq!(close_order.avg_px(), Some(close_px));
         assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].last_px, Price::from("2552.59"));
-        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
-        assert_eq!(fills[0].commission, Some(Money::from("0.08658522 USDC")));
+        assert_eq!(fills[0].last_px, close_price);
+        assert_eq!(fills[0].last_qty, quantity);
+        assert_eq!(fills[0].commission, Some(closing_commission));
         assert_eq!(fills[0].trade_id, close_trade_id);
         assert_eq!(fills[0].venue_order_id, close_order_id);
         assert_eq!(fills[0].ts_event, close_ts);
@@ -13204,6 +13709,10 @@ async fn test_generate_position_status_reports_option_position() {
     assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].signed_decimal_qty, dec!(-2));
     assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
+    assert_eq!(
+        reports[0].avg_px_open_reconciliation,
+        AvgPxReconciliation::OpeningOnly
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -14297,7 +14806,10 @@ fn pagination_record(fills: bool, page: u8) -> Value {
 #[case::reversed_manager(8)]
 #[case::duplicate_engine(9)]
 #[case::duplicate_manager(10)]
-#[tokio::test]
+#[case::worker_single_current(11)]
+#[case::worker_single_parent(12)]
+#[case::worker_bulk(13)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_replacement_reports_project_logical_quantity_and_average(
     #[case] route: u8,
     #[values(false, true)] terminal: bool,
@@ -14460,6 +14972,46 @@ async fn test_replacement_reports_project_logical_quantity_and_average(
     let mut mass = None;
 
     let reports = match route {
+        11 | 12 => {
+            let command = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(instrument_id),
+                Some(cid),
+                Some(if route == 12 { parent_id } else { current_id }),
+                None,
+                None,
+            );
+            vec![
+                finish_report_task(
+                    tc.client
+                        .generate_order_status_report_task(&command)
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap(),
+            ]
+        }
+        13 => {
+            let command = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                !terminal,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+            finish_report_task(
+                tc.client
+                    .generate_order_status_reports_task(&command)
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        }
         0 | 1 => vec![
             tc.client
                 .generate_order_status_report(&GenerateOrderStatusReport::new(
@@ -14532,7 +15084,7 @@ async fn test_replacement_reports_project_logical_quantity_and_average(
             .iter()
             .filter(|report| report.venue_order_id == parent_id)
             .count(),
-        usize::from(route >= 3 || route == 2 && terminal),
+        usize::from((3..=10).contains(&route) || matches!(route, 2 | 13) && terminal),
     );
 
     tc.client.disconnect().await.unwrap();
@@ -14705,7 +15257,11 @@ fn reconcile_replacement_reports(
 #[case::different_id("different_id", Some("Does not exist"), 1)]
 #[case::different_error("different_error", Some("Permission error"), 0)]
 #[case::foreign_account("foreign_account", Some("subaccount"), 1)]
-#[case::foreign_instrument("foreign_instrument", None, 1)]
+#[case::foreign_instrument(
+    "foreign_instrument",
+    Some("is for BTC-PERP but report requested ETH-PERP.DERIVE"),
+    1
+)]
 #[case::bad_pagination("bad_pagination", Some("Invalid Derive page count"), 1)]
 #[tokio::test]
 async fn test_order_lookup_falls_back_to_exact_scoped_history(
@@ -14789,8 +15345,6 @@ async fn test_order_lookup_falls_back_to_exact_scoped_history(
 
     if let Some(expected) = expected_error {
         assert!(format!("{:#}", result.unwrap_err()).contains(expected));
-    } else if scenario == "foreign_instrument" {
-        assert!(result.unwrap().is_none());
     } else {
         let report = result.unwrap().unwrap();
         assert_eq!(report.venue_order_id, native_id);
@@ -14828,6 +15382,7 @@ async fn test_order_lookup_falls_back_to_exact_scoped_history(
 async fn test_startup_refuses_unproved_replacement_before_private_connection(
     #[case] scenario: &str,
     #[case] pending: bool,
+    #[values(false, true)] scoped: bool,
 ) {
     let state = RestState::default();
     let ws = WsState::default();
@@ -14855,7 +15410,13 @@ async fn test_startup_refuses_unproved_replacement_before_private_connection(
 
     *state.open_orders_response.lock().await = json!({"orders": if scenario == "open" { children.clone() } else { vec![] }, "subaccount_id": TEST_SUBACCOUNT});
     *state.order_history_response.lock().await = json!({"orders": if scenario == "open" { vec![] } else { children.clone() }, "pagination": {"count": if scenario == "open" { 0 } else { children.len() }, "num_pages": i32::from(scenario != "open" && !children.is_empty())}, "subaccount_id": TEST_SUBACCOUNT});
-    let mut tc = build_report_client(state.clone(), ws.clone()).await;
+
+    let mut tc = build_report_client_with_config(state.clone(), ws.clone(), |mut config| {
+        config.load_ids = scoped.then(|| vec![InstrumentId::from("BTC-PERP.DERIVE")]);
+        config
+    })
+    .await;
+
     let mut restored = accepted_order(
         build_limit_order(
             instrument_id,
@@ -14945,7 +15506,7 @@ async fn test_startup_refuses_unproved_replacement_before_private_connection(
     "requested quantity is below native cumulative fills"
 )]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_native_replacement_chain_before_write(
+async fn test_modify_order_denies_invalid_native_replacement_chain_before_write(
     #[case] invalid_field: &str,
     #[case] expected_reason: &str,
 ) {
@@ -15045,7 +15606,7 @@ async fn test_modify_order_rejects_invalid_native_replacement_chain_before_write
         ))
         .unwrap();
 
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = drain_until(
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = drain_until(
         &mut tc.rx,
         |event| matches!(event, ExecutionEvent::Order(_)),
         "native chain rejection",
@@ -16911,7 +17472,7 @@ async fn test_reports_defer_unproved_tracked_replacement_binding(#[case] operati
         }
 
         if operation == 7 || operation == 8 {
-            assert_unresolved_command_rejection(&mut tc, operation, cid, old_id).await;
+            assert_unresolved_command_denial(&mut tc, operation, cid, old_id).await;
         }
     }
 
@@ -16995,7 +17556,7 @@ async fn test_reports_defer_unproved_tracked_replacement_binding(#[case] operati
     assert!(ws_state.replace_orders.lock().await.is_empty());
 }
 
-async fn assert_unresolved_command_rejection(
+async fn assert_unresolved_command_denial(
     tc: &mut TestClient,
     operation: u8,
     cid: ClientOrderId,
@@ -17009,7 +17570,7 @@ async fn assert_unresolved_command_rejection(
     .await;
 
     match event {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) if operation == 7 => {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if operation == 7 => {
             assert_eq!(event.client_order_id, cid);
             assert_eq!(event.venue_order_id, Some(old_id));
             assert_eq!(
@@ -17017,7 +17578,7 @@ async fn assert_unresolved_command_rejection(
                 "unresolved Derive venue binding for COLD-BINDING"
             );
         }
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) if operation == 8 => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if operation == 8 => {
             assert_eq!(event.client_order_id, cid);
             assert_eq!(event.venue_order_id, Some(old_id));
             assert_eq!(
@@ -17025,7 +17586,7 @@ async fn assert_unresolved_command_rejection(
                 "unresolved Derive venue binding for COLD-BINDING"
             );
         }
-        other => panic!("expected matching local command rejection, received {other:?}"),
+        other => panic!("expected matching local command denial, received {other:?}"),
     }
 }
 
@@ -18299,4 +18860,445 @@ async fn test_fresh_cache_replacement_rejects_invalid_ancestry(
         tc.cache.borrow().orders(None, None, None, None, None).len(),
         0
     );
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::orders_open(1)]
+#[case::orders_history(2)]
+#[case::fills(3)]
+#[case::positions(4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_matches_inline(
+    #[case] request: u8,
+    #[values("valid", "filtered", "malformed", "venue_error")] response: &str,
+) {
+    let state = RestState::default();
+    let order = sample_order_json();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [order.clone()], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({"orders": [order.clone()], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.get_order_response.lock().await = order;
+    *state.trade_history_response.lock().await = json!({"trades": [sample_trade_json("task-fill", "ord-mock-1", "ETH-PERP")], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await = json!({"positions": [sample_position_json("ETH-PERP", "1.23"), sample_position_json("BTC-PERP", "-2.34")], "subaccount_id": TEST_SUBACCOUNT});
+
+    if response == "venue_error" {
+        let error = json!({"id": 1, "error": {"code": 11000, "message": "report unavailable"}});
+        *state.get_order_response.lock().await = error.clone();
+        *state.trigger_orders_response.lock().await = error.clone();
+        *state.open_orders_response.lock().await = error.clone();
+        *state.order_history_response.lock().await = error.clone();
+        *state.trade_history_response.lock().await = error.clone();
+        *state.positions_response.lock().await = error;
+    } else if response == "malformed" {
+        state.get_order_response.lock().await["amount"] = json!("invalid");
+        state.open_orders_response.lock().await["orders"][0]["amount"] = json!("invalid");
+        state.order_history_response.lock().await["orders"][0]["amount"] = json!("invalid");
+        state.trade_history_response.lock().await["trades"][0]["trade_fee"] = json!("invalid");
+        state.positions_response.lock().await["positions"][0]["amount"] = json!("invalid");
+    }
+
+    let tc = build_report_client(state, WsState::default()).await;
+
+    let filter = if response == "filtered" {
+        "SOL-PERP.DERIVE"
+    } else {
+        "ETH-PERP.DERIVE"
+    };
+
+    let instrument_id = InstrumentId::from(filter);
+    let inline = request_report_content(&tc.client, request, instrument_id, false).await;
+    let worker = request_report_content(&tc.client, request, instrument_id, true).await;
+
+    match (inline, worker) {
+        (Ok(inline), Ok(worker)) => {
+            assert!(
+                matches!(response, "valid" | "filtered")
+                    && !(request == 0 && response == "filtered"),
+                "single-order instrument mismatch must not report absence",
+            );
+            assert_eq!(worker, inline);
+
+            if response == "filtered" {
+                assert_eq!(worker, json!([]));
+            } else {
+                assert_eq!(worker.as_array().unwrap().len(), 1);
+            }
+        }
+        (Err(inline), Err(worker)) => {
+            assert!(
+                matches!(response, "malformed" | "venue_error")
+                    || (request == 0 && response == "filtered")
+            );
+            assert_eq!(format!("{worker:#}"), format!("{inline:#}"));
+
+            if request == 0 && response == "filtered" {
+                assert!(
+                    format!("{inline:#}")
+                        .contains("is for ETH-PERP but report requested SOL-PERP.DERIVE")
+                );
+            }
+        }
+        result => panic!("inline and task results differ: {result:?}"),
+    }
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::orders(1)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_finalizes_against_current_cache(#[case] request: u8) {
+    let tc = build_report_client(RestState::default(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(instrument_id),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let task = if request == 0 {
+        let cmd = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(instrument_id),
+            None,
+            Some(VenueOrderId::from("ord-mock-1")),
+            None,
+            None,
+        );
+        let task = tc.client.generate_order_status_report_task(&cmd).unwrap();
+        ExecutionReportTask {
+            collection: task.collection,
+            finish: Box::new(move || Ok((task.finish)()?.into_iter().collect::<Vec<_>>())),
+        }
+    } else {
+        tc.client.generate_order_status_reports_task(&cmd).unwrap()
+    };
+
+    collect_report_with_borrowed_cache(task.collection, &tc.cache).await;
+    let cid = ClientOrderId::from("STRAT-O-1");
+    let order = accepted_order(
+        build_limit_order(
+            instrument_id,
+            cid,
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        VenueOrderId::from("ord-mock-1"),
+        AccountId::from("DERIVE-001"),
+    );
+    add_order_to_cache(&tc.cache, order, Some(ClientId::from("DERIVE")));
+    let error = (task.finish)().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Derive order binding changed during report collection for STRAT-O-1"
+    );
+    let retry = request_report_content(&tc.client, request, instrument_id, true)
+        .await
+        .unwrap();
+    assert_eq!(retry.as_array().unwrap().len(), 1);
+}
+
+#[rstest]
+#[case::cancel(false)]
+#[case::discard(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_disposal_preserves_retry(#[case] completed: bool) {
+    let state = RestState::default();
+    *state.trade_history_response.lock().await = json!({"trades": [sample_trade_json("retry-fill", "ord-mock-1", "ETH-PERP")], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    let tc = build_report_client(state.clone(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let response = state.trade_history_response.lock().await;
+    let task = tc.client.generate_fill_reports_task(&cmd).unwrap();
+    let worker = tokio::spawn(task.collection);
+    wait_until(
+        || {
+            let calls = state.trade_history_calls.clone();
+            async move { calls.lock().await.len() == 1 }
+        },
+        "fill collection reaches venue",
+    )
+    .await;
+
+    if completed {
+        drop(response);
+        worker.await.unwrap();
+        drop(task.finish);
+    } else {
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        drop(response);
+        assert_eq!(
+            (task.finish)().unwrap_err().to_string(),
+            "report collection stopped without a result"
+        );
+    }
+
+    let retry = finish_report_task(tc.client.generate_fill_reports_task(&cmd).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(retry.len(), 1);
+    assert_eq!(retry[0].trade_id, TradeId::from("retry-fill"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_uses_instrument_update_during_collection() {
+    let state = RestState::default();
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument_id),
+        None,
+        Some(VenueOrderId::from("ord-mock-1")),
+        None,
+        None,
+    );
+    let response = state.get_order_response.lock().await;
+    let task = tc.client.generate_order_status_report_task(&cmd).unwrap();
+    let worker = tokio::spawn(task.collection);
+    wait_until(
+        || {
+            let calls = state.get_order_calls.clone();
+            async move { calls.lock().await.len() == 1 }
+        },
+        "order collection reaches venue",
+    )
+    .await;
+
+    let mut definition: DeriveInstrument =
+        serde_json::from_value(sample_instrument_json()).unwrap();
+    definition.tick_size = dec!(0.0001);
+    definition.amount_step = dec!(0.00001);
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.client.on_instrument(instrument);
+    drop(response);
+    worker.await.unwrap();
+    let report = (task.finish)().unwrap().unwrap();
+    assert_eq!(report.price, Some(Price::from("3500.0000")));
+    assert_eq!(report.quantity, Quantity::from("1.00000"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_deduplicates_fill_delivered_after_collection() {
+    let state = RestState::default();
+    let ws_state = WsState::default();
+    let shared = sample_trade_json("task-shared-fill", "ord-1", "ETH-PERP");
+    let fresh = sample_trade_json("task-fresh-fill", "ord-2", "ETH-PERP");
+    *state.trade_history_response.lock().await = json!({"trades": [shared.clone(), fresh], "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    let mut tc = build_report_client(state, ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    drain_initial_account_state(&mut tc).await;
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = tc.client.generate_fill_reports_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    ws_state.push_notification(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.trades"),
+        &json!([shared]),
+    ));
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))),
+        "fill delivered before report acceptance",
+    )
+    .await;
+
+    let ExecutionEvent::Report(ExecutionReport::Fill(fill)) = event else {
+        unreachable!()
+    };
+
+    assert_eq!(fill.trade_id, TradeId::from("task-shared-fill"));
+    let reports = (task.finish)().unwrap();
+    let retry = tc.client.generate_fill_reports(cmd).await.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].trade_id, TradeId::from("task-fresh-fill"));
+    assert_eq!(
+        report_content(serde_json::to_value(reports).unwrap()),
+        report_content(serde_json::to_value(retry).unwrap())
+    );
+    tc.client.disconnect().await.unwrap();
+}
+
+async fn request_report_content(
+    client: &DeriveExecutionClient,
+    request: u8,
+    instrument_id: InstrumentId,
+    owned: bool,
+) -> anyhow::Result<Value> {
+    let now = UnixNanos::from(1_700_000_004_000_000_000);
+
+    let value = match request {
+        0 => {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                None,
+                Some(VenueOrderId::from("ord-mock-1")),
+                None,
+                None,
+            );
+
+            let report = report_result(
+                owned.then(|| client.generate_order_status_report_task(&cmd).unwrap()),
+                client.generate_order_status_report(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(report.into_iter().collect::<Vec<_>>())?
+        }
+        1 | 2 => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                now,
+                request == 1,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_order_status_reports_task(&cmd).unwrap()),
+                client.generate_order_status_reports(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        3 => {
+            let cmd = GenerateFillReports::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                Some(VenueOrderId::from(
+                    if instrument_id.symbol.as_str() == "SOL-PERP" {
+                        "excluded-order"
+                    } else {
+                        "ord-mock-1"
+                    },
+                )),
+                Some(UnixNanos::from(1_700_000_000_000_000_000)),
+                Some(now),
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_fill_reports_task(&cmd).unwrap()),
+                client.generate_fill_reports(cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        4 => {
+            let cmd = GeneratePositionStatusReports::new(
+                UUID4::new(),
+                now,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+
+            let reports = report_result(
+                owned.then(|| client.generate_position_status_reports_task(&cmd).unwrap()),
+                client.generate_position_status_reports(&cmd),
+            )
+            .await?;
+
+            serde_json::to_value(reports)?
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(report_content(value))
+}
+
+fn report_content(mut value: Value) -> Value {
+    for report in value.as_array_mut().unwrap() {
+        let report = report.as_object_mut().unwrap();
+        if report["type"] == "PositionStatusReport" {
+            assert_eq!(report["ts_last"], report["ts_init"]);
+            report.insert("ts_last".to_string(), json!(0));
+        }
+
+        report.remove("report_id");
+        report.remove("ts_init");
+    }
+
+    value
+}
+
+async fn finish_report_task<T: 'static>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+
+    tokio::spawn(async move {
+        assert_ne!(std::thread::current().id(), core_thread);
+        task.collection.await;
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(std::thread::current().id(), core_thread);
+    (task.finish)()
+}
+
+async fn report_result<T: 'static>(
+    task: Option<ExecutionReportTask<T>>,
+    inline: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    match task {
+        Some(task) => finish_report_task(task).await,
+        None => inline.await,
+    }
+}
+
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "the cache borrow proves worker collection does not access core-thread state"
+)]
+async fn collect_report_with_borrowed_cache(
+    collection: impl std::future::Future<Output = ()> + Send + 'static,
+    cache: &RefCell<Cache>,
+) {
+    let cache_borrow = cache.borrow_mut();
+
+    tokio::spawn(collection).await.unwrap();
+    drop(cache_borrow);
 }

@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::config::{ConfigResult, check_unique_values};
+use nautilus_common::config::{ConfigError, ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -27,6 +27,7 @@ use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
+    credential::credential_env_vars,
     enums::{
         BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode, BybitProductType,
     },
@@ -46,9 +47,18 @@ use crate::common::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 pub struct BybitDataClientConfig {
-    /// Optional API key for authenticated REST/WebSocket requests.
+    /// API key.
+    ///
+    /// When omitted, the client loads `BYBIT_API_KEY`, `BYBIT_DEMO_API_KEY`, or
+    /// `BYBIT_TESTNET_API_KEY` for the selected [`BybitEnvironment`]. An explicit
+    /// value takes precedence. Public market-data requests stay unsigned.
     pub api_key: Option<SecretString>,
-    /// Optional API secret for authenticated REST/WebSocket requests.
+    /// API secret.
+    ///
+    /// When omitted, the client loads `BYBIT_API_SECRET`, `BYBIT_DEMO_API_SECRET`,
+    /// or `BYBIT_TESTNET_API_SECRET` for the selected [`BybitEnvironment`]. An
+    /// explicit value takes precedence. A missing key or secret leaves the client
+    /// without credentials.
     pub api_secret: Option<SecretString>,
     /// Product types to subscribe to (e.g., Linear, Spot, Inverse, Option).
     #[builder(default = vec![BybitProductType::Linear])]
@@ -67,13 +77,13 @@ pub struct BybitDataClientConfig {
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum retry attempts for REST requests.
+    /// Maximum retry attempts for REST reads.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry backoff in milliseconds.
+    /// Initial retry backoff for REST reads, in milliseconds.
     #[builder(default = 1_000)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry backoff in milliseconds.
+    /// Maximum retry backoff for REST reads, in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
     /// Heartbeat interval in seconds for WebSocket clients.
@@ -145,10 +155,25 @@ impl BybitDataClientConfig {
         check_unique_values("product_types", &self.product_types)
     }
 
-    /// Returns `true` if both API key and secret are available.
+    /// Returns `true` if both API key and secret fields are set.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
         self.api_key.is_some() && self.api_secret.is_some()
+    }
+
+    pub(crate) fn resolved_api_credentials(&self) -> Option<(String, String)> {
+        let (key_var, secret_var) = credential_env_vars(self.environment);
+        // Keep each side in a zeroizing owner until both exist. An incomplete
+        // pair must not leave a plaintext secret on the heap.
+        let key = self
+            .api_key
+            .clone()
+            .or_else(|| std::env::var(key_var).ok().map(SecretString::from))?;
+        let secret = self
+            .api_secret
+            .clone()
+            .or_else(|| std::env::var(secret_var).ok().map(SecretString::from))?;
+        Some((key.into_inner(), secret.into_inner()))
     }
 
     /// Returns the REST base URL, considering overrides and environment.
@@ -230,13 +255,13 @@ pub struct BybitExecutionClientConfig {
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum retry attempts for REST requests.
+    /// Maximum retry attempts for REST reads.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry backoff in milliseconds.
+    /// Initial REST read retry backoff, in milliseconds. Also the cancel-all polling interval.
     #[builder(default = 1_000)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry backoff in milliseconds.
+    /// Maximum retry backoff for REST reads, in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
     /// Heartbeat interval in seconds for WebSocket clients.
@@ -261,6 +286,12 @@ pub struct BybitExecutionClientConfig {
     /// fully fill.
     #[builder(default)]
     pub auto_repay_spot_borrows: bool,
+    /// Whether to subscribe to the lower-latency `execution.fast` channel instead of the
+    /// standard `execution` channel. Fast fills derive commissions from cached account fee
+    /// rates on a best-effort basis; derived values are not venue-authoritative. Demo mode
+    /// does not support this option.
+    #[builder(default)]
+    pub use_ws_execution_fast: bool,
     /// Leverage configuration for futures (symbol -> leverage).
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Position mode configuration for symbols (symbol -> mode).
@@ -293,6 +324,7 @@ nautilus_core::impl_pyo3_config_getters!(BybitExecutionClientConfig {
     account_id: Option<AccountId>,
     use_spot_position_reports: bool,
     auto_repay_spot_borrows: bool,
+    use_ws_execution_fast: bool,
     margin_mode: Option<BybitMarginMode>,
     transport_backend: TransportBackend,
 });
@@ -310,12 +342,20 @@ impl BybitExecutionClientConfig {
         Self::default()
     }
 
-    /// Validates that configured selections contain no duplicates.
+    /// Validates configured product types and execution-stream selection.
     ///
     /// # Errors
     ///
-    /// Returns an error if `product_types` repeats a value.
+    /// Returns an error if `product_types` repeats a value or fast execution is enabled in Demo
+    /// mode.
     pub fn validate(&self) -> ConfigResult<()> {
+        if self.use_ws_execution_fast && self.environment == BybitEnvironment::Demo {
+            return Err(ConfigError::unsupported_value(
+                "use_ws_execution_fast",
+                "execution.fast is not supported in demo mode",
+            ));
+        }
+
         check_unique_values("product_types", &self.product_types)
     }
 
@@ -409,6 +449,37 @@ mod tests {
         assert_eq!(execution_result, expected);
         assert_eq!(data.product_types, values);
         assert_eq!(execution.product_types, values);
+    }
+
+    #[rstest]
+    #[case::demo_fast(BybitEnvironment::Demo, true, true)]
+    #[case::demo_standard(BybitEnvironment::Demo, false, false)]
+    #[case::mainnet_fast(BybitEnvironment::Mainnet, true, false)]
+    #[case::testnet_fast(BybitEnvironment::Testnet, true, false)]
+    fn test_exec_config_fast_environment(
+        #[case] environment: BybitEnvironment,
+        #[case] use_ws_execution_fast: bool,
+        #[case] expect_rejection: bool,
+    ) {
+        let config = BybitExecutionClientConfig {
+            environment,
+            use_ws_execution_fast,
+            ..Default::default()
+        };
+
+        let result = config.validate();
+
+        if expect_rejection {
+            assert_eq!(
+                result,
+                Err(ConfigError::unsupported_value(
+                    "use_ws_execution_fast",
+                    "execution.fast is not supported in demo mode",
+                ))
+            );
+        } else {
+            assert_eq!(result, Ok(()));
+        }
     }
 
     #[rstest]

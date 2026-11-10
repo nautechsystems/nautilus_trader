@@ -639,7 +639,7 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
-        orders::{OrderAny, builder::OrderTestBuilder},
+        orders::{Order, OrderAny, builder::OrderTestBuilder},
     };
     use pyo3::{IntoPyObjectExt, ffi::c_str, types::PyDict};
     use rstest::rstest;
@@ -671,6 +671,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(commission, expected_commission);
+            assert_callback_args(&model, &order, &instrument);
         });
     }
 
@@ -698,6 +699,7 @@ mod tests {
             assert!(original.bind(py).is(&model));
             assert!(retained.bind(py).is(&model));
             assert_eq!(commission, expected_commission);
+            assert_callback_args(&model, &order, &instrument);
         });
     }
 
@@ -730,8 +732,10 @@ mod tests {
                 .eval(
                     c_str!(
                         "type('CustomFeeModel', (FeeModel,), {\
+                            'calls': [], \
                             'get_commission': \
-                                lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                                lambda self, order, fill_quantity, fill_px, instrument: \
+                                    self.calls.append((str(order.client_order_id), fill_quantity, fill_px, str(instrument.id))) or self.commission\
                         })()"
                     ),
                     None,
@@ -755,6 +759,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(commission, expected_commission);
+            assert_callback_args(&model, &order, &instrument);
         });
     }
 
@@ -772,10 +777,12 @@ mod tests {
                 .eval(
                     c_str!(
                         "type('CustomFeeModel', (FeeModel,), {\
+                            'calls': [], \
                             'get_commission': \
                                 lambda self, order, fill_quantity, fill_px, instrument: self.base_commission, \
                             'get_commission_with_context': \
-                                lambda self, order, fill_quantity, fill_px, instrument, underlying_px=None: self.context_commission\
+                                lambda self, order, fill_quantity, fill_px, instrument, underlying_px=None: \
+                                    self.calls.append((str(order.client_order_id), fill_quantity, fill_px, str(instrument.id), underlying_px)) or self.context_commission\
                         })()"
                     ),
                     None,
@@ -808,6 +815,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(commission, expected_commission);
+            assert_context_callback_args(&model, &order, &instrument);
         });
     }
 
@@ -851,6 +859,45 @@ mod tests {
         });
     }
 
+    fn assert_callback_args(
+        model: &Bound<'_, PyAny>,
+        order: &OrderAny,
+        instrument: &InstrumentAny,
+    ) {
+        let calls: Vec<(String, Quantity, Price, String)> =
+            model.getattr("calls").unwrap().extract().unwrap();
+
+        assert_eq!(
+            calls,
+            vec![(
+                order.client_order_id().to_string(),
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                instrument.id().to_string(),
+            )]
+        );
+    }
+
+    fn assert_context_callback_args(
+        model: &Bound<'_, PyAny>,
+        order: &OrderAny,
+        instrument: &InstrumentAny,
+    ) {
+        let calls: Vec<(String, Quantity, Price, String, Option<Price>)> =
+            model.getattr("calls").unwrap().extract().unwrap();
+
+        assert_eq!(
+            calls,
+            vec![(
+                order.client_order_id().to_string(),
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                instrument.id().to_string(),
+                Some(Price::from("0.70000")),
+            )]
+        );
+    }
+
     fn commission_inputs() -> (InstrumentAny, OrderAny) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let order = OrderTestBuilder::new(OrderType::Market)
@@ -871,8 +918,10 @@ mod tests {
             .eval(
                 c_str!(
                     "type('CustomFeeModel', (FeeModel,), {\
+                        'calls': [], \
                         'get_commission': \
-                            lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                            lambda self, order, fill_quantity, fill_px, instrument: \
+                                self.calls.append((str(order.client_order_id), fill_quantity, fill_px, str(instrument.id))) or self.commission\
                     })()"
                 ),
                 None,

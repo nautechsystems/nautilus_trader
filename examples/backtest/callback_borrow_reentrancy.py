@@ -83,12 +83,14 @@ def main() -> None:
     parser.add_argument("scenario", choices=("start", "signal"), nargs="?", default="start")
     args = parser.parse_args()
     print(f"Scenario: {args.scenario}", flush=True)
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             logging=LoggerConfig(stdout_level=LogLevel.WARNING),
             run_analysis=False,
         ),
     )
+
     actor = SubscribingActor()
     engine.add_actor(actor)
     try:

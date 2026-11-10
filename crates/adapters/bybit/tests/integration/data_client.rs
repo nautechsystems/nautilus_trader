@@ -55,8 +55,9 @@ use nautilus_common::{
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
             RequestInstruments, RequestOptionChainReferencePrice, SubscribeBars,
-            SubscribeBookDeltas, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
-            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeCustomData, UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -68,6 +69,7 @@ use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, OrderBookDeltas, QuoteTick},
     enums::{BookAction, BookType, PositionSide, RecordFlag},
     identifiers::{InstrumentId, OptionSeriesId},
+    instruments::Instrument,
     types::{Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -81,6 +83,7 @@ struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     upgrade_count: Arc<AtomicUsize>,
     instrument_requests: Arc<AtomicUsize>,
+    instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     upgrade_gate: tokio::sync::watch::Sender<bool>,
     socket_drops: Arc<tokio::sync::Mutex<HashMap<usize, tokio::sync::oneshot::Sender<()>>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -100,6 +103,7 @@ impl Default for TestServerState {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             upgrade_count: Arc::new(AtomicUsize::new(0)),
             instrument_requests: Arc::new(AtomicUsize::new(0)),
+            instrument_queries: Arc::default(),
             upgrade_gate: tokio::sync::watch::channel(true).0,
             socket_drops: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -137,6 +141,7 @@ async fn handle_get_instruments(
     query: Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     state.instrument_requests.fetch_add(1, Ordering::Relaxed);
+    state.instrument_queries.lock().await.push(query.0.clone());
     let category = query.get("category").map(String::as_str);
     let filename = match category {
         Some("linear") => "http_get_instruments_linear.json",
@@ -470,6 +475,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v3/public/time", get(handle_get_server_time))
         .route("/v5/public/linear", get(handle_websocket))
         .route("/v5/public/spot", get(handle_websocket))
+        .route("/v5/public/option", get(handle_websocket))
         .with_state(state)
 }
 
@@ -1038,6 +1044,97 @@ async fn test_data_client_subscribe_book_deltas() {
 }
 
 #[rstest]
+#[case::default_25(None, 25)]
+#[case::explicit_100(Some(100), 100)]
+#[tokio::test]
+async fn test_data_client_subscribe_option_book_deltas(
+    #[case] depth: Option<usize>,
+    #[case] expected_depth: usize,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Option];
+    config.base_url_ws_public = Some(format!("ws://{addr}/v5/public/option"));
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        depth.and_then(NonZeroUsize::new),
+        false,
+        None,
+        None,
+    );
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    let expected_topic = format!("orderbook.{expected_depth}.ETH-26JUN26-16000-P");
+    wait_until_async(
+        || async {
+            state
+                .subscription_events
+                .lock()
+                .await
+                .contains(&(expected_topic.clone(), true))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let snapshot = next_book_deltas(&mut rx).await;
+
+    let mut delta = load_test_data("ws_orderbook_delta.json");
+    delta["topic"] = expected_topic.clone().into();
+    delta["data"]["s"] = "ETH-26JUN26-16000-P".into();
+    delta["data"]["b"][0][1] = "2".into();
+    state.book_updates.lock().await.push(delta);
+    let update = next_book_deltas(&mut rx).await;
+    let subscription_events = state.subscription_events.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    let book_events: Vec<_> = subscription_events
+        .into_iter()
+        .filter(|(topic, _)| topic.starts_with("orderbook."))
+        .collect();
+    assert_eq!(book_events, [(expected_topic, true)]);
+    assert_eq!(snapshot.instrument_id, instrument_id);
+    assert_eq!(snapshot.deltas.len(), 5);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert!(
+        snapshot
+            .deltas
+            .iter()
+            .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+    );
+    assert_eq!(update.instrument_id, instrument_id);
+    assert_eq!(update.ts_event, UnixNanos::new(1_709_891_679_500_000_000));
+    assert_eq!(
+        update
+            .deltas
+            .iter()
+            .map(|delta| delta.action)
+            .collect::<Vec<_>>(),
+        [BookAction::Update, BookAction::Delete],
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_data_client_book_gap_resubscribes_for_fresh_snapshot() {
     let (addr, state) = start_test_server().await.unwrap();
@@ -1317,6 +1414,109 @@ async fn test_data_client_emits_instruments_on_connect() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::status_poll(false)]
+#[case::instrument_and_status_poll(true)]
+#[tokio::test]
+async fn test_option_bulk_requests_load_all_base_coins(#[case] poll_instruments: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Option];
+    config.base_url_ws_public = Some(format!("ws://{addr}/v5/public/option"));
+    config.instrument_poll_interval_secs = Some(1);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+
+    client.connect().await.unwrap();
+
+    let instrument = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await {
+                break instrument;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    let connect_queries = state.instrument_queries.lock().await.clone();
+    state.instrument_queries.lock().await.clear();
+
+    let request = RequestInstruments::new(
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        Some(*BYBIT_VENUE),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_instruments(request).unwrap();
+
+    let refreshed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Response(DataResponse::Instruments(response))) = rx.recv().await
+            {
+                break response.data;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    let refresh_queries = state.instrument_queries.lock().await.clone();
+    state.instrument_queries.lock().await.clear();
+
+    let cmd = SubscribeInstrumentStatus::new(
+        instrument.id(),
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe_instrument_status(cmd).unwrap();
+
+    if poll_instruments {
+        let cmd = SubscribeInstruments::new(
+            Some(*BYBIT_CLIENT_ID),
+            *BYBIT_VENUE,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.subscribe_instruments(cmd).unwrap();
+    }
+
+    wait_until_async(
+        || async { !state.instrument_queries.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    let expected = HashMap::from([
+        ("category".to_string(), "option".to_string()),
+        ("baseCoin".to_string(), "All".to_string()),
+        ("limit".to_string(), "1000".to_string()),
+    ]);
+    assert_eq!(
+        instrument.id(),
+        InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT")
+    );
+    assert_eq!(refreshed.len(), 1);
+    assert_eq!(refreshed[0].id(), instrument.id());
+    assert_eq!(connect_queries, vec![expected.clone(), expected.clone()]);
+    assert_eq!(refresh_queries, vec![expected.clone()]);
+
+    for query in state.instrument_queries.lock().await.iter() {
+        assert_eq!(query, &expected);
+    }
 }
 
 #[rstest]

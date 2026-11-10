@@ -86,6 +86,7 @@ from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
+from nautilus_trader.trading import Strategy
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import TestActor
 from tests.unit.common.actor import TestActorConfig
@@ -164,10 +165,12 @@ LIFECYCLE_HOOK_SIGNATURES = [
     ("on_degrade", NO_PARAMETERS),
     ("on_fault", NO_PARAMETERS),
 ]
+
 SAVE_LOAD_HOOK_SIGNATURES = [
     ("on_save", NO_PARAMETERS),
     ("on_load", STATE_PARAMETERS),
 ]
+
 DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", ("event",)),
     ("on_data", ("data",)),
@@ -188,6 +191,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_option_greeks", ("greeks",)),
     ("on_option_chain", ("slice",)),
 ]
+
 HISTORICAL_CALLBACK_SIGNATURES = [
     ("on_historical_data", ("data",)),
     ("on_historical_quotes", ("quotes",)),
@@ -197,6 +201,7 @@ HISTORICAL_CALLBACK_SIGNATURES = [
     ("on_historical_mark_prices", ("mark_prices",)),
     ("on_historical_index_prices", ("index_prices",)),
 ]
+
 DEFI_CALLBACK_SIGNATURES = [
     ("on_block", ("block",)),
     ("on_pool", ("pool",)),
@@ -205,6 +210,7 @@ DEFI_CALLBACK_SIGNATURES = [
     ("on_pool_fee_collect", ("update",)),
     ("on_pool_flash", ("flash",)),
 ]
+
 CALLBACK_SIGNATURES = (
     LIFECYCLE_HOOK_SIGNATURES
     + SAVE_LOAD_HOOK_SIGNATURES
@@ -220,6 +226,7 @@ SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
 VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
+
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -228,6 +235,7 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
+
 BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -236,6 +244,7 @@ BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
+
 BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -244,9 +253,11 @@ BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
     "client_id",
     "params",
 )
+
 BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
 BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
 BLOCK_SUBSCRIPTION_PARAMETERS = ("chain", "client_id", "params")
+
 OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "series_id",
     "strike_range",
@@ -254,9 +265,11 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "client_id",
     "params",
 )
+
 INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
 BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+
 BOOK_DEPTH_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -266,6 +279,7 @@ BOOK_DEPTH_REQUEST_PARAMETERS = (
     "client_id",
     "params",
 )
+
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -274,6 +288,7 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "client_id",
     "params",
 )
+
 BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 PUBLISH_DATA_PARAMETERS = ("data_type", "data")
@@ -349,6 +364,7 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("request_funding_rates", (*INSTRUMENT_HISTORY_REQUEST_PARAMETERS, "callback")),
     ("request_bars", (*BAR_REQUEST_PARAMETERS, "callback")),
 ]
+
 REMOVED_ORDER_EVENT_METHODS = [
     "on_order_filled",
     "on_order_canceled",
@@ -357,6 +373,7 @@ REMOVED_ORDER_EVENT_METHODS = [
     "unsubscribe_order_fills",
     "unsubscribe_order_cancels",
 ]
+
 HISTORICAL_REQUEST_DATETIME_CASES = [
     pytest.param("datetime-utc", id="datetime-utc"),
     pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
@@ -376,7 +393,6 @@ def _make_recording_method(method_name: str) -> object:
 
 def _create_recording_actor_type() -> object:
     attrs = {}
-
     for method_name in HOOK_METHODS:
         attrs[method_name] = _make_recording_method(method_name)
 
@@ -1137,7 +1153,6 @@ def _historical_request_time(request_time: object) -> object:
         return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
     pd = pytest.importorskip("pandas")
-
     if request_time == "pandas-timestamp-utc":
         return pd.Timestamp("1970-01-01T00:00:00Z")
 
@@ -1157,6 +1172,7 @@ def actor() -> object:
         log_events=False,
         log_commands=False,
     )
+
     return TestActor(config)
 
 
@@ -1170,6 +1186,7 @@ def recording_actor() -> object:
         log_events=False,
         log_commands=False,
     )
+
     actor = RecordingActor(config)
     actor.calls = []
     return actor
@@ -1194,6 +1211,7 @@ def sample_objects() -> object:
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
+
     queue_state_changed = QueueStateChanged(
         TraderId("TRADER-001"),
         SystemChannel.EXEC_COMMANDS,
@@ -1205,6 +1223,7 @@ def sample_objects() -> object:
         7,
         8,
     )
+
     socket_state_changed = SocketStateChanged(
         TraderId("TRADER-001"),
         ClientId("BINANCE"),
@@ -1283,6 +1302,7 @@ def _make_trade(instrument_id: InstrumentId) -> object:
 
 def _make_bar(instrument_id: InstrumentId) -> object:
     bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
+
     return Bar(
         bar_type,
         Price.from_str("1.00000"),
@@ -1305,6 +1325,7 @@ def _make_book_deltas(instrument_id: InstrumentId) -> object:
 
 def _make_option_greeks() -> object:
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
+
     return OptionGreeks(
         instrument_id,
         0.5,
@@ -1345,6 +1366,7 @@ def _make_pool() -> object:
     dex = _make_dex(chain)
     token0 = _make_token0(chain)
     token1 = _make_token1(chain)
+
     return Pool(
         chain=chain,
         dex=dex,
@@ -1605,5 +1627,45 @@ def test_signal_subscription_shared_borrow_conflict_names_operation(operation: s
             "outer:exit",
         ]
         assert getattr(actor, operation)("reentry") is None
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("component_type", [DataActor, Strategy])
+@pytest.mark.parametrize("interval", [0, None, 1])
+def test_option_chain_snapshot_interval_validation(
+    component_type: type,
+    interval: int | None,
+) -> None:
+    """
+    Reject zero snapshot intervals and accept raw and positive intervals.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    component = component_type()
+    if component_type is Strategy:
+        engine.add_strategy(component)
+    else:
+        engine.add_actor(component)
+    series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2027-03-26")
+    try:
+        engine.run(streaming=True)
+
+        if interval == 0:
+            with pytest.raises(ValueError, match="snapshot_interval_ms") as error:
+                component.subscribe_option_chain(
+                    series_id,
+                    StrikeRange.fixed([]),
+                    snapshot_interval_ms=interval,
+                )
+            assert str(error.value) == "invalid u64 for 'snapshot_interval_ms' not positive, was 0"
+        else:
+            assert (
+                component.subscribe_option_chain(
+                    series_id,
+                    StrikeRange.fixed([]),
+                    snapshot_interval_ms=interval,
+                )
+                is None
+            )
     finally:
         engine.dispose()

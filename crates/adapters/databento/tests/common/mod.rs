@@ -29,7 +29,7 @@ use nautilus_databento::{
     common::Credential,
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
 };
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{Symbol, Venue, futures::FuturesYearDigits};
 
 pub(crate) const TEST_KEY: &str = "32-character-with-lots-of-filler";
 pub(crate) const TEST_DATASET: &str = "GLBX.MDP3";
@@ -46,6 +46,7 @@ pub(crate) struct TestHandlerConfig {
     pub use_exchange_as_venue: bool,
     pub bars_timestamp_on_close: bool,
     pub reconnect_timeout_mins: Option<u64>,
+    pub symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
 }
 
 pub(crate) fn create_test_handler(
@@ -77,17 +78,18 @@ pub(crate) fn create_test_handler_with_config(
         cmd_rx,
         msg_tx,
         publisher_venue_map(),
-        Arc::new(AtomicMap::new()),
+        Arc::clone(&config.symbol_venue_map),
         config.use_exchange_as_venue,
         config.bars_timestamp_on_close,
         config.reconnect_timeout_mins,
     )
+    .with_futures_year_digits(FuturesYearDigits::One)
     .with_gateway_addr(addr.to_string());
 
     (cmd_tx, msg_rx, handler)
 }
 
-fn str_to_cchar_array<const N: usize>(s: &str) -> [c_char; N] {
+pub(crate) fn str_to_cchar_array<const N: usize>(s: &str) -> [c_char; N] {
     let mut arr = [0 as c_char; N];
     for (i, byte) in s.bytes().enumerate() {
         if i >= N - 1 {
@@ -282,6 +284,7 @@ pub(crate) fn instrument_def_msg(instrument_id: u32, instrument_class: u8) -> In
     msg.exchange = str_to_cchar_array::<5>("XCME");
     msg.asset = str_to_cchar_array::<ASSET_CSTR_LEN>("ES");
     msg.instrument_class = instrument_class as c_char;
+    msg.raw_symbol = str_to_cchar_array::<SYMBOL_CSTR_LEN>("ESM4");
 
     // Expiration is required by the decoder (errors on UNDEF_TIMESTAMP)
     msg.expiration = 2_000_000_000_000_000_000;

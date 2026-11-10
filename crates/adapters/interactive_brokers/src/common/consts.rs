@@ -43,9 +43,9 @@ pub const DEFAULT_CLIENT_ID: i32 = 1;
 
 /// Seconds the execution client waits before re-binding `order_update_stream` after
 /// the stream ended or yielded a terminal error (in ibapi a decode error ends the
-/// subscription).
+/// subscription), or reopening the account summary.
 pub const ORDER_UPDATE_REBIND_DELAY_SECS: u64 = 2;
 
 /// Seconds the execution client waits before retrying a failed `order_update_stream`
-/// bind.
+/// bind or account summary reopen.
 pub const ORDER_UPDATE_BIND_RETRY_DELAY_SECS: u64 = 5;

@@ -129,7 +129,7 @@ pub struct WebSocketConfig {
     /// Bounds three things: the initial connection attempt, each reconnect attempt, and how long a
     /// send waits for the client to become active again. A short value therefore makes sends give
     /// up early during a reconnect as well as failing a connection attempt faster; keep it above
-    /// the reconnect backoff.
+    /// the reconnect backoff. The client has no separate send-wait timeout.
     ///
     /// Only applies to handler mode and must be non-zero when set. Stream mode ignores this field
     /// and bounds its connection attempt at 10 seconds.
@@ -160,8 +160,9 @@ pub struct WebSocketConfig {
     /// Only applies to handler mode. Stream mode ignores this field.
     ///
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
-    /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
-    ///   failed or established connections active for less than 10 seconds.
+    /// - `Some(0)`: Disables reconnection; any reconnect trigger closes the client.
+    /// - `Some(n)` for `n > 0`: Transitions to CLOSED once `n` consecutive reconnect attempts have
+    ///   either failed or established connections active for less than 10 seconds.
     #[serde(default)]
     pub reconnect_max_attempts: Option<u32>,
     /// The dead-peer timeout (seconds) for the read task.
@@ -171,7 +172,8 @@ pub struct WebSocketConfig {
     ///
     /// When set, the read task stops and triggers reconnection if no inbound frame of any kind
     /// arrives within this duration. Ping and Pong both refresh it, so this detects a peer that has
-    /// gone silent rather than one whose feed is merely quiet. Set it above
+    /// gone silent rather than one whose feed is merely quiet. Continuation frames refresh it
+    /// before their message is complete. Set it above
     /// [`Self::heartbeat_interval_secs`] so a healthy connection cannot trip it; three intervals is
     /// the usual choice, tolerating two lost replies.
     ///
@@ -420,8 +422,8 @@ impl WebSocketConfig {
 pub struct InitialConnectRetryPolicy {
     /// Maximum number of connection attempts, including the first attempt.
     ///
-    /// This is an upper bound rather than a promise: a failure classified as permanent returns
-    /// before the bound is reached.
+    /// A value of 1 disables retries. This is an upper bound rather than a promise: a failure
+    /// classified as permanent returns before the bound is reached.
     pub max_attempts: NonZeroU32,
     /// Delay before the second connection attempt.
     pub delay_initial: Duration,

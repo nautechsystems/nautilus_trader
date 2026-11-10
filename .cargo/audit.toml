@@ -39,6 +39,15 @@ ignore = [
   # faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller
   "RUSTSEC-2026-0306",
 
+  # pin-utils is unmaintained, via Alloy's browser-WASM-only wasmtimer.
+  # Native builds exclude it; remove when wasmtimer replaces pin-utils.
+  "RUSTSEC-2026-0441",
+
+  # SQLx 0.9 resolves SQLite into Cargo.lock but no workspace feature builds it.
+  # Its libsqlite3-sys requirement excludes the fixed 0.39 release. Keep cargo-deny
+  # unsuppressed so enabling SQLite makes the resolved-graph audit fail.
+  "RUSTSEC-2026-0459",
+
   # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.

@@ -20,18 +20,19 @@
 //! client and connects it to NautilusTrader's live data, execution, historical data, and
 //! instrument loading infrastructure.
 //!
+//! The official Interactive Brokers TWS API reference can be found at
+//! <https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/>.
+//!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `execution` (default): Enables order execution and networking support.
@@ -42,6 +43,12 @@
 //!   `python`.
 //! - `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical
 //!   client, and the instrument provider.
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/interactive_brokers/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

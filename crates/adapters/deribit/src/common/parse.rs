@@ -16,7 +16,9 @@
 //! Parsing functions for Deribit API responses into Nautilus domain types.
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use nautilus_core::{
+    Params,
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
     nanos::UnixNanos,
     uuid::UUID4,
@@ -38,6 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        capabilities::{IS_CBE_ROUTED, IS_CSR},
         consts::DERIBIT_VENUE,
         enums::{DeribitOptionType, DeribitProductType},
     },
@@ -163,6 +166,7 @@ pub fn extract_server_timestamp(us_out: Option<u64>) -> anyhow::Result<UnixNanos
 /// - Required fields are missing (e.g., strike price for options).
 /// - Timestamp conversion fails.
 /// - Decimal conversion fails for fees.
+/// - Instrument validation fails.
 pub fn parse_deribit_instrument_any(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
@@ -205,6 +209,15 @@ fn parse_spot_instrument(
     let size_increment = parse_min_trade_amount(instrument)?;
     let min_quantity = parse_min_trade_amount(instrument)?;
 
+    let mut info = IndexMap::new();
+    if let Some(value) = instrument.is_cbe_routed {
+        info.insert(IS_CBE_ROUTED.to_string(), value.into());
+    }
+
+    if let Some(value) = instrument.is_csr {
+        info.insert(IS_CSR.to_string(), value.into());
+    }
+
     let currency_pair = CurrencyPair::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -215,10 +228,10 @@ fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .min_quantity(min_quantity)
+        .maybe_info((!info.is_empty()).then(|| Params::new(info)))
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
 
     Ok(InstrumentAny::CurrencyPair(currency_pair))
 }
@@ -266,8 +279,7 @@ fn parse_perpetual_instrument(
         .min_quantity(min_quantity)
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
 
     Ok(InstrumentAny::CryptoPerpetual(perpetual))
 }
@@ -324,8 +336,7 @@ fn parse_future_instrument(
         .min_quantity(min_quantity)
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
 
     Ok(InstrumentAny::CryptoFuture(future))
 }
@@ -371,7 +382,6 @@ fn parse_option_instrument(
     let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     let multiplier = deribit_amount_quantity_multiplier();
-    let lot_size = parse_min_trade_amount(instrument)?;
     let min_trade_amount = parse_min_trade_amount(instrument)?;
 
     let option = CryptoOption::builder()
@@ -386,16 +396,15 @@ fn parse_option_instrument(
         .activation_ns(UnixNanos::from(activation_ns))
         .expiration_ns(UnixNanos::from(expiration_ns))
         .price_precision(price_increment.precision)
-        .size_precision(lot_size.precision)
+        .size_precision(min_trade_amount.precision)
         .price_increment(price_increment)
-        .size_increment(lot_size)
+        .size_increment(min_trade_amount)
         .multiplier(multiplier)
-        .lot_size(lot_size)
+        .lot_size(min_trade_amount)
         .min_quantity(min_trade_amount)
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
 
     Ok(InstrumentAny::CryptoOption(option))
 }
@@ -406,7 +415,7 @@ fn parse_option_combo_instrument(
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let spread = build_spread_common(instrument, ts_init, ts_event)?;
+    let spread = build_spread_common(instrument)?;
     let option_spread = CryptoOptionSpread::builder()
         .instrument_id(spread.id)
         .raw_symbol(spread.raw_symbol)
@@ -426,8 +435,7 @@ fn parse_option_combo_instrument(
         .min_quantity(spread.size_increment)
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
     Ok(InstrumentAny::CryptoOptionSpread(option_spread))
 }
 
@@ -437,7 +445,7 @@ fn parse_future_combo_instrument(
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let spread = build_spread_common(instrument, ts_init, ts_event)?;
+    let spread = build_spread_common(instrument)?;
     let futures_spread = CryptoFuturesSpread::builder()
         .instrument_id(spread.id)
         .raw_symbol(spread.raw_symbol)
@@ -457,8 +465,7 @@ fn parse_future_combo_instrument(
         .min_quantity(spread.size_increment)
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
     Ok(InstrumentAny::CryptoFuturesSpread(futures_spread))
 }
 
@@ -482,11 +489,7 @@ struct DeribitSpreadCommon {
     lot_size: Quantity,
 }
 
-fn build_spread_common(
-    instrument: &DeribitInstrument,
-    _ts_init: UnixNanos,
-    _ts_event: UnixNanos,
-) -> anyhow::Result<DeribitSpreadCommon> {
+fn build_spread_common(instrument: &DeribitInstrument) -> anyhow::Result<DeribitSpreadCommon> {
     let id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
     let raw_symbol = Symbol::new(instrument.instrument_name);
     let underlying = Currency::get_or_create_crypto(instrument.base_currency);
@@ -982,6 +985,183 @@ mod tests {
             DeribitAccountSummariesResponse, DeribitJsonRpcResponse, DeribitTradesResponse,
         },
     };
+
+    #[rstest]
+    #[case(dec!(-0.5999))]
+    #[case(dec!(0))]
+    fn test_parse_spot_invalid_tick_returns_error(#[case] tick_size: Decimal) {
+        let json = load_test_json("http_get_instrument_routed_spot.json");
+        let mut definition: DeribitInstrument = serde_json::from_str(&json).unwrap();
+        definition.tick_size = tick_size;
+
+        let error =
+            parse_deribit_instrument_any(&definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("invalid `Price` for 'price_increment' not positive, was {tick_size}")
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_parse_perpetual_invalid_tick_or_min_trade_returns_error(#[case] zero_min_trade: bool) {
+        let json = load_test_json("http_get_instrument.json");
+        let response: DeribitJsonRpcResponse<DeribitInstrument> =
+            serde_json::from_str(&json).unwrap();
+        let mut definition = response.result.expect("Test data must have result");
+        if zero_min_trade {
+            definition.min_trade_amount = dec!(0);
+        } else {
+            definition.tick_size = dec!(0);
+        }
+
+        let error =
+            parse_deribit_instrument_any(&definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        let expected = if zero_min_trade {
+            "invalid `Quantity` for 'size_increment' not positive, was 0"
+        } else {
+            "invalid `Price` for 'price_increment' not positive, was 0"
+        };
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_parse_future_invalid_tick_or_min_trade_returns_error(#[case] zero_min_trade: bool) {
+        let json_data = load_test_json("http_get_instruments.json");
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&json_data).unwrap();
+        let mut instruments = response.result.expect("Test data must have result");
+        let definition = instruments
+            .iter_mut()
+            .find(|i| i.instrument_name == "BTC-27DEC24")
+            .expect("Test data must contain BTC-27DEC24");
+
+        if zero_min_trade {
+            definition.min_trade_amount = dec!(0);
+        } else {
+            definition.tick_size = dec!(0);
+        }
+
+        let error =
+            parse_deribit_instrument_any(definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        let expected = if zero_min_trade {
+            "invalid `Quantity` for 'size_increment' not positive, was 0"
+        } else {
+            "invalid `Price` for 'price_increment' not positive, was 0"
+        };
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_parse_option_invalid_tick_or_min_trade_returns_error(#[case] zero_min_trade: bool) {
+        let json_data = load_test_json("http_get_instruments.json");
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&json_data).unwrap();
+        let mut instruments = response.result.expect("Test data must have result");
+        let definition = instruments
+            .iter_mut()
+            .find(|i| i.instrument_name == "BTC-27DEC24-100000-C")
+            .expect("Test data must contain BTC-27DEC24-100000-C");
+
+        if zero_min_trade {
+            definition.min_trade_amount = dec!(0);
+        } else {
+            definition.tick_size = dec!(0);
+        }
+
+        let error =
+            parse_deribit_instrument_any(definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        let expected = if zero_min_trade {
+            "invalid `Quantity` for 'size_increment' not positive, was 0"
+        } else {
+            "invalid `Price` for 'price_increment' not positive, was 0"
+        };
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_parse_option_combo_invalid_tick_or_min_trade_returns_error(
+        #[case] zero_min_trade: bool,
+    ) {
+        let json_data = load_test_json("http_get_instruments_option_combo.json");
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&json_data).unwrap();
+        let mut instruments = response.result.expect("Test data must have result");
+        let definition = instruments
+            .iter_mut()
+            .find(|i| i.instrument_name == "BTC-STRG-19MAY26-74000_79000")
+            .expect("fixture must contain BTC-STRG-19MAY26-74000_79000");
+
+        if zero_min_trade {
+            definition.min_trade_amount = dec!(0);
+        } else {
+            definition.tick_size = dec!(0);
+        }
+
+        let error =
+            parse_deribit_instrument_any(definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        let expected = if zero_min_trade {
+            "invalid `Quantity` for 'size_increment' not positive, was 0"
+        } else {
+            "invalid `Price` for 'price_increment' not positive, was 0"
+        };
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_parse_future_combo_invalid_tick_or_min_trade_returns_error(
+        #[case] zero_min_trade: bool,
+    ) {
+        let json_data = load_test_json("http_get_instruments_future_combo.json");
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&json_data).unwrap();
+        let mut instruments = response.result.expect("Test data must have result");
+        let definition = instruments
+            .iter_mut()
+            .find(|i| i.instrument_name == "BTC-FS-19MAY26_PERP")
+            .expect("fixture must contain BTC-FS-19MAY26_PERP");
+
+        if zero_min_trade {
+            definition.min_trade_amount = dec!(0);
+        } else {
+            definition.tick_size = dec!(0);
+        }
+
+        let error =
+            parse_deribit_instrument_any(definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        let expected = if zero_min_trade {
+            "invalid `Quantity` for 'size_increment' not positive, was 0"
+        } else {
+            "invalid `Price` for 'price_increment' not positive, was 0"
+        };
+
+        assert_eq!(error.to_string(), expected);
+    }
 
     #[rstest]
     fn test_parse_perpetual_instrument() {

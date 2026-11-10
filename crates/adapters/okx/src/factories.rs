@@ -17,13 +17,12 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-#[cfg(test)]
-use nautilus_common::clock::VirtualClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    live::runner::try_get_exec_event_sender,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -163,7 +162,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
             )
         });
 
-        let account_type = if okx_config.use_spot_margin || has_derivatives {
+        let account_type = if okx_config.uses_spot_margin() || has_derivatives {
             AccountType::Margin
         } else {
             AccountType::Cash
@@ -186,7 +185,10 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
             cache,
         );
 
-        let client = OKXExecutionClient::new(core, okx_config)?;
+        let mut client = OKXExecutionClient::new(core, okx_config)?;
+        if let Some(sender) = try_get_exec_event_sender() {
+            client.set_event_sender(sender);
+        }
 
         Ok(Box::new(client))
     }
@@ -197,155 +199,5 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
 
     fn config_type(&self) -> &'static str {
         "OKXExecutionClientConfig"
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
-    use nautilus_common::{
-        cache::Cache,
-        factories::{ClientConfig, ExecutionClientFactory},
-    };
-    use nautilus_model::identifiers::{AccountId, TraderId};
-    use rstest::rstest;
-
-    use super::*;
-    use crate::{common::enums::OKXInstrumentType, config::OKXExecutionClientConfig};
-
-    #[rstest]
-    fn test_okx_execution_client_factory_creation() {
-        let factory = OKXExecutionClientFactory::new();
-        assert_eq!(factory.name(), OKX);
-        assert_eq!(factory.config_type(), "OKXExecutionClientConfig");
-    }
-
-    #[rstest]
-    fn test_okx_execution_client_factory_default() {
-        let factory = OKXExecutionClientFactory::new();
-        assert_eq!(factory.name(), OKX);
-    }
-
-    #[rstest]
-    fn test_okx_exec_client_config_implements_client_config() {
-        let config = OKXExecutionClientConfig {
-            account_id: AccountId::from("OKX-001"),
-            instrument_types: vec![OKXInstrumentType::Spot],
-            ..Default::default()
-        };
-
-        let boxed_config: Box<dyn ClientConfig> = Box::new(config);
-        let downcasted = boxed_config
-            .as_any()
-            .downcast_ref::<OKXExecutionClientConfig>();
-
-        assert!(downcasted.is_some());
-    }
-
-    #[rstest]
-    fn test_okx_execution_client_factory_creates_client_for_spot() {
-        let factory = OKXExecutionClientFactory::new();
-        let config = OKXExecutionClientConfig {
-            account_id: AccountId::from("OKX-001"),
-            instrument_types: vec![OKXInstrumentType::Spot],
-            api_key: Some("test_key".into()),
-            api_secret: Some("test_secret".into()),
-            api_passphrase: Some("test_pass".into()),
-            ..Default::default()
-        };
-
-        let cache = Rc::new(RefCell::new(Cache::default()));
-
-        let result = factory.create(
-            TraderId::from("TRADER-001"),
-            "OKX-TEST",
-            &config,
-            cache.into(),
-            Rc::new(RefCell::new(VirtualClock::new())),
-        );
-        assert!(result.is_ok());
-
-        let client = result.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("OKX-TEST"));
-    }
-
-    #[rstest]
-    fn test_okx_execution_client_factory_creates_client_for_derivatives() {
-        let factory = OKXExecutionClientFactory::new();
-        let config = OKXExecutionClientConfig {
-            account_id: AccountId::from("OKX-001"),
-            instrument_types: vec![OKXInstrumentType::Swap, OKXInstrumentType::Futures],
-            api_key: Some("test_key".into()),
-            api_secret: Some("test_secret".into()),
-            api_passphrase: Some("test_pass".into()),
-            ..Default::default()
-        };
-
-        let cache = Rc::new(RefCell::new(Cache::default()));
-
-        let result = factory.create(
-            TraderId::from("TRADER-001"),
-            "OKX-DERIV",
-            &config,
-            cache.into(),
-            Rc::new(RefCell::new(VirtualClock::new())),
-        );
-        result.unwrap();
-    }
-
-    #[rstest]
-    fn test_okx_execution_client_factory_rejects_wrong_config_type() {
-        let factory = OKXExecutionClientFactory::new();
-        let wrong_config = OKXDataClientConfig::default();
-
-        let cache = Rc::new(RefCell::new(Cache::default()));
-
-        let result = factory.create(
-            TraderId::from("TRADER-001"),
-            "OKX-TEST",
-            &wrong_config,
-            cache.into(),
-            Rc::new(RefCell::new(VirtualClock::new())),
-        );
-        assert!(result.is_err());
-        assert!(
-            result
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("Invalid config type")
-        );
-    }
-
-    #[rstest]
-    #[case(OKXInstrumentType::Swap, None, OmsType::Netting)]
-    #[case(OKXInstrumentType::Futures, Some(OmsType::Hedging), OmsType::Hedging)]
-    #[case(OKXInstrumentType::Spot, None, OmsType::Hedging)]
-    fn test_execution_oms_type(
-        #[case] instrument_type: OKXInstrumentType,
-        #[case] oms_type: Option<OmsType>,
-        #[case] expected: OmsType,
-    ) {
-        let config = OKXExecutionClientConfig {
-            instrument_types: vec![instrument_type],
-            oms_type,
-            api_key: Some("key".into()),
-            api_secret: Some("secret".into()),
-            api_passphrase: Some("pass".into()),
-            ..Default::default()
-        };
-
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let client = OKXExecutionClientFactory::new()
-            .create(
-                TraderId::from("TRADER-001"),
-                "OKX-TEST",
-                &config,
-                cache.into(),
-                Rc::new(RefCell::new(VirtualClock::new())),
-            )
-            .unwrap();
-        assert_eq!(client.oms_type(), expected);
     }
 }

@@ -17,11 +17,11 @@
 Test Polymarket Up/Down execution with the built-in ExecTester strategy.
 
 WARNING: This example connects to Polymarket and places REAL orders with REAL
-funds. It resolves a current Up/Down instrument through the Gamma API, opens a
-position with an IOC order, then maintains post-only limit buy quotes. On stop it
-cancels all orders and closes all positions. Run only against a funded account
-you intend to test. The strategy has no alpha advantage whatsoever and is not
-intended for production trading.
+funds when DRY_RUN is False. It resolves a current Up/Down instrument through the
+Gamma API, opens a position with an IOC order, then maintains post-only limit buy
+quotes. On stop it cancels all orders and closes all positions. Run only against
+a funded account you intend to test. The strategy has no alpha advantage
+whatsoever and is not intended for production trading.
 
 """
 
@@ -43,7 +43,6 @@ from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConf
 from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
@@ -55,9 +54,9 @@ from nautilus_trader.testkit import ExecTesterConfig
 
 
 # WARNING: With DRY_RUN = False, this tester submits orders to the configured
-# environment and may use real funds. Set DRY_RUN = True to connect without
+# environment and may use real funds. Keep DRY_RUN = True to connect without
 # submitting orders or sending shutdown cancel/close commands.
-DRY_RUN = False
+DRY_RUN = True
 POLYMARKET = "POLYMARKET"
 DEFAULT_GAMMA_URL = "https://gamma-api.polymarket.com"
 TRADER_ID = TraderId.from_str("TESTER-001")
@@ -93,6 +92,7 @@ def main() -> None:
     print(f"Resolved Polymarket {OUTCOME.upper()} instrument: {instrument_id}")
 
     instrument_config = PolymarketInstrumentProviderConfig(
+        load_ids=[instrument_id],
         event_slug_builder=PolymarketUpDownEventSlugConfig(
             assets=ASSETS,
             interval_mins=INTERVAL_MINS,
@@ -104,7 +104,8 @@ def main() -> None:
     node = (
         LiveNode.builder("POLYMARKET-UPDOWN-SMOKE-001", TRADER_ID, Environment.LIVE)
         .with_reconciliation(reconciliation=True)
-        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_timeout_disconnection_secs(30)
+        .with_delay_post_stop_secs(30)
         .add_data_client(
             None,
             PolymarketDataClientFactory(),
@@ -121,6 +122,7 @@ def main() -> None:
             PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 signature_type=SIGNATURE_TYPE,
+                instrument_config=instrument_config,
             ),
         )
         .build()

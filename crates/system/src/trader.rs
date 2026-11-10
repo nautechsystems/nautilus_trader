@@ -19,7 +19,11 @@
 //! and individual trading components. It manages component lifecycles, provides
 //! unique identification, and coordinates with system engines.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{
+    cell::{OnceCell, RefCell},
+    fmt::Debug,
+    rc::Rc,
+};
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
@@ -66,7 +70,7 @@ use ustr::Ustr;
 use crate::{
     clock_factory::ClockFactory,
     registration::{
-        base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
+        base_strategy_id, ensure_unique_order_id_tag, next_order_id_tag, strategy_control_endpoint,
         strategy_registration_id,
     },
 };
@@ -137,6 +141,7 @@ pub struct Trader {
     exec_algorithm_cleanup_fns: AHashMap<ExecAlgorithmId, ExecutionAlgorithmSubscriptionFn>,
     /// Component clocks for individual components.
     pub(crate) clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
+    clocks_snapshot: OnceCell<ComponentClockSnapshot>,
     /// Timestamp when the trader was created.
     ts_created: UnixNanos,
     /// Timestamp when the trader was last started.
@@ -183,6 +188,7 @@ impl Trader {
             exec_algorithm_restore_fns: AHashMap::new(),
             exec_algorithm_cleanup_fns: AHashMap::new(),
             clocks: IndexMap::new(),
+            clocks_snapshot: OnceCell::new(),
             ts_created,
             ts_started: None,
             ts_stopped: None,
@@ -252,7 +258,18 @@ impl Trader {
     /// Returns references to all component clocks for backtest time advancement.
     #[must_use]
     pub fn get_component_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
-        self.clocks.values().cloned().collect()
+        self.get_component_clocks_snapshot().to_vec()
+    }
+
+    /// Returns a shared snapshot of component clocks in registration order.
+    ///
+    /// Reuses the snapshot until a clock is added, replaced, or removed. Existing snapshots retain
+    /// their membership while sharing the clocks' current state.
+    #[must_use]
+    pub fn get_component_clocks_snapshot(&self) -> Rc<[Rc<RefCell<dyn Clock>>]> {
+        self.clocks_snapshot
+            .get_or_init(|| self.clocks.values().cloned().collect())
+            .clone()
     }
 
     /// Returns the total number of registered components.
@@ -286,6 +303,7 @@ impl Trader {
     /// clocks are also used for deterministic time advancement by the engine.
     pub fn create_component_clock(&mut self, component_id: ComponentId) -> Rc<RefCell<dyn Clock>> {
         let clock = self.clock_factory.create_component_clock();
+        self.clocks_snapshot.take();
         self.clocks.insert(component_id, clock.clone());
         clock
     }
@@ -296,7 +314,7 @@ impl Trader {
     ///
     /// Returns an error if:
     /// - The trader is not in a valid state for adding components.
-    /// - An actor with the same ID is already registered.
+    /// - The trader already tracks a component under the actor's ID.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
         T: DataActor + DataActorNative + Component + Debug + 'static,
@@ -311,10 +329,14 @@ impl Trader {
         }
 
         let component_id = ComponentId::from(actor_id);
+        self.ensure_component_id_available(component_id)?;
         let clock = self.create_component_clock(component_id);
 
         let mut actor_mut = actor;
-        actor_mut.register(self.trader_id, clock, self.cache.clone())?;
+        if let Err(e) = actor_mut.register(self.trader_id, clock, self.cache.clone()) {
+            self.release_component_clock(component_id);
+            return Err(e);
+        }
 
         self.add_registered_actor(actor_mut)
     }
@@ -329,7 +351,7 @@ impl Trader {
     /// Returns an error if:
     /// - The factory function fails to create the actor.
     /// - The trader is not in a valid state for adding components.
-    /// - An actor with the same ID is already registered.
+    /// - The trader already tracks a component under the actor's ID.
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
@@ -572,7 +594,7 @@ impl Trader {
             strategy_id
         } else {
             let order_id_tag = runtime_order_id_tag.map_or_else(
-                || format!("{:03}", existing_order_id_tags.len()),
+                || next_order_id_tag(&existing_order_id_tags),
                 str::to_string,
             );
             ensure_unique_order_id_tag(&existing_order_id_tags, &order_id_tag)?;
@@ -601,7 +623,7 @@ impl Trader {
     ///
     /// Returns an error if:
     /// - The trader is not in a valid state for adding components.
-    /// - A strategy with the same ID is already registered.
+    /// - The trader already tracks a component under the strategy's ID.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
@@ -611,15 +633,19 @@ impl Trader {
         let strategy_id = self.prepare_strategy_for_registration(&mut strategy)?;
 
         let component_id = strategy.component_id();
+        self.ensure_component_id_available(component_id)?;
         let clock = self.create_component_clock(component_id);
 
         // Register strategy core with portfolio for order management
-        StrategyNative::strategy_core_mut(&mut strategy).register(
+        if let Err(e) = StrategyNative::strategy_core_mut(&mut strategy).register(
             self.trader_id,
             clock.clone(),
             self.cache.clone(),
             self.portfolio.clone(),
-        )?;
+        ) {
+            self.release_component_clock(component_id);
+            return Err(e);
+        }
 
         // Register default time event handler for this strategy
         let actor_id = strategy.actor_id().inner();
@@ -643,76 +669,15 @@ impl Trader {
         clock.borrow_mut().register_default_handler(callback);
 
         // Transition to Ready state
-        strategy.initialize()?;
+        if let Err(e) = strategy.initialize() {
+            self.release_component_clock(component_id);
+            return Err(e);
+        }
 
         // Register in both component and actor registries
         register_component_actor(strategy);
 
-        let order_topic = get_event_order_topic(strategy_id);
-        let order_actor_id = actor_id;
-        let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
-            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
-                strategy.handle_order_event(event.clone());
-            } else {
-                log::error!("Strategy {order_actor_id} not found for order event handling");
-            }
-        });
-        let order_handler_id = order_handler.id();
-        msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
-
-        let position_topic = get_event_position_topic(strategy_id);
-        let position_handler = TypedHandler::from(move |event: &PositionEvent| {
-            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
-                strategy.handle_position_event(event.clone());
-            } else {
-                log::error!("Strategy {actor_id} not found for position event handling");
-            }
-        });
-        let position_handler_id = position_handler.id();
-        msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
-
-        let control_actor_id = actor_id;
-        let control_handler = TypedHandler::from(move |command: &StrategyCommand| {
-            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&control_actor_id) {
-                match command {
-                    StrategyCommand::ExitMarket => {
-                        if let Err(e) = strategy.market_exit() {
-                            log::error!(
-                                "Error handling strategy command for {control_actor_id}: {e}"
-                            );
-                        }
-                    }
-                }
-            } else {
-                log::error!("Strategy {control_actor_id} not found for control handling");
-            }
-        });
-        get_message_bus()
-            .borrow_mut()
-            .endpoint_map::<StrategyCommand>()
-            .register(strategy_control_endpoint(strategy_id), control_handler);
-
-        self.strategy_ids.push(strategy_id);
-        self.strategy_state_callbacks.insert(
-            strategy_id,
-            ComponentStateCallbacks {
-                load: Self::load_component_state::<T>,
-                save: Self::save_component_state::<T>,
-            },
-        );
-        self.strategy_handler_ids
-            .insert(strategy_id, (order_handler_id, position_handler_id));
-
-        let stop_actor_id = actor_id;
-        let stop_fn = Box::new(move || -> bool {
-            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&stop_actor_id) {
-                Strategy::stop(&mut *strategy)
-            } else {
-                log::error!("Strategy {stop_actor_id} not found for stop");
-                true // Proceed with component stop anyway
-            }
-        });
-        self.strategy_stop_fns.insert(strategy_id, stop_fn);
+        self.add_strategy_id_with_subscriptions::<T>(strategy_id)?;
 
         log::info!(
             "Registered strategy {strategy_id} with trader {}",
@@ -731,7 +696,7 @@ impl Trader {
     ///
     /// Returns an error if:
     /// - The trader is not in a valid state for adding components.
-    /// - An execution algorithm with the same ID is already registered.
+    /// - The trader already tracks a component under the execution algorithm's ID.
     pub fn add_exec_algorithm<T>(&mut self, mut exec_algorithm: T) -> anyhow::Result<()>
     where
         T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
@@ -745,9 +710,13 @@ impl Trader {
         }
 
         let component_id = exec_algorithm.component_id();
+        self.ensure_component_id_available(component_id)?;
         let clock = self.create_component_clock(component_id);
+        if let Err(e) = exec_algorithm.register(self.trader_id, clock, self.cache.clone()) {
+            self.release_component_clock(component_id);
+            return Err(e);
+        }
 
-        exec_algorithm.register(self.trader_id, clock, self.cache.clone())?;
         exec_algorithm
             .exec_algorithm_core_mut()
             .set_portfolio(self.portfolio.clone());
@@ -817,6 +786,36 @@ impl Trader {
             "Registered execution algorithm {exec_algorithm_id} with trader {}",
             self.trader_id
         );
+
+        Ok(())
+    }
+
+    /// Rejects a component ID this trader already tracks, whatever kind registered it.
+    ///
+    /// Lifecycle collections also cover externally registered components without trader-owned
+    /// clocks. Reject collisions before replacing a clock, registry entry, or Python wrapper.
+    pub(crate) fn ensure_component_id_available(
+        &self,
+        component_id: ComponentId,
+    ) -> anyhow::Result<()> {
+        let id = component_id.inner();
+        let tracked = self.clocks.contains_key(&component_id)
+            || self.actor_ids.iter().any(|actor_id| actor_id.inner() == id)
+            || self
+                .strategy_ids
+                .iter()
+                .any(|strategy_id| strategy_id.inner() == id)
+            || self
+                .exec_algorithm_ids
+                .iter()
+                .any(|exec_algorithm_id| exec_algorithm_id.inner() == id);
+
+        if tracked {
+            anyhow::bail!(
+                "Component {component_id} is already registered with trader {}",
+                self.trader_id
+            );
+        }
 
         Ok(())
     }
@@ -1071,18 +1070,29 @@ impl Trader {
 
     /// Stops all registered components.
     ///
+    /// Attempts every active component before returning collected errors. Managed strategy stops
+    /// can remain deferred until market exit completes.
+    ///
     /// # Errors
     ///
     /// Returns an error if any component fails to stop.
     pub fn stop_components(&mut self) -> anyhow::Result<()> {
+        let mut errors = Vec::new();
+
         for actor_id in &self.actor_ids {
             log::debug!("Stopping actor {actor_id}");
-            Self::stop_component_if_active(actor_id.inner())?;
+
+            if let Err(e) = Self::stop_component_if_active(actor_id.inner()) {
+                errors.push(format!("actor {actor_id}: {e:#}"));
+            }
         }
 
         for exec_algorithm_id in &self.exec_algorithm_ids {
             log::debug!("Stopping execution algorithm {exec_algorithm_id}");
-            Self::stop_component_if_active(exec_algorithm_id.inner())?;
+
+            if let Err(e) = Self::stop_component_if_active(exec_algorithm_id.inner()) {
+                errors.push(format!("execution algorithm {exec_algorithm_id}: {e:#}"));
+            }
         }
 
         for strategy_id in self.strategy_ids.clone() {
@@ -1092,12 +1102,16 @@ impl Trader {
                 .get_mut(&strategy_id)
                 .is_none_or(|stop_fn| stop_fn());
 
-            if should_proceed {
-                Self::stop_component_if_active(strategy_id.inner())?;
+            if should_proceed && let Err(e) = Self::stop_component_if_active(strategy_id.inner()) {
+                errors.push(format!("strategy {strategy_id}: {e:#}"));
             }
         }
 
-        Ok(())
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("Failed to stop trader components: {}", errors.join("; "))
+        }
     }
 
     /// Stops a partially started trader without deferring managed strategy shutdown.
@@ -1110,6 +1124,10 @@ impl Trader {
         self.transition_state(ComponentTrigger::Stop)?;
 
         let stop_result = self.stop_components_after_start_failure();
+        self.complete_stop(stop_result)
+    }
+
+    fn complete_stop(&mut self, stop_result: anyhow::Result<()>) -> anyhow::Result<()> {
         let clock = self.clock_factory.clock();
         self.ts_stopped = Some(clock.borrow().timestamp_ns());
         let transition_result = self.transition_state(ComponentTrigger::StopCompleted);
@@ -1168,7 +1186,7 @@ impl Trader {
     fn stop_component_if_active(component_id: Ustr) -> anyhow::Result<()> {
         if !matches!(
             component_state(&component_id)?,
-            ComponentState::Starting | ComponentState::Running
+            ComponentState::Starting | ComponentState::Running | ComponentState::Degraded
         ) {
             return Ok(());
         }
@@ -1227,7 +1245,11 @@ impl Trader {
         for clock in self.clocks.values() {
             clock.borrow_mut().cancel_timers();
         }
-        self.clocks.clear();
+
+        if !self.clocks.is_empty() {
+            self.clocks.clear();
+            self.clocks_snapshot.take();
+        }
 
         Ok(())
     }
@@ -1549,12 +1571,7 @@ impl Trader {
     /// A rollback only removes what the failed attempt created, because the Python registration
     /// path rejects a component ID this trader already tracks before it mutates anything.
     pub(crate) fn release_component(&mut self, component_id: ComponentId) {
-        if let Some(clock) = self.clocks.shift_remove(&component_id) {
-            let mut clock = clock.borrow_mut();
-            clock.cancel_timers();
-            clock.cancel_default_handler();
-            clock.cancel_callbacks();
-        }
+        self.release_component_clock(component_id);
 
         let id = component_id.inner();
         deregister_component(&id);
@@ -1564,6 +1581,16 @@ impl Trader {
         // Rust, and by then nothing is registered
         #[cfg(feature = "python")]
         release_python_wrapper(component_id);
+    }
+
+    fn release_component_clock(&mut self, component_id: ComponentId) {
+        if let Some(clock) = self.clocks.shift_remove(&component_id) {
+            self.clocks_snapshot.take();
+            let mut clock = clock.borrow_mut();
+            clock.cancel_timers();
+            clock.cancel_default_handler();
+            clock.cancel_callbacks();
+        }
     }
 
     // -- Lifecycle management ---------------------------------------------------
@@ -1620,15 +1647,17 @@ impl Trader {
         Ok(())
     }
 
-    /// Saves actor and strategy state in registration order.
+    /// Collects actor and strategy state in registration order and attempts persistence.
     ///
-    /// Empty state is persisted, while a cache without database backing does not invoke
-    /// component callbacks. All callbacks and updates receive an attempt before errors return.
+    /// Empty state is submitted too, while a cache without database backing does not invoke
+    /// component callbacks. All callbacks and updates receive an attempt before collected errors
+    /// return. Persistence write failures are logged by the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if any component callback or persistence operation fails. The error
-    /// contains every such failure.
+    /// Returns an error if preparing callbacks or collecting component state fails, or the backing
+    /// reports a DeFi currency integrity error. Save-time errors are aggregated across all attempted
+    /// components.
     pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
         let (cache, actor_callbacks, strategy_callbacks) = {
             let trader = trader.borrow();
@@ -1750,15 +1779,6 @@ impl Trader {
         Ok(())
     }
 
-    fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.stop_components()?;
-
-        let clock = self.clock_factory.clock();
-        self.ts_stopped = Some(clock.borrow().timestamp_ns());
-
-        Ok(())
-    }
-
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.reset_components()?;
 
@@ -1807,8 +1827,15 @@ impl Component for Trader {
         Self::on_start(self)
     }
 
+    fn stop(&mut self) -> anyhow::Result<()> {
+        self.transition_state(ComponentTrigger::Stop)?;
+
+        let stop_result = self.on_stop();
+        self.complete_stop(stop_result)
+    }
+
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        Self::on_stop(self)
+        self.stop_components()
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
@@ -1820,12 +1847,17 @@ impl Component for Trader {
     }
 }
 
+type ComponentClockSnapshot = Rc<[Rc<RefCell<dyn Clock>>]>;
+
 #[cfg(test)]
 mod tests {
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     #[cfg(feature = "python")]
@@ -1865,8 +1897,9 @@ mod tests {
             drain_trading_cmd_queue, replace_data_cmd_sender, replace_exec_cmd_sender,
             trading_cmd_queue_is_empty,
         },
+        timer::TimeEventHandler,
     };
-    use nautilus_core::UUID4;
+    use nautilus_core::{DurationNanos, UUID4};
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
@@ -1918,6 +1951,7 @@ mod tests {
         fail_fault: bool,
         fail_dispose: bool,
         bars_received: usize,
+        time_events: usize,
     }
 
     impl TestDataActor {
@@ -1928,11 +1962,17 @@ mod tests {
                 fail_fault: false,
                 fail_dispose: false,
                 bars_received: 0,
+                time_events: 0,
             }
         }
     }
 
     impl DataActor for TestDataActor {
+        fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+            self.time_events += 1;
+            Ok(())
+        }
+
         fn on_stop(&mut self) -> anyhow::Result<()> {
             if self.fail_stop {
                 anyhow::bail!("test actor stop failure");
@@ -1967,6 +2007,7 @@ mod tests {
     struct TestExecutionAlgorithm {
         core: ExecutionAlgorithmCore,
         fail_start: bool,
+        fail_stop: bool,
         submit_on_accept: Option<OrderAny>,
         accepted_events: usize,
         denied_events: usize,
@@ -1981,6 +2022,7 @@ mod tests {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
                 fail_start: false,
+                fail_stop: false,
                 submit_on_accept: None,
                 accepted_events: 0,
                 denied_events: 0,
@@ -1997,6 +2039,14 @@ mod tests {
             if self.fail_start {
                 anyhow::bail!("test execution algorithm start failure");
             }
+            Ok(())
+        }
+
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.fail_stop {
+                anyhow::bail!("test execution algorithm stop failure");
+            }
+
             Ok(())
         }
     }
@@ -2561,6 +2611,287 @@ mod tests {
     }
 
     #[rstest]
+    fn test_automatic_strategy_tag_skips_existing_tags(#[values(false, true)] remove_first: bool) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        if remove_first {
+            trader
+                .add_strategy(TestStrategy::new(StrategyConfig::default()))
+                .unwrap();
+        }
+
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("TestStrategy-001")),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        if remove_first {
+            trader
+                .remove_strategy(&StrategyId::from("TestStrategy-000"))
+                .unwrap();
+        }
+
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig::default()))
+            .unwrap();
+
+        assert_eq!(
+            trader.strategy_ids(),
+            vec![
+                StrategyId::from("TestStrategy-001"),
+                StrategyId::from("TestStrategy-002"),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case("actor", "strategy")]
+    #[case("actor", "algorithm")]
+    #[case("strategy", "actor")]
+    #[case("strategy", "algorithm")]
+    #[case("algorithm", "actor")]
+    #[case("algorithm", "strategy")]
+    fn test_native_registration_preserves_colliding_component(
+        #[case] first_kind: &str,
+        #[case] second_kind: &str,
+    ) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let id = Ustr::from("Collision-001");
+
+        let mut add = |kind| match kind {
+            "actor" => trader.add_actor(TestDataActor::new(DataActorConfig {
+                actor_id: Some(ActorId::new(id)),
+                ..Default::default()
+            })),
+            "strategy" => trader.add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(StrategyId::new(id)),
+                ..Default::default()
+            })),
+            "algorithm" => {
+                trader.add_exec_algorithm(TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
+                    exec_algorithm_id: Some(ExecAlgorithmId::new(id)),
+                    ..Default::default()
+                }))
+            }
+            _ => unreachable!(),
+        };
+
+        add(first_kind).unwrap();
+        let component = get_component(&id).unwrap();
+        let clock = match first_kind {
+            "actor" => get_actor_unchecked::<TestDataActor>(&id).clock_rc(),
+            "strategy" => get_actor_unchecked::<TestStrategy>(&id).clock_rc(),
+            "algorithm" => get_actor_unchecked::<TestExecutionAlgorithm>(&id).clock_rc(),
+            _ => unreachable!(),
+        };
+
+        let error = add(second_kind).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Component {id} is already registered with trader {}",
+                trader.trader_id()
+            )
+        );
+        assert!(Rc::ptr_eq(&component, &get_component(&id).unwrap()));
+        let clocks = trader.get_component_clocks();
+        assert_eq!(clocks.len(), 1);
+        assert!(Rc::ptr_eq(&clock, &clocks[0]));
+        assert_eq!(trader.actor_count(), usize::from(first_kind == "actor"));
+        assert_eq!(
+            trader.strategy_count(),
+            usize::from(first_kind == "strategy")
+        );
+        assert_eq!(
+            trader.exec_algorithm_count(),
+            usize::from(first_kind == "algorithm")
+        );
+    }
+
+    #[rstest]
+    #[case::actor("actor", false)]
+    #[case::strategy_initialized("strategy", false)]
+    #[case::strategy_registered("strategy", true)]
+    #[case::algorithm("algorithm", false)]
+    fn test_failed_native_registration_keeps_id_reusable(
+        #[case] kind: &str,
+        #[case] registered: bool,
+    ) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let id = Ustr::from("Retry-001");
+
+        let add = |trader: &mut Trader, initialize: bool| match kind {
+            "actor" => {
+                let mut actor = TestDataActor::new(DataActorConfig {
+                    actor_id: Some(ActorId::new(id)),
+                    ..Default::default()
+                });
+
+                if initialize {
+                    actor.initialize().unwrap();
+                }
+
+                trader.add_actor(actor)
+            }
+            "strategy" => {
+                let mut strategy = TestStrategy::new(StrategyConfig {
+                    strategy_id: Some(StrategyId::new(id)),
+                    ..Default::default()
+                });
+
+                if initialize && registered {
+                    let clock = trader.clock_factory.create_component_clock();
+                    StrategyNative::strategy_core_mut(&mut strategy)
+                        .register(
+                            trader.trader_id(),
+                            clock,
+                            trader.cache.clone(),
+                            trader.portfolio.clone(),
+                        )
+                        .unwrap();
+                } else if initialize {
+                    strategy.initialize().unwrap();
+                }
+
+                trader.add_strategy(strategy)
+            }
+            "algorithm" => {
+                let mut algorithm = TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
+                    exec_algorithm_id: Some(ExecAlgorithmId::new(id)),
+                    ..Default::default()
+                });
+
+                if initialize {
+                    algorithm.initialize().unwrap();
+                }
+
+                trader.add_exec_algorithm(algorithm)
+            }
+            _ => unreachable!(),
+        };
+
+        let error = add(&mut trader, true).unwrap_err();
+
+        let expected_error = if registered {
+            format!(
+                "DataActor {id} already registered with trader {}",
+                trader.trader_id()
+            )
+        } else {
+            format!(
+                "Invalid state trigger {} -> {}",
+                ComponentState::Ready,
+                ComponentTrigger::Initialize,
+            )
+        };
+
+        assert_eq!(error.to_string(), expected_error);
+        assert!(trader.get_component_clocks().is_empty());
+
+        add(&mut trader, false).unwrap();
+
+        assert_eq!(trader.get_component_clocks().len(), 1);
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Ready);
+        assert_eq!(trader.actor_count(), usize::from(kind == "actor"));
+        assert_eq!(trader.strategy_count(), usize::from(kind == "strategy"));
+        assert_eq!(
+            trader.exec_algorithm_count(),
+            usize::from(kind == "algorithm")
+        );
+    }
+
+    #[rstest]
+    fn test_native_collision_preserves_externally_registered_actor() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let clock = clock_factory.create_component_clock();
+
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(ActorId::from("External-001")),
+            ..Default::default()
+        });
+
+        actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
+        register_component_actor(actor);
+
+        let mut trader = Trader::new(
+            trader_id,
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_id = ActorId::from("External-001");
+        trader
+            .add_actor_id_for_lifecycle::<TestDataActor>(actor_id)
+            .unwrap();
+        let component = get_component(&actor_id.inner()).unwrap();
+
+        let error = trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("External-001")),
+                ..Default::default()
+            }))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Component {actor_id} is already registered with trader {trader_id}")
+        );
+        assert!(Rc::ptr_eq(
+            &component,
+            &get_component(&actor_id.inner()).unwrap()
+        ));
+        assert!(Rc::ptr_eq(
+            &clock,
+            &get_actor_unchecked::<TestDataActor>(&actor_id.inner()).clock_rc(),
+        ));
+        assert_eq!(trader.actor_ids(), vec![actor_id]);
+        assert!(trader.strategy_ids().is_empty());
+        assert!(trader.get_component_clocks().is_empty());
+    }
+
+    #[rstest]
     fn test_prepare_strategy_for_registration_is_idempotent() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
@@ -2612,6 +2943,7 @@ mod tests {
             order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
+
         let strategy1 = TestStrategy::new(config.clone());
         let strategy2 = TestStrategy::new(config);
 
@@ -3309,7 +3641,8 @@ mod tests {
         trader.stop_components().unwrap();
 
         let clock = trader.get_component_clocks().into_iter().next().unwrap();
-        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let deadline = clock.borrow().timestamp_ns() + DurationNanos::new(1_000_000);
+        let dispatched = dispatch_component_time_events(&clock, deadline);
         let strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
 
         assert_eq!(dispatched, 1);
@@ -3334,10 +3667,12 @@ mod tests {
             cache.clone(),
             portfolio,
         );
-        let (strategy_id, client_order_id) = register_gtd_timer(&mut trader, &cache, trader_id);
+
+        let (strategy_id, client_order_id, deadline) =
+            register_gtd_timer(&mut trader, &cache, trader_id);
 
         let clock = trader.get_component_clocks().into_iter().next().unwrap();
-        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let dispatched = dispatch_component_time_events(&clock, deadline);
         let mut strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
         let strategy_state = (
             strategy.time_events,
@@ -3368,11 +3703,13 @@ mod tests {
             cache.clone(),
             portfolio,
         );
-        let (strategy_id, client_order_id) = register_gtd_timer(&mut trader, &cache, trader_id);
+
+        let (strategy_id, client_order_id, deadline) =
+            register_gtd_timer(&mut trader, &cache, trader_id);
         trader.stop_components().unwrap();
 
         let clock = trader.get_component_clocks().into_iter().next().unwrap();
-        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let dispatched = dispatch_component_time_events(&clock, deadline);
         let mut strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
         let strategy_state = (
             strategy.time_events,
@@ -3394,17 +3731,8 @@ mod tests {
         clock: &Rc<RefCell<dyn Clock>>,
         to_time_ns: UnixNanos,
     ) -> usize {
-        let handlers = {
-            let mut clock_ref = clock.borrow_mut();
-            let test_clock = clock_ref
-                .as_any_mut()
-                .downcast_mut::<VirtualClock>()
-                .expect("component clock must be VirtualClock");
-            let events = test_clock.advance_time(to_time_ns, true);
-            test_clock.match_handlers(events)
-        };
+        let handlers = queue_component_time_events(clock, to_time_ns);
         let dispatched = handlers.len();
-
         for handler in handlers {
             handler.run();
         }
@@ -3412,11 +3740,26 @@ mod tests {
         dispatched
     }
 
+    fn queue_component_time_events(
+        clock: &Rc<RefCell<dyn Clock>>,
+        to_time_ns: UnixNanos,
+    ) -> Vec<TimeEventHandler> {
+        let mut clock_ref = clock.borrow_mut();
+        let test_clock = clock_ref
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .expect("component clock must be VirtualClock");
+        let events = test_clock.advance_time(to_time_ns, true);
+        test_clock.match_handlers(events)
+    }
+
     fn register_gtd_timer(
         trader: &mut Trader,
         cache: &Rc<RefCell<Cache>>,
         trader_id: TraderId,
-    ) -> (StrategyId, ClientOrderId) {
+    ) -> (StrategyId, ClientOrderId, UnixNanos) {
+        let deadline =
+            trader.clock_factory.clock().borrow().timestamp_ns() + DurationNanos::new(1_000_000);
         let strategy_id = StrategyId::from("TimerRouting-001");
         let strategy = TimerRoutingStrategy::new(StrategyConfig {
             strategy_id: Some(strategy_id),
@@ -3432,7 +3775,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .price(Price::from("1.00"))
             .time_in_force(TimeInForce::Gtd)
-            .expire_time(UnixNanos::from(1_000_000))
+            .expire_time(deadline)
             .build();
 
         trader.add_strategy(strategy).unwrap();
@@ -3442,7 +3785,7 @@ mod tests {
             .set_gtd_expiry(&order)
             .unwrap();
 
-        (strategy_id, client_order_id)
+        (strategy_id, client_order_id, deadline)
     }
 
     fn cache_accepted_order(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
@@ -3522,6 +3865,281 @@ mod tests {
         assert!(trader.dispose().is_ok());
         assert_eq!(trader.state(), ComponentState::Disposed);
         assert!(trader.is_disposed());
+    }
+
+    #[rstest]
+    #[case("actor", "actor StopActor-0: test actor stop failure")]
+    #[case(
+        "algorithm",
+        "execution algorithm StopAlgorithm-0: test execution algorithm stop failure"
+    )]
+    #[case("strategy", "strategy StopStrategy-000: test strategy stop failure")]
+    fn test_stop_failure_stops_remaining_components(
+        #[case] failing_kind: &str,
+        #[case] expected_error: &str,
+        #[values(false, true)] after_start_failure: bool,
+    ) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let clock = clock_factory.clock();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let mut components = Vec::new();
+
+        for index in 0..2 {
+            let actor_id = ActorId::from(format!("StopActor-{index}"));
+
+            let mut actor = TestDataActor::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            });
+
+            actor.fail_stop = failing_kind == "actor" && index == 0;
+            components.push((actor_id.inner(), actor.fail_stop));
+            trader.add_actor(actor).unwrap();
+
+            let algorithm_id = ExecAlgorithmId::from(format!("StopAlgorithm-{index}"));
+
+            let mut algorithm = TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
+                exec_algorithm_id: Some(algorithm_id),
+                ..Default::default()
+            });
+
+            algorithm.fail_stop = failing_kind == "algorithm" && index == 0;
+            components.push((algorithm_id.inner(), algorithm.fail_stop));
+            trader.add_exec_algorithm(algorithm).unwrap();
+
+            let strategy_id = StrategyId::from(format!("StopStrategy-{index:03}"));
+
+            let mut strategy = TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            });
+
+            strategy.fail_stop = failing_kind == "strategy" && index == 0;
+            components.push((strategy_id.inner(), strategy.fail_stop));
+            trader.add_strategy(strategy).unwrap();
+        }
+
+        trader.initialize().unwrap();
+        trader.start().unwrap();
+        clock
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .unwrap()
+            .set_time(3_000_000_000u64.into());
+
+        let result = if after_start_failure {
+            trader.stop_after_start_failure()
+        } else {
+            trader.stop()
+        };
+
+        let error = result.unwrap_err();
+
+        let prefix = if after_start_failure {
+            "Failed to stop one or more trader components after startup failure"
+        } else {
+            "Failed to stop trader components"
+        };
+
+        assert_eq!(error.to_string(), format!("{prefix}: {expected_error}"));
+        assert_eq!(trader.state(), ComponentState::Stopped);
+        assert_eq!(trader.ts_stopped(), Some(3_000_000_000u64.into()));
+
+        for (component_id, fail_stop) in components {
+            let expected = if fail_stop {
+                ComponentState::Stopping
+            } else {
+                ComponentState::Stopped
+            };
+
+            assert_eq!(component_state(&component_id).unwrap(), expected);
+        }
+    }
+
+    #[rstest]
+    fn test_stop_collects_all_callback_errors(#[values(false, true)] after_start_failure: bool) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_ids = [ActorId::from("Stop-A"), ActorId::from("Stop-B")];
+        for actor_id in actor_ids {
+            let mut actor = TestDataActor::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            });
+
+            actor.fail_stop = true;
+            trader.add_actor(actor).unwrap();
+        }
+
+        trader.initialize().unwrap();
+        trader.start().unwrap();
+        let result = if after_start_failure {
+            trader.stop_after_start_failure()
+        } else {
+            trader.stop()
+        };
+
+        let prefix = if after_start_failure {
+            "Failed to stop one or more trader components after startup failure"
+        } else {
+            "Failed to stop trader components"
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "{prefix}: actor Stop-A: test actor stop failure; actor Stop-B: test actor stop failure"
+            )
+        );
+        assert_eq!(trader.state(), ComponentState::Stopped);
+
+        for actor_id in actor_ids {
+            assert_eq!(
+                component_state(&actor_id.inner()).unwrap(),
+                ComponentState::Stopping
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_stop_error_preserves_managed_strategy_deferral() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let mut actor = TestDataActor::new(DataActorConfig::default());
+        actor.fail_stop = true;
+        trader.add_actor(actor).unwrap();
+        let strategy_id = StrategyId::from("ManagedStop-001");
+        trader
+            .add_strategy(TimerRoutingStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                manage_stop: true,
+                market_exit_interval_ms: 1,
+                ..Default::default()
+            }))
+            .unwrap();
+
+        trader.initialize().unwrap();
+        trader.start().unwrap();
+
+        let error = trader.stop().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to stop trader components: actor DataActor: test actor stop failure"
+        );
+        assert_eq!(trader.state(), ComponentState::Stopped);
+        {
+            let strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
+            assert_eq!(strategy.state(), ComponentState::Running);
+            assert!(strategy.is_exiting());
+        }
+
+        let clock = trader.clocks[&ComponentId::from(strategy_id)].clone();
+        let deadline = clock.borrow().timestamp_ns() + DurationNanos::new(1_000_000);
+        let dispatched = dispatch_component_time_events(&clock, deadline);
+
+        let strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
+        assert_eq!(dispatched, 1);
+        assert_eq!(strategy.state(), ComponentState::Stopped);
+        assert!(!strategy.is_exiting());
+        assert_eq!(strategy.post_market_exits, 1);
+    }
+
+    #[rstest]
+    fn test_stop_includes_degraded_components(#[values(false, true)] after_start_failure: bool) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_id = ActorId::from("DegradedActor");
+        trader
+            .add_actor(TestDataActor::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        let algorithm_id = ExecAlgorithmId::from("DegradedAlgorithm");
+        trader
+            .add_exec_algorithm(TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
+                exec_algorithm_id: Some(algorithm_id),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        let strategy_id = StrategyId::from("DegradedStrategy-001");
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        trader.initialize().unwrap();
+        trader.start().unwrap();
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner())
+            .degrade()
+            .unwrap();
+        get_actor_unchecked::<TestExecutionAlgorithm>(&algorithm_id.inner())
+            .degrade()
+            .unwrap();
+        get_actor_unchecked::<TestStrategy>(&strategy_id.inner())
+            .degrade()
+            .unwrap();
+
+        if after_start_failure {
+            trader.stop_after_start_failure().unwrap();
+        } else {
+            trader.stop().unwrap();
+        }
+
+        assert_eq!(trader.state(), ComponentState::Stopped);
+
+        for component_id in [actor_id.inner(), algorithm_id.inner(), strategy_id.inner()] {
+            assert_eq!(
+                component_state(&component_id).unwrap(),
+                ComponentState::Stopped
+            );
+        }
     }
 
     #[rstest]
@@ -3800,6 +4418,77 @@ mod tests {
         for (actual, expected) in returned.iter().zip(&registered) {
             assert!(Rc::ptr_eq(actual, expected));
         }
+    }
+
+    #[rstest]
+    fn test_component_clock_snapshot_tracks_membership() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let component_a = ComponentId::new("ACTOR-A");
+        let component_b = ComponentId::new("ACTOR-B");
+        let empty = trader.get_component_clocks_snapshot();
+
+        assert!(empty.is_empty());
+        assert!(Rc::ptr_eq(&empty, &trader.get_component_clocks_snapshot()));
+
+        let clock_a = trader.create_component_clock(component_a);
+        let first = trader.get_component_clocks_snapshot();
+
+        assert!(empty.is_empty());
+        assert_eq!(first.len(), 1);
+        assert!(Rc::ptr_eq(&first[0], &clock_a));
+        assert!(Rc::ptr_eq(&first, &trader.get_component_clocks_snapshot()));
+
+        let clock_b = trader.create_component_clock(component_b);
+        let both = trader.get_component_clocks_snapshot();
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(both.len(), 2);
+        assert!(Rc::ptr_eq(&both[0], &clock_a));
+        assert!(Rc::ptr_eq(&both[1], &clock_b));
+
+        let replacement = trader.create_component_clock(component_a);
+        let replaced = trader.get_component_clocks_snapshot();
+
+        assert_eq!(replaced.len(), 2);
+        assert!(!Rc::ptr_eq(&both, &replaced));
+        assert!(Rc::ptr_eq(&both[0], &clock_a));
+        assert!(Rc::ptr_eq(&replaced[0], &replacement));
+        assert!(Rc::ptr_eq(&replaced[1], &clock_b));
+
+        trader.release_component_clock(component_a);
+        let remaining = trader.get_component_clocks_snapshot();
+
+        assert_eq!(replaced.len(), 2);
+        assert_eq!(remaining.len(), 1);
+        assert!(Rc::ptr_eq(&remaining[0], &clock_b));
+
+        trader.release_component_clock(component_a);
+
+        assert!(Rc::ptr_eq(
+            &remaining,
+            &trader.get_component_clocks_snapshot()
+        ));
+
+        trader.dispose_components().unwrap();
+        let disposed = trader.get_component_clocks_snapshot();
+
+        assert_eq!(remaining.len(), 1);
+        assert!(disposed.is_empty());
+        assert!(Rc::ptr_eq(
+            &disposed,
+            &trader.get_component_clocks_snapshot()
+        ));
     }
 
     #[rstest]
@@ -4217,6 +4906,196 @@ class StateComponent:
             0,
             "actor clocks must be dropped after clear_actors",
         );
+    }
+
+    #[rstest]
+    #[case::removed(false, true)]
+    #[case::reused(true, true)]
+    #[case::invalid_registration(false, false)]
+    fn test_queued_actor_time_event_is_revoked_on_retirement(
+        #[case] reuse_id: bool,
+        #[case] retire: bool,
+    ) {
+        let _guard = init_logging(
+            TraderId::test_default(),
+            UUID4::new(),
+            LoggerConfig::default(),
+            FileWriterConfig::default(),
+        )
+        .unwrap();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let retired_id = ActorId::from("Queued-Retirement");
+        let active_id = ActorId::from("Queued-Active");
+        for actor_id in [retired_id, active_id] {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(actor_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+
+            trader.start_actor(&actor_id).unwrap();
+        }
+
+        let mut handlers = Vec::new();
+        let interval = DurationNanos::new(1_000_000_000);
+
+        for clock in trader.get_component_clocks() {
+            clock
+                .borrow_mut()
+                .set_timer_ns("stats", interval, None, None, None, None, None)
+                .unwrap();
+            let deadline = clock.borrow().timestamp_ns() + interval;
+            handlers.extend(queue_component_time_events(&clock, deadline));
+        }
+
+        assert_eq!(handlers.len(), 2);
+
+        if retire {
+            trader.remove_actor(&retired_id).unwrap();
+        } else {
+            deregister_actor(&retired_id.inner());
+        }
+
+        if reuse_id {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(retired_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+
+            trader.start_actor(&retired_id).unwrap();
+        }
+
+        arm_shutdown_on_error(true);
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        if retire {
+            assert!(
+                trigger.is_none(),
+                "retired callback logged an error: {trigger:?}"
+            );
+        } else {
+            assert_eq!(
+                trigger.unwrap().message,
+                format!("Actor {retired_id} not found for time event handling")
+            );
+        }
+
+        assert_eq!(
+            get_actor_unchecked::<TestDataActor>(&active_id.inner()).time_events,
+            1
+        );
+
+        if reuse_id {
+            assert_eq!(
+                get_actor_unchecked::<TestDataActor>(&retired_id.inner()).time_events,
+                0
+            );
+        } else {
+            assert!(!actor_exists(&retired_id.inner()));
+        }
+    }
+
+    #[rstest]
+    fn test_failed_dispose_preserves_queued_callbacks_until_retry(
+        #[values(false, true)] named: bool,
+    ) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Queued-Failed-Dispose");
+
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+
+        actor.fail_dispose = true;
+        trader.add_actor(actor).unwrap();
+        let clock = trader.get_component_clocks().pop().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = calls.clone();
+        let callback = TimeEventCallback::from(move |_| {
+            callback_calls.fetch_add(1, Ordering::Relaxed);
+        });
+
+        if !named {
+            clock
+                .borrow_mut()
+                .register_default_handler(callback.clone());
+        }
+
+        let interval = DurationNanos::new(1_000_000_000);
+        clock
+            .borrow_mut()
+            .set_timer_ns(
+                "queued",
+                interval,
+                None,
+                None,
+                named.then_some(callback),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let first_tick = clock.borrow().timestamp_ns() + interval;
+        let handlers = queue_component_time_events(&clock, first_tick);
+        assert_eq!(handlers.len(), 1);
+
+        let error = trader.remove_actor(&actor_id).unwrap_err();
+        assert_eq!(error.to_string(), "test actor dispose failure");
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(actor_exists(&actor_id.inner()));
+        assert!(get_component(&actor_id.inner()).is_some());
+        assert_eq!(trader.actor_ids(), vec![actor_id]);
+        assert_eq!(clock.borrow().timer_count(), 1);
+
+        let handlers = queue_component_time_events(&clock, first_tick + interval);
+        assert_eq!(handlers.len(), 1);
+        trader.remove_actor(&actor_id).unwrap();
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(trader.get_component_clocks().is_empty());
+        assert!(trader.actor_ids().is_empty());
+        assert_eq!(clock.borrow().timer_count(), 0);
     }
 
     #[rstest]
@@ -4989,6 +5868,57 @@ class ModuleStrategy(Strategy):
 
     #[cfg(feature = "python")]
     #[rstest]
+    fn test_automatic_python_strategy_tag_skips_existing_tags(
+        #[values(false, true)] remove_first: bool,
+    ) {
+        Python::initialize();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        Python::attach(|py| {
+            let module_name = "test_automatic_python_strategy_tag";
+            install_python_component_module(py, module_name);
+            if remove_first {
+                let strategy = create_python_component(py, module_name, "ModuleStrategy");
+                trader.add_python_strategy_instance(&strategy).unwrap();
+            }
+
+            let strategy = create_python_component(py, module_name, "ModuleStrategy");
+            strategy
+                .bind(py)
+                .extract::<PyRefMut<PyStrategy>>()
+                .unwrap()
+                .set_strategy_id(StrategyId::from("ModuleStrategy-001"))
+                .unwrap();
+            trader.add_python_strategy_instance(&strategy).unwrap();
+            if remove_first {
+                trader
+                    .remove_strategy(&StrategyId::from("ModuleStrategy-000"))
+                    .unwrap();
+            }
+
+            let strategy = create_python_component(py, module_name, "ModuleStrategy");
+            let strategy_id = trader.add_python_strategy_instance(&strategy).unwrap();
+
+            assert_eq!(strategy_id, StrategyId::from("ModuleStrategy-002"));
+            assert_eq!(
+                trader.strategy_ids(),
+                vec![StrategyId::from("ModuleStrategy-001"), strategy_id]
+            );
+        });
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
     fn test_colliding_python_registration_leaves_the_live_component_registered() {
         Python::initialize();
 
@@ -5291,13 +6221,34 @@ class ModuleStrategy(Strategy):
         drain_data_cmd_queue();
         assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 
+        let topic = get_bars_topic(bar_type);
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 2);
+
+        let bar = Bar {
+            bar_type,
+            ..stub_bar()
+        };
+
         trader.remove_actor(&first_id).unwrap();
         drain_data_cmd_queue();
         assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 1);
+        msgbus::publish_bar(topic, &bar);
+        assert_eq!(
+            get_actor_unchecked::<TestDataActor>(&second_id.inner()).bars_received,
+            1
+        );
+        assert!(!actor_exists(&first_id.inner()));
+        assert!(get_component(&first_id.inner()).is_none());
+
         trader.remove_actor(&second_id).unwrap();
         drain_data_cmd_queue();
         assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 0);
+        assert!(!actor_exists(&second_id.inner()));
+        assert!(get_component(&second_id.inner()).is_none());
+        assert!(trader.get_component_clocks().is_empty());
     }
 
     #[rstest]

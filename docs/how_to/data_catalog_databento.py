@@ -124,7 +124,7 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 loader = DatabentoDataLoader()
 
 # %% [markdown]
-# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ESZ3.GLBX").
+# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ESZ23.GLBX").
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
@@ -133,7 +133,7 @@ path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
 depth = loader.load_order_book_depth(filepath=path)
 
 # Option 2: Explicitly specify a valid Nautilus instrument ID (symbol.venue format)
-# instrument_id = InstrumentId.from_str("ESZ3.GLBX")  # E-mini S&P December 2023 futures on Globex
+# instrument_id = InstrumentId.from_str("ESZ23.GLBX")  # E-mini S&P December 2023 futures on Globex
 # depth = loader.load_order_book_depth(
 #     filepath=path,
 #     instrument_id=instrument_id,

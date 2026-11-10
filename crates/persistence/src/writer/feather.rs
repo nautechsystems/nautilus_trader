@@ -53,26 +53,30 @@ use nautilus_common::{clock::Clock, live::LiveClock};
 use nautilus_core::{DurationNanos, UnixNanos, time::nanos_since_unix_epoch};
 use nautilus_model::{
     data::{
-        Bar, CustomData, CustomDataTrait, Data, DataBatch, FundingRateUpdate, IndexPriceUpdate,
-        InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, CustomData, CustomDataTrait, Data, DataBatch, DataType as CustomDataType,
+        FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, NautilusDataType,
+        OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         encode_custom_to_arrow, get_arrow_schema,
         greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionEvent, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
+        OrderInitialized, OrderModifyDenied, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened, PositionSnapshot,
     },
     instruments::{InstrumentAny, NautilusInstrumentType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
-use nautilus_serialization::arrow::{
-    EncodeToRecordBatch, KEY_TYPE_NAME, catalog_identifier_from_metadata,
-    record_batch_with_identifier_column, schema_with_identifier_column,
+use nautilus_serialization::{
+    arrow::{
+        EncodeToRecordBatch, KEY_TYPE_NAME, catalog_identifier_from_metadata,
+        record_batch_with_identifier_column, schema_with_identifier_column,
+    },
+    ensure_custom_data_registered,
 };
 
 use crate::{
@@ -1333,11 +1337,13 @@ impl FeatherWriter {
         try_write!(message, OrderRejected);
         try_write!(message, OrderPendingCancel);
         try_write!(message, OrderCanceled);
+        try_write!(message, OrderCancelDenied);
         try_write!(message, OrderCancelRejected);
         try_write!(message, OrderExpired);
         try_write!(message, OrderTriggered);
         try_write!(message, OrderPendingUpdate);
         try_write!(message, OrderReleased);
+        try_write!(message, OrderModifyDenied);
         try_write!(message, OrderModifyRejected);
         try_write!(message, OrderUpdated);
         try_write!(message, OrderFilled);
@@ -1352,8 +1358,25 @@ impl FeatherWriter {
         try_write!(message, FillReport);
         try_write!(message, PositionStatusReport);
         try_write!(message, ExecutionMassStatus);
-        try_write!(message, GreeksData);
-        try_write!(message, PortfolioGreeks);
+
+        if let Some(greeks) = message.downcast_ref::<GreeksData>() {
+            ensure_custom_data_registered::<GreeksData>();
+
+            let data_type = CustomDataType::new(
+                GreeksData::type_name_static(),
+                None,
+                Some(greeks.instrument_id.to_string()),
+            );
+
+            let custom = CustomData::new(Arc::new(greeks.clone()), data_type);
+            return Some(Box::new(move |writer| writer.write_custom_data(&custom)));
+        }
+
+        if let Some(portfolio) = message.downcast_ref::<PortfolioGreeks>() {
+            ensure_custom_data_registered::<PortfolioGreeks>();
+            let custom = CustomData::from_arc(Arc::new(portfolio.clone()));
+            return Some(Box::new(move |writer| writer.write_custom_data(&custom)));
+        }
 
         if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
             let deltas = deltas.deltas.clone();
@@ -1402,7 +1425,9 @@ impl FeatherWriter {
             OrderEventAny::Triggered(event) => self.write(*event),
             OrderEventAny::PendingUpdate(event) => self.write(*event),
             OrderEventAny::PendingCancel(event) => self.write(*event),
+            OrderEventAny::ModifyDenied(event) => self.write(*event),
             OrderEventAny::ModifyRejected(event) => self.write(*event),
+            OrderEventAny::CancelDenied(event) => self.write(*event),
             OrderEventAny::CancelRejected(event) => self.write(*event),
             OrderEventAny::Updated(event) => self.write(*event),
             OrderEventAny::Filled(event) => self.write(event.clone()),
@@ -1899,8 +1924,7 @@ mod tests {
     #[rstest]
     fn test_subscription_records_greeks_once_and_unsubscribes() {
         use nautilus_common::msgbus::{MStr, publish_any, publish_greeks};
-        use nautilus_model::data::greeks::GreeksData;
-        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, custom::CustomDataDecoder};
         let temp_dir = TempDir::new().unwrap();
 
         let writer = Rc::new(RefCell::new(FeatherWriter::new(
@@ -1923,27 +1947,46 @@ mod tests {
         writer.borrow_mut().close().unwrap();
         let mut counts = HashMap::new();
 
-        for batch in feather_files(temp_dir.path(), FEATHER_EXTENSION)
+        for batch in feather_files(&temp_dir.path().join("data/custom"), FEATHER_EXTENSION)
             .iter()
             .flat_map(|path| read_feather_batches(path))
         {
             let schema = batch.schema();
             let name = schema.metadata()["type_name"].clone();
             *counts.entry(name.clone()).or_insert(0) += batch.num_rows();
+            let decoded = CustomDataDecoder::decode_data_batch(schema.metadata(), batch).unwrap();
+            assert_eq!(decoded.len(), 1);
+
+            let Data::Custom(custom) = &decoded[0] else {
+                panic!("expected custom data")
+            };
+
             match name.as_str() {
                 "GreeksData" => {
-                    let values = GreeksData::decode_typed_batch(schema.metadata(), batch).unwrap();
-                    assert_eq!(values[0].instrument_id, greeks.instrument_id);
-                    assert_eq!(values[0].greeks, greeks.greeks);
-                    assert_eq!(values[0].ts_init, greeks.ts_init);
+                    assert_eq!(
+                        custom.data_type,
+                        CustomDataType::new(
+                            "GreeksData",
+                            None,
+                            Some(greeks.instrument_id.to_string())
+                        )
+                    );
+                    assert_eq!(
+                        custom.data.as_any().downcast_ref::<GreeksData>(),
+                        Some(&greeks)
+                    );
                 }
                 "PortfolioGreeks" => {
-                    let values =
-                        PortfolioGreeks::decode_typed_batch(schema.metadata(), batch).unwrap();
-                    assert_eq!(values[0].greeks, portfolio.greeks);
-                    assert_eq!(values[0].ts_init, portfolio.ts_init);
+                    assert_eq!(
+                        custom.data_type,
+                        CustomDataType::new("PortfolioGreeks", None, None)
+                    );
+                    assert_eq!(
+                        custom.data.as_any().downcast_ref::<PortfolioGreeks>(),
+                        Some(&portfolio)
+                    );
                 }
-                _ => panic!("unexpected record type {name}"),
+                _ => panic!("unexpected custom data type {name}"),
             }
         }
 
@@ -2156,6 +2199,117 @@ mod tests {
             writer.next_rotation_times[&path],
             UnixNanos::from(1_767_348_000_000_000_000u64),
         );
+    }
+
+    #[rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    fn test_command_denied_dynamic_round_trip(
+        #[case] modify: bool,
+        #[values(false, true)] envelope: bool,
+    ) {
+        use nautilus_core::UUID4;
+        use nautilus_model::{
+            events::order::spec::{OrderCancelDeniedSpec, OrderModifyDeniedSpec},
+            identifiers::{AccountId, ClientOrderId, StrategyId, TraderId, VenueOrderId},
+        };
+        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        let cause = UUID4::new();
+        let trader = TraderId::from("WRITER-017");
+        let strategy = StrategyId::from("S-DENIAL-019");
+        let instrument = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let client = ClientOrderId::from("O-DENIAL-023");
+        let venue = VenueOrderId::from("V-DENIAL-029");
+        let account = AccountId::from("BINANCE-031");
+
+        let event = if modify {
+            OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .venue_order_id(venue)
+                    .account_id(account)
+                    .reason("not sent to modify".into())
+                    .ts_event(37.into())
+                    .ts_init(41.into())
+                    .causation_id(cause)
+                    .build(),
+            )
+        } else {
+            OrderEventAny::CancelDenied(
+                OrderCancelDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .venue_order_id(venue)
+                    .account_id(account)
+                    .reason("not sent to cancel".into())
+                    .ts_event(43.into())
+                    .ts_init(47.into())
+                    .causation_id(cause)
+                    .build(),
+            )
+        };
+
+        let temp = TempDir::new().unwrap();
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
+        let mut writer = FeatherWriter::new(
+            temp.path().to_path_buf(),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+
+        let written = if envelope {
+            writer.write_any_message(&event).unwrap()
+        } else {
+            match &event {
+                OrderEventAny::ModifyDenied(event) => writer.write_any_message(event).unwrap(),
+                OrderEventAny::CancelDenied(event) => writer.write_any_message(event).unwrap(),
+                _ => unreachable!(),
+            }
+        };
+
+        assert!(written);
+        writer.close().unwrap();
+        let files = feather_files(temp.path(), "feather");
+        assert_eq!(files.len(), 1);
+        let mut recovered = Vec::new();
+
+        for batch in read_feather_batches(&files[0]) {
+            let metadata = batch.schema().metadata().clone();
+            assert_eq!(
+                metadata.get("type_name").unwrap(),
+                if modify {
+                    "OrderModifyDenied"
+                } else {
+                    "OrderCancelDenied"
+                }
+            );
+
+            if modify {
+                recovered.extend(
+                    OrderModifyDenied::decode_typed_batch(&metadata, batch)
+                        .unwrap()
+                        .into_iter()
+                        .map(OrderEventAny::ModifyDenied),
+                );
+            } else {
+                recovered.extend(
+                    OrderCancelDenied::decode_typed_batch(&metadata, batch)
+                        .unwrap()
+                        .into_iter()
+                        .map(OrderEventAny::CancelDenied),
+                );
+            }
+        }
+
+        assert_eq!(recovered, vec![event]);
     }
 
     #[rstest]

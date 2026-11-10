@@ -14,11 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::BTreeMap,
     fmt::Debug,
     fs::File,
     hint::black_box,
     io::{BufRead, BufReader},
     path::PathBuf,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -48,6 +50,7 @@ use nautilus_model::{
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const DATA_FILE: &str = "btc-perp-20211231-20220201_1m.csv";
@@ -56,6 +59,8 @@ const SCHEDULED_ACTIONS: usize = 64;
 const TRADE_SIZE: &str = "0.010";
 const EMA_FAST_PERIOD: usize = 10;
 const EMA_SLOW_PERIOD: usize = 20;
+const NUMERICAL_ABSOLUTE_TOLERANCE: f64 = 1e-12;
+const NUMERICAL_RELATIVE_TOLERANCE: f64 = 1e-12;
 
 pub(crate) const SCENARIOS: [CanonicalScenario; 4] = [
     CanonicalScenario::Replay,
@@ -158,93 +163,36 @@ impl CanonicalScenario {
     }
 
     pub(crate) fn verify(self, result: &CanonicalBacktestResult) -> anyhow::Result<()> {
-        let actual = CanonicalFingerprint::from_result(result)?;
-        let expected = self.expected();
-        anyhow::ensure!(
-            actual == expected,
-            "canonical workload '{}' fingerprint mismatch\nexpected: {expected:#?}\nactual: {actual:#?}",
-            self.name(),
-        );
-        Ok(())
+        let actual = CanonicalReference::from_value(result.as_value())?;
+        actual
+            .verify(self.expected())
+            .with_context(|| format!("canonical workload '{}' result mismatch", self.name()))
     }
 
-    fn expected(self) -> CanonicalFingerprint {
-        match self {
-            Self::Replay => CanonicalFingerprint {
-                data_events: 20_000,
-                execution_events: 0,
-                orders_submitted: 0,
-                orders_rejected: 0,
-                fills: 0,
-                cancels: 0,
-                positions: 0,
-                accounts: 1,
-                account_digest:
-                    "blake3:405c9f219087dbff0f0641cfdc5fc41c84296981f4158bc9ea0978a1c81aee2c"
-                        .to_string(),
-                result_digest:
-                    "blake3:7dd768c892f560c967c2aae291c6b9315d619bafab1b43b6a9f80cfad81e6914"
-                        .to_string(),
-            },
-            Self::ScheduledMarketOrders => CanonicalFingerprint {
-                data_events: 20_000,
-                execution_events: 128,
-                orders_submitted: 64,
-                orders_rejected: 0,
-                fills: 64,
-                cancels: 0,
-                positions: 32,
-                accounts: 1,
-                account_digest:
-                    "blake3:be57c858fd2d34e157342f64260c4d517abc2f7a5f67dce73d43858ea1b2bf1a"
-                        .to_string(),
-                result_digest: expected_result_digest(
-                    "blake3:f2930cd2c5127aa2a0d4845c1735c9891a62d308963b2d791fa89310710f2b9e",
-                    "blake3:aff686ceb0181ce3f2459115269bc0f634a46aeaa5d26a6e01e380b1b08c2ffb",
-                ),
-            },
-            Self::PassiveLimitOrders => CanonicalFingerprint {
-                data_events: 20_000,
-                execution_events: 192,
-                orders_submitted: 64,
-                orders_rejected: 0,
-                fills: 0,
-                cancels: 64,
-                positions: 0,
-                accounts: 1,
-                account_digest:
-                    "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
-                        .to_string(),
-                result_digest:
-                    "blake3:bdf55fed6226757d296b891b8c0271c4e81571ad3e569dcc1304e29d1ec05a72"
-                        .to_string(),
-            },
-            Self::BarEmaCross => CanonicalFingerprint {
-                data_events: 20_000,
-                execution_events: 900,
-                orders_submitted: 450,
-                orders_rejected: 0,
-                fills: 450,
-                cancels: 0,
-                positions: 225,
-                accounts: 1,
-                account_digest:
-                    "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc"
-                        .to_string(),
-                result_digest: expected_result_digest(
-                    "blake3:b39fb4859eb50b38a2bbc8dd46d2817549ecff2d463f438604922da2e4ef843e",
-                    "blake3:1be2c04ff8587ac11aa7b68119afaf787818b75391aa7fcf5634e56f63bd09cd",
-                ),
-            },
-        }
-    }
-}
+    fn expected(self) -> &'static CanonicalReference {
+        static REFERENCES: LazyLock<[CanonicalReference; SCENARIOS.len()]> = LazyLock::new(|| {
+            let references = if HIGH_PRECISION_MODE != 0 {
+                [
+                    include_str!("../../test_data/canonical/high/replay_only.json"),
+                    include_str!("../../test_data/canonical/high/scheduled_market_orders.json"),
+                    include_str!("../../test_data/canonical/high/passive_limit_orders.json"),
+                    include_str!("../../test_data/canonical/high/bar_ema_cross.json"),
+                ]
+            } else {
+                [
+                    include_str!("../../test_data/canonical/standard/replay_only.json"),
+                    include_str!("../../test_data/canonical/standard/scheduled_market_orders.json"),
+                    include_str!("../../test_data/canonical/standard/passive_limit_orders.json"),
+                    include_str!("../../test_data/canonical/standard/bar_ema_cross.json"),
+                ]
+            };
 
-fn expected_result_digest(standard: &str, high_precision: &str) -> String {
-    if HIGH_PRECISION_MODE != 0 {
-        high_precision.to_string()
-    } else {
-        standard.to_string()
+            references.map(|reference| {
+                serde_json::from_str(reference)
+                    .expect("canonical reference fixtures contain valid JSON")
+            })
+        });
+        &REFERENCES[self as usize]
     }
 }
 
@@ -395,7 +343,7 @@ fn parse_volume(value: &str, precision: u8, row: usize) -> anyhow::Result<Quanti
         .with_context(|| format!("failed to normalize canonical volume '{value}' at row {row}"))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CanonicalFingerprint {
     data_events: usize,
     execution_events: usize,
@@ -406,12 +354,11 @@ struct CanonicalFingerprint {
     positions: usize,
     accounts: usize,
     account_digest: String,
-    result_digest: String,
+    state_digest: String,
 }
 
 impl CanonicalFingerprint {
-    fn from_result(result: &CanonicalBacktestResult) -> anyhow::Result<Self> {
-        let value = result.as_value();
+    fn from_value(value: &Value) -> anyhow::Result<Self> {
         let run = value["run"]
             .as_object()
             .context("canonical result run should be an object")?;
@@ -434,7 +381,8 @@ impl CanonicalFingerprint {
             .context("canonical result accounts should be an array")?;
         let account_bytes = serde_json::to_vec(accounts)?;
         let account_digest = format!("blake3:{}", blake3::hash(&account_bytes).to_hex());
-        let result_digest = result.digest()?;
+        let state_bytes = serde_json::to_vec(value)?;
+        let state_digest = format!("blake3:{}", blake3::hash(&state_bytes).to_hex());
 
         Ok(Self {
             data_events: parse_count(run, "iterations")?,
@@ -449,9 +397,205 @@ impl CanonicalFingerprint {
             positions: parse_count(run, "total_positions")?,
             accounts: accounts.len(),
             account_digest,
-            result_digest,
+            state_digest,
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CanonicalReference {
+    high_precision: bool,
+    fingerprint: CanonicalFingerprint,
+    numerical_values: BTreeMap<String, String>,
+}
+
+impl CanonicalReference {
+    fn from_value(value: &Value) -> anyhow::Result<Self> {
+        let mut state = value.clone();
+        let numerical_values = extract_numerical_values(&mut state)?;
+        let fingerprint = CanonicalFingerprint::from_value(&state)?;
+        Ok(Self {
+            high_precision: HIGH_PRECISION_MODE != 0,
+            fingerprint,
+            numerical_values,
+        })
+    }
+
+    fn verify(&self, expected: &Self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.high_precision == expected.high_precision,
+            "canonical reference precision does not match the active precision mode"
+        );
+        anyhow::ensure!(
+            self.fingerprint == expected.fingerprint,
+            "exact state fingerprint mismatch\nexpected: {:#?}\nactual: {:#?}",
+            expected.fingerprint,
+            self.fingerprint,
+        );
+        anyhow::ensure!(
+            self.numerical_values.len() == expected.numerical_values.len(),
+            "canonical numerical field counts differ, expected {}, actual {}",
+            expected.numerical_values.len(),
+            self.numerical_values.len(),
+        );
+
+        for (path, expected) in &expected.numerical_values {
+            let actual = self
+                .numerical_values
+                .get(path)
+                .with_context(|| format!("canonical numerical field '{path}' is missing"))?;
+            let expected = decode_numerical_value(expected)?;
+            let actual = decode_numerical_value(actual)?;
+            anyhow::ensure!(
+                numerical_values_match(expected, actual),
+                "canonical numerical field '{path}' differs, expected {expected:?}, actual {actual:?} \
+                 (absolute tolerance {NUMERICAL_ABSOLUTE_TOLERANCE}, \
+                 relative tolerance {NUMERICAL_RELATIVE_TOLERANCE})",
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn extract_numerical_values(value: &mut Value) -> anyhow::Result<BTreeMap<String, String>> {
+    let mut numerical_values = BTreeMap::new();
+    let statistics = value
+        .get_mut("statistics")
+        .context("canonical statistics are missing")?;
+
+    for group in ["general", "returns"] {
+        extract_numerical_map(
+            &mut statistics[group],
+            &format!("/statistics/{group}"),
+            &mut numerical_values,
+        )?;
+    }
+
+    let pnls = statistics["pnls"]
+        .as_object_mut()
+        .context("canonical PnL statistics should be an object")?;
+
+    for (currency, statistics) in pnls {
+        let currency = escape_pointer_token(currency);
+        extract_numerical_map(
+            statistics,
+            &format!("/statistics/pnls/{currency}"),
+            &mut numerical_values,
+        )?;
+    }
+
+    let returns = statistics["returns_series"]
+        .as_array_mut()
+        .context("canonical returns series should be an array")?;
+
+    for (index, entry) in returns.iter_mut().enumerate() {
+        let value = entry
+            .get_mut("value")
+            .context("canonical return value is missing")?;
+        extract_numerical_value(
+            value,
+            format!("/statistics/returns_series/{index}/value"),
+            &mut numerical_values,
+        )?;
+    }
+
+    for collection in ["positions", "position_snapshots"] {
+        let positions = value[collection]
+            .as_array_mut()
+            .context("canonical positions should be an array")?;
+
+        for (index, position) in positions.iter_mut().enumerate() {
+            let value = position
+                .get_mut("realized_return")
+                .context("canonical position return is missing")?;
+            extract_numerical_value(
+                value,
+                format!("/{collection}/{index}/realized_return"),
+                &mut numerical_values,
+            )?;
+        }
+    }
+
+    Ok(numerical_values)
+}
+
+fn extract_numerical_map(
+    value: &mut Value,
+    prefix: &str,
+    numerical_values: &mut BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    let values = value
+        .as_object_mut()
+        .context("canonical numerical statistics should be an object")?;
+
+    for (name, value) in values {
+        let name = escape_pointer_token(name);
+        extract_numerical_value(value, format!("{prefix}/{name}"), numerical_values)?;
+    }
+
+    Ok(())
+}
+
+fn extract_numerical_value(
+    value: &mut Value,
+    path: String,
+    numerical_values: &mut BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    if value.is_null() {
+        return Ok(());
+    }
+
+    let encoded = value
+        .as_str()
+        .with_context(|| format!("canonical numerical field '{path}' should be a string"))?;
+    decode_numerical_value(encoded)
+        .with_context(|| format!("invalid canonical numerical field '{path}'"))?;
+    numerical_values.insert(path, encoded.to_string());
+    *value = Value::Null;
+    Ok(())
+}
+
+fn decode_numerical_value(encoded: &str) -> anyhow::Result<f64> {
+    match encoded {
+        "nan" => Ok(f64::NAN),
+        "+inf" => Ok(f64::INFINITY),
+        "-inf" => Ok(f64::NEG_INFINITY),
+        _ => {
+            anyhow::ensure!(
+                encoded.len() == 16
+                    && encoded
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+                "invalid canonical numerical encoding '{encoded}'"
+            );
+            let bits = u64::from_str_radix(encoded, 16)?;
+            let value = f64::from_bits(bits);
+            anyhow::ensure!(
+                value.is_finite(),
+                "non-finite canonical values require a named encoding"
+            );
+            Ok(value)
+        }
+    }
+}
+
+fn numerical_values_match(expected: f64, actual: f64) -> bool {
+    if expected == actual || (expected.is_nan() && actual.is_nan()) {
+        return true;
+    }
+
+    if !expected.is_finite() || !actual.is_finite() {
+        return false;
+    }
+
+    let tolerance = NUMERICAL_ABSOLUTE_TOLERANCE
+        .max(NUMERICAL_RELATIVE_TOLERANCE * expected.abs().max(actual.abs()));
+    (expected - actual).abs() <= tolerance
+}
+
+fn escape_pointer_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
 }
 
 fn canonical_order_status(order: &Value) -> anyhow::Result<&str> {
@@ -727,6 +871,11 @@ pub(crate) fn write_result(case: &str, result: &CanonicalBacktestResult) -> anyh
         std::fs::write(
             directory.join(format!("{case}.json")),
             serde_json::to_vec_pretty(result.as_value())?,
+        )?;
+        let reference = CanonicalReference::from_value(result.as_value())?;
+        std::fs::write(
+            directory.join(format!("{case}.reference.json")),
+            serde_json::to_vec_pretty(&reference)?,
         )?;
     }
 

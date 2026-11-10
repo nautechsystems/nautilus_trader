@@ -15,6 +15,9 @@
 
 //! Configuration structures for the Lighter adapter.
 //!
+//! The default environment is mainnet. Deployment and environment select the credential namespace
+//! and protocol settings as well as endpoint defaults. URL overrides change only transport.
+//!
 //! Fields follow this order:
 //!
 //! - Environment
@@ -30,7 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, Venue},
     types::Currency,
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::common::{
@@ -68,20 +71,22 @@ pub struct LighterDataClientConfig {
     /// This scopes instruments, cache entries, and message routing without changing the
     /// deployment's signing or settlement settings.
     pub venue: Option<Venue>,
-    /// Lighter account index for authenticated REST data requests. Falls back
-    /// to the environment variable selected by `deployment` and `environment`.
+    /// Optional account index retained for config compatibility.
+    /// Public data requests do not use credentials.
     pub account_index: Option<u64>,
-    /// API key index for authenticated REST data requests. Falls back to the
-    /// environment variable selected by `deployment` and `environment`.
+    /// Optional API key index retained for config compatibility.
+    /// Public data requests do not use credentials.
     pub api_key_index: Option<u8>,
-    /// Hex-encoded private key for REST auth tokens. Falls back to the
-    /// environment variable selected by `deployment` and `environment`.
+    /// Optional private key retained for config compatibility.
+    /// Public data requests do not use credentials.
     pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
-    /// Optional WebSocket URL override.
+    /// Optional WebSocket URL override. The client enforces `readonly=true`.
+    /// Different resolved data and execution URLs use separate control-message limiters.
     pub base_url_ws: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
+    /// Optional absolute HTTP or HTTPS proxy URL for both transports, including its scheme.
+    #[serde(deserialize_with = "deserialize_proxy_url")]
     pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
@@ -89,7 +94,7 @@ pub struct LighterDataClientConfig {
     /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
-    /// Refresh interval for instrument metadata in minutes.
+    /// Refresh interval for instrument metadata in minutes. Set to 0 to disable refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// Maximum time to wait for an initial, post-reconnect, or recovery order book
@@ -98,8 +103,9 @@ pub struct LighterDataClientConfig {
     /// Set to 0 to disable snapshot deadlines.
     #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
-    /// Optional REST read-bucket quota override in requests per minute; unset keeps
-    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    /// Optional REST read-bucket quota in requests per minute. `None` or 0 uses 60.
+    /// Each client has its own limiter; budget combined data and execution traffic.
+    /// Raising the quota requires venue IP registration and does not authenticate public data.
     pub rest_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
@@ -168,26 +174,19 @@ impl LighterDataClientConfig {
         deployment::settlement_currency(self.deployment)
     }
 
-    /// Returns `true` when all REST auth credential fields are available.
+    /// Returns `true` when all credential fields are present in config or the selected environment.
+    ///
+    /// This checks presence without validating credentials. Public data requests do not use them.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
-        let (key_var, secret_var, account_var) =
-            credential_env_vars_for_deployment(self.deployment, self.environment);
-        let has_key = self.api_key_index.is_some() || env_var_is_set(key_var);
-        let has_account = self.account_index.is_some() || env_var_is_set(account_var);
-        let has_secret = self
-            .private_key
-            .as_ref()
-            .map(SecretString::expose_secret)
-            .is_some_and(|s| !s.trim().is_empty())
-            || env_var_is_set(secret_var);
-
-        has_key && has_account && has_secret
+        credentials_available(
+            self.private_key.as_ref(),
+            self.account_index,
+            self.api_key_index,
+            self.deployment,
+            self.environment,
+        )
     }
-}
-
-fn env_var_is_set(name: &str) -> bool {
-    std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
 }
 
 fn ensure_readonly_ws_url(url: String) -> String {
@@ -235,8 +234,12 @@ pub struct LighterExecutionClientConfig {
     ///
     /// This scopes instruments, cache entries, and execution routing without changing the
     /// deployment's signing, settlement, or protocol behavior.
+    /// Use underscores instead of hyphens so the account ID issuer can match.
+    #[serde(deserialize_with = "deserialize_execution_venue")]
     pub venue: Option<Venue>,
     /// Account identifier on the venue. Its issuer must match the resolved venue.
+    /// Rust defaults to `LIGHTER-001`; override it for Robinhood or a custom venue.
+    /// Python requires an explicit account ID.
     #[builder(default = AccountId::from("LIGHTER-001"))]
     pub account_id: AccountId,
     /// Lighter account index (numeric, assigned at registration). Falls back
@@ -251,9 +254,12 @@ pub struct LighterExecutionClientConfig {
     pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
-    /// Optional WebSocket URL override.
+    /// Optional WebSocket URL override. URLs containing `readonly=true` are rejected because
+    /// the query parameter does not prevent authenticated trading.
+    #[serde(deserialize_with = "deserialize_execution_ws_url")]
     pub base_url_ws: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
+    /// Optional absolute HTTP or HTTPS proxy URL for both transports, including its scheme.
+    #[serde(deserialize_with = "deserialize_proxy_url")]
     pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
@@ -261,14 +267,20 @@ pub struct LighterExecutionClientConfig {
     /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
-    /// Slippage buffer in basis points for market-style orders.
+    /// Slippage buffer in basis points for market-style orders, in `[0, 10_000)`.
+    /// Per-order `market_order_slippage_bps` overrides must be integers in the same range;
+    /// invalid values cause local denial before signing or dispatch.
     #[builder(default = 50)]
+    #[serde(deserialize_with = "deserialize_market_order_slippage_bps")]
     pub market_order_slippage_bps: u32,
-    /// Optional REST read-bucket quota override in requests per minute; unset keeps
-    /// the conservative 60 req/min default (raising it requires venue IP registration).
+    /// Optional REST read-bucket quota in requests per minute. `None` or 0 uses 60.
+    /// Raising the quota requires venue IP registration. Each client has its own limiter;
+    /// Standard accounts must budget combined REST and transaction traffic.
     pub rest_quota_per_min: Option<u32>,
-    /// Optional transaction quota override (req/min), independent of `rest_quota_per_min`;
-    /// unset keeps 60. Enforced across the HTTP and WebSocket sendTx paths (execution only).
+    /// Optional transaction quota (req/min), independent of `rest_quota_per_min`.
+    /// `None` or 0 uses 60. HTTP and WebSocket sends share this limiter, including trading,
+    /// startup integrator approval, and scheduled cancellation. Low quotas can delay arming
+    /// and renewal; Standard accounts must budget combined REST and transaction traffic.
     pub sendtx_quota_per_min: Option<u32>,
     /// WebSocket transport backend.
     #[builder(default)]
@@ -319,19 +331,19 @@ impl Default for LighterExecutionClientConfig {
 }
 
 impl LighterExecutionClientConfig {
-    /// Returns `true` when all fields required to sign and submit
-    /// authenticated transactions are configured.
+    /// Returns `true` when all credential fields are present in config or the selected environment.
     ///
-    /// Lighter signing requires the private key, the account index, and the
-    /// API key index together; any missing field invalidates the credential.
+    /// This checks presence without validating credentials. Client construction validates
+    /// the resolved account index, API key index, and private key.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
-        let key_set = self
-            .private_key
-            .as_ref()
-            .map(SecretString::expose_secret)
-            .is_some_and(|s| !s.trim().is_empty());
-        key_set && self.account_index.is_some() && self.api_key_index.is_some()
+        credentials_available(
+            self.private_key.as_ref(),
+            self.account_index,
+            self.api_key_index,
+            self.deployment,
+            self.environment,
+        )
     }
 
     /// Returns the resolved REST base URL.
@@ -370,6 +382,103 @@ impl LighterExecutionClientConfig {
     }
 }
 
+fn credentials_available(
+    private_key: Option<&SecretString>,
+    account_index: Option<u64>,
+    api_key_index: Option<u8>,
+    deployment: LighterDeployment,
+    environment: LighterEnvironment,
+) -> bool {
+    let (key_var, secret_var, account_var) =
+        credential_env_vars_for_deployment(deployment, environment);
+    let has_key = api_key_index.is_some() || env_var_is_set(key_var);
+    let has_account = account_index.is_some() || env_var_is_set(account_var);
+    let has_secret = private_key
+        .map(SecretString::expose_secret)
+        .is_some_and(|s| !s.trim().is_empty())
+        || env_var_is_set(secret_var);
+
+    has_key && has_account && has_secret
+}
+
+fn env_var_is_set(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
+}
+
+fn deserialize_proxy_url<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SecretString>, D::Error> {
+    let value = Option::<SecretString>::deserialize(deserializer)?;
+    validate_proxy_url(value.as_ref()).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+pub(crate) fn validate_proxy_url(value: Option<&SecretString>) -> anyhow::Result<()> {
+    if let Some(value) = value {
+        ProxyUrl::parse(value.expose_secret()).map_err(|_| {
+            anyhow::anyhow!(
+                "Lighter proxy_url must be an absolute http:// or https:// URL with a host"
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn deserialize_execution_venue<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Venue>, D::Error> {
+    let value = Option::<Venue>::deserialize(deserializer)?;
+    validate_execution_venue(value).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+pub(crate) fn validate_execution_venue(value: Option<Venue>) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        value.is_none_or(|venue| !venue.as_str().contains('-')),
+        "Lighter execution venue must not contain '-'; use '_' so the account ID issuer can match"
+    );
+    Ok(())
+}
+
+fn deserialize_execution_ws_url<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let value = Option::<String>::deserialize(deserializer)?;
+    validate_execution_ws_url(value.as_deref()).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+pub(crate) fn validate_execution_ws_url(value: Option<&str>) -> anyhow::Result<()> {
+    if let Some(value) = value.and_then(|value| url::Url::parse(value).ok()) {
+        anyhow::ensure!(
+            !value.query_pairs().any(|(key, value)| {
+                key.eq_ignore_ascii_case(WS_READONLY_QUERY_PARAM)
+                    && value.trim().eq_ignore_ascii_case("true")
+            }),
+            "Lighter execution WebSocket URL must not set readonly=true; it does not disable trading"
+        );
+    }
+
+    Ok(())
+}
+
+fn deserialize_market_order_slippage_bps<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u32, D::Error> {
+    let value = u32::deserialize(deserializer)?;
+    validate_market_order_slippage_bps(value).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+pub(crate) fn validate_market_order_slippage_bps(value: u32) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        value < 10_000,
+        "Lighter market_order_slippage_bps must be in [0, 10000)"
+    );
+    Ok(())
+}
+
 fn deserialize_scheduled_cancel_timeout<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<u64>, D::Error> {
@@ -406,6 +515,118 @@ mod tests {
 
     #[rstest]
     #[case(None, true)]
+    #[case(Some("http://127.0.0.1:8080"), true)]
+    #[case(Some("https://fixture:proxy-secret@proxy.example:8443"), true)]
+    #[case(Some("127.0.0.1:8080"), false)]
+    #[case(Some("socks5://127.0.0.1:1080"), false)]
+    #[case(Some("http://fixture:proxy-secret@[::1"), false)]
+    fn test_proxy_url_requires_shared_transport_support(
+        #[case] value: Option<&str>,
+        #[case] valid: bool,
+    ) {
+        let json = serde_json::json!({"proxy_url": value});
+        let data = serde_json::from_value::<LighterDataClientConfig>(json.clone());
+        let execution = serde_json::from_value::<LighterExecutionClientConfig>(json);
+
+        if valid {
+            assert_eq!(
+                data.unwrap()
+                    .proxy_url
+                    .as_ref()
+                    .map(SecretString::expose_secret),
+                value
+            );
+            assert_eq!(
+                execution
+                    .unwrap()
+                    .proxy_url
+                    .as_ref()
+                    .map(SecretString::expose_secret),
+                value
+            );
+        } else {
+            let expected =
+                "Lighter proxy_url must be an absolute http:// or https:// URL with a host";
+            assert_eq!(data.unwrap_err().to_string(), expected);
+            assert_eq!(execution.unwrap_err().to_string(), expected);
+        }
+    }
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some("LIGHTER_ALT"), true)]
+    #[case(Some("LIGHTER-ALT"), false)]
+    fn test_execution_venue_requires_representable_account_issuer(
+        #[case] value: Option<&str>,
+        #[case] valid: bool,
+    ) {
+        let json = serde_json::json!({"venue": value});
+        let data: LighterDataClientConfig = serde_json::from_value(json.clone()).unwrap();
+        let execution = serde_json::from_value::<LighterExecutionClientConfig>(json);
+        assert_eq!(
+            data.venue.map(|venue| venue.to_string()),
+            value.map(str::to_string)
+        );
+
+        if valid {
+            assert_eq!(execution.unwrap().venue, data.venue);
+        } else {
+            assert_eq!(
+                execution.unwrap_err().to_string(),
+                "Lighter execution venue must not contain '-'; use '_' so the account ID issuer can match"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some("wss://example.com/stream"), true)]
+    #[case(Some("wss://example.com/stream?readonly=false"), true)]
+    #[case(Some("wss://example.com/stream?readonly=true"), false)]
+    #[case(Some("wss://example.com/stream?readonly=false&readonly=true"), false)]
+    #[case(Some("wss://example.com/stream?read%6Fnly=tr%75e"), false)]
+    #[case(Some("wss://example.com/stream?ReadOnly=%20TRUE%20"), false)]
+    fn test_execution_ws_url_rejects_misleading_readonly_query(
+        #[case] value: Option<&str>,
+        #[case] valid: bool,
+    ) {
+        let json = serde_json::json!({"base_url_ws": value});
+        let data: LighterDataClientConfig = serde_json::from_value(json.clone()).unwrap();
+        let execution = serde_json::from_value::<LighterExecutionClientConfig>(json);
+        assert_eq!(data.base_url_ws.as_deref(), value);
+
+        if valid {
+            assert_eq!(execution.unwrap().base_url_ws.as_deref(), value);
+        } else {
+            assert_eq!(
+                execution.unwrap_err().to_string(),
+                "Lighter execution WebSocket URL must not set readonly=true; it does not disable trading"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(0, true)]
+    #[case(9_999, true)]
+    #[case(10_000, false)]
+    #[case(u32::MAX, false)]
+    fn test_market_order_slippage_bps(#[case] value: u32, #[case] valid: bool) {
+        let decoded = serde_json::from_value::<LighterExecutionClientConfig>(serde_json::json!({
+            "market_order_slippage_bps": value,
+        }));
+
+        if valid {
+            assert_eq!(decoded.unwrap().market_order_slippage_bps, value);
+        } else {
+            assert_eq!(
+                decoded.unwrap_err().to_string(),
+                "Lighter market_order_slippage_bps must be in [0, 10000)"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(None, true)]
     #[case(Some(0), false)]
     #[case(Some(15), false)]
     #[case(Some(419), false)]
@@ -425,7 +646,6 @@ mod tests {
             serde_json::json!(timeout)
         );
         let decoded = serde_json::from_value::<LighterExecutionClientConfig>(encoded);
-        assert_eq!(validate_scheduled_cancel_timeout(timeout).is_ok(), valid);
         assert_eq!(decoded.is_ok(), valid);
 
         if valid {

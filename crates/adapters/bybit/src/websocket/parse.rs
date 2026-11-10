@@ -30,10 +30,11 @@ use nautilus_model::{
         OrderStatus, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
+    fees::{MakerTakerFeeRates, calculate_maker_taker_commission},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -50,7 +51,9 @@ use super::{
 use crate::{
     common::{
         consts::BYBIT_QUOTE_DEPTH,
-        enums::{BybitOrderSide, BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
+        enums::{
+            BybitOrderSide, BybitOrderStatus, BybitPositionSide, BybitProductType, BybitTimeInForce,
+        },
         parse::{
             bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
             parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
@@ -957,10 +960,14 @@ pub fn parse_ws_fill_report(
 
 /// Parses a fast-stream WebSocket execution payload into a [`FillReport`].
 ///
-/// The `execution.fast` channel omits fee and exec-type fields, so the resulting
-/// report carries zero commission. Liquidity side is derived from the payload's
-/// `isMaker` flag. Pair with the standard `execution` channel if exact fee data
-/// is required.
+/// The `execution.fast` channel omits fee and exec-type fields. When account fee
+/// rates are supplied, commission is derived on a best-effort basis and is not
+/// venue-authoritative. Missing rates or derivation failures produce zero commission.
+/// Option fast fills always use zero commission because the payload lacks the inputs
+/// required by Bybit's Option fee formula. Liquidity side is derived from `isMaker`.
+///
+/// `client_order_id` takes precedence over the payload's `orderLinkId`. The execution client
+/// supplies the identity it correlates by venue order ID for maker fills.
 ///
 /// `venue_position_id` should be supplied for tracked hedge-mode orders so the
 /// emitted report carries the long/short position identity that the standard
@@ -973,6 +980,8 @@ pub fn parse_ws_fill_report_fast(
     execution: &BybitWsAccountExecutionFast,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    fee_rates: Option<MakerTakerFeeRates>,
+    client_order_id: Option<ClientOrderId>,
     venue_position_id: Option<PositionId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
@@ -999,17 +1008,23 @@ pub fn parse_ws_fill_report_fast(
         LiquiditySide::Taker
     };
 
-    // execution.fast carries no fee data (no rate or currency)
-    let commission_currency = instrument.quote_currency();
-    let commission = Money::from_decimal(Decimal::ZERO, commission_currency)
-        .with_context(|| format!("Failed to create zero commission for {commission_currency}"))?;
+    let commission = derive_fast_commission(
+        execution,
+        instrument,
+        order_side,
+        fee_rates,
+        last_qty,
+        last_px,
+        liquidity_side,
+    );
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
-
-    let client_order_id = if execution.order_link_id.is_empty() {
-        None
-    } else {
-        Some(ClientOrderId::new(execution.order_link_id))
-    };
+    let client_order_id = client_order_id.or_else(|| {
+        if execution.order_link_id.is_empty() {
+            None
+        } else {
+            Some(ClientOrderId::new(execution.order_link_id))
+        }
+    });
 
     Ok(FillReport::new(
         account_id,
@@ -1027,6 +1042,105 @@ pub fn parse_ws_fill_report_fast(
         ts_init,
         None,
     ))
+}
+
+fn derive_fast_commission(
+    execution: &BybitWsAccountExecutionFast,
+    instrument: &InstrumentAny,
+    order_side: OrderSide,
+    fee_rates: Option<MakerTakerFeeRates>,
+    last_qty: Quantity,
+    last_px: Price,
+    liquidity_side: LiquiditySide,
+) -> Money {
+    let fee_rate = fee_rates.map(|rates| {
+        if liquidity_side == LiquiditySide::Maker {
+            rates.maker
+        } else {
+            rates.taker
+        }
+    });
+
+    let currency = fast_commission_currency(execution, instrument, order_side, fee_rate);
+    let zero_commission = || {
+        Money::from_decimal(Decimal::ZERO, currency)
+            .expect("zero commission is valid in any currency")
+    };
+
+    if execution.category == BybitProductType::Option {
+        return zero_commission();
+    }
+
+    let Some(fee_rate) = fee_rate else {
+        return zero_commission();
+    };
+
+    match calculate_fast_commission(execution, instrument, fee_rate, last_qty, last_px, currency) {
+        Ok(commission) => commission,
+        Err(e) => {
+            log::warn!(
+                "Failed to derive fast execution commission for {} on {}, using zero: {e}",
+                execution.exec_id,
+                instrument.id()
+            );
+            zero_commission()
+        }
+    }
+}
+
+fn calculate_fast_commission(
+    execution: &BybitWsAccountExecutionFast,
+    instrument: &InstrumentAny,
+    fee_rate: Decimal,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+) -> anyhow::Result<Money> {
+    if execution.category == BybitProductType::Spot {
+        let base_currency = instrument
+            .base_currency()
+            .expect("Bybit spot instruments have a base currency");
+
+        if currency == base_currency {
+            let amount = last_qty
+                .as_decimal()
+                .checked_mul(fee_rate)
+                .ok_or_else(|| anyhow::anyhow!("fast commission calculation overflow"))?;
+            return Money::from_decimal(amount, currency).map_err(Into::into);
+        }
+
+        return calculate_maker_taker_commission(instrument, last_qty, last_px, fee_rate, None);
+    }
+
+    let commission =
+        calculate_maker_taker_commission(instrument, last_qty, last_px, fee_rate, None)?;
+    Money::from_decimal(commission.as_decimal(), instrument.settlement_currency())
+        .map_err(Into::into)
+}
+
+fn fast_commission_currency(
+    execution: &BybitWsAccountExecutionFast,
+    instrument: &InstrumentAny,
+    order_side: OrderSide,
+    fee_rate: Option<Decimal>,
+) -> Currency {
+    if execution.category != BybitProductType::Spot {
+        return instrument.settlement_currency();
+    }
+
+    let is_rebate = execution.is_maker && fee_rate.is_some_and(|rate| rate < Decimal::ZERO);
+    let use_base = matches!(
+        (order_side, is_rebate),
+        (OrderSide::Buy, false) | (OrderSide::Sell, true)
+    );
+
+    if use_base {
+        instrument
+            .base_currency()
+            .expect("Bybit spot instruments have a base currency")
+    } else {
+        instrument.quote_currency()
+    }
 }
 
 /// Parses a WebSocket account position payload into a [`PositionStatusReport`].
@@ -1156,10 +1270,16 @@ mod tests {
     use crate::{
         common::{
             enums::{BybitExecType, BybitOrderSide, BybitProductType},
-            parse::{parse_linear_instrument, parse_option_instrument},
+            parse::{
+                parse_inverse_instrument, parse_linear_instrument, parse_option_instrument,
+                parse_spot_instrument,
+            },
             testing::load_test_json,
         },
-        http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
+        http::models::{
+            BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
+            BybitInstrumentOptionResponse, BybitInstrumentSpotResponse,
+        },
         websocket::messages::{
             BybitWsAccountExecutionMsg, BybitWsLiquidationMsg, BybitWsOrderbookDepthMsg,
             BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
@@ -1177,8 +1297,29 @@ mod tests {
         parse_linear_instrument(instrument, TS, TS).unwrap()
     }
 
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        parse_spot_instrument(instrument, TS, TS).unwrap()
+    }
+
+    fn inverse_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_inverse.json");
+        let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        parse_inverse_instrument(instrument, TS, TS).unwrap()
+    }
+
     fn option_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_option.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        parse_option_instrument(instrument, TS, TS).unwrap()
+    }
+
+    fn option_instrument_with_distinct_settlement() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_option_symbol_id.json");
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
         parse_option_instrument(instrument, TS, TS).unwrap()
@@ -1308,6 +1449,22 @@ mod tests {
             last.flags & RecordFlag::F_LAST as u8,
             RecordFlag::F_LAST as u8
         );
+    }
+
+    #[rstest]
+    fn parse_orderbook_empty_snapshot_is_clear() {
+        let instrument = linear_instrument();
+        let mut msg: BybitWsOrderbookDepthMsg =
+            serde_json::from_str(&load_test_json("ws_orderbook_snapshot.json")).unwrap();
+        msg.data.b.clear();
+        msg.data.a.clear();
+
+        let deltas = parse_orderbook_deltas(&msg, &instrument, TS).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[0].flags));
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
     }
 
     #[rstest]
@@ -1742,7 +1899,9 @@ mod tests {
         let exec = fast_execution(is_maker, order_link_id);
         let account_id = AccountId::new("BYBIT-001");
 
-        let report = parse_ws_fill_report_fast(&exec, account_id, &instrument, None, TS).unwrap();
+        let report =
+            parse_ws_fill_report_fast(&exec, account_id, &instrument, None, None, None, TS)
+                .unwrap();
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument.id());
@@ -1751,7 +1910,7 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(50000.0));
-        assert_eq!(report.commission.as_f64(), 0.0);
+        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
         assert_eq!(report.liquidity_side, expected_liquidity);
         assert_eq!(
             report.client_order_id.map(|c| c.to_string()),
@@ -1762,14 +1921,175 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_ws_fill_report_fast_matches_standard_linear_commission() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let standard = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-001");
+        let standard_report = parse_ws_fill_report(standard, account_id, &instrument, TS).unwrap();
+        let mut fast = fast_execution(false, "link-1");
+        fast.exec_price = standard.exec_price.clone();
+        fast.exec_qty = standard.exec_qty.clone();
+        fast.side = standard.side;
+        fast.is_maker = standard.is_maker;
+        let rates = MakerTakerFeeRates::new(dec!(0.0001), dec!(0.00055));
+
+        let report =
+            parse_ws_fill_report_fast(&fast, account_id, &instrument, Some(rates), None, None, TS)
+                .unwrap();
+
+        assert_eq!(report.commission, standard_report.commission);
+        assert_eq!(report.commission.as_decimal(), dec!(26.3725275));
+        assert_eq!(report.commission.currency.code, "USDT");
+    }
+
+    #[rstest]
+    #[case::maker_buy(BybitOrderSide::Buy, true, dec!(0.0001), "BTC", dec!(0.00005))]
+    #[case::maker_sell(BybitOrderSide::Sell, true, dec!(0.0001), "USDT", dec!(2.5))]
+    #[case::taker_buy(BybitOrderSide::Buy, false, dec!(0.0001), "BTC", dec!(0.0003))]
+    #[case::taker_sell(BybitOrderSide::Sell, false, dec!(0.0001), "USDT", dec!(15))]
+    #[case::maker_buy_rebate(BybitOrderSide::Buy, true, dec!(-0.0001), "USDT", dec!(-2.5))]
+    #[case::maker_sell_rebate(BybitOrderSide::Sell, true, dec!(-0.0001), "BTC", dec!(-0.00005))]
+    fn parse_ws_fill_report_fast_calculates_spot_commission(
+        #[case] side: BybitOrderSide,
+        #[case] is_maker: bool,
+        #[case] maker_rate: Decimal,
+        #[case] expected_currency: &str,
+        #[case] expected_amount: Decimal,
+    ) {
+        let instrument = spot_instrument();
+        let mut exec = fast_execution(is_maker, "link-1");
+        exec.category = BybitProductType::Spot;
+        exec.side = side;
+        let rates = MakerTakerFeeRates::new(maker_rate, dec!(0.0006));
+
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            AccountId::new("BYBIT-001"),
+            &instrument,
+            Some(rates),
+            None,
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.commission.as_decimal(), expected_amount);
+        assert_eq!(report.commission.currency.code, expected_currency);
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_fast_calculates_inverse_commission() {
+        let instrument = inverse_instrument();
+        let mut exec = fast_execution(false, "link-1");
+        exec.category = BybitProductType::Inverse;
+        exec.symbol = Ustr::from("BTCUSD");
+        exec.exec_qty = "1000".to_string();
+        exec.exec_price = "50000".to_string();
+        let rates = MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006));
+
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            AccountId::new("BYBIT-001"),
+            &instrument,
+            Some(rates),
+            None,
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.commission.as_decimal(), dec!(0.000012));
+        assert_eq!(report.commission.currency.code, "BTC");
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_fast_option_missing_data_uses_zero_settlement_commission() {
+        let instrument = option_instrument_with_distinct_settlement();
+        let mut exec = fast_execution(false, "link-1");
+        exec.category = BybitProductType::Option;
+        exec.symbol = Ustr::from("BTC-30JUN25-100000-C");
+        exec.exec_qty = "0.5".to_string();
+        exec.exec_price = "1000".to_string();
+        let rates = MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0002));
+
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            AccountId::new("BYBIT-001"),
+            &instrument,
+            Some(rates),
+            None,
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.commission.currency.code, "USDC");
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_fast_missing_spot_rate_uses_side_currency() {
+        let instrument = spot_instrument();
+        let mut exec = fast_execution(false, "link-1");
+        exec.category = BybitProductType::Spot;
+
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            AccountId::new("BYBIT-001"),
+            &instrument,
+            None,
+            None,
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.commission.currency.code, "BTC");
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_fast_derivation_overflow_preserves_fill() {
+        let instrument = linear_instrument();
+        let exec = fast_execution(false, "link-1");
+        let rates = MakerTakerFeeRates::new(dec!(0.0001), Decimal::MAX);
+
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            AccountId::new("BYBIT-001"),
+            &instrument,
+            Some(rates),
+            None,
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.trade_id.to_string(), "abc-123");
+        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.commission.currency.code, "USDT");
+    }
+
+    #[rstest]
     fn parse_ws_fill_report_fast_preserves_venue_position_id() {
         let instrument = linear_instrument();
         let exec = fast_execution(false, "link-hedge");
         let account_id = AccountId::new("BYBIT-001");
         let venue_pid = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
 
-        let report =
-            parse_ws_fill_report_fast(&exec, account_id, &instrument, Some(venue_pid), TS).unwrap();
+        let report = parse_ws_fill_report_fast(
+            &exec,
+            account_id,
+            &instrument,
+            None,
+            None,
+            Some(venue_pid),
+            TS,
+        )
+        .unwrap();
 
         assert_eq!(report.venue_position_id, Some(venue_pid));
     }

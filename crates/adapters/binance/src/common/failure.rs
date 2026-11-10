@@ -27,7 +27,7 @@ use nautilus_live::execution::failure::CommandFailure;
 
 use crate::{
     common::error::{is_ambiguous_venue_code, is_retryable_http_status, is_retryable_venue_code},
-    futures::http::error::BinanceFuturesHttpError,
+    futures::http::{error::BinanceFuturesHttpError, models::BatchOrderError},
     spot::http::error::BinanceSpotHttpError,
 };
 
@@ -86,9 +86,9 @@ pub(crate) fn classify_spot_http_failure(error: &BinanceSpotHttpError) -> Comman
     let reason = error.to_string();
 
     match error {
-        BinanceSpotHttpError::MissingCredentials | BinanceSpotHttpError::ValidationError(_) => {
-            CommandFailure::NotSent(reason)
-        }
+        BinanceSpotHttpError::MissingCredentials
+        | BinanceSpotHttpError::ValidationError(_)
+        | BinanceSpotHttpError::RateLimitBlocked => CommandFailure::NotSent(reason),
         BinanceSpotHttpError::BinanceError { code, status, .. } => {
             classify_venue_failure(Some(*code), Some(*status), reason)
         }
@@ -109,7 +109,9 @@ pub(crate) fn classify_futures_http_failure(error: &BinanceFuturesHttpError) -> 
 
     match error {
         BinanceFuturesHttpError::MissingCredentials
-        | BinanceFuturesHttpError::ValidationError(_) => CommandFailure::NotSent(reason),
+        | BinanceFuturesHttpError::ValidationError(_)
+        | BinanceFuturesHttpError::IdentityLookup(_)
+        | BinanceFuturesHttpError::RateLimitBlocked => CommandFailure::NotSent(reason),
         BinanceFuturesHttpError::BinanceError { code, status, .. } => {
             classify_venue_failure(Some(*code), Some(*status), reason)
         }
@@ -119,6 +121,17 @@ pub(crate) fn classify_futures_http_failure(error: &BinanceFuturesHttpError) -> 
         | BinanceFuturesHttpError::Canceled(_)
         | BinanceFuturesHttpError::RetryBudgetExceeded(_)
         | BinanceFuturesHttpError::UnexpectedStatus { .. } => CommandFailure::Ambiguous(reason),
+    }
+}
+
+pub(crate) fn classify_futures_batch_failure(
+    error: &BatchOrderError,
+    reason: String,
+) -> CommandFailure {
+    if error.not_sent {
+        CommandFailure::NotSent(reason)
+    } else {
+        classify_venue_failure(Some(error.code), None, reason)
     }
 }
 
@@ -213,6 +226,32 @@ mod tests {
     }
 
     #[rstest]
+    #[case::venue(
+        BinanceFuturesHttpError::BinanceError {
+            code: -2013,
+            message: "Order does not exist".to_string(),
+            status: 400,
+            retry_after: None,
+        },
+        "Order identity lookup failed before submission: Binance error -2013 (HTTP 400): Order does not exist"
+    )]
+    #[case::timeout(
+        BinanceFuturesHttpError::Timeout("lookup timed out".to_string()),
+        "Order identity lookup failed before submission: Timeout: lookup timed out"
+    )]
+    fn test_classify_futures_identity_lookup_is_not_sent(
+        #[case] source: BinanceFuturesHttpError,
+        #[case] reason: &str,
+    ) {
+        let error = BinanceFuturesHttpError::IdentityLookup(Box::new(source));
+
+        assert_eq!(
+            classify_futures_http_failure(&error),
+            CommandFailure::NotSent(reason.to_string())
+        );
+    }
+
+    #[rstest]
     fn test_classify_futures_http_server_error_with_body_is_ambiguous() {
         let error = BinanceFuturesHttpError::BinanceError {
             code: -1000,
@@ -273,6 +312,20 @@ mod tests {
         assert_eq!(
             sanitize_reason("Insufficient balance"),
             "Insufficient balance"
+        );
+    }
+
+    #[rstest]
+    fn test_shared_backoff_failure_is_not_sent() {
+        let spot = BinanceSpotHttpError::RateLimitBlocked;
+        let futures = BinanceFuturesHttpError::RateLimitBlocked;
+        assert_eq!(
+            classify_spot_http_failure(&spot),
+            CommandFailure::NotSent(spot.to_string())
+        );
+        assert_eq!(
+            classify_futures_http_failure(&futures),
+            CommandFailure::NotSent(futures.to_string())
         );
     }
 }

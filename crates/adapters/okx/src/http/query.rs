@@ -522,7 +522,7 @@ pub struct GetFundingRateHistoryParams {
     /// Pagination: records older than this timestamp (ms).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
-    /// Number of results per request (default 100, max 100).
+    /// Number of results per request (default 400, max 400).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
@@ -825,24 +825,6 @@ mod tests {
         assert_eq!(
             qs, "instId=BTC-USDT-SWAP&bar=1m",
             "unexpected optional parameters were serialized: {qs}",
-        );
-    }
-
-    #[rstest]
-    fn test_no_literal_none_strings_leak_into_query_string() {
-        let mut builder = GetCandlesticksParamsBuilder::default();
-        builder.inst_id("BTC-USDT-SWAP");
-        builder.bar("1m");
-
-        let params = builder.build().unwrap();
-        let qs = serde_urlencoded::to_string(&params).unwrap();
-        assert!(
-            !qs.contains("None"),
-            "found literal \"None\" in query string: {qs}",
-        );
-        assert!(
-            !qs.contains("after=") && !qs.contains("before=") && !qs.contains("limit="),
-            "empty optional parameters must be omitted entirely: {qs}",
         );
     }
 

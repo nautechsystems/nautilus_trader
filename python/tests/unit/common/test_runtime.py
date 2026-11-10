@@ -118,33 +118,50 @@ def test_get_exchange_rate_direct_and_inverse_pairs() -> None:
     assert inverse == pytest.approx(Decimal("0.8"), abs=Decimal("1e-9"))
 
 
-def test_get_exchange_rate_midpoint_overflow_raises_value_error() -> None:
+def test_get_exchange_rate_midpoint_sum_overflow_returns_rate() -> None:
     """
-    Test midpoint overflow maps to a regular Python exception.
+    Test a representable midpoint survives overflow of the intermediate sum.
     """
     quotes = {"EUR/JPY": 7e28}
 
-    with pytest.raises(
-        ValueError,
-        match=r"^Decimal overflow calculating midpoint for pair EUR/JPY$",
-    ):
-        get_exchange_rate("EUR", "JPY", PriceType.MID, quotes, quotes)
+    rate = get_exchange_rate("EUR", "JPY", PriceType.MID, quotes, quotes)
+
+    assert rate == Decimal(69999999999999999280861413376)
 
 
 @pytest.mark.parametrize("price_type", [PriceType.BID, PriceType.ASK, PriceType.MID])
-def test_get_exchange_rate_path_overflow_raises_value_error(
+def test_get_exchange_rate_no_representable_path_raises_value_error(
     price_type: PriceType,
 ) -> None:
     """
-    Test path overflow maps to a regular Python exception for each price type.
+    Test a path overflow with no alternate route maps to a Python exception.
     """
     quotes = {"EUR/USD": 1e20, "USD/JPY": 1e20}
 
     with pytest.raises(
         ValueError,
-        match=r"^Decimal overflow multiplying exchange rates for EUR/JPY at USD/JPY$",
+        match=r"^No representable exchange rate from EUR to JPY$",
     ):
         get_exchange_rate("EUR", "JPY", price_type, quotes, quotes)
+
+
+@pytest.mark.parametrize("price_type", [PriceType.BID, PriceType.ASK, PriceType.MID])
+def test_get_exchange_rate_path_overflow_uses_alternate_route(price_type: PriceType) -> None:
+    """
+    Test a representable route remains available after another path overflows.
+    """
+    quotes = {
+        "EUR/USD": 1e9,
+        "USD/GBP": 1e9,
+        "GBP/AUD": 1e9,
+        "AUD/JPY": 1e9,
+        "EUR/ZAR": 2.0,
+        "ZAR/JPY": 3.0,
+    }
+
+    rate = get_exchange_rate("EUR", "JPY", price_type, quotes, quotes)
+
+    assert rate == Decimal(6)
 
 
 def test_message_bus_listener_stream_requires_running_event_loop() -> None:

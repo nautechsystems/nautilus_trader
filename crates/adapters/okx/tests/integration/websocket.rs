@@ -18,7 +18,6 @@
 use std::{
     collections::HashSet,
     net::SocketAddr,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -26,6 +25,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use axum::{
     Router,
     extract::{
@@ -45,17 +45,19 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
+    data::BarType,
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
 };
-use nautilus_network::{error::SendError, websocket::TransportBackend};
+use nautilus_network::{mode::ReconnectRequestOutcome, websocket::TransportBackend};
 use nautilus_okx::{
     common::{
-        enums::{OKXInstrumentType, OKXTradeMode},
+        consts::OKX_NAUTILUS_BROKER_ID,
+        enums::{OKXGreeksType, OKXInstrumentType, OKXTradeMode},
         models::OKXInstrument,
         parse::parse_instrument_any,
     },
@@ -87,6 +89,8 @@ struct TestServerState {
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     order_messages: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    frames: Arc<tokio::sync::Mutex<Vec<(usize, String)>>>,
+    next_connection: Arc<AtomicUsize>,
     drop_next_connection: Arc<AtomicBool>,
     send_text_ping: Arc<AtomicBool>,
     send_control_ping: Arc<AtomicBool>,
@@ -105,14 +109,8 @@ struct TestServerState {
     upgrade_delay: Duration,
 }
 
-fn data_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
-}
-
 fn load_json(filename: &str) -> Value {
-    let content = std::fs::read_to_string(data_path().join(filename))
-        .unwrap_or_else(|_| panic!("failed to read {filename}"));
-    serde_json::from_str(&content).expect("invalid json")
+    crate::common::load_test_json(filename)
 }
 
 fn load_margin_instruments() -> Vec<InstrumentAny> {
@@ -339,6 +337,8 @@ async fn handle_ws_upgrade(
 )]
 async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     state.authenticated.store(false, Ordering::Relaxed);
+    let mut authenticated = false;
+    let connection_id = state.next_connection.fetch_add(1, Ordering::Relaxed);
     {
         let mut count = state.connection_count.lock().await;
         *count += 1;
@@ -378,6 +378,12 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                 }
 
                 if let Ok(payload) = serde_json::from_str::<Value>(&text) {
+                    state
+                        .frames
+                        .lock()
+                        .await
+                        .push((connection_id, text.to_string()));
+
                     if payload.get("op") == Some(&json!("login")) {
                         if let Some(delay_ms) = *state.auth_response_delay_ms.lock().await {
                             state.auth_delay_count.fetch_add(1, Ordering::Relaxed);
@@ -394,12 +400,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         }
 
                         if state.fail_next_login.swap(false, Ordering::Relaxed) {
-                            let response = json!({
-                                "event": "login",
-                                "code": "60015",
-                                "msg": "Invalid signature",
-                                "connId": "test-conn",
-                            });
+                            let fixture = load_json("ws_reconnect_queued_frames.json");
+                            let response = fixture["api_key_error"].clone();
                             let _result = socket
                                 .send(Message::Text(response.to_string().into()))
                                 .await;
@@ -421,6 +423,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             break;
                         }
 
+                        authenticated = true;
                         state.authenticated.store(true, Ordering::Relaxed);
                         continue;
                     }
@@ -438,10 +441,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     .unwrap_or_default();
 
                                 let mut success = true;
-
-                                if is_private_channel(channel)
-                                    && !state.authenticated.load(Ordering::Relaxed)
-                                {
+                                if is_private_channel(channel) && !authenticated {
                                     success = false;
                                 }
 
@@ -556,7 +556,14 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     if let Some(op) = payload.get("op").and_then(Value::as_str)
                         && matches!(
                             op,
-                            "order" | "batch-orders" | "amend-order" | "batch-amend-orders"
+                            "order"
+                                | "batch-orders"
+                                | "amend-order"
+                                | "batch-amend-orders"
+                                | "cancel-order"
+                                | "batch-cancel-orders"
+                                | "mass-cancel"
+                                | "cancel-algos"
                         )
                     {
                         {
@@ -652,6 +659,13 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
 }
 
 fn connect_client(ws_url: &str) -> OKXWebSocketClient {
+    connect_client_with_auth_timeout(ws_url, None)
+}
+
+fn connect_client_with_auth_timeout(
+    ws_url: &str,
+    auth_timeout_secs: Option<u64>,
+) -> OKXWebSocketClient {
     OKXWebSocketClient::new(
         Some(ws_url.to_string()),
         Some("api_key".to_string()),
@@ -659,7 +673,7 @@ fn connect_client(ws_url: &str) -> OKXWebSocketClient {
         Some("passphrase".to_string()),
         Some(AccountId::from("OKX-TEST")),
         Some(30),
-        None,
+        auth_timeout_secs,
         TransportBackend::default(),
         None,
     )
@@ -727,6 +741,92 @@ async fn test_submit_event_order_omits_speed_bump() {
     assert!(arg.get("ccy").is_none());
 
     client.close().await.expect("close failed");
+}
+
+#[rstest]
+#[case::option("http_get_instruments_option.json", OKXTradeMode::Cross)]
+#[case::spot("http_get_instruments_spot.json", OKXTradeMode::Cash)]
+#[case::swap("http_get_instruments_swap.json", OKXTradeMode::Cross)]
+#[tokio::test]
+async fn test_submit_limit_fok_order_uses_fok_on_wire(
+    #[case] fixture: &str,
+    #[case] td_mode: OKXTradeMode,
+) {
+    let payload = load_json(fixture);
+    let response: OKXResponse<OKXInstrument> = serde_json::from_value(payload).unwrap();
+    let instrument = parse_instrument_any(&response.data[0], None, None, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    let instrument_id = instrument.id();
+    let quote_currency = instrument.quote_currency();
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+    let mut client = connect_client(&ws_url);
+    client.cache_instruments(&[instrument]);
+    client.cache_inst_id_code(instrument_id.symbol.inner(), 1_000_000_287);
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            td_mode,
+            ClientOrderId::from("Ofokwire001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("3"),
+            Some(TimeInForce::Fok),
+            Some(Price::from("0.0002")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let mut expected = json!({
+        "instIdCode": 1_000_000_287,
+        "tdMode": td_mode,
+        "ccy": quote_currency.to_string(),
+        "clOrdId": "Ofokwire001",
+        "tag": OKX_NAUTILUS_BROKER_ID,
+        "side": "buy",
+        "ordType": "fok",
+        "sz": "3",
+        "px": "0.0002",
+    });
+
+    if td_mode == OKXTradeMode::Cross {
+        expected["posSide"] = json!("net");
+    }
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["op"], "order");
+    assert_eq!(messages[0]["args"], json!([expected]));
+
+    client.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -857,7 +957,7 @@ async fn test_rejected_subscription_emits_subscription_failed_message() {
 }
 
 #[tokio::test]
-async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
+async fn test_submit_margin_cross_order_without_reduce_only() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -885,7 +985,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
             None,
             None,
             Some(false),
-            Some(true),
+            Some(false),
             None,
             None,
             None,
@@ -914,7 +1014,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
 
     assert_eq!(messages[0]["op"], "order");
     assert_eq!(arg["tdMode"], "cross");
-    assert_eq!(arg["reduceOnly"], true);
+    assert!(arg.get("reduceOnly").is_none());
 
     client.close().await.expect("close failed");
 }
@@ -923,13 +1023,39 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
 #[case::submit(OKXWsOperation::Order)]
 #[case::cancel(OKXWsOperation::CancelOrder)]
 #[case::amend(OKXWsOperation::AmendOrder)]
+#[case::batch_cancel(OKXWsOperation::BatchCancelOrders)]
 #[tokio::test]
-async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKXWsOperation) {
+async fn test_order_operations_during_reconnect_are_replayed(
+    #[case] op: OKXWsOperation,
+    #[values(false, true)] authenticated: bool,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url);
+    let registry = SocketReconnectRegistry::default();
+    let client_id = ClientId::from("REPLAY-CHECK");
+
+    let mut client = if authenticated {
+        connect_client(&ws_url)
+    } else {
+        OKXWebSocketClient::new(
+            Some(ws_url),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap()
+    }
+    .with_socket_control(SocketControl::with_registry(
+        client_id, None, "replay", &registry,
+    ));
+
     client.cache_instruments(&load_margin_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USDT"), 1_000_000_101);
     client.connect().await.expect("connect failed");
@@ -938,12 +1064,30 @@ async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKX
         .await
         .expect("client inactive");
 
-    state.reject_upgrades.store(true, Ordering::Relaxed);
-    state.drop_next_connection.store(true, Ordering::Relaxed);
     client
         .subscribe_trades(InstrumentId::from("BTC-USDT.OKX"), false)
         .await
-        .expect("subscribe failed");
+        .unwrap();
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 1 },
+        Duration::from_secs(2),
+    )
+    .await;
+    let reconnect = registry.handle(client_id, Ustr::from("replay")).unwrap();
+    assert_eq!(
+        reconnect.request_reconnect(),
+        ReconnectRequestOutcome::Accepted
+    );
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.reject_upgrades.store(true, Ordering::Relaxed);
+    assert_eq!(
+        reconnect.request_reconnect(),
+        ReconnectRequestOutcome::Accepted
+    );
     wait_until_async(
         || {
             let client = &client;
@@ -953,7 +1097,7 @@ async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKX
     )
     .await;
 
-    let client_order_id = ClientOrderId::from("Oreconnectnoreplay000001");
+    let client_order_id = ClientOrderId::from("Oreconnectqueued000001");
 
     match op {
         OKXWsOperation::Order => client
@@ -1011,6 +1155,21 @@ async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKX
             )
             .await
             .expect("amend order command failed"),
+        OKXWsOperation::BatchCancelOrders => client
+            .batch_cancel_orders(vec![
+                (
+                    InstrumentId::from("BTC-USDT.OKX"),
+                    Some(client_order_id),
+                    Some(VenueOrderId::from("70001")),
+                ),
+                (
+                    InstrumentId::from("BTC-USDT.OKX"),
+                    Some(ClientOrderId::from("Oreconnectqueued000002")),
+                    Some(VenueOrderId::from("70029")),
+                ),
+            ])
+            .await
+            .expect("batch cancel command failed"),
         _ => unreachable!("unexpected order operation"),
     }
 
@@ -1019,39 +1178,90 @@ async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKX
     tokio::time::sleep(Duration::from_millis(100)).await;
     state.reject_upgrades.store(false, Ordering::Relaxed);
 
-    let (failed_order_ids, failed_op, error) =
-        tokio::time::timeout(Duration::from_secs(10), async {
-            loop {
-                let message = stream.next().await.expect("stream ended");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let message = stream.next().await.expect("stream ended");
+            assert!(
+                !matches!(message, OKXWsMessage::SendFailed { .. }),
+                "unexpected send failure: {message:?}"
+            );
 
-                if let OKXWsMessage::SendFailed {
-                    client_order_ids,
-                    op,
-                    error,
-                    ..
-                } = message
-                    && client_order_ids.contains(&client_order_id)
-                {
-                    return (client_order_ids, op, error);
-                }
+            if matches!(message, OKXWsMessage::OrderResponse { .. }) {
+                break;
             }
-        })
-        .await
-        .expect("missing stale-connection send failure");
+        }
+    })
+    .await
+    .expect("missing recovered order response");
 
-    assert_eq!(failed_order_ids, vec![client_order_id]);
-    assert_eq!(failed_op, Some(op));
-    assert!(matches!(
-        error,
-        OKXWsError::TransportSend(SendError::ConnectionChanged)
-    ));
-    assert!(state.order_messages().await.is_empty());
+    let messages = state.order_messages().await;
+    let expected_op = serde_json::to_value(&op).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], "1");
+    assert_eq!(messages[0]["op"], expected_op);
+    assert_eq!(messages[0]["args"][0]["clOrdId"], client_order_id.as_str());
+
+    if op == OKXWsOperation::BatchCancelOrders {
+        assert_eq!(
+            messages[0]["args"],
+            json!([
+                {"instIdCode":1_000_000_101,"clOrdId":"Oreconnectqueued000001","ordId":"70001"},
+                {"instIdCode":1_000_000_101,"clOrdId":"Oreconnectqueued000002","ordId":"70029"},
+            ])
+        );
+    }
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let frames = state.frames.lock().await;
+    let recovered: Vec<_> = frames
+        .iter()
+        .filter(|(connection, _)| *connection == 2)
+        .map(|(_, text)| serde_json::from_str::<Value>(text).unwrap()["op"].clone())
+        .collect();
+    let mut expected_recovery = Vec::new();
+    if authenticated {
+        expected_recovery.push(json!("login"));
+    }
+
+    expected_recovery.extend([json!("subscribe"), expected_op]);
+    assert_eq!(recovered.len(), expected_recovery.len());
+
+    for expected in &expected_recovery {
+        assert_eq!(recovered.iter().filter(|op| *op == expected).count(), 1);
+    }
+
+    if authenticated {
+        assert_eq!(recovered[0], json!("login"));
+    }
+
+    drop(frames);
 
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::cash(
+    OKXTradeMode::Cash,
+    "Client error: OKX cash orders do not support reduce-only instructions"
+)]
+#[case::cross(
+    OKXTradeMode::Cross,
+    "Client error: OKX spot orders do not support reduce-only instructions"
+)]
+#[case::isolated(
+    OKXTradeMode::Isolated,
+    "Client error: OKX spot orders do not support reduce-only instructions"
+)]
 #[tokio::test]
-async fn test_submit_cash_spot_order_rejects_reduce_only() {
+async fn test_submit_spot_order_rejects_reduce_only(
+    #[case] trade_mode: OKXTradeMode,
+    #[case] expected_reason: &str,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1070,7 +1280,7 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
             TraderId::from("TRADER-001"),
             StrategyId::from("STRATEGY-001"),
             InstrumentId::from("BTC-USD.OKX"),
-            OKXTradeMode::Cash,
+            trade_mode,
             ClientOrderId::from("Ocashspotnoreduceonly00001"),
             OrderSide::Sell,
             OrderType::Limit,
@@ -1094,10 +1304,7 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
         .await
         .unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        "Client error: OKX cash orders do not support reduce-only instructions"
-    );
+    assert_eq!(error.to_string(), expected_reason);
     assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
@@ -1324,6 +1531,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
+                None,
             ),
             (
                 OKXInstrumentType::Margin,
@@ -1338,6 +1546,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
+                None,
                 None,
                 None,
                 None,
@@ -1360,6 +1569,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
+                None,
             ),
             (
                 OKXInstrumentType::Swap,
@@ -1374,6 +1584,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
+                None,
                 None,
                 None,
                 None,
@@ -1475,6 +1686,7 @@ async fn test_batch_submit_event_order_requires_outcome() {
             None,
             None,
             None,
+            None,
         )])
         .await;
 
@@ -1513,6 +1725,7 @@ async fn test_batch_submit_event_order_omits_speed_bump() {
             Some(Price::from("0.420")),
             None,
             Some(false),
+            None,
             None,
             Some("yes".to_string()),
             None,
@@ -1734,6 +1947,7 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             None,
             Some(false),
             Some(false),
+            None,
             None,
             Some(true),
             Some(false),
@@ -2315,41 +2529,162 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
 }
 
 #[tokio::test]
-async fn test_login_failure_emits_error() {
+async fn test_reconnect_during_authentication_does_not_repeat_login() {
     let state = Arc::new(TestServerState::default());
-    state.fail_next_login.store(true, Ordering::Relaxed);
-
     let addr = start_ws_server(state.clone()).await;
-    let ws_url = format!("ws://{addr}/ws");
+    let registry = SocketReconnectRegistry::default();
+    let client_id = ClientId::from("AUTH-RECOVERY");
+    let mut ws_client = connect_client_with_auth_timeout(&format!("ws://{addr}/ws"), Some(1))
+        .with_socket_control(SocketControl::with_registry(
+            client_id, None, "private", &registry,
+        ));
 
-    let instruments = load_instruments();
+    ws_client.connect().await.unwrap();
+    ws_client
+        .subscribe_orders(OKXInstrumentType::Spot)
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 1 },
+        Duration::from_secs(2),
+    )
+    .await;
 
-    let mut client = connect_client(&ws_url);
-    client.cache_instruments(&instruments);
+    *state.auth_response_delay_ms.lock().await = Some(300);
+    let reconnect = registry.handle(client_id, Ustr::from("private")).unwrap();
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until_async(
+        || async { state.auth_delay_count.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    let connect_result = tokio::time::timeout(Duration::from_secs(1), client.connect()).await;
+    state.reject_upgrades.store(true, Ordering::Relaxed);
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    state.reject_upgrades.store(false, Ordering::Relaxed);
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 2 },
+        Duration::from_secs(10),
+    )
+    .await;
 
-    match connect_result {
-        Ok(Ok(())) => panic!("connect unexpectedly succeeded"),
-        Ok(Err(e)) => assert!(format!("{e}").contains("Authentication")),
-        Err(_) => {
-            tokio::time::timeout(Duration::from_secs(1), async {
-                loop {
-                    if *state.login_count.lock().await >= 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                }
-            })
-            .await
-            .expect("login error did not arrive in time");
-        }
+    let frames = state.frames.lock().await.clone();
+    let connections = state.next_connection.load(Ordering::Relaxed);
+
+    let logins: Vec<_> = frames
+        .iter()
+        .filter_map(|(connection, text)| {
+            let frame: Value = serde_json::from_str(text).unwrap();
+            (frame["op"] == "login").then_some(*connection)
+        })
+        .collect();
+
+    ws_client.close().await.unwrap();
+
+    assert_eq!(connections, 3);
+    assert_eq!(logins, vec![0, 1, 2]);
+}
+
+#[rstest]
+#[case::timeout(true)]
+#[case::rejected(false)]
+#[tokio::test]
+async fn test_reconnect_authentication_failure_opens_new_connection(#[case] suppress_ack: bool) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let client_id = ClientId::from("AUTH-FAILURE");
+    let mut ws_client = connect_client_with_auth_timeout(&format!("ws://{addr}/ws"), Some(1))
+        .with_socket_control(SocketControl::with_registry(
+            client_id, None, "private", &registry,
+        ));
+
+    ws_client.connect().await.unwrap();
+    ws_client
+        .subscribe_orders(OKXInstrumentType::Spot)
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 1 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    if suppress_ack {
+        state.suppress_login_ack.store(true, Ordering::Relaxed);
+    } else {
+        state.fail_next_login.store(true, Ordering::Relaxed);
     }
 
+    let reconnect = registry.handle(client_id, Ustr::from("private")).unwrap();
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 2 },
+        Duration::from_secs(15),
+    )
+    .await;
+
+    let frames = state.frames.lock().await.clone();
+    let connections = state.next_connection.load(Ordering::Relaxed);
+
+    let logins: Vec<_> = frames
+        .iter()
+        .filter_map(|(connection, text)| {
+            let frame: Value = serde_json::from_str(text).unwrap();
+            (frame["op"] == "login").then_some(*connection)
+        })
+        .collect();
+
+    ws_client.close().await.unwrap();
+
+    assert_eq!(connections, 3);
+    assert_eq!(logins, vec![0, 1, 2]);
+}
+
+#[rstest]
+#[case(TransportBackend::Sockudo)]
+#[case(TransportBackend::Tungstenite)]
+#[tokio::test]
+async fn test_login_failure_emits_error(#[case] backend: TransportBackend) {
+    let state = Arc::new(TestServerState::default());
+    state.fail_next_login.store(true, Ordering::Relaxed);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = OKXWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        Some("key".into()),
+        Some("secret".into()),
+        Some("passphrase".into()),
+        None,
+        None,
+        Some(5),
+        backend,
+        None,
+    )
+    .unwrap();
+
+    let error = tokio::time::timeout(Duration::from_secs(1), client.connect())
+        .await
+        .expect("explicit login denial must settle before the auth timeout")
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("OKX authentication error 60005: Invalid apiKey")
+    );
     assert_eq!(*state.login_count.lock().await, 1);
     assert!(!state.authenticated.load(Ordering::Relaxed));
-
-    client.close().await.expect("close failed");
+    assert!(!client.is_active());
+    client.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -3387,6 +3722,67 @@ async fn test_reconnection_race_condition() {
 }
 
 #[tokio::test]
+async fn test_bar_subscription_flow() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url);
+    client.cache_instruments(&instruments);
+    client.connect().await.expect("connect failed");
+    client.wait_until_active(5.0).await.expect("wait failed");
+
+    let bar_type = BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL");
+    client
+        .subscribe_bars(bar_type)
+        .await
+        .expect("subscribe bars failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert_eq!(
+        state.subscription_events().await,
+        vec![(
+            "candle1m:BTC-USD".to_string(),
+            Some("BTC-USD".to_string()),
+            true,
+        )],
+    );
+
+    client
+        .unsubscribe_bars(bar_type)
+        .await
+        .expect("unsubscribe bars failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.unsubscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(
+        unsubscriptions.as_slice(),
+        &[json!({"channel": "candle1m", "instId": "BTC-USD"})],
+    );
+    drop(unsubscriptions);
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
 async fn test_subscribe_after_stream_call() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -3483,47 +3879,7 @@ async fn test_is_active_lifecycle() {
         !client.is_active(),
         "Client should not be active after close"
     );
-}
-
-#[tokio::test]
-async fn test_is_active_false_after_close() {
-    let state = Arc::new(TestServerState::default());
-    let addr = start_ws_server(state.clone()).await;
-    let ws_url = format!("ws://{addr}/ws");
-
-    let instruments = load_instruments();
-
-    let mut client = connect_client(&ws_url);
-    client.cache_instruments(&instruments);
-
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("wait until active failed");
-
-    assert!(
-        client.is_active(),
-        "Expected is_active() to be true after connect"
-    );
-
-    client.close().await.expect("close failed");
-
-    let client_ref = &client;
-    wait_until_async(
-        || async move { !client_ref.is_active() },
-        Duration::from_secs(2),
-    )
-    .await;
-
-    assert!(
-        !client.is_active(),
-        "Expected is_active() to be false after close"
-    );
-    assert!(
-        client.is_closed(),
-        "Expected is_closed() to be true after close"
-    );
+    assert!(client.is_closed(), "Client should be closed after close");
 }
 
 #[tokio::test]
@@ -4014,6 +4370,176 @@ async fn test_submit_usdc_spot_order_serializes_usd_trade_quote_ccy() {
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::buy_base(OrderSide::Buy, Some(false), Some("base_ccy"))]
+#[case::buy_quote(OrderSide::Buy, Some(true), Some("quote_ccy"))]
+#[case::buy_default(OrderSide::Buy, None, None)]
+#[case::sell_base(OrderSide::Sell, Some(false), None)]
+#[case::sell_quote(OrderSide::Sell, Some(true), Some("quote_ccy"))]
+#[case::sell_default(OrderSide::Sell, None, None)]
+#[tokio::test]
+async fn test_spot_market_quantity_units(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: Option<bool>,
+    #[case] target: Option<&str>,
+    #[values(
+        OKXTradeMode::Cash,
+        OKXTradeMode::Cross,
+        OKXTradeMode::Isolated,
+        OKXTradeMode::SpotIsolated
+    )]
+    mode: OKXTradeMode,
+    #[values(false, true)] batch: bool,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = connect_client(&format!("ws://{addr}/ws"));
+    client.cache_instruments(&load_usdc_spot_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    let instrument_id = InstrumentId::from("BTC-USDC.OKX");
+    let client_order_id = ClientOrderId::from("OUNITS");
+
+    let quantity = Quantity::from(if quote_quantity == Some(true) {
+        "123.45"
+    } else {
+        "0.01234567"
+    });
+
+    if batch {
+        client
+            .batch_submit_orders(vec![(
+                OKXInstrumentType::Spot,
+                instrument_id,
+                mode,
+                client_order_id,
+                side,
+                None,
+                OrderType::Market,
+                quantity,
+                None,
+                None,
+                Some(false),
+                Some(false),
+                quote_quantity,
+                None,
+                None,
+                None,
+                None,
+            )])
+            .await
+            .unwrap();
+    } else {
+        client
+            .submit_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                mode,
+                client_order_id,
+                side,
+                OrderType::Market,
+                quantity,
+                Some(TimeInForce::Gtc),
+                None,
+                None,
+                Some(false),
+                Some(false),
+                quote_quantity,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let mut expected = json!({
+        "instIdCode": 20459, "tdMode": mode.to_string().to_lowercase(),
+        "clOrdId": "OUNITS", "ccy": "USDC", "side": side.to_string().to_lowercase(),
+        "ordType": "market", "sz": quantity.to_string(), "tag": OKX_NAUTILUS_BROKER_ID,
+    });
+
+    if let Some(target) = target {
+        expected["tgtCcy"] = json!(target);
+    }
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        messages[0]["op"],
+        if batch { "batch-orders" } else { "order" }
+    );
+    assert_eq!(messages[0]["args"], json!([expected]));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[case::buy_base(
+    OrderSide::Buy,
+    false,
+    "OKXInstrumentType::Margin market BUY orders require quote quantity"
+)]
+#[case::sell_quote(
+    OrderSide::Sell,
+    true,
+    "OKXInstrumentType::Margin market SELL orders require base quantity"
+)]
+#[tokio::test]
+async fn test_margin_market_quantity_rejected_before_send(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: bool,
+    #[case] reason: &str,
+) {
+    let client = connect_client("ws://127.0.0.1:0/ws");
+    client.cache_instruments(&load_margin_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDT"), 123);
+    let error = client
+        .batch_submit_orders(vec![(
+            OKXInstrumentType::Margin,
+            InstrumentId::from("BTC-USDT.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("OUNSUPPORTEDUNITS"),
+            side,
+            None,
+            OrderType::Market,
+            Quantity::from("0.01234567"),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            Some(quote_quantity),
+            None,
+            None,
+            None,
+            None,
+        )])
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Client error: VALIDATION_FAILED: {reason}")
+    );
+}
+
 #[tokio::test]
 async fn test_submit_usdc_spot_order_rejects_unlisted_trade_quote_ccy() {
     let state = Arc::new(TestServerState::default());
@@ -4169,4 +4695,222 @@ async fn test_usdc_subscription_resubscribes_same_inst_id_after_reconnect() {
     );
 
     client.close().await.expect("close failed");
+}
+
+#[rstest]
+fn test_new_without_credentials() {
+    let client = OKXWebSocketClient::default();
+    assert_eq!(client.api_key(), None);
+    assert!(client.is_closed());
+    assert!(!client.is_active());
+}
+
+#[rstest]
+fn test_new_with_credentials() {
+    let client = OKXWebSocketClient::new(
+        None,
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        None,
+        None,
+        None,
+        TransportBackend::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(client.api_key(), Some("test_key"));
+}
+
+#[rstest]
+fn test_new_partial_credentials_fails() {
+    let result = OKXWebSocketClient::new(
+        None,
+        Some("test_key".to_string()),
+        None,
+        Some("test_passphrase".to_string()),
+        None,
+        None,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "`api_key`, `api_secret`, `api_passphrase` credentials must be provided together"
+    );
+}
+
+#[rstest]
+fn test_instruments_cache_arc_observes_post_clone_writes() {
+    let client = OKXWebSocketClient::default();
+    let cache = client.instruments_cache_arc();
+    assert!(cache.load().is_empty());
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let symbol = instrument.symbol().inner();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+
+    let loaded = cache.load();
+    assert_eq!(loaded.len(), 1);
+    let stored = loaded.get(&symbol).expect("instrument not refreshed");
+    assert_eq!(stored.id(), instrument.id());
+}
+
+#[rstest]
+fn test_add_option_greeks_sub_defaults_to_both_conventions() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+    client.add_option_greeks_sub(instrument_id);
+
+    let subs = client.option_greeks_subs().load();
+    let stored = subs.get(&instrument_id).expect("instrument not registered");
+    assert_eq!(stored.len(), 2);
+    assert!(stored.contains(&OKXGreeksType::Bs));
+    assert!(stored.contains(&OKXGreeksType::Pa));
+}
+
+#[rstest]
+#[case::bs_only(vec![OKXGreeksType::Bs])]
+#[case::pa_only(vec![OKXGreeksType::Pa])]
+#[case::both(vec![OKXGreeksType::Bs, OKXGreeksType::Pa])]
+fn test_add_option_greeks_sub_with_conventions_stores_requested_set(
+    #[case] conventions: Vec<OKXGreeksType>,
+) {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+    let set: AHashSet<OKXGreeksType> = conventions.iter().copied().collect();
+
+    client.add_option_greeks_sub_with_conventions(instrument_id, set.clone());
+
+    let subs = client.option_greeks_subs().load();
+    let stored = subs.get(&instrument_id).expect("instrument not registered");
+    assert_eq!(stored, &set);
+}
+
+#[rstest]
+fn test_add_option_greeks_sub_with_empty_conventions_falls_back_to_both() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+    client.add_option_greeks_sub_with_conventions(instrument_id, AHashSet::new());
+
+    let subs = client.option_greeks_subs().load();
+    let stored = subs.get(&instrument_id).expect("instrument not registered");
+    assert_eq!(
+        stored,
+        &AHashSet::from_iter([OKXGreeksType::Bs, OKXGreeksType::Pa])
+    );
+}
+
+#[rstest]
+fn test_remove_option_greeks_sub_clears_entry() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+    client.add_option_greeks_sub(instrument_id);
+    client.remove_option_greeks_sub(&instrument_id);
+
+    let subs = client.option_greeks_subs().load();
+    assert!(!subs.contains_key(&instrument_id));
+}
+
+#[tokio::test]
+async fn test_cancel_order_fails_without_inst_id_code() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+    let result = client
+        .cancel_order(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            Some(ClientOrderId::new("O-001")),
+            None,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(OKXWsError::ClientError(message))
+            if message == "No instIdCode cached for BTC-USDT-SWAP.OKX, cannot cancel order"
+    ));
+}
+
+#[tokio::test]
+async fn test_submit_order_fails_without_inst_id_code() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+
+    let result = client
+        .submit_order(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            OKXTradeMode::Cross,
+            ClientOrderId::new("O-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(OKXWsError::ClientError(message))
+            if message == "No instIdCode cached for ETH-USDT-SWAP.OKX, cannot submit order"
+    ));
+}
+
+#[tokio::test]
+async fn test_cancel_order_passes_inst_id_code_lookup_when_cached() {
+    let client = OKXWebSocketClient::default();
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+    client.cache_inst_id_code(Ustr::from("BTC-USDT-SWAP"), 10459);
+
+    let result = client
+        .cancel_order(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            Some(ClientOrderId::new("O-001")),
+            None,
+        )
+        .await;
+
+    assert!(matches!(result, Err(OKXWsError::HandlerUnavailable(_))));
+}
+
+#[rstest]
+fn test_inst_id_code_cache_keeps_usd_and_usdc_instruments_distinct() {
+    let client = OKXWebSocketClient::default();
+    client.cache_inst_id_code(Ustr::from("BTC-USD"), 10401);
+    client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+
+    assert_eq!(client.get_inst_id_code(&Ustr::from("BTC-USD")), Some(10401));
+    assert_eq!(
+        client.get_inst_id_code(&Ustr::from("BTC-USDC")),
+        Some(20459)
+    );
+    assert_ne!(
+        client.get_inst_id_code(&Ustr::from("BTC-USD")),
+        client.get_inst_id_code(&Ustr::from("BTC-USDC"))
+    );
 }

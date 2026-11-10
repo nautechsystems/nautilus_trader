@@ -147,6 +147,12 @@ impl TimeEventAccumulator {
         self.next_sequence = 0;
     }
 
+    /// Cancels accumulated events for a timer already advanced off its clock.
+    pub(crate) fn cancel_timer(&mut self, name: &str) {
+        self.heap
+            .retain(|handler| handler.0.handler.event.name.as_str() != name);
+    }
+
     /// Drain all events from the heap in timestamp order.
     ///
     /// This is provided for backwards compatibility with code that expects

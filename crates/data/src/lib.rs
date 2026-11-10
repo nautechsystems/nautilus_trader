@@ -138,13 +138,13 @@ pub mod option_chains;
 #[doc(hidden)]
 pub mod replay;
 
-#[cfg(feature = "python")]
-pub mod python;
+mod subscription;
 
 #[cfg(feature = "defi")]
 pub mod defi;
 
-mod subscription;
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports
 pub use aggregation::{

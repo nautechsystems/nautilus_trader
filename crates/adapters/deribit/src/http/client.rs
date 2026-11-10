@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
@@ -36,7 +37,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol},
+    identifiers::{AccountId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -68,9 +69,14 @@ use super::{
         GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
         GetUserTradesByInstrumentAndTimeParams,
     },
+    reconciliation::{
+        ReconciliationScope, ReportRead, instrument_id_from_name, is_historical_order_state,
+        millis_in_window, record_historical_miss, timestamp_in_window,
+    },
 };
 use crate::{
     common::{
+        capabilities,
         consts::{
             DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_API_PATH, DERIBIT_GLOBAL_RATE_KEY,
             DERIBIT_HTTP_ACCOUNT_QUOTA, DERIBIT_HTTP_ORDER_QUOTA, DERIBIT_HTTP_REST_QUOTA,
@@ -103,76 +109,7 @@ use crate::{
 /// The API maximum is 1000.
 pub const DERIBIT_HISTORICAL_TRADES_MAX_COUNT: u32 = 1000;
 
-// Dedup and cursor state for timestamp-based trade pagination.
-// Deribit provides no offset cursor, so when multiple trades share
-// one millisecond we use trade-ID dedup to avoid reprocessing.
-// If an entire page contains only seen IDs we advance past that
-// millisecond, which can skip trades when >1000 share one timestamp.
-struct TradePaginator {
-    seen_ids: AHashSet<String>,
-    cursor: i64,
-    end: i64,
-}
-
-impl TradePaginator {
-    fn new(start: i64, end: i64) -> Self {
-        Self {
-            seen_ids: AHashSet::new(),
-            cursor: start,
-            end,
-        }
-    }
-
-    // Returns indices of new (unseen) items and advances the cursor.
-    // Returns None when the page is empty (pagination should stop).
-    fn advance(
-        &mut self,
-        ids: &[String],
-        timestamps: &[i64],
-        has_more: bool,
-    ) -> Option<Vec<usize>> {
-        if ids.is_empty() {
-            return None;
-        }
-
-        let prev_seen = self.seen_ids.len();
-        let mut new_indices = Vec::new();
-        let mut last_ts = self.cursor;
-
-        for (i, id) in ids.iter().enumerate() {
-            last_ts = timestamps[i];
-
-            if self.seen_ids.insert(id.clone()) {
-                new_indices.push(i);
-            }
-        }
-
-        if !has_more {
-            return Some(new_indices);
-        }
-
-        let new_count = self.seen_ids.len() - prev_seen;
-
-        if new_count == 0 {
-            self.cursor = last_ts + 1;
-        } else {
-            self.cursor = last_ts;
-        }
-
-        Some(new_indices)
-    }
-
-    // Strict greater-than so pages at exactly end_ms are still
-    // fetched (Deribit treats start_timestamp as inclusive).
-    fn is_exhausted(&self) -> bool {
-        self.cursor > self.end
-    }
-
-    fn reset(&mut self, start: i64) {
-        self.seen_ids.clear();
-        self.cursor = start;
-    }
-}
+const ORDER_HISTORY_PAGE_SIZE: u32 = 100;
 
 /// Low-level Deribit HTTP client for raw API operations.
 ///
@@ -1135,35 +1072,35 @@ impl DeribitHttpClient {
             return AHashMap::new();
         }
 
-        let mut currencies = AHashSet::new();
-
-        if requested_currency == DeribitCurrency::ANY {
-            for instrument in raw_instruments
+        let currencies = if requested_currency == DeribitCurrency::ANY {
+            raw_instruments
                 .iter()
                 .filter(|instrument| Self::is_combo_kind(instrument.kind))
-            {
-                if let Ok(currency) = DeribitCurrency::from_str(instrument.base_currency.as_str()) {
-                    currencies.insert(currency);
-                }
-            }
+                .filter_map(|instrument| {
+                    DeribitCurrency::from_str(instrument.base_currency.as_str()).ok()
+                })
+                .collect()
         } else {
-            currencies.insert(requested_currency);
-        }
+            AHashSet::from([requested_currency])
+        };
 
         let mut combo_by_id = AHashMap::new();
 
         for currency in currencies {
-            match self.inner.get_combos(GetCombosParams::new(currency)).await {
-                Ok(response) => {
-                    if let Some(combos) = response.result {
-                        for combo in combos {
-                            combo_by_id.insert(combo.id, combo);
-                        }
-                    }
-                }
+            let response = match self.inner.get_combos(GetCombosParams::new(currency)).await {
+                Ok(response) => response,
                 Err(e) => {
                     log::warn!("Failed to load Deribit combo definitions for {currency}: {e}");
+                    continue;
                 }
+            };
+
+            let Some(combos) = response.result else {
+                continue;
+            };
+
+            for combo in combos {
+                combo_by_id.insert(combo.id, combo);
             }
         }
 
@@ -1178,23 +1115,14 @@ impl DeribitHttpClient {
     }
 
     fn attach_combo_leg_info(instrument: &mut InstrumentAny, combo: &DeribitCombo) {
-        if let Some(info) = Self::combo_leg_info(instrument, combo) {
-            match instrument {
-                InstrumentAny::CryptoOptionSpread(spread) => spread.info = Some(info),
-                InstrumentAny::CryptoFuturesSpread(spread) => spread.info = Some(info),
-                _ => {}
-            }
-        }
-    }
-
-    fn combo_leg_info(instrument: &InstrumentAny, combo: &DeribitCombo) -> Option<Params> {
-        let existing_info = match instrument {
-            InstrumentAny::CryptoOptionSpread(spread) => spread.info.as_ref(),
-            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.as_ref(),
-            _ => return None,
+        let info = match instrument {
+            InstrumentAny::CryptoOptionSpread(spread) => &mut spread.info,
+            InstrumentAny::CryptoFuturesSpread(spread) => &mut spread.info,
+            _ => return,
         };
 
-        let mut info = existing_info
+        let mut merged = info
+            .as_ref()
             .map(|info| IndexMap::clone(info))
             .unwrap_or_default();
 
@@ -1213,14 +1141,13 @@ impl DeribitHttpClient {
             })
             .collect::<Vec<_>>();
 
-        info.insert("deribit_combo_id".to_string(), json!(combo.id));
-        info.insert(
+        merged.insert("deribit_combo_id".to_string(), json!(combo.id));
+        merged.insert(
             "deribit_combo_state".to_string(),
             json!(combo.state.as_str()),
         );
-        info.insert("deribit_combo_legs".to_string(), json!(legs));
-
-        Some(Params::new(info))
+        merged.insert("deribit_combo_legs".to_string(), json!(legs));
+        *info = Some(Params::new(merged));
     }
 
     /// Requests historical trades for an instrument within a time range.
@@ -1256,6 +1183,7 @@ impl DeribitHttpClient {
         // Get instrument from cache to determine precisions
         let (price_precision, size_precision) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                capabilities::validate_public_trades(&instrument)?;
                 (instrument.price_precision(), instrument.size_precision())
             } else {
                 log::warn!("Instrument {instrument_id} not in cache, skipping trades request");
@@ -1413,8 +1341,10 @@ impl DeribitHttpClient {
         }
 
         let instrument_id = bar_type.instrument_id();
+
         let (price_precision, size_precision, use_cost_for_volume) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                capabilities::validate_public_trades(&instrument)?;
                 (
                     instrument.price_precision(),
                     instrument.size_precision(),
@@ -1590,6 +1520,8 @@ impl DeribitHttpClient {
     /// Requests order status reports for reconciliation.
     ///
     /// Fetches order statuses from Deribit and converts them to Nautilus [`OrderStatusReport`].
+    /// Every instrument is in scope. An unresolved open order fails the request. An unresolved
+    /// closed order inside the request window also fails the request.
     ///
     /// # Strategy
     /// - Uses `/private/get_open_orders` for all open orders (single efficient API call)
@@ -1598,7 +1530,10 @@ impl DeribitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - An in-scope open order cannot be resolved.
+    /// - An in-scope closed order inside the request window cannot be resolved.
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -1607,144 +1542,249 @@ impl DeribitHttpClient {
         end: Option<UnixNanos>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let read = self
+            .request_order_status_reports_in_scope(
+                account_id,
+                instrument_id,
+                start,
+                end,
+                open_only,
+                ReconciliationScope::unrestricted(),
+            )
+            .await?;
+
+        read.into_reports()
+    }
+
+    /// Requests order status reports and reports in-window historical instrument misses.
+    ///
+    /// Records outside `scope` are omitted. An in-scope open order whose instrument is not cached
+    /// fails the read. An in-scope closed order inside the request window whose instrument is not
+    /// cached is omitted and recorded on [`ReportRead::historical_misses`]. This method does not
+    /// request the missing instrument from the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or an in-scope open order cannot be resolved. No
+    /// reports are returned in that case. A cached order that cannot be parsed is omitted.
+    pub(crate) async fn request_order_status_reports_in_scope(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        open_only: bool,
+        scope: ReconciliationScope,
+    ) -> anyhow::Result<ReportRead<OrderStatusReport>> {
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
         let mut seen_order_ids = AHashSet::new();
+        let mut historical_misses = Vec::new();
 
-        let mut parse_and_add = |order: &DeribitOrderMsg| {
-            let symbol = order.instrument_name;
-            if let Some(instrument) = self.get_instrument(&symbol) {
-                match parse_user_order_msg(order, &instrument, account_id, ts_init) {
-                    Ok(report) => {
-                        // Apply time range filter based on ts_last
-                        let ts_last = report.ts_last;
-                        let in_range = match (start, end) {
-                            (Some(s), Some(e)) => ts_last >= s && ts_last <= e,
-                            (Some(s), None) => ts_last >= s,
-                            (None, Some(e)) => ts_last <= e,
-                            (None, None) => true,
-                        };
-                        // Only deduplicate if in range (prevents dropping valid historical reports)
-                        if in_range && seen_order_ids.insert(order.order_id.clone()) {
-                            reports.push(report);
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to parse order {} for {}: {}",
-                            order.order_id,
-                            order.instrument_name,
-                            e
-                        );
-                    }
-                }
-            } else {
-                log::debug!(
-                    "Skipping order {} - instrument {} not in cache",
-                    order.order_id,
-                    order.instrument_name
-                );
-            }
+        let mut parse_and_add = |order: &DeribitOrderMsg| -> anyhow::Result<()> {
+            self.accept_order_report(
+                order,
+                account_id,
+                instrument_id,
+                start,
+                end,
+                ts_init,
+                &scope,
+                &mut seen_order_ids,
+                &mut reports,
+                &mut historical_misses,
+            )
         };
 
         if let Some(instrument_id) = instrument_id {
-            // Use instrument-specific endpoint (efficient)
-            let instrument_name = instrument_id.symbol.to_string();
-
-            // Get open orders for this instrument
-            let open_params = GetOpenOrdersByInstrumentParams {
-                instrument_name: instrument_name.clone(),
-                r#type: None,
-            };
-
-            if let Some(orders) = self
-                .inner
-                .get_open_orders_by_instrument(open_params)
-                .await?
-                .result
-            {
-                for order in &orders {
-                    parse_and_add(order);
-                }
-            }
-
-            if !open_only {
-                const PAGE_SIZE: u32 = 100;
-                let mut offset: u32 = 0;
-
-                loop {
-                    let history_params = GetOrderHistoryByInstrumentParams {
-                        instrument_name: instrument_name.clone(),
-                        count: Some(PAGE_SIZE),
-                        offset: Some(offset),
-                        include_old: Some(true),
-                        include_unfilled: Some(true),
-                    };
-                    let orders = self
-                        .inner
-                        .get_order_history_by_instrument(history_params)
-                        .await?
-                        .result
-                        .unwrap_or_default();
-
-                    let count = orders.len() as u32;
-                    for order in &orders {
-                        parse_and_add(order);
-                    }
-
-                    if count < PAGE_SIZE {
-                        break;
-                    }
-                    offset += count;
-                }
-            }
+            self.collect_instrument_order_reports(instrument_id, open_only, &mut parse_and_add)
+                .await?;
         } else {
-            // Use get_open_orders for ALL open orders - single API call!
-            let open_params = GetOpenOrdersParams::default();
-            if let Some(orders) = self.inner.get_open_orders(open_params).await?.result {
-                for order in &orders {
-                    parse_and_add(order);
-                }
-            }
-
-            if !open_only {
-                const PAGE_SIZE: u32 = 100;
-
-                for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
-                    let mut offset: u32 = 0;
-
-                    loop {
-                        let history_params = GetOrderHistoryByCurrencyParams {
-                            currency,
-                            kind: None,
-                            count: Some(PAGE_SIZE),
-                            offset: Some(offset),
-                            include_old: Some(true),
-                            include_unfilled: Some(true),
-                        };
-                        let orders = self
-                            .inner
-                            .get_order_history_by_currency(history_params)
-                            .await?
-                            .result
-                            .unwrap_or_default();
-
-                        let count = orders.len() as u32;
-                        for order in &orders {
-                            parse_and_add(order);
-                        }
-
-                        if count < PAGE_SIZE {
-                            break;
-                        }
-                        offset += count;
-                    }
-                }
-            }
+            self.collect_account_order_reports(open_only, &mut parse_and_add)
+                .await?;
         }
 
         log::debug!("Generated {} order status reports", reports.len());
-        Ok(reports)
+        Ok(ReportRead {
+            reports,
+            historical_misses,
+        })
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn accept_order_report(
+        &self,
+        order: &DeribitOrderMsg,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ts_init: UnixNanos,
+        scope: &ReconciliationScope,
+        seen_order_ids: &mut AHashSet<String>,
+        reports: &mut Vec<OrderStatusReport>,
+        historical_misses: &mut Vec<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        let record_id = instrument_id_from_name(order.instrument_name);
+
+        if instrument_id.is_some_and(|id| id != record_id) {
+            return Ok(());
+        }
+
+        if !scope.includes(record_id) {
+            log::debug!("Skipping report for out-of-scope instrument {record_id}");
+            return Ok(());
+        }
+
+        let Some(instrument) = self.get_instrument(&order.instrument_name) else {
+            if !is_historical_order_state(order.order_state.as_str()) {
+                anyhow::bail!(
+                    "Open order {} has unresolved instrument {record_id}",
+                    order.order_id
+                );
+            }
+
+            if millis_in_window(order.last_update_timestamp, start, end) {
+                record_historical_miss(historical_misses, record_id);
+            }
+
+            return Ok(());
+        };
+
+        match parse_user_order_msg(order, &instrument, account_id, ts_init) {
+            Ok(report) if timestamp_in_window(report.ts_last, start, end) => {
+                if seen_order_ids.insert(order.order_id.clone()) {
+                    reports.push(report);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse order {} for {}: {}",
+                    order.order_id,
+                    order.instrument_name,
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn collect_instrument_order_reports(
+        &self,
+        instrument_id: InstrumentId,
+        open_only: bool,
+        parse_and_add: &mut impl FnMut(&DeribitOrderMsg) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let instrument_name = instrument_id.symbol.to_string();
+
+        let open_params = GetOpenOrdersByInstrumentParams {
+            instrument_name: instrument_name.clone(),
+            r#type: None,
+        };
+
+        if let Some(orders) = self
+            .inner
+            .get_open_orders_by_instrument(open_params)
+            .await?
+            .result
+        {
+            for order in &orders {
+                parse_and_add(order)?;
+            }
+        }
+
+        if open_only {
+            return Ok(());
+        }
+
+        let mut offset = 0;
+
+        loop {
+            let history_params = GetOrderHistoryByInstrumentParams {
+                instrument_name: instrument_name.clone(),
+                count: Some(ORDER_HISTORY_PAGE_SIZE),
+                offset: Some(offset),
+                include_old: Some(true),
+                include_unfilled: Some(true),
+            };
+
+            let orders = self
+                .inner
+                .get_order_history_by_instrument(history_params)
+                .await?
+                .result
+                .unwrap_or_default();
+            let count = orders.len() as u32;
+            for order in &orders {
+                parse_and_add(order)?;
+            }
+
+            if count < ORDER_HISTORY_PAGE_SIZE {
+                break;
+            }
+
+            offset += count;
+        }
+
+        Ok(())
+    }
+
+    async fn collect_account_order_reports(
+        &self,
+        open_only: bool,
+        parse_and_add: &mut impl FnMut(&DeribitOrderMsg) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        if let Some(orders) = self
+            .inner
+            .get_open_orders(GetOpenOrdersParams::default())
+            .await?
+            .result
+        {
+            for order in &orders {
+                parse_and_add(order)?;
+            }
+        }
+
+        if open_only {
+            return Ok(());
+        }
+
+        for currency in DeribitCurrency::iter().filter(|currency| *currency != DeribitCurrency::ANY)
+        {
+            let mut offset = 0;
+
+            loop {
+                let history_params = GetOrderHistoryByCurrencyParams {
+                    currency,
+                    kind: None,
+                    count: Some(ORDER_HISTORY_PAGE_SIZE),
+                    offset: Some(offset),
+                    include_old: Some(true),
+                    include_unfilled: Some(true),
+                };
+
+                let orders = self
+                    .inner
+                    .get_order_history_by_currency(history_params)
+                    .await?
+                    .result
+                    .unwrap_or_default();
+                let count = orders.len() as u32;
+                for order in &orders {
+                    parse_and_add(order)?;
+                }
+
+                if count < ORDER_HISTORY_PAGE_SIZE {
+                    break;
+                }
+
+                offset += count;
+            }
+        }
+
+        Ok(())
     }
 
     /// Requests fill reports for reconciliation.
@@ -1752,13 +1792,21 @@ impl DeribitHttpClient {
     /// Fetches user trades from Deribit and converts them to Nautilus [`FillReport`].
     /// Automatically paginates through all results using time-cursor advancement.
     ///
+    /// Every instrument is in scope. A trade whose instrument is not cached is an unresolved
+    /// historical record and fails this request. A trade for a cached instrument that cannot be
+    /// parsed, including a commission outside the representable money range, also fails the
+    /// request. No fill reports are returned.
+    ///
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
     /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - A trade for a cached instrument cannot be parsed.
+    /// - An in-scope trade inside the request window cannot be resolved.
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -1766,6 +1814,45 @@ impl DeribitHttpClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let read = self
+            .request_fill_reports_scoped(
+                account_id,
+                instrument_id,
+                start,
+                end,
+                None,
+                ReconciliationScope::unrestricted(),
+            )
+            .await?;
+
+        read.into_reports()
+    }
+
+    /// Requests fill reports, optionally limited to one venue order.
+    ///
+    /// When `venue_order_id` is set, trades for other orders are omitted before trade parsing.
+    /// A trade-parse failure for an omitted order does not fail the request. A response that
+    /// cannot be decoded still fails the request.
+    ///
+    /// Records outside `scope` are omitted. An in-scope trade inside the request window whose
+    /// instrument is not cached is omitted and recorded on [`ReportRead::historical_misses`]. A
+    /// commission conversion failure for a cached trade still fails the request and is not recorded
+    /// as incomplete history. This method does not request the missing instrument from the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - A requested cached trade cannot be parsed.
+    pub(crate) async fn request_fill_reports_scoped(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        venue_order_id: Option<&VenueOrderId>,
+        scope: ReconciliationScope,
+    ) -> anyhow::Result<ReportRead<FillReport>> {
         let ts_init = self.generate_ts_init();
         let now_ms = Timestamp::now().as_millisecond();
 
@@ -1773,105 +1860,191 @@ impl DeribitHttpClient {
         let start_ms = start.map_or(0, |ns| nanos_to_millis(ns.as_u64()) as i64);
         let end_ms = end.map_or(now_ms, |ns| nanos_to_millis(ns.as_u64()) as i64);
         let mut reports = Vec::new();
+        let mut historical_misses = Vec::new();
 
-        let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
-            let symbol = trade.instrument_name;
-            if let Some(instrument) = self.get_instrument(&symbol) {
-                match parse_user_trade_msg(trade, &instrument, account_id, ts_init) {
-                    Ok(report) => reports.push(report),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to parse trade {} for {}: {}",
-                            trade.trade_id,
-                            trade.instrument_name,
-                            e
-                        );
-                    }
-                }
-            } else {
-                log::debug!(
-                    "Skipping trade {} - instrument {} not in cache",
-                    trade.trade_id,
-                    trade.instrument_name
-                );
-            }
+        let mut parse_and_add = |trade: &DeribitUserTradeMsg| -> anyhow::Result<()> {
+            self.accept_fill_report(
+                trade,
+                account_id,
+                instrument_id,
+                start,
+                end,
+                ts_init,
+                venue_order_id,
+                &scope,
+                &mut reports,
+                &mut historical_misses,
+            )
         };
 
         let mut paginator = TradePaginator::new(start_ms, end_ms);
 
         if let Some(instrument_id) = instrument_id {
+            self.collect_instrument_fill_reports(
+                instrument_id,
+                end_ms,
+                &mut paginator,
+                &mut parse_and_add,
+            )
+            .await?;
+        } else {
+            self.collect_account_fill_reports(start_ms, end_ms, &mut paginator, &mut parse_and_add)
+                .await?;
+        }
+
+        log::debug!("Generated {} fill reports", reports.len());
+        Ok(ReportRead {
+            reports,
+            historical_misses,
+        })
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn accept_fill_report(
+        &self,
+        trade: &DeribitUserTradeMsg,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ts_init: UnixNanos,
+        venue_order_id: Option<&VenueOrderId>,
+        scope: &ReconciliationScope,
+        reports: &mut Vec<FillReport>,
+        historical_misses: &mut Vec<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        if venue_order_id.is_some_and(|order_id| trade.order_id != order_id.as_str()) {
+            return Ok(());
+        }
+
+        let record_id = instrument_id_from_name(trade.instrument_name);
+
+        if instrument_id.is_some_and(|id| id != record_id) {
+            return Ok(());
+        }
+
+        if !scope.includes(record_id) {
+            log::debug!("Skipping report for out-of-scope instrument {record_id}");
+            return Ok(());
+        }
+
+        let Some(instrument) = self.get_instrument(&trade.instrument_name) else {
+            if millis_in_window(trade.timestamp, start, end) {
+                record_historical_miss(historical_misses, record_id);
+            }
+
+            return Ok(());
+        };
+
+        let report =
+            parse_user_trade_msg(trade, &instrument, account_id, ts_init).with_context(|| {
+                format!(
+                    "failed to parse trade {} for {}",
+                    trade.trade_id, trade.instrument_name
+                )
+            })?;
+
+        reports.push(report);
+        Ok(())
+    }
+
+    async fn collect_instrument_fill_reports(
+        &self,
+        instrument_id: InstrumentId,
+        end_ms: i64,
+        paginator: &mut TradePaginator,
+        parse_and_add: &mut impl FnMut(&DeribitUserTradeMsg) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        loop {
+            let params = GetUserTradesByInstrumentAndTimeParams {
+                instrument_name: instrument_id.symbol.to_string(),
+                start_timestamp: paginator.cursor,
+                end_timestamp: end_ms,
+                count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
+                sorting: Some("asc".to_string()),
+            };
+
+            let Some(data) = self
+                .inner
+                .get_user_trades_by_instrument_and_time(params)
+                .await?
+                .result
+            else {
+                break;
+            };
+
+            if !Self::consume_trade_page(&data, paginator, parse_and_add)? {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn collect_account_fill_reports(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+        paginator: &mut TradePaginator,
+        parse_and_add: &mut impl FnMut(&DeribitUserTradeMsg) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        for currency in DeribitCurrency::iter().filter(|currency| *currency != DeribitCurrency::ANY)
+        {
+            paginator.reset(start_ms);
+
             loop {
-                let params = GetUserTradesByInstrumentAndTimeParams {
-                    instrument_name: instrument_id.symbol.to_string(),
+                let params = GetUserTradesByCurrencyAndTimeParams {
+                    currency,
                     start_timestamp: paginator.cursor,
                     end_timestamp: end_ms,
+                    kind: None,
                     count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
                     sorting: Some("asc".to_string()),
                 };
-                let response = self
+
+                let Some(data) = self
                     .inner
-                    .get_user_trades_by_instrument_and_time(params)
-                    .await?;
-
-                let Some(data) = response.result else { break };
-
-                let ids: Vec<String> = data.trades.iter().map(|t| t.trade_id.clone()).collect();
-                let timestamps: Vec<i64> = data.trades.iter().map(|t| t.timestamp as i64).collect();
-
-                let Some(new_indices) = paginator.advance(&ids, &timestamps, data.has_more) else {
+                    .get_user_trades_by_currency_and_time(params)
+                    .await?
+                    .result
+                else {
                     break;
                 };
 
-                for i in &new_indices {
-                    parse_and_add(&data.trades[*i]);
-                }
-
-                if !data.has_more || paginator.is_exhausted() {
+                if !Self::consume_trade_page(&data, paginator, parse_and_add)? {
                     break;
-                }
-            }
-        } else {
-            for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
-                paginator.reset(start_ms);
-
-                loop {
-                    let params = GetUserTradesByCurrencyAndTimeParams {
-                        currency,
-                        start_timestamp: paginator.cursor,
-                        end_timestamp: end_ms,
-                        kind: None,
-                        count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
-                        sorting: Some("asc".to_string()),
-                    };
-                    let response = self
-                        .inner
-                        .get_user_trades_by_currency_and_time(params)
-                        .await?;
-
-                    let Some(data) = response.result else { break };
-
-                    let ids: Vec<String> = data.trades.iter().map(|t| t.trade_id.clone()).collect();
-                    let timestamps: Vec<i64> =
-                        data.trades.iter().map(|t| t.timestamp as i64).collect();
-
-                    let Some(new_indices) = paginator.advance(&ids, &timestamps, data.has_more)
-                    else {
-                        break;
-                    };
-
-                    for i in &new_indices {
-                        parse_and_add(&data.trades[*i]);
-                    }
-
-                    if !data.has_more || paginator.is_exhausted() {
-                        break;
-                    }
                 }
             }
         }
 
-        log::debug!("Generated {} fill reports", reports.len());
-        Ok(reports)
+        Ok(())
+    }
+
+    fn consume_trade_page(
+        data: &DeribitUserTradesResponse,
+        paginator: &mut TradePaginator,
+        parse_and_add: &mut impl FnMut(&DeribitUserTradeMsg) -> anyhow::Result<()>,
+    ) -> anyhow::Result<bool> {
+        let ids: Vec<String> = data
+            .trades
+            .iter()
+            .map(|trade| trade.trade_id.clone())
+            .collect();
+        let timestamps: Vec<i64> = data
+            .trades
+            .iter()
+            .map(|trade| trade.timestamp as i64)
+            .collect();
+
+        let Some(new_indices) = paginator.advance(&ids, &timestamps, data.has_more) else {
+            return Ok(false);
+        };
+
+        for index in new_indices {
+            parse_and_add(&data.trades[index])?;
+        }
+
+        Ok(data.has_more && !paginator.is_exhausted())
     }
 
     /// Requests ticker data for a single instrument.
@@ -1965,6 +2138,8 @@ impl DeribitHttpClient {
     /// Requests position status reports for reconciliation.
     ///
     /// Fetches positions from Deribit and converts them to Nautilus [`PositionStatusReport`].
+    /// Every instrument is in scope. A non-flat position whose instrument is not cached fails the
+    /// request, and no reports are returned.
     ///
     /// # Strategy
     /// - Uses `currency=any` to fetch all positions in one call
@@ -1972,12 +2147,39 @@ impl DeribitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if the request fails or an in-scope non-flat position cannot be resolved.
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        Ok(self
+            .request_position_status_reports_in_scope(
+                account_id,
+                instrument_id,
+                ReconciliationScope::unrestricted(),
+            )
+            .await?
+            .reports)
+    }
+
+    /// Requests position status reports and classifies instrument misses by `scope`.
+    ///
+    /// A position outside `scope`, or outside `instrument_id` when that filter is set, is omitted.
+    /// An in-scope non-flat position whose instrument is not cached fails the read. Flat positions
+    /// are omitted before scope classification. This method does not request the missing instrument
+    /// from the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or an in-scope non-flat position cannot be resolved.
+    /// No reports are returned in that case.
+    pub(crate) async fn request_position_status_reports_in_scope(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        scope: ReconciliationScope,
+    ) -> anyhow::Result<ReportRead<PositionStatusReport>> {
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
 
@@ -1994,27 +2196,137 @@ impl DeribitHttpClient {
                     continue;
                 }
 
-                let symbol = position.instrument_name;
-                if let Some(instrument) = self.get_instrument(&symbol) {
-                    let report =
-                        parse_position_status_report(position, &instrument, account_id, ts_init);
-                    reports.push(report);
-                } else {
-                    log::debug!(
-                        "Skipping position - instrument {} not in cache",
-                        position.instrument_name
-                    );
+                let record_id = instrument_id_from_name(position.instrument_name);
+
+                if instrument_id.is_some_and(|id| id != record_id) {
+                    continue;
                 }
+
+                if !scope.includes(record_id) {
+                    log::debug!("Skipping report for out-of-scope instrument {record_id}");
+                    continue;
+                }
+
+                let symbol = position.instrument_name;
+
+                let Some(instrument) = self.get_instrument(&symbol) else {
+                    anyhow::bail!("Position has unresolved instrument {record_id}");
+                };
+
+                let report =
+                    parse_position_status_report(position, &instrument, account_id, ts_init);
+                reports.push(report);
             }
         }
 
-        // Filter by instrument if provided
-        if let Some(instrument_id) = instrument_id {
-            reports.retain(|r| r.instrument_id == instrument_id);
+        log::debug!("Generated {} position status reports", reports.len());
+        Ok(ReportRead {
+            reports,
+            historical_misses: Vec::new(),
+        })
+    }
+
+    /// Loads configured instruments that are not already cached.
+    ///
+    /// Each returned instrument id matches the requested id. The caller caches the result. Report
+    /// generation does not call this method.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a request fails or the venue returns a different instrument.
+    pub(crate) async fn request_uncached_instruments(
+        &self,
+        instrument_ids: &[InstrumentId],
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let mut loaded = Vec::new();
+
+        for instrument_id in instrument_ids {
+            if self.get_instrument(&instrument_id.symbol.inner()).is_some() {
+                continue;
+            }
+
+            let instrument = self
+                .request_instrument(*instrument_id)
+                .await
+                .with_context(|| {
+                    format!("failed to load reconciliation instrument {instrument_id}")
+                })?;
+
+            anyhow::ensure!(
+                instrument.id() == *instrument_id,
+                "loaded instrument {} does not match required {instrument_id}",
+                instrument.id(),
+            );
+            loaded.push(instrument);
         }
 
-        log::debug!("Generated {} position status reports", reports.len());
-        Ok(reports)
+        Ok(loaded)
+    }
+}
+
+// Dedup and cursor state for timestamp-based trade pagination.
+// Deribit provides no offset cursor, so when multiple trades share
+// one millisecond we use trade-ID dedup to avoid reprocessing.
+// If an entire page contains only seen IDs we advance past that
+// millisecond, which can skip trades when >1000 share one timestamp.
+struct TradePaginator {
+    seen_ids: AHashSet<String>,
+    cursor: i64,
+    end: i64,
+}
+
+impl TradePaginator {
+    fn new(start: i64, end: i64) -> Self {
+        Self {
+            seen_ids: AHashSet::new(),
+            cursor: start,
+            end,
+        }
+    }
+
+    // Returns indices of new (unseen) items and advances the cursor.
+    // Returns None when the page is empty (pagination should stop).
+    fn advance(
+        &mut self,
+        ids: &[String],
+        timestamps: &[i64],
+        has_more: bool,
+    ) -> Option<Vec<usize>> {
+        if ids.is_empty() {
+            return None;
+        }
+
+        let mut new_indices = Vec::new();
+        let mut last_ts = self.cursor;
+        for (i, id) in ids.iter().enumerate() {
+            last_ts = timestamps[i];
+            if self.seen_ids.insert(id.clone()) {
+                new_indices.push(i);
+            }
+        }
+
+        if !has_more {
+            return Some(new_indices);
+        }
+
+        if new_indices.is_empty() {
+            self.cursor = last_ts + 1;
+        } else {
+            self.cursor = last_ts;
+        }
+
+        Some(new_indices)
+    }
+
+    // Strict greater-than so pages at exactly end_ms are still
+    // fetched (Deribit treats start_timestamp as inclusive).
+    fn is_exhausted(&self) -> bool {
+        self.cursor > self.end
+    }
+
+    fn reset(&mut self, start: i64) {
+        self.seen_ids.clear();
+        self.cursor = start;
     }
 }
 
@@ -2024,9 +2336,47 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::{
-        DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_GLOBAL_RATE_KEY, DERIBIT_ORDER_RATE_KEY,
+    use crate::common::{
+        consts::{DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_GLOBAL_RATE_KEY, DERIBIT_ORDER_RATE_KEY},
+        testing::routed_spot_instrument,
     };
+
+    #[tokio::test]
+    async fn routed_spot_rejects_trade_and_bar_history_before_http() {
+        let client = DeribitHttpClient::new(
+            Some("http://127.0.0.1:1".into()),
+            DeribitEnvironment::Testnet,
+            1,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        let instrument = routed_spot_instrument();
+        let instrument_id = instrument.id();
+        client.cache_instruments(&[instrument]);
+
+        let trades_error = client
+            .request_trades(instrument_id, None, None, None)
+            .await
+            .unwrap_err();
+        let bars_error = client
+            .request_bars(
+                "BTC_USDC.DERIBIT-1-MINUTE-LAST-EXTERNAL".parse().unwrap(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            trades_error.to_string(),
+            "Deribit routed spot does not support public trades or charts for BTC_USDC.DERIBIT"
+        );
+        assert_eq!(bars_error.to_string(), trades_error.to_string());
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {

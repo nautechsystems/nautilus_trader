@@ -22,8 +22,9 @@ use crate::{
     hypersync::{
         HypersyncLog,
         log::{
-            extract_address_from_topic, extract_block_number, extract_log_index,
-            extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
+            extract_address_from_topic, extract_block_hash, extract_block_number,
+            extract_log_index, extract_transaction_hash, extract_transaction_index,
+            validate_event_signature_hash,
         },
     },
     rpc::log as rpc_log,
@@ -88,6 +89,7 @@ pub fn parse_flash_event_hypersync(
             dex,
             pool_identifier,
             extract_block_number(log)?,
+            extract_block_hash(log),
             extract_transaction_hash(log)?,
             extract_transaction_index(log)?,
             extract_log_index(log)?,
@@ -133,6 +135,7 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
         dex,
         pool_identifier,
         rpc_log::extract_block_number(log)?,
+        rpc_log::extract_block_hash(log)?,
         rpc_log::extract_transaction_hash(log)?,
         rpc_log::extract_transaction_index(log)?,
         rpc_log::extract_log_index(log)?,
@@ -147,9 +150,9 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
-    use alloy::primitives::U256;
+    use alloy::primitives::{B256, U256};
     use rstest::*;
     use serde_json::json;
 
@@ -206,6 +209,8 @@ mod tests {
         let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_flash_event_hypersync(dex, &hypersync_log).unwrap();
 
+        assert_eq!(event.block_hash, None);
+
         assert_eq!(
             event.pool_identifier.to_string(),
             "0x4CEf551255EC96d89feC975446301b5C4e164C59"
@@ -231,6 +236,11 @@ mod tests {
     fn test_parse_flash_event_rpc(rpc_log: RpcLog) {
         let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_flash_event_rpc(dex, &rpc_log).unwrap();
+
+        let expected =
+            B256::from_str("0xf10a01cbc75fccad0384a7447f37f06bfb01fbd08d7541a6e5f558ff9bc31ea4")
+                .unwrap();
+        assert_eq!(event.block_hash, Some(expected));
 
         assert_eq!(
             event.pool_identifier.to_string(),

@@ -13,15 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::{actor::DataActor, timer::TimeEvent};
+use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
+
+use jiff::Timestamp;
+use nautilus_common::{
+    actor::DataActor,
+    cache::Cache,
+    clock::VirtualClock,
+    messages::data::{DataCommand, RequestCommand},
+    msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
+    timer::TimeEvent,
+};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+        Bar, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{InstrumentCloseType, MarketStatusAction},
-    identifiers::{ClientId, InstrumentId, Symbol},
+    identifiers::{ClientId, InstrumentId, Symbol, TraderId},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -77,6 +87,143 @@ fn test_config_default() {
     assert!(config.log_data);
     assert!(config.subscribe_params.is_none());
     assert!(config.request_params.is_none());
+    assert_eq!(config.request_start, None);
+    assert_eq!(config.request_end, None);
+    assert_eq!(config.request_limit, None);
+}
+
+#[rstest]
+#[case::defaults(None, None, None, "2026-10-31T23:00:00Z", "2026-10-25T00:00:00Z")]
+#[case::bounded(
+    Some("2026-10-29T01:02:03.123456789Z"),
+    Some("2026-10-29T01:07:08.987654321Z"),
+    Some(23),
+    "2026-10-29T01:02:03.123456789Z",
+    "2026-10-29T01:02:03.123456789Z"
+)]
+#[case::end_only(
+    None,
+    Some("2026-10-29T01:07:08Z"),
+    Some(31),
+    "2026-10-29T00:07:08Z",
+    "2026-10-22T01:07:08Z"
+)]
+#[case::start_only(
+    Some("2026-10-28T02:03:04Z"),
+    None,
+    Some(47),
+    "2026-10-28T02:03:04Z",
+    "2026-10-28T02:03:04Z"
+)]
+fn test_on_start_historical_request_bounds(
+    #[case] start: Option<&str>,
+    #[case] end: Option<&str>,
+    #[case] limit: Option<usize>,
+    #[case] expected_start: &str,
+    #[case] expected_funding_start: &str,
+) {
+    let now: Timestamp = "2026-11-01T00:00:00Z".parse().unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(UnixNanos::from(now));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = InstrumentId::from("BTC-USDT.TEST");
+    let client_id = ClientId::new("HISTORY");
+    let bar_type = BarType::from("BTC-USDT.TEST-1-MINUTE-LAST-EXTERNAL");
+    let start = start.map(|value| value.parse::<Timestamp>().unwrap());
+    let end = end.map(|value| value.parse::<Timestamp>().unwrap());
+    let limit = limit.map(|value| NonZeroUsize::new(value).unwrap());
+    let config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(vec![instrument_id])
+        .bar_types(vec![bar_type])
+        .request_quotes(true)
+        .request_trades(true)
+        .request_bars(true)
+        .request_funding_rates(true)
+        .maybe_request_start(start)
+        .maybe_request_end(end)
+        .maybe_request_limit(limit)
+        .stats_interval_secs(0)
+        .build()
+        .unwrap();
+    let mut actor = DataTester::new(config);
+    actor
+        .core
+        .register(TraderId::from("TESTER-001"), clock, cache)
+        .unwrap();
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    actor.on_start().unwrap();
+
+    let bounds: Vec<_> = saver
+        .get_messages()
+        .into_iter()
+        .map(|command| match command {
+            DataCommand::Request(RequestCommand::Quotes(request)) => {
+                assert_eq!(request.instrument_ids, vec![instrument_id]);
+                (
+                    "quotes",
+                    request.start,
+                    request.end,
+                    request.limit,
+                    request.client_id,
+                )
+            }
+            DataCommand::Request(RequestCommand::Trades(request)) => {
+                assert_eq!(request.instrument_ids, vec![instrument_id]);
+                (
+                    "trades",
+                    request.start,
+                    request.end,
+                    request.limit,
+                    request.client_id,
+                )
+            }
+            DataCommand::Request(RequestCommand::FundingRates(request)) => {
+                assert_eq!(request.instrument_ids, vec![instrument_id]);
+                (
+                    "funding",
+                    request.start,
+                    request.end,
+                    request.limit,
+                    request.client_id,
+                )
+            }
+            DataCommand::Request(RequestCommand::Bars(request)) => {
+                assert_eq!(request.bar_types, vec![bar_type]);
+                (
+                    "bars",
+                    request.start,
+                    request.end,
+                    request.limit,
+                    request.client_id,
+                )
+            }
+            other => panic!("Unexpected data command: {other:?}"),
+        })
+        .collect();
+
+    let expected_start = Some(expected_start.parse::<Timestamp>().unwrap());
+    let expected_funding_start = Some(expected_funding_start.parse::<Timestamp>().unwrap());
+    assert_eq!(
+        bounds,
+        vec![
+            ("quotes", expected_start, end, limit, Some(client_id)),
+            ("trades", expected_start, end, limit, Some(client_id)),
+            (
+                "funding",
+                expected_funding_start,
+                end,
+                limit,
+                Some(client_id)
+            ),
+            ("bars", expected_start, end, limit, Some(client_id)),
+        ],
+    );
 }
 
 #[rstest]

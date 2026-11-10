@@ -10,12 +10,14 @@
 
 # %% [markdown]
 # ## Prerequisites
-# - Python 3.13-3.14
+# - Python 3.13-3.15
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.
 # - pandas (`pip install pandas`), used by the reports at the end. The wheel
 #   declares no runtime dependencies.
+#
+# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %%
 from decimal import Decimal
@@ -162,6 +164,7 @@ class EMACrossTWAP(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.exec_algorithm_id = ExecAlgorithmId("TWAP")
+
         self.exec_algorithm_params = {
             "horizon_secs": str(config.twap_horizon_secs),
             "interval_secs": str(config.twap_interval_secs),

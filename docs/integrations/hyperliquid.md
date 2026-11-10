@@ -187,9 +187,9 @@ All four product types load automatically at connect when their metadata is avai
 No per-product opt-in is required.
 
 :::note
-Standard Hyperliquid perpetuals are settled in USDC. HIP-3 dexes may settle in
-their own collateral token, such as USDH, USDE, or USDT0, while keeping Nautilus
-symbols quoted as `USD`. Spot markets are standard currency pairs. See
+Perpetuals are quoted and settled in their dex's collateral token: USDC for standard
+perps, and for HIP-3 dexes possibly another token such as USDH, USDE, or USDT0.
+Perp symbols keep the `USD` suffix. Spot markets are standard currency pairs. See
 [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals) and
 [HIP-4 outcome markets](#hip-4-outcome-markets) for the details of each.
 :::
@@ -415,9 +415,9 @@ The key differences are:
 - **Isolated margin**: HIP-3 markets default to isolated-only margin.
 - **Per-dex collateral**: Each HIP-3 dex declares its settlement token through
   its `collateralToken` entry in `allPerpMetas`. Nautilus resolves that token
-  through `spotMeta` and keeps the symbol's quote leg as `USD`. If a non-USDC
-  collateral token cannot resolve from `spotMeta`, instrument loading returns
-  an error rather than falling back to USDC.
+  through `spotMeta` as the quote and settlement currency, while the symbol
+  keeps the `USD` suffix. If a non-USDC collateral token cannot resolve from `spotMeta`,
+  instrument loading returns an error rather than falling back to USDC.
 - **Deployer-managed oracles**: The deployer operates the oracle feed, not validators.
 - **Growth mode**: Dexes whose markets are disjoint from validator-operated perps can opt into
   growth mode, which Hyperliquid documents as at least a 90% cut to all-in fees.
@@ -1068,7 +1068,7 @@ then rounds to the instrument's size increment.
 - The venue executes that base size, so filled notional can differ slightly from the requested quote amount.
 - Venue fills arrive in base units while the order's local quantity stays quote-denominated,
   so these orders reconcile from venue status reports instead of local quantity comparison.
-- Modifying a quote-denominated order is rejected locally, because the venue modify replaces
+- Modifying a quote-denominated order produces `OrderModifyDenied`, because the venue modify replaces
   a base size that cannot be reconciled against a quote target. Cancel and resubmit with a
   new amount instead.
 - The raw HTTP and WebSocket client methods (`submit_order`, `modify_order`) take explicit
@@ -1170,10 +1170,10 @@ are rejected and emit `OrderRejected`.
 Cancels use `cancelByCloid`, falling back to numeric-OID `cancel` when no CLOID is cached. Fast and standard
 cancels form separate batches, so one cancel request can make multiple venue calls.
 
-Definite local failures and authoritative venue rejections emit `OrderCancelRejected` per affected order,
-preserving the venue's error message. A per-order batch error leaves other cancels intact; a whole-request
-rejection applies to every cancel in that action. Transport failures or responses with an unknown venue
-outcome leave orders available for reconciliation after dispatch.
+Local failures proven not sent emit `OrderCancelDenied`. Authoritative venue rejections emit
+`OrderCancelRejected` per affected order, preserving the venue's error message. A per-order batch error
+leaves other cancels intact; a whole-request rejection applies to every cancel in that action. Transport
+failures or responses with an unknown venue outcome leave orders available for reconciliation after dispatch.
 :::
 
 :::info
@@ -1366,7 +1366,8 @@ Before dispatch, the client queues a modify intent. If `CANCELED(old_oid)` arriv
 `ACCEPTED(new_oid)`, the intent holds that cancel even while the request is in flight.
 The subsequent acceptance promotes to `OrderUpdated` and discards the held cancel.
 
-Pre-dispatch failure or venue rejection emits `OrderModifyRejected` and clears only that request's intent.
+A pre-dispatch failure emits `OrderModifyDenied`; a venue rejection emits `OrderModifyRejected`.
+Both clear only that request's intent.
 An unknown outcome after dispatch retains the intent, so a timed-out request still holds an early cancel
 and promotes a later acceptance. Without an intent, detection uses the cached `venue_order_id`, which
 the replacement's acceptance no longer matches. See
@@ -1519,17 +1520,23 @@ and output format.
 
 ## Account and position management
 
-`AccountState` merges perp margin and spot balances according to the `userAbstraction` account mode:
+On connect, the execution client seeds account state from REST and subscribes to `clearinghouseState`
+and `spotState`. Each snapshot updates cached balances and margins using the latest known perp and
+spot state and the account mode fetched on connect, without `QueryAccount`. Subscriptions resume
+after a WebSocket reconnect.
 
-- **Unified or portfolio margin**: All balances and holds come from `spotClearinghouseState`.
+`AccountState` merges perp margin and spot balances according to the `userAbstraction` account mode.
+Spot state comes from `spotClearinghouseState` over REST and `spotState` over WebSocket:
+
+- **Unified or portfolio margin**: All balances and holds come from spot state.
   Spot USDC `hold` is the account-wide margin.
 - **Other modes**: Perp margin and cross-margin usage come from `clearinghouseState`; non-zero spot holdings
-  come from `spotClearinghouseState`, including USDC, USDH, HYPE, vault tokens, and HIP-4 side tokens.
+  come from spot state, including USDC, USDH, HYPE, vault tokens, and HIP-4 side tokens.
   USDC uses the perp summary when collateral, margin, or withdrawable balance is non-zero, otherwise spot USDC.
   Unknown modes log a warning and use this path.
 
 Zero spot entries clear sold-out or withdrawn balances, and an account with no USDC reports zero USDC.
-Outside unified and portfolio margin, both zero-balance cases require a perp summary in the response;
+Outside unified and portfolio margin, both zero-balance cases require a perp summary in the snapshot;
 without it, previous balances remain.
 
 Failure to fetch or read the account mode fails both the account-state request and connect.
@@ -1539,6 +1546,13 @@ reconciles orders, fills, and positions against Hyperliquid's clearinghouse stat
 reconstructed from held balances (long-only). HIP-4 side tokens reconcile against their matching
 `BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for per-dex
 open-order and position fan-out.
+
+Perpetual position reports retain the venue's `entryPx` as `avg_px_open` and set
+`avg_px_open_precision` to the instrument's price precision.
+[Average-price comparisons](../concepts/execution/reconciliation.md#reported-entry-averages) allow one unit
+at that precision in addition to the default 0.01% relative tolerance. This accounts for truncated venue
+averages. When the cached average matches within this allowance, same-side quantity adjustments use it
+as the reconciliation fill price. With matching quantities, larger price differences fail startup.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
@@ -1635,8 +1649,8 @@ target them without cycling the containing client.
 ### Execution recovery after reconnect
 
 Resubscribing to `orderUpdates` and `userEvents` provides no snapshot, so the stream never delivers outage
-events. After reconnect, the execution client waits for both subscription confirmations, then reads the
-account's `historicalOrders` followed by `userFills` over REST.
+events. After reconnect, the execution client waits for all pending subscription confirmations, then
+reads the account's `historicalOrders` followed by `userFills` over REST.
 
 A reconnect reuses any pending recovery window. Otherwise, it opens a window 30 seconds before the venue
 time of the last delivered report, or before stream start if none has arrived. Recovery processes fills and

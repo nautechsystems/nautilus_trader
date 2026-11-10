@@ -17,45 +17,9 @@ env:
   SPDX_PREDICATE_TYPE: https://spdx.dev/Document/v2.3
 
 jobs:
-  plan:
-    runs-on: ubuntu-22.04
-    outputs:
-      recovery-only: ${{ steps.repair.outputs.recovery_only }}
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.CI_ALLOWED_ENDPOINTS }}
-
-      # https://github.com/actions/checkout
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Plan release repair
-        id: repair
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          CI_RELEASE_REPAIR_TREE: ${{ vars.CI_RELEASE_REPAIR_TREE }}
-        run: |
-          if bash scripts/ci/check-release-repair.bash; then
-            echo "recovery_only=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "recovery_only=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build-docker-images-nautilus-trader:
     name: build-docker-images (nautilus_trader-${{ matrix.platform }})
-    needs: plan
-    if: >-
-      needs.plan.outputs.recovery-only != 'true' &&
-      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly')
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
@@ -71,7 +35,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -176,7 +140,7 @@ jobs:
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
           path: ${{ runner.temp }}/digests/nautilus_trader/*
@@ -196,7 +160,7 @@ jobs:
       digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -215,9 +179,9 @@ jobs:
 
       - name: Download digests
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: /tmp/digests/nautilus_trader
+          path: ${{ runner.temp }}/digests/nautilus_trader
           pattern: digests-nautilus_trader-*
           merge-multiple: true
 
@@ -250,7 +214,7 @@ jobs:
 
       - name: Create manifest list and push
         id: push
-        working-directory: /tmp/digests/nautilus_trader
+        working-directory: ${{ runner.temp }}/digests/nautilus_trader
         shell: bash
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci/create-docker-manifest.bash"
@@ -314,7 +278,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -424,7 +388,7 @@ jobs:
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
           path: ${{ runner.temp }}/digests/jupyterlab/*
@@ -441,7 +405,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -459,9 +423,9 @@ jobs:
 
       - name: Download digests
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: /tmp/digests/jupyterlab
+          path: ${{ runner.temp }}/digests/jupyterlab
           pattern: digests-jupyterlab-*
           merge-multiple: true
 
@@ -494,7 +458,7 @@ jobs:
 
       - name: Create manifest list and push
         id: push
-        working-directory: /tmp/digests/jupyterlab
+        working-directory: ${{ runner.temp }}/digests/jupyterlab
         shell: bash
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci/create-docker-manifest.bash"

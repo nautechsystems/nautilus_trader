@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.7"
+version = "0.5.9"
 ci = true
 releases = "pypi:prek"
 
@@ -19,7 +19,7 @@ pre-commit-revision = "v{version}"
 
 [ruff]
 kind = "tool"
-version = "0.17.2"
+version = "0.17.3"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -82,6 +82,11 @@ kind = "tool"
 version = "0.22.2"
 releases = "crates:cargo-audit"
 
+[cargo-binstall]
+kind = "tool"
+version = "1.26.2"
+releases = "crates:cargo-binstall"
+
 [cargo-deny]
 kind = "tool"
 version = "0.20.2"
@@ -92,14 +97,34 @@ kind = "tool"
 version = "0.13.14"
 releases = "crates:cargo-edit"
 
+[cargo-fuzz]
+kind = "tool"
+version = "0.13.2"
+releases = "crates:cargo-fuzz"
+
+[cargo-hack]
+kind = "tool"
+version = "0.6.45"
+releases = "crates:cargo-hack"
+
+[cargo-hawk]
+kind = "tool"
+version = "0.1.17"
+releases = "crates:cargo-hawk"
+
 [cargo-llvm-cov]
 kind = "tool"
 version = "0.9.1"
 releases = "crates:cargo-llvm-cov"
 
+[cargo-machete]
+kind = "tool"
+version = "0.9.2"
+releases = "crates:cargo-machete"
+
 [cargo-nextest]
 kind = "tool"
-version = "0.9.149"
+version = "0.9.150"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
@@ -114,7 +139,7 @@ releases = "crates:rust-code-analysis-cli"
 
 [uv]
 kind = "tool"
-version = "0.13.5"
+version = "0.13.6"
 releases = "pypi:uv"
 
 [pip-audit]
@@ -131,6 +156,54 @@ releases = "github:google/osv-scanner"
 kind = "tool"
 version = "1.5.0"
 releases = "github-tags:capnproto/capnproto"
+
+[codespell]
+kind = "python"
+version = "2.4.3"
+releases = "pypi:codespell"
+pre-commit-repository = "https://github.com/codespell-project/codespell"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/codespell.yaml"
+
+[gitleaks]
+kind = "tool"
+version = "8.30.1"
+releases = "github:gitleaks/gitleaks"
+pre-commit-repository = "https://github.com/gitleaks/gitleaks"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/gitleaks.yaml"
+
+[gitlint]
+kind = "python"
+version = "0.19.1"
+releases = "pypi:gitlint"
+pre-commit-repository = "https://github.com/jorisroovers/gitlint"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/gitlint.yaml"
+
+[hadolint]
+kind = "tool"
+version = "2.15.1"
+releases = "github:hadolint/hadolint"
+pre-commit-repository = "https://github.com/AleksaC/hadolint-py"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/docker.yaml"
+
+[mermaid-lint]
+kind = "tool"
+version = "0.53.1"
+releases = "npm:@mermaid-lint/cli"
+pre-commit-dependency = "@mermaid-lint/cli@{version}"
+pre-commit-hooks = ["mermaid-lint"]
+pre-commit-fragment = "pre-commit/mermaid.yaml"
+
+[typos]
+kind = "tool"
+version = "1.51.1"
+releases = "github:crate-ci/typos"
+pre-commit-repository = "https://github.com/crate-ci/typos"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/typos.yaml"
 
 [zizmor]
 kind = "tool"

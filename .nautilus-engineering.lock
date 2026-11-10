@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "80bf50eee134222e978fadfbfc5d7a3b3d30ebcf"
-manifest_sha256 = "e2e91502b0682520f8a8cc302ce87b33687cef8421f4c4244103022cfb4ff866"
+revision = "a7ea5c90472753c7c54892b60d17b396a5e4d52f"
+manifest_sha256 = "e4b3be265c62ccd21a5655dc5b68e98e9e69549acc767310c0d9d9d59f813961"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "88a7fb5d58cd326f50ac2edb3fadf42b407c1d82d767a5877fd4ea4ea77c3c72"
+sha256 = "1701cc3d98a5ba539ae499b1a5eb44e41ab21c91755cf660d3b4012b80241f9e"
 executable = false
 
 [[file]]
@@ -62,7 +62,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "392d51f8f317b6c0ea73acac5767d547c7ed3085db8962af662350a47016e553"
+sha256 = "a01a90dbc5e70cc44d9a5cf688a27c8024316ac9778b66dd1cdb6285d451abb6"
 executable = false
 
 [[file]]
@@ -80,13 +80,13 @@ executable = true
 [[file]]
 artifact = "cargo-cooldown-check"
 path = "scripts/check-cargo-cooldown.sh"
-sha256 = "4972e595ec3c014a05bb9d00fef77b2dc5b507e2f4de3832076681677cfcbdb9"
+sha256 = "c720cf227000413a9f2cdbba26ea869b225065fec461cdd2b77d4f265e74ca8d"
 executable = true
 
 [[file]]
 artifact = "markdown-table-check"
 path = "scripts/check-markdown-tables.py"
-sha256 = "7fff7ae1ad25b752badb749ad6e238b438ed61b1011c81a78821f3cf16ff0b0a"
+sha256 = "fb7b983c71991c52526756710aa5c90682addd1d7e01749407863f3e7c77953d"
 executable = false
 
 [[file]]
@@ -104,7 +104,13 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "c65a312d41472d58898f0ec6617a03510e116fc1957875ffc0464df8e5102601"
+sha256 = "1bb731e945822869fcb3d9a835e56e067cf6f5a241ebfe3d7cd262d59367e676"
+executable = true
+
+[[file]]
+artifact = "python-formatter"
+path = "scripts/format-python.py"
+sha256 = "f5ab0d57579c50d2f02007a9b3e3d5af958b3c0135f0169990e4f5cf9708e348"
 executable = true
 
 [[file]]
@@ -122,7 +128,7 @@ executable = true
 [[file]]
 artifact = "pre-commit-manager"
 path = "scripts/manage-nautilus-engineering-pre-commit.py"
-sha256 = "52148d1f8b329181bb6ae4de9db933e521b7b8f1f7697d78bc7871eec8641276"
+sha256 = "c4d3baa9dfed37b7a3847296965b9e739d50c1c9d9d02f02ef7e3b6ad49ce18f"
 executable = true
 
 [[file]]
@@ -134,7 +140,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "00c190ea859d95941b60d8b4d8fe5721d2c2f80403d445b46d229bf44080b8d7"
+sha256 = "d689f5868bb48f9819f4f3cbf3c76a86de21b82930a10925cbb5a1816e8f315b"
 executable = false
 
 [[file]]

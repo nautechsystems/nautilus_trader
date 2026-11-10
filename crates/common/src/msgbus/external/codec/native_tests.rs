@@ -52,12 +52,106 @@ use crate::{
 };
 
 #[rstest]
+fn iso_msgpack_bytes_use_json_arrays() {
+    let value = Bytes::from_static(&[0, 127, 255]);
+    let kind = BusPayloadType::Custom("Bytes".into());
+    let native = serialize_payload(SerializationEncoding::MsgPack, kind, &value, false).unwrap();
+    let iso = serialize_payload(SerializationEncoding::MsgPack, kind, &value, true).unwrap();
+    let restored_native: Bytes = deserialize_payload(kind, SerializationEncoding::MsgPack, &native)
+        .unwrap()
+        .unwrap();
+    let restored_iso: Bytes = deserialize_payload(kind, SerializationEncoding::MsgPack, &iso)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(native.as_ref(), &[0xc4, 3, 0, 127, 255]);
+    assert_eq!(iso.as_ref(), &[0x93, 0, 127, 0xcc, 255]);
+    assert_eq!(restored_native, value);
+    assert_eq!(restored_iso, value);
+}
+
+#[rstest]
+#[case(f64::NAN)]
+#[case(f64::INFINITY)]
+#[case(f64::NEG_INFINITY)]
+fn iso_msgpack_nonfinite_floats_use_null(#[case] value: f64) {
+    let kind = BusPayloadType::Custom("Float64".into());
+    let native = serialize_payload(SerializationEncoding::MsgPack, kind, &value, false).unwrap();
+    let iso = serialize_payload(SerializationEncoding::MsgPack, kind, &value, true).unwrap();
+    let restored: f64 = deserialize_payload(kind, SerializationEncoding::MsgPack, &native)
+        .unwrap()
+        .unwrap();
+    let iso_error = deserialize_payload::<f64>(kind, SerializationEncoding::MsgPack, &iso);
+    let mut expected = vec![0xcb];
+    expected.extend(value.to_be_bytes());
+
+    assert_eq!(native.as_ref(), expected.as_slice());
+    assert_eq!(iso.as_ref(), &[0xc0]);
+    assert_eq!(restored.to_bits(), value.to_bits());
+    assert!(iso_error.is_err());
+}
+
+#[rstest]
+#[case(SerializationEncoding::Json)]
+#[case(SerializationEncoding::MsgPack)]
+fn timestamp_config_controls_external_payloads(
+    #[case] encoding: SerializationEncoding,
+    #[values(false, true)] iso8601: bool,
+) {
+    let recorded = Rc::new(RefCell::new(Vec::new()));
+    let mut bus = MessageBus::default();
+
+    let config = MessageBusConfig {
+        encoding,
+        timestamps_as_iso8601: iso8601,
+        ..Default::default()
+    };
+
+    bus.set_external_egress_config(Box::new(RecordingEgress(recorded.clone())), &config)
+        .unwrap();
+    set_message_bus(Rc::new(RefCell::new(bus)));
+    let mut quote = quote_ethusdt_binance();
+    quote.ts_event = UnixNanos::from(123_u64);
+    quote.ts_init = UnixNanos::from(456_u64);
+
+    msgbus::publish_quote("data.quotes.timestamps".into(), &quote);
+
+    let messages = recorded.borrow();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].topic.as_str(), "data.quotes.timestamps");
+    assert_eq!(messages[0].payload_type, BusPayloadType::QuoteTick);
+    assert_eq!(messages[0].encoding, encoding);
+
+    let value: serde_json::Value = match encoding {
+        SerializationEncoding::Json => serde_json::from_slice(&messages[0].payload).unwrap(),
+        SerializationEncoding::MsgPack => rmp_serde::from_slice(&messages[0].payload).unwrap(),
+        SerializationEncoding::Sbe => unreachable!(),
+    };
+
+    if iso8601 {
+        assert_eq!(value["ts_event"], "1970-01-01T00:00:00.000000123Z");
+        assert_eq!(value["ts_init"], "1970-01-01T00:00:00.000000456Z");
+    } else {
+        assert_eq!(value["ts_event"], 123);
+        assert_eq!(value["ts_init"], 456);
+    }
+
+    let restored = deserialize_quote(encoding, &messages[0].payload)
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored, quote);
+    msgbus::get_message_bus().borrow_mut().dispose();
+    set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+}
+
+#[rstest]
 #[case(SerializationEncoding::Json)]
 #[case(SerializationEncoding::MsgPack)]
 fn responses_preserve_every_field(
     #[case] encoding: SerializationEncoding,
     #[values(0, 1, 2)] mode: u8,
     #[values(0, 1, 2)] view: u8,
+    #[values(false, true)] iso8601: bool,
 ) {
     for mut expected in responses(mode) {
         let mut expected_value = serde_json::to_value(&expected).unwrap();
@@ -91,7 +185,8 @@ fn responses_preserve_every_field(
             }
         }
 
-        let payload = serialize_payload(encoding, BusPayloadType::DataResponse, &expected).unwrap();
+        let payload =
+            serialize_payload(encoding, BusPayloadType::DataResponse, &expected, iso8601).unwrap();
         let decoded: DataResponse =
             deserialize_payload(BusPayloadType::DataResponse, encoding, &payload)
                 .unwrap()
@@ -99,8 +194,13 @@ fn responses_preserve_every_field(
         assert_eq!(serde_json::to_value(&decoded).unwrap(), expected_value);
 
         let envelope = DataResponseEnvelope::new(expected, false, Some(UUID4::new()));
-        let payload =
-            serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &envelope).unwrap();
+        let payload = serialize_payload(
+            encoding,
+            BusPayloadType::DataResponseEnvelope,
+            &envelope,
+            iso8601,
+        )
+        .unwrap();
         let decoded: DataResponseEnvelope =
             deserialize_payload(BusPayloadType::DataResponseEnvelope, encoding, &payload)
                 .unwrap()
@@ -195,7 +295,8 @@ fn l1_book_response_starts_new_snapshot_after_roundtrip(#[case] encoding: Serial
         18,
         89.into(),
     );
-    let payload = serialize_payload(encoding, BusPayloadType::DataResponse, &expected).unwrap();
+    let payload =
+        serialize_payload(encoding, BusPayloadType::DataResponse, &expected, false).unwrap();
     let mut decoded: DataResponse =
         deserialize_payload(BusPayloadType::DataResponse, encoding, &payload)
             .unwrap()
@@ -492,7 +593,7 @@ fn defi_block_external_ingress_preserves_chain(#[case] encoding: SerializationEn
     msgbus::get_message_bus()
         .borrow_mut()
         .add_streaming_type(BusPayloadType::Block);
-    let payload = serialize_payload(encoding, BusPayloadType::Block, &expected).unwrap();
+    let payload = serialize_payload(encoding, BusPayloadType::Block, &expected, false).unwrap();
     let message =
         BusMessage::with_str_topic("defi.blocks", BusPayloadType::Block, payload, encoding);
     msgbus::republish_external_message(&message).unwrap();
@@ -758,7 +859,7 @@ fn test_l1_reply_retains_subsequent_batch_behavior(
     let DataResponse::Book(mut decoded) = deserialize_payload::<DataResponse>(
         BusPayloadType::DataResponse,
         encoding,
-        &serialize_payload(encoding, BusPayloadType::DataResponse, &reply).unwrap(),
+        &serialize_payload(encoding, BusPayloadType::DataResponse, &reply, false).unwrap(),
     )
     .unwrap()
     .unwrap() else {
@@ -864,6 +965,7 @@ fn test_book_response_preserves_full_depth(
             encoding,
             BusPayloadType::DataResponse,
             &DataResponse::Book(response.clone()),
+            false,
         )
         .unwrap(),
     )
@@ -991,8 +1093,13 @@ fn test_historical_envelope_round_trip(
         DataResponseEnvelope::new(response, false, Some(UUID4::new()))
     };
 
-    let payload =
-        serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &expected).unwrap();
+    let payload = serialize_payload(
+        encoding,
+        BusPayloadType::DataResponseEnvelope,
+        &expected,
+        false,
+    )
+    .unwrap();
     let actual: DataResponseEnvelope =
         deserialize_payload(BusPayloadType::DataResponseEnvelope, encoding, &payload)
             .unwrap()

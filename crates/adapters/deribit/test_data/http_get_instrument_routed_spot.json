@@ -1,0 +1,19 @@
+{
+  "base_currency": "BTC",
+  "counter_currency": "USDC",
+  "creation_timestamp": 1787011200000,
+  "instrument_id": 904,
+  "instrument_name": "BTC_USDC",
+  "instrument_type": "linear",
+  "is_active": true,
+  "kind": "spot",
+  "maker_commission": 0.001,
+  "taker_commission": 0.002,
+  "contract_size": 1,
+  "min_trade_amount": 0.0001,
+  "quote_currency": "USDC",
+  "tick_size": 0.01,
+  "tick_size_steps": [],
+  "is_cbe_routed": true,
+  "is_csr": true
+}

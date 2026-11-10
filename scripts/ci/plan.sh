@@ -77,18 +77,6 @@ else
   changed_files="$(git diff --no-renames --name-only "$merge_base" HEAD)"
 fi
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if bash "${script_dir}/check-release-repair.bash"; then
-  {
-    echo "run_tests=false"
-    echo "run_rust_tests=false"
-    echo "github_changed=true"
-    echo "recovery_only=true"
-  } >> "$GITHUB_OUTPUT"
-  echo "Approved release repair tree: running tooling checks without rebuilding distributions"
-  exit 0
-fi
-
 code_changed=0
 rust_changed=0
 github_changed=0

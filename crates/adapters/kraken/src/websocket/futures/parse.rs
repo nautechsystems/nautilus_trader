@@ -22,10 +22,8 @@ use nautilus_model::{
         BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick,
         TradeTick,
     },
-    enums::{
-        AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
-    },
-    identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+    enums::{AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TriggerType},
+    identifiers::{AccountId, ClientOrderId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -36,7 +34,10 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::{enums::KrakenOrderSide, parse::fee_currency};
+use crate::common::{
+    enums::KrakenOrderSide,
+    parse::{fee_currency, parse_futures_order_type_time_in_force, parse_venue_order_id},
+};
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -245,7 +246,7 @@ pub fn parse_futures_ws_order_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let venue_order_id = VenueOrderId::new(&order.order_id);
+    let venue_order_id = parse_venue_order_id(&order.order_id, "futures order delta")?;
     let order_side = parse_ws_direction(order.direction);
     let order_type = OrderType::from(order.order_type);
     let order_type = if order_type == OrderType::MarketIfTouched && order.limit_price.is_some() {
@@ -254,6 +255,7 @@ pub fn parse_futures_ws_order_status_report(
         order_type
     };
     let order_status = infer_order_status(order, is_cancel);
+    let (time_in_force, post_only) = parse_futures_order_type_time_in_force(order.order_type);
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -273,7 +275,7 @@ pub fn parse_futures_ws_order_status_report(
         venue_order_id,
         order_side: order_side.into(),
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -296,7 +298,7 @@ pub fn parse_futures_ws_order_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only,
         reduce_only: order.reduce_only,
         cancel_reason: None,
         ts_triggered: None,
@@ -336,7 +338,10 @@ pub fn parse_futures_ws_fill_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let venue_order_id = VenueOrderId::new(&fill.order_id);
+    let venue_order_id = parse_venue_order_id(
+        &fill.order_id,
+        format_args!("futures fill {}", fill.fill_id),
+    )?;
     let trade_id = TradeId::new(&fill.fill_id);
     let order_side = if fill.buy {
         OrderSide::Buy
@@ -440,7 +445,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{CurrencyType, LiquiditySide, OrderSide},
+        enums::{CurrencyType, LiquiditySide, OrderSide, TimeInForce},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
@@ -588,6 +593,66 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_futures_ws_order_status_report_fails_on_an_invalid_order_id() {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PI_XBTUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000100,
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
+            stop_price: None,
+            order_type: KrakenFuturesOrderType::Limit,
+            order_id: String::new(),
+            cli_ord_id: None,
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+
+        let error = parse_futures_ws_order_status_report(
+            &order,
+            false,
+            None,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken futures order delta"
+        );
+    }
+
+    /// The dispatch logs only this message for the fill it drops, so the message names the fill.
+    #[rstest]
+    fn test_parse_futures_ws_fill_report_names_the_fill_of_an_invalid_order_id() {
+        let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
+        let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
+            serde_json::from_str(json).unwrap();
+        let mut fill = fills_delta.fills[0].clone();
+        fill.order_id = String::new();
+
+        let error = parse_futures_ws_fill_report(
+            &fill,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Invalid order_id '' in Kraken futures fill {}",
+                fill.fill_id
+            )
+        );
+    }
+
+    #[rstest]
     fn test_parse_futures_ws_order_status_report_canceled() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
@@ -620,6 +685,49 @@ mod tests {
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.cancel_reason.as_deref(), Some("cancelled_by_user"));
+    }
+
+    /// The `ioc` and `post` types reach the report as `IOC` and post-only `GTC`, and any other type
+    /// stays `GTC` and not post-only.
+    #[rstest]
+    #[case::limit(KrakenFuturesOrderType::Limit, TimeInForce::Gtc, false)]
+    #[case::ioc(KrakenFuturesOrderType::Ioc, TimeInForce::Ioc, false)]
+    #[case::post(KrakenFuturesOrderType::Post, TimeInForce::Gtc, true)]
+    #[case::stop(KrakenFuturesOrderType::StopLower, TimeInForce::Gtc, false)]
+    #[case::take_profit(KrakenFuturesOrderType::TakeProfit, TimeInForce::Gtc, false)]
+    fn test_parse_futures_ws_order_status_report_time_in_force(
+        #[case] order_type: KrakenFuturesOrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] post_only: bool,
+    ) {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PI_XBTUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000100,
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
+            stop_price: None,
+            order_type,
+            order_id: "abc-123".to_string(),
+            cli_ord_id: None,
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+
+        let report = parse_futures_ws_order_status_report(
+            &order,
+            false,
+            None,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, time_in_force);
+        assert_eq!(report.post_only, post_only);
     }
 
     #[rstest]

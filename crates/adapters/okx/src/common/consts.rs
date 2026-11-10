@@ -22,11 +22,13 @@ use nautilus_model::{
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     events::OrderDeniedReason,
     identifiers::{ClientId, Venue},
+    instruments::{Instrument, InstrumentAny},
 };
 use ustr::Ustr;
 
 use super::enums::{
-    OKXBookChannel, OKXInstrumentType, OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
+    OKXBookChannel, OKXContractType, OKXInstrumentType, OKXTargetCurrency, OKXTradeMode,
+    OKXVipLevel,
 };
 
 /// Venue identifier string.
@@ -38,7 +40,7 @@ pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(O
 /// Static client ID instance.
 pub static OKX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(OKX)));
 
-/// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
+/// See the [OKX integration program](https://www.okx.com/docs-v5/en/#overview-broker-program) for details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "5328c82e5542BCDE";
 
 /// Default lookback for terminal orders and fills during reconciliation.
@@ -142,6 +144,8 @@ pub(crate) fn okx_reduce_only_wire_value(
         OKXInstrumentType::Spot | OKXInstrumentType::Margin => {
             if td_mode == OKXTradeMode::Cash {
                 Err("OKX cash orders do not support reduce-only instructions".to_string())
+            } else if instrument_type == OKXInstrumentType::Spot {
+                Err("OKX spot orders do not support reduce-only instructions".to_string())
             } else {
                 Ok(Some(true))
             }
@@ -158,6 +162,44 @@ pub(crate) fn okx_reduce_only_wire_value(
             "OKX {instrument_type} orders do not support reduce-only instructions"
         )),
         OKXInstrumentType::Any => Ok(Some(true)),
+    }
+}
+
+/// Resolves quantity units for ordinary market orders.
+///
+/// # Errors
+///
+/// Returns an error if a margin order requests units other than its native side-dependent units.
+pub(crate) fn okx_market_target_currency(
+    instrument_type: OKXInstrumentType,
+    order_side: OrderSide,
+    order_type: OrderType,
+    quote_quantity: Option<bool>,
+) -> Result<Option<OKXTargetCurrency>, OrderDeniedReason> {
+    if order_type != OrderType::Market {
+        return Ok(None);
+    }
+
+    match instrument_type {
+        OKXInstrumentType::Spot => Ok(match quote_quantity {
+            Some(true) => Some(OKXTargetCurrency::QuoteCcy),
+            Some(false) if order_side == OrderSide::Buy => Some(OKXTargetCurrency::BaseCcy),
+            _ => None,
+        }),
+        OKXInstrumentType::Margin => {
+            let native_quote = order_side == OrderSide::Buy;
+            if quote_quantity.is_some_and(|quote| quote != native_quote) {
+                let unit = if native_quote { "quote" } else { "base" };
+                return Err(OrderDeniedReason::ValidationFailed {
+                    detail: format!(
+                        "OKXInstrumentType::Margin market {order_side} orders require {unit} quantity"
+                    ),
+                });
+            }
+
+            Ok(None)
+        }
+        _ => Ok(None),
     }
 }
 
@@ -241,6 +283,45 @@ pub(crate) fn validate_algo_trigger_type(
         return Err(format!(
             "OKX {instrument_type} {order_type} algo orders do not support {trigger_type} triggers"
         ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_order_time_in_force(
+    time_in_force: Option<TimeInForce>,
+) -> Result<(), String> {
+    if let Some(tif) = time_in_force
+        && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
+    {
+        return Err(format!("Unsupported time in force: {tif:?}"));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_regular_order_params(
+    instrument_type: OKXInstrumentType,
+    order_type: OrderType,
+    time_in_force: Option<TimeInForce>,
+    post_only: bool,
+    rpi: bool,
+    outcome: Option<&str>,
+) -> Result<(), String> {
+    if rpi && order_type != OrderType::Limit {
+        return Err("OKX RPI orders require a limit order".to_string());
+    }
+
+    if !rpi
+        && !post_only
+        && order_type == OrderType::Market
+        && time_in_force == Some(TimeInForce::Fok)
+    {
+        return Err("Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string());
+    }
+
+    if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
+        return Err("OKX event contract orders require `outcome`".to_string());
     }
 
     Ok(())
@@ -458,11 +539,81 @@ pub(crate) fn select_book_channel(depth: usize, vip: OKXVipLevel) -> OKXBookChan
     }
 }
 
+pub(crate) fn contract_filter_with_config_types(
+    contract_types: Option<&Vec<OKXContractType>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    match contract_types {
+        None => true,
+        Some(filter) if filter.is_empty() => true,
+        Some(filter) => {
+            let is_inverse = instrument.is_inverse();
+            (is_inverse && filter.contains(&OKXContractType::Inverse))
+                || (!is_inverse && filter.contains(&OKXContractType::Linear))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::market_fok(false, Err("Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()))]
+    #[case::post_only_precedence(true, Ok(()))]
+    fn test_validate_regular_order_params_preserves_post_only_precedence(
+        #[case] post_only: bool,
+        #[case] expected: Result<(), String>,
+    ) {
+        assert_eq!(
+            validate_regular_order_params(
+                OKXInstrumentType::Swap,
+                OrderType::Market,
+                Some(TimeInForce::Fok),
+                post_only,
+                false,
+                None
+            ),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::buy_quote(OrderSide::Buy, Some(true))]
+    #[case::sell_base(OrderSide::Sell, Some(false))]
+    #[case::buy_default(OrderSide::Buy, None)]
+    #[case::sell_default(OrderSide::Sell, None)]
+    fn test_market_target_currency_preserves_native_margin_units(
+        #[case] side: OrderSide,
+        #[case] quote_quantity: Option<bool>,
+    ) {
+        assert_eq!(
+            okx_market_target_currency(
+                OKXInstrumentType::Margin,
+                side,
+                OrderType::Market,
+                quote_quantity,
+            ),
+            Ok(None),
+        );
+    }
+
+    #[rstest]
+    #[case::spot_limit(OKXInstrumentType::Spot, OrderType::Limit)]
+    #[case::spot_market_to_limit(OKXInstrumentType::Spot, OrderType::MarketToLimit)]
+    #[case::swap_market(OKXInstrumentType::Swap, OrderType::Market)]
+    #[case::event_market(OKXInstrumentType::Events, OrderType::Market)]
+    fn test_market_target_currency_omits_unrelated_units(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] order_type: OrderType,
+    ) {
+        assert_eq!(
+            okx_market_target_currency(instrument_type, OrderSide::Buy, order_type, Some(true)),
+            Ok(None),
+        );
+    }
 
     #[rstest]
     #[case::auto_default(0, OKXVipLevel::Vip0, OKXBookChannel::Book)]
@@ -789,8 +940,22 @@ mod tests {
         None,
         Err("OKX cash orders do not support reduce-only instructions".to_string()),
     )]
-    #[case::margin(
+    #[case::spot_cross(
         OKXInstrumentType::Spot,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        None,
+        Err("OKX spot orders do not support reduce-only instructions".to_string()),
+    )]
+    #[case::spot_isolated(
+        OKXInstrumentType::Spot,
+        OKXTradeMode::Isolated,
+        OrderSide::Sell,
+        None,
+        Err("OKX spot orders do not support reduce-only instructions".to_string()),
+    )]
+    #[case::margin(
+        OKXInstrumentType::Margin,
         OKXTradeMode::Cross,
         OrderSide::Sell,
         None,

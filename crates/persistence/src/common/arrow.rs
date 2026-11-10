@@ -27,16 +27,13 @@ use nautilus_model::data::{
     to_variant,
 };
 use nautilus_model::{
-    data::{
-        NautilusDataType, NautilusRecordType,
-        greeks::{GreeksData, PortfolioGreeks},
-    },
+    data::{NautilusDataType, NautilusRecordType},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionAdjusted, PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::NautilusInstrumentType,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -286,11 +283,13 @@ macro_rules! dispatch_record_type {
             NautilusRecordType::OrderRejected => $call::<OrderRejected>($($arg),*),
             NautilusRecordType::OrderPendingCancel => $call::<OrderPendingCancel>($($arg),*),
             NautilusRecordType::OrderCanceled => $call::<OrderCanceled>($($arg),*),
+            NautilusRecordType::OrderCancelDenied => $call::<OrderCancelDenied>($($arg),*),
             NautilusRecordType::OrderCancelRejected => $call::<OrderCancelRejected>($($arg),*),
             NautilusRecordType::OrderExpired => $call::<OrderExpired>($($arg),*),
             NautilusRecordType::OrderTriggered => $call::<OrderTriggered>($($arg),*),
             NautilusRecordType::OrderPendingUpdate => $call::<OrderPendingUpdate>($($arg),*),
             NautilusRecordType::OrderReleased => $call::<OrderReleased>($($arg),*),
+            NautilusRecordType::OrderModifyDenied => $call::<OrderModifyDenied>($($arg),*),
             NautilusRecordType::OrderModifyRejected => $call::<OrderModifyRejected>($($arg),*),
             NautilusRecordType::OrderUpdated => $call::<OrderUpdated>($($arg),*),
             NautilusRecordType::OrderFilled => $call::<OrderFilled>($($arg),*),
@@ -305,8 +304,6 @@ macro_rules! dispatch_record_type {
             NautilusRecordType::FillReport => $call::<FillReport>($($arg),*),
             NautilusRecordType::PositionStatusReport => $call::<PositionStatusReport>($($arg),*),
             NautilusRecordType::ExecutionMassStatus => $call::<ExecutionMassStatus>($($arg),*),
-            NautilusRecordType::GreeksData => $call::<GreeksData>($($arg),*),
-            NautilusRecordType::PortfolioGreeks => $call::<PortfolioGreeks>($($arg),*),
             #[cfg(feature = "defi")]
             NautilusRecordType::Defi => {
                 anyhow::bail!("Catalog Arrow queries do not support DeFi records")

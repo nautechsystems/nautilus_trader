@@ -11,6 +11,10 @@ order IDs, account labels, email addresses, and deposit references are also repl
 quantities, timestamps, nulls, and protocol fields retain their captured values. Authentication tokens
 and request credentials are excluded.
 
+`captured/whoami-without-status.json` contains a sanitized sandbox `GET /whoami` response captured
+on 2026-11-01. It omits `is_onboarded`, `is_frozen`, and `fiat_deposit_code`. Identity replacements
+use the `fixture-whoami-` prefix for this capture.
+
 The HTTP captures cover identity, balances, positions, risk, instruments, tickers, books, trades,
 candles, funding rates, funding slots, transactions, fills, orders, and open orders. The
 `open-reject`, `open-backoff`, `open-top`, `open-default`, and `open-inactive` captures come from

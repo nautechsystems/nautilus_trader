@@ -35,12 +35,14 @@ use crate::{
 ///
 /// # Panics
 ///
-/// Panics if the formula is invalid for the given components.
+/// Panics if:
+/// - The components string contains invalid UTF-8 or JSON, or is not an array of instrument IDs.
+/// - An instrument construction check fails, including formula validation.
 ///
 /// # Safety
 ///
 /// This function assumes:
-/// - `components_ptr` is a valid C string pointer of a JSON format list of strings.
+/// - `components_ptr` is a valid C string pointer.
 /// - `formula_ptr` is a valid C string pointer.
 ///
 /// Returns an owning pointer to the heap-allocated `SyntheticInstrument` which the
@@ -56,6 +58,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
 ) -> *mut SyntheticInstrument {
     // TODO: There is absolutely no error handling here yet
     let components = unsafe { bytes_to_string_vec(components_ptr) }
+        .expect("Invalid synthetic instrument components JSON")
         .into_iter()
         .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
@@ -141,9 +144,19 @@ pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument) -> U
     synth.ts_init
 }
 
+/// Returns 1 if the formula is valid for the components, otherwise 0.
+///
+/// Null pointers and invalid components JSON return 0.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The formula string contains invalid UTF-8.
+/// - A decoded component is not a valid instrument ID.
+///
 /// # Safety
 ///
-/// Assumes `formula_ptr` is a valid C string pointer.
+/// Non-null pointers must reference valid C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     formula_ptr: *const c_char,
@@ -153,7 +166,11 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
         return 0;
     }
 
-    let components = unsafe { bytes_to_string_vec(components_ptr) }
+    let Ok(components) = (unsafe { bytes_to_string_vec(components_ptr) }) else {
+        return 0;
+    };
+
+    let components = components
         .into_iter()
         .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
@@ -202,9 +219,44 @@ pub unsafe extern "C" fn synthetic_instrument_calculate(
 
 #[cfg(test)]
 mod cvec_tests {
+    use std::ffi::CString;
+
+    use nautilus_core::ffi::string::cstr_drop;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_synthetic_formula_accepts_valid_components_json() {
+        let synth = SyntheticInstrument::default();
+        let formula = CString::new(synth.formula.as_str()).unwrap();
+        let components = synth
+            .components
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let components_ptr = string_vec_to_bytes(&components);
+
+        let valid =
+            unsafe { synthetic_instrument_is_valid_formula(formula.as_ptr(), components_ptr) };
+        unsafe { cstr_drop(components_ptr) };
+
+        assert_eq!(valid, 1);
+    }
+
+    #[rstest]
+    #[case::empty(Vec::new())]
+    #[case::invalid_utf8(vec![0xff])]
+    #[case::invalid_utf8_string(vec![b'[', b'"', 0xff, b'"', b']'])]
+    fn test_synthetic_formula_rejects_invalid_components_json(#[case] bytes: Vec<u8>) {
+        let components = CString::new(bytes).unwrap();
+
+        let valid = unsafe {
+            synthetic_instrument_is_valid_formula(c"BTCUSDT.BINANCE".as_ptr(), components.as_ptr())
+        };
+
+        assert_eq!(valid, 0);
+    }
 
     #[rstest]
     fn test_synthetic_calculate_borrows_inputs() {

@@ -20,6 +20,8 @@
     reason = "consolidation operations forward catalog/storage errors and operate on validated batches"
 )]
 
+use std::collections::BTreeMap;
+
 use ahash::AHashSet;
 use arrow::record_batch::RecordBatch;
 use nautilus_core::{ClosedInterval, UnixNanos, string::conversions::to_snake_case};
@@ -36,7 +38,7 @@ use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         intervals::{are_intervals_contiguous, are_intervals_disjoint},
-        io::combine_parquet_files_from_object_store,
+        io::consolidate_parquet_files_from_object_store,
         paths::{
             extract_path_components, make_object_store_path, normalize_path_separators,
             parse_filename_timestamps, timestamps_to_filename,
@@ -139,9 +141,8 @@ impl ParquetDataCatalog {
 
     /// Consolidates data files for a specific data type and identifier.
     ///
-    /// This method consolidates Parquet files within a specific directory (defined by data type
-    /// and optional identifier) by merging multiple files into a single file. This improves
-    /// query performance and can reduce storage overhead.
+    /// This method selects directories by data type and optional identifier, then merges files
+    /// within each directory. It preserves identifier partitions while reducing file count.
     ///
     /// # Parameters
     ///
@@ -297,11 +298,11 @@ impl ParquetDataCatalog {
     ///
     /// # Behavior
     ///
-    /// - Skips consolidation if directory contains 1 or fewer files.
+    /// - Skips directories containing 1 or fewer files.
     /// - Filters files by timestamp range if start/end are specified.
-    /// - Sorts intervals by start timestamp before consolidation.
+    /// - Sorts files by interval bounds and path before consolidation.
     /// - Creates a new file spanning the entire time range of input files.
-    /// - Validates interval disjointness after consolidation (if enabled).
+    /// - Validates interval disjointness and contiguity before merging (if enabled).
     ///
     /// # Errors
     ///
@@ -318,8 +319,39 @@ impl ParquetDataCatalog {
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
+        self.recover_consolidation(&self.to_object_path(directory)?)?;
         let parquet_files = self.list_parquet_files(directory)?;
+        let mut directories = BTreeMap::<ObjectPath, Vec<String>>::new();
 
+        for file in parquet_files {
+            let path = self.to_object_path_parsed(&file)?;
+            let directory = path.parent().unwrap_or_default();
+            directories.entry(directory).or_default().push(file);
+        }
+
+        for (directory, files) in directories {
+            self.consolidate_files(
+                &directory,
+                files,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn consolidate_files(
+        &self,
+        directory: &ObjectPath,
+        parquet_files: Vec<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
+    ) -> anyhow::Result<()> {
         if parquet_files.len() <= 1 {
             return Ok(());
         }
@@ -338,15 +370,24 @@ impl ParquetDataCatalog {
             }
         }
 
-        files_to_consolidate.sort_by_key(|&(_, (interval_start, _))| interval_start);
+        files_to_consolidate.sort_by(|(path_a, interval_a), (path_b, interval_b)| {
+            interval_a.cmp(interval_b).then_with(|| path_a.cmp(path_b))
+        });
+
         let intervals: Vec<(u64, u64)> = files_to_consolidate
             .iter()
             .map(|&(_, interval)| interval)
             .collect();
 
-        // Validate disjointness before merging so source files are left untouched on failure
-        if ensure_contiguous_files.unwrap_or(true) && !are_intervals_disjoint(&intervals) {
-            anyhow::bail!("Intervals are not disjoint before consolidating a directory");
+        if ensure_contiguous_files.unwrap_or(true) {
+            anyhow::ensure!(
+                are_intervals_disjoint(&intervals),
+                "Intervals are not disjoint before consolidating a directory"
+            );
+            anyhow::ensure!(
+                are_intervals_contiguous(&intervals),
+                "Intervals are not contiguous before consolidating a directory"
+            );
         }
 
         let Some(last_end) = intervals.iter().map(|interval| interval.1).max() else {
@@ -355,7 +396,7 @@ impl ParquetDataCatalog {
 
         let file_name =
             timestamps_to_filename(UnixNanos::from(intervals[0].0), UnixNanos::from(last_end));
-        let path = make_object_store_path(directory, [&file_name]);
+        let path = directory.clone().join(file_name);
 
         let object_paths = files_to_consolidate
             .iter()
@@ -363,10 +404,10 @@ impl ParquetDataCatalog {
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         self.execute_async(|| async {
-            combine_parquet_files_from_object_store(
+            consolidate_parquet_files_from_object_store(
                 self.object_store.clone(),
                 object_paths,
-                &ObjectPath::from(path),
+                &path,
                 Some(self.compression),
                 Some(self.max_row_group_size),
                 deduplicate,

@@ -456,6 +456,9 @@ time rather than silently coercing them.
 | Batch modify | -    | ✓       | Futures HTTP method only. Execution sends one command. |
 | Batch cancel | ✓    | ✓       | Auto-chunks into batches of 50.                        |
 
+Futures batch cancels split repeated venue or client order IDs into separate requests so each reply
+identifies one command UUID. Other chunks contain up to 50 orders.
+
 :::note
 **Cancel all orders**:
 
@@ -510,98 +513,106 @@ total at or below the filled quantity.
 
 ### Maker Protection (Futures)
 
-Kraken Futures applies [Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection) on
-selected markets: placements and edits that could take liquidity are held for the market's configured window
-before reaching the matching engine. The classification is by order type, so a non-post-only limit placement
-is held even when it would have rested. Stop and take-profit trigger placements are not held. The orders they
-fire are held unless post-only. Post-only placements and all cancellations are never held, and no held-order
-state is exposed on any API.
+Kraken Futures [Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection)
+holds placements and edits that would take liquidity on arrival. This eligibility rule took effect
+on 29 October 2026 at 08:00 UTC, as announced in the
+[22 October 2026 changelog](https://docs.kraken.com/exchange/changelog). Before that boundary,
+eligibility followed order type: non-post-only limit placements were held even when they would rest.
+The Phase 3 rollout added 51 markets at the same time. The hold applies to every client on selected markets.
 
-The venue applies the hold per market to every client. The adapter decodes the per-market window
-(`makerProtectionMillis`) on the raw venue instrument model and exposes no configuration for it.
+- **Window**: The raw instrument field `makerProtectionMillis` gives the market's window, at most
+  100 ms. Read `/instruments` or `/trading/instruments` for the live market set; an absent or zero
+  value means no delay. The adapter exposes no setting for it.
+- **Exemptions**: Orders and edits that would rest, post-only orders, and stop or take-profit trigger
+  placements are not held. Orders fired by triggers are held unless post-only.
+- **Self-trade prevention**: A released order cancels any resting order of the same account it would
+  match, overriding the configured strategy. The resting order's cancel reason is `CANCELLED_BY_SELF_TRADE`.
 
-Order-state handling accounts for the held-order semantics:
+#### Split amendments
 
-- A cancel acknowledged for a held limit placement is not terminal. The order is
-  released as IOC and can still fill. Held market and IOC orders cannot be recalled:
-  cancel returns `ORDER_NOT_FOUND`, and the order still reaches matching at release.
-  Venue order updates drive fills and terminal states, never the cancel acknowledgement itself.
-- An order that cannot trade after such a release is reported with the venue
-  status `iocWouldNotExecute` on REST (`IOC_WOULD_ENTER_BOOK` on market data),
-  which the adapter treats as a terminal rejection. On the order-update feed
-  the same outcome arrives as a terminal cancellation whose venue reason the
-  adapter preserves.
-- A released order cancels a resting order of the same account it would
-  match, overriding the configured self-trade strategy. The resting order is
-  reported canceled with reason `CANCELLED_BY_SELF_TRADE`.
+When an edit both reduces size and reprices a resting order across the book, the size reduction
+applies immediately and preserves queue priority. Only the reprice waits for the hold to release.
+The order can fill at its original price during that window, up to the reduced size. Both changes
+keep the same venue and client order IDs.
+
+The adapter emits `OrderUpdated` for each tracked open-order update that changes quantity or price.
+When the venue reports the reduction and reprice separately, the first update carries the reduced
+quantity at the original price. It restores the order's prior lifecycle status from `PENDING_UPDATE`,
+but does not establish that the requested price has taken effect. Read each update's quantity and
+price, and account for fills during the window. Do not treat the first update as confirmation of
+the whole edit.
+
+#### Cancellation
+
+**Canceling a held order cannot prevent execution.** Cancellations are not held, but the reply waits
+for the held order's release. The order matches as submitted, then cancellation removes any remainder
+that would rest. No API exposes a held-order state.
+
+| Outcome at release                              | Cancel reply |
+| ----------------------------------------------- | ------------ |
+| Resting remainder, including no fills           | `cancelled`  |
+| Full execution                                  | `notFound`   |
+| IOC, FOK, or market order with no right to rest | `notFound`   |
+| Order refused at release                        | `notFound`   |
+
+Neither reply establishes the order's terminal state. The adapter emits `OrderCancelRejected` for
+`notFound`; the order can still fill. Placement or amend responses, private updates, fills, and
+reconciliation establish the order's state and cumulative fills.
+
+- **Order IDs**: A held placement has no venue order ID until release. The adapter uses its full
+  [client order ID](#client-order-ids) to cancel it.
+- **Repeated and batch cancels**: A second cancel returns `notFound` immediately while the first
+  awaits release. Batch cancels apply these rules per instruction.
+- **Cancel-all and dead-man switch**: Own cancel-all and an externally armed `cancelallordersafter`
+  apply cancellation at release and cannot prevent execution. Held targets are absent from the
+  cancel-all result. A held amend's original order can remain resting until release, so a sweep
+  reply does not prove every order is gone. The adapter does not arm the Futures dead-man switch.
+- **Timeouts**: The default `timeout_secs` is 30 seconds. A delayed or lost mutation response needs
+  private updates or reconciliation to resolve it. The adapter does not automatically replay mutations.
 
 #### Order-update feed
 
-A removal with `is_cancel=true` and reason `partial_fill` discards the remainder
-and is terminal (a converted hold, or any IOC-style order). The delta carries
-the venue's cumulative filled.
+The fills stream supplies terminal full fills, so the adapter skips `full_fill` removals. For other
+tracked cancellations, a full `is_cancel=true` delta closes the order only after that stream accounts
+for the delta's cumulative filled quantity. Cancellation cannot overtake those fills.
 
-- For a tracked order, the adapter closes from the feed once the fills stream
-  has accounted that quantity. A fill still in flight is never orphaned, and a
-  tracked order is not left open after its fills are accounted.
-- For a removal it cannot match, the adapter skips and converges through
-  reconciliation.
+Untracked cancellations produce status reports, except for skipped `partial_fill` removals:
 
-| Unmatched removal             | Reason                        |
-| ----------------------------- | ----------------------------- |
-| Cancel-only message           | Carries no cumulative filled. |
-| No resolvable client order ID | Cannot match a tracked order. |
+| Skipped `partial_fill` removal | Reason                             |
+| ------------------------------ | ---------------------------------- |
+| Cancel-only message            | No cumulative filled quantity.     |
+| No tracked identity            | No resolvable or registered order. |
+
+The adapter skips cancel-only `full_fill` and `partial_fill` removals: full fills close through the fills
+stream; partial-fill remainders need reconciliation unless a full order delta arrives. Other cancel-only
+reasons close a tracked order immediately; later fills use fill reports for reconciliation.
 
 #### Reconciliation
 
-A held order never reaches the book, so it is absent from `/openorders`. Mass
-status, open-only report runs, and targeted single-order queries consult
-[`POST /orders/status`](https://docs.kraken.com/api-reference/order-management/get-specific-orders-status)
-before treating the order as missing. That window reports
-orders that are open or were filled or canceled in the last 5 seconds.
+Held orders are absent from `/openorders`. Before treating an order as missing, mass status, open-only
+report runs, and targeted queries check
+[`POST /orders/status`](https://docs.kraken.com/api-reference/order-management/get-specific-orders-status).
+It covers open orders and orders filled or canceled in the last 5 seconds.
 
-The venue echoes the client order ID an order was sent with, which the window is
-asked about under both forms the venue can hold it under (see
-[Client order IDs](#client-order-ids)). Mass status and open-only report runs map
-each window report to a cached order:
-
-- A cached venue order ID identifies the order directly.
-- Otherwise, exactly one order queried by client order ID must hold the echoed
-  ID, and exactly one report with an unknown venue order ID must carry it. The
-  instrument and side must match, and the venue placement time must be no more
-  than five seconds before the order's creation time, allowing for clock skew.
-  This keeps out an older order whose ID shortens alike or that reused the ID.
-  Two reports that would name one order, one echoing each form, name neither.
-
-The adapter withholds any other window report with a warning naming the reason,
-because it cannot tie that report to exactly one cached order.
-
-The client order ID request returns every order holding the ID. A window
-report of an order the open-orders or history read already returned names that
-report by the cached order it describes and is then left out, so the order
-reaches reconciliation once with the venue read's fields, such as time in force,
-post-only and trigger fields, which the window lacks. When that report is open
-and the window report is a later update, the report takes the window's status,
-quantities, prices, cancel reason and update time, and the window rules below
-apply to it. A
-closed report keeps its state. A run scoped to one instrument keeps only that
-instrument's window reports.
-
-The venue order ID and client order ID requests run one after the other, so an
-order asked about by venue order ID can come back from the client order ID
-request too, in a different state. The adapter chooses the latest state regardless of
-which request ran later: a closed state over an open one, then the later venue
-update, then the larger filled quantity. The naming rule above and
-the fill-price rule below apply to the report kept.
-
-In those runs, the window carries no fill price. Thus, a fully executed order is left out with a warning. Its
-executions are not inferred at the order price. A targeted single-order query prices it from recent fills
-instead, or fails so reconciliation defers it. Mass status marks the set incomplete when it leaves out a
-window report. A canceled order with executions is reported, since reconciliation waits for its fills rather
-than infer them.
-
-A hold that fills after a cancel acknowledgement reconciles to its true
-terminal state with the venue's cumulative filled, not a premature cancellation.
+- **Identity**: Queries use both [client order ID forms](#client-order-ids). Bulk reads match a cached
+  venue order ID directly. Otherwise, exactly one queried cached order and one report with an uncached
+  venue ID must match the echoed ID, instrument, and side. Placement time must be no more than 5 seconds
+  before order creation, allowing clock skew while excluding older reused or shortened IDs.
+- **Ambiguity**: Two reports echoing different forms of one order's ID are ambiguous. Unmatched or
+  ambiguous reports are withheld with a warning naming the reason. Instrument-scoped runs keep only
+  that instrument.
+- **Duplicate reports**: The client-ID query returns every order holding that ID. Reports already
+  present in open orders or history receive the cached client ID and appear only once, retaining
+  time-in-force, post-only, and trigger fields absent from the status window. A later window state
+  updates an open report's status, quantities, prices, cancel reason, and update time; window pricing
+  rules then apply. Closed reports keep their state.
+- **State precedence**: Venue-ID and client-ID queries can return different states of one order.
+  The adapter prefers a closed state, then the later venue update, then the larger filled quantity,
+  regardless of request order. Identity and pricing checks apply to the retained report.
+- **Fill prices**: The window supplies none. Bulk reads withhold fully executed orders with a warning;
+  targeted queries price them from recent fills or fail so reconciliation defers them. Executions are
+  never inferred at the order price. Canceled orders with executions remain reportable because
+  reconciliation waits for their fills. Mass status marks the set incomplete for any withheld window report.
 
 ## Order routing (Spot)
 
@@ -695,11 +706,26 @@ lookup for that trigger fails while it is skipped, so reconciliation defers it.
 Both clients return no rows for a query scoped to an instrument they do not hold. Spot and Futures share the
 `KRAKEN` venue, so either client can receive a query for an order it did not route. Single-order status
 lookups and `query_order` inspect only the command's instrument. Unresolved or unparsable records on another
-instrument cannot fail that scoped read, though a lookup cannot rule out an order such a record may name.
+instrument cannot fail that scoped read, though a lookup cannot rule out an order such a record may name. A
+Futures history row of a documented kind that names both its order and a contract resolving to another
+instrument is outside the read and does not count. See [Order history and pricing](#order-history-and-pricing).
 
 Other gaps mark the set incomplete: closed or historical orders and fills that cannot be parsed, or whose
 instruments cannot be resolved. Position records do not contribute to the completeness flag. In-scope position
 failures fail the read.
+
+A venue order ID that is empty, blank, or not ASCII cannot be represented, so a report row carrying one counts as
+unparsable. A stream order update or fill carrying one is dropped and the order waits for a later frame or
+reconciliation. A status report can restore a dropped fill's quantity as an inferred fill, with a synthetic trade ID
+and an inferred price. A fill read supplies the real ones only if it arrives before or with that report. Nothing ties
+a later real fill to the inferred fill, so it can apply as a second fill and overstate the filled quantity until the
+mass status at the next startup corrects it.
+
+A successful submit or edit response naming the order only by such an ID leaves the outcome ambiguous: the command is
+not rejected, and the streams or reconciliation resolve the order. The in-flight check's `query_order` needs a venue
+order ID, so if a submitted order's stream frames are lost too and no open check (`open_check_interval_secs`) reads it
+before the in-flight retries run out, the default `submission_recovery_policy` closes it locally, even while the venue
+holds it.
 
 #### Single-order lookups
 
@@ -713,8 +739,8 @@ reconciliation defers the order:
   order before answering.
 - A read that skipped a row, including one whose instrument the client cannot
   resolve, rules out an order with a venue order ID that no skipped row carries. A
-  skipped row that names no order, such as an undocumented history event kind, rules
-  out none.
+  skipped row that names no order, or any row of an undocumented history event kind,
+  rules out none.
 - A lookup on an instrument of the other product reads complete, since the other
   client answers for its orders. One on an instrument of the client's own product
   that it does not hold reads nothing and rules out none.
@@ -834,25 +860,27 @@ With `spot_account_type=AccountType.MARGIN`:
   margin trading).
 
 :::warning
-A leveraged position closed while the node was down is not recovered from its closing fill when
-`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the instrument
-carries no position report. Thus, the engine projects that order's fill as order-only. The order reaches
-`FILLED`, but the cached position keeps both its quantity and realized PnL. The closing PnL is never recorded.
+A position closed while the node was down can recover from explicit closing fills even when
+`reconciliation_lookback_mins` excludes its opening trade. A fully closed margin lot is absent from
+`OpenPositions`, but a complete bounded history can still close its retained position when the closing
+order's normal routing resolves to that position. The fills record closing PnL and fees.
 
-This is the shared engine's documented behavior for an instrument with no in-scope position report, not a
-Kraken rule. See
-[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection). Removing the
-synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously supplied an explicit
-FLAT.
+This uses the shared engine's
+[retained closing recovery](../concepts/execution/reconciliation.md#retained-closing-recovery) rules.
+An incomplete mass status withholds recovery. Eligible closing fills apply independently; other skipped or
+inferred executions do not veto them. Offline additions to a position, re-entry, corrections, and mixed
+explicit/inferred histories may require manual reconciliation.
 
-A periodic position check does not recover it either, since margin mode declares no bulk position
-coverage, and that skip is logged at debug level. The condition also persists across restarts: the
-closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
-as already in sync.
+When recovery is withheld, the order can reach `FILLED` while the cached position and its economics remain
+unchanged. Startup then logs a warning naming the account, the pair, and the position, where one resolves. A
+periodic position check does not recover that close: margin mode declares no bulk position coverage, so the
+check skips the instrument and logs at debug level. The mismatch can persist across restarts because the
+closing order is already in sync, and a restart with the order cached does not repeat the warning. Reconcile
+such a position manually.
 
-Leaving `reconciliation_lookback_mins` unset avoids the projection. A closing order already in the cache, such
-as a strategy exit submitted before the outage, then recovers into its position. The fill applies to the
-cached order and closes its position.
+Leaving `reconciliation_lookback_mins` unset avoids bounded order-only projection. A closing order already in
+the cache, such as a strategy exit submitted before the outage, then recovers into its position. The fill
+applies to the cached order and closes its position.
 
 It is not a general remedy, because a closing order absent from the cache is attributed to the `EXTERNAL`
 strategy and keys a netting position by instrument and strategy. Unless the cached position is
@@ -860,9 +888,23 @@ strategy and keys a netting position by instrument and strategy. Unless the cach
 second, opposite position. It does not close the cached one. Net exposure reaches zero, but the stale position
 and its realized PnL remain.
 
-Until this is addressed, reconcile a margin position closed during downtime manually, or run
-`spot_account_type=AccountType.CASH` with `use_spot_position_reports=True`, where the wallet read enumerates
-every holding it covers and an absent report is genuine evidence of flat.
+Cash-mode recovery also depends on position-report coverage:
+
+- With `use_spot_position_reports=False`, the default, or for an instrument outside
+  `spot_positions_quote_currency`, the client declares no bulk position coverage. Eligible explicit closing
+  fills recover retained exposure and economics only when the instrument passes the rules above.
+  Otherwise, its fills remain order-only. The periodic check skips the instrument.
+- For a covered instrument, startup reports a cached open `LONG` position as `FLAT` when the wallet shows its
+  base asset as flat (see [Spot position reports (cash mode)](#spot-position-reports-cash-mode)). A closing
+  fill in the startup reports then closes the position with its PnL and fees when the closing order is cached
+  or claimed by the position's strategy. A closing order that is neither cached nor claimed opens an
+  offsetting `EXTERNAL` position instead, as above. A closing fill the reports miss, because it predates the
+  lookback window or its row cannot be parsed, is inferred from the order report without a fee.
+- Where startup withholds that `FLAT`, the instrument carries no position report, so startup projects the
+  closing fill order-only. A periodic position check, when enabled, does not apply the fill either. With
+  `generate_missing_orders` enabled (the default), it falls back to a synthetic order at the cached average
+  entry price, attributed as above, so the closing PnL and fees are not recorded.
+
 :::
 
 ### Futures reconciliation
@@ -876,7 +918,8 @@ order ID it already holds, or one too long or otherwise invalid, as a send statu
 that rejects the order.
 
 A cancel or edit names the order by one identifier: its venue order ID when
-known, else its full client order ID.
+known, else its full client order ID. An edit response reads the order ID under the
+documented `orderId` key, and under `order_id` as well.
 
 Open-order and fill reports read the client order ID under the documented
 `cliOrdId` key, and under `cli_ord_id` as well. An echoed ID that is empty or not
@@ -920,7 +963,8 @@ filled orders. Historical reads have the limits below.
 
 The adapter reads order lifecycle events from
 [`/api/history/v3/orders`](https://docs.kraken.com/api-reference/account-history/get-order-events). Each read
-takes one page: Kraken `/history` endpoints share a pool of 100 tokens, replenished at 100 every 10 minutes.
+takes one page of up to 1000 events, the most the venue serves: Kraken `/history` endpoints share a pool of 100
+tokens, replenished at 100 every 10 minutes.
 An order-history page costs one token, so a page that hands back a continuation token, in the body or the
 `Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than reading further. A
 single-order status lookup can still report a cached order absent when it was placed after the page's oldest
@@ -930,20 +974,43 @@ The history lists every lifecycle event. The read returns one report per order: 
 venue still lists it. Otherwise, it returns the latest history state. A closed order is not reopened by an
 open state stamped later, such as a refused edit logged after a cancel.
 
-The contract name is resolved as the venue spells it, exactly first and then case-insensitively. The history
-carries no trigger price. Thus, a stop order is reported as the limit or market order it executes as once
-triggered. Venue-initiated orders (liquidation, assignment, hedge assignment, unwind, block, RFQ) are reported
-as market orders.
+The contract name is resolved as the venue spells it, exactly first and then case-insensitively. A spelling that
+matches two contracts case-insensitively resolves to neither. The history carries no trigger price. Thus, a stop
+order is reported as the limit or market order it executes as once triggered. Venue-initiated orders (liquidation,
+assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
 
-The adapter skips unrepresentable rows with a warning and marks the set incomplete:
+The order type is the only place the history states a time in force. `IoC` and `HedgeImmediateOrCancel` rows are
+reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
+`GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
+
+The open-order read and order feed deltas for orders the adapter does not track report the `ioc` and `post` order
+types the same way, but Kraken documents neither there, and the orders-status window states no time in force or
+post-only flag. A resting post-only order the venue lists as a plain limit therefore reports as `GTC` and not
+post-only, and an order adopted from such a report keeps those values.
+
+The adapter skips unrepresentable rows with a warning:
 
 - An unknown event kind.
+- A documented event kind whose payload does not decode.
 - An order type reported as `Unknown` or omitted.
 - An unknown direction.
 - A timestamp before the epoch.
 
-`OrderNotFound` carries no order state and is skipped without affecting completeness.
-A venue error returned under an HTTP success status fails the read.
+A skipped row marks the set incomplete unless it is provably outside the read: the open-order snapshot reports
+its order, or a scoped read finds it names an order and a contract resolving to another instrument. Any other
+row whose order or contract cannot be read stays in scope, as does any row of an unknown event kind. A row with
+an invalid order ID names no order.
+
+A skipped row in scope that is at least as new as the state an order would be reported from withholds that order,
+whether that state is open or closed, so an unreadable newest row cannot fall back to an older state. The page's
+other orders are still reported. A later lookup of the withheld order is deferred like any order a read cannot
+rule out. A row that names no order can withhold nothing, so its order's older state can still be reported in the
+incomplete set. A canceled or rejected row's state counts from its event. Any other state stamped before its
+event, such as a refused edit's, counts from the earlier stamp.
+
+A decoded `OrderNotFound` carries no order state and is skipped without affecting completeness.
+A venue error returned under an HTTP success status fails the read, as does a body without an `elements` array or
+an element without the documented `uid`, `timestamp` and `event`.
 
 A terminal history row with executions carries no average price. The adapter prices
 it from page fills that cover its filled quantity exactly, or from page fills plus
@@ -959,7 +1026,8 @@ order that reached a terminal state during downtime when that page contains it.
 A venue error body under an HTTP success status, regardless of its code, or HTTP
 429 triggers a warning and fallback to open orders alone, with the set marked incomplete.
 Other HTTP errors, transport failures, and unparsable bodies fail mass status,
-as does a failed open-order read.
+as does a failed open-order read. A documented event whose payload does not decode
+does not: it is skipped as described in [Order history and pricing](#order-history-and-pricing).
 
 #### Startup pricing safeguard
 
@@ -969,7 +1037,9 @@ only the latest fills page. They cannot page back to recover an older missing ex
 
 A withheld order's page fills remain when the cache holds the order, because the
 engine can reconcile those fills against it without a report. An uncached order's
-fills are withheld with the order.
+fills are withheld with the order, including an order the history read itself left
+without a report because a skipped row names it. A fill of such an order that echoes a
+cached order stays, since the engine applies it to that order by its client order ID.
 
 #### Flat instruments
 
@@ -1033,6 +1103,29 @@ independently of this option (see [Spot margin trading](#spot-margin-trading)).
   so an instrument quoted in anything else is never reconciled to flat from a missing report.
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
+- At startup, the mass status also reports `FLAT` for each cached open `LONG` position on a covered
+  instrument whose base asset the
+  [`POST /0/private/Balance`](https://docs.kraken.com/api-reference/account-data/get-account-balance) read
+  shows as flat: the base has no row, or its rows sum to an amount that rounds to zero at the instrument's
+  size precision. Every row of the base counts: its code in either spelling (`XXBT`, `XBT`), and a dotted
+  code whose part before the last dot names the base, as is or once trailing digits are removed, such as
+  `XBT.F`, `DOT28.S`, or `EUR.HOLD` for BTC, DOT, or EUR.
+- Kraken documents that read as net of pending withdrawals, so a withdrawal reduces it while still pending.
+- The `FLAT` is withheld, with a warning, when the rows of the base sum to a nonzero amount that no `LONG`
+  report carries, such as a suffixed (`XBT.F`), staking (`DOT.S`), or hold (`EUR.HOLD`) balance. It is also
+  withheld when an order report shows a `SELL` on the instrument that is not terminal, when a cached open or
+  in-flight `SELL` on the instrument has no matching order report, when the instrument is missing from the
+  cache, and for tokenized assets (xStocks), whose `Balance` key and units are not documented.
+- A row that counts toward the base of a position that can get this `FLAT` fails the startup mass status
+  when it cannot be parsed or is negative. Other rows that cannot be parsed are skipped.
+- Periodic position checks get no such report, since a missing report there already means flat for a
+  covered instrument.
+- A position reported `FLAT` with no closing fill in the startup reports, as after a withdrawal or a sale of
+  the base through another pair, reconciles as a discrepancy, with or without a lookback. With
+  `generate_missing_orders` enabled (the default), a position whose strategy claims the instrument closes at
+  its cached average entry price, with no closing PnL or fee. Otherwise the synthetic order belongs to
+  `EXTERNAL` and opens an offsetting position next to the strategy's. With `generate_missing_orders`
+  disabled, startup stops on the unresolved position.
 
 **Configuration**:
 
@@ -1155,8 +1248,9 @@ read would actually enumerate: cash mode with `use_spot_position_reports=True`, 
 instrument quoted in `spot_positions_quote_currency` (see Spot position reports, which applies
 the same filter). Under `spot_account_type=AccountType.MARGIN` the source is `OpenPositions`, which omits
 unleveraged lots, and cash mode without wallet-derived reports returns nothing at all. Wherever
-coverage is not declared, an absent report leaves the cached position untouched instead of
-closing it.
+coverage is not declared, an absent report alone leaves the cached position untouched. Startup can still
+apply eligible explicit closing fills under the
+[retained closing recovery](../concepts/execution/reconciliation.md#retained-closing-recovery) rules.
 
 ## Funding rates
 

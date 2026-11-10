@@ -15,10 +15,11 @@
 
 //! OKX subscription topic construction.
 
+use nautilus_network::websocket::SubscriptionState;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::OKXInstrumentType,
+    common::{consts::OKX_WS_TOPIC_DELIMITER, enums::OKXInstrumentType},
     websocket::{
         enums::OKXWsChannel,
         messages::{OKXSubscriptionArg, OKXWebSocketArg},
@@ -69,4 +70,17 @@ pub(crate) fn topic_from_websocket_arg(arg: &OKXWebSocketArg) -> String {
         arg.inst_type.as_ref(),
         arg.bar.as_ref(),
     )
+}
+
+pub(super) fn is_topic_subscribed(state: &SubscriptionState, topic: &str) -> bool {
+    let (channel, symbol) = topic
+        .split_once(OKX_WS_TOPIC_DELIMITER)
+        .unwrap_or((topic, ""));
+
+    let (Some(channel), Some(symbol)) = (Ustr::from_existing(channel), Ustr::from_existing(symbol))
+    else {
+        return false;
+    };
+
+    state.is_subscribed(&channel, &symbol)
 }

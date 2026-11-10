@@ -20,21 +20,31 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, VirtualClock},
     config::ConfigError,
+    messages::execution::TradingCommand,
+    msgbus::{
+        self, MessagingSwitchboard,
+        stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+    },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType, TradeTick},
-    enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
-    instruments::{CryptoPerpetual, InstrumentAny},
+    data::{Bar, BarSpecification, BarType, QuoteTick, TradeTick},
+    enums::{AggregationSource, AggressorSide, BarAggregation, OmsType, OrderSide, PriceType},
+    events::{PositionClosed, order::spec::OrderFilledSpec},
+    identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId},
+    instruments::{CryptoPerpetual, Instrument, InstrumentAny},
+    orders::Order,
+    position::Position,
     types::{Currency, Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 use super::{HurstVpinDirectional, HurstVpinDirectionalConfig};
 use crate::{
+    cache_database::FailNthAddOrderDatabase,
     examples::strategies::hurst_vpin_directional::config::MAX_HURST_VPIN_WINDOW,
     strategy::StrategyConfig,
 };
@@ -72,6 +82,19 @@ fn create_strategy(instrument_id: InstrumentId) -> HurstVpinDirectional {
         .instrument_id(instrument_id)
         .bar_type(bar_type(instrument_id))
         .trade_size(Quantity::from("0.01"))
+        .build();
+    HurstVpinDirectional::new(config)
+}
+
+fn create_strategy_with_short_windows(instrument_id: InstrumentId) -> HurstVpinDirectional {
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(4)
+        .hurst_lags(vec![2, 4])
+        .vpin_window(1)
+        .max_holding_secs(60)
         .build();
     HurstVpinDirectional::new(config)
 }
@@ -195,9 +218,14 @@ fn test_strategy_allocates_maximum_supported_windows() {
 }
 
 fn register_strategy(strategy: &mut HurstVpinDirectional) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    register_strategy_with_cache(strategy, cache);
+}
+
+fn register_strategy_with_cache(strategy: &mut HurstVpinDirectional, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TESTER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
-    let cache = Rc::new(RefCell::new(Cache::default()));
+
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),
         cache.clone(),
@@ -207,6 +235,29 @@ fn register_strategy(strategy: &mut HurstVpinDirectional) {
         .core
         .register(trader_id, clock, cache, portfolio)
         .unwrap();
+}
+
+fn capture_risk_commands() -> TypedIntoMessageSavingHandler<TradingCommand> {
+    let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+        get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        handler,
+    );
+    messages
+}
+
+fn submitted_order_ids(
+    messages: &TypedIntoMessageSavingHandler<TradingCommand>,
+) -> Vec<ClientOrderId> {
+    messages
+        .get_messages()
+        .iter()
+        .map(|message| match message {
+            TradingCommand::SubmitOrder(command) => command.client_order_id,
+            other => panic!("expected SubmitOrder command, was {other:?}"),
+        })
+        .collect()
 }
 
 fn trade(instrument_id: InstrumentId, size: &str, side: AggressorSide, ts: u64) -> TradeTick {
@@ -232,6 +283,66 @@ fn bar(bar_type: BarType, close: &str, ts: u64) -> Bar {
         ts.into(),
         ts.into(),
     )
+}
+
+fn quote(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from("30000.0"),
+        Price::from("30000.5"),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        ts.into(),
+        ts.into(),
+    )
+}
+
+fn cache_open_position(
+    cache: &Rc<RefCell<Cache>>,
+    strategy: &HurstVpinDirectional,
+    position_id: &str,
+    ts_opened: u64,
+) -> Position {
+    let instrument = InstrumentAny::CryptoPerpetual(pf_xbtusd());
+    let fill = OrderFilledSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(strategy.core.strategy_id().unwrap())
+        .instrument_id(instrument.id())
+        .position_id(PositionId::from(position_id))
+        .last_qty(Quantity::from("0.01"))
+        .last_px(Price::from("30000.0"))
+        .ts_event(ts_opened.into())
+        .ts_init(ts_opened.into())
+        .build();
+    let position = Position::new(&instrument, fill);
+    let mut cache = cache.borrow_mut();
+    cache.add_instrument(instrument).unwrap();
+    cache.add_position(&position, OmsType::Hedging).unwrap();
+    position
+}
+
+fn set_ready_signals(strategy: &mut HurstVpinDirectional) {
+    strategy.returns = VecDeque::from([0.01, -0.01, 0.02, -0.02]);
+    strategy.abs_imbalances = VecDeque::from([0.4]);
+    strategy.signed_imbalances = VecDeque::from([0.5]);
+    strategy.hurst = Some(0.6);
+    strategy.vpin = Some(0.4);
+    strategy.signed_vpin = Some(0.5);
+}
+
+fn process_constant_bars(strategy: &mut HurstVpinDirectional) {
+    let bar_type = strategy.config.bar_type;
+    for ts in 1..=5 {
+        strategy
+            .on_trade(&trade(
+                strategy.config.instrument_id,
+                "1.0",
+                AggressorSide::Buy,
+                ts,
+            ))
+            .unwrap();
+        strategy.on_bar(&bar(bar_type, "30000.0", ts)).unwrap();
+    }
 }
 
 #[rstest]
@@ -550,4 +661,233 @@ fn test_on_reset_clears_all_state() {
     assert!(!strategy.exit_cooldown);
     assert!(strategy.entry_order_id.is_none());
     assert!(strategy.exit_order_ids.is_empty());
+}
+
+#[rstest]
+fn test_entry_persistence_failure_keeps_latch_and_dispatch() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let (database, database_control) = FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    set_ready_signals(&mut strategy);
+    let risk_commands = capture_risk_commands();
+    database_control.set_fail_add_order_on(Some(1));
+
+    strategy.on_quote(&quote(instrument_id, 1)).unwrap();
+    let entry_id = strategy.entry_order_id.unwrap();
+
+    database_control.set_fail_add_order_on(None);
+    strategy.on_quote(&quote(instrument_id, 2)).unwrap();
+
+    assert_eq!(strategy.entry_order_id, Some(entry_id));
+    assert_eq!(submitted_order_ids(&risk_commands), vec![entry_id]);
+    let cache = cache.borrow();
+    let order = cache.order(&entry_id).unwrap();
+    assert_eq!(order.order_side(), OrderSide::Buy);
+    assert_eq!(order.quantity(), Quantity::from("0.01"));
+}
+
+#[rstest]
+fn test_close_persistence_failure_keeps_latch_and_dispatch() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let (database, database_control) = FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    cache_open_position(&cache, &strategy, "P-RETRY-1", 0);
+    strategy.position_opened_ns = Some(UnixNanos::from(0));
+    set_ready_signals(&mut strategy);
+    let risk_commands = capture_risk_commands();
+    database_control.set_fail_add_order_on(Some(1));
+
+    strategy
+        .on_quote(&quote(instrument_id, 61_000_000_000))
+        .unwrap();
+    let first_ids = submitted_order_ids(&risk_commands);
+
+    database_control.set_fail_add_order_on(None);
+    strategy
+        .on_quote(&quote(instrument_id, 62_000_000_000))
+        .unwrap();
+
+    let submitted_ids = submitted_order_ids(&risk_commands);
+    assert_eq!(submitted_ids, first_ids);
+    assert_eq!(submitted_ids.len(), 1);
+    assert!(strategy.exit_cooldown);
+    assert!(strategy.exit_order_ids.contains(&submitted_ids[0]));
+    assert_eq!(strategy.exit_order_ids.len(), 1);
+    let cache = cache.borrow();
+    let order = cache.order(&submitted_ids[0]).unwrap();
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert_eq!(order.quantity(), Quantity::from("0.01"));
+    assert!(order.is_reduce_only());
+}
+
+#[rstest]
+fn test_close_persistence_failure_preserves_all_exit_ids() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let (database, database_control) = FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    cache_open_position(&cache, &strategy, "P-PARTIAL-1", 0);
+    cache_open_position(&cache, &strategy, "P-PARTIAL-2", 0);
+    strategy.position_opened_ns = Some(UnixNanos::from(0));
+    set_ready_signals(&mut strategy);
+    let risk_commands = capture_risk_commands();
+    database_control.set_fail_add_order_on(Some(2));
+
+    strategy
+        .on_quote(&quote(instrument_id, 61_000_000_000))
+        .unwrap();
+
+    let submitted_ids = submitted_order_ids(&risk_commands);
+    assert_eq!(submitted_ids.len(), 2);
+    assert_eq!(strategy.exit_order_ids.len(), 2);
+    assert_eq!(
+        strategy.exit_order_ids,
+        submitted_ids
+            .iter()
+            .copied()
+            .collect::<ahash::AHashSet<_>>()
+    );
+    assert!(strategy.exit_cooldown);
+
+    let closing_position_id = {
+        let messages = risk_commands.get_messages();
+
+        let TradingCommand::SubmitOrder(command) = &messages[0] else {
+            panic!("expected SubmitOrder command");
+        };
+
+        command.position_id.unwrap()
+    };
+
+    let closing_fill = OrderFilledSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(strategy.core.strategy_id().unwrap())
+        .instrument_id(instrument_id)
+        .client_order_id(submitted_ids[0])
+        .position_id(closing_position_id)
+        .trade_id(TradeId::from("T-CLOSE-PARTIAL"))
+        .order_side(OrderSide::Sell)
+        .last_qty(Quantity::from("0.01"))
+        .last_px(Price::from("30000.0"))
+        .ts_event(61_000_000_000.into())
+        .ts_init(61_000_000_000.into())
+        .build();
+    let closed_position = cache
+        .borrow_mut()
+        .update_position_from_fill(closing_position_id, &closing_fill)
+        .unwrap();
+    let closed_event = PositionClosed::create(
+        &closed_position,
+        &closing_fill,
+        UUID4::new(),
+        61_000_000_000.into(),
+    );
+    crate::strategy::Strategy::on_position_closed(&mut strategy, closed_event);
+    strategy.exit_order_ids.remove(&submitted_ids[0]);
+    database_control.set_fail_add_order_on(None);
+    strategy
+        .on_quote(&quote(instrument_id, 62_000_000_000))
+        .unwrap();
+
+    let submitted_ids_after = submitted_order_ids(&risk_commands);
+    assert_eq!(strategy.position_opened_ns, Some(UnixNanos::from(0)));
+    assert_eq!(submitted_ids_after, submitted_ids);
+    assert_eq!(strategy.exit_order_ids.len(), 1);
+    assert!(!strategy.exit_order_ids.contains(&submitted_ids[0]));
+    assert!(strategy.exit_order_ids.contains(&submitted_ids_after[1]));
+    let cache = cache.borrow();
+    let order = cache.order(&submitted_ids_after[1]).unwrap();
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert!(order.is_reduce_only());
+}
+
+#[rstest]
+fn test_on_start_hydrates_cached_position_and_enforces_timeout() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    cache_open_position(&cache, &strategy, "P-INHERITED-1", 0);
+    let risk_commands = capture_risk_commands();
+
+    strategy.on_start().unwrap();
+    set_ready_signals(&mut strategy);
+    strategy
+        .on_quote(&quote(instrument_id, 61_000_000_000))
+        .unwrap();
+
+    assert_eq!(strategy.position_opened_ns, Some(UnixNanos::from(0)));
+    let submitted_ids = submitted_order_ids(&risk_commands);
+    assert_eq!(submitted_ids.len(), 1);
+    let cache = cache.borrow();
+    let order = cache.order(&submitted_ids[0]).unwrap();
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert!(order.is_reduce_only());
+}
+
+#[rstest]
+fn test_on_start_uses_oldest_cached_position_opened_ns() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    cache_open_position(&cache, &strategy, "P-INHERITED-NEW", 20_000_000_000);
+    cache_open_position(&cache, &strategy, "P-INHERITED-OLD", 10_000_000_000);
+
+    strategy.on_start().unwrap();
+
+    assert_eq!(
+        strategy.position_opened_ns,
+        Some(UnixNanos::from(10_000_000_000))
+    );
+}
+
+#[rstest]
+fn test_holding_timeout_runs_without_hurst_estimate() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache.clone());
+    cache_open_position(&cache, &strategy, "P-TIMEOUT-1", 0);
+    strategy.position_opened_ns = Some(UnixNanos::from(0));
+    let risk_commands = capture_risk_commands();
+
+    process_constant_bars(&mut strategy);
+    strategy
+        .on_quote(&quote(instrument_id, 61_000_000_000))
+        .unwrap();
+
+    assert!(strategy.hurst.is_none());
+    assert_eq!(strategy.vpin, Some(1.0));
+    assert_eq!(strategy.signed_vpin, Some(1.0));
+    assert!(!strategy.signals_ready());
+    let submitted_ids = submitted_order_ids(&risk_commands);
+    assert_eq!(submitted_ids.len(), 1);
+    let cache = cache.borrow();
+    let order = cache.order(&submitted_ids[0]).unwrap();
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert!(order.is_reduce_only());
+}
+
+#[rstest]
+fn test_flat_quote_requires_ready_signals() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut strategy = create_strategy_with_short_windows(instrument_id);
+    register_strategy_with_cache(&mut strategy, cache);
+    strategy.hurst = Some(0.6);
+    strategy.vpin = Some(0.4);
+    strategy.signed_vpin = Some(0.5);
+    let risk_commands = capture_risk_commands();
+
+    strategy.on_quote(&quote(instrument_id, 1)).unwrap();
+
+    assert!(!strategy.signals_ready());
+    assert!(strategy.entry_order_id.is_none());
+    assert!(submitted_order_ids(&risk_commands).is_empty());
 }

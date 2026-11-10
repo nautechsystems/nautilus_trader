@@ -444,6 +444,35 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case(-1)]
+    #[case(1)]
+    fn test_decode_price_rejects_spurious_digits(#[case] raw: PriceRaw) {
+        let wire: i128 = raw_to_wire(raw);
+        let mut bytes = wire.to_le_bytes().to_vec();
+        bytes.push(0);
+        let mut cursor = SbeCursor::new(&bytes);
+
+        let result = decode_price(&mut cursor);
+
+        assert_eq!(result, Err(SbeDecodeError::InvalidValue { field: "Price" }));
+    }
+
+    #[rstest]
+    fn test_decode_quantity_rejects_spurious_digits() {
+        let wire: u128 = raw_to_wire(QuantityRaw::from(1_u8));
+        let mut bytes = wire.to_le_bytes().to_vec();
+        bytes.push(0);
+        let mut cursor = SbeCursor::new(&bytes);
+
+        let result = decode_quantity(&mut cursor);
+
+        assert_eq!(
+            result,
+            Err(SbeDecodeError::InvalidValue { field: "Quantity" })
+        );
+    }
+
+    #[rstest]
     #[case(&[0, 0, 1, 0, b'X'], "InstrumentId.symbol")]
     #[case(&[1, 0, b' ', 1, 0, b'X'], "InstrumentId.symbol")]
     #[case(&[1, 0, b'A', 0, 0], "InstrumentId.venue")]

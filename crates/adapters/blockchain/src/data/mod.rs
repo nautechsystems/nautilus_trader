@@ -13,6 +13,61 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy::primitives::B256;
+
 pub mod client;
 pub mod core;
 pub mod subscription;
+
+// An event without an observed hash carries no constraint and always matches.
+pub(crate) fn block_hash_matches(observed: Option<B256>, cached: B256) -> bool {
+    observed.is_none_or(|hash| hash == cached)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    fn fixture_hash(hash: &str) -> B256 {
+        B256::from_str(hash).expect("fixture block hash must be valid")
+    }
+
+    #[rstest]
+    #[case(
+        None,
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        true
+    )]
+    #[case(
+        Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        true
+    )]
+    #[case(
+        Some("0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        true
+    )]
+    #[case(
+        Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        true
+    )]
+    #[case(
+        Some("0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        false
+    )]
+    fn test_block_hash_matches(
+        #[case] observed: Option<&str>,
+        #[case] cached: &str,
+        #[case] expected: bool,
+    ) {
+        let observed = observed.map(fixture_hash);
+        assert_eq!(block_hash_matches(observed, fixture_hash(cached)), expected);
+    }
+}

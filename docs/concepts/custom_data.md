@@ -191,14 +191,24 @@ JSON and Arrow callbacks on this path run under the Python GIL.
 
 For Rust types compiled into the process:
 
-1. `#[custom_data]` or `#[custom_data(pyo3)]` generates the trait and JSON
-   implementations, plus Arrow implementations by default.
+1. `#[custom_data]` or `#[custom_data(pyo3)]` generates the model traits and JSON
+   implementations.
+1. `#[arrow_custom_data]`, applied above the model macro, generates Arrow schema,
+   encoding, and decoding implementations.
 1. `ensure_custom_data_registered::<T>()` inserts native schema/encoder/decoder
    handlers into the process-wide registries.
 1. `ensure_rust_extractor_registered::<T>()` registers an extractor factory for
    PyO3-exposed types. Once activated through Python class registration, the
    extractor can recover the concrete Rust type instead of using the Python
    wrapper.
+
+For internal integration with `nautilus_serialization`, use `#[custom_data(export_fields)]` in a separate
+model crate to export field definitions and their `#[custom_data_field(...)]` options. Invoke
+`arrow_custom_data_remote!(model_crate::module::Type)` inside `nautilus_serialization`, which owns
+the Arrow traits. This internal form generates the Arrow implementations without redefining the
+model or generating Python methods. Both Arrow macro forms use the same schema, encoding, and decoding generator.
+Use non-generic structs with public fields and no `#[non_exhaustive]` attribute. Exported struct names
+must be unique within their defining crate. The remote path must start with that defining crate's name.
 
 This path stays fully native in Rust for encode/decode.
 
@@ -383,11 +393,10 @@ The PostgreSQL and Redis cache database implementations support `CustomData`.
 - The stored record includes `data_type`, `metadata`, `identifier`, and full
   JSON payload.
 - Reads reconstruct `CustomData` using `CustomData::from_json_bytes(...)`.
-- Python SQL bindings expose `add_custom_data` and `load_custom_data`.
 - Redis cache stores custom data under keys
   `custom:<ts_init_020>:<uuid>` with full `CustomData` JSON as value.
 - Redis `add_custom_data` and `load_custom_data` filter by `DataType` (type_name, metadata, identifier) and
-  return results sorted by `ts_init`. This is exposed through the PyO3 `RedisCacheDatabase` API.
+  return results sorted by `ts_init`.
 
 ## Practical implications
 

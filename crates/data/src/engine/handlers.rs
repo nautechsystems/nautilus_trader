@@ -28,6 +28,41 @@ use crate::aggregation::{BarAggregator, SpreadQuoteAggregator};
 // Between built-in handlers (10) and default user handlers (0)
 pub(super) const BAR_AGGREGATOR_PRIORITY: u32 = 5;
 
+/// Holds live data back from a bar aggregator that is still replaying a historical request.
+///
+/// The buffer collects while it is `Some` and is emptied by [`WarmupBuffer::release`], after which
+/// the handlers holding it pass data straight through again.
+#[derive(Debug)]
+pub(super) struct WarmupBuffer<T>(Rc<RefCell<Option<Vec<T>>>>);
+
+impl<T> Clone for WarmupBuffer<T> {
+    fn clone(&self) -> Self {
+        Self(Rc::clone(&self.0))
+    }
+}
+
+impl<T: Copy> WarmupBuffer<T> {
+    pub(super) fn new() -> Self {
+        Self(Rc::new(RefCell::new(Some(Vec::new()))))
+    }
+
+    /// Holds `item` and returns `true` while warming up, otherwise returns `false`.
+    fn hold(&self, item: &T) -> bool {
+        match self.0.borrow_mut().as_mut() {
+            Some(held) => {
+                held.push(*item);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Ends the warm-up and returns the data held in arrival order.
+    pub(super) fn release(&self) -> Vec<T> {
+        self.0.borrow_mut().take().unwrap_or_default()
+    }
+}
+
 /// Message handler for processing quote ticks through bar aggregators.
 ///
 /// This handler receives quote tick messages and forwards them to the underlying
@@ -37,6 +72,7 @@ pub(super) const BAR_AGGREGATOR_PRIORITY: u32 = 5;
 pub(super) struct BarQuoteHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
+    warmup: Option<WarmupBuffer<QuoteTick>>,
 }
 
 impl BarQuoteHandler {
@@ -44,7 +80,14 @@ impl BarQuoteHandler {
         Self {
             aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
+            warmup: None,
         }
+    }
+
+    /// Holds incoming data in `warmup` until the buffer is released.
+    pub(super) fn with_warmup(mut self, warmup: Option<WarmupBuffer<QuoteTick>>) -> Self {
+        self.warmup = warmup;
+        self
     }
 }
 
@@ -54,6 +97,14 @@ impl Handler<QuoteTick> for BarQuoteHandler {
     }
 
     fn handle(&self, quote: &QuoteTick) {
+        if self
+            .warmup
+            .as_ref()
+            .is_some_and(|warmup| warmup.hold(quote))
+        {
+            return;
+        }
+
         if let Some(agg) = self.aggregator.upgrade() {
             agg.borrow_mut().handle_quote(*quote);
         }
@@ -69,6 +120,7 @@ impl Handler<QuoteTick> for BarQuoteHandler {
 pub(super) struct BarTradeHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
+    warmup: Option<WarmupBuffer<TradeTick>>,
 }
 
 impl BarTradeHandler {
@@ -76,7 +128,14 @@ impl BarTradeHandler {
         Self {
             aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
+            warmup: None,
         }
+    }
+
+    /// Holds incoming data in `warmup` until the buffer is released.
+    pub(super) fn with_warmup(mut self, warmup: Option<WarmupBuffer<TradeTick>>) -> Self {
+        self.warmup = warmup;
+        self
     }
 }
 
@@ -86,6 +145,14 @@ impl Handler<TradeTick> for BarTradeHandler {
     }
 
     fn handle(&self, trade: &TradeTick) {
+        if self
+            .warmup
+            .as_ref()
+            .is_some_and(|warmup| warmup.hold(trade))
+        {
+            return;
+        }
+
         if let Some(agg) = self.aggregator.upgrade() {
             agg.borrow_mut().handle_trade(*trade);
         }
@@ -102,6 +169,7 @@ impl Handler<TradeTick> for BarTradeHandler {
 pub(super) struct BarBarHandler {
     aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
+    warmup: Option<WarmupBuffer<Bar>>,
 }
 
 impl BarBarHandler {
@@ -109,7 +177,14 @@ impl BarBarHandler {
         Self {
             aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
+            warmup: None,
         }
+    }
+
+    /// Holds incoming data in `warmup` until the buffer is released.
+    pub(super) fn with_warmup(mut self, warmup: Option<WarmupBuffer<Bar>>) -> Self {
+        self.warmup = warmup;
+        self
     }
 }
 
@@ -119,6 +194,10 @@ impl Handler<Bar> for BarBarHandler {
     }
 
     fn handle(&self, bar: &Bar) {
+        if self.warmup.as_ref().is_some_and(|warmup| warmup.hold(bar)) {
+            return;
+        }
+
         if let Some(agg) = self.aggregator.upgrade() {
             agg.borrow_mut().handle_bar(*bar);
         }

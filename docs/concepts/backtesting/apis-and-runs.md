@@ -71,6 +71,35 @@ than once.
 **Input ownership**: Clearing or modifying the original Python list after `add_data()` does not
 change the loaded stream.
 
+### Equal-timestamp replay ordering
+
+For built-in market data and `CustomData`, the engine replays data in ascending `ts_init` order.
+When items have the same `ts_init`:
+
+- **Across streams**: The stream registered by the earlier `add_data()` call takes priority.
+- **Within a stream**: Items retain their order in the input list.
+
+The engine dispatches each item before advancing to the next. Equal timestamps do not mean that
+all data at that timestamp has reached the strategy before `on_bar` runs.
+
+To use same-timestamp custom data in `on_bar`, add its stream before the bars. Assume `flows` is a
+list of `CustomData` points, `bars` is a list of external `Bar` objects, and the engine already has
+the required venue, instrument, and a strategy subscribed to both:
+
+```python
+engine.add_data(flows)
+engine.add_data(bars)
+engine.run()
+```
+
+At each shared `ts_init`, `on_data` receives the flow points before `on_bar` receives the bars.
+State updated by `on_data` is then available to `on_bar`. Reversing the two `add_data()` calls makes
+`on_bar` run first, before that state includes the same-timestamp flow points.
+
+Set custom data's `ts_init` to its actual availability time. Stream registration order only breaks
+ties; a point with a later `ts_init` still arrives after the bar. For bar timestamps, see the
+[bar timestamp convention](bar-execution.md#bar-timestamp-convention).
+
 ### Streaming batches manually
 
 Use **streaming mode** when the complete dataset does not fit in memory:
@@ -156,6 +185,26 @@ Set `chunk_size` to a value in `[1, 1_000_000]` to enable streaming. Leave it as
 data at once.
 
 `BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
+
+Rust callers can register external catalog backends with `extend_catalog_factories` and select
+the resulting registry through the node builder. Select a factory by setting the data config's
+`DataCatalogConfig` backend to `CatalogBackendType::External(name)`, where `name` matches its
+registered factory key:
+
+```rust
+let mut node = BacktestNode::builder(configs)
+    .with_catalog_factories(factories)
+    .build()?;
+```
+
+The builder's `build()` validates the run configurations and creates the node without initializing
+its engines. Call `node.build()` to initialize them, or `node.run()` to initialize them and run the
+backtest. The selected registry supplies instrument loading and replay data in both one-shot and
+streaming runs. The builder defaults to the built-in registry; `BacktestNode::new`,
+`BacktestNode::load_catalog`, and `BacktestNode::load_data_config` always use the built-in registry.
+
+The kernel uses its built-in factories for `BacktestEngineConfig.catalogs` and streaming output;
+the node's selected registry applies only to `BacktestDataConfig` loading.
 
 ### Order book delta replay
 

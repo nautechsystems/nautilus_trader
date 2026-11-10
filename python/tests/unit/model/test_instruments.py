@@ -266,6 +266,9 @@ def test_btcusdt_perp_construction() -> None:
     assert perp.is_inverse is False
     assert perp.price_precision == 1
     assert perp.size_precision == 3
+    assert perp.size_increment == Quantity.from_str("0.001")
+    assert perp.lot_size == Quantity.from_str("0.001")
+    assert perp.min_quantity == Quantity.from_str("0.001")
 
 
 def test_crypto_perpetual_type_name() -> None:
@@ -1284,6 +1287,7 @@ def _make_derivative(
             activation_ns=3,
             expiration_ns=4,
         )
+
     if instrument_type is CryptoOption:
         return CryptoOption(
             **common,
@@ -1293,11 +1297,13 @@ def _make_derivative(
             activation_ns=3,
             expiration_ns=4,
         )
+
     if instrument_type is CryptoPerpetual:
         return CryptoPerpetual(
             **common,
             base_currency=Currency.from_str("ETH"),
         )
+
     return PerpetualContract(
         **common,
         underlying="ETH",

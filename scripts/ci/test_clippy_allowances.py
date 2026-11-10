@@ -135,6 +135,7 @@ def _clippy(root: Path, flags: tuple[str, ...] = ()) -> tuple[int, set[tuple[str
         check=False,
     )
     diagnostics = set()
+
     for line in result.stdout.splitlines():
         event = json.loads(line)
         if event.get("reason") == "compiler-message":
@@ -193,6 +194,7 @@ def _test_precedence(root: Path) -> None:
         "\npub mod ",
         1,
     )[0]
+
     cases = [
         (
             "blockchain_workspace_check",
@@ -294,6 +296,7 @@ def _test_precedence(root: Path) -> None:
             "similar_names",
         ),
     ]
+
     for name, source, binary, flags, status, lint in cases:
         library.write_text(source, encoding="utf-8")
         binary_path = root / "src/main.rs"
@@ -330,6 +333,7 @@ def _test_precedence(root: Path) -> None:
             "if let Some(value) = option { value.wrapping_add(1) } else { 0 }\n}\n"
         ),
     }
+
     for lint, body in bodies.items():
         opt_in = f"#![warn(clippy::{lint})]\n"
         library.write_text(opt_in + OPT_IN + body, encoding="utf-8")

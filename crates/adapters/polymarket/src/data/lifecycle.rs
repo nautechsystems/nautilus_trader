@@ -148,41 +148,11 @@ impl PolymarketDataClient {
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
-        let instruments = self.instruments.clone();
-        let closure_client = gamma_client.clone();
-        let closure_sender = self.data_sender.clone();
-        let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
 
-        let task_spawner = self
-            .tasks
+        self.tasks
             .spawner()
             .map_err(|e| anyhow::anyhow!("Polymarket task admission is closed: {e}"))?;
-        let ctx = WsMessageContext {
-            subscriptions: self.subscriptions.clone(),
-            clock: self.clock,
-            data_sender: self.data_sender.clone(),
-            instruments: self.instruments.clone(),
-            instrument_update_state: self.instrument_update_state.clone(),
-            gamma_client: gamma_client.clone(),
-            filters: self.provider.filters(),
-            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
-            resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
-            pending_resolutions: self.pending_resolutions.clone(),
-            deferred_resolutions: self.deferred_resolutions.clone(),
-            book_snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
-            new_market_inflight_keys: self.new_market_inflight_keys.clone(),
-            new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
-            tasks: task_spawner,
-            polybolt_feed: self.polybolt_feed.clone(),
-            new_market_filter: self.config.new_market_filter.clone(),
-            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
-            compute_effective_deltas: self.config.compute_effective_deltas,
-            cancellation_token: cancellation.clone(),
-        };
-
-        let watchlist = self.resolve_poll_watchlist.clone();
-
-        let resolve_ctx = ctx.resolve_context();
+        let resolve_ctx = self.resolution_context();
 
         if resolve_poll_enabled {
             log::debug!("Polymarket resolve poll task started");
@@ -207,9 +177,9 @@ impl PolymarketDataClient {
                         // cycle. Without an expired instrument reported open, no request is sent.
                         let refresh_result = tokio::select! {
                             result = refresh_expired_market_closure(
-                                &closure_client,
-                                &instruments,
-                                &closure_sender,
+                                &gamma_client,
+                                &resolve_ctx.instruments,
+                                &resolve_ctx.data_sender,
                                 now_ns,
                                 &subscriptions,
                                 Some(&cancellation),
@@ -228,8 +198,7 @@ impl PolymarketDataClient {
 
                         // A set-wide sweep never converges and grows for the process lifetime
                         let pending_retirement = {
-                            let terminal_conditions = closed_condition_ids
-                                .lock();
+                            let terminal_conditions = subscriptions.closed_condition_ids.lock();
 
                             terminal_conditions
                                 .difference(&retired_condition_ids)
@@ -260,7 +229,7 @@ impl PolymarketDataClient {
                         .await;
 
                         let (watched_conditions, watched_instruments, selection) = {
-                            let snapshot = watchlist.read();
+                            let snapshot = resolve_ctx.watchlist.read();
                             let watched_conditions = snapshot.len();
                             let watched_instruments = snapshot
                                 .values()
@@ -950,93 +919,6 @@ mod tests {
         .unwrap()
     }
 
-    #[rstest]
-    #[case(false)]
-    #[case(true)]
-    #[tokio::test]
-    async fn test_data_client_keeps_missing_taker_rate_at_zero(#[case] missing_schedule: bool) {
-        let mut market: Value = serde_json::from_str(include_str!(
-            "../../test_data/gamma_market_fee_zero_rate.json"
-        ))
-        .unwrap();
-
-        if missing_schedule {
-            market["feeSchedule"] = Value::Null;
-        }
-
-        let response = serde_json::to_string(&vec![market]).unwrap();
-        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let asserted = Arc::clone(&calls);
-
-        let router = axum::Router::new()
-            .route(
-                "/markets",
-                axum::routing::get(move || {
-                    let response = response.clone();
-                    async move { response }
-                }),
-            )
-            .route(
-                "/fee-rate",
-                axum::routing::get(move || {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    async { include_str!("../../test_data/clob_fee_rate_response_nonzero.json") }
-                }),
-            );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let gamma = PolymarketGammaHttpClient::new(
-            Some(format!("http://{address}")),
-            5,
-            RetryConfig::default(),
-        )
-        .unwrap();
-        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        replace_data_event_sender(tx);
-
-        let client = PolymarketDataClient::new(
-            ClientId::from("POLY-TEST"),
-            PolymarketDataClientConfig::default(),
-            gamma,
-            clob,
-            PolymarketDataApiHttpClient::new(None, 5).unwrap(),
-            PolymarketMarketConnectionPool::new(
-                None,
-                false,
-                TransportBackend::default(),
-                WS_DEFAULT_SUBSCRIPTIONS,
-            ),
-        )
-        .unwrap();
-        let instruments = client
-            .provider()
-            .http_client()
-            .request_instruments_by_slugs(vec!["fee-market".to_string()])
-            .await
-            .unwrap();
-        server.abort();
-
-        assert_eq!(asserted.load(Ordering::SeqCst), 0);
-        assert_eq!(instruments.len(), 2);
-
-        for instrument in instruments {
-            let InstrumentAny::BinaryOption(binary) = instrument else {
-                panic!("expected a binary option instrument");
-            };
-
-            let info = binary.info.unwrap();
-            let schedule: crate::http::models::FeeSchedule =
-                serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
-            assert_eq!(schedule.rate, rust_decimal::Decimal::ZERO);
-            assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
-            assert!(schedule.taker_only);
-            assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
-        }
-    }
-
     fn polybolt_crypto_data_type(symbol: &str) -> DataType {
         let metadata =
             Params::new([("symbol".to_string(), Value::String(symbol.to_string()))].into());
@@ -1080,6 +962,7 @@ mod tests {
 
         let info = Params::new(
             [
+                ("market_version".to_string(), "v1".into()),
                 (
                     "token_id".to_string(),
                     serde_json::Value::String(raw_symbol.to_string()),
@@ -1856,6 +1739,20 @@ mod tests {
     }
 
     #[rstest]
+    fn resolve_poll_task_rejects_closed_task_admission() {
+        let client = make_client_for_reset_test();
+        client.tasks.begin_shutdown();
+
+        let error = client.register_resolve_poll_task().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Polymarket task admission is closed: task group admission is closed",
+        );
+        assert!(client.tasks.is_empty());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn resolve_poll_task_retires_expired_runtime_state_when_auto_poll_disabled() {
         let mut client = make_client_for_reset_test();
@@ -2051,7 +1948,23 @@ mod tests {
 
         // Retirement is one-shot: a later sweep must not walk the whole terminal set again
         cache_instrument_unchecked(&client.instruments, &client.subscriptions.token_meta, &inst);
-        tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+
+        // The second marker enters a later snapshot, proving the first sweep finished
+        for suffix in ["LATER1", "LATER2"] {
+            let condition_id = format!("0xCOND-{suffix}");
+            let raw_symbol = format!("{condition_id}-0xTOKEN_{suffix}");
+            let later = seed_instrument(&client, &raw_symbol, &condition_id, expiration_ns);
+            client
+                .subscriptions
+                .closed_condition_ids
+                .lock()
+                .insert(condition_id);
+            wait_until_async(
+                || async { !client.instruments.load().contains_key(&later.id()) },
+                tokio::time::Duration::from_secs(5),
+            )
+            .await;
+        }
 
         client.cancellation_token.cancel();
         client

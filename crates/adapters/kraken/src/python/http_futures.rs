@@ -475,6 +475,7 @@ impl KrakenFuturesHttpClient {
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - The edit fails on the exchange.
+    /// - The response carries an invalid order ID.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
     #[expect(clippy::too_many_arguments)]

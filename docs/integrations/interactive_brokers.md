@@ -293,7 +293,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Command[Submit or modify command] --> Ready{Client ready}
-    Ready -->|no| Rejected[Emit rejection event]
+    Ready -->|no| Denied[Emit denial event]
     Ready -->|yes| Transform[Transform Nautilus order]
     Transform --> Submit[Submit through ibapi]
     Submit --> Track[Record order state]
@@ -422,11 +422,12 @@ The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in fo
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
 
-The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
-order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
-IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
-transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+The adapter rejects post-only and reduce-only orders. Quote quantity is valid only for inverse
+instruments, and only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash
+quantity on any other order type with error 10244). Trailing orders support price offsets and
+basis-point offsets, which IB receives as a trailing percent. These checks, and any order the
+adapter cannot resolve or transform for IB, emit coded `OrderDenied` reasons before the adapter
+sends an order to IB.
 
 ### Commands and order attributes
 
@@ -439,6 +440,16 @@ transform for IB, emit coded `OrderDenied` reasons before the adapter sends an o
 | Cancel all orders | Yes     | Scoped through the execution client.                         |
 | Query order       | Yes     | Checks open orders, then executions before inferring cancel. |
 | Mass status       | Yes     | Orders, fills, and positions.                                |
+
+Brackets from `OrderFactory::bracket()` make the take-profit and stop-loss legs reduce-only by
+default, so the adapter denies the whole order list. Set `tp_reduce_only` and `sl_reduce_only` to
+`false` to submit the bracket to IB.
+
+:::warning
+Exits that are not reduce-only give up the reduce-only guarantee. IB does not cancel bracket exits
+when another order closes the position, so a later exit fill opens a position in the opposite
+direction. Cancel the remaining exits before closing the position separately.
+:::
 
 Pass `params={"exchange": "IEX"}` to submit, submit-list, or modify commands to override the
 cached contract exchange for that command. An omitted or empty value retains the cached exchange.
@@ -520,7 +531,23 @@ report carries the replayed entry price only when both conditions hold:
 For this check, the expected average cost is the entry price plus opening commissions per unit for a long. For
 a short, it is the entry price minus those commissions. A lot opened by a flip carries no commission.
 
-Otherwise the report keeps IB's average cost, which the engine's reconciliation fill uses.
+Otherwise the report keeps IB's average cost, rounded to the instrument's price precision. The report
+sets `avg_px_open_precision` to that precision, so average-price comparisons allow one unit at that
+precision in addition to the default 0.01% relative tolerance. For price precision 2, the extra allowance
+is 0.01. This lets a cached fill-price average reconcile with IB's commission-inclusive average cost
+even after the entry fills leave the lookback window. Larger differences remain unresolved if recovery
+cannot restore the reported average.
+
+When the report carries this precision and the cached average matches within that allowance, same-side
+quantity increases and reductions use the cached average as the reconciliation fill price. This
+preserves the cached entry average instead of inferring a price from the small average-cost difference.
+Opening from flat or flipping the position uses the reported average cost. Outside the allowance,
+same-side increases use a price calculated to reach the reported average, while reductions use the
+reported average cost and leave the remaining entry average unchanged.
+
+When replayed fills replace IB's average cost, the adapter clears `avg_px_open_precision`. Comparisons
+then use the relative tolerance without the extra rounding allowance. The same-side preservation rule
+above no longer applies.
 
 On connect, the execution client resolves the instrument of every open position in the account. It publishes
 any instrument absent from the cache. Thus, a position in a contract outside the provider's `load_ids` still
@@ -554,14 +581,26 @@ queries do not apply the same fills again.
 | `SymbologyMethod.RAW`        | IDs that retain the IB security type for explicit lookup. |
 
 One symbology value built from this setting drives every mapping site in the adapter, so data,
-execution, and provider paths always resolve identical IDs. Raw symbology
-(`AAPL=STK.SMART`) is the lossless escape hatch: it preserves the IB local symbol and security
-type for instruments the simplified format rules cannot express, such as complex international
-listings.
+execution, and provider paths always resolve identical IDs. Raw symbology (`AAPL=STK.SMART`) preserves
+the IB security type and supports local symbols that simplified rules cannot express, such as complex
+international listings. Standard futures year suffixes are normalized under both methods.
 
-Futures and futures-option IDs carry the local symbol reported by IB, such as `YMM6.XCBT` and
-`YMM6 C45000.XCBT`. The adapter does not rewrite the contract year, so identifiers stay stable
-across catalogs and caches.
+Standard futures and futures-option codes use two-digit years by default, such as `YMM26.XCBT`
+and `YMM26 C45000.XCBT`. Futures-option underlying codes use the same year digits. The instrument's
+`raw_symbol` keeps the native IB symbol.
+
+Rust APIs use `nautilus_model::identifiers::futures::FuturesYearDigits::{One, Two}`, with `Two` as the
+default. Python configuration keeps the integer values `1` and `2`.
+
+When using Databento data with Interactive Brokers execution, set `futures_year_digits` to the same
+value in both adapters so their instrument IDs match.
+
+After upgrading, either set `futures_year_digits=1` on `InteractiveBrokersInstrumentProviderConfig` or
+re-import existing data into a separate catalog, rebuild instrument caches, and update configured instrument IDs. Renaming catalog files does not change
+IDs stored in records.
+
+Keep `futures_year_digits=1` until working orders are canceled and positions opened with one-digit IDs are
+closed. Rebuild cached trading state before switching to two-digit IDs.
 
 The symbology method controls symbol conversion. Venue selection is a separate step with this
 precedence:
@@ -601,6 +640,7 @@ instrument cannot be resolved.
 | Option                          | Default      | Purpose                                                 |
 | ------------------------------- | ------------ | ------------------------------------------------------- |
 | `symbology_method`              | `SIMPLIFIED` | Select simplified or raw symbol conversion.             |
+| `futures_year_digits`           | `2`          | Use two-digit years, or `1` for existing futures IDs.   |
 | `load_ids`                      | Empty        | Load Nautilus instrument IDs at startup.                |
 | `load_contracts`                | Empty        | Load IB contract dictionaries at startup.               |
 | `min_expiry_days`               | `None`       | Minimum relative expiry for chain loading.              |
@@ -699,7 +739,7 @@ The execution client needs an instrument's magnifier before it submits or modifi
 When its provider has not loaded the instrument, for example one a data client loaded after the
 execution client was created, the client takes the contract and magnifier from the instrument in
 the cache, or else requests the contract details from IB and waits up to `request_timeout` for
-them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
+them. It emits `OrderDenied` or `OrderModifyDenied` when neither supplies the magnifier in time.
 An order canceled while it waits, singly or by a cancel-all, is canceled in the client and never
 reaches IB. Canceling one order of a waiting order list stops the whole list, and the client
 denies the list's other orders.
@@ -792,8 +832,9 @@ not restart a subscription.
 | `vnc_port`        | `None`                             | Expose VNC on a port from `5900` through `5999`; `None` disables it. |
 
 `DockerizedIBGateway` exposes asynchronous and blocking `start`, `safe_start`, and `stop` methods,
-plus `container_status`. The safe start variants reuse a ready container and replace an unhealthy
-one.
+plus `container_status`. The safe start variants reuse a ready container, wait for a starting one to
+log in, and replace an unhealthy one. A running container that never logs in is not replaced: the
+call fails at the timeout, and `stop` removes it.
 
 ## Python enum reference
 

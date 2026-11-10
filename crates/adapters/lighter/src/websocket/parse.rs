@@ -719,15 +719,13 @@ pub(crate) enum ParsedOrderEvent {
 /// [`crate::websocket::dispatch::WsDispatchState::order_snapshots`]. The parser
 /// uses the flags to pick the correct typed event without dispatch state
 /// lookups.
+///
+/// `shape_changed` compares quantity, price, and trigger price with the stored
+/// snapshot and is meaningful only after `OrderAccepted` has been emitted.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OpenFrameContext {
-    /// `true` if an `OrderAccepted` has already been emitted for the cloid.
     pub(crate) accepted_already_emitted: bool,
-    /// `true` if an `OrderTriggered` has already been emitted for the cloid.
     pub(crate) triggered_already_emitted: bool,
-    /// `true` if (qty, price, trigger_price) differ from the last stored
-    /// snapshot. Computed by the caller; only meaningful when
-    /// `accepted_already_emitted` is `true`.
     pub(crate) shape_changed: bool,
 }
 
@@ -1133,26 +1131,11 @@ pub fn parse_ws_position_status_report(
     Ok(report)
 }
 
-/// Builds the per-asset [`AccountBalance`] for one Lighter wallet entry.
+/// Builds the per-asset [`AccountBalance`] before applying `user_stats.available_balance`.
 ///
-/// Lighter is a unified-margin venue: spot-side `balance` and perp-side
-/// `margin_balance` are both deployable equity. The split shows where the
-/// money currently sits, not whether it's usable. The only true lock on
-/// the trading side is `locked_balance` (resting spot orders); perp
-/// margin currently in use is tracked separately via [`MarginBalance`],
-/// not via `AccountBalance.locked`.
-///
-/// We map:
-/// - `total  = balance + margin_balance`: every unit of that currency
-///   the account owns at the venue
-/// - `locked = locked_balance`: only spot-order reservations
-/// - `free   = total - locked` (derived by `from_total_and_locked`):
-///   all deployable equity, whether currently sitting on spot or perp
-///
-/// Perp-side margin currently allocated to positions is **not** folded
-/// into `locked`. It lives on [`MarginBalance`] and the portfolio's
-/// risk engine consumes it from there. See
-/// [`margin_balance_from_user_stats`].
+/// The total is `balance + margin_balance`, and `locked_balance` reserves resting spot orders.
+/// The account-state reconciler then caps settlement-currency free funds at
+/// `max(user_stats.available_balance, 0)`. [`MarginBalance`] reports account-wide margin separately.
 ///
 /// # Errors
 ///

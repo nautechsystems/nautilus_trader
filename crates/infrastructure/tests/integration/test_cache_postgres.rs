@@ -28,8 +28,6 @@ fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
 mod serial_tests {
     use std::time::Duration;
 
-    use ahash::AHashMap;
-    use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
     use nautilus_core::{UUID4, UnixNanos};
@@ -416,8 +414,8 @@ mod serial_tests {
         database.close().unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_all_and_unsupported_loads_return_results() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_load_all_and_missing_state_return_empty_results() {
         let mut database = get_test_pg_cache_database().await.unwrap();
         reset_test_database(&database).await;
 
@@ -427,29 +425,19 @@ mod serial_tests {
             .await;
         let actor_result = database.load_actor(&ActorId::from("ACTOR-001"));
         let strategy_result = database.load_strategy(&StrategyId::from("STRATEGY-001"));
-        let state = AHashMap::from([("state".to_string(), Bytes::from_static(b"value"))]);
-        let actor_update_result = database.update_actor(&ActorId::from("ACTOR-001"), &state);
-        let strategy_update_result =
-            database.update_strategy(&StrategyId::from("STRATEGY-001"), &state);
 
+        assert!(loaded.currencies.is_empty());
+        assert!(loaded.instruments.is_empty());
+        assert!(loaded.instrument_closes.is_empty());
         assert!(loaded.synthetics.is_empty());
-        assert!(synthetic_result.is_err());
-        assert_eq!(
-            actor_result.unwrap_err().to_string(),
-            "load_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
-        );
-        assert_eq!(
-            strategy_result.unwrap_err().to_string(),
-            "load_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
-        );
-        assert_eq!(
-            actor_update_result.unwrap_err().to_string(),
-            "update_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
-        );
-        assert_eq!(
-            strategy_update_result.unwrap_err().to_string(),
-            "update_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
-        );
+        assert!(loaded.accounts.is_empty());
+        assert!(loaded.orders.is_empty());
+        assert!(loaded.positions.is_empty());
+        assert!(loaded.greeks.is_empty());
+        assert!(loaded.yield_curves.is_empty());
+        assert!(synthetic_result.unwrap().is_none());
+        assert!(actor_result.unwrap().is_empty());
+        assert!(strategy_result.unwrap().is_empty());
 
         database.close().unwrap();
     }
@@ -616,6 +604,71 @@ mod serial_tests {
             other => panic!("Expected OrderModifyRejected, was {other:?}"),
         }
 
+        reset_test_database(&db).await;
+        db.close().unwrap();
+    }
+
+    #[rstest::rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_command_denied_insert_and_load_preserves_all_fields(
+        #[case] modify: bool,
+        #[values(false, true)] with_metadata: bool,
+        #[values(false, true)] with_cause: bool,
+    ) {
+        use nautilus_model::events::order::spec::{OrderCancelDeniedSpec, OrderModifyDeniedSpec};
+        let mut db = get_test_pg_cache_database()
+            .await
+            .expect("connect disposable test database");
+        let instrument = seed_order_event_dependencies(&db).await;
+        let trader = TraderId::from("TRADER-DENIAL-017");
+        let strategy = StrategyId::from("S-DENIAL-019");
+        let client = ClientOrderId::from(UUID4::new().to_string().as_str());
+        let venue = with_metadata.then(|| VenueOrderId::from("V-DENIAL-023"));
+        let account = with_metadata.then(|| AccountId::from("A-DENIAL-029"));
+        let cause = with_cause.then(UUID4::new);
+
+        let event = if modify {
+            OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .maybe_venue_order_id(venue)
+                    .maybe_account_id(account)
+                    .reason("local modify refusal".into())
+                    .ts_event(31.into())
+                    .ts_init(37.into())
+                    .maybe_causation_id(cause)
+                    .build(),
+            )
+        } else {
+            OrderEventAny::CancelDenied(
+                OrderCancelDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .maybe_venue_order_id(venue)
+                    .maybe_account_id(account)
+                    .reason("local cancel refusal".into())
+                    .ts_event(41.into())
+                    .ts_init(43.into())
+                    .maybe_causation_id(cause)
+                    .build(),
+            )
+        };
+
+        DatabaseQueries::add_order_event(&db.pool, event.clone().into_boxed(), None)
+            .await
+            .unwrap();
+        let loaded = DatabaseQueries::load_order_events(&db.pool, &client, &trader)
+            .await
+            .unwrap();
+        delete_order_events(&db.pool, &client).await;
+        assert_eq!(loaded, vec![event]);
         reset_test_database(&db).await;
         db.close().unwrap();
     }

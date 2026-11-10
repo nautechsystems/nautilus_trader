@@ -17,7 +17,10 @@
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use aws_lc_rs::hmac;
 use nautilus_core::{
@@ -162,46 +165,20 @@ impl Credential {
     /// Hex-encoded HMAC-SHA256 signature
     #[must_use]
     pub fn sign_ws_auth(&self, timestamp: u64, nonce: &str, data: &str) -> String {
-        // Build string to sign: timestamp + "\n" + nonce + "\n" + data
-        let string_to_sign = format!("{timestamp}\n{nonce}\n{data}");
-
-        // Sign with HMAC-SHA256
-        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
-        let tag = hmac::sign(&key, string_to_sign.as_bytes());
-
-        // Return hex-encoded signature
-        hex::encode(tag.as_ref())
+        self.sign_message(timestamp, nonce, data)
     }
 
-    /// Signs a request message according to the Deribit HTTP authentication scheme.
-    ///
-    /// # Deribit Signature Specification
+    /// Signs a timestamp, nonce, and data payload according to the Deribit authentication scheme.
     ///
     /// ```text
-    /// RequestData = UPPERCASE(HTTP_METHOD) + "\n" + URI + "\n" + RequestBody + "\n"
-    /// StringToSign = Timestamp + "\n" + Nonce + "\n" + RequestData
+    /// StringToSign = Timestamp + "\n" + Nonce + "\n" + Data
     /// Signature = HEX_STRING(HMAC-SHA256(ClientSecret, StringToSign))
     /// ```
-    ///
-    /// # Parameters
-    ///
-    /// - `timestamp`: Milliseconds since UNIX epoch
-    /// - `nonce`: Random string (typically UUID v4)
-    /// - `request_data`: Pre-formatted string containing method, URI, and body
-    ///
-    /// # Returns
-    ///
-    /// Hex-encoded HMAC-SHA256 signature
     #[must_use]
-    fn sign_message(&self, timestamp: i64, nonce: &str, request_data: &str) -> String {
-        // Build string to sign: timestamp + "\n" + nonce + "\n" + request_data
-        let string_to_sign = format!("{timestamp}\n{nonce}\n{request_data}");
-
-        // Sign with HMAC-SHA256
+    fn sign_message(&self, timestamp: impl Display, nonce: &str, data: &str) -> String {
+        let string_to_sign = format!("{timestamp}\n{nonce}\n{data}");
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, string_to_sign.as_bytes());
-
-        // Return hex-encoded signature (not base64 like OKX)
         hex::encode(tag.as_ref())
     }
 
@@ -261,8 +238,6 @@ impl Credential {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use rstest::rstest;
 
     use super::*;
@@ -458,17 +433,20 @@ mod tests {
         let body = b"{}";
 
         let headers1 = credential.sign_auth_headers(method, uri, body).unwrap();
-        // Sleep briefly to ensure different timestamp
-        std::thread::sleep(Duration::from_millis(10));
         let headers2 = credential.sign_auth_headers(method, uri, body).unwrap();
 
         let auth1 = headers1.get("Authorization").unwrap();
         let auth2 = headers2.get("Authorization").unwrap();
 
-        // Headers should be different due to different timestamp and nonce
+        let [nonce1, nonce2] = [auth1, auth2].map(|auth| {
+            auth.split(',')
+                .find(|part| part.starts_with("nonce="))
+                .unwrap()
+        });
+
         assert_ne!(
-            auth1, auth2,
-            "Authorization headers should differ between calls due to timestamp/nonce"
+            nonce1, nonce2,
+            "Authorization nonces should differ between calls"
         );
     }
 

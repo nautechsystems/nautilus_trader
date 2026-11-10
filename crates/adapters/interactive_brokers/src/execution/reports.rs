@@ -18,11 +18,12 @@
 //! Collection owns everything it uses and never touches the live cache, so it can run on a
 //! runtime worker as an `ExecutionReportTask` and inline through the same code.
 
-use ibapi::client::Client;
+use ibapi::{client::Client, orders::Order as IBOrder};
+use nautilus_live::execution::reports::retain_order_status_reports;
 
 use super::{
     core::*,
-    parse::{FillEvidence, parse_order_data_to_report},
+    parse::{FillEvidence, link_order_contingencies, parse_order_data_to_report},
 };
 
 /// Inputs for turning IB report data into reports, with no venue access.
@@ -264,69 +265,88 @@ impl IbReportClient {
         }
 
         if !cmd.open_only {
-            let completed = tokio::time::timeout(timeout_dur, client.completed_orders(false))
-                .await
-                .context("Timeout requesting completed orders")??;
-            let mut completed = completed.filter_data();
+            self.collect_completed_orders(cmd, &mut reports, &mut ib_orders, ts_init)
+                .await?;
+        }
 
-            while let Some(order_result) = completed.next().await {
-                let Orders::OrderData(data) = order_result? else {
-                    continue;
-                };
+        link_order_contingencies(&mut reports, &ib_orders);
+        if !cmd.open_only {
+            retain_order_status_reports(&mut reports, cmd);
+        }
 
-                if !data.order.account.is_empty() && data.order.account != ib_account {
-                    continue;
-                }
+        Ok(reports)
+    }
 
-                // An OCA group that reduces its members on a fill cancels an unfilled member
-                // by reducing its quantity to zero, leaving nothing to reconcile
-                if data.order.total_quantity == 0.0 && data.order.filled_quantity == 0.0 {
-                    tracing::debug!(
-                        "Skipping completed IB order {} with zero quantity",
-                        data.order.perm_id
-                    );
-                    continue;
-                }
+    async fn collect_completed_orders(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+        reports: &mut Vec<OrderStatusReport>,
+        ib_orders: &mut Vec<IBOrder>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<()> {
+        let client = self.client.as_ref();
+        let timeout_dur = self.request_timeout;
+        let ib_account = self.ib_account;
+        let completed = tokio::time::timeout(timeout_dur, client.completed_orders(false))
+            .await
+            .context("Timeout requesting completed orders")??;
+        let mut completed = completed.filter_data();
 
-                let instrument_id = self
-                    .context
-                    .resolve_report_contract_instrument_id(&data.contract)
-                    .with_context(|| {
-                        format!(
-                            "Failed to resolve completed IB order contract ID {} ({:?})",
-                            data.contract.contract_id, data.contract.security_type
-                        )
-                    })?;
+        while let Some(order_result) = completed.next().await {
+            let Orders::OrderData(data) = order_result? else {
+                continue;
+            };
 
-                if cmd
-                    .instrument_id
-                    .is_some_and(|filter_id| instrument_id != filter_id)
-                {
-                    continue;
-                }
+            if !data.order.account.is_empty() && data.order.account != ib_account {
+                continue;
+            }
 
-                let report = parse_order_data_to_report(
-                    &data,
-                    instrument_id,
-                    self.context.account_id,
-                    &self.context.instrument_provider,
-                    ts_init,
-                )
-                .context("Failed to parse completed IB order")?;
+            // An OCA group that reduces its members on a fill cancels an unfilled member
+            // by reducing its quantity to zero, leaving nothing to reconcile
+            if data.order.total_quantity == 0.0 && data.order.filled_quantity == 0.0 {
+                tracing::debug!(
+                    "Skipping completed IB order {} with zero quantity",
+                    data.order.perm_id
+                );
+                continue;
+            }
 
-                if !reports
-                    .iter()
-                    .any(|existing| existing.venue_order_id == report.venue_order_id)
-                {
-                    reports.push(report);
-                    ib_orders.push(data.order);
-                }
+            let instrument_id = self
+                .context
+                .resolve_report_contract_instrument_id(&data.contract)
+                .with_context(|| {
+                    format!(
+                        "Failed to resolve completed IB order contract ID {} ({:?})",
+                        data.contract.contract_id, data.contract.security_type
+                    )
+                })?;
+
+            if cmd
+                .instrument_id
+                .is_some_and(|filter_id| instrument_id != filter_id)
+            {
+                continue;
+            }
+
+            let report = parse_order_data_to_report(
+                &data,
+                instrument_id,
+                self.context.account_id,
+                &self.context.instrument_provider,
+                ts_init,
+            )
+            .context("Failed to parse completed IB order")?;
+
+            if !reports
+                .iter()
+                .any(|existing| existing.venue_order_id == report.venue_order_id)
+            {
+                reports.push(report);
+                ib_orders.push(data.order);
             }
         }
 
-        parse::link_order_contingencies(&mut reports, &ib_orders);
-
-        Ok(reports)
+        Ok(())
     }
 
     pub(super) async fn generate_fill_reports(
@@ -476,7 +496,10 @@ impl IbReportClient {
                         None,    // report_id: auto-generated
                         None,    // venue_position_id
                         avg_px_open,
-                    );
+                    )
+                    // `position_avg_px_open` rounds IB's average cost to the price precision,
+                    // and that cost includes commissions: reconciliation allows one tick for both
+                    .with_avg_px_open_precision(instrument.price_precision());
 
                     if Self::upsert_position_report(&mut reports, report) {
                         tracing::debug!(
@@ -726,5 +749,290 @@ impl<'a> FillReportCollector<'a> {
                 self.evidence.missing_instruments.insert(instrument_id);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{enums::ContingencyType, instruments::stubs::equity_aapl};
+    use rstest::rstest;
+    use serde::Deserialize;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+    use crate::config::InteractiveBrokersInstrumentProviderConfig;
+
+    #[rstest]
+    #[case::unbounded(None, None, false, true, false)]
+    #[case::before_start(Some("20260924 12:02:05 UTC"), None, false, false, false)]
+    #[case::after_end(None, Some("20260924 12:02:03 UTC"), false, false, false)]
+    #[case::at_start(Some("20260924 12:02:04 UTC"), None, false, true, false)]
+    #[case::at_end(None, Some("20260924 12:02:04 UTC"), false, true, false)]
+    #[case::open_only(Some("20260924 12:02:05 UTC"), None, true, false, false)]
+    #[case::open_only_terminal(Some("20260924 12:02:05 UTC"), None, true, false, true)]
+    #[tokio::test]
+    async fn test_order_status_reports_filter_completed_orders(
+        #[case] start: Option<&str>,
+        #[case] end: Option<&str>,
+        #[case] open_only: bool,
+        #[case] includes_entry: bool,
+        #[case] terminal_report: bool,
+    ) {
+        let mut exchanges = report_exchanges();
+
+        // Simulate a stale terminal response in the open-order stream
+        if terminal_report {
+            replace_frame_bytes(&mut exchanges[1].responses[0], b"Submitted", b"Cancelled");
+        }
+
+        exchanges.truncate(if open_only { 2 } else { 3 });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+
+        let config = InteractiveBrokersInstrumentProviderConfig::default();
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+        let provider = Arc::new(provider);
+        provider.insert_test_instrument(equity_aapl().into(), 265598, 1);
+        let command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(1))
+            .open_only(open_only)
+            .start(start.map(|value| parse_execution_time(value).unwrap()))
+            .end(end.map(|value| parse_execution_time(value).unwrap()))
+            .build()
+            .unwrap();
+
+        let reports = tokio::time::timeout(Duration::from_secs(10), async {
+            let client = Arc::new(Client::connect(&address.to_string(), 7).await.unwrap());
+            let context = IbReportContext::new(provider, AccountId::from("IB-DU123"));
+
+            let report_client = IbReportClient::new(
+                Arc::clone(&client),
+                context,
+                Ustr::from("DU123"),
+                Duration::from_secs(2),
+            );
+            let reports = report_client
+                .generate_order_status_reports(&command)
+                .await
+                .unwrap();
+            client.disconnect().await;
+            done_tx.send(()).unwrap();
+            server.await.unwrap();
+            reports
+        })
+        .await
+        .unwrap();
+
+        let venue_order_ids = reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect::<Vec<_>>();
+        let mut expected_ids = vec![VenueOrderId::from("PERM-11"), VenueOrderId::from("PERM-12")];
+        if includes_entry {
+            expected_ids.push(VenueOrderId::from("PERM-10"));
+        }
+
+        assert_eq!(venue_order_ids, expected_ids);
+
+        for (report, client_id, sibling) in [
+            (&reports[0], "O-STOP", "O-TAKE"),
+            (&reports[1], "O-TAKE", "O-STOP"),
+        ] {
+            assert_eq!(report.client_order_id, Some(ClientOrderId::from(client_id)));
+            assert_eq!(
+                report.parent_order_id,
+                (!open_only).then(|| ClientOrderId::from("O-ENTRY"))
+            );
+            assert_eq!(report.contingency_type, Some(ContingencyType::Ouo));
+            assert_eq!(
+                report.linked_order_ids,
+                Some(vec![ClientOrderId::from(sibling)])
+            );
+
+            let expected_status = if terminal_report && client_id == "O-STOP" {
+                OrderStatus::Canceled
+            } else {
+                OrderStatus::Accepted
+            };
+
+            assert_eq!(report.order_status, expected_status);
+            assert_eq!(report.quantity, Quantity::from(1));
+            assert_eq!(report.filled_qty, Quantity::from(0));
+            assert_eq!(report.ts_last, report.ts_init);
+        }
+
+        if includes_entry {
+            assert_eq!(reports[2].order_status, OrderStatus::Filled);
+            assert_eq!(
+                reports[2].ts_last,
+                parse_execution_time("20260924 12:02:04 UTC").unwrap()
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::foreign_account(CompletedOrderCase::ForeignAccount, &[])]
+    #[case::instrument_mismatch(CompletedOrderCase::InstrumentMismatch, &[])]
+    #[case::duplicate_venue_id(CompletedOrderCase::DuplicateVenueId, &["PERM-10"])]
+    #[case::zero_quantity(CompletedOrderCase::ZeroQuantity, &[])]
+    #[tokio::test]
+    async fn test_completed_order_reports_filtering(
+        #[case] case: CompletedOrderCase,
+        #[case] expected_ids: &[&str],
+    ) {
+        let mut exchanges = report_exchanges();
+        exchanges.remove(1);
+        let completed = &mut exchanges[1].responses[0];
+        let mut command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(7))
+            .open_only(false)
+            .build()
+            .unwrap();
+
+        match case {
+            CompletedOrderCase::ForeignAccount => {
+                replace_frame_bytes(completed, b"DU123", b"DU999");
+            }
+            CompletedOrderCase::InstrumentMismatch => {
+                command.instrument_id = Some(InstrumentId::from("MSFT.XNAS"));
+            }
+            CompletedOrderCase::DuplicateVenueId => {}
+            CompletedOrderCase::ZeroQuantity => {
+                replace_frame_bytes(completed, b"\x32\x01\x31", b"\x32\x01\x30");
+                replace_frame_bytes(completed, b"\x9a\x07\x01\x31", b"\x9a\x07\x01\x30");
+            }
+        }
+
+        exchanges.push(ReportExchange {
+            request: exchanges[1].request,
+            responses: exchanges[1].responses.clone(),
+        });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+        let config = InteractiveBrokersInstrumentProviderConfig::default();
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+        let instrument = equity_aapl();
+        let instrument_id = instrument.id;
+        provider.insert_test_instrument(instrument.into(), 265598, 1);
+        let context = IbReportContext::new(Arc::new(provider), AccountId::from("IB-DU123"));
+
+        let (reports_first, orders_first, reports_second, orders_second) =
+            tokio::time::timeout(Duration::from_secs(10), async {
+                let client = Client::connect(&address.to_string(), 7).await.unwrap();
+                let client = Arc::new(client);
+
+                let report_client = IbReportClient::new(
+                    Arc::clone(&client),
+                    context,
+                    Ustr::from("DU123"),
+                    Duration::from_secs(2),
+                );
+                let mut reports = Vec::new();
+                let mut orders = Vec::new();
+                report_client
+                    .collect_completed_orders(&command, &mut reports, &mut orders, command.ts_init)
+                    .await
+                    .unwrap();
+                let reports_first = reports.clone();
+                let orders_first = orders.clone();
+                report_client
+                    .collect_completed_orders(&command, &mut reports, &mut orders, command.ts_init)
+                    .await
+                    .unwrap();
+                client.disconnect().await;
+                done_tx.send(()).unwrap();
+                server.await.unwrap();
+                (reports_first, orders_first, reports, orders)
+            })
+            .await
+            .unwrap();
+
+        let venue_ids = reports_first
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(venue_ids, expected_ids);
+        assert_eq!(orders_first.len(), expected_ids.len());
+        assert_eq!(reports_second, reports_first);
+        assert_eq!(orders_second, orders_first);
+
+        if let Some(report) = reports_first.first() {
+            assert_eq!(report.account_id, AccountId::from("IB-DU123"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.client_order_id, Some(ClientOrderId::from("O-ENTRY")));
+            assert_eq!(report.order_status, OrderStatus::Filled);
+            assert_eq!(report.quantity, Quantity::from(1));
+            assert_eq!(report.filled_qty, Quantity::from(1));
+            assert_eq!(report.ts_init, command.ts_init);
+            assert_eq!(
+                report.ts_last,
+                parse_execution_time("20260924 12:02:04 UTC").unwrap()
+            );
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum CompletedOrderCase {
+        ForeignAccount,
+        InstrumentMismatch,
+        DuplicateVenueId,
+        ZeroQuantity,
+    }
+
+    #[derive(Deserialize)]
+    struct ReportExchange {
+        request: i32,
+        responses: Vec<Vec<u8>>,
+    }
+
+    fn report_exchanges() -> Vec<ReportExchange> {
+        serde_json::from_str(include_str!("../../test_data/order_report_responses.json")).unwrap()
+    }
+
+    fn replace_frame_bytes(frame: &mut [u8], original: &[u8], replacement: &[u8]) {
+        assert_eq!(original.len(), replacement.len());
+        let offset = frame
+            .windows(original.len())
+            .position(|bytes| bytes == original)
+            .unwrap();
+        frame[offset..offset + original.len()].copy_from_slice(replacement);
+    }
+
+    async fn serve_report_exchanges(
+        listener: tokio::net::TcpListener,
+        exchanges: Vec<ReportExchange>,
+        done: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut magic = [0_u8; 4];
+        socket.read_exact(&mut magic).await.unwrap();
+        assert_eq!(magic, *b"API\0");
+        let _version = read_ib_frame(&mut socket).await;
+        let handshake = b"213\x0020260924 12:03:00 UTC\0";
+        socket.write_u32(handshake.len() as u32).await.unwrap();
+        socket.write_all(handshake).await.unwrap();
+        for exchange in exchanges {
+            let request = read_ib_frame(&mut socket).await;
+            let message_id = i32::from_be_bytes(request[..4].try_into().unwrap());
+            assert_eq!(message_id, exchange.request);
+
+            for response in exchange.responses {
+                socket.write_all(&response).await.unwrap();
+            }
+        }
+
+        done.await.unwrap();
+    }
+
+    async fn read_ib_frame(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
+        let length = socket.read_u32().await.unwrap();
+        let mut frame = vec![0; length as usize];
+        socket.read_exact(&mut frame).await.unwrap();
+        frame
     }
 }

@@ -51,7 +51,7 @@ source "$HOME/.cargo/env"
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
-cargo install cargo-binstall --locked
+cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 make install-tools
 ./scripts/install-capnp.sh
 
@@ -84,6 +84,18 @@ test dependencies from the repository root:
 make sync
 ```
 
+For Python 3.15, exclude documentation dependencies. Set these variables before running sync, build,
+or test targets in the same shell:
+
+```bash
+export UV_PYTHON=3.15
+export UV_SYNC_FLAGS="--inexact --no-group docs"
+make sync
+```
+
+Documentation builds use Python 3.14. The `docs` dependency group supports Python 3.13 and 3.14
+because PyYAML does not yet publish Python 3.15 wheels.
+
 For frequent development, install a debug build of the package into `python/.venv`:
 
 ```bash
@@ -101,11 +113,11 @@ make install-tools
 
 This installs:
 
-- **Shared Cargo CLIs** pinned in `.nautilus-engineering/tools.toml`: `cargo-audit`, `cargo-deny`,
-  `cargo-edit`, `cargo-llvm-cov`, `cargo-nextest`, and `cargo-vet`.
+- **Shared Cargo CLIs** pinned in `.nautilus-engineering/tools.toml`: `cargo-audit`, `cargo-binstall`,
+  `cargo-deny`, `cargo-edit`, `cargo-fuzz`, `cargo-hawk`, `cargo-llvm-cov`, `cargo-machete`,
+  `cargo-nextest`, and `cargo-vet`.
 - **NautilusTrader Cargo CLIs** pinned in `Cargo.toml` under `[workspace.metadata.tools]`:
-  `cargo-codspeed`, `cargo-fuzz`, `cargo-hawk`, `cargo-machete`, `cbindgen`, `flamegraph`, and
-  `lychee`.
+  `cargo-codspeed`, `cbindgen`, `flamegraph`, and `lychee`.
 - **NautilusTrader Cargo CLI** pinned in `tools.toml`: `tokei` (line counter).
 - **Prebuilt binaries** pinned in `.nautilus-engineering/tools.toml`: `prek` (pre-commit runner) and
   `osv-scanner` (vulnerability scanner).
@@ -131,14 +143,15 @@ rustup toolchain install "$(bash scripts/tool-version.sh nightly)" --profile min
 #### One-off prerequisite: cargo-binstall
 
 `make install-tools` uses [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) to fetch
-`prek` as a prebuilt binary instead of compiling it from source. Install `cargo-binstall` once per
-machine:
+`prek` as a prebuilt binary instead of compiling it from source. Install the shared pinned version
+before the first run:
 
 ```bash
-cargo install cargo-binstall --locked
+cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 ```
 
-This is a one-time step. Subsequent runs of `make install-tools` reuse the installed `cargo-binstall`.
+Each run of `make install-tools` updates `cargo-binstall` to the shared pin before installing the
+remaining tools.
 
 #### Single source of truth for versions
 

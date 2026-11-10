@@ -43,6 +43,7 @@ def test_response_payload_and_metadata_survive_owned_conversion(kind) -> None:
     params = {"tag": "response", "nested": {"sequence": 47}}
     data_type = DataType("Example", metadata={"source": "external"})
     custom = CustomData(data_type, instrument)
+
     shared = {
         "client_id": client_id,
         "correlation_id": correlation_id,
@@ -65,6 +66,7 @@ def test_response_payload_and_metadata_survive_owned_conversion(kind) -> None:
             data=[custom],
             **shared,
         )
+
         expected = [custom]
     params["nested"]["sequence"] = 71
     returned = response.params

@@ -79,6 +79,7 @@ use crate::{
         symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
+    http::client::BybitHttpClient,
     websocket::{
         enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
@@ -102,6 +103,7 @@ pub struct BybitWebSocketClient {
     environment: BybitEnvironment,
     product_type: Option<BybitProductType>,
     credential: Option<Credential>,
+    http_client: Option<BybitHttpClient>,
     requires_auth: bool,
     auth_tracker: AuthTracker,
     heartbeat: Option<u64>,
@@ -117,7 +119,6 @@ pub struct BybitWebSocketClient {
     rate_limiter: BybitRateLimiter,
     recv_window_ms: Arc<AtomicU64>,
     account_id: Option<AccountId>,
-    mm_level: Arc<AtomicU8>,
     bar_types_cache: Arc<AtomicMap<String, BarType>>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     trade_subs: Arc<AtomicSet<InstrumentId>>,
@@ -180,6 +181,7 @@ impl Clone for BybitWebSocketClient {
             environment: self.environment,
             product_type: self.product_type,
             credential: self.credential.clone(),
+            http_client: self.http_client.clone(),
             requires_auth: self.requires_auth,
             auth_tracker: self.auth_tracker.clone(),
             heartbeat: self.heartbeat,
@@ -195,7 +197,6 @@ impl Clone for BybitWebSocketClient {
             rate_limiter: self.rate_limiter.clone(),
             recv_window_ms: Arc::clone(&self.recv_window_ms),
             account_id: self.account_id,
-            mm_level: Arc::clone(&self.mm_level),
             bar_types_cache: Arc::clone(&self.bar_types_cache),
             instruments_cache: Arc::clone(&self.instruments_cache),
             trade_subs: Arc::clone(&self.trade_subs),
@@ -266,6 +267,7 @@ impl BybitWebSocketClient {
             environment,
             product_type: Some(product_type),
             credential: None,
+            http_client: None,
             requires_auth: false,
             auth_tracker: AuthTracker::new(),
             heartbeat: Some(heartbeat),
@@ -285,7 +287,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             account_id: None,
-            mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
@@ -335,6 +336,7 @@ impl BybitWebSocketClient {
             environment,
             product_type: None,
             credential,
+            http_client: None,
             requires_auth: true,
             auth_tracker: AuthTracker::new(),
             heartbeat: Some(heartbeat),
@@ -354,7 +356,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             account_id: None,
-            mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
@@ -364,22 +365,18 @@ impl BybitWebSocketClient {
 
     /// Creates a new Bybit trade WebSocket client for order operations.
     ///
-    /// If `api_key` or `api_secret` are not provided, they will be loaded from
-    /// environment variables based on the environment:
-    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
-    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
-    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+    /// Uses the HTTP client's credentials and detects the market-maker level
+    /// in the background through its API-key information endpoint on first use.
     #[must_use]
     pub fn new_trade(
         environment: BybitEnvironment,
-        api_key: Option<String>,
-        api_secret: Option<String>,
+        http_client: BybitHttpClient,
         url: Option<String>,
         heartbeat: u64,
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
     ) -> Self {
-        let credential = Credential::resolve(api_key, api_secret, environment);
+        let credential = http_client.credential().cloned();
 
         let (cmd_tx, _) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -397,6 +394,7 @@ impl BybitWebSocketClient {
             environment,
             product_type: None,
             credential,
+            http_client: Some(http_client),
             requires_auth: true,
             auth_tracker: AuthTracker::new(),
             heartbeat: Some(heartbeat),
@@ -416,7 +414,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             account_id: None,
-            mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
@@ -447,10 +444,15 @@ impl BybitWebSocketClient {
         if !self.task_handle.is_empty() {
             self.close_locked().await?;
         }
+
         self.signal.store(false, Ordering::Relaxed);
         let cancellation_token = CancellationToken::new();
         self.cancellation_token
             .store(Arc::new(cancellation_token.clone()));
+
+        if let Some(http_client) = &self.http_client {
+            http_client.start_mm_detection();
+        }
 
         let (raw_handler, raw_rx) = channel_message_handler();
 
@@ -989,11 +991,6 @@ impl BybitWebSocketClient {
     /// Sets the account ID for account message parsing.
     pub fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = Some(account_id);
-    }
-
-    /// Sets the account market maker level.
-    pub fn set_mm_level(&self, mm_level: u8) {
-        self.mm_level.store(mm_level, Ordering::Relaxed);
     }
 
     /// Returns the account ID if set.
@@ -1660,7 +1657,10 @@ impl BybitWebSocketClient {
         let category = orders[0].category;
         let order_count = orders.len();
 
-        let mm_level = self.mm_level.load(Ordering::Relaxed);
+        let mm_level = self
+            .http_client
+            .as_ref()
+            .map_or(0, BybitHttpClient::mm_level);
         let has_non_post_only = orders
             .iter()
             .any(|o| !matches!(o.time_in_force, Some(BybitTimeInForce::PostOnly)));
@@ -2195,7 +2195,10 @@ impl BybitWebSocketClient {
 
     fn include_referer_header(&self, time_in_force: Option<BybitTimeInForce>) -> bool {
         let is_post_only = matches!(time_in_force, Some(BybitTimeInForce::PostOnly));
-        let mm_level = self.mm_level.load(Ordering::Relaxed);
+        let mm_level = self
+            .http_client
+            .as_ref()
+            .map_or(0, BybitHttpClient::mm_level);
         !(is_post_only && mm_level > 0)
     }
 
@@ -2577,8 +2580,7 @@ mod tests {
     async fn batch_chunks_enter_handler_atomically() {
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -2633,8 +2635,7 @@ mod tests {
     async fn option_batch_chunks_preserve_request_correlation() {
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -2863,8 +2864,7 @@ mod tests {
     fn batch_place_command_carries_smp_type_per_order() {
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -2967,8 +2967,7 @@ mod tests {
 
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -3039,8 +3038,7 @@ mod tests {
 
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -3083,8 +3081,7 @@ mod tests {
     fn test_build_place_order_params_with_bbo_omits_price() {
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Some("test-key".to_string()),
-            Some("test-secret".to_string()),
+            trade_http_client(),
             None,
             20,
             TransportBackend::default(),
@@ -3119,5 +3116,20 @@ mod tests {
         assert_eq!(params.price, None);
         assert_eq!(params.bbo_side_type, Some(BybitBboSideType::Queue));
         assert_eq!(params.bbo_level.as_deref(), Some("2"));
+    }
+
+    fn trade_http_client() -> BybitHttpClient {
+        BybitHttpClient::with_credentials(
+            "test-key".to_string(),
+            "test-secret".to_string(),
+            Some("http://127.0.0.1:1".to_string()),
+            2,
+            0,
+            1,
+            1,
+            5_000,
+            None,
+        )
+        .unwrap()
     }
 }

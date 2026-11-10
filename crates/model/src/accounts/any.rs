@@ -213,6 +213,8 @@ impl PartialEq for AccountAny {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -362,10 +364,10 @@ mod tests {
         let mut expected = account.clone();
 
         match &mut expected {
-            AccountAny::Margin(account) => account.base.events.clear(),
-            AccountAny::Cash(account) => account.base.events.clear(),
-            AccountAny::Betting(account) => account.base.events.clear(),
-            AccountAny::Wallet(account) => account.base.events.clear(),
+            AccountAny::Margin(account) => account.base.events = Arc::default(),
+            AccountAny::Cash(account) => account.base.events = Arc::default(),
+            AccountAny::Betting(account) => account.base.events = Arc::default(),
+            AccountAny::Wallet(account) => account.base.events = Arc::default(),
         }
 
         assert_eq!(account.event_count(), 2);

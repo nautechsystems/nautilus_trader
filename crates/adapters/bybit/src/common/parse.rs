@@ -210,7 +210,7 @@ use nautilus_model::{
         perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, QUANTITY_MAX, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -218,11 +218,12 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
-            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus,
-            BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitPositionSide,
-            BybitProductType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
-            BybitTriggerDirection, BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginAction,
+            BybitMarginTrading, BybitMarketUnit, BybitOptionType, BybitOrderSide,
+            BybitOrderSmpType, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
+            BybitSymbolType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -378,10 +379,10 @@ pub fn parse_spot_instrument(
         "lotSizeFilter.basePrecision",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -506,10 +507,10 @@ pub fn parse_linear_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -699,10 +700,10 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.qtyStep",
     )?;
     let lot_size = Some(size_increment);
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -854,10 +855,10 @@ pub fn parse_option_instrument(
         &definition.lot_size_filter.qty_step,
         "lotSizeFilter.qtyStep",
     )?;
-    let max_quantity = Some(parse_quantity(
+    let max_quantity = parse_max_quantity(
         &definition.lot_size_filter.max_order_qty,
         "lotSizeFilter.maxOrderQty",
-    )?);
+    )?;
     let min_quantity = Some(parse_quantity(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
@@ -1388,6 +1389,15 @@ pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantit
     Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
+/// Parses an order size limit, returning `None` when it exceeds [`QUANTITY_MAX`].
+pub(crate) fn parse_max_quantity(value: &str, field: &str) -> anyhow::Result<Option<Quantity>> {
+    if parse_decimal(value, field)? > Decimal::try_from(QUANTITY_MAX)? {
+        return Ok(None);
+    }
+
+    parse_quantity(value, field).map(Some)
+}
+
 pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(value)
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {e}"))
@@ -1505,6 +1515,10 @@ pub fn parse_bybit_order_type(
 }
 
 /// Parses a Bybit order into a Nautilus OrderStatusReport.
+///
+/// Copies a venue `rejectReason` into `cancel_reason`, except `EC_NoError`. When the mapped
+/// status is `Rejected` and `rejectReason` is empty or `EC_NoError`, the reason is
+/// `venue omitted rejectReason`.
 pub fn parse_order_status_report(
     order: &crate::http::models::BybitOrder,
     instrument: &InstrumentAny,
@@ -1642,7 +1656,25 @@ pub fn parse_order_status_report(
         report = report.with_post_only(true);
     }
 
+    let reject_reason = order.reject_reason.as_str();
+    let report = report_with_reject_reason(report, reject_reason, order_status);
+
     Ok(report)
+}
+
+fn report_with_reject_reason(
+    report: OrderStatusReport,
+    reject_reason: &str,
+    order_status: OrderStatus,
+) -> OrderStatusReport {
+    if !reject_reason.is_empty() && reject_reason != "EC_NoError" {
+        report.with_cancel_reason(reject_reason.to_string())
+    } else if order_status == OrderStatus::Rejected {
+        // Reconciliation substitutes UNKNOWN when cancel_reason is absent
+        report.with_cancel_reason("venue omitted rejectReason".to_string())
+    } else {
+        report
+    }
 }
 
 /// Returns the `marketUnit` parameter for spot market orders.
@@ -1804,6 +1836,18 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
         Some(n.to_string())
     } else {
         value.as_u64().map(|n| n.to_string())
+    }
+}
+
+/// Parses a Bybit margin action from a `query_account` parameter, accepting the
+/// `BybitMarginAction` enum's snake_case and Python variant spellings.
+#[must_use]
+pub fn parse_margin_action(s: &str) -> Option<BybitMarginAction> {
+    match s.to_ascii_lowercase().as_str() {
+        "borrow" => Some(BybitMarginAction::Borrow),
+        "repay" => Some(BybitMarginAction::Repay),
+        "get_borrow_amount" => Some(BybitMarginAction::GetBorrowAmount),
+        _ => None,
     }
 }
 
@@ -2066,6 +2110,7 @@ mod tests {
     use nautilus_model::{
         data::BarSpecification,
         enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
+        orders::OrderAny,
     };
     use rstest::rstest;
     use serde_json::json;
@@ -2088,6 +2133,28 @@ mod tests {
     };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    #[rstest]
+    #[case::snake("borrow", BybitMarginAction::Borrow)]
+    #[case::python_variant("BORROW", BybitMarginAction::Borrow)]
+    #[case::repay_snake("repay", BybitMarginAction::Repay)]
+    #[case::repay_variant("REPAY", BybitMarginAction::Repay)]
+    #[case::query_snake("get_borrow_amount", BybitMarginAction::GetBorrowAmount)]
+    #[case::query_variant("GET_BORROW_AMOUNT", BybitMarginAction::GetBorrowAmount)]
+    fn test_parse_margin_action_accepts_param_spellings(
+        #[case] action: &str,
+        #[case] expected: BybitMarginAction,
+    ) {
+        assert_eq!(parse_margin_action(action), Some(expected));
+    }
+
+    #[rstest]
+    #[case("lend")]
+    #[case("")]
+    #[case("borrow_all")]
+    fn test_parse_margin_action_rejects_unknown_actions(#[case] action: &str) {
+        assert_eq!(parse_margin_action(action), None);
+    }
 
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
@@ -2152,6 +2219,16 @@ mod tests {
 
         assert_eq!(quantity, Quantity::from(expected));
         assert_eq!(quantity.precision, precision);
+    }
+
+    #[rstest]
+    #[case::in_range("100.0".to_string(), Some("100.0".to_string()))]
+    #[case::at_max(QUANTITY_MAX.to_string(), Some(QUANTITY_MAX.to_string()))]
+    #[case::above_max(format!("{QUANTITY_MAX}.5"), None)]
+    fn test_parse_max_quantity(#[case] value: String, #[case] expected: Option<String>) {
+        let quantity = parse_max_quantity(&value, "test.quantity").unwrap();
+
+        assert_eq!(quantity, expected.as_deref().map(Quantity::from));
     }
 
     #[rstest]
@@ -2611,6 +2688,147 @@ mod tests {
             report.client_order_id.as_ref().unwrap().to_string(),
             "O-20251001-164609-APEX-000-49"
         );
+        assert_eq!(report.cancel_reason.as_deref(), Some("INSUFFICIENT_MARGIN"));
+    }
+
+    // The post-only row is a redacted Bybit demo history capture, and the other rows are
+    // synthetic variants of that envelope, including the reported reduce-only rejection text
+    // and a rejected order whose rejectReason is the EC_NoError sentinel
+    #[rstest]
+    fn replay_rejected_order_history_keeps_venue_reason() {
+        use nautilus_execution::reconciliation::generate_reconciliation_order_events;
+        use nautilus_model::events::OrderEventAny;
+
+        use crate::http::models::BybitOrderHistoryResponse;
+
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_history_rejected.json");
+        let response: BybitOrderHistoryResponse = serde_json::from_str(&json).unwrap();
+        let orders = &response.result.list;
+
+        let post_only = history_report(orders, &instrument, "post-only-reject");
+        assert_eq!(post_only.order_status, OrderStatus::Rejected);
+        assert!(post_only.post_only);
+        assert_replayed_rejection(
+            &post_only,
+            &instrument,
+            "EC_PostOnlyWillTakeLiquidity",
+            true,
+        );
+
+        let reduce_only = history_report(orders, &instrument, "reduce-only-reject");
+        assert_eq!(reduce_only.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(
+            &reduce_only,
+            &instrument,
+            "current position is zero, cannot fix reduce-only order qty",
+            false,
+        );
+
+        let omitted = history_report(orders, &instrument, "omitted-reject");
+        assert_eq!(omitted.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(&omitted, &instrument, "venue omitted rejectReason", false);
+
+        let rejected_no_error = history_report(orders, &instrument, "rejected-no-error");
+        assert_eq!(rejected_no_error.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(
+            &rejected_no_error,
+            &instrument,
+            "venue omitted rejectReason",
+            false,
+        );
+
+        let filled = history_report(orders, &instrument, "filled-no-error");
+        assert_eq!(filled.order_status, OrderStatus::Filled);
+        assert_eq!(filled.cancel_reason, None);
+
+        let user_cancel = history_report(orders, &instrument, "user-cancel");
+        assert_eq!(user_cancel.order_status, OrderStatus::Canceled);
+        assert_eq!(user_cancel.cancel_reason, None);
+        let order = submitted_limit(&user_cancel, &instrument);
+        let events = generate_reconciliation_order_events(
+            &order,
+            &user_cancel,
+            Some(&instrument),
+            UnixNanos::from(2_000),
+        );
+
+        let canceled = events.iter().find_map(|event| match event {
+            OrderEventAny::Canceled(canceled) => Some(*canceled),
+            _ => None,
+        });
+
+        let canceled = canceled.expect("reconciliation did not emit OrderCanceled");
+        assert_eq!(canceled.reason, None);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+    }
+
+    fn history_report(
+        orders: &[crate::http::models::BybitOrder],
+        instrument: &InstrumentAny,
+        link_id: &str,
+    ) -> OrderStatusReport {
+        let order = orders
+            .iter()
+            .find(|order| order.order_link_id.as_str() == link_id)
+            .unwrap_or_else(|| panic!("missing history row {link_id}"));
+        parse_order_status_report(order, instrument, AccountId::new("BYBIT-001"), TS).unwrap()
+    }
+
+    fn submitted_limit(report: &OrderStatusReport, instrument: &InstrumentAny) -> OrderAny {
+        use nautilus_model::orders::builder::OrderTestBuilder;
+
+        let instrument_id = instrument.id();
+        let client_order_id = report.client_order_id.expect("history row has orderLinkId");
+        let side = report.order_side.expect("history row has a side");
+        let price = report.price.expect("history row has a price");
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(side)
+            .quantity(report.quantity)
+            .price(price)
+            .submit(true)
+            .build()
+    }
+
+    fn assert_replayed_rejection(
+        report: &OrderStatusReport,
+        instrument: &InstrumentAny,
+        reason: &str,
+        due_post_only: bool,
+    ) {
+        use nautilus_execution::reconciliation::{
+            generate_external_order_status_events, generate_reconciliation_order_events,
+        };
+        use nautilus_model::events::OrderEventAny;
+
+        let order = submitted_limit(report, instrument);
+        let ts_now = UnixNanos::from(2_000);
+        let cached = generate_reconciliation_order_events(&order, report, Some(instrument), ts_now);
+        let external = generate_external_order_status_events(
+            &order,
+            report,
+            &report.account_id,
+            instrument,
+            ts_now,
+        );
+
+        for events in [&cached, &external] {
+            let rejected = events.iter().find_map(|event| match event {
+                OrderEventAny::Rejected(rejected) => Some(*rejected),
+                _ => None,
+            });
+
+            let rejected = rejected.expect("reconciliation did not emit OrderRejected");
+            assert_eq!(rejected.reason.as_str(), reason);
+            assert_eq!(rejected.due_post_only, due_post_only);
+            assert!(rejected.reconciliation);
+        }
     }
 
     #[rstest]

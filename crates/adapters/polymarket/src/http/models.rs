@@ -200,14 +200,18 @@ pub struct GammaMarket {
     pub raw: String,
     /// Internal Gamma market ID.
     pub id: String,
-    /// On-chain condition ID for the CTF contracts.
+    /// On-chain condition ID for the market protocol.
     pub condition_id: String,
     /// Hash used for resolution.
     #[serde(rename = "questionID")]
     pub question_id: Option<String>,
-    /// JSON-encoded array of two CLOB token IDs (Yes, No).
+    /// JSON-encoded CTF outcome IDs, selected only for protocol `v1`.
     #[serde(default)]
     pub clob_token_ids: String,
+    /// Protocol V2 outcome position IDs in outcome order.
+    pub position_ids: Option<Vec<String>>,
+    /// Protocol V2 resolution state: inactive, active, or resolved.
+    pub resolution_status: Option<String>,
     /// JSON-encoded outcome labels (e.g. `["Yes", "No"]`).
     #[serde(default)]
     pub outcomes: String,

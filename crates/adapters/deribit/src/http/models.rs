@@ -126,6 +126,12 @@ pub struct DeribitInstrument {
     pub tick_size: Decimal,
     /// Tick size steps for different price ranges
     pub tick_size_steps: Option<Vec<DeribitTickSizeStep>>,
+    /// Presence identifies spot instruments routed to Coinbase Exchange.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_cbe_routed: Option<bool>,
+    /// Alias for the Coinbase Exchange routing flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_csr: Option<bool>,
 }
 
 /// Tick size step definition for price-dependent tick sizes.

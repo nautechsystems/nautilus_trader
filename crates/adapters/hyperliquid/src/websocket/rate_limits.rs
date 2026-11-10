@@ -225,6 +225,8 @@ fn subscription_user(subscription: &SubscriptionRequest) -> Option<&str> {
     match subscription {
         SubscriptionRequest::Notification { user }
         | SubscriptionRequest::WebData2 { user }
+        | SubscriptionRequest::ClearinghouseState { user }
+        | SubscriptionRequest::SpotState { user, .. }
         | SubscriptionRequest::OrderUpdates { user }
         | SubscriptionRequest::UserEvents { user }
         | SubscriptionRequest::UserFills { user, .. }

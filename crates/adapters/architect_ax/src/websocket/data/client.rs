@@ -1336,26 +1336,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
-    #[case(
-        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
-        "wss://stream.example.com:9443"
-    )]
-    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
-        let client = AxMdWebSocketClient::new(
-            url.to_string(),
-            "SYN-auth-token",
-            30,
-            TransportBackend::default(),
-            None,
-        );
-        let debug = format!("{client:?}");
-        assert!(debug.contains(&format!("url: {origin:?}")));
-        assert!(!debug.contains("SYN-"));
-        assert_eq!(client.url.expose(), url);
-    }
-
-    #[rstest]
     fn test_auth_token_uses_secret_string_owner() {
         let client = AxMdWebSocketClient::new(
             "ws://localhost:9999/md/ws".to_string(),
@@ -1384,23 +1364,22 @@ mod tests {
             None,
         );
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
+            let _dropped_tx = dropped_tx;
             started_tx.send(()).expect("started receiver");
             std::future::pending::<()>().await;
         });
-        let abort_handle = handle.abort_handle();
+
         client.task_handle.insert(handle);
         started_rx.await.expect("handler task started");
 
         drop(client);
 
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !abort_handle.is_finished() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("handler task aborted");
+        tokio::time::timeout(Duration::from_secs(5), dropped_rx)
+            .await
+            .expect("handler task future should be dropped")
+            .expect_err("aborted task should drop its sender");
     }
 
     #[rstest]

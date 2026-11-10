@@ -12,26 +12,38 @@ The `nautilus-sandbox` crate provides a simulated execution client that uses the
 `OrderMatchingEngine` to simulate order execution against live market data. This enables
 paper trading and strategy testing in real-time without actual order execution on exchanges.
 
+## NautilusTrader
+
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
 ## Features
 
 - Paper trading against live market data from any data source.
+- Matching against `OrderBookDepth` snapshots using the configured `book_type`.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).
 - Configurable fill models, fee models, queue-position tracking, and liquidity consumption.
 - Account balance and position tracking.
 - Support for both cash and margin account types.
 
-## NautilusTrader
+For L1 books with `bar_execution=true`, only externally aggregated time bars drive matching.
+The sandbox logs a warning and skips external non-time bars for execution; subscribers still receive them.
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+For `L2_MBP` and `L3_MBO`, feed each instrument with deltas or depth snapshots, not both.
+Each depth snapshot replaces the book, so mixing the streams can drop current levels or restore stale liquidity.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+## Configuration
+
+See [sandbox configuration](../../../docs/concepts/backtesting/trade-execution.md#sandbox-configuration)
+for matching-engine settings and the [Python example](../../../examples/live/sandbox/exec_tester.py)
+for node setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `example-databento`: Enables the Databento example binary.
 - `extension-module`: Builds as a Python extension module.
@@ -42,7 +54,10 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-sandbox) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-sandbox)
+- [Sandbox configuration](../../../docs/concepts/backtesting/trade-execution.md#sandbox-configuration)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/sandbox/)
 
 ## License
 

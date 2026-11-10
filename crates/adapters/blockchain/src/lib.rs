@@ -15,25 +15,23 @@
 
 //! Blockchain data adapter for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
-//! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
-//! It enables you to power analytics pipelines and trading strategies with real-time and historical
-//! on-chain data.
+//! The `nautilus-blockchain` crate loads DEX pools and token definitions and ingests real-time and
+//! historical on-chain data for analytics and trading strategies. It connects RPC and optional
+//! HyperSync sources to NautilusTrader for block, swap, and liquidity-event processing.
+//!
+//! Official API references: [Ethereum JSON-RPC](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+//! and [Envio HyperSync](https://docs.envio.dev/docs/HyperSync/overview).
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `extension-module`: Builds as a Python extension module.
 //! - `hypersync`: Enables the
@@ -41,6 +39,12 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `turmoil`: Enables deterministic network simulation testing with
 //!   [turmoil](https://crates.io/crates/turmoil).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/blockchain/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/blockchain/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/blockchain)
 
 #![warn(rustc::all)]
 #![warn(clippy::clone_on_ref_ptr)]
@@ -68,13 +72,13 @@ pub mod rpc;
 pub mod cache;
 
 #[cfg(feature = "hypersync")]
-pub mod execution;
-
-#[cfg(feature = "hypersync")]
 pub mod data;
 
 #[cfg(feature = "hypersync")]
 pub mod exchanges;
+
+#[cfg(feature = "hypersync")]
+pub mod execution;
 
 #[cfg(feature = "hypersync")]
 pub mod factories;
@@ -82,8 +86,8 @@ pub mod factories;
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
 
-#[cfg(feature = "hypersync")]
-pub mod services;
-
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(feature = "hypersync")]
+pub mod services;

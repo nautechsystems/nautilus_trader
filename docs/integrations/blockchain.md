@@ -16,7 +16,7 @@ market swaps. The execution client is not production-ready. The adapter uses thr
 
 | Capability                | Scope                                                                      | Readiness                                                     |
 | ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Historical blocks         | Any configured `Chain` with a reachable HyperSync endpoint.                | Available through the Rust service and `sync-blocks`.         |
+| Historical blocks         | Any configured `Chain` with a reachable HyperSync endpoint.                | Rust service; `sync-blocks` requires a preset HyperSync URL.  |
 | Live blocks               | HyperSync, or WSS RPC for chains with an RPC client.                       | Available through the Rust and Python data-client surfaces.   |
 | DEX pool discovery        | Chain and DEX combinations with a registered pool-creation parser.         | Available through the data client and `sync-dex`.             |
 | Pool snapshots and replay | Concentrated-liquidity integrations with the complete snapshot parser set. | Available with Postgres and the provider constraints below.   |
@@ -32,16 +32,16 @@ WSS live mode.
 Command support is derived from the parsers registered for each chain and DEX. The CLI help for
 `sync-dex` and `analyze-pool(s)` prints the same capability boundaries.
 
-| Tier            | Meaning                                                      | DEXes                                               | Chains                                      |
-| --------------- | ------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------- |
-| Replay-ready    | Discovery, snapshot, and fee-protocol replay parsers.        | Uniswap V3 and PancakeSwap V3.                      | Ethereum, Base, Arbitrum, and BSC.          |
-| Analysis only   | Snapshot parsers without CLI pool discovery.                 | Aerodrome Slipstream.                               | Base.                                       |
-| Discovery only  | Pool discovery without the complete snapshot parser set.     | Uniswap V2 and Uniswap V4.                          | Ethereum, Base, and Arbitrum.               |
-| Discovery only  | Pool discovery without the complete snapshot parser set.     | Camelot V3 and Fluid DEX.                           | Arbitrum.                                   |
-| Registered only | Metadata registration without command-capable event parsers. | Curve Finance and Fluid DEX.                        | Ethereum.                                   |
-| Registered only | Metadata registration without command-capable event parsers. | Aerodrome V1, BaseSwap V2, BaseX, and SushiSwap V3. | Base.                                       |
-| Registered only | Metadata registration without command-capable event parsers. | Curve Finance, SushiSwap V2, and SushiSwap V3.      | Arbitrum.                                   |
-| Blocks only     | No DEX registration; `sync-blocks` remains available.        | -                                                   | Other configured chains, including Polygon. |
+| Tier            | Meaning                                                      | DEXes                                               | Chains                                                 |
+| --------------- | ------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------ |
+| Replay-ready    | Discovery, snapshot, and fee-protocol replay parsers.        | Uniswap V3 and PancakeSwap V3.                      | Ethereum, Base, Arbitrum, and BSC.                     |
+| Analysis only   | Snapshot parsers without CLI pool discovery.                 | Aerodrome Slipstream.                               | Base.                                                  |
+| Discovery only  | Pool discovery without the complete snapshot parser set.     | Uniswap V2 and Uniswap V4.                          | Ethereum, Base, and Arbitrum.                          |
+| Discovery only  | Pool discovery without the complete snapshot parser set.     | Camelot V3 and Fluid DEX.                           | Arbitrum.                                              |
+| Registered only | Metadata registration without command-capable event parsers. | Curve Finance and Fluid DEX.                        | Ethereum.                                              |
+| Registered only | Metadata registration without command-capable event parsers. | Aerodrome V1, BaseSwap V2, BaseX, and SushiSwap V3. | Base.                                                  |
+| Registered only | Metadata registration without command-capable event parsers. | Curve Finance, SushiSwap V2, and SushiSwap V3.      | Arbitrum.                                              |
+| Blocks only     | No DEX registration; `sync-blocks` only.                     | -                                                   | Other presets with a HyperSync URL, including Polygon. |
 
 `sync-dex` requires a pool-creation parser. `analyze-pool(s)` requires Initialize, Swap, Mint, Burn, and
 Collect parsers. Replay-ready integrations also parse `SetFeeProtocol`. Integrations with a `CollectProtocol`
@@ -84,18 +84,20 @@ The DeFi domain model lives in `nautilus_model::defi`.
 
 ### Chain
 
-`Chain` defines the target blockchain and its default service endpoints.
+`Chain` identifies a blockchain and holds optional service endpoints.
 
-| Field                      | Type             | Description                                                        |
-| -------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `name`                     | `Blockchain`     | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
-| `chain_id`                 | `u32`            | EVM chain ID, such as `1` for Ethereum.                            |
-| `hypersync_url`            | `String`         | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
-| `rpc_url`                  | `Option<String>` | Optional direct RPC endpoint stored on the chain model.            |
-| `native_currency_decimals` | `u8`             | Native gas token decimal precision, usually `18`.                  |
+| Field                      | Type             | Description                                             |
+| -------------------------- | ---------------- | ------------------------------------------------------- |
+| `name`                     | `Blockchain`     | Chain enum value, such as `Ethereum` or `Arbitrum`.     |
+| `chain_id`                 | `u32`            | EIP-155 chain ID, such as `1` for Ethereum.             |
+| `hypersync_url`            | `Option<String>` | HyperSync endpoint, or `None` when not configured.      |
+| `rpc_url`                  | `Option<String>` | Optional direct RPC endpoint stored on the chain model. |
+| `native_currency_decimals` | `u8`             | Native gas token decimal precision, usually `18`.       |
 
 Chains can be loaded by numeric ID with `Chain::from_chain_id` or by name with
-`Chain::from_chain_name`.
+`Chain::from_chain_name`. Presets include verified default HyperSync endpoints where available.
+`Chain::new` configures neither RPC nor HyperSync. Set `hypersync_url` in Rust or call
+`set_hypersync_url` in Python to configure or clear a custom endpoint.
 
 | Chain family     | Code | Name         | Decimals |
 | ---------------- | ---- | ------------ | -------- |
@@ -128,6 +130,68 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 - `Mint` and `Burn` events for position and tick state replay.
 - `Swap` events for live pool price movement.
 - HTTP RPC final-state reads for `slot0`, liquidity, active ticks, and position data.
+
+### Token currency identity and recovery
+
+- **Code**: ERC-20 currencies use `SYMBOL@CHAIN`, such as `WETH@ARBITRUM`, in balances,
+  instruments, money, and persistence.
+- **Contract binding**: Each code binds to one numeric chain ID and full lowercase contract address.
+  A different contract claiming the code fails registration or recovery. Same-symbol contracts on
+  the same chain cannot coexist. Symbols containing whitespace, `@`, or `:` are rejected.
+- **Precision**: Currencies keep actual token decimals up to 18; higher precisions are rejected.
+  Instrument price and size precision remain capped at `FIXED_PRECISION`.
+- **Native currency**: Native balances and gas fees keep their existing currency definitions.
+
+#### Persistence and recovery
+
+With the `defi` feature, run `nautilus database init` before using the Postgres cache. The additive,
+repeatable schema preserves existing currency records, instrument records, and foreign keys. All
+processes sharing a store must use matching `defi` feature settings.
+
+- **Restore order**: Redis and Postgres persist full token definitions and each instrument's required
+  currencies. Recovery restores definitions before decoding dependent instruments.
+- **Writes**: Redis and Postgres attempt persistent currency identity checks before the cache accepts
+  instruments, including legacy updates when the instrument is not loaded in memory. Detected integrity
+  conflicts reject the operation. If an ordinary persistence failure prevents confirmation, including
+  exhausted concurrent-write retries, the cache logs the error and accepts valid in-memory changes without
+  persistent confirmation.
+  See the [cache persistence failure policy](../concepts/cache.md#persistence-failure-policy).
+- **Hard failures**: Missing definitions, inconsistent recorded currency dependencies, or conflicts
+  in identity, precision, type, or ISO code fail the load. During startup, they fail cache recovery.
+- **Metadata changes**: Name or symbol changes for a registered contract warn and retain the first
+  definition and currency code. Restore persisted definitions before converting tokens. If a cold writer
+  registers a renamed symbol first, the write fails; restart and restore the definitions before retrying.
+- **Legacy data**: Currencies without token metadata remain legacy, regardless of code format.
+  A legacy currency occupying a token code blocks registration. Recovery never infers contract
+  provenance from symbols or code format.
+
+Create token currencies through `Token::currency`. `Currency::register` and `Cache::add_currency`
+protect registered definitions; direct `CURRENCY_MAP` writes bypass validation.
+
+#### Legacy instrument replacement
+
+A legacy instrument has no recorded token currency dependencies. Processing a pool definition under
+its instrument ID attempts to replace it with a `CurrencyPair` using qualified currencies.
+
+Before replacement, **stop order submission** on every node sharing the cache or execution store.
+Replacement requires:
+
+- No position history in memory or persistence, including closed positions and snapshots.
+- No nonterminal orders in memory or persistence.
+- No active swap intents in the authoritative blockchain execution store, which can differ from
+  the general cache store.
+
+A registered blockchain execution client for the chain must supply the intent check and have access
+to a Postgres execution store. An unavailable check or store, or an in-flight submission, blocks
+replacement. Data-only nodes cannot replace legacy instruments.
+
+A token conflict or failed replacement check logs an error and preserves existing pool and instrument
+state. The rejected update is neither cached nor published. An instrument response fails if any
+definition is rejected. Do not clear persisted data or relabel historical fills to force replacement.
+
+Migrating instruments with trading history is unsupported. Adding a purged token instrument again with
+retained position history is also rejected. These checks do not synchronize nodes or prevent other
+nodes from submitting orders during replacement.
 
 ## Data client configuration
 
@@ -186,11 +250,14 @@ Execution adds further variables (see [Execution](#execution)):
 For token setup and quota details, see Envio's
 [HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens).
 
-### RPC provider requirements
+### RPC and HyperSync requirements
 
 `RPC_HTTP_URL` or `--rpc-url` must point at an EVM JSON-RPC endpoint for the target chain. The data client
 uses it for contract reads, and first-time pool syncs read on-chain state through it. The client reads the
-HyperSync endpoint from `Chain::hypersync_url`. Built-in chains default to `https://{chain_id}.hypersync.xyz`.
+HyperSync endpoint from `Chain::hypersync_url` and requires it to be configured. Networks without a
+verified default endpoint require a custom URL. See Envio's
+[supported networks](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks) for availability
+and access requirements.
 
 Choose an RPC provider that supports the intended target blocks and Multicall workload. Provider
 labels are not sufficient evidence of archive access: verify an `eth_getCode` or `eth_call` against
@@ -486,17 +553,17 @@ loaded, while nanosecond rows preserve their stored precision.
 `analyze-pool(s)` validates its prerequisites and reports each pool independently. These boundaries
 also apply when the underlying analysis services are called from Rust.
 
-| Condition                  | Behavior                                                                                 | Constraint                                                                                                       |
-| -------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Missing pool metadata      | Fails with `Pool <address> is not registered`.                                           | Discover the pool first; analysis cannot infer or register metadata.                                             |
-| Missing parser capability  | Fails before sync.                                                                       | Use a snapshot-capable combination from [Chain and DEX command support](#chain-and-dex-command-support).         |
-| Non-checksummed address    | Fails with `Blockchain address '<address>' has incorrect checksum`.                      | Supply an EIP-55 address; factory `getPool` results may need checksum conversion.                                |
-| Provider Multicall cap     | An `out of gas`, payload, or timeout error aborts final-state hydration.                 | Lower `multicall_calls_per_rpc_request` or use a provider with higher limits.                                    |
-| Missing historical state   | A first bootstrap cannot read final state at an old `--to-block`.                        | Use a recent target or an archive-capable provider; see [RPC provider requirements](#rpc-provider-requirements). |
-| Restricted HyperSync quota | High-activity pools back off, and a full first sync can require thousands of requests.   | Lower `--concurrency`, or use `--snapshot-from-rpc` when stored swap history is unnecessary.                     |
-| Mid-life `--from-block`    | Omitting `Initialize` can leave the profiler without an initial price.                   | Sync from pool creation when generating a first snapshot.                                                        |
-| No liquidity events        | `analyze-pool` errors; `analyze-pools` emits a failure result and continues other pools. | Select a pool with a Mint or Burn at or before the target block.                                                 |
-| Any per-pool failure       | Emits `"status": "failure"` and makes `analyze-pool(s)` exit non-zero.                   | Use the exit code for the overall result and each JSON status for the per-pool result.                           |
+| Condition                  | Behavior                                                                                 | Constraint                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Missing pool metadata      | Fails with `Pool <address> is not registered`.                                           | Discover the pool first; analysis cannot infer or register metadata.                                                       |
+| Missing parser capability  | Fails before sync.                                                                       | Use a snapshot-capable combination from [Chain and DEX command support](#chain-and-dex-command-support).                   |
+| Non-checksummed address    | Fails with `Blockchain address '<address>' has incorrect checksum`.                      | Supply an EIP-55 address; factory `getPool` results may need checksum conversion.                                          |
+| Provider Multicall cap     | An `out of gas`, payload, or timeout error aborts final-state hydration.                 | Lower `multicall_calls_per_rpc_request` or use a provider with higher limits.                                              |
+| Missing historical state   | A first bootstrap cannot read final state at an old `--to-block`.                        | Use a recent target or an archive-capable provider; see [RPC and HyperSync requirements](#rpc-and-hypersync-requirements). |
+| Restricted HyperSync quota | High-activity pools back off, and a full first sync can require thousands of requests.   | Lower `--concurrency`, or use `--snapshot-from-rpc` when stored swap history is unnecessary.                               |
+| Mid-life `--from-block`    | Omitting `Initialize` can leave the profiler without an initial price.                   | Sync from pool creation when generating a first snapshot.                                                                  |
+| No liquidity events        | `analyze-pool` errors; `analyze-pools` emits a failure result and continues other pools. | Select a pool with a Mint or Burn at or before the target block.                                                           |
+| Any per-pool failure       | Emits `"status": "failure"` and makes `analyze-pool(s)` exit non-zero.                   | Use the exit code for the overall result and each JSON status for the per-pool result.                                     |
 
 Final RPC hydration in `--snapshot-from-rpc` mode is authoritative for checkpoint state. A failed
 hydration aborts analysis rather than storing a snapshot with stale price state.
@@ -536,7 +603,7 @@ within the provider's limits.
 
 A first-time sync reads on-chain state at `--to-block`. With a non-archive RPC provider, use a recent target.
 Alternatively, use a provider that serves contract state at the requested historical block. See
-[RPC provider requirements](#rpc-provider-requirements).
+[RPC and HyperSync requirements](#rpc-and-hypersync-requirements).
 
 ### Control HyperSync request volume
 
@@ -747,8 +814,8 @@ Connect completes these checks before it loads the signer:
 Without Postgres, the client can connect and publish balances, but all transaction operations are
 refused. A verification, migration, reconciliation, balance, or exact amount conversion failure
 keeps the client disconnected. Any loaded signer is removed, the previous complete snapshot stays
-installed, and no partial wallet state is published. Duplicate token symbols also reject the
-snapshot because symbols define currency identity.
+installed, and no partial wallet state is published. Wallet snapshots reject duplicate raw
+token symbols, including a token symbol that matches the native currency code.
 
 The verification providers never receive signed transaction bytes and have no broadcast method.
 The authoritative endpoint alone receives `eth_sendRawTransaction`. Security-critical unsigned
@@ -798,11 +865,11 @@ Equal `Token::get_token_priority` values are ambiguous and reject the order.
 Venue routing admits Uniswap V3 on any configured chain whose venue matches. Swap preparation also
 requires a registered Uniswap V3 deployment and factory for that chain.
 
-Order lists deny each open order with `OrderDenied`. Modify, cancel, and batch-cancel commands reject each
-referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`. Cancel-all commands and order
-queries log a warning without an event. Mass status returns `Ok(None)` so startup reconciliation logs and
-continues. Order, fill, and position report probes return an error so LiveNode does not treat an empty answer
-as absence. These paths never sign, broadcast, or persist an intent.
+Order lists deny each open order with `OrderDenied`. Modify, cancel, and batch-cancel commands produce
+`OrderModifyDenied` or `OrderCancelDenied` for each targeted command, including uncached orders.
+Cancel-all commands and order queries log a warning without an event. Mass status returns `Ok(None)` so
+startup reconciliation logs and continues. Order, fill, and position report probes return an error so
+LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist an intent.
 
 A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client requires
 submission retention. When the in-flight check exhausts its retries, LiveNode logs a warning and keeps the
@@ -1427,7 +1494,7 @@ Execution validation on public networks must remain read-only and must not load 
 ## Limitations
 
 - Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment on the
-  client's chain. Order lists are denied, and modify and cancel operations are rejected. Venue report probes
+  client's chain. Order lists are denied, and modify and cancel operations are denied. Venue report probes
   return an error, except mass status, which returns `Ok(None)`. All these unsupported paths fail closed with
   no on-chain or durable side effects. LiveNode must leave open-order checks off.
 

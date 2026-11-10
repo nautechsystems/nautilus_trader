@@ -125,6 +125,7 @@ fn client_id() -> ClientId {
     ClientId::new("LIGHTER")
 }
 
+// Queued test frames are sent one per subscribe acknowledgement in FIFO order
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
@@ -132,9 +133,7 @@ struct TestServerState {
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribe_received: Arc<tokio::sync::Notify>,
     subscribe_errors: Arc<tokio::sync::Mutex<Vec<u64>>>,
-    /// Frames queued by tests, drained one per `subscribe` ack in FIFO order.
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
-    /// When set, the server closes the socket after sending the next subscribe ack.
     drop_after_next_subscribe: Arc<AtomicBool>,
     funding_cap: Arc<AtomicBool>,
     funding_calls: Arc<AtomicUsize>,
@@ -596,6 +595,49 @@ async fn test_connect_disconnect_lifecycle() {
     client.disconnect().await.expect("disconnect");
     assert!(!client.is_connected());
 
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[case::private_key(12_345, 5, "not-hex")]
+#[case::api_key_index(12_345, 255, PRIVATE_KEY_HEX)]
+#[case::account_index(u64::MAX, 5, PRIVATE_KEY_HEX)]
+#[tokio::test]
+async fn test_connect_ignores_unused_invalid_credentials(
+    #[case] account_index: u64,
+    #[case] api_key_index: u8,
+    #[case] private_key: &str,
+) {
+    let (addr, state) = start_server().await;
+
+    let config = LighterDataClientConfig {
+        account_index: Some(account_index),
+        api_key_index: Some(api_key_index),
+        private_key: Some(private_key.into()),
+        ..build_config(addr)
+    };
+
+    let (mut client, mut rx) = build_client(config);
+
+    client.connect().await.expect("public data must connect");
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
+        matches!(event, DataEvent::Data(Data::Instrument(_)))
+    })
+    .await
+    .expect("public instrument metadata must arrive");
+
+    assert!(client.is_connected());
+    assert!(client.has_credentials());
+
+    let DataEvent::Data(Data::Instrument(instrument)) = event else {
+        unreachable!("event predicate requires an instrument")
+    };
+
+    assert_eq!(instrument.id(), eth_perp_id());
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
     await_connection_count(&state, 0).await;
 }
 

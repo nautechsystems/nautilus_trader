@@ -32,12 +32,15 @@ use nautilus_model::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, PerpetualContract,
     },
     orderbook::OrderBook,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Price, Quantity, fixed::check_fixed_precision},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::models::{Book, Ohlcv, Quote, Symbol, Trade};
+use super::{
+    error::Error,
+    models::{Book, Ohlcv, Quote, Symbol, Trade},
+};
 use crate::{
     common::symbol::{CoinApiSymbolType, Contract, SymbolAssets, SymbolError, VenueSymbol},
     websocket::parse::{parse_aggressor_side, price, quantity, timestamp, volume},
@@ -81,7 +84,7 @@ pub fn parse_instruments(
     let mut errors = Vec::new();
 
     for symbol in symbols {
-        if CoinApiSymbolType::from_str(&symbol.symbol_type).is_err() {
+        if CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()).is_err() {
             continue;
         }
 
@@ -114,6 +117,51 @@ pub fn parse_instruments(
     (instruments, errors)
 }
 
+pub(crate) fn validate_price_precisions(
+    price_precisions: &HashMap<InstrumentId, u8>,
+) -> Result<(), Error> {
+    for (instrument_id, precision) in price_precisions {
+        check_fixed_precision(*precision)
+            .map_err(|e| Error::Validation(format!("price precision for {instrument_id}: {e}")))?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn parse_instruments_with_precisions(
+    symbols: &[Symbol],
+    price_precisions: &HashMap<InstrumentId, u8>,
+    ts_init: UnixNanos,
+) -> Vec<CoinApiInstrument> {
+    let (mut instruments, errors) = parse_instruments(symbols, ts_init);
+
+    for e in errors {
+        log::warn!("Skipping CoinAPI instrument: {e}");
+    }
+
+    for loaded in &mut instruments {
+        let Some(&precision) = price_precisions.get(&loaded.instrument.id()) else {
+            continue;
+        };
+
+        let Some(symbol) = symbols.iter().find(|s| s.symbol_id == loaded.symbol_id) else {
+            continue;
+        };
+
+        let symbol = Symbol {
+            price_precision: Some(Decimal::new(1, u32::from(precision))),
+            ..symbol.clone()
+        };
+
+        match parse_instrument(&symbol, ts_init) {
+            Ok(overridden) => *loaded = overridden,
+            Err(e) => log::warn!("Keeping CoinAPI price resolution: {e}"),
+        }
+    }
+
+    instruments
+}
+
 /// Parses one CoinAPI symbol into a native spot, perpetual, or futures instrument.
 ///
 /// # Errors
@@ -140,7 +188,7 @@ pub fn parse_instrument(
         Ok(value)
     };
 
-    let symbol_type = CoinApiSymbolType::from_str(&symbol.symbol_type).map_err(|_| {
+    let symbol_type = CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()).map_err(|_| {
         field(
             "symbol_type",
             &format!("unsupported {}", symbol.symbol_type),
@@ -177,10 +225,15 @@ pub fn parse_instrument(
         .map_err(|source| InstrumentError::Symbol { symbol_id, source })?;
 
     let price_increment = decimal(symbol.price_precision)
-        .and_then(|value| Price::from_decimal(value).map_err(|e| e.to_string()))
+        .and_then(|value| {
+            Price::from_decimal_dp(value, value.scale() as u8).map_err(|e| e.to_string())
+        })
         .map_err(|reason| field("price_precision", &reason))?;
+
     let size_increment = decimal(symbol.size_precision)
-        .and_then(|value| Quantity::from_decimal(value).map_err(|e| e.to_string()))
+        .and_then(|value| {
+            Quantity::from_decimal_dp(value, value.scale() as u8).map_err(|e| e.to_string())
+        })
         .map_err(|reason| field("size_precision", &reason))?;
 
     let instrument_id = native.instrument_id;
@@ -426,8 +479,9 @@ fn perpetual_asset_class(symbol: &Symbol) -> Result<Option<AssetClass>, (&'stati
 }
 
 fn multiplier(symbol: &Symbol) -> Result<Quantity, String> {
-    decimal(symbol.future_contract_unit)
-        .and_then(|value| Quantity::from_decimal(value).map_err(|e| e.to_string()))
+    decimal(symbol.future_contract_unit).and_then(|value| {
+        Quantity::from_decimal_dp(value, value.scale() as u8).map_err(|e| e.to_string())
+    })
 }
 
 // CoinAPI pads resolutions with trailing zeros beyond the domain precision limit

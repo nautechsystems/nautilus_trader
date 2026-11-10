@@ -15,11 +15,14 @@
 
 //! Python bindings for live tester configuration.
 
+use std::num::NonZeroUsize;
+
+use jiff::Timestamp;
 use nautilus_common::{actor::DataActorConfig, python::config_error_to_pyvalue_err};
 use nautilus_core::from_pydict;
 use nautilus_model::{
     data::BarType,
-    enums::{BookType, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{BookType, ContingencyType, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ActorId, ClientId, InstrumentId, StrategyId},
     types::Quantity,
 };
@@ -73,6 +76,10 @@ impl DataTesterConfig {
         stats_interval_secs = None,
         log_events = None,
         log_commands = None,
+        request_start = None,
+        request_end = None,
+        request_limit = None,
+        book_type = None,
     ))]
     fn py_new(
         actor_id: Option<ActorId>,
@@ -108,6 +115,10 @@ impl DataTesterConfig {
         stats_interval_secs: Option<u64>,
         log_events: Option<bool>,
         log_commands: Option<bool>,
+        request_start: Option<Timestamp>,
+        request_end: Option<Timestamp>,
+        #[gen_stub(override_type(type_repr = "int | None"))] request_limit: Option<NonZeroUsize>,
+        book_type: Option<BookType>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let config = Self {
@@ -148,13 +159,16 @@ impl DataTesterConfig {
             request_book_snapshot: request_book_snapshot.unwrap_or(defaults.request_book_snapshot),
             request_book_deltas: request_book_deltas.unwrap_or(defaults.request_book_deltas),
             request_funding_rates: request_funding_rates.unwrap_or(defaults.request_funding_rates),
-            book_type: defaults.book_type,
+            book_type: book_type.unwrap_or(defaults.book_type),
             book_depth,
             book_interval_ms: book_interval_ms.unwrap_or(defaults.book_interval_ms),
             book_levels_to_print: book_levels_to_print.unwrap_or(defaults.book_levels_to_print),
             manage_book: manage_book.unwrap_or(defaults.manage_book),
             log_data: log_data.unwrap_or(defaults.log_data),
             stats_interval_secs: stats_interval_secs.unwrap_or(defaults.stats_interval_secs),
+            request_start,
+            request_end,
+            request_limit,
         };
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
@@ -347,6 +361,31 @@ impl DataTesterConfig {
     }
 
     #[getter]
+    #[pyo3(name = "request_start")]
+    const fn py_request_start(&self) -> Option<Timestamp> {
+        self.request_start
+    }
+
+    #[getter]
+    #[pyo3(name = "request_end")]
+    const fn py_request_end(&self) -> Option<Timestamp> {
+        self.request_end
+    }
+
+    #[getter]
+    #[pyo3(name = "request_limit")]
+    #[gen_stub(override_return_type(type_repr = "int | None"))]
+    const fn py_request_limit(&self) -> Option<NonZeroUsize> {
+        self.request_limit
+    }
+
+    #[getter]
+    #[pyo3(name = "book_type")]
+    const fn py_book_type(&self) -> BookType {
+        self.book_type
+    }
+
+    #[getter]
     #[pyo3(name = "log_events")]
     const fn py_log_events(&self) -> bool {
         self.base.log_events
@@ -437,6 +476,8 @@ impl ExecTesterConfig {
         clamp_to_instrument_price_range = None,
         log_events = None,
         log_commands = None,
+        bracket_contingency_type = None,
+        bracket_tp_order_type = None,
     ))]
     fn py_new(
         py: Python<'_>,
@@ -503,6 +544,8 @@ impl ExecTesterConfig {
         clamp_to_instrument_price_range: Option<bool>,
         log_events: Option<bool>,
         log_commands: Option<bool>,
+        bracket_contingency_type: Option<ContingencyType>,
+        bracket_tp_order_type: Option<OrderType>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let order_params = match order_params {
@@ -594,6 +637,9 @@ impl ExecTesterConfig {
             can_unsubscribe: can_unsubscribe.unwrap_or(defaults.can_unsubscribe),
             clamp_to_instrument_price_range: clamp_to_instrument_price_range
                 .unwrap_or(defaults.clamp_to_instrument_price_range),
+            bracket_contingency_type: bracket_contingency_type
+                .unwrap_or(defaults.bracket_contingency_type),
+            bracket_tp_order_type: bracket_tp_order_type.unwrap_or(defaults.bracket_tp_order_type),
         };
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
@@ -822,6 +868,18 @@ impl ExecTesterConfig {
     #[pyo3(name = "bracket_entry_order_type")]
     const fn py_bracket_entry_order_type(&self) -> OrderType {
         self.bracket_entry_order_type
+    }
+
+    #[getter]
+    #[pyo3(name = "bracket_contingency_type")]
+    const fn py_bracket_contingency_type(&self) -> ContingencyType {
+        self.bracket_contingency_type
+    }
+
+    #[getter]
+    #[pyo3(name = "bracket_tp_order_type")]
+    const fn py_bracket_tp_order_type(&self) -> OrderType {
+        self.bracket_tp_order_type
     }
 
     #[getter]

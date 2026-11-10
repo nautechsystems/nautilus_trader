@@ -127,23 +127,116 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 
 ### Database configuration
 
-Configure a database backing to recover successfully persisted, supported cache records after a
-restart. Restorable records include general data, currencies, instruments, instrument closes,
-accounts, orders, and positions. Startup does not restore bounded market-data histories or the
-running process.
+`CacheConfig` controls cache behavior. Set connection details in `RedisCacheConfig` or `PostgresCacheConfig`.
 
-Instrument closes persist whenever a backing database is configured. `save_market_data` does not
-gate them because they are recovery snapshots rather than bounded market-data history.
+Native backends implement `CacheDatabaseFactory` and `CacheDatabaseAdapter` and own their concrete
+connection settings. Python passes a concrete backend config or registered native factory to
+`LiveNodeBuilder.with_cache_database_factory`.
 
-`CacheConfig` controls cache behavior. Connection settings belong to the concrete backing config,
-such as `RedisCacheConfig` or `PostgresCacheConfig`.
+Custom backend factories must be integrated into NautilusTrader's native extension and use unique
+Python class names. Python does not expose a factory registration API for separately installed packages.
 
-A backing is a recovery mechanism, not a complete event archive or a synchronized distributed cache. Each node
-owns its in-memory cache. Pointing multiple nodes at the same database namespace does not keep those caches
-coherent.
+#### Persistence failure policy
 
-Rust-native callers build a concrete database config and use the `CacheDatabaseFactory` trait to
-construct the adapter passed into the system builder:
+Cache operations complete valid in-memory changes independently of optional database persistence.
+Persistence failures are logged at `ERROR` without failing the cache operation or interrupting event
+publication or command dispatch. This policy applies to all cache writes, including
+indexes, snapshots, component state, heartbeats, and purge deletions.
+
+The cache still propagates:
+
+- Validation and in-memory operation errors.
+- DeFi currency integrity errors reported by the backing database.
+- Read, restoration, and explicit database flush errors returned by the backing.
+
+For queued backings, persistence attempts can fail at writer-channel admission or later in the database
+worker. Both failures are logged. Cache success confirms the cache operation, not queue admission or
+durable storage. Restored state can therefore differ from the running cache.
+
+:::note Shut down on persistence errors
+To request a normal shutdown when a persistence error is logged, set `shutdown_on_error=True` in
+[`LiveNodeConfig`](live.md#shutdown-on-error) or
+[`BacktestEngineConfig`](backtesting/apis-and-runs.md#shutdown-on-error). This setting responds to Rust error
+logs emitted after the runtime starts, including persistence errors. Shutdown takes effect when the runtime
+next checks the request; it does not abort the process or roll back the current operation.
+Error-triggered shutdown handling is disabled before final component-state saves. Those saves still follow
+the best-effort persistence policy, so their persistence failures are logged without failing finalization.
+:::
+
+#### Recovery
+
+- Startup restores supported, successfully persisted general data, currencies, instruments,
+  instrument closes, synthetics, accounts, orders, and positions. Postgres also restores Greeks and yield curves.
+- Loading replaces Greeks and yield curves already in memory; Redis loads empty maps.
+- Instrument closes persist whenever a backing is configured, regardless of `save_market_data`:
+  they are recovery snapshots rather than bounded history.
+- Startup does not restore bounded market-data histories or the running process.
+- A backing does not provide a complete event archive or synchronize nodes. Each node owns its
+  in-memory cache, even when nodes share a database namespace.
+- With the `defi` feature, Redis and Postgres restore full token currency definitions before dependent
+  instruments. Instrument writes wait for persistent conflict checks, including legacy updates. Integrity
+  conflicts fail recovery. See [token currency recovery](../integrations/blockchain.md#token-currency-identity-and-recovery)
+  for legacy-data and instrument-replacement rules.
+
+An event-store snapshot anchor records a reference and hash, not the snapshot blob. Recording an anchor
+does not confirm blob persistence, and recovery fails if the referenced blob is unavailable. Durable
+blob-before-anchor ordering requires a separate persistence acknowledgment; cache success cannot establish
+it. See [Snapshot-anchored recovery](event_sourcing.md#snapshot-anchored-recovery).
+
+#### Explicit database operations
+
+- `cache.load_instrument(instrument_id)` and `cache.load_synthetic(instrument_id)` check memory first,
+  then load from the backing and cache successful results. Fill handling also uses this instrument fallback
+  when processing order fills and orderless spread legs. Failed or missing reads leave memory unchanged.
+- `cache.delete_actor(actor_id)` and `cache.delete_strategy(strategy_id)` attempt to delete saved component
+  state without unregistering components.
+- `cache.heartbeat(timestamp)` attempts to persist a caller-supplied timestamp in UNIX nanoseconds.
+
+Deletions and heartbeats follow the [persistence failure policy](#persistence-failure-policy).
+
+#### Postgres
+
+- With `save_market_data = true`, Postgres queues `GreeksData` per instrument and `YieldCurve` per name.
+  Later writes replace earlier values, regardless of timestamp.
+- Cache validation rejects invalid yield curves. Postgres rejects non-finite Greeks for persistence;
+  the cache logs the error and retains the Greeks in memory. Queueing failures also follow the
+  [persistence failure policy](#persistence-failure-policy); the adapter logs later database write failures.
+- Order-book and funding-rate persistence are unsupported. With `save_market_data = true`, order-book
+  and bulk funding-rate additions log an `ERROR` and update memory only.
+- Orders, positions, their snapshots, and accounts belong to a trader. Two traders can reuse client order
+  or position IDs.
+- Flushes, including `flush_on_start`, delete only the trader's rows. Currencies, instruments,
+  instrument closes, synthetics, market data (including Greeks and yield curves), and user general data stay shared.
+  The trader's saved actor and strategy state and heartbeat are also deleted.
+- Actor and strategy state persistence supports `load_state` and `save_state`.
+- The `cache-database:` key prefix is reserved for backing data. User entries with this prefix do not restore.
+
+Run `nautilus database init` to create the `greeks` and `yield_curve` tables before connecting,
+even with `save_market_data = false`.
+
+:::warning
+Account events saved before trader scoping have no trader, and ownership cannot be inferred.
+Connecting fails for every node using that database until each affected account is assigned.
+The error lists the accounts. After initialization, assign each one:
+
+```bash
+nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
+```
+
+:::
+
+#### Redis
+
+- Does not persist quotes, trades, bars, order books, funding rates, Greeks, or yield curves.
+- With `save_market_data = true`, each unsupported persistence attempt logs an `ERROR` and updates memory
+  only. For funding rates, only bulk additions attempt persistence; single additions stay in memory.
+- Direct `load_greeks` and `load_yield_curves` calls return errors; `load_all` returns empty maps for them.
+- Disable `save_market_data` with Redis to avoid unsupported writes. Postgres supports quotes, trades,
+  bars, Greeks, and yield curves; neither built-in backing persists order books or funding rates.
+
+#### Connect a backing
+
+Rust callers use `CacheDatabaseFactory` to construct an adapter:
 
 ```rust
 use nautilus_common::{
@@ -172,7 +265,7 @@ let cache_database = database
     .await?;
 ```
 
-For a Rust-native live node, attach the adapter before startup:
+Attach it to the node before startup:
 
 ```rust
 let node_config = LiveNodeConfig {
@@ -184,15 +277,8 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
-:::warning
-With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
-and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
-`CacheConfig.flush_on_start = true` clears the backing instead. A Postgres backing clears only the
-node's trader rows (see below).
-:::
-
-Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
-constructs and owns the adapter when it starts, so the connection opens only when the node runs:
+Python passes the config to `LiveNodeBuilder.with_cache_database_factory`. The node creates and owns
+the adapter when it starts:
 
 ```python
 from nautilus_trader.common import Environment
@@ -212,32 +298,31 @@ finally:
     node.dispose()
 ```
 
-Pass `PostgresCacheConfig` instead to back cache data with Postgres. Postgres does not support actor
-or strategy state persistence, so do not combine it with `load_state` or `save_state`. Both configs
-come from `nautilus_trader.infrastructure`.
+Use `PostgresCacheConfig` for Postgres. Both configs come from `nautilus_trader.infrastructure`.
 
-A Postgres backing is scoped to the node's trader ID, so several nodes can share one database:
+Python configures persistence through `LiveNodeBuilder.with_cache_database_factory`.
+Concrete cache database objects and their connection, read, and write methods are not exposed to Python.
+Use the runtime `Cache` API from actors and strategies to access cached data.
 
-- The node loads and writes only its own orders, positions, snapshots, and accounts, keyed by trader. Thus,
-  two traders can reuse the same client order or position IDs.
-- `flush_on_start` deletes only that trader's rows.
-- Currencies, instruments, instrument closes, market data, and general data stay shared across traders.
+Missing `PostgresCacheConfig` fields resolve from Postgres environment variables and then built-in
+defaults. Explicit config fields take precedence over both.
+
+Rust callers pass `PostgresCacheConfig` and `TraderId` to `PostgresCacheDatabase::connect`.
+Direct connections and the factory use the same native configuration path.
+
+#### Startup and shutdown
 
 :::warning
-Upgrading an existing database is a required migration step. Account events persisted before trader scoping
-have no trader, and nothing establishes which trader owns them, so connecting fails while any exist. This
-blocks each node using that database. The error lists the affected accounts. Run `nautilus database init`,
-then assign each account to its trader:
 
-```bash
-nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
-```
+- `LiveExecutionEngineConfig.load_cache = true` (default) restores persisted state and rebuilds indexes
+  before connecting clients or reconciling execution state.
+- `CacheConfig.flush_on_start = true` clears the backing instead. Postgres clears only the node's trader rows.
 
 :::
 
 :::warning
-Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the
-buffer when `CacheConfig.buffer_interval_ms` is set. Returning straight from `run()` can drop them.
+Always call `dispose()` after `run()`. It closes the backing and flushes buffered writes;
+returning from `run()` alone can drop them when `CacheConfig.buffer_interval_ms` is set.
 :::
 
 ## Using the cache
@@ -258,20 +343,15 @@ entry. The list accessors use the same order as the single-entry accessors.
 | Funding rates       | `funding_rates(instrument_id)`       | `funding_rate(instrument_id)`      |
 | Instrument statuses | `instrument_statuses(instrument_id)` | `instrument_status(instrument_id)` |
 
-Bars are ordered by `ts_event`, newest first. The other histories use reverse insertion order: the
-most recently added entry comes first, even if it has an older timestamp. These histories are not
-sorted by `ts_event` or `ts_init`.
-
-Each history accessor returns a list, or `None` when no entries are cached for the key. For a nonempty
-list, `[0]` is the latest entry. `[-1]` selects the oldest retained bar or the least recently inserted
-entry in the other histories. Only `quote()`, `trade()`, and `bar()` accept an `index` argument.
-They return `None` for a missing entry at a valid non-negative index. A negative index, or an integer
-too large for the platform's unsigned index type, raises `OverflowError`. Negative indexing works on
-the returned Python lists.
-
-`CacheConfig.bar_capacity` limits the history for each bar type. `CacheConfig.tick_capacity` limits
-each of the other histories per instrument. When a history reaches its capacity, a new insertion
-removes the last entry.
+- **Ordering:** Bars use descending `ts_event`. Other histories use reverse insertion order, even
+  for older timestamps; they are not sorted by `ts_event` or `ts_init`.
+- **History lists:** Accessors return a list, or `None` when the key has no entries. `[-1]` selects
+  the oldest retained bar or the least recently inserted entry in other histories.
+- **Single entries:** Only `quote()`, `trade()`, and `bar()` accept `index`. They return `None` for a
+  missing entry at a valid non-negative index. Negative indices or values beyond the platform's
+  unsigned index limit raise `OverflowError`; negative indexing works on returned Python lists.
+- **Capacity:** `bar_capacity` limits each bar type; `tick_capacity` limits each other history per
+  instrument. A new insertion at capacity removes the last entry.
 
 #### Order book
 
@@ -349,8 +429,7 @@ To process bars from oldest to newest, reverse the returned list:
 bars_chronological = list(reversed(self.cache.bars(bar_type) or []))
 ```
 
-Bars are kept **newest-first per bar type**. A newer bar is added. An older bar is skipped but is still
-delivered in the response.
+Bars newer than the cached latest are added; older bars are skipped but still delivered in the response.
 
 - **Time bars**: a bar with the same `ts_event` replaces the cached one (the later data wins), so duplicates
   from overlapping historical requests do not accumulate.
@@ -421,18 +500,11 @@ class MarketDataStrategy(Strategy):
 
 ### Trading objects
 
-The `Cache` provides access to trading objects such as:
-
-- Orders
-- Positions
-- Accounts
-- Instruments
-
 #### Orders
 
 Query orders by venue, strategy, instrument, account, or order side.
 
-##### Basic order access
+**Basic order access**:
 
 ```python
 # Get a specific order by its client order ID
@@ -451,7 +523,7 @@ orders_for_strategy = self.cache.orders(strategy_id=strategy_id)
 orders_for_instrument = self.cache.orders(instrument_id=instrument_id)
 ```
 
-##### Order state queries
+**Order state queries**:
 
 ```python
 # Orders currently active at the venue
@@ -489,7 +561,7 @@ order = self.cache.order(client_order_id)
 is_active_local = order is not None and order.is_active_local
 ```
 
-##### Order statistics
+**Order statistics**:
 
 ```python
 # Number of open orders
@@ -521,7 +593,7 @@ venue_orders_count = self.cache.orders_total_count(venue=venue)
 
 The `Cache` keeps positions until they are purged or reset and provides several ways to query them.
 
-##### Position access
+**Position access**:
 
 ```python
 # Get a specific position by its ID
@@ -549,7 +621,7 @@ strategy_positions = self.cache.positions(strategy_id=strategy_id)
 long_positions = self.cache.positions(side=PositionSide.LONG)
 ```
 
-##### Position state queries
+**Position state queries**:
 
 ```python
 # Checks if a position with the given ID exists
@@ -568,7 +640,7 @@ orders = self.cache.orders_for_position(position_id)
 position = self.cache.position_for_order(client_order_id)
 ```
 
-##### Position statistics
+**Position statistics**:
 
 ```python
 # Number of currently open positions
@@ -629,9 +701,17 @@ Long-running sessions accumulate closed orders, closed positions, account events
 unused instruments. The cache exposes targeted and bulk purge methods so strategies and
 the live trading engine can keep memory bounded without restarting the system.
 
+Purges change memory only by default. Pass `purge_from_database=True` to order and position purge methods
+in Python to queue deletion of their persisted histories and routine snapshots. Rust callers pass the
+boolean explicitly. Persistence failures follow the [persistence failure policy](#persistence-failure-policy),
+so a successful return does not confirm queue admission or database deletion. Encoded position snapshots
+used to replay corrections remain persisted as general data.
+Instrument purges change memory only.
+
 #### Targeted purges
 
-Use these to drop a single entity. Each refuses to purge while the entity is still active.
+Use these to drop a single entity. Order and position guards use in-memory state; direct purges can
+also target IDs absent from memory.
 
 - `cache.purge_order(client_order_id)`: removes the order and each order-keyed index entry. Skips open orders.
 - `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
@@ -661,7 +741,9 @@ lookback window in seconds.
 - `cache.purge_closed_positions(ts_now, buffer_secs)`: closed positions whose close timestamp
   is older than `buffer_secs`.
 - `cache.purge_account_events(ts_now, lookback_secs)`: account state events older than
-  `lookback_secs`. A value of `0` purges all events.
+  `lookback_secs`. The latest event always remains, including when the lookback is `0`.
+  With `purge_from_database=True`, Redis and Postgres log deletion requests and retain the full account
+  history for incremental balance, margin, and starting-balance replay.
 
 :::warning
 Keep the closed source position of a virtual `HEDGING` flip while its order can still receive fills.
@@ -672,8 +754,9 @@ Purging it removes the history needed to route later fills and can cause the eng
 
 `LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`, which
 disables the corresponding loop. Set an interval to enable a loop and set its buffer or lookback to control
-how recent entries stay protected. This example uses the recommended starting values from the live-trading
-configuration guide:
+how recent entries stay protected. Set `purge_from_database=True` to also delete persisted closed orders
+and positions. Redis and Postgres retain persisted account-event history. This example uses the recommended starting values
+from the live-trading configuration guide and keeps purges in memory:
 
 ```python
 from nautilus_trader.config import LiveExecutionEngineConfig
@@ -723,8 +806,6 @@ The `Cache` is not a general database. Use a dedicated store for large datasets 
 ## Best practices and common questions
 
 ### Cache vs. portfolio usage
-
-The `Cache` and `Portfolio` serve different purposes:
 
 **Cache**:
 

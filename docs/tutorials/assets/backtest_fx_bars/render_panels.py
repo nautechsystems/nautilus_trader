@@ -91,6 +91,7 @@ def run_backtest() -> object:
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         risk_engine=RiskEngineConfig(bypass=True),
     )
+
     engine = BacktestEngine(config=config)
 
     provider = TestDataProvider()
@@ -133,6 +134,7 @@ def run_backtest() -> object:
     engine.add_data(ticks)
 
     bar_type = BarType.from_str("USD/JPY.SIM-5-MINUTE-BID-INTERNAL")
+
     strategy = EMACross(
         EMACrossConfig(
             instrument_id=USDJPY_SIM.id,
@@ -142,6 +144,7 @@ def run_backtest() -> object:
             trade_size=Decimal(1_000_000),
         ),
     )
+
     engine.add_strategy(strategy)
 
     engine.run()
@@ -334,6 +337,7 @@ def panel_b_zoom(
                 },
             ),
         )
+
     if shorts:
         fig.add_trace(
             go.Scatter(
@@ -458,6 +462,7 @@ def main() -> None:
             f"entries={len(entries)} closes={len(closes)} cycles={len(cycles)} "
             f"winners={winners} cum_pnl_jpy={df_cycles['pnl_jpy'].sum():+.0f}",
         )
+
     panels = {
         "panel_a_price_overview.png": panel_a_price_overview(bars),
         "panel_b_zoom.png": panel_b_zoom(bars, entries, closes, cycles),

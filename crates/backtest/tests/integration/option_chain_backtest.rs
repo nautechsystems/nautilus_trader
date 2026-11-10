@@ -289,7 +289,8 @@ impl DataActor for ChainSubscriber {
             self.snapshot_interval_ms,
             None,
             None,
-        );
+        )
+        .unwrap();
         Ok(())
     }
 

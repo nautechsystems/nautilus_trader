@@ -33,10 +33,17 @@ impl Client {
     pub(super) fn new(
         redirects: HttpRedirectPolicy,
         proxy: Option<&str>,
+        certs_dir: Option<&str>,
     ) -> Result<Self, HttpClientError> {
         if proxy.is_some() {
             return Err(HttpClientError::ClientBuildError(
                 "HTTP proxies are unsupported under simulation".into(),
+            ));
+        }
+
+        if certs_dir.is_some() {
+            return Err(HttpClientError::ClientBuildError(
+                "HTTP client certificates are unsupported under simulation".into(),
             ));
         }
 

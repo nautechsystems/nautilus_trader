@@ -352,6 +352,14 @@ class _ClientOutput:
     def order_accepted(
         self, order: typing.Any, venue_order_id: model.VenueOrderId, ts_event: int, ts_init: int
     ) -> None: ...
+    def order_modify_denied(
+        self,
+        order: typing.Any,
+        reason: str,
+        ts_event: int,
+        ts_init: int,
+        causation_id: core.UUID4 | None = None,
+    ) -> None: ...
     def order_modify_rejected(
         self,
         order: typing.Any,
@@ -359,6 +367,15 @@ class _ClientOutput:
         reason: str,
         ts_event: int,
         ts_init: int,
+        causation_id: core.UUID4 | None = None,
+    ) -> None: ...
+    def order_cancel_denied(
+        self,
+        order: typing.Any,
+        reason: str,
+        ts_event: int,
+        ts_init: int,
+        causation_id: core.UUID4 | None = None,
     ) -> None: ...
     def order_cancel_rejected(
         self,
@@ -367,6 +384,7 @@ class _ClientOutput:
         reason: str,
         ts_event: int,
         ts_init: int,
+        causation_id: core.UUID4 | None = None,
     ) -> None: ...
     def order_updated(
         self,
@@ -724,6 +742,8 @@ class LiveExecutionEngineConfig:
     @property
     def purge_account_events_lookback_mins(self) -> int | None: ...
     @property
+    def purge_from_database(self) -> bool: ...
+    @property
     def own_books_audit_interval_secs(self) -> float | None: ...
     @property
     def debug(self) -> bool: ...
@@ -746,7 +766,7 @@ class LiveExecutionEngineConfig:
         inflight_check_threshold_ms: int | None = None,
         inflight_check_retries: int | None = None,
         open_check_interval_secs: float | None = None,
-        open_check_lookback_mins: int | None = None,
+        open_check_lookback_mins: int | None = ...,
         open_check_threshold_ms: int | None = None,
         open_check_missing_retries: int | None = None,
         open_check_open_only: bool | None = None,
@@ -767,6 +787,7 @@ class LiveExecutionEngineConfig:
         snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
         submission_recovery_policy: SubmissionRecoveryPolicy | None = None,
+        purge_from_database: bool | None = None,
     ) -> LiveExecutionEngineConfig: ...
 
 @typing.final

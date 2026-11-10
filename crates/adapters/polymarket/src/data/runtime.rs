@@ -23,7 +23,6 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -328,13 +327,6 @@ impl DataSubscriptions {
     }
 }
 
-pub(crate) fn is_condition_closed(
-    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
-    condition_id: &str,
-) -> bool {
-    closed_condition_ids.lock().contains(condition_id)
-}
-
 pub(crate) fn is_instrument_expired_and_not_reported_open(
     instrument: &InstrumentAny,
     now_ns: UnixNanos,
@@ -438,6 +430,7 @@ mod tests {
 
         let info = nautilus_core::Params::new(
             [
+                ("market_version".to_string(), "v1".into()),
                 (
                     "token_id".to_string(),
                     serde_json::Value::String(raw_symbol.to_string()),

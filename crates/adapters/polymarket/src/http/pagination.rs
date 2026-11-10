@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashSet, future::Future};
+use std::{collections::HashSet, convert::Infallible, future::Future};
 
 #[derive(Debug)]
-pub(crate) enum FetchOutcome<T, W> {
-    Page { rows: Vec<T>, wire: W },
+pub(crate) struct FetchOutcome<T> {
+    pub(crate) rows: Vec<T>,
+    pub(crate) wire: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -30,32 +31,6 @@ pub(crate) enum Completion<S> {
 pub(crate) struct Completed<O, S> {
     pub(crate) output: O,
     pub(crate) completion: Completion<S>,
-}
-
-pub(crate) enum PageObservation<P, C> {
-    Terminal,
-    Continue { next: P, commit: C },
-}
-
-pub(crate) type ObservationResult<P, C> = Result<PageObservation<P, C>, PaginationError>;
-
-pub(crate) trait PageProtocol<T> {
-    type Position: Clone;
-    type Wire;
-    type Stop;
-    type Commit;
-
-    fn initial_position(&self) -> Self::Position;
-
-    fn observe(
-        &mut self,
-        position: &Self::Position,
-        page_index: usize,
-        rows: &[T],
-        wire: Self::Wire,
-    ) -> ObservationResult<Self::Position, Self::Commit>;
-
-    fn commit_continue(&mut self, commit: Self::Commit);
 }
 
 pub(crate) trait PageReducer<T, E> {
@@ -77,12 +52,11 @@ impl AsRef<str> for Cursor {
 }
 
 #[derive(Debug)]
-pub(crate) struct CursorProtocol<S> {
+pub(crate) struct CursorProtocol {
     endpoint: &'static str,
     initial: Option<Cursor>,
     dialect: CursorDialect,
     seen: HashSet<Cursor>,
-    stop: std::marker::PhantomData<fn() -> S>,
 }
 
 #[derive(Debug)]
@@ -91,7 +65,7 @@ enum CursorDialect {
     Gamma,
 }
 
-impl<S> CursorProtocol<S> {
+impl CursorProtocol {
     pub(crate) fn clob(
         endpoint: &'static str,
         initial: String,
@@ -104,7 +78,6 @@ impl<S> CursorProtocol<S> {
             initial: Some(initial),
             dialect: CursorDialect::Clob { terminal_cursor },
             seen,
-            stop: std::marker::PhantomData,
         }
     }
 
@@ -114,30 +87,16 @@ impl<S> CursorProtocol<S> {
             initial: None,
             dialect: CursorDialect::Gamma,
             seen: HashSet::new(),
-            stop: std::marker::PhantomData,
         }
-    }
-}
-
-impl<T, S> PageProtocol<T> for CursorProtocol<S> {
-    type Commit = Cursor;
-    type Position = Option<Cursor>;
-    type Stop = S;
-    type Wire = Option<String>;
-
-    fn initial_position(&self) -> Self::Position {
-        self.initial.clone()
     }
 
     fn observe(
-        &mut self,
-        position: &Self::Position,
-        _page_index: usize,
-        _rows: &[T],
-        wire: Self::Wire,
-    ) -> ObservationResult<Self::Position, Self::Commit> {
+        &self,
+        position: &Option<Cursor>,
+        wire: Option<String>,
+    ) -> Result<Option<Cursor>, PaginationError> {
         let raw = match (&self.dialect, wire) {
-            (CursorDialect::Gamma, None) => return Ok(PageObservation::Terminal),
+            (CursorDialect::Gamma, None) => return Ok(None),
             (CursorDialect::Clob { .. }, None) => {
                 return Err(PaginationError::MissingCursor {
                     endpoint: self.endpoint,
@@ -150,7 +109,7 @@ impl<T, S> PageProtocol<T> for CursorProtocol<S> {
             CursorDialect::Clob { terminal_cursor }
                 if raw.is_empty() || raw == *terminal_cursor =>
             {
-                return Ok(PageObservation::Terminal);
+                return Ok(None);
             }
             CursorDialect::Clob { .. } | CursorDialect::Gamma => {}
         }
@@ -170,34 +129,23 @@ impl<T, S> PageProtocol<T> for CursorProtocol<S> {
             });
         }
 
-        Ok(PageObservation::Continue {
-            next: Some(next.clone()),
-            commit: next,
-        })
-    }
-
-    fn commit_continue(&mut self, commit: Self::Commit) {
-        self.seen.insert(commit);
+        Ok(Some(next))
     }
 }
 
-pub(crate) struct CollectAll<T, S = std::convert::Infallible> {
+pub(crate) struct CollectAll<T> {
     rows: Vec<T>,
-    stop: std::marker::PhantomData<fn() -> S>,
 }
 
-impl<T, S> CollectAll<T, S> {
+impl<T> CollectAll<T> {
     pub(crate) const fn new() -> Self {
-        Self {
-            rows: Vec::new(),
-            stop: std::marker::PhantomData,
-        }
+        Self { rows: Vec::new() }
     }
 }
 
-impl<T, E, S> PageReducer<T, E> for CollectAll<T, S> {
+impl<T, E> PageReducer<T, E> for CollectAll<T> {
     type Output = Vec<T>;
-    type Stop = S;
+    type Stop = Infallible;
 
     fn consume(&mut self, rows: Vec<T>) -> Result<Option<Self::Stop>, E> {
         self.rows.extend(rows);
@@ -257,15 +205,15 @@ where
     }
 }
 
-pub(crate) struct Paginator<P, R> {
+pub(crate) struct Paginator<R> {
     endpoint: &'static str,
-    protocol: P,
+    protocol: CursorProtocol,
     reducer: R,
     pages: usize,
 }
 
-impl<P, R> Paginator<P, R> {
-    pub(crate) const fn new(endpoint: &'static str, protocol: P, reducer: R) -> Self {
+impl<R> Paginator<R> {
+    pub(crate) const fn new(endpoint: &'static str, protocol: CursorProtocol, reducer: R) -> Self {
         Self {
             endpoint,
             protocol,
@@ -280,48 +228,43 @@ impl<P, R> Paginator<P, R> {
         mut map_pagination_error: M,
     ) -> Result<Completed<R::Output, R::Stop>, E>
     where
-        P: PageProtocol<T, Stop = R::Stop>,
         R: PageReducer<T, E>,
-        F: FnMut(P::Position) -> Fut,
-        Fut: Future<Output = Result<FetchOutcome<T, P::Wire>, E>>,
+        F: FnMut(Option<Cursor>) -> Fut,
+        Fut: Future<Output = Result<FetchOutcome<T>, E>>,
         M: FnMut(PaginationError) -> E,
     {
-        let mut position = self.protocol.initial_position();
-
-        loop {
-            let FetchOutcome::Page { rows, wire } = fetch(position.clone()).await?;
+        let mut position = self.protocol.initial.clone();
+        let completion = loop {
+            let FetchOutcome { rows, wire } = fetch(position.clone()).await?;
 
             let page = self.pages.checked_add(1).ok_or_else(|| {
                 map_pagination_error(PaginationError::PageCounterOverflow {
                     endpoint: self.endpoint,
                 })
             })?;
-            let observation = self
+
+            let next = self
                 .protocol
-                .observe(&position, page, &rows, wire)
+                .observe(&position, wire)
                 .map_err(&mut map_pagination_error)?;
 
             log::debug!("Fetched {} page {page}: {} rows", self.endpoint, rows.len(),);
             self.pages = page;
 
             if let Some(stop) = self.reducer.consume(rows)? {
-                let completion = Completion::Stopped(stop);
-                let output = self.reducer.finish(&completion)?;
-                return Ok(Completed { output, completion });
+                break Completion::Stopped(stop);
             }
 
-            match observation {
-                PageObservation::Terminal => {
-                    let completion = Completion::WireExhausted;
-                    let output = self.reducer.finish(&completion)?;
-                    return Ok(Completed { output, completion });
-                }
-                PageObservation::Continue { next, commit } => {
-                    self.protocol.commit_continue(commit);
-                    position = next;
-                }
-            }
-        }
+            let Some(next) = next else {
+                break Completion::WireExhausted;
+            };
+
+            self.protocol.seen.insert(next.clone());
+            position = Some(next);
+        };
+
+        let output = self.reducer.finish(&completion)?;
+        Ok(Completed { output, completion })
     }
 }
 

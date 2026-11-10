@@ -757,6 +757,7 @@ class PortfolioMultiVenueProbeStrategy(Strategy):
             InstrumentId.from_str("GBP/USD.OTHER"): [OrderSide.SELL],
             InstrumentId.from_str("NZD/USD.CLOSED"): [OrderSide.BUY, OrderSide.SELL],
         }
+
         self._quote_counts = dict.fromkeys(self._sides, 0)
 
         for instrument_id in self._sides:

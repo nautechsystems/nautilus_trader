@@ -17,14 +17,17 @@
 
 use std::fmt::Debug;
 
+use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{actor::DataActor, timer::TimeEvent};
 use nautilus_core::{DurationNanos, params::Params};
 use nautilus_model::{
     data::{QuoteTick, black_scholes::compute_greeks, option_chain::OptionGreeks},
     enums::{OptionKind, OrderSide, TimeInForce},
-    events::{OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected},
-    identifiers::{ClientId, InstrumentId},
+    events::{
+        OrderCanceled, OrderDenied, OrderExpired, OrderFillVoided, OrderFilled, OrderRejected,
+    },
+    identifiers::{ClientId, ClientOrderId, InstrumentId},
     instruments::Instrument,
     orders::Order,
     types::{Price, Quantity},
@@ -66,6 +69,7 @@ pub struct DeltaNeutralVol {
     pub(super) call_position: f64,
     pub(super) put_position: f64,
     pub(super) hedge_position: f64,
+    pub(super) order_filled_qty: AHashMap<ClientOrderId, Decimal>,
     pub(super) hedge_pending: bool,
     pub(super) entry_attempted: bool,
 }
@@ -92,6 +96,7 @@ impl DeltaNeutralVol {
             call_position: 0.0,
             put_position: 0.0,
             hedge_position: 0.0,
+            order_filled_qty: AHashMap::new(),
             hedge_pending: false,
             entry_attempted: false,
             config,
@@ -486,6 +491,30 @@ impl DeltaNeutralVol {
 
         Ok(())
     }
+
+    fn cached_position(&self, instrument_id: InstrumentId) -> f64 {
+        self.cache()
+            .positions_open(None, Some(&instrument_id), None, None, None)
+            .iter()
+            .map(|p| {
+                p.signed_qty
+                    .to_f64()
+                    .expect("Decimal quantity fits strategy analytics")
+            })
+            .sum()
+    }
+
+    fn position_mut(&mut self, instrument_id: InstrumentId) -> Option<&mut f64> {
+        if instrument_id == self.config.hedge_instrument_id {
+            Some(&mut self.hedge_position)
+        } else if Some(instrument_id) == self.call_instrument_id {
+            Some(&mut self.call_position)
+        } else if Some(instrument_id) == self.put_instrument_id {
+            Some(&mut self.put_position)
+        } else {
+            None
+        }
+    }
 }
 
 nautilus_strategy!(DeltaNeutralVol, {
@@ -496,9 +525,15 @@ nautilus_strategy!(DeltaNeutralVol, {
             OrderSide::Sell => -qty,
         };
 
-        if event.instrument_id == self.config.hedge_instrument_id {
-            self.hedge_position += signed_qty;
+        if let Some(position) = self.position_mut(event.instrument_id) {
+            *position += signed_qty;
+            *self
+                .order_filled_qty
+                .entry(event.client_order_id)
+                .or_default() += event.last_qty.as_decimal();
+        }
 
+        if event.instrument_id == self.config.hedge_instrument_id {
             let is_closed = self
                 .cache()
                 .order(&event.client_order_id)
@@ -507,10 +542,6 @@ nautilus_strategy!(DeltaNeutralVol, {
             if is_closed {
                 self.hedge_pending = false;
             }
-        } else if Some(event.instrument_id) == self.call_instrument_id {
-            self.call_position += signed_qty;
-        } else if Some(event.instrument_id) == self.put_instrument_id {
-            self.put_position += signed_qty;
         }
 
         log::info!(
@@ -522,6 +553,36 @@ nautilus_strategy!(DeltaNeutralVol, {
             self.put_position,
             self.hedge_position,
         );
+    }
+
+    fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
+        let Some(applied_qty) = self.order_filled_qty.get(&event.client_order_id).copied() else {
+            return;
+        };
+        let corrected_qty = {
+            let cache = self.cache();
+            let Some(order) = cache.order(&event.client_order_id) else {
+                log::warn!(
+                    "Cannot refresh voided fill, order {} missing from cache",
+                    event.client_order_id
+                );
+                return;
+            };
+            order.filled_qty().as_decimal()
+        };
+        let delta = corrected_qty - applied_qty;
+        let signed_delta = match event.order_side {
+            OrderSide::Buy => delta,
+            OrderSide::Sell => -delta,
+        };
+
+        if let Some(position) = self.position_mut(event.instrument_id) {
+            *position += signed_delta
+                .to_f64()
+                .expect("Decimal quantity fits strategy analytics");
+            self.order_filled_qty
+                .insert(event.client_order_id, corrected_qty);
+        }
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) {
@@ -678,46 +739,19 @@ impl DataActor for DeltaNeutralVol {
             self.config.hedge_instrument_id,
         );
 
-        let (cached_call_pos, cached_put_pos, cached_hedge_pos) = {
+        let strategy_id = self.strategy_id().expect("Registered strategy has an ID");
+        let hedge_id = self.config.hedge_instrument_id;
+        self.call_position = self.cached_position(call_id);
+        self.put_position = self.cached_position(put_id);
+        self.hedge_position = self.cached_position(hedge_id);
+        self.order_filled_qty = {
             let cache = self.cache();
-            let hedge_id = self.config.hedge_instrument_id;
-
-            let call_pos: f64 = cache
-                .positions_open(None, Some(&call_id), None, None, None)
+            [call_id, put_id, hedge_id]
                 .iter()
-                .map(|p| {
-                    p.signed_qty
-                        .to_f64()
-                        .expect("Decimal quantity fits strategy analytics")
-                })
-                .sum();
-
-            let put_pos: f64 = cache
-                .positions_open(None, Some(&put_id), None, None, None)
-                .iter()
-                .map(|p| {
-                    p.signed_qty
-                        .to_f64()
-                        .expect("Decimal quantity fits strategy analytics")
-                })
-                .sum();
-
-            let hedge_pos: f64 = cache
-                .positions_open(None, Some(&hedge_id), None, None, None)
-                .iter()
-                .map(|p| {
-                    p.signed_qty
-                        .to_f64()
-                        .expect("Decimal quantity fits strategy analytics")
-                })
-                .sum();
-
-            (call_pos, put_pos, hedge_pos)
+                .flat_map(|id| cache.orders(None, Some(id), Some(&strategy_id), None, None))
+                .map(|order| (order.client_order_id(), order.filled_qty().as_decimal()))
+                .collect()
         };
-
-        self.call_position = cached_call_pos;
-        self.put_position = cached_put_pos;
-        self.hedge_position = cached_hedge_pos;
 
         if self.call_position != 0.0 || self.put_position != 0.0 || self.hedge_position != 0.0 {
             log::info!(
@@ -889,9 +923,45 @@ impl DataActor for DeltaNeutralVol {
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         if event.name == REHEDGE_TIMER {
+            let order_ids_purged: Vec<_> = {
+                let cache = self.cache();
+                self.order_filled_qty
+                    .keys()
+                    .filter(|id| !cache.order_exists(id))
+                    .copied()
+                    .collect()
+            };
+
+            for id in order_ids_purged {
+                self.order_filled_qty.remove(&id);
+            }
+
             self.check_rehedge()?;
         }
 
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.call_instrument_id = None;
+        self.put_instrument_id = None;
+        self.subscribed_greeks.clear();
+        self.call_delta = 0.0;
+        self.put_delta = 0.0;
+        self.call_mark_iv = None;
+        self.put_mark_iv = None;
+        self.call_quote = None;
+        self.put_quote = None;
+        self.call_greeks = None;
+        self.put_greeks = None;
+        self.call_delta_ready = false;
+        self.put_delta_ready = false;
+        self.call_position = 0.0;
+        self.put_position = 0.0;
+        self.hedge_position = 0.0;
+        self.order_filled_qty.clear();
+        self.hedge_pending = false;
+        self.entry_attempted = false;
         Ok(())
     }
 }

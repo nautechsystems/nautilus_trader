@@ -70,6 +70,7 @@ from nautilus_trader.model import OrderAccepted
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import OrderCancelDenied
 from nautilus_trader.model import OrderCanceled
 from nautilus_trader.model import OrderCancelRejected
 from nautilus_trader.model import OrderDenied
@@ -79,6 +80,7 @@ from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderInitialized
 from nautilus_trader.model import OrderList
 from nautilus_trader.model import OrderListId
+from nautilus_trader.model import OrderModifyDenied
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -133,6 +135,7 @@ HISTORICAL_REQUEST_DATETIME_CASES = [
     pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
     pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
 ]
+
 DATA_OPERATION_REGISTRATION_ERROR = (
     "Strategy must be registered before publishing, managing synthetics, or requesting data"
 )
@@ -369,6 +372,7 @@ def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(
     Test registered strategy retains configured id with an unset order id tag.
     """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
     strategy = ConfiguredDefaultStrategy(
         StrategyConfig(strategy_id=StrategyId("MyStrategy-001"), order_id_tag=order_id_tag),
     )
@@ -515,6 +519,7 @@ def test_strategy_construction_with_config() -> None:
         True,
         False,
     )
+
     strategy = Strategy(config)
 
     assert strategy.strategy_id == StrategyId("S-001")
@@ -708,6 +713,7 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
                 use_hyphens_in_client_order_ids=False,
             ),
         )
+
         engine.add_strategy(strategy)
         engine.run()
 
@@ -873,6 +879,7 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio() -> None:
             assert not hasattr(portfolio, old_name)
 
         mismatched_venue = Venue("OTHER")
+
         mismatched_queries = (
             lambda: portfolio.account(
                 venue=mismatched_venue,
@@ -1353,6 +1360,7 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
     eur = Currency.from_str("EUR")
     jpy = Currency.from_str("JPY")
     venues = (Venue("SIM"), Venue("OTHER"), Venue("CLOSED"))
+
     instruments = (
         TestInstrumentProvider.default_fx_ccy("AUD/USD", venues[0]),
         TestInstrumentProvider.default_fx_ccy("GBP/USD", venues[1]),
@@ -1365,7 +1373,6 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
     PortfolioMultiVenueProbeStrategy.observed_accounts = None
 
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-
     for venue, oms_type in zip(
         venues,
         (OmsType.HEDGING, OmsType.HEDGING, OmsType.NETTING),
@@ -1398,6 +1405,7 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
         (instruments[1], "1.10000", "1.10002", 21),
         (instruments[2], "0.80000", "0.80002", 22),
     )
+
     quotes = [
         QuoteTick(
             instrument_id=instrument.id,
@@ -1478,6 +1486,7 @@ DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "p
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
 VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
+
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -1486,6 +1495,7 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
+
 BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -1494,6 +1504,7 @@ BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
+
 BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -1502,8 +1513,10 @@ BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
     "client_id",
     "params",
 )
+
 BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
 BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
+
 OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "series_id",
     "strike_range",
@@ -1511,10 +1524,12 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "client_id",
     "params",
 )
+
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
 BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+
 BOOK_DEPTH_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -1524,6 +1539,7 @@ BOOK_DEPTH_REQUEST_PARAMETERS = (
     "client_id",
     "params",
 )
+
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -1532,9 +1548,11 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "client_id",
     "params",
 )
+
 BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
 SUBMIT_ORDER_PARAMETERS = ("order", "position_id", "client_id", "params")
 SUBMIT_ORDER_LIST_PARAMETERS = ("order_list", "position_id", "client_id", "params")
+
 MODIFY_ORDER_PARAMETERS = (
     "client_order_id",
     "quantity",
@@ -1543,9 +1561,11 @@ MODIFY_ORDER_PARAMETERS = (
     "client_id",
     "params",
 )
+
 CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
 CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
 CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
+
 CANCEL_ALL_ORDERS_PARAMETERS = (
     "instrument_id",
     "order_side",
@@ -1553,6 +1573,7 @@ CANCEL_ALL_ORDERS_PARAMETERS = (
     "strategy_only",
     "params",
 )
+
 CLOSE_POSITION_PARAMETERS = (
     "position",
     "client_id",
@@ -1562,6 +1583,7 @@ CLOSE_POSITION_PARAMETERS = (
     "quote_quantity",
     "params",
 )
+
 CLOSE_ALL_POSITIONS_PARAMETERS = (
     "instrument_id",
     "position_side",
@@ -1572,6 +1594,7 @@ CLOSE_ALL_POSITIONS_PARAMETERS = (
     "quote_quantity",
     "params",
 )
+
 QUERY_ACCOUNT_PARAMETERS = ("account_id", "client_id", "params")
 QUERY_ORDER_PARAMETERS = ("order", "client_id", "params")
 SHUTDOWN_SYSTEM_PARAMETERS = ("reason",)
@@ -1584,6 +1607,7 @@ SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("client_id", "endpoint", "priority")
 QUEUE_STATE_UNSUBSCRIBE_PARAMETERS = ("channel",)
 SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ("client_id", "endpoint")
 SYNTHETIC_PARAMETERS = ("synthetic",)
+
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
     ("publish_signal", PUBLISH_SIGNAL_PARAMETERS),
@@ -1638,12 +1662,14 @@ DATA_SURFACE_SIGNATURES = [
     ("request_funding_rates", (*INSTRUMENT_HISTORY_REQUEST_PARAMETERS, "callback")),
     ("request_bars", (*BAR_REQUEST_PARAMETERS, "callback")),
 ]
+
 REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS = [
     "subscribe_order_fills",
     "subscribe_order_cancels",
     "unsubscribe_order_fills",
     "unsubscribe_order_cancels",
 ]
+
 EXECUTION_SIGNATURES = [
     ("submit_order", SUBMIT_ORDER_PARAMETERS),
     ("submit_order_list", SUBMIT_ORDER_LIST_PARAMETERS),
@@ -1671,14 +1697,17 @@ LIFECYCLE_HOOK_SIGNATURES = [
     ("on_degrade", NO_PARAMETERS),
     ("on_fault", NO_PARAMETERS),
 ]
+
 SAVE_LOAD_HOOK_SIGNATURES = [
     ("on_save", NO_PARAMETERS),
     ("on_load", STATE_PARAMETERS),
 ]
+
 MARKET_EXIT_HOOK_SIGNATURES = [
     ("on_market_exit", NO_PARAMETERS),
     ("post_market_exit", NO_PARAMETERS),
 ]
+
 DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", EVENT_PARAMETERS),
     ("on_data", ("data",)),
@@ -1699,6 +1728,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_option_greeks", ("greeks",)),
     ("on_option_chain", ("slice",)),
 ]
+
 HISTORICAL_CALLBACK_SIGNATURES = [
     ("on_historical_data", ("data",)),
     ("on_historical_quotes", ("quotes",)),
@@ -1708,6 +1738,7 @@ HISTORICAL_CALLBACK_SIGNATURES = [
     ("on_historical_mark_prices", ("mark_prices",)),
     ("on_historical_index_prices", ("index_prices",)),
 ]
+
 ORDER_CALLBACK_SIGNATURES = [
     ("on_order_initialized", EVENT_PARAMETERS),
     ("on_order_event", EVENT_PARAMETERS),
@@ -1721,18 +1752,22 @@ ORDER_CALLBACK_SIGNATURES = [
     ("on_order_triggered", EVENT_PARAMETERS),
     ("on_order_pending_update", EVENT_PARAMETERS),
     ("on_order_pending_cancel", EVENT_PARAMETERS),
+    ("on_order_modify_denied", EVENT_PARAMETERS),
     ("on_order_modify_rejected", EVENT_PARAMETERS),
+    ("on_order_cancel_denied", EVENT_PARAMETERS),
     ("on_order_cancel_rejected", EVENT_PARAMETERS),
     ("on_order_updated", EVENT_PARAMETERS),
     ("on_order_canceled", EVENT_PARAMETERS),
     ("on_order_filled", EVENT_PARAMETERS),
 ]
+
 POSITION_CALLBACK_SIGNATURES = [
     ("on_position_opened", EVENT_PARAMETERS),
     ("on_position_event", EVENT_PARAMETERS),
     ("on_position_changed", EVENT_PARAMETERS),
     ("on_position_closed", EVENT_PARAMETERS),
 ]
+
 CALLBACK_SIGNATURES = (
     LIFECYCLE_HOOK_SIGNATURES
     + SAVE_LOAD_HOOK_SIGNATURES
@@ -2138,7 +2173,6 @@ def _historical_request_time(request_time: object) -> object:
         return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
     pd = pytest.importorskip("pandas")
-
     if request_time == "pandas-timestamp-utc":
         return pd.Timestamp("1970-01-01T00:00:00Z")
 
@@ -2177,6 +2211,7 @@ def test_strategy_config_with_explicit_values() -> None:
     Test strategy config with explicit values.
     """
     external_order_instrument_ids = [InstrumentId.from_str("ETH/USDT.BINANCE")]
+
     config = StrategyConfig(
         StrategyId("S-002"),
         "002",
@@ -2225,6 +2260,22 @@ def test_forex_session_variants() -> None:
     assert ForexSession.from_str("TOKYO") == ForexSession.TOKYO
     assert ForexSession.from_str("LONDON") == ForexSession.LONDON
     assert ForexSession.from_str("NEW_YORK") == ForexSession.NEW_YORK
+
+
+@pytest.mark.parametrize(
+    ("session", "expected"),
+    [
+        (ForexSession.SYDNEY, "<ForexSession.SYDNEY: '0'>"),
+        (ForexSession.TOKYO, "<ForexSession.TOKYO: '1'>"),
+        (ForexSession.LONDON, "<ForexSession.LONDON: '2'>"),
+        (ForexSession.NEW_YORK, "<ForexSession.NEW_YORK: '3'>"),
+    ],
+)
+def test_forex_session_repr(session: ForexSession, expected: str) -> None:
+    """
+    Test forex session repr.
+    """
+    assert repr(session) == expected
 
 
 NOW_UTC = dt.datetime(2024, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
@@ -2335,7 +2386,9 @@ ORDER_CALLBACKS = [
     ("on_order_triggered", "order_triggered"),
     ("on_order_pending_update", "order_pending_update"),
     ("on_order_pending_cancel", "order_pending_cancel"),
+    ("on_order_modify_denied", "order_modify_denied"),
     ("on_order_modify_rejected", "order_modify_rejected"),
+    ("on_order_cancel_denied", "order_cancel_denied"),
     ("on_order_cancel_rejected", "order_cancel_rejected"),
     ("on_order_updated", "order_updated"),
     ("on_order_canceled", "order_canceled"),
@@ -2361,7 +2414,6 @@ def _make_recording_method(method_name: str) -> object:
 
 def _create_recording_strategy_type() -> object:
     attrs = {}
-
     for method_name in HOOK_METHODS:
         attrs[method_name] = _make_recording_method(method_name)
 
@@ -2407,6 +2459,7 @@ def strategy_sample_objects() -> object:
     time_event = TimeEvent("timer", UUID4(), 1, 2)
     custom_data = CustomData(DataType("X"), [1, 2], 3, 4)
     signal = Signal("sig", "value", 1, 2)
+
     queue_state_changed = QueueStateChanged(
         TraderId("TRADER-001"),
         SystemChannel.EXEC_COMMANDS,
@@ -2418,6 +2471,7 @@ def strategy_sample_objects() -> object:
         7,
         8,
     )
+
     socket_state_changed = SocketStateChanged(
         TraderId("TRADER-001"),
         ClientId("BINANCE"),
@@ -2428,10 +2482,12 @@ def strategy_sample_objects() -> object:
         7,
         8,
     )
+
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
     instrument_status = InstrumentStatus(instrument.id, MarketStatusAction.TRADING, 1, 2)
+
     instrument_close = InstrumentClose(
         instrument.id,
         Price.from_str("1.00000"),
@@ -2439,6 +2495,7 @@ def strategy_sample_objects() -> object:
         1,
         2,
     )
+
     order_events = _make_order_events(instrument)
     position_events = _make_position_events(instrument)
 
@@ -2551,6 +2608,7 @@ def _make_trade(instrument_id: InstrumentId) -> object:
 
 def _make_bar(instrument_id: InstrumentId) -> object:
     bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
+
     return Bar(
         bar_type,
         Price.from_str("1.00000"),
@@ -2573,6 +2631,7 @@ def _make_book_deltas(instrument_id: InstrumentId) -> object:
 
 def _make_option_greeks() -> object:
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
+
     return OptionGreeks(
         instrument_id,
         0.5,
@@ -2731,6 +2790,19 @@ def _make_order_events(instrument: object) -> object:
             reconciliation=False,
             venue_order_id=venue_order_id,
         ),
+        "order_modify_denied": OrderModifyDenied(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument.id,
+            client_order_id=client_order_id,
+            reason="modify denied",
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=2,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            causation_id=UUID4(),
+        ),
         "order_modify_rejected": OrderModifyRejected(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -2743,6 +2815,19 @@ def _make_order_events(instrument: object) -> object:
             reconciliation=False,
             venue_order_id=venue_order_id,
             account_id=account_id,
+        ),
+        "order_cancel_denied": OrderCancelDenied(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument.id,
+            client_order_id=client_order_id,
+            reason="cancel denied",
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=2,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            causation_id=UUID4(),
         ),
         "order_cancel_rejected": OrderCancelRejected(
             trader_id=trader_id,

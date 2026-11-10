@@ -429,6 +429,14 @@ impl Order for MarketToLimitOrder {
         self.ts_last
     }
 
+    fn has_pending_update_command(&self) -> bool {
+        self.core.has_pending_update_command()
+    }
+
+    fn has_pending_cancel_command(&self) -> bool {
+        self.core.has_pending_cancel_command()
+    }
+
     fn events(&self) -> Vec<&OrderEventAny> {
         self.events.iter().collect()
     }
@@ -563,7 +571,7 @@ impl TryFrom<OrderInitialized> for MarketToLimitOrder {
     type Error = OrderError;
 
     fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
-        Self::new_checked(
+        let mut order = Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -586,7 +594,9 @@ impl TryFrom<OrderInitialized> for MarketToLimitOrder {
             event.tags,
             event.event_id,
             event.ts_event,
-        )
+        )?;
+        order.set_init_metadata(event.reconciliation, event.causation_id, event.ts_init);
+        Ok(order)
     }
 }
 

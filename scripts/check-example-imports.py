@@ -42,12 +42,14 @@ PYTHON_FENCE = re.compile(r"^```python(?:[ \t].*)?\n(.*?)^```[ \t]*$", re.MULTIL
 @cache
 def _module_sources(module: str) -> tuple[Path, ...]:
     relative = Path(*module.split("."))
+
     candidates = (
         PACKAGE_ROOT / relative.with_suffix(".pyi"),
         PACKAGE_ROOT / relative.with_suffix(".py"),
         PACKAGE_ROOT / relative / "__init__.pyi",
         PACKAGE_ROOT / relative / "__init__.py",
     )
+
     return tuple(path for path in candidates if path.exists())
 
 
@@ -66,10 +68,13 @@ def _module_exports(module: str) -> frozenset[str]:
 def _node_exports(node: ast.stmt) -> set[str]:
     if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
         return {node.name}
+
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         return {alias.asname or alias.name.rsplit(".", 1)[-1] for alias in node.names}
+
     if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
         return {node.target.id}
+
     if not isinstance(node, ast.Assign):
         return set()
 
@@ -93,6 +98,7 @@ def _notebook_source(path: Path) -> Iterator[tuple[str, str]]:
             continue
 
         lines = []
+
         for line in cell.get("source", []):
             stripped = line.lstrip()
             lines.append("\n" if stripped.startswith(("%", "!")) else line)
@@ -167,6 +173,7 @@ def _check_imports(
             exports = _module_exports(node.module)
             for alias in node.names:
                 submodule = f"{node.module}.{alias.name}"
+
                 if (
                     alias.name != "*"
                     and alias.name not in exports
@@ -185,7 +192,6 @@ def main() -> int:
     """
     issues = []
     checked = 0
-
     for label, source in _example_sources():
         checked += 1
         issues.extend(

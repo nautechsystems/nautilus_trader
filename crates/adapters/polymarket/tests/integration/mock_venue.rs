@@ -41,8 +41,9 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
-    config::PolymarketExecutionClientConfig, http::models::PolymarketOrder,
-    signing::eip712::order_hash,
+    config::PolymarketExecutionClientConfig,
+    http::models::PolymarketOrder,
+    signing::eip712::{OrderSigningContext, order_hash_with_context},
 };
 use serde_json::{Value, json};
 
@@ -126,6 +127,10 @@ impl RequestGate {
     }
 }
 
+/// Configurable responses and recorded requests for the mock execution venue.
+///
+/// For retry tests, `order_post_500_remaining` sets how many order submissions return HTTP 500
+/// before the handler uses `order_response_status`.
 #[derive(Clone)]
 pub(super) struct TestServerState {
     pub(super) last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -141,15 +146,16 @@ pub(super) struct TestServerState {
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) startup_request_paths: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub(super) balance_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    pub(super) balance_update_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) balance_response: Arc<tokio::sync::Mutex<Value>>,
+    pub(super) balance_response_gate: Arc<RequestGate>,
     pub(super) order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) order_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     pub(super) order_post_count: Arc<tokio::sync::Mutex<usize>>,
-    /// When > 0, `handle_post_order` returns 500 on this many calls before
-    /// reverting to the configured `order_response_status`. Used by retry tests.
     pub(super) order_post_500_remaining: Arc<tokio::sync::Mutex<usize>>,
     pub(super) order_response_uses_request_hash: Arc<AtomicBool>,
+    pub(super) order_market_versions: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     pub(super) batch_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) batch_order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) batch_order_post_count: Arc<tokio::sync::Mutex<usize>>,
@@ -187,6 +193,7 @@ pub(super) struct TestServerState {
     pub(super) batch_order_request_gate: Arc<RequestGate>,
     pub(super) open_order_ids: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub(super) orders_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) orders_response_pages: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     pub(super) orders_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -225,6 +232,8 @@ impl Default for TestServerState {
             version_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             startup_request_paths: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            balance_update_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            balance_response_gate: Arc::new(RequestGate::default()),
             balance_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_balance_allowance_collateral.json",
             ))),
@@ -234,6 +243,7 @@ impl Default for TestServerState {
             order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
             order_post_500_remaining: Arc::new(tokio::sync::Mutex::new(0)),
             order_response_uses_request_hash: Arc::new(AtomicBool::new(false)),
+            order_market_versions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             batch_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             batch_order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             batch_order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -273,6 +283,7 @@ impl Default for TestServerState {
             batch_order_request_gate: Arc::new(RequestGate::default()),
             open_order_ids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_response_pages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             orders_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             orders_get_count: Arc::new(AtomicUsize::new(0)),
             single_order_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -357,9 +368,20 @@ async fn handle_get_orders(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let cursor = query.get("next_cursor").cloned().unwrap_or_default();
     *state.last_query.lock().await = query;
     state.orders_get_count.fetch_add(1, Ordering::AcqRel);
     let status = *state.orders_response_status.lock().await;
+    if let Some(body) = state
+        .orders_response_pages
+        .lock()
+        .await
+        .get(&cursor)
+        .cloned()
+    {
+        return (status, Json(body)).into_response();
+    }
+
     let body = state
         .orders_response_override
         .lock()
@@ -445,6 +467,7 @@ async fn handle_get_balance(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    let status = *state.balance_response_status.lock().await;
     state.balance_queries.lock().await.push(query);
     *state.last_path.lock().await = uri.path().to_string();
     state
@@ -456,9 +479,24 @@ async fn handle_get_balance(
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
-    let status = *state.balance_response_status.lock().await;
     let response = state.balance_response.lock().await.clone();
+    state.balance_response_gate.wait().await;
     (status, Json(response)).into_response()
+}
+
+async fn handle_update_balance(
+    State(state): State<TestServerState>,
+    uri: Uri,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let status = *state.balance_update_status.lock().await;
+    state.balance_queries.lock().await.push(query);
+    state
+        .startup_request_paths
+        .lock()
+        .await
+        .push(uri.path().to_string());
+    (status, Json(json!({}))).into_response()
 }
 
 async fn handle_get_version(State(state): State<TestServerState>, uri: Uri) -> Response {
@@ -523,9 +561,14 @@ async fn handle_post_order(
                 .expect("order request body"),
         )
         .expect("valid signed order");
+        let versions = state.order_market_versions.lock().await;
+        let version = versions
+            .get(signed_order.token_id.as_str())
+            .map_or("v1", String::as_str);
+        let context = OrderSigningContext::new(Some(version), false).unwrap();
         body["orderID"] = Value::String(format!(
             "{:#x}",
-            order_hash(&signed_order, false).expect("valid order hash")
+            order_hash_with_context(&signed_order, context).expect("valid order hash")
         ));
     }
 
@@ -929,6 +972,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/data/trades", get(handle_get_trades))
         .route("/version", get(handle_get_version))
         .route("/balance-allowance", get(handle_get_balance))
+        .route("/balance-allowance/update", get(handle_update_balance))
         .route(
             "/order",
             post(handle_post_order).delete(handle_delete_order),

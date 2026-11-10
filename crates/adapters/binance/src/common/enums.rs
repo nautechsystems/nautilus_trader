@@ -375,6 +375,9 @@ impl TryFrom<BinanceFuturesOrderType> for OrderType {
 pub enum BinanceTimeInForce {
     /// Good till canceled.
     Gtc,
+    /// Good till canceled while the linked position remains open.
+    #[serde(rename = "GTE_GTC")]
+    GteGtc,
     /// Immediate or cancel.
     Ioc,
     /// Fill or kill.

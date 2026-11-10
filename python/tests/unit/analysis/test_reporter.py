@@ -110,6 +110,7 @@ def _make_filled_order(
         quote_quantity=False,
         contingency_type=None,
     )
+
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -120,6 +121,7 @@ def _make_filled_order(
         ts_event=500_000_000,
         ts_init=500_000_000,
     )
+
     order.apply(submitted)
     fill = _make_fill(client_order_id=client_order_id, position_id=position_id)
     order.apply(fill)
@@ -213,6 +215,7 @@ def test_generate_order_fills_report_excludes_unfilled() -> None:
     Test generate order fills report excludes unfilled.
     """
     filled = _make_filled_order("O-001")
+
     unfilled = MarketOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -364,10 +367,12 @@ def _run_small_backtest_with_fills() -> BacktestEngine:
 def _float_maps_equal(a: dict, b: dict) -> bool:
     if a.keys() != b.keys():
         return False
+
     for key in a:
         va, vb = a[key], b[key]
         if math.isnan(va) and math.isnan(vb):
             continue
+
         if va != vb:
             return False
     return True
@@ -376,6 +381,7 @@ def _float_maps_equal(a: dict, b: dict) -> bool:
 def _stats_equal(a: dict, b: dict) -> bool:
     if a.keys() != b.keys():
         return False
+
     for key in a:
         va, vb = a[key], b[key]
         if isinstance(va, dict) and isinstance(vb, dict):

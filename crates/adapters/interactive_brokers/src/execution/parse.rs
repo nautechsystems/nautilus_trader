@@ -169,7 +169,9 @@ impl FillEvidence {
 /// it. The entry price therefore replaces IB's average cost only when every execution of the
 /// instrument was parsed and the entry price plus the opening commissions per unit reproduces
 /// IB's average cost, within the rounding of the average cost and of each commission. Otherwise
-/// the position keeps IB's average cost, which position recovery prices from.
+/// the position keeps IB's average cost, which position recovery prices from, with the
+/// one-tick precision the report was built with. A replaced average is the fills' own,
+/// unrounded, so its precision is cleared and reconciliation uses only the relative tolerance.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     evidence: &FillEvidence,
@@ -234,6 +236,7 @@ pub(crate) fn fill_position_avg_px_from_fills(
 
         if (venue_avg_px - venue_avg_px_expected).abs() <= tolerance {
             report.avg_px_open = Some(lot.avg_px);
+            report.avg_px_open_precision = None;
         } else {
             tracing::debug!(
                 "Keeping IB average cost {venue_avg_px} for {instrument_id}: fills give entry \
@@ -616,7 +619,8 @@ pub fn parse_order_status_to_report(
         None
     };
 
-    if order_status.filled > 0.0
+    if nautilus_status != NautilusOrderStatus::Canceled
+        && order_status.filled > 0.0
         && (order_status.remaining > 0.0
             || order.is_some_and(|order| order.total_quantity > order_status.filled))
     {
@@ -935,6 +939,10 @@ mod tests {
         contracts::Contract,
         orders::{Action, ExecutionSide, Liquidity, Order, OrderStatusKind},
     };
+    #[cfg(feature = "execution")]
+    use nautilus_execution::reconciliation::{
+        generate_external_order_status_events, generate_reconciliation_order_events,
+    };
     use nautilus_model::{
         enums::{AssetClass, PositionSide, TrailingOffsetType, TriggerType},
         identifiers::{Symbol, Venue},
@@ -942,6 +950,11 @@ mod tests {
             CurrencyPair, FuturesContract, InstrumentAny,
             stubs::{equity_aapl, equity_aapl_itch},
         },
+    };
+    #[cfg(feature = "execution")]
+    use nautilus_model::{
+        events::OrderEventAny,
+        orders::{Order as NautilusOrder, OrderTestBuilder},
     };
     use rust_decimal::Decimal;
     use ustr::Ustr;
@@ -1015,6 +1028,8 @@ mod tests {
             None,
             Some(Decimal::from_str(venue_avg_px).unwrap()),
         )
+        // As `generate_position_status_reports` builds it: rounded to the price precision
+        .with_avg_px_open_precision(equity_aapl().price_precision())
     }
 
     fn rebuild_avg_px_open(
@@ -1206,6 +1221,42 @@ mod tests {
             position_reports[0].avg_px_open,
             Some(Decimal::from_str("4.8675").unwrap())
         );
+    }
+
+    #[rstest]
+    // The fills reproduce IB's average cost: their entry price replaces it, unrounded
+    #[case::replaced(vec![(OrderSide::Buy, "7", "229.67")], "229.81", None)]
+    // IB's rounded average cost is kept, and so is its one-tick precision
+    #[case::kept_without_fills(vec![], "229.81", Some(2))]
+    #[case::kept_when_fills_disagree(vec![(OrderSide::Buy, "7", "229.67")], "230.50", Some(2))]
+    fn test_fill_position_avg_px_from_fills_sets_the_average_precision(
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] venue_avg_px: &str,
+        #[case] expected: Option<u8>,
+    ) {
+        let evidence = FillEvidence {
+            reports: fills
+                .into_iter()
+                .enumerate()
+                .map(|(index, (side, qty, px))| {
+                    create_test_entry_fill(side, qty, px, &format!("T-{index}"), index as u64 + 10)
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let mut position_reports = vec![create_test_entry_position_report(
+            PositionSide::Long,
+            "7",
+            venue_avg_px,
+        )];
+
+        fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &evidence,
+            &create_test_avg_px_provider(),
+        );
+
+        assert_eq!(position_reports[0].avg_px_open_precision, expected);
     }
 
     #[rstest]
@@ -1867,6 +1918,92 @@ mod tests {
             report.client_order_id,
             Some(ClientOrderId::from("O-20260527-001"))
         );
+    }
+
+    #[rstest]
+    #[case::remaining_quantity(70.0, false)]
+    #[case::original_quantity(0.0, true)]
+    #[case::both_quantities(70.0, true)]
+    fn test_parse_order_status_to_report_preserves_partial_cancel(
+        #[values(OrderStatusKind::Cancelled, OrderStatusKind::ApiCancelled)]
+        status: OrderStatusKind,
+        #[case] remaining: f64,
+        #[case] with_order: bool,
+    ) {
+        let order_status = OrderStatus {
+            status,
+            filled: 30.0,
+            remaining,
+            average_fill_price: Some(150.25),
+            ..Default::default()
+        };
+
+        let order = Order {
+            total_quantity: 100.0,
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            with_order.then_some(&order),
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, NautilusOrderStatus::Canceled);
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::from(30));
+        assert_eq!(report.avg_px, Some(Decimal::from_str("150.25").unwrap()));
+    }
+
+    #[rstest]
+    #[case::submitted(OrderStatusKind::Submitted, 30.0, NautilusOrderStatus::PartiallyFilled)]
+    #[case::pre_submitted(
+        OrderStatusKind::PreSubmitted,
+        30.0,
+        NautilusOrderStatus::PartiallyFilled
+    )]
+    #[case::pending_cancel(
+        OrderStatusKind::PendingCancel,
+        30.0,
+        NautilusOrderStatus::PartiallyFilled
+    )]
+    #[case::inactive(OrderStatusKind::Inactive, 30.0, NautilusOrderStatus::PartiallyFilled)]
+    #[case::filled(OrderStatusKind::Filled, 100.0, NautilusOrderStatus::Filled)]
+    #[case::cancelled_unfilled(OrderStatusKind::Cancelled, 0.0, NautilusOrderStatus::Canceled)]
+    #[case::api_cancelled_unfilled(
+        OrderStatusKind::ApiCancelled,
+        0.0,
+        NautilusOrderStatus::Canceled
+    )]
+    fn test_parse_order_status_to_report_fill_status(
+        #[case] status: OrderStatusKind,
+        #[case] filled: f64,
+        #[case] expected_status: NautilusOrderStatus,
+    ) {
+        let order_status = OrderStatus {
+            status,
+            filled,
+            remaining: 100.0 - filled,
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            None,
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::new(filled, 0));
     }
 
     #[rstest]
@@ -2644,6 +2781,7 @@ mod tests {
     #[rstest]
     #[case::completed("20260924 12:02:04 UTC", 1_790_251_324_000_000_000)]
     #[case::open("", 7)]
+    #[case::unparsable("20260924 12:02:04 Unknown/Timezone", 7)]
     fn test_parse_order_data_to_report_uses_completed_time(
         #[case] completed_time: &str,
         #[case] expected_ts_last: u64,
@@ -2672,6 +2810,95 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.ts_last, UnixNanos::from(expected_ts_last));
+    }
+
+    #[cfg(feature = "execution")]
+    #[rstest]
+    fn test_completed_partial_cancel_closes_reconciled_order(
+        #[values(OrderStatusKind::Cancelled, OrderStatusKind::ApiCancelled)]
+        status: OrderStatusKind,
+        #[values(false, true)] cached_partial_fill: bool,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl());
+        let account_id = AccountId::from("IB-DU001");
+        let ts_init = UnixNanos::new(1_790_251_325_000_000_000);
+
+        let mut data = OrderData {
+            order_id: -1,
+            order: Order {
+                action: Action::Buy,
+                total_quantity: 100.0,
+                filled_quantity: 30.0,
+                perm_id: 123_456,
+                order_type: "MKT".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        data.order_state.status = status;
+        data.order_state.completed_time = "20260924 12:02:04 UTC".to_string();
+
+        let report = parse_order_data_to_report(
+            &data,
+            instrument.id(),
+            account_id,
+            &create_test_avg_px_provider(),
+            ts_init,
+        )
+        .unwrap();
+        assert_eq!(report.venue_order_id, VenueOrderId::from("PERM-123456"));
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::from(30));
+        assert_eq!(report.ts_last, UnixNanos::new(1_790_251_324_000_000_000));
+        assert_eq!(report.avg_px, None);
+
+        // Completed orders get their missing average price from executions at startup
+        let fill = create_test_entry_fill(OrderSide::Buy, "30", "150.25", "123456", 1);
+        let mut reports = [report];
+        fill_missing_avg_px(&mut reports, &[fill]);
+        let report = &reports[0];
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .build();
+
+        let events = if cached_partial_fill {
+            let mut working_report = report.clone();
+            working_report.order_status = NautilusOrderStatus::PartiallyFilled;
+
+            for event in generate_external_order_status_events(
+                &order,
+                &working_report,
+                &account_id,
+                &instrument,
+                ts_init,
+            ) {
+                order.apply(event).unwrap();
+            }
+            assert_eq!(order.status(), NautilusOrderStatus::PartiallyFilled);
+
+            generate_reconciliation_order_events(&order, report, Some(&instrument), ts_init)
+        } else {
+            generate_external_order_status_events(&order, report, &account_id, &instrument, ts_init)
+        };
+
+        assert!(matches!(events.last(), Some(OrderEventAny::Canceled(_))));
+        for event in events {
+            order.apply(event).unwrap();
+        }
+
+        assert_eq!(order.status(), NautilusOrderStatus::Canceled);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+        assert_eq!(order.quantity(), Quantity::from(100));
+        assert_eq!(order.filled_qty(), Quantity::from(30));
+        assert_eq!(order.avg_px(), Some(Decimal::from_str("150.25").unwrap()));
+        assert!(
+            generate_reconciliation_order_events(&order, report, Some(&instrument), ts_init)
+                .is_empty()
+        );
     }
 
     // A 4-decimal instrument whose contract IB prices in a sub-unit 100 times the currency

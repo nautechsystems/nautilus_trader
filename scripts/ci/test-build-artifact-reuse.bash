@@ -129,8 +129,8 @@ pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p
 [[ "$pre_flight_recipe" != *'pytest-wheel'* && "$pre_flight_recipe" != *'build-wheel'* ]] ||
   fail "Pre-flight must not build a wheel for validation"
 isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory pytest-isolated)
-[[ "$isolated_commands" == 'bash scripts/test-python-isolation.bash' ]] ||
-  fail "Python isolation must only check the existing build"
+[[ "$isolated_commands" == "bash \"$REPO_ROOT/scripts/strip-adapter-env.bash\" bash scripts/test-python-isolation.bash" ]] ||
+  fail "Python isolation must only check the existing build with adapter variables unset"
 [[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
   fail "Pre-flight still runs Rust doctests"
 
@@ -152,8 +152,8 @@ nightly_doctest_job=$(awk '
   }
 ' "$REPO_ROOT/.github/workflows/nightly-tests.yml")
 [[ -n "$nightly_doctest_job" ]] || fail "Nightly tests do not define a Rust doctest job"
-[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"'* ]] ||
-  fail "Nightly Rust doctests do not cover Python 3.13 and 3.14"
+[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"\n          - "3.15"'* ]] ||
+  fail "Nightly Rust doctests do not cover Python 3.13, 3.14, and 3.15"
 [[ "$nightly_doctest_job" == *'make cargo-test-doc'* ]] ||
   fail "Nightly tests do not run Rust doctests"
 [[ "$nightly_doctest_job" == *'EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"'* ]] ||
@@ -181,7 +181,7 @@ grep -Fq \
   'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive --lib --test integration --no-default-features --features simulation' \
+  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --test integration --no-default-features --features simulation' \
   "$CARGO_LOG" || fail "Adapter DST tests did not use a standard-precision simulation build"
 grep -Fq \
   'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
@@ -203,7 +203,7 @@ grep -Fq \
   'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation --profile nextest -- -D warnings' \
   "$CARGO_LOG" || fail "Standard-precision DST clippy did not lint the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
+  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
   "$CARGO_LOG" || fail "Adapter DST clippy did not use a standard-precision simulation build"
 
 printf '%s\n' \

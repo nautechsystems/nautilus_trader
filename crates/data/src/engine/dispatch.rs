@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(feature = "defi")]
+use nautilus_common::defi::cache::IntegrityError;
+
 use super::{
     Bar, Cache, CustomData, DataEngine, Display, FundingRateUpdate, IndexPriceUpdate, Instrument,
     InstrumentAny, InstrumentClose, InstrumentStatus, MarkPriceUpdate, MarketStatusAction,
@@ -27,6 +30,12 @@ impl DataEngine {
     }
 
     pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+        if self.cache_instrument(instrument) {
+            self.publish_instrument(instrument);
+        }
+    }
+
+    pub(crate) fn cache_instrument(&self, instrument: &InstrumentAny) -> bool {
         log::debug!("Handling instrument: {}", instrument.id());
 
         if let Err(e) = self
@@ -36,8 +45,20 @@ impl DataEngine {
             .add_instrument(instrument.clone())
         {
             log_error_on_cache_insert(&e);
+
+            #[cfg(feature = "defi")]
+            if e.is::<IntegrityError>()
+                || nautilus_model::defi::currency::instrument_codes(instrument)
+                    .map_or(true, |codes| !codes.is_empty())
+            {
+                return false;
+            }
         }
 
+        true
+    }
+
+    pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny) {
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
         msgbus::publish_instrument(topic, instrument);
@@ -364,24 +385,6 @@ impl DataEngine {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
         let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
-    }
-
-    pub(super) fn handle_instrument_response(&self, instrument: InstrumentAny) {
-        let mut cache = self.cache.as_ref().borrow_mut();
-        if let Err(e) = cache.add_instrument(instrument) {
-            log_error_on_cache_insert(&e);
-        }
-    }
-
-    pub(super) fn handle_instruments(&self, instruments: &[InstrumentAny]) {
-        // TODO: Improve by adding bulk update methods to cache and database
-        let mut cache = self.cache.as_ref().borrow_mut();
-
-        for instrument in instruments {
-            if let Err(e) = cache.add_instrument(instrument.clone()) {
-                log_error_on_cache_insert(&e);
-            }
-        }
     }
 
     pub(super) fn handle_quotes(&self, quotes: &[QuoteTick]) {

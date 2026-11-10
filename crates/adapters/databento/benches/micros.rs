@@ -269,7 +269,8 @@ fn bench_atoms(c: &mut Criterion) {
     c.bench_function("atom/decode_price_or_undef", |b| {
         b.iter(|| {
             let price =
-                decode_price_or_undef(black_box(3_720_250_000_000), common::PRICE_PRECISION);
+                decode_price_or_undef(black_box(3_720_250_000_000), common::PRICE_PRECISION)
+                    .unwrap();
             black_box(price);
         });
     });

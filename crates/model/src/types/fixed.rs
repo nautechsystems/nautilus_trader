@@ -20,16 +20,14 @@
 //!
 //! # Raw Value Requirements
 //!
-//! When constructing value types like [`Price`] or [`Quantity`] using `from_raw`, the raw value
-//! **must** be a valid multiple of the scale factor for the given precision. Valid raw values
-//! should ideally come from:
+//! For [`Price`] and [`Quantity`], non-sentinel raw constructor inputs at precision `p` below
+//! [`FIXED_PRECISION`] must be multiples of `10^(FIXED_PRECISION - p)`. The checked constructors
+//! return an error for extra fractional digits; `from_raw` panics in both debug and release builds.
+//! Arrow and SBE decoders use the checked constructors and reject these inputs without rounding.
 //!
-//! - Calling the `raw()` accessor of an existing value (e.g., `price.raw()`)
-//! - Using the fixed-point conversion functions in this module
-//! - Values from Nautilus-produced Arrow data
-//!
-//! Raw values that are not valid multiples will cause a panic on construction in debug builds,
-//! and may result in incorrect values in release builds.
+//! Arithmetic does not implicitly increase precision. In particular, [`Quantity`] multiplication
+//! can retain finer raw digits than its declared precision. Such a result requires an explicit
+//! precision choice or rounding before reconstruction through a raw constructor.
 //!
 //! # Legacy Catalog Data and Floating-Point Errors
 //!
@@ -48,12 +46,11 @@
 //!
 //! # Raw Value Correction
 //!
-//! To handle legacy data with floating-point errors, the Arrow decode path uses correction
-//! functions ([`correct_raw_i64`], [`correct_raw_i128`], etc.) to round raw values to the
-//! nearest valid multiple. This ensures backward compatibility with existing catalogs.
-//!
-//! **Note:** This correction adds a small amount of overhead during decoding. In a future
-//! version, once catalogs have been repaired or migrated, this correction will become opt-in.
+//! Correction functions ([`correct_raw_i64`], [`correct_raw_i128`], etc.) explicitly round raw
+//! values to the nearest valid multiple. Arrow decoding does not apply this correction.
+//! Legacy catalog migration does not round raw digits. Built-in rows with extra digits fail
+//! migration, including arithmetic results with finer digits than their declared precision.
+//! Regenerate affected data or explicitly correct its precision or scaling before migration.
 //!
 //! [`Price`]: crate::types::Price
 //! [`Quantity`]: crate::types::Quantity
@@ -65,6 +62,8 @@ use nautilus_core::correctness::{
 };
 use rust_decimal::Decimal;
 
+#[cfg(feature = "defi")]
+use crate::defi::WEI_PRECISION;
 use crate::types::{price::PriceRaw, quantity::QuantityRaw};
 
 /// Indicates if high-precision mode is enabled.
@@ -92,6 +91,12 @@ pub const FIXED_PRECISION_STANDARD: u8 = 9;
 #[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = FIXED_PRECISION_STANDARD;
+
+#[cfg(feature = "defi")]
+pub(crate) const MAX_PRECISION: u8 = WEI_PRECISION;
+
+#[cfg(not(feature = "defi"))]
+pub(crate) const MAX_PRECISION: u8 = FIXED_PRECISION;
 
 // -----------------------------------------------------------------------------
 // PRECISION_BYTES (size of integer backing the fixed-point values)
@@ -193,18 +198,16 @@ pub const MAX_FLOAT_PRECISION: u8 = 16;
 /// - The `defi` feature is enabled and `precision` exceeds `WEI_PRECISION` (18).
 /// - The `defi` feature is disabled and `precision` exceeds [`FIXED_PRECISION`].
 pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
-    #[cfg(feature = "defi")]
-    if precision > crate::defi::WEI_PRECISION {
-        return Err(CorrectnessError::PredicateViolation {
-            message: format!("`precision` exceeded maximum `WEI_PRECISION` (18), was {precision}"),
-        });
-    }
+    if precision > MAX_PRECISION {
+        let limit_name = if cfg!(feature = "defi") {
+            "WEI_PRECISION"
+        } else {
+            "FIXED_PRECISION"
+        };
 
-    #[cfg(not(feature = "defi"))]
-    if precision > FIXED_PRECISION {
         return Err(CorrectnessError::PredicateViolation {
             message: format!(
-                "`precision` exceeded maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}"
+                "`precision` exceeded maximum `{limit_name}` ({MAX_PRECISION}), was {precision}"
             ),
         });
     }

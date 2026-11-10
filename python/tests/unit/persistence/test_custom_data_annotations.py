@@ -46,6 +46,7 @@ def test_postponed_custom_data_annotations_roundtrip(representation: str) -> Non
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
         values={"bid": 61, "ask": 73},
     )
+
     schema = AnnotatedData.arrow_schema_py()
 
     if representation == "json":

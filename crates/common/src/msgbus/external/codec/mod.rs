@@ -14,6 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 //! External message bus payload codecs.
+//!
+//! ISO timestamp output rewrites timestamp-like keys in general metadata maps too.
+//! Custom payload decoders must accept ISO strings at those keys.
+//! ISO `MsgPack` uses JSON values, representing bytes as arrays and non-finite floats as null.
+//! Default `MsgPack` retains its native representation.
 
 use std::any::Any;
 
@@ -29,14 +34,14 @@ use serde::de::DeserializeOwned;
 use super::super::BusPayloadType;
 use crate::enums::SerializationEncoding;
 
+mod json;
+mod msgpack;
+
 #[cfg(feature = "sbe")]
 mod sbe;
 #[cfg(not(feature = "sbe"))]
 #[path = "sbe_unavailable.rs"]
 mod sbe;
-
-mod json;
-mod msgpack;
 
 #[derive(Debug)]
 pub(super) enum PayloadCodecError {
@@ -48,6 +53,7 @@ pub(super) fn serialize_payload<T>(
     encoding: SerializationEncoding,
     payload_type: BusPayloadType,
     message: &T,
+    timestamps_as_iso8601: bool,
 ) -> Result<Bytes, PayloadCodecError>
 where
     T: serde::Serialize + Any,
@@ -71,14 +77,18 @@ where
         };
 
         return match encoding {
-            SerializationEncoding::Json => json::serialize(&payload, type_name),
-            _ => msgpack::serialize(&payload, type_name),
+            SerializationEncoding::Json => {
+                json::serialize(&payload, type_name, timestamps_as_iso8601)
+            }
+            _ => msgpack::serialize(&payload, type_name, timestamps_as_iso8601),
         };
     }
 
     match encoding {
-        SerializationEncoding::Json => json::serialize(message, type_name),
-        SerializationEncoding::MsgPack => msgpack::serialize(message, type_name),
+        SerializationEncoding::Json => json::serialize(message, type_name, timestamps_as_iso8601),
+        SerializationEncoding::MsgPack => {
+            msgpack::serialize(message, type_name, timestamps_as_iso8601)
+        }
         SerializationEncoding::Sbe => sbe::serialize_payload(payload_type, message),
     }
 }
@@ -232,6 +242,7 @@ mod tests {
             SerializationEncoding::Sbe,
             BusPayloadType::Custom(Ustr::from("StubCustomData")),
             &custom,
+            false,
         )
         .expect_err("unsupported SBE payload must be dropped");
 
@@ -247,6 +258,7 @@ mod tests {
             SerializationEncoding::Sbe,
             BusPayloadType::QuoteTick,
             &quote,
+            false,
         )
         .expect_err("SBE without feature must be dropped");
 

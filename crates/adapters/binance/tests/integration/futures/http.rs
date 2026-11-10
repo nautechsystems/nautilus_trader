@@ -45,7 +45,10 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::BarType,
     enums::{AssetClass, MarketStatusAction},
@@ -627,6 +630,46 @@ async fn test_request_delivery_instrument_populates_cache_and_status(
         statuses.get(&raw_symbol),
         Some(&MarketStatusAction::Trading),
     );
+}
+
+#[rstest]
+#[case::usdm(BinanceProductType::UsdM, 3)]
+#[case::coinm(BinanceProductType::CoinM, 1)]
+#[tokio::test]
+async fn test_request_instruments_uses_clock_on_refresh(
+    #[case] product_type: BinanceProductType,
+    #[case] expected_count: usize,
+) {
+    let addr = start_test_server(TestServerState::default()).await.unwrap();
+    let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::default())));
+    let client = BinanceFuturesHttpClient::new(
+        product_type,
+        BinanceEnvironment::Live,
+        clock,
+        None,
+        None,
+        Some(format!("http://{addr}")),
+        None,
+        Some(60),
+        None,
+        false,
+    )
+    .unwrap();
+
+    for ts_init in [
+        UnixNanos::from(1_700_000_000_123_456_789),
+        UnixNanos::from(1_700_003_600_987_654_321),
+    ] {
+        clock.set_time(ts_init);
+        let instruments = client.request_instruments().await.unwrap();
+
+        assert_eq!(instruments.len(), expected_count);
+
+        for instrument in instruments {
+            assert_eq!(instrument.ts_event(), ts_init);
+            assert_eq!(instrument.ts_init(), ts_init);
+        }
+    }
 }
 
 #[rstest]

@@ -1275,17 +1275,17 @@ mod tests {
     fn parquet_promotion_preserves_every_record_family(#[values(false, true)] automatic: bool) {
         use nautilus_core::UUID4;
         use nautilus_model::{
-            data::greeks::{GreeksData, OptionGreekValues, PortfolioGreeks},
             enums::{
                 LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
                 PositionSide, TimeInForce,
             },
             events::{
-                OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-                OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-                OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted,
-                OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
-                PositionOpened, PositionSnapshot,
+                OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+                OrderEmulated, OrderExpired, OrderInitialized, OrderModifyDenied,
+                OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+                OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+                PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+                PositionSnapshot,
                 account::stubs::cash_account_state,
                 order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
             },
@@ -1307,59 +1307,6 @@ mod tests {
             };
         }
 
-        let greeks = GreeksData::new(
-            "ESZ26 C7000.XCME".parse().unwrap(),
-            false,
-            7000.5,
-            20_261_218,
-            68,
-            0.186,
-            50.0,
-            -3.0,
-            6950.25,
-            0.0425,
-            0.0125,
-            0.175,
-            12.5,
-            98.75,
-            OptionGreekValues {
-                delta: 0.41,
-                gamma: 0.0012,
-                vega: 11.2,
-                theta: -2.3,
-                rho: 1.7,
-            },
-            0.62,
-            11.into(),
-            13.into(),
-        );
-
-        let mut second = greeks.clone();
-        second.ts_init = 113.into();
-        second.instrument_id = "ESZ26 P6900.XCME".parse().unwrap();
-        families.insert(assert_native_record_promotion(&[greeks, second], automatic));
-
-        let portfolio = PortfolioGreeks {
-            pnl: -125.5,
-            price: 4310.25,
-            greeks: OptionGreekValues {
-                delta: 0.83,
-                gamma: 0.004,
-                vega: 45.5,
-                theta: -12.25,
-                rho: 3.75,
-            },
-            ts_event: 19.into(),
-            ts_init: 17.into(),
-        };
-
-        let mut second = portfolio.clone();
-        second.ts_init = 117.into();
-        families.insert(assert_native_record_promotion(
-            &[portfolio, second],
-            automatic,
-        ));
-
         promote!(cash_account_state());
         promote!(OrderInitialized::test_default());
         promote!(OrderDenied::test_default());
@@ -1369,11 +1316,17 @@ mod tests {
         promote!(OrderRejected::test_default());
         promote!(OrderPendingCancel::test_default());
         promote!(OrderCanceled::test_default());
+        let mut cancel_denied = OrderCancelDenied::test_default();
+        cancel_denied.causation_id = Some(UUID4::new());
+        promote!(cancel_denied);
         promote!(OrderCancelRejected::test_default());
         promote!(OrderExpired::test_default());
         promote!(OrderTriggered::test_default());
         promote!(OrderPendingUpdate::test_default());
         promote!(OrderReleased::test_default());
+        let mut modify_denied = OrderModifyDenied::test_default();
+        modify_denied.causation_id = Some(UUID4::new());
+        promote!(modify_denied);
         promote!(OrderModifyRejected::test_default());
         promote!(OrderUpdated::test_default());
         promote!(OrderFillVoidedSpec::builder().is_reopened(true).build());
@@ -1519,12 +1472,81 @@ mod tests {
         assert_eq!(families, expected);
     }
 
-    fn assert_native_record_promotion<T>(records: &[T], automatic: bool) -> NautilusRecordType
-    where
-        T: std::any::Any + EncodeToRecordBatch + DecodeTypedFromRecordBatch,
-    {
+    #[rstest]
+    fn parquet_promotion_preserves_calculated_greeks_as_custom_data(
+        #[values(false, true)] automatic: bool,
+        #[values(false, true)] portfolio: bool,
+    ) {
+        use nautilus_model::data::{
+            CustomData, DataType,
+            greeks::{GreeksData, OptionGreekValues, PortfolioGreeks},
+        };
+
+        let greeks = GreeksData::new(
+            "ESZ26 C7000.XCME".parse().unwrap(),
+            false,
+            7000.5,
+            20_261_218,
+            68,
+            0.186,
+            50.0,
+            -3.0,
+            6950.25,
+            0.0425,
+            0.0125,
+            0.175,
+            12.5,
+            98.75,
+            OptionGreekValues {
+                delta: 0.41,
+                gamma: 0.0012,
+                vega: 11.2,
+                theta: -2.3,
+                rho: 1.7,
+            },
+            0.62,
+            11.into(),
+            13.into(),
+        );
+
+        let mut second = greeks.clone();
+        second.ts_init = 113.into();
+        second.instrument_id = "ESZ26 P6900.XCME".parse().unwrap();
+
+        let greeks = vec![greeks, second]
+            .into_iter()
+            .map(|value| {
+                let data_type =
+                    DataType::new("GreeksData", None, Some(value.instrument_id.to_string()));
+                CustomData::new(Arc::new(value), data_type)
+            })
+            .collect::<Vec<_>>();
+
+        let portfolio_value = PortfolioGreeks {
+            pnl: -125.5,
+            price: 4310.25,
+            greeks: OptionGreekValues {
+                delta: 0.83,
+                gamma: 0.004,
+                vega: 45.5,
+                theta: -12.25,
+                rho: 3.75,
+            },
+            ts_event: 19.into(),
+            ts_init: 17.into(),
+        };
+
+        let mut second = portfolio_value.clone();
+        second.ts_init = 117.into();
+        let portfolios = vec![portfolio_value, second]
+            .into_iter()
+            .map(|value| CustomData::from_arc(Arc::new(value)))
+            .collect::<Vec<_>>();
+
+        let expected = if portfolio { portfolios } else { greeks };
+
         let directory = TempDir::new().unwrap();
-        let staging = directory.path().join("backtest/run-native-record");
+        let staging = directory.path().join("backtest/run-greeks-custom");
         let mut config =
             WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
         config.promote_on_close = automatic;
@@ -1532,20 +1554,22 @@ mod tests {
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
                 .unwrap();
 
-        for record in records {
-            assert!(sink.write_any(record).unwrap());
+        for custom in &expected {
+            assert!(sink.write_any(custom.data.as_any()).unwrap());
         }
 
         sink.close().unwrap();
-        let record_type = T::get_schema(None).metadata()["type_name"]
-            .parse::<NautilusRecordType>()
-            .unwrap();
+
+        let data_type = NautilusDataType::Custom {
+            type_name: expected[0].data_type.type_name().to_string(),
+        };
+
         let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
         if !automatic {
             catalog
                 .convert_stream_to_data(
-                    "run-native-record",
-                    &record_type.into(),
+                    "run-greeks-custom",
+                    &data_type.clone().into(),
                     Environment::Backtest,
                     None,
                     false,
@@ -1553,22 +1577,12 @@ mod tests {
                 .unwrap();
         }
 
-        let batches = catalog
-            .query_record_batches(&record_type.into(), None, None, None, None, true)
-            .unwrap();
+        let DataBatch::Custom(actual) = catalog.query_batch(&CatalogQuery::new(data_type)).unwrap()
+        else {
+            panic!("expected custom data")
+        };
 
-        let decoded = batches
-            .into_iter()
-            .flat_map(|batch| {
-                let schema = batch.schema();
-                T::decode_typed_batch(schema.metadata(), batch).unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        let expected = T::encode_batch(&records[0].metadata(), records).unwrap();
-        let actual = T::encode_batch(&records[0].metadata(), &decoded).unwrap();
-        assert_eq!(actual.columns(), expected.columns());
-        record_type
+        assert_eq!(actual.as_ref(), expected.as_slice());
     }
 
     fn assert_record_promotion<T>(record: T, automatic: bool) -> NautilusRecordType

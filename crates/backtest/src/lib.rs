@@ -87,13 +87,14 @@ pub mod accumulator;
 pub mod config;
 pub mod data_client;
 pub mod data_iterator;
-#[cfg(feature = "defi")]
-pub mod defi;
 pub mod engine;
 pub mod exchange;
 pub mod execution_client;
 pub mod modules;
 pub mod result;
+
+#[cfg(feature = "defi")]
+pub mod defi;
 
 #[cfg(feature = "streaming")]
 pub mod node;

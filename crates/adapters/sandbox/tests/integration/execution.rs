@@ -33,13 +33,14 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
+            GenerateOrderStatusReportBuilder, GenerateOrderStatusReportsBuilder, ModifyOrder,
             SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
-        stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
+        stubs::get_typed_into_message_saving_handler, switchboard, typed_handler::TypedIntoHandler,
     },
     runner::{
         SyncTradingCommandSender, TimeEventMessage, TimeEventSender, drain_trading_cmd_queue,
@@ -56,6 +57,7 @@ use nautilus_execution::python::{
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
+    matching_engine::config::OrderPriorityResetPolicy,
     models::{
         fee::{
             FeeModel, FeeModelAny, FeeModelHandle, MakerTakerFeeModel, ProbabilityPriceFeeModel,
@@ -70,14 +72,20 @@ use nautilus_model::{
         AccountAny, MarginAccount,
         margin_model::{LeveragedMarginModel, MarginModel, MarginModelAny, StandardMarginModel},
     },
-    data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDepth,
+        QuoteTick, TradeTick,
+    },
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderPendingCancel,
-        OrderPendingUpdate, PositionClosed, PositionEvent, account::stubs::margin_account_state,
+        OrderPendingUpdate, PositionClosed, PositionEvent,
+        account::stubs::margin_account_state,
+        order::spec::{OrderCanceledSpec, OrderTriggeredSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -89,6 +97,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
+    reports::OrderStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_sandbox::{
@@ -164,6 +173,7 @@ fn create_config(
         use_market_order_acks: false,
         oto_full_trigger: false,
         price_protection_points: 0,
+        order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
     }
 }
 
@@ -887,6 +897,8 @@ fn order_event_kind(event: &OrderEventAny) -> &'static str {
         OrderEventAny::Triggered(_) => "triggered",
         OrderEventAny::PendingUpdate(_) => "pending_update",
         OrderEventAny::PendingCancel(_) => "pending_cancel",
+        OrderEventAny::ModifyDenied(_) => "modify_denied",
+        OrderEventAny::CancelDenied(_) => "cancel_denied",
         OrderEventAny::ModifyRejected(_) => "modify_rejected",
         OrderEventAny::CancelRejected(_) => "cancel_rejected",
         OrderEventAny::Updated(_) => "updated",
@@ -933,14 +945,14 @@ fn drain_order_events(
 
 /// Applies an `OrderPendingCancel` event to `order` in the cache, mirroring the state
 /// `Strategy::cancel_order` / `cancel_orders` establish before their cancel command reaches the
-/// execution client, so a synthesized `CancelRejected` later has a valid FSM transition.
+/// execution client, with a command ID shared by `send_command_through_engine`.
 fn mark_pending_cancel(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
     trader_id: TraderId,
     ts: UnixNanos,
 ) {
-    let event = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+    let mut event = OrderPendingCancel::new(
         trader_id,
         order.strategy_id(),
         order.instrument_id(),
@@ -951,20 +963,24 @@ fn mark_pending_cancel(
         ts,
         false,
         order.venue_order_id(),
-    ));
-    cache.borrow_mut().update_order(&event).unwrap();
+    );
+    event.causation_id = Some(UUID4::new());
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(event))
+        .unwrap();
 }
 
 /// Applies an `OrderPendingUpdate` event to `order` in the cache, mirroring the state
 /// `Strategy::modify_order` establishes before its modify command reaches the execution client, so
-/// a synthesized `ModifyRejected` later has a valid FSM transition.
+/// the matching command ID shared by `send_command_through_engine` can resolve it.
 fn mark_pending_update(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
     trader_id: TraderId,
     ts: UnixNanos,
 ) {
-    let event = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+    let mut event = OrderPendingUpdate::new(
         trader_id,
         order.strategy_id(),
         order.instrument_id(),
@@ -975,8 +991,12 @@ fn mark_pending_update(
         ts,
         false,
         order.venue_order_id(),
-    ));
-    cache.borrow_mut().update_order(&event).unwrap();
+    );
+    event.causation_id = Some(UUID4::new());
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingUpdate(event))
+        .unwrap();
 }
 
 /// The commands deferred by a leg other than the insert leg. `Cancel`, `Modify`, `BatchCancel` and
@@ -1053,14 +1073,20 @@ impl DeferredCommand {
     }
 
     /// Client order IDs this command's rejection event names, in dispatch order.
-    fn rejected_ids(self, events: &[OrderEventAny]) -> Vec<ClientOrderId> {
+    fn refused_ids(self, events: &[OrderEventAny]) -> Vec<ClientOrderId> {
         events
             .iter()
             .filter_map(|event| match (self, event) {
+                (Self::Cancel | Self::BatchCancel, OrderEventAny::CancelDenied(denied)) => {
+                    Some(denied.client_order_id)
+                }
                 (
                     Self::Cancel | Self::BatchCancel | Self::CancelAll,
                     OrderEventAny::CancelRejected(rejected),
                 ) => Some(rejected.client_order_id),
+                (Self::Modify | Self::BatchModify, OrderEventAny::ModifyDenied(denied)) => {
+                    Some(denied.client_order_id)
+                }
                 (Self::Modify | Self::BatchModify, OrderEventAny::ModifyRejected(rejected)) => {
                     Some(rejected.client_order_id)
                 }
@@ -1309,7 +1335,7 @@ fn modify_command(
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        None,
+        order.venue_order_id(),
         None,
         Some(Price::from("99.00")),
         None,
@@ -1333,7 +1359,7 @@ fn cancel_command(
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        None,
+        order.venue_order_id(),
         UUID4::new(),
         ts,
         None,
@@ -1353,7 +1379,7 @@ fn send_command_through_engine(
     let strategy_id = targets[0].strategy_id();
     let client_id = harness.client_id;
 
-    let command = match kind {
+    let mut command = match kind {
         DeferredCommand::Cancel => {
             TradingCommand::CancelOrder(cancel_command(client_id, trader_id, &targets[0], ts))
         }
@@ -1400,6 +1426,40 @@ fn send_command_through_engine(
             None,
         )),
     };
+
+    let pending_cause = |id: ClientOrderId, cancel: bool| {
+        let cache = harness.cache.borrow();
+        let order = cache.order(&id)?;
+        match (cancel, order.last_event()) {
+            (false, OrderEventAny::PendingUpdate(event)) => event.causation_id,
+            (true, OrderEventAny::PendingCancel(event)) => event.causation_id,
+            _ => None,
+        }
+    };
+
+    match &mut command {
+        TradingCommand::ModifyOrder(command) => {
+            command.command_id =
+                pending_cause(command.client_order_id, false).unwrap_or(command.command_id);
+        }
+        TradingCommand::ModifyOrders(command) => {
+            for child in &mut command.modifies {
+                child.command_id =
+                    pending_cause(child.client_order_id, false).unwrap_or(child.command_id);
+            }
+        }
+        TradingCommand::CancelOrder(command) => {
+            command.command_id =
+                pending_cause(command.client_order_id, true).unwrap_or(command.command_id);
+        }
+        TradingCommand::CancelOrders(command) => {
+            for child in &mut command.cancels {
+                child.command_id =
+                    pending_cause(child.client_order_id, true).unwrap_or(child.command_id);
+            }
+        }
+        _ => {}
+    }
 
     msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), command);
 }
@@ -4278,6 +4338,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             use_market_order_acks: false,
             oto_full_trigger: false,
             price_protection_points: 0,
+            order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
         };
         let core = ExecutionClientCore::new(
             trader_id,
@@ -4877,6 +4938,111 @@ fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAn
 }
 
 #[rstest]
+#[case::tick("TICK")]
+#[case::volume("VOLUME")]
+#[case::value("VALUE")]
+fn test_non_time_bars_preserve_time_bar_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] aggregation: &str,
+    #[values(false, true)] via_bus: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.bar_execution = true;
+        });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    context.client.start().unwrap();
+    let received = Rc::new(RefCell::new(Vec::new()));
+
+    let handler = {
+        let received = received.clone();
+        TypedHandler::from(move |bar: &Bar| received.borrow_mut().push(*bar))
+    };
+
+    if via_bus {
+        msgbus::subscribe_bars("data.bars.*".into(), handler.clone(), Some(0));
+    }
+
+    let order = resting_limit(&instrument, "NON-TIME-BAR", "1495.00", 1.into());
+    submit_to_client(&context, trader_id, &order);
+    let _ = drain_order_events(&mut rx);
+
+    let mut bar = Bar::new(
+        BarType::from(format!(
+            "{}-200-{aggregation}-LAST-EXTERNAL",
+            instrument.id()
+        )),
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1494.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    assert!(drain_order_events(&mut rx).is_empty());
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![bar]);
+    }
+
+    let non_time_bar = bar;
+    bar.bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    bar.ts_event = 3.into();
+    bar.ts_init = 3.into();
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(
+            order.client_order_id(),
+            Price::from("1495.00"),
+            Quantity::from("1.000")
+        )]
+    );
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![non_time_bar, bar]);
+        msgbus::unsubscribe_bars("data.bars.*".into(), &handler);
+    }
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
 fn test_process_bar_drops_precision_mismatch(
     trader_id: TraderId,
     account_id: AccountId,
@@ -5015,6 +5181,565 @@ async fn test_generate_mass_status_returns_empty_report(
     assert!(mass_status.order_reports().is_empty());
     assert!(mass_status.fill_reports().is_empty());
     assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+#[case::client("client", true)]
+#[case::venue("venue", true)]
+#[case::both("both", true)]
+#[case::unknown("unknown", false)]
+#[case::mismatched_venue("mismatched_venue", false)]
+#[case::mismatched_client("mismatched_client", false)]
+#[case::mismatched_instrument("mismatched_instrument", false)]
+#[case::no_identity("none", false)]
+#[tokio::test]
+async fn test_generate_order_status_report(
+    instrument: InstrumentAny,
+    #[case] query: &str,
+    #[case] found: bool,
+) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(match query {
+            "venue" | "none" => None,
+            "unknown" | "mismatched_client" => Some(ClientOrderId::from("UNKNOWN")),
+            _ => Some(order.client_order_id()),
+        })
+        .venue_order_id(match query {
+            "venue" | "both" | "mismatched_client" => order.venue_order_id(),
+            "mismatched_venue" => Some(VenueOrderId::from("UNKNOWN")),
+            _ => None,
+        })
+        .instrument_id((query == "mismatched_instrument").then(|| InstrumentId::from("OTHER.SIM")))
+        .build()
+        .unwrap();
+
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap();
+
+    if found {
+        let report = report.unwrap();
+        let expected = OrderStatusReport::new(
+            account_id(),
+            instrument.id(),
+            Some(order.client_order_id()),
+            order.venue_order_id().unwrap(),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("1.000"),
+            Quantity::from("0.000"),
+            UnixNanos::from(11),
+            UnixNanos::from(11),
+            UnixNanos::from(23),
+            Some(report.report_id),
+        )
+        .with_price(Price::from("900.00"));
+        assert_eq!(report, expected);
+    } else {
+        assert_eq!(report, None);
+    }
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_preserves_fill(instrument: InstrumentAny) {
+    let (mut context, mut rx, order) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 899.0, 900.0))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(43), true);
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(order.client_order_id()))
+        .build()
+        .unwrap();
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+    let expected = OrderStatusReport::new(
+        account_id(),
+        instrument.id(),
+        Some(order.client_order_id()),
+        order.venue_order_id().unwrap(),
+        Some(OrderSide::Buy),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(11),
+        UnixNanos::from(31),
+        UnixNanos::from(43),
+        Some(report.report_id),
+    )
+    .with_price(Price::from("900.00"))
+    .with_avg_px(Decimal::from(900));
+
+    assert_eq!(report, expected);
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_preserves_metadata(instrument: InstrumentAny) {
+    let (mut context, _rx, _resting) = order_report_context(&instrument);
+    let mut order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        .client_order_id(ClientOrderId::from("O-METADATA"))
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("3.456"))
+        .price(Price::from("952.25"))
+        .trigger_price(Price::from("950.75"))
+        .activation_price(Price::from("925.50"))
+        .trigger_type(TriggerType::LastPrice)
+        .limit_offset(Decimal::from_str_exact("1.50").unwrap())
+        .trailing_offset(Decimal::from_str_exact("7.25").unwrap())
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(400))
+        .post_only(true)
+        .reduce_only(false)
+        .display_qty(Quantity::from("0.123"))
+        .order_list_id(OrderListId::from("OL-METADATA"))
+        .parent_order_id(ClientOrderId::from("O-PARENT"))
+        .linked_order_ids(vec![
+            ClientOrderId::from("O-LINK-1"),
+            ClientOrderId::from("O-LINK-2"),
+        ])
+        .contingency_type(ContingencyType::Oto)
+        .build();
+    order.set_position_id(Some(PositionId::from("P-LOCAL-METADATA")));
+    let submitted = TestOrderEventStubs::submitted(&order, account_id());
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id(), VenueOrderId::from("V-METADATA"));
+    let triggered = OrderTriggeredSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .account_id(account_id())
+        .venue_order_id(VenueOrderId::from("V-METADATA"))
+        .ts_event(UnixNanos::from(7))
+        .ts_init(UnixNanos::from(8))
+        .build();
+    let canceled = OrderCanceledSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .account_id(account_id())
+        .venue_order_id(VenueOrderId::from("V-METADATA"))
+        .ts_event(UnixNanos::from(17))
+        .ts_init(UnixNanos::from(18))
+        .reason(Ustr::from("USER_REQUEST"))
+        .build();
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+
+    for event in [
+        submitted,
+        accepted,
+        OrderEventAny::Triggered(triggered),
+        OrderEventAny::Canceled(canceled),
+    ] {
+        context.cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(ClientOrderId::from("O-METADATA")))
+        .build()
+        .unwrap();
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let expected = OrderStatusReport {
+        account_id: account_id(),
+        instrument_id: instrument.id(),
+        client_order_id: Some(ClientOrderId::from("O-METADATA")),
+        venue_order_id: VenueOrderId::from("V-METADATA"),
+        order_side: Some(OrderSide::Buy),
+        order_type: OrderType::TrailingStopLimit,
+        time_in_force: TimeInForce::Gtd,
+        order_status: OrderStatus::Canceled,
+        quantity: Quantity::from("3.456"),
+        filled_qty: Quantity::from("0.000"),
+        report_id: report.report_id,
+        ts_accepted: UnixNanos::default(),
+        ts_last: UnixNanos::from(17),
+        ts_init: UnixNanos::from(23),
+        order_list_id: Some(OrderListId::from("OL-METADATA")),
+        venue_position_id: None,
+        linked_order_ids: Some(vec![
+            ClientOrderId::from("O-LINK-1"),
+            ClientOrderId::from("O-LINK-2"),
+        ]),
+        parent_order_id: Some(ClientOrderId::from("O-PARENT")),
+        contingency_type: Some(ContingencyType::Oto),
+        expire_time: Some(UnixNanos::from(400)),
+        price: Some(Price::from("952.25")),
+        activation_price: Some(Price::from("925.50")),
+        trigger_price: Some(Price::from("950.75")),
+        trigger_type: Some(TriggerType::LastPrice),
+        limit_offset: Some(Decimal::from_str_exact("1.50").unwrap()),
+        trailing_offset: Some(Decimal::from_str_exact("7.25").unwrap()),
+        trailing_offset_type: Some(TrailingOffsetType::Price),
+        avg_px: None,
+        display_qty: Some(Quantity::from("0.123")),
+        post_only: true,
+        reduce_only: false,
+        cancel_reason: Some("USER_REQUEST".to_string()),
+        ts_triggered: Some(UnixNanos::from(7)),
+    };
+
+    assert_eq!(report, expected);
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_reports_excludes_unacknowledged_record(instrument: InstrumentAny) {
+    let (mut context, _rx, accepted) = order_report_context(&instrument);
+    let order = resting_limit(
+        &instrument,
+        "O-UNACKNOWLEDGED",
+        "800.00",
+        UnixNanos::from(2),
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, account_id());
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+    context.cache.borrow_mut().update_order(&submitted).unwrap();
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(ClientOrderId::from("O-UNACKNOWLEDGED")))
+        .build()
+        .unwrap();
+    let single = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap();
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(false)
+        .build()
+        .unwrap();
+    let bulk = context
+        .client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+
+    assert_eq!(single, None);
+    assert_eq!(bulk.len(), 1);
+    assert_eq!(bulk[0].client_order_id, Some(accepted.client_order_id()));
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::history(false, None, None, true)]
+#[case::open_only(true, None, None, false)]
+#[case::closed_at_bounds(false, Some(31), Some(31), true)]
+#[case::closed_before_start(false, Some(32), None, false)]
+#[case::closed_after_end(false, None, Some(30), false)]
+#[tokio::test]
+async fn test_generate_order_status_reports_filters(
+    instrument: InstrumentAny,
+    #[case] open_only: bool,
+    #[case] start: Option<u64>,
+    #[case] end: Option<u64>,
+    #[case] include_closed: bool,
+) {
+    let (mut context, mut rx, closed) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id(),
+            &closed,
+            UnixNanos::from(31),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    let open = resting_limit(&instrument, "O-REPORT-2", "800.00", UnixNanos::from(2));
+    submit_to_client(&context, trader_id(), &open);
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+
+    let mut foreign_reports = Vec::new();
+
+    for (id, owner, instrument_id) in [
+        (
+            "FOREIGN-ACCOUNT",
+            AccountId::from("OTHER-001"),
+            instrument.id(),
+        ),
+        (
+            "FOREIGN-VENUE",
+            account_id(),
+            InstrumentId::from("OTHER.SIM"),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from(id))
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("2.000"))
+            .price(Price::from("700.00"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, owner);
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let order = context.cache.borrow_mut().update_order(&submitted).unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, owner, VenueOrderId::from(id));
+        context.cache.borrow_mut().update_order(&accepted).unwrap();
+        let command = GenerateOrderStatusReportBuilder::default()
+            .ts_init(UnixNanos::from(31))
+            .client_order_id(Some(order.client_order_id()))
+            .build()
+            .unwrap();
+        foreign_reports.push(
+            context
+                .client
+                .generate_order_status_report(&command)
+                .await
+                .unwrap(),
+        );
+    }
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(open_only)
+        .start(start.map(UnixNanos::from))
+        .end(end.map(UnixNanos::from))
+        .build()
+        .unwrap();
+    let mut reports = context
+        .client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    reports.sort_by_key(|report| report.client_order_id);
+    let actual: Vec<_> = reports
+        .iter()
+        .map(|report| (report.client_order_id.unwrap(), report.order_status))
+        .collect();
+    let mut expected = vec![(open.client_order_id(), OrderStatus::Accepted)];
+    if include_closed {
+        expected.insert(0, (closed.client_order_id(), OrderStatus::Canceled));
+    }
+
+    let instrument_command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(false)
+        .instrument_id(Some(InstrumentId::from("MISSING.BINANCE")))
+        .build()
+        .unwrap();
+    let absent = context
+        .client
+        .generate_order_status_reports(&instrument_command)
+        .await
+        .unwrap();
+
+    assert_eq!(foreign_reports, [None, None]);
+    assert_eq!(actual, expected);
+    assert!(absent.is_empty());
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::unbounded(None, 1)]
+#[case::zero_window(Some(0), 0)]
+#[tokio::test]
+async fn test_generate_mass_status_respects_lookback(
+    instrument: InstrumentAny,
+    #[case] lookback: Option<u64>,
+    #[case] expected_orders: usize,
+) {
+    let (mut context, mut rx, order) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id(),
+            &order,
+            UnixNanos::from(31),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(43), true);
+    let mass = context
+        .client
+        .generate_mass_status(lookback)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass.order_reports().len(), expected_orders);
+    assert_eq!(mass.ts_init, UnixNanos::from(43));
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_includes_order_reports(instrument: InstrumentAny) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+    let mass = context
+        .client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .unwrap();
+    let reports = mass.order_reports();
+
+    assert_eq!(mass.client_id, context.client.client_id());
+    assert_eq!(mass.account_id, account_id());
+    assert_eq!(mass.venue, instrument.id().venue);
+    assert_eq!(mass.ts_init, UnixNanos::from(23));
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[&order.venue_order_id().unwrap()].client_order_id,
+        Some(order.client_order_id())
+    );
+    assert_eq!(
+        reports[&order.venue_order_id().unwrap()].order_status,
+        OrderStatus::Accepted
+    );
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_order_check_keeps_resting_sandbox_order(
+    instrument: InstrumentAny,
+    #[values(false, true)] cached_client: bool,
+    #[values(false, true)] open_only: bool,
+) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+    if cached_client {
+        context
+            .cache
+            .borrow_mut()
+            .claim_order_clients(&[(order.client_order_id(), context.client.client_id())])
+            .unwrap();
+    }
+
+    let config = ExecutionManagerConfig {
+        open_check_open_only: open_only,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 2,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    };
+
+    let checks = config.open_check_missing_retries + 1;
+    let mut manager =
+        ExecutionManager::new(context.test_clock.clone(), context.cache.clone(), config).unwrap();
+    let mut events = Vec::new();
+
+    for _ in 0..checks {
+        let reported = manager.check_open_orders(&[&context.client]).await;
+        for event in &reported {
+            context.cache.borrow_mut().update_order(event).unwrap();
+        }
+
+        events.extend(reported);
+    }
+
+    let cache = context.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.events(), order.events());
+    assert_eq!(manager.recon_check_retry_count(&order.client_order_id()), 0);
+    assert!(events.is_empty(), "Unexpected events: {events:?}");
+    drop(cached);
+    drop(cache);
+    context.client.stop().unwrap();
+}
+
+fn order_report_context(
+    instrument: &InstrumentAny,
+) -> (
+    TestContext,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    OrderAny,
+) {
+    let (context, mut rx) = setup_channel_context(
+        trader_id(),
+        account_id(),
+        instrument.id().venue,
+        instrument,
+        None,
+    );
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(11), true);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+    let order = resting_limit(instrument, "O-REPORT-1", "900.00", UnixNanos::from(1));
+    submit_to_client(&context, trader_id(), &order);
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    let order = context
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(23), true);
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    (context, rx, order)
 }
 
 #[rstest]
@@ -5551,6 +6276,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         use_market_order_acks: false,
         oto_full_trigger: false,
         price_protection_points: 0,
+        order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
     };
     let core = ExecutionClientCore::new(
         trader_id,
@@ -5887,11 +6613,9 @@ fn test_exec_engine_stop_rejects_in_flight_commands_without_reentering(
     );
 }
 
-/// With no latency model configured every command runs inline with no deferral and no alert, the
-/// sender is installed and events take the channel, and a cancel that finds no engine stays the
-/// silent no-op it was: zero behavior change for the default `latency_model = None`.
+/// With no latency model, commands run inline; a missing matching engine denies the command.
 #[rstest]
-fn test_no_latency_model_keeps_the_immediate_path_unchanged(
+fn test_no_latency_model_applies_inline_and_denies_missing_engine(
     trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
@@ -5916,9 +6640,9 @@ fn test_no_latency_model_keeps_the_immediate_path_unchanged(
             ts,
         ))
         .unwrap();
+    let events = drain_order_events(&mut rx);
     assert!(
-        drain_order_events(&mut rx).is_empty(),
-        "a cancel that finds no engine must keep its pre-feature silent no-op",
+        matches!(events.as_slice(), [OrderEventAny::CancelDenied(event)] if event.client_order_id == unknown.client_order_id())
     );
 
     let order = resting_limit(&instrument, "O-NO-LATENCY-1", "100.00", ts);
@@ -6158,7 +6882,7 @@ fn test_inbound_latency_deferred_command_without_an_engine_is_rejected(
         .map(|order| order.client_order_id())
         .collect();
     assert_eq!(
-        kind.rejected_ids(&events),
+        kind.refused_ids(&events),
         expected,
         "every target of a command that finds no engine must be rejected, not dropped",
     );
@@ -6245,6 +6969,169 @@ fn test_inbound_latency_public_quote_processing_drains_due_commands(
     context.client.stop().unwrap();
 }
 
+#[rstest]
+#[case::modify(DeferredCommand::Modify, false)]
+#[case::batch_modify(DeferredCommand::BatchModify, false)]
+#[case::batch_modify_shared(DeferredCommand::BatchModify, true)]
+#[case::cancel(DeferredCommand::Cancel, false)]
+#[case::batch_cancel(DeferredCommand::BatchCancel, false)]
+#[case::batch_cancel_shared(DeferredCommand::BatchCancel, true)]
+fn test_unsent_commands_emit_correlated_denials(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+    #[case] shared_cause: bool,
+    #[values(false, true)] stop: bool,
+) {
+    let latency = stop.then(|| static_latency_model(1_000, 1_000_000, 1_000_000));
+    let mut harness = setup_engine_harness(trader_id, &instrument, latency);
+    let cancel = matches!(kind, DeferredCommand::Cancel | DeferredCommand::BatchCancel);
+    let mut expected = Vec::new();
+    let shared_id = shared_cause.then(UUID4::new);
+
+    for index in 0..kind.target_count() {
+        let id = format!("O-UNSENT-{index}");
+        let order = if stop {
+            accept_through_engine(&mut harness, trader_id, &instrument, &id, "99.00", 1_000)
+        } else {
+            let ts = harness.test_clock.borrow().timestamp_ns();
+            uncached_instrument_order(&harness.cache, harness.client_id, &id, ts)
+        };
+
+        let order = harness
+            .cache
+            .borrow()
+            .try_order_owned(&order.client_order_id())
+            .unwrap();
+        let ts = harness.test_clock.borrow().timestamp_ns();
+
+        let cause = shared_id.unwrap_or_else(UUID4::new);
+
+        let event = if cancel {
+            let mut event = OrderPendingCancel::new(
+                trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            );
+            event.causation_id = Some(cause);
+            OrderEventAny::PendingCancel(event)
+        } else {
+            let mut event = OrderPendingUpdate::new(
+                trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            );
+            event.causation_id = Some(cause);
+            OrderEventAny::PendingUpdate(event)
+        };
+
+        harness.cache.borrow_mut().update_order(&event).unwrap();
+        expected.push((order, cause));
+    }
+
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let targets = expected
+        .iter()
+        .map(|(order, _)| order.clone())
+        .collect::<Vec<_>>();
+    send_command_through_engine(&harness, trader_id, kind, &targets, ts);
+
+    if stop {
+        assert!(harness.settle().is_empty());
+        harness.engine.borrow_mut().stop();
+    }
+
+    let events = harness.settle();
+    assert_eq!(events.len(), expected.len());
+
+    let expected_reason = if stop {
+        "Client stopped before the command was sent"
+    } else {
+        "No matching engine for instrument"
+    };
+
+    for (event, (original, cause)) in events.iter().zip(expected) {
+        let (id, instrument_id, strategy_id, actual_cause, reason, event_id, ts_event, ts_init) =
+            match event {
+                OrderEventAny::ModifyDenied(event) if !cancel => (
+                    event.client_order_id,
+                    event.instrument_id,
+                    event.strategy_id,
+                    event.causation_id,
+                    event.reason,
+                    event.event_id,
+                    event.ts_event,
+                    event.ts_init,
+                ),
+                OrderEventAny::CancelDenied(event) if cancel => (
+                    event.client_order_id,
+                    event.instrument_id,
+                    event.strategy_id,
+                    event.causation_id,
+                    event.reason,
+                    event.event_id,
+                    event.ts_event,
+                    event.ts_init,
+                ),
+                other => panic!("expected local command denial, was {other:?}"),
+            };
+
+        assert_eq!(
+            (id, instrument_id, strategy_id, actual_cause),
+            (
+                original.client_order_id(),
+                original.instrument_id(),
+                original.strategy_id(),
+                Some(cause)
+            )
+        );
+        assert_eq!(event.trader_id(), trader_id);
+        assert_eq!(event.venue_order_id(), original.venue_order_id());
+        assert_eq!(
+            event.account_id(),
+            Some(AccountId::from(format!("{}-001", instrument.id().venue)))
+        );
+        assert_eq!((ts_event, ts_init), (ts, ts));
+        assert_ne!(event_id, original.init_event().event_id);
+        assert_eq!(reason.as_str(), expected_reason);
+        let cache = harness.cache.borrow();
+        let order = cache.order(&id).unwrap();
+        assert_eq!(
+            (
+                order.status(),
+                order.quantity(),
+                order.price(),
+                order.filled_qty(),
+                order.account_id(),
+                order.venue_order_id()
+            ),
+            (
+                original.status(),
+                original.quantity(),
+                original.price(),
+                original.filled_qty(),
+                original.account_id(),
+                original.venue_order_id()
+            )
+        );
+        assert_eq!(order.event_count(), original.event_count() + 2);
+    }
+}
+
 /// Commands discarded by `stop()` never reached the venue, so their orders are terminalized
 /// through the channel: the sandbox emits no status reports to resolve them later.
 #[rstest]
@@ -6306,7 +7193,7 @@ fn test_stop_terminalizes_commands_still_in_flight(trader_id: TraderId, instrume
     );
     assert!(
         events.iter().any(
-            |event| matches!(event, OrderEventAny::CancelRejected(rejected)
+            |event| matches!(event, OrderEventAny::CancelDenied(rejected)
             if rejected.client_order_id == resting.client_order_id())
         ),
         "a cancel discarded at stop must release the order from PENDING_CANCEL",
@@ -6319,7 +7206,7 @@ fn test_stop_terminalizes_commands_still_in_flight(trader_id: TraderId, instrume
     assert_eq!(
         cached_status(&harness.cache, &resting),
         OrderStatus::Accepted,
-        "the FSM must accept the synthesized cancel-rejected, restoring the pre-cancel status",
+        "the FSM must accept the synthesized cancel-denied, restoring the pre-cancel status",
     );
 
     // Discarded means gone, not merely rejected: a restart must not resurrect the queue and apply
@@ -6561,7 +7448,8 @@ fn test_inbound_latency_deferred_submit_rejects_when_it_cannot_be_applied(
     harness
         .cache
         .borrow_mut()
-        .purge_order(order.client_order_id());
+        .purge_order(order.client_order_id(), false)
+        .unwrap();
 
     assert_eq!(
         advance_and_fire(
@@ -6629,7 +7517,7 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
             std::slice::from_ref(&order),
             ts,
         );
-        "modify_rejected"
+        "modify_denied"
     } else {
         mark_pending_cancel(&harness.cache, &order, trader_id, ts);
         send_command_through_engine(
@@ -6639,7 +7527,7 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
             std::slice::from_ref(&order),
             ts,
         );
-        "cancel_rejected"
+        "cancel_denied"
     };
 
     // The clock has not advanced, so all three commands are still in flight
@@ -6653,9 +7541,8 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
         .collect();
     assert_eq!(
         kinds,
-        vec![last_rejection, "rejected"],
-        "the pending state is released once, by the last command issued, before the submit is \
-         rejected: {kinds:?}",
+        vec![last_rejection, "modify_denied", "rejected"],
+        "each pending command is denied before the submit is rejected: {kinds:?}",
     );
     // The real engine only logs an event the FSM refuses: one it published is one it applied
     {
@@ -8167,13 +9054,11 @@ fn test_inbound_latency_cancel_leaves_in_transit_contingent_unaffected(
     );
 }
 
-/// A modify or cancel still in flight at `stop()` whose order closed meanwhile raises no
-/// rejection: the fill already resolved the pending status the rejection would release, and the
-/// FSM has no transition from `FILLED`.
+/// An unsent command is denied even after its order fills, preserving the authoritative fill.
 #[rstest]
 #[case::cancel(DeferredCommand::Cancel)]
 #[case::modify(DeferredCommand::Modify)]
-fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
+fn test_stop_preserves_closed_order_and_denies_unsent_command(
     trader_id: TraderId,
     instrument: InstrumentAny,
     #[case] kind: DeferredCommand,
@@ -8222,10 +9107,14 @@ fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
         .iter()
         .map(|event| (order_event_kind(event), event.client_order_id()))
         .collect();
-    assert!(
-        at_stop.is_empty(),
-        "a command discarded at stop must raise no rejection for a closed order: {at_stop:?}",
-    );
+
+    let expected = match kind {
+        DeferredCommand::Modify => "modify_denied",
+        DeferredCommand::Cancel => "cancel_denied",
+        _ => unreachable!(),
+    };
+
+    assert_eq!(at_stop, vec![(expected, order.client_order_id())]);
     assert_eq!(
         cached_status(&harness.cache, &order),
         OrderStatus::Filled,
@@ -10770,4 +11659,248 @@ model = RecordedLatency()
         let model = pyobject_to_latency_model_any(&obj).unwrap();
         (model, obj.unbind())
     })
+}
+
+#[rstest]
+#[case::l1(BookType::L1_MBP, "1.000", 1)]
+#[case::l2(BookType::L2_MBP, "3.000", 2)]
+fn test_book_depth_fills_and_replaces_snapshot(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] book_type: BookType,
+    #[case] qty: &str,
+    #[case] levels: usize,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+
+    let mut data_engine = DataEngine::new(harness.test_clock.clone(), harness.cache.clone(), None);
+    let depth = create_depth(
+        instrument.id(),
+        &[("1000.00", "1.000"), ("1001.00", "2.000")],
+    );
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("DEPTH-FILL".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1002.00"))
+        .quantity(Quantity::from(qty))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.instrument_id, fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    let expected: Vec<_> = depth
+        .asks
+        .iter()
+        .take(levels)
+        .map(|order| (instrument.id(), order.price, order.size))
+        .collect();
+    assert_eq!(fills, expected);
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+
+    let replacement = create_depth(instrument.id(), &[("1004.00", "4.000")]);
+    data_engine.process_data(Data::BookDepth(Box::new(replacement)));
+    let probe = submit_through_engine(&harness, trader_id, &instrument, "DEPTH-REMOVED", "1001.00");
+    let events = harness.settle();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(cached_status(&harness.cache, &probe), OrderStatus::Accepted);
+    assert!(harness.cache.borrow().quote(&instrument.id()).is_none());
+    assert!(harness.cache.borrow().trade(&instrument.id()).is_none());
+}
+
+#[rstest]
+fn test_book_depth_handler_lifecycle(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    let topic = switchboard::get_book_depth_topic(instrument.id());
+    context.client.start().unwrap();
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 1);
+
+    let InstrumentAny::CryptoPerpetual(base) = &instrument else {
+        panic!("Expected perpetual");
+    };
+
+    let foreign_id = InstrumentId::from("ETHUSDT.OTHER");
+
+    let foreign_instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: foreign_id,
+        ..base.clone()
+    });
+
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(foreign_instrument)
+        .unwrap();
+    let mut foreign = create_depth(foreign_id, &[("1000.00", "1.000")]);
+    msgbus::publish_depth(topic, &foreign);
+    assert_eq!(context.client.matching_engine_count(), 0);
+    let unknown = create_depth(
+        InstrumentId::from("UNKNOWN.BINANCE"),
+        &[("1000.00", "1.000")],
+    );
+    msgbus::publish_depth(topic, &unknown);
+    assert_eq!(context.client.matching_engine_count(), 0);
+    foreign.instrument_id = instrument.id();
+    msgbus::publish_depth(
+        switchboard::get_pipeline_book_depth_topic(instrument.id()),
+        &foreign,
+    );
+    assert_eq!(context.client.matching_engine_count(), 0);
+
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 0);
+    msgbus::publish_depth(topic, &foreign);
+    assert_eq!(context.client.matching_engine_count(), 0);
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 1);
+    msgbus::publish_depth(topic, &foreign);
+    assert_eq!(context.client.matching_engine_count(), 1);
+    let order = resting_limit(&instrument, "DEPTH-RESTART", "1001.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    );
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 0);
+}
+
+#[rstest]
+fn test_book_depth_drains_due_commands(trader_id: TraderId, instrument: InstrumentAny) {
+    const LATENCY: u64 = 1_000_000_000;
+    let mut harness = setup_engine_harness_with_config(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(LATENCY, 0, 0)),
+        |config| config.book_type = BookType::L2_MBP,
+    );
+    let order = submit_through_engine(&harness, trader_id, &instrument, "DEPTH-DUE", "1001.00");
+    harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+    harness.test_clock.borrow_mut().set_time(LATENCY.into());
+    let mut data_engine = DataEngine::new(harness.test_clock.clone(), harness.cache.clone(), None);
+    data_engine.process_data(Data::BookDepth(Box::new(create_depth(
+        instrument.id(),
+        &[("1000.00", "1.000")],
+    ))));
+    let events = harness.settle();
+    assert_eq!(
+        events.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["accepted", "filled"]
+    );
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_book_depth_invalid_snapshot_preserves_book(trader_id: TraderId, instrument: InstrumentAny) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+
+    let mut data_engine = DataEngine::new(harness.test_clock.clone(), harness.cache.clone(), None);
+    let valid = create_depth(instrument.id(), &[("1004.00", "2.000")]);
+    data_engine.process_data(Data::BookDepth(Box::new(valid)));
+    let invalid = create_depth(instrument.id(), &[("1000.001", "1.000")]);
+    data_engine.process_data(Data::BookDepth(Box::new(invalid)));
+    let order = submit_through_engine(&harness, trader_id, &instrument, "DEPTH-INVALID", "1500.00");
+
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(Price::from("1004.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+fn create_depth(instrument_id: InstrumentId, asks: &[(&str, &str)]) -> OrderBookDepth {
+    let asks: Vec<_> = asks
+        .iter()
+        .map(|(price, qty)| {
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from(*price),
+                Quantity::from(*qty),
+                0,
+            )
+        })
+        .collect();
+
+    let ask_counts = vec![1; asks.len()];
+
+    OrderBookDepth::new(
+        instrument_id,
+        [],
+        asks,
+        [],
+        ask_counts,
+        RecordFlag::F_SNAPSHOT as u8,
+        1,
+        1.into(),
+        1.into(),
+    )
 }

@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "market_id": "TEST-OUTCOME_71231",
+      "title": "Authored HYPERLIQUIDOUTCOME outcome",
+      "description": "Authored unsupported-venue definition.",
+      "outcome_name": "No",
+      "price": 0,
+      "status": "Open",
+      "exchange_id": "HYPERLIQUIDOUTCOME",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "unknown": "preserved"
+      }
+    }
+  ],
+  "next_cursor": "authored-cursor"
+}

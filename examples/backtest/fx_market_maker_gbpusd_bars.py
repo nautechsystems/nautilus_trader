@@ -41,6 +41,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     SIM = Venue("SIM")
     USD = Currency.from_str("USD")
     engine.add_venue(

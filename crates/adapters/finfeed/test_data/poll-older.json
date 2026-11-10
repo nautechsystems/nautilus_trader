@@ -1,0 +1,1 @@
+{"quotes":[{"bid":"0.2","ask":"0.3","bid_volume":"5.000005","ask_volume":"6.000006","entry_time":"2026-10-11T00:00:00Z","recv_time":"2026-10-11T00:00:01Z"}],"trades":[{"id":"trade-2","market_id":"TEST-OUTCOME_NO","price":"0.21","quantity":"3.000003","timestamp":"2026-10-11T00:00:01Z","outcome":"No","side":"Sell"}]}

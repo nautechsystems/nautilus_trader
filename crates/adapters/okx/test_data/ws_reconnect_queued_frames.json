@@ -1,0 +1,51 @@
+{
+  "response": {
+    "id": "queued-response-17",
+    "op": "order",
+    "code": "0",
+    "msg": "",
+    "data": [
+      {
+        "clOrdId": "OQUEUED17",
+        "ordId": "2497956918703120384",
+        "sCode": "0",
+        "sMsg": ""
+      }
+    ]
+  },
+  "login_failure": {
+    "event": "login",
+    "code": "60009",
+    "msg": "Login failed",
+    "connId": "old-failure"
+  },
+  "login_error": {
+    "event": "error",
+    "code": "60009",
+    "msg": "Login failed",
+    "connId": "rejected-login"
+  },
+  "api_key_error": {
+    "event": "error",
+    "code": "60005",
+    "msg": "Invalid apiKey",
+    "connId": "rejected-key"
+  },
+  "subscription_error": {
+    "event": "error",
+    "code": "64003",
+    "msg": "Your trading fee tier does not meet the channel requirement"
+  },
+  "login_rate_limit": {
+    "event": "error",
+    "code": "60023",
+    "msg": "Bulk login requests too frequent",
+    "connId": "rejected-login"
+  },
+  "login_method_error": {
+    "event": "error",
+    "code": "60026",
+    "msg": "Batch login by APIKey and token simultaneously is not supported.",
+    "connId": "rejected-login"
+  }
+}

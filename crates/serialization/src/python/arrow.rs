@@ -178,7 +178,6 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
 /// Returns an error if:
 /// - `data` is empty.
 /// - `data` contains unsupported or incompatible objects.
-/// - `GreeksData` records have different instrument IDs.
 /// - Arrow encoding or IPC serialization fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]

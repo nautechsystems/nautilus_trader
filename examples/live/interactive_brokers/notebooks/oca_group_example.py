@@ -128,6 +128,7 @@ def main() -> None:
     node.add_strategy(OcaGroupExample())
 
     print(f"Built OCA node for {INSTRUMENT_ID}.", flush=True)
+
     if env_bool("IB_V2_RUN_NODE"):
         schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 20))
         node.run()

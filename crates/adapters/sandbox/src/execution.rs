@@ -21,7 +21,7 @@ use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, generate_mass_status},
     clock::Clock,
     factories::OrderEventFactory,
     live::try_get_exec_event_sender,
@@ -52,14 +52,13 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, OrderBookDepth, QuoteTick,
+        TradeTick,
+    },
     enums::OmsType,
-    events::{
-        OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected, PositionEvent,
-    },
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
-    },
+    events::{OrderCancelDenied, OrderEventAny, OrderModifyDenied, OrderRejected, PositionEvent},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -77,6 +76,9 @@ const EXPIRED_ENGINE_SWEEP_INTERVAL: DurationNanos = DurationNanos::from_mins(1)
 /// The `SandboxExecutionClient` simulates order execution using the `OrderMatchingEngine`
 /// to match orders against market data. This enables strategy testing in real-time
 /// without actual order execution on exchanges.
+///
+/// Order status reports use cached orders with a venue order ID for this account and venue.
+/// Full-history requests include retained closed orders.
 pub struct SandboxExecutionClient {
     core: RefCell<ExecutionClientCore>,
     factory: OrderEventFactory,
@@ -90,6 +92,8 @@ pub struct SandboxExecutionClient {
 struct RegisteredHandlers {
     deltas_pattern: MStr<Pattern>,
     deltas_handler: TypedHandler<OrderBookDeltas>,
+    depth_pattern: MStr<Pattern>,
+    depth_handler: TypedHandler<OrderBookDepth>,
     quote_pattern: MStr<Pattern>,
     quote_handler: TypedHandler<QuoteTick>,
     trade_pattern: MStr<Pattern>,
@@ -249,6 +253,13 @@ impl SandboxExecutionClient {
             })
         };
 
+        let depth_handler = {
+            let inner = inner_weak.clone();
+            TypedHandler::from(move |depth: &OrderBookDepth| {
+                SandboxInner::on_order_book_depth(&inner, venue, depth);
+            })
+        };
+
         let quote_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |quote: &QuoteTick| {
@@ -314,6 +325,7 @@ impl SandboxExecutionClient {
         };
 
         let deltas_pattern: MStr<Pattern> = format!("data.book.deltas.{venue}.*").into();
+        let depth_pattern: MStr<Pattern> = format!("data.book.depth.{venue}.*").into();
         let quote_pattern: MStr<Pattern> = format!("data.quotes.{venue}.*").into();
         let trade_pattern: MStr<Pattern> = format!("data.trades.{venue}.*").into();
         let bar_pattern: MStr<Pattern> = "data.bars.*".into();
@@ -322,6 +334,7 @@ impl SandboxExecutionClient {
         let position_pattern: MStr<Pattern> = "events.position.*".into();
 
         msgbus::subscribe_book_deltas(deltas_pattern, deltas_handler.clone(), Some(10));
+        msgbus::subscribe_book_depth(depth_pattern, depth_handler.clone(), Some(10));
         msgbus::subscribe_quotes(quote_pattern, quote_handler.clone(), Some(10));
         msgbus::subscribe_trades(trade_pattern, trade_handler.clone(), Some(10));
         msgbus::subscribe_bars(bar_pattern, bar_handler.clone(), Some(10));
@@ -332,6 +345,8 @@ impl SandboxExecutionClient {
         *self.handlers.borrow_mut() = Some(RegisteredHandlers {
             deltas_pattern,
             deltas_handler,
+            depth_pattern,
+            depth_handler,
             quote_pattern,
             quote_handler,
             trade_pattern,
@@ -355,6 +370,7 @@ impl SandboxExecutionClient {
     fn deregister_message_handlers(&self) {
         if let Some(handlers) = self.handlers.borrow_mut().take() {
             msgbus::unsubscribe_book_deltas(handlers.deltas_pattern, &handlers.deltas_handler);
+            msgbus::unsubscribe_book_depth(handlers.depth_pattern, &handlers.depth_handler);
             msgbus::unsubscribe_quotes(handlers.quote_pattern, &handlers.quote_handler);
             msgbus::unsubscribe_trades(handlers.trade_pattern, &handlers.trade_handler);
             msgbus::unsubscribe_bars(handlers.bar_pattern, &handlers.bar_handler);
@@ -708,14 +724,14 @@ impl ExecutionClient for SandboxExecutionClient {
         self.cancel_expiry_sweep_timer();
         self.cancel_inbound_alert();
 
-        // Rejections take the execution channel like every other event, so the engine stopping
+        // Command outcomes take the execution channel, so the engine stopping
         // this client processes them once its own borrow is released. Without a runner sender they
         // would dispatch synchronously into an engine `ExecutionEngine::stop` still holds mutably,
         // which is unsupported
         {
             let mut inner = self.inner.borrow_mut();
             let discarded = inner.take_inbound_queue();
-            inner.reject_discarded(discarded);
+            inner.refuse_discarded(discarded);
         }
 
         self.core.borrow().set_stopped();
@@ -869,18 +885,62 @@ impl ExecutionClient for SandboxExecutionClient {
 
     async fn generate_order_status_report(
         &self,
-        _cmd: &GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        // Sandbox orders are tracked internally
-        Ok(None)
+        let cache = self.cache.borrow();
+
+        let client_order_id = cmd.client_order_id.or_else(|| {
+            cmd.venue_order_id
+                .and_then(|id| cache.client_order_id(&id).copied())
+        });
+
+        let Some(order) = client_order_id.and_then(|id| cache.order(&id)) else {
+            return Ok(None);
+        };
+
+        if order.account_id() != Some(self.core.borrow().account_id)
+            || order.instrument_id().venue != self.config.venue
+            || cmd
+                .instrument_id
+                .is_some_and(|id| id != order.instrument_id())
+            || cmd
+                .venue_order_id
+                .is_some_and(|id| Some(id) != order.venue_order_id())
+        {
+            return Ok(None);
+        }
+
+        let ts_init = self.clock.borrow().timestamp_ns();
+        Ok(order_status_report(&order, ts_init))
     }
 
     async fn generate_order_status_reports(
         &self,
-        _cmd: &GenerateOrderStatusReports,
+        cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        // Sandbox orders are tracked internally
-        Ok(Vec::new())
+        let account_id = self.core.borrow().account_id;
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let cache = self.cache.borrow();
+
+        let reports = cache
+            .orders_refs(
+                Some(&self.config.venue),
+                cmd.instrument_id.as_ref(),
+                None,
+                Some(&account_id),
+                None,
+            )
+            .into_iter()
+            .filter(|order| !cmd.open_only || order.is_open() || order.is_inflight())
+            .filter(|order| {
+                !order.is_closed()
+                    || (cmd.start.is_none_or(|start| order.ts_last() >= start)
+                        && cmd.end.is_none_or(|end| order.ts_last() <= end))
+            })
+            .filter_map(|order| order_status_report(&order, ts_init))
+            .collect();
+
+        Ok(reports)
     }
 
     async fn generate_fill_reports(
@@ -901,18 +961,25 @@ impl ExecutionClient for SandboxExecutionClient {
 
     async fn generate_mass_status(
         &self,
-        _lookback_mins: Option<u64>,
+        lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        let core = self.core.borrow();
         let ts_init = self.clock.borrow().timestamp_ns();
-        Ok(Some(ExecutionMassStatus::new(
-            core.client_id,
-            core.account_id,
-            core.venue,
-            ts_init,
-            None,
-        )))
+        generate_mass_status(self, lookback_mins, ts_init).await
     }
+}
+
+fn order_status_report(order: &OrderAny, ts_init: UnixNanos) -> Option<OrderStatusReport> {
+    let mut report = order.to_order_status_report(None)?;
+    report.ts_init = ts_init;
+    report.venue_position_id = None;
+
+    for event in order.events() {
+        if let OrderEventAny::Canceled(event) = event {
+            report.cancel_reason = event.reason.map(|reason| reason.to_string());
+        }
+    }
+
+    Some(report)
 }
 
 // Wrapped in `Rc<RefCell<>>` so message handlers can hold weak references
@@ -1132,6 +1199,23 @@ impl SandboxInner {
         self.drain_oto_commands();
     }
 
+    fn process_order_book_depth(&mut self, depth: &OrderBookDepth) {
+        let instrument_id = depth.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
+                && let Err(e) = engine.process_order_book_depth(depth)
+            {
+                log::error!("Error processing order book depth: {e}");
+            }
+        }
+
+        self.drain_oto_commands();
+    }
+
     fn process_instrument_status(&mut self, status: &InstrumentStatus) {
         let instrument_id = status.instrument_id;
 
@@ -1271,7 +1355,7 @@ impl SandboxInner {
                 | TradingCommand::CancelOrders(_)
         ) && !self.ensure_engine_for(cmd.instrument_id())
         {
-            self.reject_command(cmd, "No matching engine for instrument");
+            self.refuse_command(cmd, "No matching engine for instrument");
             return Ok(());
         }
 
@@ -1293,17 +1377,15 @@ impl SandboxInner {
         Ok(())
     }
 
-    fn reject_command(&self, command: &TradingCommand, reason: &str) {
-        self.reject_command_deduped(command, reason, &mut AHashSet::new());
+    fn refuse_command(&self, command: &TradingCommand, reason: &str) {
+        self.refuse_command_deduped(command, reason, &mut AHashSet::new());
     }
 
-    /// Dispatches the rejection for `command`, skipping any order that has already received a
-    /// modify or cancel rejection recorded in `pending_rejected`.
-    fn reject_command_deduped(
+    fn refuse_command_deduped(
         &self,
         command: &TradingCommand,
         reason: &str,
-        pending_rejected: &mut AHashSet<ClientOrderId>,
+        pending_denied: &mut AHashSet<(ClientOrderId, UUID4)>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = self.account_id;
@@ -1353,74 +1435,37 @@ impl SandboxInner {
                 }
             }
             TradingCommand::ModifyOrder(cmd) => {
-                if self.needs_rejection(cmd.client_order_id, pending_rejected) {
-                    self.reject_modify(cmd, reason, ts_now);
+                if pending_denied.insert((cmd.client_order_id, cmd.command_id)) {
+                    self.deny_modify(cmd, reason, ts_now);
                 }
             }
             TradingCommand::ModifyOrders(cmd) => {
                 for modify in &cmd.modifies {
-                    if self.needs_rejection(modify.client_order_id, pending_rejected) {
-                        self.reject_modify(modify, reason, ts_now);
+                    if pending_denied.insert((modify.client_order_id, modify.command_id)) {
+                        self.deny_modify(modify, reason, ts_now);
                     }
                 }
             }
             TradingCommand::CancelOrder(cmd) => {
-                if self.needs_rejection(cmd.client_order_id, pending_rejected) {
-                    self.reject_cancel(
-                        cmd.trader_id,
-                        cmd.strategy_id,
-                        cmd.instrument_id,
-                        cmd.client_order_id,
-                        cmd.venue_order_id,
-                        reason,
-                        ts_now,
-                    );
+                if pending_denied.insert((cmd.client_order_id, cmd.command_id)) {
+                    self.deny_cancel(cmd, reason, ts_now);
                 }
             }
             TradingCommand::CancelOrders(cmd) => {
                 for cancel in &cmd.cancels {
-                    if self.needs_rejection(cancel.client_order_id, pending_rejected) {
-                        self.reject_cancel(
-                            cancel.trader_id,
-                            cancel.strategy_id,
-                            cancel.instrument_id,
-                            cancel.client_order_id,
-                            cancel.venue_order_id,
-                            reason,
-                            ts_now,
-                        );
+                    if pending_denied.insert((cancel.client_order_id, cancel.command_id)) {
+                        self.deny_cancel(cancel, reason, ts_now);
                     }
                 }
             }
-            // `CancelAllOrders` names no orders and the strategy marks none `PENDING_CANCEL` for
-            // it, so there is no pending state to release and the FSM would refuse a rejection.
+            // Cancel-all carries no individual command IDs to deny
             TradingCommand::CancelAllOrders(_) => {}
             TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => {}
         }
     }
 
-    /// Returns whether a modify or cancel that will not reach the venue still has a rejection to
-    /// raise for `client_order_id`, recording it in `pending_rejected`.
-    ///
-    /// An order closed while the command was in flight has none: the event that closed it already
-    /// resolved the `PENDING_UPDATE` or `PENDING_CANCEL` a rejection would release, and the FSM
-    /// has no transition from a closed status to a rejection.
-    fn needs_rejection(
-        &self,
-        client_order_id: ClientOrderId,
-        pending_rejected: &mut AHashSet<ClientOrderId>,
-    ) -> bool {
-        let is_closed = self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .is_some_and(|order| order.is_closed());
-
-        !is_closed && pending_rejected.insert(client_order_id)
-    }
-
-    fn reject_modify(&self, cmd: &ModifyOrder, reason: Ustr, ts_now: UnixNanos) {
-        self.dispatch_order_event(OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+    fn deny_modify(&self, cmd: &ModifyOrder, reason: Ustr, ts_now: UnixNanos) {
+        let mut event = OrderModifyDenied::new(
             cmd.trader_id,
             cmd.strategy_id,
             cmd.instrument_id,
@@ -1429,36 +1474,28 @@ impl SandboxInner {
             UUID4::new(),
             ts_now,
             ts_now,
-            false,
             cmd.venue_order_id,
             Some(self.account_id),
-        )));
+        );
+        event.causation_id = Some(cmd.command_id);
+        self.dispatch_order_event(OrderEventAny::ModifyDenied(event));
     }
 
-    #[expect(clippy::too_many_arguments, reason = "mirrors the event's own fields")]
-    fn reject_cancel(
-        &self,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: Option<VenueOrderId>,
-        reason: Ustr,
-        ts_now: UnixNanos,
-    ) {
-        self.dispatch_order_event(OrderEventAny::CancelRejected(OrderCancelRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+    fn deny_cancel(&self, cmd: &CancelOrder, reason: Ustr, ts_now: UnixNanos) {
+        let mut event = OrderCancelDenied::new(
+            cmd.trader_id,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
             reason,
             UUID4::new(),
             ts_now,
             ts_now,
-            false,
-            venue_order_id,
+            cmd.venue_order_id,
             Some(self.account_id),
-        )));
+        );
+        event.causation_id = Some(cmd.command_id);
+        self.dispatch_order_event(OrderEventAny::CancelDenied(event));
     }
 
     fn dispatch_order_event(&self, event: OrderEventAny) {
@@ -1635,6 +1672,9 @@ impl SandboxInner {
         let account_id = self.account_id;
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_modify(cmd, account_id);
+        } else {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            self.deny_modify(cmd, "No matching engine for instrument".into(), ts_now);
         }
 
         self.drain_oto_commands();
@@ -1644,6 +1684,11 @@ impl SandboxInner {
         let account_id = self.account_id;
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_batch_modify(cmd, account_id);
+        } else {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            for command in &cmd.modifies {
+                self.deny_modify(command, "No matching engine for instrument".into(), ts_now);
+            }
         }
 
         self.drain_oto_commands();
@@ -1653,6 +1698,9 @@ impl SandboxInner {
         let account_id = self.account_id;
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_cancel(cmd, account_id);
+        } else {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            self.deny_cancel(cmd, "No matching engine for instrument".into(), ts_now);
         }
 
         self.drain_oto_commands();
@@ -1673,6 +1721,11 @@ impl SandboxInner {
         let account_id = self.account_id;
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_batch_cancel(cmd, account_id);
+        } else {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            for command in &cmd.cancels {
+                self.deny_cancel(command, "No matching engine for instrument".into(), ts_now);
+            }
         }
 
         self.drain_oto_commands();
@@ -1706,7 +1759,7 @@ impl SandboxInner {
             Err(e) => {
                 let reason = format!("Latency model failed: {e:#}");
                 log::error!("{reason}");
-                self.reject_command(&command, &reason);
+                self.refuse_command(&command, &reason);
                 return;
             }
         };
@@ -1714,7 +1767,7 @@ impl SandboxInner {
         let Some(due_ns) = now_ns.checked_add(leg_latency) else {
             let reason = "Latency arrival timestamp exceeds u64 nanoseconds";
             log::error!("{reason}");
-            self.reject_command(&command, reason);
+            self.refuse_command(&command, reason);
             return;
         };
 
@@ -1729,7 +1782,7 @@ impl SandboxInner {
 
         if let Err(e) = self.apply_trading_command(&command) {
             log::error!("Error applying command: {e}");
-            self.reject_command(&command, "Command could not be applied at the venue");
+            self.refuse_command(&command, "Command could not be applied at the venue");
         }
     }
 
@@ -1786,6 +1839,19 @@ impl SandboxInner {
     fn on_order_book_deltas(inner: &Rc<RefCell<Self>>, deltas: &OrderBookDeltas) {
         Self::drain_inbound(inner);
         inner.borrow_mut().process_order_book_deltas(deltas);
+    }
+
+    fn on_order_book_depth(inner: &WeakCell<Self>, venue: Venue, depth: &OrderBookDepth) {
+        if depth.instrument_id.venue != venue {
+            return;
+        }
+
+        let Some(inner_rc) = inner.upgrade() else {
+            return;
+        };
+
+        Self::drain_inbound(&inner_rc);
+        inner_rc.borrow_mut().process_order_book_depth(depth);
     }
 
     fn on_instrument_status(inner: &Rc<RefCell<Self>>, status: &InstrumentStatus) {
@@ -1845,7 +1911,7 @@ impl SandboxInner {
         while let Some(delayed) = this.pop_due(now_ns) {
             if let Err(e) = this.apply_trading_command(&delayed.command) {
                 log::error!("Error applying deferred command: {e}");
-                this.reject_command(
+                this.refuse_command(
                     &delayed.command,
                     "Command could not be applied at the venue",
                 );
@@ -1855,7 +1921,7 @@ impl SandboxInner {
         this.arm_inbound_alert(now_ns);
     }
 
-    /// Takes every command still deferred by inbound latency, ordered for [`Self::reject_discarded`]
+    /// Takes every command still deferred by inbound latency, ordered for [`Self::refuse_discarded`]
     /// to unwind last-issued-first.
     fn take_inbound_queue(&mut self) -> Vec<DelayedCommand> {
         self.inflight_orders.clear();
@@ -1869,24 +1935,20 @@ impl SandboxInner {
             self.inbound_queue.len(),
         );
 
-        // Unwind last-issued-first by `seq`, so each rejection restores the state the command
-        // before it established.
+        // Publish command outcomes before rejecting the submit they were queued behind
         let mut discarded = std::mem::take(&mut self.inbound_queue).into_vec();
         discarded.sort_unstable_by_key(|delayed| std::cmp::Reverse(delayed.seq));
         discarded
     }
 
-    /// Rejects every command [`Self::take_inbound_queue`] discarded.
-    fn reject_discarded(&self, discarded: Vec<DelayedCommand>) {
-        // Shared across the whole unwind: one order can have several pending commands in flight,
-        // but only the first rejection it receives has a valid FSM transition.
-        let mut pending_rejected = AHashSet::new();
+    fn refuse_discarded(&self, discarded: Vec<DelayedCommand>) {
+        let mut pending_denied = AHashSet::new();
 
         for delayed in discarded {
-            self.reject_command_deduped(
+            self.refuse_command_deduped(
                 &delayed.command,
                 "Client stopped before the command was sent",
-                &mut pending_rejected,
+                &mut pending_denied,
             );
         }
     }

@@ -340,46 +340,19 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             }
         }
 
-        self.scheduled_orders.insert(
-            primary_id,
-            TwapSchedule {
-                remaining_sizes: scheduled_sizes.clone(),
-                interval,
-            },
-        );
-
-        let schedule = self.scheduled_orders.get_mut(&primary_id).unwrap();
-        let first_qty = schedule.remaining_sizes.remove(0);
-        let is_single_slice = self
-            .scheduled_orders
-            .get(&primary_id)
-            .is_some_and(|schedule| schedule.remaining_sizes.is_empty());
-
-        // Single slice: submit the primary order directly
-        if is_single_slice {
-            self.submit_order(order, None, None)?;
-            self.complete_sequence(primary_id);
-            return Ok(());
-        }
-
-        // Multiple slices: spawn first child order and reduce primary
-        let tags = order.tags().map(<[Ustr]>::to_vec);
-        let time_in_force = order.time_in_force();
-        let reduce_only = order.is_reduce_only();
-        let mut order = order;
-        let spawned = self.spawn_market(
-            &mut order,
-            first_qty,
-            time_in_force,
-            reduce_only,
-            tags,
-            true,
-        );
-        self.submit_order(spawned.into(), None, None)?;
-
         ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
             .set_timer(primary_id.as_str(), interval, None, None, None, None, None)?;
+
+        self.scheduled_orders.insert(
+            primary_id,
+            TwapSchedule {
+                remaining_sizes: scheduled_sizes,
+                interval,
+                pending_order: None,
+            },
+        );
+        self.submit_slice(order)?;
 
         log::info!(
             "Started TWAP execution for {primary_id}: horizon_secs={horizon_secs}, interval_secs={interval_secs}"
@@ -409,42 +382,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             return Ok(());
         }
 
-        let Some(schedule) = self.scheduled_orders.get_mut(&primary_id) else {
-            log::error!("Cannot find scheduled sizes for exec_spawn_id={primary_id}");
-            return Ok(());
-        };
-
-        if schedule.remaining_sizes.is_empty() {
-            log::warn!("No more size to execute for exec_spawn_id={primary_id}");
-            return Ok(());
-        }
-
-        let quantity = schedule.remaining_sizes.remove(0);
-        let is_final_slice = schedule.remaining_sizes.is_empty();
-
-        // Final slice: submit the primary order (already reduced to remaining quantity)
-        if is_final_slice {
-            self.submit_order(primary, None, None)?;
-            self.complete_sequence(primary_id);
-            return Ok(());
-        }
-
-        // Intermediate slice: spawn child order and reduce primary
-        let tags = primary.tags().map(<[Ustr]>::to_vec);
-        let time_in_force = primary.time_in_force();
-        let reduce_only = primary.is_reduce_only();
-        let mut primary = primary;
-        let spawned = self.spawn_market(
-            &mut primary,
-            quantity,
-            time_in_force,
-            reduce_only,
-            tags,
-            true,
-        );
-        self.submit_order(spawned.into(), None, None)?;
-
-        Ok(())
+        self.submit_slice(primary)
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
@@ -491,10 +429,79 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     }
 });
 
+impl TwapAlgorithm {
+    fn submit_slice(&mut self, mut primary: OrderAny) -> anyhow::Result<()> {
+        let primary_id = primary.client_order_id();
+
+        let Some(schedule) = self.scheduled_orders.get_mut(&primary_id) else {
+            log::error!("Cannot find scheduled sizes for exec_spawn_id={primary_id}");
+            return Ok(());
+        };
+
+        let Some(quantity) = schedule.remaining_sizes.first().copied() else {
+            log::warn!("No more size to execute for exec_spawn_id={primary_id}");
+            return Ok(());
+        };
+
+        if schedule.remaining_sizes.len() == 1 {
+            self.submit_order(primary, None, None)?;
+            self.complete_sequence(primary_id);
+            return Ok(());
+        }
+
+        let spawned = if let Some(order) = schedule.pending_order.take() {
+            order
+        } else {
+            let tags = primary.tags().map(<[Ustr]>::to_vec);
+            let time_in_force = primary.time_in_force();
+            let reduce_only = primary.is_reduce_only();
+            self.spawn_market(
+                &mut primary,
+                quantity,
+                time_in_force,
+                reduce_only,
+                tags,
+                true,
+            )?
+            .into()
+        };
+
+        let client_order_id = spawned.client_order_id();
+        let order_exists = ExecutionAlgorithmNative::exec_algorithm_core(self)
+            .cache_ref()
+            .order_exists(&client_order_id);
+
+        if let Err(e) = self.submit_order(spawned.clone(), None, None) {
+            self.scheduled_orders
+                .get_mut(&primary_id)
+                .expect("TWAP schedule exists during submission")
+                .pending_order = Some(spawned);
+
+            if !order_exists {
+                // Remove the unannounced cached child so retry publishes initialization
+                ExecutionAlgorithmNative::exec_algorithm_core(self)
+                    .cache_rc()
+                    .borrow_mut()
+                    .purge_order(client_order_id, false)?;
+            }
+
+            return Err(e);
+        }
+
+        self.scheduled_orders
+            .get_mut(&primary_id)
+            .expect("TWAP schedule exists during submission")
+            .remaining_sizes
+            .remove(0);
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct TwapSchedule {
     remaining_sizes: Vec<Quantity>,
     interval: Duration,
+    pending_order: Option<OrderAny>,
 }
 
 fn validation_failed(detail: impl Into<String>) -> Ustr {
@@ -517,19 +524,26 @@ mod tests {
         enums::ComponentTrigger,
         messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard, TypedHandler},
+        timer::TimeEventCallback,
     };
     use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, TimeInForce},
-        events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
-        identifiers::{ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
+        enums::{LiquiditySide, OrderSide, OrderStatus, TimeInForce},
+        events::{
+            OrderDeniedReason, OrderEventAny,
+            order::spec::{OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec},
+        },
+        identifiers::{
+            AccountId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
         orders::{LimitOrder, MarketOrder},
-        types::Price,
+        types::{Currency, Price},
     };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+    use crate::cache_database::FailNthAddOrderDatabase;
 
     fn create_twap_algorithm() -> TwapAlgorithm {
         // Use unique ID to avoid thread-local registry/msgbus conflicts in parallel tests
@@ -542,8 +556,6 @@ mod tests {
     }
 
     fn register_algorithm_with_clock(algo: &mut TwapAlgorithm) -> Rc<RefCell<VirtualClock>> {
-        use nautilus_common::timer::TimeEventCallback;
-
         let trader_id = TraderId::from("TRADER-001");
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -649,6 +661,320 @@ mod tests {
     }
 
     #[rstest]
+    #[case::initial(2, false)]
+    #[case::intermediate(3, false)]
+    #[case::final_slice(4, false)]
+    #[case::every_slice(2, true)]
+    fn test_twap_slice_persistence_failure_keeps_dispatch(
+        #[case] fail_on: usize,
+        #[case] repeated_failure: bool,
+        #[values(false, true)] stopped: bool,
+    ) {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        let (database, control) = FailNthAddOrderDatabase::create();
+        control.set_fail_add_order_on(Some(fail_on));
+        *algo.core.cache_rc().borrow_mut() = Cache::new(None, Some(Box::new(database)));
+        add_instrument_to_cache(&algo);
+
+        let commands = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = msgbus::TypedIntoHandler::from({
+            let commands = commands.clone();
+            let cache = algo.core.cache_rc();
+            move |command: TradingCommand| {
+                if let TradingCommand::SubmitOrder(command) = command {
+                    let quantity = cache
+                        .borrow()
+                        .order(&command.client_order_id)
+                        .unwrap()
+                        .quantity();
+                    commands
+                        .borrow_mut()
+                        .push((command.client_order_id, quantity, command.params));
+                }
+            }
+        });
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        let initialized = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = TypedHandler::from({
+            let initialized = initialized.clone();
+            move |event: &OrderEventAny| {
+                if let OrderEventAny::Initialized(event) = event {
+                    initialized.borrow_mut().push(event.client_order_id);
+                }
+            }
+        });
+
+        let topic = Ustr::from("events.order.STRAT-001");
+        msgbus::subscribe_order_events(topic.as_str().into(), handler.clone(), None);
+
+        let params = IndexMap::from([
+            (Ustr::from("horizon_secs"), Ustr::from("60")),
+            (Ustr::from("interval_secs"), Ustr::from("20")),
+        ]);
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+
+        let submit_params = Params::new(
+            [(
+                "routing_profile".to_string(),
+                serde_json::Value::String("persistence-route".to_string()),
+            )]
+            .into(),
+        );
+
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params.clone()));
+        algo.on_order(order).unwrap();
+        if stopped {
+            Component::stop(&mut algo).unwrap();
+            assert!(algo.clock().timer_names().is_empty());
+            Component::resume(&mut algo).unwrap();
+            assert_eq!(algo.clock().timer_names(), vec![primary_id.as_str()]);
+        }
+
+        for step in 1..3 {
+            if repeated_failure {
+                control.set_fail_add_order_on(Some(1));
+            }
+
+            let events = clock
+                .borrow_mut()
+                .advance_time((step * 20_000_000_000_u64).into(), true);
+            assert_eq!(events.len(), 1);
+            ExecutionAlgorithm::on_time_event(&mut algo, &events[0]).unwrap();
+        }
+
+        msgbus::unsubscribe_order_events(topic.as_str().into(), &handler);
+        let commands = commands.borrow();
+        let ids: Vec<_> = commands.iter().map(|command| command.0).collect();
+        let quantities: Vec<_> = commands.iter().map(|command| command.1).collect();
+        assert_eq!(
+            ids,
+            vec![
+                ClientOrderId::from("O-001-E1"),
+                ClientOrderId::from("O-001-E2"),
+                primary_id
+            ]
+        );
+        assert_eq!(quantities, vec![Quantity::from("0.4"); 3]);
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.2.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(submit_params); 3]
+        );
+        assert_eq!(algo.core.submit_params(&primary_id), None);
+        assert_eq!(
+            quantities.iter().map(Quantity::as_decimal).sum::<Decimal>(),
+            Decimal::from_str_exact("1.2").unwrap()
+        );
+        assert_eq!(
+            *initialized.borrow(),
+            vec![
+                ClientOrderId::from("O-001-E1"),
+                ClientOrderId::from("O-001-E2")
+            ]
+        );
+        assert!(algo.scheduled_orders.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+        assert!(algo.core.cache_rc().borrow_mut().check_integrity());
+    }
+
+    #[rstest]
+    #[case::pre_cache("60", "1.2", 3)]
+    #[case::single_interval("20", "1.2", 1)]
+    #[case::whole_size("60", "0.001", 1)]
+    fn test_twap_pre_schedule_persistence_failure_keeps_dispatch(
+        #[case] horizon: &str,
+        #[case] quantity: &str,
+        #[case] expected_submissions: usize,
+    ) {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        let (database, control) = FailNthAddOrderDatabase::create();
+        control.set_fail_add_order_on(Some(1));
+        *algo.core.cache_rc().borrow_mut() = Cache::new(None, Some(Box::new(database)));
+        add_instrument_to_cache(&algo);
+        let commands = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = msgbus::TypedIntoHandler::from({
+            let commands = commands.clone();
+            let cache = algo.core.cache_rc();
+            move |command: TradingCommand| {
+                if let TradingCommand::SubmitOrder(command) = command {
+                    let quantity = cache
+                        .borrow()
+                        .order(&command.client_order_id)
+                        .unwrap()
+                        .quantity();
+                    commands
+                        .borrow_mut()
+                        .push((command.client_order_id, quantity));
+                }
+            }
+        });
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        let params = IndexMap::from([
+            (Ustr::from("horizon_secs"), Ustr::from(horizon)),
+            (Ustr::from("interval_secs"), Ustr::from("20")),
+        ]);
+        let quantity = Quantity::from(quantity);
+        let order = create_market_order_with_params_and_qty(params, quantity);
+        algo.on_order(order).unwrap();
+
+        for i in 1..expected_submissions {
+            let events = clock
+                .borrow_mut()
+                .advance_time((i as u64 * 20_000_000_000).into(), true);
+            assert_eq!(events.len(), 1);
+            ExecutionAlgorithm::on_time_event(&mut algo, &events[0]).unwrap();
+        }
+
+        let commands = commands.borrow();
+        assert_eq!(commands.len(), expected_submissions);
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.1.as_decimal())
+                .sum::<Decimal>(),
+            quantity.as_decimal()
+        );
+        assert!(algo.scheduled_orders.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+        assert!(algo.core.cache_rc().borrow_mut().check_integrity());
+    }
+
+    #[rstest]
+    fn test_twap_timer_failure_preserves_primary_for_retry() {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        add_instrument_to_cache(&algo);
+        clock.borrow_mut().cancel_default_handler();
+        let params = IndexMap::from([
+            (Ustr::from("horizon_secs"), Ustr::from("60")),
+            (Ustr::from("interval_secs"), Ustr::from("20")),
+        ]);
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        let result = algo.on_order(order.clone());
+
+        assert_eq!(result.unwrap_err().to_string(), "No callbacks provided");
+        assert!(algo.scheduled_orders.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("1.2")
+        );
+        assert_eq!(
+            algo.cache()
+                .orders_total_count(None, None, None, None, None),
+            1
+        );
+
+        clock
+            .borrow_mut()
+            .register_default_handler(TimeEventCallback::Rust(std::sync::Arc::new(|_| {})));
+        algo.on_order(order).unwrap();
+
+        assert_eq!(
+            algo.scheduled_orders[&primary_id].remaining_sizes,
+            vec![Quantity::from("0.4"); 2]
+        );
+        assert_eq!(algo.clock().timer_names(), vec![primary_id.as_str()]);
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("0.8")
+        );
+        assert_eq!(
+            algo.cache()
+                .orders_total_count(None, None, None, None, None),
+            2
+        );
+    }
+
+    #[rstest]
+    fn test_twap_retry_preserves_closed_child_after_reset() {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        add_instrument_to_cache(&algo);
+        let submitted = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = msgbus::TypedIntoHandler::from({
+            let submitted = submitted.clone();
+            move |command: TradingCommand| {
+                if let TradingCommand::SubmitOrder(command) = command {
+                    submitted.borrow_mut().push(command.client_order_id);
+                }
+            }
+        });
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        let params = IndexMap::from([
+            (Ustr::from("horizon_secs"), Ustr::from("60")),
+            (Ustr::from("interval_secs"), Ustr::from("20")),
+        ]);
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        let child_id = ClientOrderId::from("O-001-E1");
+        algo.on_order(order).unwrap();
+        let canceled = OrderCanceledSpec::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("STRAT-001"))
+            .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+            .client_order_id(child_id)
+            .build();
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(canceled))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::Canceled(canceled));
+        let closed_child = algo.cache().order(&child_id).unwrap();
+        DataActor::on_reset(&mut algo).unwrap();
+        let primary = algo.cache().order(&primary_id).unwrap();
+
+        let result = algo.on_order(primary);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Order denied: duplicate O-001-E1"
+        );
+        let child = algo.cache().order(&child_id).unwrap();
+        assert_eq!(child.status(), OrderStatus::Canceled);
+        assert_eq!(child.quantity(), Quantity::from("0.4"));
+        assert_eq!(child.events(), closed_child.events());
+        drop(child);
+
+        let events = clock.borrow_mut().advance_time(20_000_000_000.into(), true);
+        assert_eq!(events.len(), 1);
+        let result = ExecutionAlgorithm::on_time_event(&mut algo, &events[0]);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Order denied: duplicate O-001-E1"
+        );
+        assert_eq!(*submitted.borrow(), vec![child_id]);
+        let child = algo.cache().order(&child_id).unwrap();
+        assert_eq!(child.status(), OrderStatus::Canceled);
+        assert_eq!(child.quantity(), Quantity::from("0.4"));
+        assert_eq!(child.events(), closed_child.events());
+        assert!(algo.core.cache_rc().borrow_mut().check_integrity());
+    }
+
+    #[rstest]
     fn test_twap_creation() {
         let algo = create_twap_algorithm();
         assert!(algo.id().inner().starts_with("TWAP"));
@@ -671,6 +997,7 @@ mod tests {
             TwapSchedule {
                 remaining_sizes: vec![Quantity::from("1.0")],
                 interval: Duration::from_secs(1),
+                pending_order: None,
             },
         );
         algo.scheduled_orders.insert(
@@ -678,6 +1005,7 @@ mod tests {
             TwapSchedule {
                 remaining_sizes: vec![Quantity::from("2.0")],
                 interval: Duration::from_secs(2),
+                pending_order: None,
             },
         );
 
@@ -958,6 +1286,10 @@ mod tests {
             None,
         );
 
+        let cause = command.command_id;
+        let timers_before = algo.clock().timer_names();
+        let remaining_before = algo.scheduled_orders[&primary_id].remaining_sizes.clone();
+        let primary_before = algo.cache().order(&primary_id).unwrap();
         algo.handle_modify_order(command).unwrap();
 
         let primary_quantity = algo.cache().order(&primary_id).unwrap().quantity();
@@ -967,6 +1299,24 @@ mod tests {
             .fold(Decimal::ZERO, |total, quantity| {
                 total + quantity.as_decimal()
             });
+
+        let cached = algo.cache().order(&primary_id).unwrap();
+
+        let OrderEventAny::ModifyDenied(event) = cached.last_event() else {
+            panic!("expected local modify denial");
+        };
+
+        assert_eq!(event.causation_id, Some(cause));
+        assert_eq!(event.client_order_id, primary_id);
+        assert_eq!(event.strategy_id, primary_before.strategy_id());
+        assert_eq!(event.instrument_id, primary_before.instrument_id());
+        assert_eq!(cached.status(), primary_before.status());
+        assert_eq!(cached.filled_qty(), primary_before.filled_qty());
+        assert_eq!(algo.clock().timer_names(), timers_before);
+        assert_eq!(
+            algo.scheduled_orders[&primary_id].remaining_sizes,
+            remaining_before
+        );
         assert_eq!(primary_quantity.as_decimal(), scheduled_quantity);
         assert_eq!(primary_quantity, Quantity::from("0.8"));
     }
@@ -1283,7 +1633,7 @@ mod tests {
             cache
                 .update_order(&OrderEventAny::Canceled(canceled))
                 .unwrap();
-            cache.purge_order(primary_id);
+            cache.purge_order(primary_id, false).unwrap();
         }
         assert!(algo.cache().order(&primary_id).is_none());
 
@@ -1409,6 +1759,153 @@ mod tests {
     }
 
     #[rstest]
+    #[case::cancel(false, Quantity::from("1.2"), false, 2)]
+    #[case::late_fill(true, Quantity::from("1.0"), false, 2)]
+    #[case::cancel_final_persistence_failure(false, Quantity::from("1.2"), true, 2)]
+    #[case::late_fill_final_persistence_failure(true, Quantity::from("1.0"), true, 2)]
+    #[case::cancel_intermediate_persistence_failure(false, Quantity::from("0.8"), true, 3)]
+    #[case::late_fill_intermediate_persistence_failure(true, Quantity::from("0.6"), true, 3)]
+    fn test_twap_resume_preserves_spawn_accounting(
+        #[case] late_fill: bool,
+        #[case] expected_primary_qty: Quantity,
+        #[case] persistence_failure: bool,
+        #[case] slices: usize,
+    ) {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        let (database, control) = FailNthAddOrderDatabase::create();
+        *algo.core.cache_rc().borrow_mut() = Cache::new(None, Some(Box::new(database)));
+        add_instrument_to_cache(&algo);
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        let handler = msgbus::TypedIntoHandler::from({
+            let received = received.clone();
+            move |command: TradingCommand| {
+                if let TradingCommand::SubmitOrder(command) = command {
+                    received.borrow_mut().push(command);
+                }
+            }
+        });
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        let mut params = IndexMap::new();
+
+        let horizon = if slices == 3 { "60" } else { "40" };
+        let interval_ns = 20_000_000_000_u64;
+        params.insert(Ustr::from("horizon_secs"), Ustr::from(horizon));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+        let child = algo
+            .cache()
+            .order(&received.borrow()[0].client_order_id)
+            .unwrap();
+        let accepted = OrderAcceptedSpec::builder()
+            .trader_id(child.trader_id())
+            .strategy_id(child.strategy_id())
+            .instrument_id(child.instrument_id())
+            .client_order_id(child.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-CHILD"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(accepted))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::Accepted(accepted));
+        let canceled = OrderCanceledSpec::builder()
+            .trader_id(child.trader_id())
+            .strategy_id(child.strategy_id())
+            .instrument_id(child.instrument_id())
+            .client_order_id(child.client_order_id())
+            .venue_order_id(accepted.venue_order_id)
+            .account_id(accepted.account_id)
+            .build();
+
+        if persistence_failure {
+            control.set_fail_add_order_on(Some(1));
+        }
+
+        if !late_fill {
+            Component::stop(&mut algo).unwrap();
+        }
+
+        algo.core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(canceled))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::Canceled(canceled));
+        if late_fill {
+            Component::stop(&mut algo).unwrap();
+            let filled = OrderFilledSpec::builder()
+                .trader_id(child.trader_id())
+                .strategy_id(child.strategy_id())
+                .instrument_id(child.instrument_id())
+                .client_order_id(child.client_order_id())
+                .venue_order_id(accepted.venue_order_id)
+                .account_id(accepted.account_id)
+                .trade_id(TradeId::from("TRADE-LATE"))
+                .order_side(child.order_side())
+                .order_type(child.order_type())
+                .last_qty(Quantity::from("0.2"))
+                .last_px(Price::from("3000.01"))
+                .currency(Currency::USDT())
+                .liquidity_side(LiquiditySide::Taker)
+                .build();
+            algo.core
+                .cache_rc()
+                .borrow_mut()
+                .update_order(&OrderEventAny::Filled(filled.clone()))
+                .unwrap();
+            algo.handle_order_event(OrderEventAny::Filled(filled));
+        }
+
+        Component::resume(&mut algo).unwrap();
+
+        let timestamp = interval_ns;
+        for step in 0..slices - 1 {
+            let timestamp = timestamp + step as u64 * interval_ns;
+            let events = clock.borrow_mut().advance_time(timestamp.into(), true);
+            assert_eq!(events.len(), 1);
+            algo.handle_time_event(&events[0]);
+        }
+
+        let received = received.borrow();
+        assert_eq!(received.len(), slices);
+        let primary = algo
+            .cache()
+            .order(&received.last().unwrap().client_order_id)
+            .unwrap();
+        let child = algo.cache().order(&child.client_order_id()).unwrap();
+        assert_eq!(primary.client_order_id(), primary_id);
+        assert_eq!(primary.quantity(), expected_primary_qty);
+
+        let retried_child_qty = received[1..received.len() - 1]
+            .iter()
+            .map(|command| {
+                algo.cache()
+                    .order(&command.client_order_id)
+                    .unwrap()
+                    .quantity()
+                    .as_decimal()
+            })
+            .sum::<Decimal>();
+
+        assert_eq!(
+            child.filled_qty().as_decimal() + retried_child_qty + primary.quantity().as_decimal(),
+            Quantity::from("1.2").as_decimal()
+        );
+        assert!(algo.scheduled_orders.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+    }
+
+    #[rstest]
     fn test_twap_on_resume_completes_closed_primary() {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
@@ -1472,7 +1969,7 @@ mod tests {
             cache
                 .update_order(&OrderEventAny::Canceled(canceled))
                 .unwrap();
-            cache.purge_order(primary_id);
+            cache.purge_order(primary_id, false).unwrap();
         }
 
         assert!(algo.cache().order(&primary_id).is_none());

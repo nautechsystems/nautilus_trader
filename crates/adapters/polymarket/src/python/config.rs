@@ -655,7 +655,9 @@ mod tests {
     fn direct_pyo3_exec_config_wires_instrument_config_load_ids() {
         Python::initialize();
         Python::attach(|py| {
-            let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
+            let scoped = InstrumentId::from(
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-123.POLYMARKET",
+            );
             let provider_kwargs = PyDict::new(py);
             provider_kwargs.set_item("load_ids", vec![scoped]).unwrap();
             let provider = py
@@ -751,6 +753,73 @@ mod tests {
             assert_eq!(
                 error.value(py).str().unwrap().to_str().unwrap(),
                 format!("duplicate {field}")
+            );
+        });
+    }
+
+    #[rstest]
+    #[case("api_key")]
+    #[case("api_secret")]
+    #[case("passphrase")]
+    fn python_data_config_rejects_blank_overrides(#[case] field: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item(field, " \t").unwrap();
+            let error = py
+                .get_type::<PolymarketDataClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("{field} must not be blank;"))
+            );
+        });
+    }
+
+    #[rstest]
+    #[case("api_key")]
+    #[case("api_secret")]
+    #[case("passphrase")]
+    #[case("private_key")]
+    #[case("funder")]
+    fn python_execution_config_rejects_blank_overrides(#[case] field: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item(field, "").unwrap();
+            let error = py
+                .get_type::<PolymarketExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("{field} must not be blank;"))
+            );
+        });
+    }
+
+    #[rstest]
+    fn python_data_config_rejects_invalid_retry_delay() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("auto_load_retry_delay_initial_secs", f64::INFINITY)
+                .unwrap();
+            let error = py
+                .get_type::<PolymarketDataClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert!(
+                error
+                    .to_string()
+                    .contains("auto_load_retry_delay_initial_secs")
             );
         });
     }

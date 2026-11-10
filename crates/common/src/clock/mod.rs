@@ -26,7 +26,16 @@ mod virtual_clock;
 #[cfg(test)]
 mod tests;
 
-use std::{any::Any, collections::BTreeMap, fmt::Debug, sync::Arc, time::Duration};
+use std::{
+    any::Any,
+    collections::BTreeMap,
+    fmt::Debug,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use ahash::AHashMap;
 pub use api::ClockApi; // Re-export
@@ -79,6 +88,8 @@ pub trait Clock: Debug + Any {
 
     /// Cancels the registered default event handler, if any.
     ///
+    /// Queued time event handlers no longer invoke the default callback.
+    ///
     /// Releases the held callback so any Python object owned by it can be dropped.
     /// `Trader::release_component` calls this at component retirement to break the cycle
     /// between a Python component and its clock: the clock holds the callback as a
@@ -86,6 +97,8 @@ pub trait Clock: Debug + Any {
     fn cancel_default_handler(&mut self);
 
     /// Cancels all registered named event callbacks, preserving the default handler.
+    ///
+    /// Queued time event handlers no longer invoke named callbacks.
     ///
     /// Releases callbacks registered via [`Clock::set_time_alert_ns`] or
     /// [`Clock::set_timer_ns`] with an explicit `callback` argument.
@@ -296,7 +309,8 @@ pub trait Clock: Debug + Any {
 
     /// Resets scheduling state while preserving the default callback.
     ///
-    /// The reset clears all timers and named callbacks. Static clocks also reset their stored time.
+    /// The reset clears all timers and revokes named callbacks, including queued copies.
+    /// Static clocks also reset their stored time.
     fn reset(&mut self);
 }
 
@@ -325,6 +339,8 @@ fn duration_to_nanos(duration: Duration) -> anyhow::Result<DurationNanos> {
 pub struct CallbackRegistry {
     default_callback: Option<TimeEventCallback>,
     callbacks: AHashMap<Ustr, TimeEventCallback>,
+    default_canceled: Option<Arc<AtomicBool>>,
+    callbacks_canceled: Option<Arc<AtomicBool>>,
 }
 
 impl CallbackRegistry {
@@ -336,17 +352,26 @@ impl CallbackRegistry {
 
     /// Registers the callback used when no callback exists for a timer name.
     pub fn register_default_handler(&mut self, callback: TimeEventCallback) {
-        self.default_callback = Some(callback);
+        let canceled = self.default_canceled.get_or_insert_default().clone();
+        self.default_callback = Some(callback.with_cancellation(canceled));
     }
 
-    /// Removes the default callback, preserving all named callbacks.
+    /// Revokes current and replaced default callbacks, including queued copies.
+    ///
+    /// Named callbacks are preserved.
     pub fn cancel_default_handler(&mut self) {
+        if let Some(canceled) = self.default_canceled.take() {
+            canceled.store(true, Ordering::Release);
+        }
+
         self.default_callback = None;
     }
 
     /// Registers a callback for `name`, replacing any existing callback for that name.
     pub fn register_callback(&mut self, name: Ustr, callback: TimeEventCallback) {
-        self.callbacks.insert(name, callback);
+        let canceled = self.callbacks_canceled.get_or_insert_default().clone();
+        self.callbacks
+            .insert(name, callback.with_cancellation(canceled));
     }
 
     /// Returns whether a named or default callback is available for `name`.
@@ -378,8 +403,12 @@ impl CallbackRegistry {
         TimeEventHandler::new(event, callback)
     }
 
-    /// Clears all named callbacks, preserving the default callback.
+    /// Revokes all named callbacks, including queued copies, preserving the default callback.
     pub fn clear(&mut self) {
+        if let Some(canceled) = self.callbacks_canceled.take() {
+            canceled.store(true, Ordering::Release);
+        }
+
         self.callbacks.clear();
     }
 }

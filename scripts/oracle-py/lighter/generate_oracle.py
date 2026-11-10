@@ -125,6 +125,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.CreateClient.restype = ctypes.c_void_p
 
     lib.SignCreateOrder.argtypes = [
@@ -148,6 +149,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignCreateOrder.restype = SignedTxResponse
 
     lib.SignCreateGroupedOrders.argtypes = [
@@ -164,6 +166,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignCreateGroupedOrders.restype = SignedTxResponse
 
     lib.SignCancelOrder.argtypes = [
@@ -174,6 +177,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignCancelOrder.restype = SignedTxResponse
 
     lib.SignModifyOrder.argtypes = [
@@ -193,6 +197,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignModifyOrder.restype = SignedTxResponse
 
     lib.SignCancelAllOrders.argtypes = [
@@ -204,6 +209,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignCancelAllOrders.restype = SignedTxResponse
 
     lib.SignUpdateLeverage.argtypes = [
@@ -215,6 +221,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignUpdateLeverage.restype = SignedTxResponse
 
     lib.SignApproveIntegrator.argtypes = [
@@ -229,6 +236,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.SignApproveIntegrator.restype = SignedTxResponse
 
     lib.CreateAuthToken.argtypes = [
@@ -236,6 +244,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_longlong,
     ]
+
     lib.CreateAuthToken.restype = StrOrErr
 
     lib.Free.argtypes = [ctypes.c_void_p]
@@ -251,13 +260,16 @@ def decode(lib: ctypes.CDLL, resp: SignedTxResponse) -> dict:
     info = take_str(lib, resp.txInfo)
     tx_hash = take_str(lib, resp.txHash)
     take_str(lib, resp.messageToSign)
+
     if err:
         raise RuntimeError(f"signer returned error: {err}")
+
     if info is None or tx_hash is None:
         raise RuntimeError("signer returned empty tx_info/tx_hash")
     parsed = json.loads(info)
     sig_b64 = parsed["Sig"]
     sig_hex = base64.b64decode(sig_b64).hex()
+
     return {
         "tx_type": resp.txType,
         "tx_info": info,
@@ -328,6 +340,7 @@ def gen_create_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_CREATE_ORDER)
 
 
@@ -343,6 +356,7 @@ def gen_cancel_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_CANCEL_ORDER)
 
 
@@ -367,6 +381,7 @@ def gen_modify_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_MODIFY_ORDER)
 
 
@@ -383,6 +398,7 @@ def gen_cancel_all_orders(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_CANCEL_ALL_ORDERS)
 
 
@@ -399,6 +415,7 @@ def gen_update_leverage(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_UPDATE_LEVERAGE)
 
 
@@ -418,6 +435,7 @@ def gen_approve_integrator(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
+
     return decode_expected(lib, resp, TX_TYPE_L2_APPROVE_INTEGRATOR)
 
 
@@ -433,8 +451,10 @@ def gen_auth_token(lib: ctypes.CDLL, deadline: int, api_key_index: int, account_
     resp = lib.CreateAuthToken(deadline, api_key_index, account_index)
     err = take_str(lib, resp.err)
     token = take_str(lib, resp.str)
+
     if err:
         raise RuntimeError(f"CreateAuthToken returned error: {err}")
+
     if token is None:
         raise RuntimeError("CreateAuthToken returned empty token")
     return token
@@ -469,7 +489,9 @@ def build_auth_vectors(
         1_111_111_111,
         1_234_567_890,
     ]
+
     vectors: list[dict] = []
+
     for deadline in fixed_deadlines:
         token = gen_auth_token(lib, deadline, seeded_api_key, account_index)
         vectors.append(
@@ -485,6 +507,7 @@ def build_auth_vectors(
     # Add one vector under a distinct api_key_index to cover the second-limb
     # path. `CreateClient` is required per (api_key, account) pair.
     extra_api_key = 0
+
     err = lib.CreateClient(
         b"https://placeholder",
         sk_hex.encode("ascii"),
@@ -492,6 +515,7 @@ def build_auth_vectors(
         extra_api_key,
         account_index,
     )
+
     err_s = take_str(lib, err)
     if err_s:
         raise RuntimeError(f"CreateClient(api_key={extra_api_key}) failed: {err_s}")
@@ -522,6 +546,7 @@ def write_auth_oracle(
     Generate the auth-token vectors and write their JSON fixture.
     """
     vectors = build_auth_vectors(lib, sk_hex, chain_id, account_index, seeded_api_key)
+
     payload = {
         "metadata": {
             "license": "Apache-2.0 (lighter-go repository; compiled signer binary)",
@@ -537,6 +562,7 @@ def write_auth_oracle(
         },
         "vectors": vectors,
     }
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -617,6 +643,7 @@ def main() -> int:
         api_key_index,
         account_index,
     )
+
     err_s = take_str(lib, err)
     if err_s:
         print(f"CreateClient failed: {err_s}", file=sys.stderr)
@@ -651,13 +678,14 @@ def main() -> int:
         json.dump(payload, f, indent=2)
         f.write("\n")
     print(f"wrote {len(vectors)} vectors to {args.out}")
-
     if args.self_trade_out is not None:
         create_fields = next(v["fields"] for v in vectors if v["kind"] == "create_order")
+
         self_trade_payload = {
             **payload,
             "vectors": build_self_trade_vectors(lib, base_ctx, create_fields),
         }
+
         args.self_trade_out.parent.mkdir(parents=True, exist_ok=True)
         args.self_trade_out.write_text(
             json.dumps(self_trade_payload, indent=2) + "\n",
@@ -691,14 +719,17 @@ def build_cancel_all_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     Generate immediate, scheduled, and abort-scheduled account cancellation vectors.
     """
     vectors = []
+
     for time_in_force, scheduled_time_ms in ((0, 0), (1, 1_999_999_123_456), (2, 0)):
         ctx = {**base_ctx, "nonce": 61 + time_in_force}
+
         fields = {
             "time_in_force": time_in_force,
             "scheduled_time_ms": scheduled_time_ms,
             "cancel_all_market_index": 255,
             "skip_nonce": 0,
         }
+
         decoded = gen_cancel_all_orders(lib, ctx, fields)
         vectors.append(build_vector("cancel_all_orders", ctx, fields, decoded))
     return vectors
@@ -713,9 +744,11 @@ def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     take_profit = CreateOrderTxReq(0, 302, 0, 419000, 1, 5, 1, 1, 420000, expiry)
     stop_loss = CreateOrderTxReq(0, 303, 0, 379000, 1, 3, 1, 1, 380000, expiry)
     vectors = []
+
     for market_index in MARKET_INDICES:
         for order in (parent, take_profit, stop_loss):
             order.MarketIndex = market_index
+
         for grouping in (GROUPING_TYPE_OTO, GROUPING_TYPE_OCO, GROUPING_TYPE_OTOCO):
             siblings = [take_profit, stop_loss]
             if grouping == GROUPING_TYPE_OTO:
@@ -727,9 +760,11 @@ def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
             else:
                 orders = [parent, *siblings]
             bodies = (CreateOrderTxReq * len(orders))(*orders)
+
             for attributes in (False, True):
                 ctx = {**base_ctx, "nonce": 30 + grouping * 2 + int(attributes)}
                 integrator = 190 if attributes else 0
+
                 response = lib.SignCreateGroupedOrders(
                     grouping,
                     bodies,
@@ -744,7 +779,9 @@ def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
                     ctx["api_key_index"],
                     ctx["account_index"],
                 )
+
                 decoded = decode_expected(lib, response, TX_TYPE_L2_CREATE_GROUPED_ORDERS)
+
                 fields = {
                     "grouping_type": grouping,
                     "orders": decoded["tx_info_decoded"]["Orders"],
@@ -753,6 +790,7 @@ def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
                     "integrator_maker_fee": 3 if attributes else 0,
                     "skip_nonce": int(attributes),
                 }
+
                 vectors.append(build_vector("create_grouped_orders", ctx, fields, decoded))
     return vectors
 
@@ -764,6 +802,7 @@ def _widened_tx_vectors(
     modify_fields: dict,
 ) -> list[dict]:
     vectors: list[dict] = []
+
     fields_by_kind = (
         ("create_order", {**create_fields, "client_order_index": 300}, gen_create_order),
         ("cancel_order", {"index": 300, "skip_nonce": 0}, gen_cancel_order),
@@ -807,6 +846,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "integrator_maker_fee": 0,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 0}
     vectors.append(
         build_vector(
@@ -825,6 +865,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "integrator_taker_fee": 250,
         "integrator_maker_fee": 100,
     }
+
     ctx = {**base_ctx, "nonce": 1}
     vectors.append(
         build_vector(
@@ -841,6 +882,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "index": 123,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 2}
     vectors.append(
         build_vector(
@@ -863,6 +905,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "integrator_maker_fee": 0,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 3}
     vectors.append(
         build_vector(
@@ -883,6 +926,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "approval_expiry": 1_780_000_000_000,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 4}
     vectors.append(
         build_vector(
@@ -901,6 +945,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "is_ask": False,
         "reduce_only": True,
     }
+
     ctx = {**base_ctx, "nonce": 5}
     vectors.append(
         build_vector(
@@ -918,6 +963,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "index": 124,
         "skip_nonce": 1,
     }
+
     ctx = {**base_ctx, "nonce": 6}
     vectors.append(
         build_vector(
@@ -933,6 +979,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         **approve_fields,
         "skip_nonce": 1,
     }
+
     ctx = {**base_ctx, "nonce": 7}
     vectors.append(
         build_vector(
@@ -952,6 +999,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "integrator_taker_fee": 250,
         "integrator_maker_fee": 100,
     }
+
     ctx = {**base_ctx, "nonce": 8}
     vectors.append(
         build_vector(
@@ -1000,6 +1048,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
             "trigger_price": 415_000,
         },
     ]
+
     for nonce, fields in enumerate(conditional_orders, start=9):
         ctx = {**base_ctx, "nonce": nonce}
         vectors.append(
@@ -1014,6 +1063,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "cancel_all_market_index": 255,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 13}
     vectors.append(
         build_vector(
@@ -1031,6 +1081,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "margin_mode": 1,
         "skip_nonce": 0,
     }
+
     ctx = {**base_ctx, "nonce": 14}
     vectors.append(
         build_vector(
@@ -1048,6 +1099,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "client_order_index": 206,
         "integrator_account_index": 723_813,
     }
+
     ctx = {**base_ctx, "nonce": 15}
     vectors.append(
         build_vector(
@@ -1063,6 +1115,7 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
         "index": 125,
         "integrator_account_index": 723_813,
     }
+
     ctx = {**base_ctx, "nonce": 16}
     vectors.append(
         build_vector(
@@ -1083,6 +1136,7 @@ def build_self_trade_vectors(lib: ctypes.CDLL, base_ctx: dict, create_fields: di
     Generate every permitted self-trade attribute pair with zero integrator fees.
     """
     vectors: list[dict] = []
+
     for behavior in range(SELF_TRADE_BEHAVIOR_REDUCE + 1):
         for equality in range(SELF_TRADE_EQUALITY_MASTER_ACCOUNT_INDEX + 1):
             if (
@@ -1090,6 +1144,7 @@ def build_self_trade_vectors(lib: ctypes.CDLL, base_ctx: dict, create_fields: di
                 and equality == SELF_TRADE_EQUALITY_MASTER_ACCOUNT_INDEX
             ):
                 continue
+
             for integrator in (0, 723_813):
                 fields = {
                     **create_fields,
@@ -1097,6 +1152,7 @@ def build_self_trade_vectors(lib: ctypes.CDLL, base_ctx: dict, create_fields: di
                     "self_trade_behavior_mode": behavior,
                     "self_trade_equality_mode": equality,
                 }
+
                 ctx = {**base_ctx, "nonce": 50 + len(vectors)}
                 vectors.append(
                     build_vector("create_order", ctx, fields, gen_create_order(lib, ctx, fields)),

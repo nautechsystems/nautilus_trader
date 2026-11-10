@@ -81,8 +81,8 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es,
-            gbpusd_sim,
+            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, default_fx_ccy,
+            futures_contract_es, gbpusd_sim,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -90,6 +90,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
+        price::PRICE_UNDEF,
     },
 };
 #[cfg(feature = "defi")]
@@ -461,6 +462,273 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         .collect();
 
     assert_eq!(canceled, vec![(usdjpy.id(), UnixNanos::from(3))]);
+}
+
+#[rstest]
+#[case::quote(None, Some("0.99000"), None, None, true)]
+#[case::trade(None, None, Some("0.99000"), None, true)]
+#[case::bar(None, None, None, Some("0.99000"), true)]
+#[case::mark_over_quote(Some("0.99000"), Some("1.00000"), None, None, true)]
+#[case::mark_over_quote_no_breach(Some("1.00000"), Some("0.99000"), None, None, false)]
+#[case::mark_over_trade_no_breach(Some("1.00000"), None, Some("0.99000"), None, false)]
+#[case::quote_over_trade_no_breach(None, Some("1.00000"), Some("0.99000"), None, false)]
+#[case::trade_over_bar_no_breach(None, None, Some("1.00000"), Some("0.99000"), false)]
+fn test_liquidation_values_positions_with_price_fallback(
+    audusd_sim: CurrencyPair,
+    #[case] mark: Option<&str>,
+    #[case] quote: Option<&str>,
+    #[case] trade: Option<&str>,
+    #[case] bar_close: Option<&str>,
+    #[case] expected_liquidation: bool,
+) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&audusd, OrderSide::Buy, &clock);
+    let ts = UnixNanos::from(2);
+
+    if let Some(price) = bar_close {
+        let price = Price::from(price);
+        let bar = Bar::new(
+            BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+            price,
+            price,
+            price,
+            price,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+    }
+
+    if let Some(price) = trade {
+        let trade = TradeTick::new(
+            audusd.id(),
+            Price::from(price),
+            Quantity::from("1000000"),
+            AggressorSide::Sell,
+            TradeId::from("T-FALLBACK-1"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_trade(trade).unwrap();
+        exchange.borrow_mut().process_trade_tick(&trade).unwrap();
+    }
+
+    if let Some(price) = quote {
+        add_fx_quote(&exchange, &cache, audusd.id(), price, price);
+    }
+
+    if let Some(price) = mark {
+        let mark = MarkPriceUpdate::new(audusd.id(), Price::from(price), ts, ts);
+        cache.borrow_mut().add_mark_price(mark).unwrap();
+        exchange.borrow_mut().process_mark_price(&mark).unwrap();
+    }
+
+    let liquidated = run_liquidation_check(&exchange, &clock, UnixNanos::from(3));
+    assert_eq!(liquidated, expected_liquidation);
+}
+
+// Bars are (bar type, close or `None` for `PRICE_UNDEF`, `ts_event` secs, `ts_init` secs)
+#[rstest]
+#[case::equal_close_bid_values_long(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL", Some("0.99000"), 60, 60),
+        ("AUD/USD.SIM-1-MINUTE-ASK-EXTERNAL", Some("1.00000"), 60, 60),
+    ],
+    true,
+)]
+#[case::equal_close_ask_values_short(
+    OrderSide::Sell,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL", Some("1.00000"), 60, 60),
+        ("AUD/USD.SIM-1-MINUTE-ASK-EXTERNAL", Some("1.01000"), 60, 60),
+    ],
+    true,
+)]
+#[case::open_stamped_latest_close(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("1.00000"), 3480, 3540),
+        ("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL", Some("0.99000"), 0, 3600),
+    ],
+    true,
+)]
+#[case::open_stamped_latest_close_no_breach(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("0.99000"), 3480, 3540),
+        ("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL", Some("1.00000"), 0, 3600),
+    ],
+    false,
+)]
+#[case::undefined_close_skipped(
+    OrderSide::Buy,
+    &[
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", Some("0.99000"), 60, 60),
+        ("AUD/USD.SIM-1-SECOND-LAST-EXTERNAL", None, 61, 61),
+    ],
+    true,
+)]
+fn test_liquidation_bar_fallback_selection(
+    audusd_sim: CurrencyPair,
+    #[case] side: OrderSide,
+    #[case] bars: &[(&str, Option<&str>, u64, u64)],
+    #[case] expected_liquidation: bool,
+) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let secs = |secs: u64| UnixNanos::from(secs * 1_000_000_000);
+    let ts_now = bars.iter().map(|bar| secs(bar.3)).max().unwrap();
+
+    // Each cache seeds its bar type map differently, so rebuild to cover both iteration orders
+    for _ in 0..32 {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let (exchange, cache) = liquidation_fallback_exchange(&audusd, side, &clock);
+
+        for &(bar_type, close, ts_event, ts_init) in bars {
+            let close = close.map_or_else(|| Price::from_raw(PRICE_UNDEF, 0), Price::from);
+            let bar = Bar::new(
+                BarType::from(bar_type),
+                close,
+                close,
+                close,
+                close,
+                Quantity::from("1000000"),
+                secs(ts_event),
+                secs(ts_init),
+            );
+            cache.borrow_mut().add_bar(bar).unwrap();
+            exchange.borrow_mut().process_bar(bar).unwrap();
+        }
+
+        let liquidated = run_liquidation_check(&exchange, &clock, ts_now);
+        assert_eq!(liquidated, expected_liquidation);
+    }
+}
+
+#[rstest]
+fn test_liquidation_bar_fallback_refreshes_between_checks(audusd_sim: CurrencyPair) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&audusd, OrderSide::Buy, &clock);
+    let mut actual = Vec::new();
+
+    for (bar_type, value, ts) in [
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", "1.00000", 2),
+        ("AUD/USD.SIM-1-SECOND-LAST-INTERNAL", "0.99000", 3),
+    ] {
+        let close = Price::from(value);
+        let ts = UnixNanos::from(ts);
+
+        let bar = Bar::new(
+            BarType::from(bar_type),
+            close,
+            close,
+            close,
+            close,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+        actual.push(run_liquidation_check(&exchange, &clock, ts));
+    }
+
+    assert_eq!(actual, vec![false, true]);
+}
+
+// Opens 100,000 AUD/USD at 1.00000 on `side` against 1,000 USD and 10 USD maintenance margin,
+// so the account is safe at 1.00000 and a 0.01000 adverse move takes equity to zero.
+fn liquidation_fallback_exchange(
+    audusd: &InstrumentAny,
+    side: OrderSide,
+    clock: &Rc<RefCell<VirtualClock>>,
+) -> (Rc<RefCell<SimulatedExchange>>, Rc<RefCell<Cache>>) {
+    let usd = Currency::USD();
+    let balance = AccountBalance::new(
+        Money::new(1_000.0, usd),
+        Money::zero(usd),
+        Money::new(1_000.0, usd),
+    );
+    let account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![balance],
+            vec![MarginBalance::new(
+                Money::new(10.0, usd),
+                Money::new(10.0, usd),
+                Some(audusd.id()),
+            )],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    let mut raw_cache = Cache::default();
+    raw_cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_fx_position_with_side(
+        &mut raw_cache,
+        audusd,
+        "T-LIQUIDATION-FALLBACK",
+        side,
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![balance.total])
+        .default_leverage(Decimal::ONE)
+        .liquidation_enabled(true)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+    let client = BacktestExecutionClient::new(
+        TraderId::test_default(),
+        AccountId::from("SIM-001"),
+        &exchange,
+        cache.clone(),
+        clock.clone(),
+        None,
+        None,
+    );
+    exchange.borrow_mut().register_client(Rc::new(client));
+    exchange
+        .borrow_mut()
+        .add_instrument(audusd.clone())
+        .unwrap();
+
+    (exchange, cache)
+}
+
+fn run_liquidation_check(
+    exchange: &Rc<RefCell<SimulatedExchange>>,
+    clock: &Rc<RefCell<VirtualClock>>,
+    ts_now: UnixNanos,
+) -> bool {
+    let saving_handler = register_order_event_saving_handler();
+    let _ = clock.borrow_mut().advance_time(ts_now, true);
+    exchange.borrow_mut().process_liquidations(ts_now);
+
+    saving_handler.get_messages().iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(fill) if fill.client_order_id.as_str().starts_with("LIQUIDATION-")
+        )
+    })
 }
 
 #[rstest]
@@ -2111,6 +2379,205 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
 }
 
+// Opens a 1 ETH long at 1000 USDT on a single-currency margin account holding `balance`,
+// with a mark price of 1000 USDT and a 1% funding rate due at the returned boundary
+fn setup_single_currency_funding(
+    instrument: &CryptoPerpetual,
+    balance: Money,
+) -> (
+    Rc<RefCell<Cache>>,
+    Rc<RefCell<SimulatedExchange>>,
+    PositionId,
+    UnixNanos,
+) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_any = InstrumentAny::CryptoPerpetual(instrument.clone());
+    let mut cache = Cache::default();
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                balance,
+                Money::zero(balance.currency),
+                balance,
+            )],
+            vec![],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(balance.currency),
+        ),
+        false,
+    );
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    cache.add_instrument(instrument_any.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::from("T-001")),
+        None,
+        Some(Price::from("1000.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument_any)
+        .unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            instrument.id,
+            Decimal::from_str("0.01").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    (cache, exchange, position.id, settlement_ns)
+}
+
+fn add_usdtusd_quote(cache: &Rc<RefCell<Cache>>) {
+    let usdtusd = default_fx_ccy(Symbol::from("USDT/USD"), Some(Venue::new("BINANCE")));
+    let usdtusd_id = usdtusd.id;
+    let mut cache = cache.borrow_mut();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(usdtusd))
+        .unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            usdtusd_id,
+            Price::from("0.99000"),
+            Price::from("1.00000"),
+            Quantity::from("1000000"),
+            Quantity::from("1000000"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+}
+
+// The long pays 1% of 1000 USDT, so -10 USDT. A USD account receives it at the
+// USDT/USD mid of 0.995 (bid 0.99, ask 1.00), so -9.95 USD, while a USDT account
+// needs no rate. The position's PnL stays in USDT either way.
+#[rstest]
+#[case::usd_base_converted(Money::from("1000 USD"), true, Money::from("990.05 USD"))]
+#[case::settlement_currency_base(Money::from("1000 USDT"), false, Money::from("990 USDT"))]
+fn test_process_funding_rate_settles_in_single_currency_account_base(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] balance: Money,
+    #[case] with_xrate: bool,
+    #[case] expected_total: Money,
+) {
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
+    let (cache, exchange, position_id, settlement_ns) =
+        setup_single_currency_funding(&crypto_perpetual_ethusdt, balance);
+
+    if with_xrate {
+        add_usdtusd_quote(&cache);
+    }
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    let position_events = position_saver.get_messages();
+    let [PositionEvent::PositionAdjusted(adjustment)] = position_events.as_slice() else {
+        panic!("expected one PositionAdjusted event");
+    };
+    let account_states = account_saver.get_messages();
+    let [account_state] = account_states.as_slice() else {
+        panic!("expected one AccountState");
+    };
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-10 USDT")));
+    assert_eq!(position.realized_pnl, Some(Money::from("-10 USDT")));
+    assert_eq!(account_state.balances.len(), 1);
+    assert_eq!(account_state.balances[0].total, expected_total);
+    assert_eq!(account_state.balances[0].free, expected_total);
+}
+
+#[rstest]
+fn test_process_funding_rate_without_xrate_for_account_base_retries(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    let (cache, exchange, position_id, settlement_ns) =
+        setup_single_currency_funding(&crypto_perpetual_ethusdt, Money::from("1000 USD"));
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    assert!(settlement_saver.get_messages().is_empty());
+    assert!(account_saver.get_messages().is_empty());
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    assert!(position.adjustments.is_empty());
+    assert_eq!(position.realized_pnl, Some(Money::from("0 USDT")));
+
+    add_usdtusd_quote(&cache);
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    assert_eq!(settlement_saver.get_messages().len(), 1);
+    let account_states = account_saver.get_messages();
+    let [account_state] = account_states.as_slice() else {
+        panic!("expected one AccountState");
+    };
+    assert_eq!(account_state.balances[0].total, Money::from("990.05 USD"));
+}
+
 #[rstest]
 fn test_position_flip_retains_opening_leg_after_database_update_failure(audusd_sim: CurrencyPair) {
     let (database, control) = TestCacheDatabaseControl::create();
@@ -2191,17 +2658,23 @@ fn test_position_flip_retains_opening_leg_after_database_update_failure(audusd_s
     assert_eq!(snapshots[0].realized_pnl, Some(Money::from("1 USD")));
     let events = saver.get_messages();
 
-    let [PositionEvent::PositionOpened(opened)] = events.as_slice() else {
-        panic!("expected one PositionOpened event");
+    let [
+        PositionEvent::PositionClosed(closed),
+        PositionEvent::PositionOpened(opened),
+    ] = events.as_slice()
+    else {
+        panic!("expected PositionClosed and PositionOpened events");
     };
 
+    assert_eq!(closed.position_id, position.id);
+    assert_eq!(closed.realized_pnl, Some(Money::from("1 USD")));
     assert_eq!(opened.position_id, position.id);
     assert_eq!(opened.quantity, Quantity::from(1));
     assert_eq!(opened.avg_px_open, dec!(2));
 }
 
 #[rstest]
-fn test_process_funding_rate_restores_position_when_database_update_fails(
+fn test_process_funding_rate_keeps_settlement_when_database_update_fails(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     let account_id = AccountId::from("BINANCE-001");
@@ -2230,8 +2703,6 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     );
     let position = Position::new(&instrument, fill.into());
     let position_id = position.id;
-    let adjustments_before = position.adjustments.clone();
-    let realized_pnl_before = position.realized_pnl;
     cache.add_position(&position, OmsType::Netting).unwrap();
     cache
         .add_mark_price(MarkPriceUpdate::new(
@@ -2246,6 +2717,8 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     let (position_handler, position_saver) =
         get_typed_message_saving_handler::<PositionEvent>(None);
     msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
     let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
     msgbus::subscribe_any(
         "events.funding_settlements.*".into(),
@@ -2280,17 +2753,42 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
         .unwrap();
 
     let cached_position = cache.borrow().position_owned(&position_id).unwrap();
-    assert_eq!(cached_position.adjustments, adjustments_before);
-    assert_eq!(cached_position.realized_pnl, realized_pnl_before);
-    assert!(position_saver.get_messages().is_empty());
-    assert!(settlement_saver.get_messages().is_empty());
+    let events = position_saver.get_messages();
+
+    let [PositionEvent::PositionAdjusted(adjustment)] = events.as_slice() else {
+        panic!("expected one PositionAdjusted event");
+    };
+
+    let settlements = settlement_saver.get_messages();
+
+    let [settlement] = settlements.as_slice() else {
+        panic!("expected one FundingSettlement");
+    };
+
+    assert_eq!(cached_position.adjustments, vec![*adjustment]);
+    assert_eq!(cached_position.realized_pnl, Some(Money::from("-1 USDT")));
+    assert_eq!(adjustment.position_id, position_id);
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
+    assert_eq!(settlement.rate, Decimal::from_str("0.001").unwrap());
+    assert_eq!(settlement.ts_event, settlement_ns);
 
     database_control.set_fail_update_position(false);
     exchange
         .borrow_mut()
         .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
         .unwrap();
-    assert_eq!(settlement_saver.get_messages().len(), 1);
+    assert_eq!(settlement_saver.get_messages(), settlements);
+    assert_eq!(
+        serde_json::to_value(position_saver.get_messages()).unwrap(),
+        serde_json::to_value(&events).unwrap()
+    );
+    let after_retry = cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(after_retry.adjustments, vec![*adjustment]);
+    assert_eq!(after_retry.realized_pnl, Some(Money::from("-1 USDT")));
+    let account_events = account_saver.get_messages();
+    assert_eq!(account_events.len(), 1);
+    assert_eq!(account_events[0].balances[0].total, Money::from("999 USDT"));
 }
 
 // Two open long positions on the instrument, in the order the exchange settles them, with
@@ -2382,31 +2880,14 @@ fn settle_funding_once(cache: &Rc<RefCell<Cache>>, instrument: &CryptoPerpetual)
         .unwrap();
 }
 
-fn assert_position_restored(
-    cache: &Rc<RefCell<Cache>>,
-    database_control: &TestCacheDatabaseControl,
-    original: &Position,
-) {
-    let cached = cache.borrow().position_owned(&original.id).unwrap();
-    assert!(cached.adjustments.is_empty());
-    assert_eq!(cached.realized_pnl, original.realized_pnl);
-
-    // The database must not keep the adjusted state of a settlement that was rolled back
-    let persisted = database_control
-        .updated_positions()
-        .into_iter()
-        .rfind(|position| position.id == original.id)
-        .unwrap();
-    assert!(persisted.adjustments.is_empty());
-    assert_eq!(persisted.realized_pnl, original.realized_pnl);
-}
-
 #[rstest]
-fn test_process_funding_rate_restores_persisted_positions_when_later_update_fails(
+fn test_process_funding_rate_settles_all_positions_when_later_write_fails(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     let (cache, database_control, positions) =
         setup_two_position_funding(&crypto_perpetual_ethusdt);
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
     let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
     msgbus::subscribe_any(
         "events.funding_settlements.*".into(),
@@ -2416,12 +2897,32 @@ fn test_process_funding_rate_restores_persisted_positions_when_later_update_fail
     database_control.set_fail_update_position_id(Some(positions[1].id));
 
     settle_funding_once(&cache, &crypto_perpetual_ethusdt);
+    for original in &positions {
+        let cached = cache.borrow().position_owned(&original.id).unwrap();
+        assert_eq!(cached.adjustments.len(), 1);
+        assert_eq!(
+            cached.adjustments[0].adjustment_type,
+            PositionAdjustmentType::Funding
+        );
+        assert_eq!(
+            cached.adjustments[0].pnl_change,
+            Some(Money::from("-1 USDT"))
+        );
+        assert_eq!(cached.realized_pnl, Some(Money::from("-1 USDT")));
+    }
 
-    assert_position_restored(&cache, &database_control, &positions[0]);
-    let cached = cache.borrow().position_owned(&positions[1].id).unwrap();
-    assert!(cached.adjustments.is_empty());
-    assert_eq!(cached.realized_pnl, positions[1].realized_pnl);
-    assert!(settlement_saver.get_messages().is_empty());
+    let persisted = database_control.updated_positions();
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].id, positions[0].id);
+    assert_eq!(persisted[0].realized_pnl, Some(Money::from("-1 USDT")));
+    assert_eq!(persisted[0].adjustments.len(), 1);
+    let settlements = settlement_saver.get_messages();
+    assert_eq!(settlements.len(), 1);
+    assert_eq!(settlements[0].rate, Decimal::from_str("0.001").unwrap());
+    assert_eq!(settlements[0].ts_event, UnixNanos::from(3));
+    let account_events = account_saver.get_messages();
+    assert_eq!(account_events.len(), 1);
+    assert_eq!(account_events[0].balances[0].total, Money::from("998 USDT"));
 }
 
 #[rstest]
@@ -4494,10 +4995,21 @@ fn add_fx_position(
     quantity: &str,
     price: &str,
 ) {
+    add_fx_position_with_side(cache, instrument, trade_id, OrderSide::Buy, quantity, price);
+}
+
+fn add_fx_position_with_side(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    trade_id: &str,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+) {
     cache.add_instrument(instrument.clone()).unwrap();
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
+        .side(side)
         .quantity(Quantity::from(quantity))
         .build();
     let fill = TestOrderEventStubs::filled(

@@ -18,6 +18,15 @@ This directory contains API response samples and documented error messages for t
 - `ws_l2_book_sample.json` - Order book update message sample
 - `ws_book_data.json` - Existing book data test sample
 
+### Position average precision
+
+`http_meta_position_precision.json` and `http_positions_precision.json` contain matching subsets
+of mainnet `meta` and `clearinghouseState` responses captured from the public HLP vault on
+2026-11-02. Each `universe` and `assetPositions` entry is unmodified. The metadata sample omits other
+markets, so tests resolve instruments by symbol rather than venue asset index. MEME and BIGTIME cover
+long and short averages whose difference from the PnL-derived cost basis exceeds 0.01%. BTC, ETH,
+and ATOM cover other instrument price precisions.
+
 ### Documented exchange errors
 
 `exchange_error_messages.json` contains the order and cancel error messages listed in the

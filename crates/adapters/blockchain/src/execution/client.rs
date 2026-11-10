@@ -58,7 +58,7 @@ use nautilus_model::{
         validation::validate_address,
         wallet::{TokenBalance, WalletBalance},
     },
-    enums::{CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
+    enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
     events::{OrderCanceled, OrderDeniedReason, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
@@ -234,7 +234,7 @@ impl BlockchainExecutionClient {
 
         let pending_tasks = TaskGroup::new();
 
-        Ok(Self {
+        let client = Self {
             core: core_client,
             emitter,
             wallet_balance: Arc::new(Mutex::new(wallet_balance)),
@@ -252,7 +252,62 @@ impl BlockchainExecutionClient {
             verification,
             wallet_address,
             pending_tasks,
-        })
+        };
+
+        client.register_migration_check();
+        Ok(client)
+    }
+
+    fn register_migration_check(&self) {
+        let database = self.cache.database.clone();
+        let options = self.config.postgres_cache_database_config.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        self.core.cache().register_defi_execution_check(
+            self.core.client_id,
+            self.chain.chain_id,
+            move |instrument_id| {
+                anyhow::ensure!(
+                    in_flight.lock().is_none(),
+                    "Blockchain submissions must stop before legacy instrument replacement"
+                );
+                anyhow::ensure!(
+                    database.is_some() || options.is_some(),
+                    "No authoritative execution store is configured for {instrument_id}"
+                );
+                let database = database.clone();
+                let options = options.clone();
+                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+
+                nautilus_common::live::get_runtime().spawn(async move {
+                    let result = async {
+                        let database = match database {
+                            Some(database) => database,
+                            None => {
+                                BlockchainCacheDatabase::connect(
+                                    options.expect("execution store checked").into(),
+                                )
+                                .await?
+                            }
+                        };
+
+                        database.check_instrument_migration(instrument_id).await
+                    }
+                    .await;
+
+                    let _ = sender.send(result);
+                });
+
+                let on_runtime = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
+                    handle.id() == nautilus_common::live::get_runtime().handle().id()
+                });
+
+                if on_runtime {
+                    tokio::task::block_in_place(|| receiver.recv())?
+                } else {
+                    receiver.recv()?
+                }
+            },
+        );
     }
 
     fn transaction_limits(
@@ -691,6 +746,7 @@ impl BlockchainExecutionClient {
         let executor = self.transaction_executor()?;
         let included = executor
             .transact(
+                SystemTime::now(),
                 self.weth_address,
                 amount_wei,
                 Bytes::from(calldata),
@@ -774,6 +830,7 @@ impl BlockchainExecutionClient {
         let executor = self.transaction_executor()?;
         let included = executor
             .transact(
+                SystemTime::now(),
                 token,
                 U256::ZERO,
                 Bytes::from(calldata),
@@ -1093,13 +1150,7 @@ impl BlockchainExecutionClient {
                 .ok_or_else(|| anyhow::anyhow!("Restored pool {instrument_id} has no fee"))?,
         )?;
         let quote_token = pool.get_quote_token();
-        let quote_currency = Currency::new_checked(
-            &quote_token.symbol,
-            quote_token.decimals,
-            0,
-            &quote_token.name,
-            CurrencyType::Crypto,
-        )?;
+        let quote_currency = quote_token.currency()?;
         let (token_in, token_out) = swap_token_pair(
             order.order_side(),
             pool.get_base_token().address,
@@ -1589,13 +1640,7 @@ impl BlockchainExecutionClient {
 
         let base_token = pool.get_base_token();
         let quote_token = pool.get_quote_token();
-        let quote_currency = Currency::new_checked(
-            &quote_token.symbol,
-            quote_token.decimals,
-            0,
-            &quote_token.name,
-            CurrencyType::Crypto,
-        )?;
+        let quote_currency = quote_token.currency()?;
         let (token_in, token_out) =
             swap_token_pair(order.order_side(), base_token.address, quote_token.address);
 
@@ -2104,12 +2149,17 @@ impl TransactionExecutor {
     /// Order of operations: claim the in-flight slot, chain ID verification, nonce and fee and
     /// gas policy checks, local signing, persist-before-broadcast, broadcast, inclusion
     /// observation. The persisted record guarantees a signed transaction is never forgotten.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Transaction fields and trusted clock input stay explicit"
+    )]
     #[allow(
         clippy::large_futures,
         reason = "keeps transaction verification futures inline without additional boxing"
     )]
     async fn transact(
         &self,
+        now: SystemTime,
         to: Address,
         value: U256,
         input: Bytes,
@@ -2118,7 +2168,15 @@ impl TransactionExecutor {
         authorization: TransactionAuthorization,
     ) -> anyhow::Result<IncludedTransaction> {
         self.claim_slot(purpose)?;
-        let now_unix_secs = current_unix_secs()?;
+
+        let now_unix_secs = match unix_secs_since_epoch(now) {
+            Ok(now_unix_secs) => now_unix_secs,
+            Err(e) => {
+                release_preparing_slot(&self.in_flight);
+                return Err(e);
+            }
+        };
+
         let decision_header = match required_verification(
             self.verification
                 .verify_decision_header(now_unix_secs)
@@ -3615,8 +3673,11 @@ fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<Ra
 }
 
 fn current_unix_secs() -> anyhow::Result<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    unix_secs_since_epoch(SystemTime::now())
+}
+
+fn unix_secs_since_epoch(now: SystemTime) -> anyhow::Result<u64> {
+    now.duration_since(UNIX_EPOCH)
         .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))
         .map(|duration| duration.as_secs())
 }
@@ -5806,32 +5867,52 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
-            log::warn!("Cannot modify unknown order {}", cmd.client_order_id);
-            return Ok(());
-        };
+        let ts_event = get_atomic_clock_realtime().get_time_ns();
 
-        self.emitter.emit_order_modify_rejected(
-            &order,
-            cmd.venue_order_id,
-            ORDER_MODIFY_UNSUPPORTED,
-            get_atomic_clock_realtime().get_time_ns(),
-        );
+        if let Ok(order) = self.core.get_order(&cmd.client_order_id) {
+            self.emitter.emit_order_modify_denied(
+                &order,
+                ORDER_MODIFY_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        } else {
+            self.emitter.emit_order_modify_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                ORDER_MODIFY_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        }
+
         Ok(())
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
-            log::warn!("Cannot cancel unknown order {}", cmd.client_order_id);
-            return Ok(());
-        };
+        let ts_event = get_atomic_clock_realtime().get_time_ns();
 
-        self.emitter.emit_order_cancel_rejected(
-            &order,
-            cmd.venue_order_id,
-            ORDER_CANCEL_UNSUPPORTED,
-            get_atomic_clock_realtime().get_time_ns(),
-        );
+        if let Ok(order) = self.core.get_order(&cmd.client_order_id) {
+            self.emitter.emit_order_cancel_denied(
+                &order,
+                ORDER_CANCEL_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        } else {
+            self.emitter.emit_order_cancel_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                ORDER_CANCEL_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        }
+
         Ok(())
     }
 
@@ -6266,6 +6347,8 @@ impl ExecutionClient for BlockchainExecutionClient {
             self.signer = None;
             return Err(e);
         }
+
+        self.register_migration_check();
         self.core.set_connected();
         setup_guard.disarm();
         log::info!(
@@ -6381,14 +6464,15 @@ mod tests {
             },
             tick_map::{tick::PoolTick, tick_math::get_tick_at_sqrt_ratio},
         },
-        enums::AccountType,
-        events::OrderEventAny,
+        enums::{AccountType, CurrencyType},
+        events::{OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
         identifiers::{OrderListId, StrategyId, TraderId},
-        orders::{OrderList, OrderTestBuilder},
+        orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::Price,
     };
     use rstest::rstest;
     use sqlx::postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgPoolOptions};
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -7522,6 +7606,52 @@ mod tests {
         (intent, tx_hash, raw_tx)
     }
 
+    #[tokio::test]
+    async fn migration_check_reads_authoritative_swap_intents() {
+        let (admin, config) = connect_test_postgres("migration_check")
+            .await
+            .expect("Postgres required");
+        let schema = format!("migration_check_{}", UUID4::new()).replace('-', "_");
+        setup_execution_schema(&admin, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = config.into();
+        let database = connect_test_database(options.options([("search_path", schema.clone())]))
+            .await
+            .unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let id = test_pool().instrument_id;
+        database.check_instrument_migration(id).await.unwrap();
+        let intent = reserve_test_swap_intent(&database).await;
+
+        let active = database.check_instrument_migration(id).await.unwrap_err();
+        let unrelated = database
+            .check_instrument_migration(InstrumentId::from("UNRELATED.DEFI"))
+            .await;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_intent SET active = FALSE WHERE id = $1"
+        )))
+        .bind(intent.id)
+        .execute(&admin)
+        .await
+        .unwrap();
+        let inactive = database.check_instrument_migration(id).await;
+        drop_execution_schema(&admin, &schema).await;
+        let unavailable = database.check_instrument_migration(id).await.unwrap_err();
+
+        assert_eq!(
+            active.to_string(),
+            format!("Instrument {id} has active swap intents")
+        );
+        unrelated.unwrap();
+        inactive.unwrap();
+        assert_eq!(
+            unavailable.to_string(),
+            "failed to check active swap intents before instrument replacement"
+        );
+    }
+
     async fn reserve_test_swap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
         let pool = test_pool();
         let order = test_market_sell_order(pool.instrument_id);
@@ -8159,14 +8289,7 @@ mod tests {
         let quote_token = pool.get_quote_token();
         SwapPlan {
             order,
-            quote_currency: Currency::new_checked(
-                &quote_token.symbol,
-                quote_token.decimals,
-                0,
-                &quote_token.name,
-                CurrencyType::Crypto,
-            )
-            .unwrap(),
+            quote_currency: quote_token.currency().unwrap(),
             instrument_id: pool.instrument_id,
             pool_address: pool.address,
             router: ROUTER_ADDRESS,
@@ -10125,7 +10248,7 @@ mod tests {
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
         assert_eq!(fill.last_px, Price::from("1000"));
-        assert_eq!(fill.currency.code, "USDC");
+        assert_eq!(fill.currency.code, "USDC@ARBITRUM");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(account_states.len(), 1);
@@ -10418,7 +10541,7 @@ mod tests {
         assert_eq!(fill.venue_order_id.as_str(), expected_hash.to_string());
         assert_eq!(fill.order_side, OrderSide::Buy);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
-        assert_eq!(fill.currency.code, "USDC");
+        assert_eq!(fill.currency.code, "USDC@ARBITRUM");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
@@ -14329,13 +14452,13 @@ mod tests {
         assert_eq!(balances[0].total.raw(), 1_000_000_000_000_000_000);
         assert_eq!(balances[0].free, balances[0].total);
         assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
-        assert_eq!(balances[1].currency.code, "WETH");
+        assert_eq!(balances[1].currency.code, "WETH@ARBITRUM");
         assert_eq!(balances[1].currency.name, "Wrapped Ether");
         assert_eq!(balances[1].currency.precision, 18);
         assert_eq!(balances[1].total.raw(), 1_234_567_890_123_456_789);
         assert_eq!(balances[1].free, balances[1].total);
         assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
-        assert_eq!(balances[2].currency.code, "USDC");
+        assert_eq!(balances[2].currency.code, "USDC@ARBITRUM");
         assert_eq!(balances[2].currency.name, "USD Coin");
         assert_eq!(balances[2].currency.precision, 6);
         assert_eq!(balances[2].total.raw(), 9_876_543_210_000_000_000);
@@ -14952,6 +15075,91 @@ mod tests {
         assert_eq!(broadcasts, 0);
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn clock_error_releases_preparing_slot_and_allows_retry() {
+        let state = broadcast_rpc_state().with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+
+        let Some((admin_pool, schema, client, state)) =
+            execution_client_with_database("execution_clock_error_test", state).await
+        else {
+            return;
+        };
+
+        let executor = client.transaction_executor().unwrap();
+        let value = U256::from(1_000_000_000_000_000u64);
+        let input = Bytes::from(WETH9::depositCall {}.abi_encode());
+        let authorization = TransactionAuthorization::Wrap { weth: WETH_ADDRESS };
+
+        let error = executor
+            .transact(
+                UNIX_EPOCH - Duration::from_secs(1),
+                WETH_ADDRESS,
+                value,
+                input.clone(),
+                TransactionPurpose::Wrap,
+                None,
+                authorization,
+            )
+            .await
+            .unwrap_err();
+        let slot_after_error = *client.in_flight.lock();
+        let requests_after_error = state.recorded_requests();
+        let intent_count_after_error: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let retry = executor
+            .transact(
+                SystemTime::now(),
+                WETH_ADDRESS,
+                value,
+                input,
+                TransactionPurpose::Wrap,
+                None,
+                authorization,
+            )
+            .await;
+        let slot_after_retry = *client.in_flight.lock();
+        let requests_after_retry = state.recorded_requests();
+        let intent_count_after_retry: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let expected_hash = expected_wrap_tx_hash(value).await;
+
+        drop_execution_schema(&admin_pool, &schema).await;
+
+        assert_eq!(
+            error.to_string(),
+            "Trusted host clock precedes the Unix epoch"
+        );
+        assert!(slot_after_error.is_none(), "was: {slot_after_error:?}");
+        assert!(
+            requests_after_error.is_empty(),
+            "was: {requests_after_error:?}"
+        );
+        assert_eq!(intent_count_after_error, 0);
+        let included = retry.unwrap();
+        assert_eq!(included.nonce, 7);
+        assert_eq!(included.tx_hash, expected_hash);
+        assert!(matches!(
+            slot_after_retry,
+            Some(InFlightSlot::AwaitingFinality(_))
+        ));
+        assert_eq!(intent_count_after_retry, 1);
+        assert_eq!(
+            requests_after_retry
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -18253,23 +18461,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn modify_order_rejects_without_side_effects() {
+    async fn modify_order_denies_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .modify_order(modify_order_cmd(
-                order.instrument_id(),
-                order.client_order_id(),
-            ))
-            .unwrap();
+        let command = modify_order_cmd(order.instrument_id(), order.client_order_id());
+        let cause = command.command_id;
+        client.modify_order(command).unwrap();
 
         let events = collect_order_events(&mut receiver);
         assert_eq!(events.len(), 1, "was: {events:?}");
-        let OrderEventAny::ModifyRejected(rejected) = &events[0] else {
-            panic!("expected OrderModifyRejected, was {:?}", events[0]);
+
+        let OrderEventAny::ModifyDenied(rejected) = &events[0] else {
+            panic!("expected OrderModifyDenied, was {:?}", events[0]);
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason, ORDER_MODIFY_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
@@ -18280,23 +18488,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_order_rejects_without_side_effects() {
+    async fn cancel_order_denies_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .cancel_order(cancel_order_cmd(
-                order.instrument_id(),
-                order.client_order_id(),
-            ))
-            .unwrap();
+        let command = cancel_order_cmd(order.instrument_id(), order.client_order_id());
+        let cause = command.command_id;
+        client.cancel_order(command).unwrap();
 
         let events = collect_order_events(&mut receiver);
         assert_eq!(events.len(), 1, "was: {events:?}");
-        let OrderEventAny::CancelRejected(rejected) = &events[0] else {
-            panic!("expected OrderCancelRejected, was {:?}", events[0]);
+
+        let OrderEventAny::CancelDenied(rejected) = &events[0] else {
+            panic!("expected OrderCancelDenied, was {:?}", events[0]);
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
@@ -18307,7 +18515,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn batch_cancel_orders_rejects_each_order_without_side_effects() {
+    async fn batch_cancel_orders_denies_each_order_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let pool = test_pool();
         let first = test_market_sell_order(pool.instrument_id);
@@ -18320,6 +18528,10 @@ mod tests {
         let cancels = orders
             .iter()
             .map(|order| cancel_order_cmd(order.instrument_id(), order.client_order_id()))
+            .collect::<Vec<_>>();
+        let causes: std::collections::HashMap<_, _> = cancels
+            .iter()
+            .map(|command| (command.client_order_id, command.command_id))
             .collect();
         let mut receiver = start_with_events(&mut client);
 
@@ -18331,9 +18543,14 @@ mod tests {
         let mut rejected_ids = Vec::new();
 
         for event in &events {
-            let OrderEventAny::CancelRejected(rejected) = event else {
-                panic!("expected OrderCancelRejected, was {event:?}");
+            let OrderEventAny::CancelDenied(rejected) = event else {
+                panic!("expected OrderCancelDenied, was {event:?}");
             };
+
+            assert_eq!(
+                rejected.causation_id,
+                Some(causes[&rejected.client_order_id])
+            );
             assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
             rejected_ids.push(rejected.client_order_id);
         }
@@ -18342,6 +18559,132 @@ mod tests {
             rejected_ids,
             [first.client_order_id(), second.client_order_id()]
         );
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().is_none());
+    }
+
+    #[rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    #[tokio::test]
+    async fn command_denial_preserves_cached_owner(
+        #[case] modify: bool,
+        #[values(false, true)] cached: bool,
+    ) {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let mut order = test_market_sell_order(test_pool().instrument_id);
+        let venue = VenueOrderId::from("V-OWNER-029");
+        let account = AccountId::from("BLOCKCHAIN-001");
+        let accepted = TestOrderEventStubs::accepted(&order, account, venue);
+        order.apply(accepted.clone()).unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        let target = if cached {
+            order.client_order_id()
+        } else {
+            ClientOrderId::from("O-UNCACHED")
+        };
+
+        let requester = StrategyId::from("REQUESTER-031");
+        let explicit_venue = VenueOrderId::from("V-REQUESTER-037");
+        let command_id = UUID4::new();
+
+        let pending = if modify {
+            let mut event = OrderPendingUpdate::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Some(account),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue),
+            );
+            event.causation_id = Some(command_id);
+            OrderEventAny::PendingUpdate(event)
+        } else {
+            let mut event = OrderPendingCancel::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Some(account),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue),
+            );
+            event.causation_id = Some(command_id);
+            OrderEventAny::PendingCancel(event)
+        };
+
+        if cached {
+            cache.borrow_mut().update_order(&pending).unwrap();
+        }
+
+        let mut receiver = start_with_events(&mut client);
+
+        if modify {
+            let mut command = modify_order_cmd(order.instrument_id(), target);
+            command.strategy_id = requester;
+            command.venue_order_id = Some(explicit_venue);
+            command.command_id = command_id;
+            client.modify_order(command).unwrap();
+        } else {
+            let mut command = cancel_order_cmd(order.instrument_id(), target);
+            command.strategy_id = requester;
+            command.venue_order_id = Some(explicit_venue);
+            command.command_id = command_id;
+            client.cancel_order(command).unwrap();
+        }
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(
+            event.strategy_id(),
+            if cached {
+                order.strategy_id()
+            } else {
+                requester
+            }
+        );
+        assert_eq!(event.client_order_id(), target);
+        assert_eq!(event.instrument_id(), order.instrument_id());
+        assert_eq!(
+            event.venue_order_id(),
+            Some(if cached { venue } else { explicit_venue })
+        );
+
+        let cause = match event {
+            OrderEventAny::ModifyDenied(denied) => {
+                assert!(modify);
+                denied.causation_id
+            }
+            OrderEventAny::CancelDenied(denied) => {
+                assert!(!modify);
+                denied.causation_id
+            }
+            other => panic!("expected command denial, was {other:?}"),
+        };
+
+        assert_eq!(cause, Some(command_id));
+
+        if cached {
+            cache.borrow_mut().update_order(event).unwrap();
+            let after = cache.borrow().try_order_owned(&target).unwrap();
+            assert_eq!(after.status(), OrderStatus::Accepted);
+            assert_eq!(after.quantity(), order.quantity());
+            assert_eq!(after.filled_qty(), order.filled_qty());
+            assert!(!after.has_pending_update_command());
+            assert!(!after.has_pending_cancel_command());
+        } else {
+            assert!(cache.borrow().order_ref(&target).is_none());
+        }
+
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
     }
@@ -18378,24 +18721,65 @@ mod tests {
         let unknown = ClientOrderId::from("O-UNKNOWN");
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .modify_order(modify_order_cmd(instrument_id, unknown))
-            .unwrap();
-        client
-            .cancel_order(cancel_order_cmd(instrument_id, unknown))
-            .unwrap();
-        client
-            .batch_cancel_orders(batch_cancel_orders_cmd(vec![cancel_order_cmd(
+        let modify = modify_order_cmd(instrument_id, unknown);
+        let cancel = cancel_order_cmd(instrument_id, unknown);
+        let batch_cancel = cancel_order_cmd(instrument_id, unknown);
+        let expected = vec![
+            (
+                true,
                 instrument_id,
                 unknown,
-            )]))
+                Ustr::from(ORDER_MODIFY_UNSUPPORTED),
+                Some(modify.command_id),
+            ),
+            (
+                false,
+                instrument_id,
+                unknown,
+                Ustr::from(ORDER_CANCEL_UNSUPPORTED),
+                Some(cancel.command_id),
+            ),
+            (
+                false,
+                instrument_id,
+                unknown,
+                Ustr::from(ORDER_CANCEL_UNSUPPORTED),
+                Some(batch_cancel.command_id),
+            ),
+        ];
+        client.modify_order(modify).unwrap();
+        client.cancel_order(cancel).unwrap();
+        client
+            .batch_cancel_orders(batch_cancel_orders_cmd(vec![batch_cancel]))
             .unwrap();
         client
             .query_order(query_order_cmd(instrument_id, unknown))
             .unwrap();
 
         let events = collect_order_events(&mut receiver);
-        assert!(events.is_empty(), "was: {events:?}");
+
+        let outcomes: Vec<_> = events
+            .iter()
+            .map(|event| match event {
+                OrderEventAny::ModifyDenied(event) => (
+                    true,
+                    event.instrument_id,
+                    event.client_order_id,
+                    event.reason,
+                    event.causation_id,
+                ),
+                OrderEventAny::CancelDenied(event) => (
+                    false,
+                    event.instrument_id,
+                    event.client_order_id,
+                    event.reason,
+                    event.causation_id,
+                ),
+                other => panic!("Expected unsupported command denial, was {other:?}"),
+            })
+            .collect();
+
+        assert_eq!(outcomes, expected);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
     }
@@ -18627,5 +19011,112 @@ mod tests {
             .expect("execution_transaction CREATE TABLE is unterminated")
             + 1;
         &statement[..end]
+    }
+
+    #[rstest]
+    #[case(17)]
+    #[case(18)]
+    fn closed_pool_position_records_high_precision_quote_pnl(#[case] precision: u8) {
+        use nautilus_model::{
+            events::{PositionClosed, PositionEvent, order::spec::OrderFilledSpec},
+            identifiers::PositionId,
+            instruments::{CurrencyPair, Instrument},
+            position::Position,
+        };
+        use nautilus_portfolio::Portfolio;
+
+        let template = test_pool();
+
+        let base = Token::new(
+            Arc::clone(&template.chain),
+            Address::from([precision; 20]),
+            "Portfolio base".into(),
+            format!("PNLBASE{precision}"),
+            18,
+        );
+
+        let quote_token = Token::new(
+            Arc::clone(&template.chain),
+            Address::from([precision + 50; 20]),
+            "Portfolio quote".into(),
+            format!("PNLQUOTE{precision}"),
+            precision,
+        );
+        let address = Address::from([precision + 100; 20]);
+
+        let pool = Pool::new(
+            template.chain,
+            template.dex,
+            address,
+            PoolIdentifier::from_address(address),
+            1,
+            base,
+            quote_token,
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument = CurrencyPair::try_from(&pool).unwrap().into_any();
+        let quote = instrument.quote_currency();
+        let position_id = PositionId::new(format!("P-QUOTE{precision}"));
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from("0.1"))
+            .last_px(Price::from("1.0000000000000000"))
+            .currency(quote)
+            .commission(Money::zero(quote))
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let mut position = Position::new(&instrument, fill.clone());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        fill.event_id = UUID4::new();
+        fill.trade_id = TradeId::new("CLOSE");
+        fill.client_order_id = ClientOrderId::new("CLOSE");
+        fill.order_side = OrderSide::Sell;
+        fill.last_px = Price::from("1.0000000000000001");
+        fill.ts_event = UnixNanos::from(2);
+        position.try_apply(&fill).unwrap();
+        cache.borrow_mut().update_position(&position).unwrap();
+
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+        portfolio.update_position(&PositionEvent::PositionClosed(PositionClosed::create(
+            &position,
+            &fill,
+            UUID4::new(),
+            UnixNanos::from(3),
+        )));
+        let records = portfolio.recorded_realized_pnls();
+        let analyzer = portfolio.analyzer();
+        let pnl = position.realized_pnl.unwrap();
+        assert!(position.is_closed());
+        assert_eq!(quote.precision, precision);
+        assert_eq!(quote.code.as_str(), format!("PNLQUOTE{precision}@ARBITRUM"));
+        assert_eq!(pnl.currency.precision, precision);
+        assert_eq!(pnl.currency, quote);
+        assert_eq!(
+            pnl.as_decimal(),
+            "0.00000000000000001"
+                .parse::<rust_decimal::Decimal>()
+                .unwrap()
+        );
+        assert_eq!(
+            records.get(&quote).unwrap(),
+            &vec![(position_id, UnixNanos::from(2), 1e-17)]
+        );
+        assert_eq!(
+            analyzer.realized_pnls(Some(&quote)).unwrap(),
+            &[(position_id, UnixNanos::from(2), 1e-17)]
+        );
     }
 }

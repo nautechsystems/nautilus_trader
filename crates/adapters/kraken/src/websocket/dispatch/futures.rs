@@ -39,7 +39,7 @@ use super::{
     fill_report_to_order_filled, resolve_client_order_id,
 };
 use crate::{
-    common::lookup_instrument_in_snapshot,
+    common::{lookup_instrument_in_snapshot, parse::parse_venue_order_id},
     websocket::futures::{
         messages::{
             KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
@@ -54,10 +54,8 @@ use crate::{
 /// Fill-driven cancel deltas (`is_cancel=true` with reason `full_fill`) are
 /// skipped - the corresponding `FillsDelta` carries the real fill, so emitting
 /// a synthetic Canceled here would race with the genuine `OrderFilled`.
-/// Part-fill removals (`is_cancel=true` with reason `partial_fill`) discard the
-/// order's remainder and are terminal: they close the order only once the
-/// fills feed has accounted the removal's cumulative filled, so a fill still
-/// in flight is never orphaned.
+/// Tracked cancellations close the order only once the fills feed has accounted
+/// the removal's cumulative filled, so a fill still in flight is never orphaned.
 #[expect(clippy::too_many_arguments)]
 pub fn open_orders_delta(
     delta: &KrakenFuturesOpenOrdersDelta,
@@ -84,6 +82,17 @@ pub fn open_orders_delta(
     let instruments = instruments.load();
     let Some(instrument) = lookup_instrument_in_snapshot(&instruments, product_id) else {
         log::warn!("No instrument for product_id: {product_id}");
+        return;
+    };
+
+    let Ok(venue_order_id) = parse_venue_order_id(
+        &delta.order.order_id,
+        format_args!(
+            "futures order delta, cli_ord_id={:?}, is_cancel={}",
+            delta.order.cli_ord_id, delta.is_cancel
+        ),
+    )
+    .inspect_err(|e| log::error!("{e}")) else {
         return;
     };
 
@@ -117,15 +126,14 @@ pub fn open_orders_delta(
         return;
     }
 
-    if delta.is_partial_fill_removal() {
-        // Untracked removals must not emit a terminal report; that orphans the fill
-        if let Some(client_order_id) = resolved_id {
-            venue_client_map.insert(delta.order.order_id.clone(), client_order_id);
-
-            if let Some(identity) = state.lookup_identity(&client_order_id) {
-                partial_removal_tracked(
+    if let Some(client_order_id) = resolved_id {
+        venue_client_map.insert(delta.order.order_id.clone(), client_order_id);
+        if let Some(identity) = state.lookup_identity(&client_order_id) {
+            if delta.is_cancel {
+                cancel_tracked(
                     delta,
                     client_order_id,
+                    venue_order_id,
                     &identity,
                     instrument,
                     state,
@@ -135,22 +143,11 @@ pub fn open_orders_delta(
                 );
                 return;
             }
-        }
 
-        log::debug!(
-            "Skipping untracked partial-fill removal: order_id={}",
-            delta.order.order_id,
-        );
-        return;
-    }
-
-    if let Some(client_order_id) = resolved_id {
-        venue_client_map.insert(delta.order.order_id.clone(), client_order_id);
-
-        if let Some(identity) = state.lookup_identity(&client_order_id) {
             delta_tracked(
                 delta,
                 client_order_id,
+                venue_order_id,
                 &identity,
                 instrument,
                 state,
@@ -158,8 +155,17 @@ pub fn open_orders_delta(
                 account_id,
                 ts_init,
             );
+
             return;
         }
+    }
+
+    if delta.is_partial_fill_removal() {
+        log::debug!(
+            "Skipping untracked partial-fill removal: order_id={}",
+            delta.order.order_id,
+        );
+        return;
     }
 
     // External / untracked: fall back to a status report.
@@ -185,6 +191,7 @@ pub fn open_orders_delta(
 fn delta_tracked(
     delta: &KrakenFuturesOpenOrdersDelta,
     client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
     instrument: &InstrumentAny,
     state: &WsDispatchState,
@@ -192,42 +199,12 @@ fn delta_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
     let ts_event = millis_to_nanos(delta.order.last_update_time);
     let Ok(new_filled) = Quantity::from_decimal_dp(delta.order.filled, instrument.size_precision())
     else {
         log::error!("Failed to parse filled quantity: {}", delta.order.filled);
         return;
     };
-
-    if delta.is_cancel {
-        ensure_accepted_emitted(
-            client_order_id,
-            venue_order_id,
-            account_id,
-            identity,
-            state,
-            emitter,
-            ts_event,
-            ts_init,
-        );
-        let canceled = OrderCanceled::new(
-            emitter.trader_id(),
-            identity.strategy_id,
-            identity.instrument_id,
-            client_order_id,
-            UUID4::new(),
-            ts_event,
-            ts_init,
-            false,
-            Some(venue_order_id),
-            Some(account_id),
-            delta.reason.as_deref().map(Ustr::from),
-        );
-        emitter.send_order_event(OrderEventAny::Canceled(canceled));
-        state.cleanup_terminal(&client_order_id);
-        return;
-    }
 
     let already_accepted = state.emitted_accepted.contains(&client_order_id);
     ensure_accepted_emitted(
@@ -320,17 +297,11 @@ fn delta_tracked(
     emitter.send_order_event(OrderEventAny::Updated(updated));
 }
 
-/// Converges a tracked terminal part-fill removal whose remainder the venue
-/// discarded (a converted Maker Protection hold or an IOC-style order).
-///
-/// The removal delta carries the venue's cumulative filled at the removal. If
-/// the fills feed has already accounted it the order closes immediately;
-/// otherwise the removal is parked until the cumulative fills reach it, so
-/// the closing cancel can never overtake the fill it belongs with.
 #[expect(clippy::too_many_arguments)]
-fn partial_removal_tracked(
+fn cancel_tracked(
     delta: &KrakenFuturesOpenOrdersDelta,
     client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
     instrument: &InstrumentAny,
     state: &WsDispatchState,
@@ -338,7 +309,6 @@ fn partial_removal_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
     let ts_event = millis_to_nanos(delta.order.last_update_time);
 
     let Ok(venue_filled) =
@@ -354,7 +324,7 @@ fn partial_removal_tracked(
 
     if recorded_filled < venue_filled {
         log::debug!(
-            "Deferring partial-fill removal for {client_order_id}: filled={recorded_filled}, \
+            "Deferring cancellation for {client_order_id}: filled={recorded_filled}, \
              venue_filled={venue_filled}",
         );
         state.insert_pending_removal(
@@ -421,7 +391,16 @@ pub fn open_orders_cancel(
         return;
     }
 
-    let venue_order_id = VenueOrderId::new(&cancel.order_id);
+    let Ok(venue_order_id) = parse_venue_order_id(
+        &cancel.order_id,
+        format_args!(
+            "futures open orders cancel, cli_ord_id={:?}",
+            cancel.cli_ord_id
+        ),
+    )
+    .inspect_err(|e| log::error!("{e}")) else {
+        return;
+    };
     let resolved_id = cancel
         .cli_ord_id
         .as_ref()

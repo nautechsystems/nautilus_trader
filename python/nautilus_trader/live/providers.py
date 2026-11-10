@@ -66,6 +66,7 @@ class InstrumentProvider:
         async with self._init_lock:
             if self._loaded and not reload:
                 return
+
             if self._config.load_all:
                 await self.load_all_async(self._config.filters)
             elif self._config.load_ids:

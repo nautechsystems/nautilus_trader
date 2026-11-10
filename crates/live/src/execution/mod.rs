@@ -28,8 +28,8 @@ pub mod manager;
 pub mod reports;
 pub mod submission;
 
-#[cfg(feature = "node")]
-pub(crate) mod client;
-
 mod recency;
 mod reconciliation;
+
+#[cfg(feature = "node")]
+pub(crate) mod client;

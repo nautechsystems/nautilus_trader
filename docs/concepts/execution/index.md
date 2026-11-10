@@ -176,10 +176,11 @@ log can accumulate each fill ever applied to that ID. The
   fill from a prior cycle. Without the carried log, the engine finds no matching position fragment
   and rejects the correction.
 
-Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the position
-across the cycle boundary. This moves the boundaries its archived snapshots describe. Thus, the engine settles
-those snapshots into the corrected history's own closed cycles, and realized PnL counts each cycle once. A
-void confined to the current cycle leaves the archive intact. See
+A fill void updates the closed-cycle archive when it increases the voided quantity of a trade from an earlier
+cycle or rolls the position back into an already archived cycle. The engine replaces the archive with the
+corrected PnL of closed cycles before the current one, or removes it if no such cycles remain. The archive
+and current position each contribute their own PnL once. Voiding a current-cycle fill leaves the archive intact
+unless the rebuild rolls back into an earlier cycle. See
 [Position snapshotting](../positions.md#position-snapshotting).
 
 ## Risk engine
@@ -205,7 +206,14 @@ Unless bypassed in `RiskEngineConfig`, the engine validates:
 
 If a submit-time risk check fails, the system generates an `OrderDenied` event with a
 standardized [reason code](#order-denied-reasons). If a modify-time risk check fails, it
-generates an `OrderModifyRejected` event.
+generates an `OrderModifyDenied` event.
+
+Risk checks also enforce these funding and position limits:
+
+- Approved submissions reserve quantity for later position-reducing checks before venue acknowledgement.
+  OTO children approved while their parent has no fills reserve no closing quantity before acceptance.
+- Negative-price sells on cash accounts require funding for the disposal cost, including when reducing a position.
+- Betting order lists and batched modifications combine funding requirements across both order sides.
 
 ### Account selection
 
@@ -225,7 +233,7 @@ in this order:
 
 An order list selects one account from the command's `client_id` and instrument. When no account
 resolves, or the selected client's account is not cached yet, the risk engine denies the order or
-rejects the modification with `VALIDATION_FAILED`. It never falls back to another account. Positions
+denies the modification with `VALIDATION_FAILED`. It never falls back to another account. Positions
 and open orders count toward position-reducing checks only when they belong to the selected account.
 
 ### Whole-position conditional exits
@@ -418,7 +426,7 @@ execution engines. These codes are the source of truth for locally denied orders
 - **Synthetic reconciliation rejections**: use the reasons documented under
   [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance).
 
-Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
+Price and quantity checks can also emit these code-led reasons on `OrderModifyDenied`:
 
 - `PRICE_PRECISION_EXCEEDS_MAXIMUM`
 - `PRICE_NOT_POSITIVE`
@@ -427,7 +435,7 @@ Price and quantity checks can also emit these code-led reasons on `OrderModifyRe
 - `QUANTITY_BELOW_MINIMUM`
 
 For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field. Other
-modification rejection reasons stay free-form. `OrderDeniedCode` does not classify them.
+modification denial reasons stay free-form. `OrderDeniedCode` does not classify them.
 
 `OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
 cross or immediately match. Other venue rejections leave it `false`.

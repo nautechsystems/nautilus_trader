@@ -32,12 +32,6 @@ pub mod bar;
 pub mod book;
 pub mod config;
 
-#[cfg(feature = "defi")]
-pub mod pool;
-
-#[cfg(feature = "streaming")]
-mod streaming;
-
 mod commands;
 mod dispatch;
 mod futures;
@@ -49,6 +43,12 @@ mod responses;
 mod spread_quote;
 mod synthetic;
 mod time_range;
+
+#[cfg(feature = "defi")]
+pub mod pool;
+
+#[cfg(feature = "streaming")]
+mod streaming;
 
 use std::{
     any::{Any, type_name},
@@ -65,7 +65,7 @@ use ::futures::future::join_all;
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
-use bar::{BarAggregationSubscription, BarAggregatorKey, bar_aggregator_key};
+use bar::{BarAggregationSubscription, BarAggregatorKey, BarAggregatorWarmup, bar_aggregator_key};
 use book::{
     BookDeltasKey, BookSnapshotInfos, BookSnapshotKey, BookSnapshotSource, BookSnapshotter,
     BookSubscription, BookSubscriptionOwner, BookUpdater,
@@ -98,6 +98,7 @@ use nautilus_common::{
     },
     msgbus::{
         self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
+        get_message_bus,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -177,6 +178,7 @@ pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     config: DataEngineConfig,
+    is_stopped: bool,
     msgbus_priority: u32,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -193,6 +195,8 @@ pub struct DataEngine {
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
+    bar_aggregator_warmups: AHashMap<BarAggregatorKey, BarAggregatorWarmup>,
+    bar_aggregators_pending_stop: AHashSet<BarAggregatorKey>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
     inflight_requests: AHashMap<UUID4, RequestCommand>,
@@ -255,6 +259,7 @@ impl DataEngine {
             clock,
             cache,
             config,
+            is_stopped: false,
             msgbus_priority: 10, // High-priority for built-in component
             subscriptions_external: SubscriptionRegistry::default(),
             clients: IndexMap::new(),
@@ -271,6 +276,8 @@ impl DataEngine {
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
+            bar_aggregator_warmups: AHashMap::new(),
+            bar_aggregators_pending_stop: AHashSet::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
             inflight_requests: AHashMap::new(),
@@ -339,6 +346,8 @@ impl DataEngine {
     }
 
     /// Registers all message bus handlers for the data engine.
+    ///
+    /// Sets external market-data ingress eligibility from the cache's external data-client registrations.
     pub fn register_msgbus_handlers(engine: &Rc<RefCell<Self>>) {
         let weak = WeakCell::from(Rc::downgrade(engine));
         engine.borrow_mut().continuous_future_roller =
@@ -384,6 +393,11 @@ impl DataEngine {
                 }
             }),
         );
+
+        let external_data_ingress = engine.borrow().cache.borrow().has_external_data_clients();
+        get_message_bus()
+            .borrow_mut()
+            .set_external_data_ingress(external_data_ingress);
 
         // Register process_defi_data handler (typed - takes ownership)
         #[cfg(feature = "defi")]
@@ -459,7 +473,10 @@ impl DataEngine {
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = false;
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
             }
@@ -485,8 +502,15 @@ impl DataEngine {
     }
 
     /// Stops all registered data clients and bar aggregator timers.
+    ///
+    /// Blocks new physical subscriptions until [`Self::start`] or [`Self::reset`].
+    /// Data processing, subscription ownership, and unsubscribes remain enabled.
+    /// Blocked subscriptions are not automatically replayed on start or connect.
     pub fn stop(&mut self) {
+        self.is_stopped = true;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = true;
             if client.stop().is_err() {
                 log::error!("Failed to stop data client {}", client.client_id());
             }
@@ -503,7 +527,10 @@ impl DataEngine {
 
     /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = false;
             match client.reset() {
                 Ok(()) => client.clear_subscription_state(),
                 Err(_) => log::error!("Failed to reset data client {}", client.client_id()),
@@ -645,9 +672,14 @@ impl DataEngine {
 
     /// Connects all registered data clients concurrently.
     ///
-    /// Connection failures are logged but do not prevent the node from running.
-    /// Logs identify the client but omit provider error text, which can contain credentials.
-    pub async fn connect(&mut self) {
+    /// Successful clients remain connected if another client fails.
+    /// Logs identify failed clients without provider error text, which can contain credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect, listing failed client IDs without provider
+    /// error text.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
@@ -658,11 +690,22 @@ impl DataEngine {
             .collect();
 
         let results = join_all(futures).await;
+        let mut failed_clients = Vec::new();
 
         for (client_id, result) in results {
             if result.is_err() {
                 log::error!("Failed to connect data client {client_id}: connection failed");
+                failed_clients.push(client_id.to_string());
             }
+        }
+
+        if failed_clients.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Failed to connect data clients: {}",
+                failed_clients.join(", ")
+            )
         }
     }
 
@@ -750,7 +793,7 @@ impl DataEngine {
         subscribed.extend(
             self.bar_aggregators
                 .keys()
-                .filter(|(_, request_id)| request_id.is_none())
+                .filter(|key| key.1.is_none() && !self.bar_aggregators_pending_stop.contains(*key))
                 .map(|(bar_type, _)| *bar_type),
         );
         subscribed
@@ -882,8 +925,7 @@ impl DataEngine {
         if let Some(client_id) = cmd.client_id().copied()
             && self.is_external_client(client_id)
         {
-            self.subscribe_external(client_id, &cmd);
-            return Ok(());
+            return self.subscribe_external(client_id, &cmd);
         }
 
         self.retain_intent(&cmd)?;
@@ -1062,12 +1104,6 @@ impl DataEngine {
                 {
                     return Ok(None);
                 }
-            }
-            SubscribeCommand::OptionChain(cmd) if cmd.snapshot_interval_ms == Some(0) => {
-                anyhow::bail!(
-                    "Cannot subscribe option chain {} with a zero `snapshot_interval_ms`; use `None` for raw mode",
-                    cmd.series_id,
-                );
             }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
@@ -1309,61 +1345,30 @@ impl DataEngine {
         Ok(true)
     }
 
-    fn subscribe_external(&mut self, client_id: ClientId, cmd: &SubscribeCommand) {
-        let dispatch = match cmd {
+    fn subscribe_external(
+        &mut self,
+        client_id: ClientId,
+        cmd: &SubscribeCommand,
+    ) -> anyhow::Result<()> {
+        let (dispatch, result) = match cmd {
             SubscribeCommand::OptionChain(command) => {
                 self.retain_external_option_chain(client_id, command, cmd);
-                cmd.clone()
+                (Some(cmd.clone()), Ok(()))
             }
-            _ => {
-                let mut acquired = false;
-                let mut fresh_ids = Vec::new();
-                let mut fresh_bar_types = Vec::new();
-
-                for member in split_subscribe(cmd.clone()) {
-                    let key = SubscriptionKey::from_subscribe(&member);
-
-                    if !self.subscriptions_external.retain(
-                        (client_id, key.clone()),
-                        member.command_id(),
-                        member,
-                    ) {
-                        continue;
-                    }
-
-                    acquired = true;
-
-                    match key {
-                        SubscriptionKey::Bars(bar_type) => fresh_bar_types.push(bar_type),
-                        SubscriptionKey::Quotes(id)
-                        | SubscriptionKey::Trades(id)
-                        | SubscriptionKey::Instrument(id)
-                        | SubscriptionKey::BookDeltas(id)
-                        | SubscriptionKey::BookDepth(id)
-                        | SubscriptionKey::MarkPrices(id)
-                        | SubscriptionKey::IndexPrices(id)
-                        | SubscriptionKey::FundingRates(id)
-                        | SubscriptionKey::InstrumentStatus(id)
-                        | SubscriptionKey::InstrumentClose(id)
-                        | SubscriptionKey::OptionGreeks(id)
-                        | SubscriptionKey::BookSnapshots(id, _) => fresh_ids.push(id),
-                        _ => {}
-                    }
-                }
-
-                if !acquired {
-                    return;
-                }
-
-                if cmd.bar_types().is_some() {
-                    cmd.with_bar_types(fresh_bar_types)
-                        .expect("bar command has types")
-                } else {
-                    cmd.with_instrument_ids(fresh_ids)
-                        .unwrap_or_else(|| cmd.clone())
-                }
-            }
+            _ => self.prepare_external_subscribe(client_id, cmd),
         };
+
+        let Some(dispatch) = dispatch else {
+            return result;
+        };
+
+        if self.is_stopped {
+            log::debug!(
+                "Skipped external subscribe after stop: client_id={client_id}, command_id={}",
+                dispatch.command_id()
+            );
+            return result;
+        }
 
         register_external_streaming_type(&dispatch);
         publish_external_data_command(client_id, &dispatch);
@@ -1371,6 +1376,102 @@ impl DataEngine {
         if self.config.debug {
             log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
         }
+
+        result
+    }
+
+    fn prepare_external_subscribe(
+        &mut self,
+        client_id: ClientId,
+        cmd: &SubscribeCommand,
+    ) -> (Option<SubscribeCommand>, anyhow::Result<()>) {
+        let mut result = Ok(());
+        let mut acquired = false;
+        let mut fresh_ids = Vec::new();
+        let mut fresh_bar_types = Vec::new();
+
+        for member in split_subscribe(cmd.clone()) {
+            let key = SubscriptionKey::from_subscribe(&member);
+            let instrument_id = member.instrument_ids().and_then(|ids| ids.first()).copied();
+            let bar_type = member.bar_types().and_then(|types| types.first()).copied();
+
+            match self.retain_external_subscription(client_id, key.clone(), member) {
+                Ok(false) => continue,
+                Ok(true) => {}
+                Err(e) => {
+                    log::error!(
+                        "External subscribe preparation failed: command={}, client={client_id}, subscription={}: {e}",
+                        cmd.command_id(),
+                        key.log_context(),
+                    );
+
+                    if result.is_ok() {
+                        result = Err(e);
+                    }
+
+                    continue;
+                }
+            }
+
+            acquired = true;
+            fresh_ids.extend(instrument_id);
+            fresh_bar_types.extend(bar_type);
+        }
+
+        if !acquired {
+            return (None, result);
+        }
+
+        let dispatch = if cmd.bar_types().is_some() {
+            cmd.with_bar_types(fresh_bar_types)
+                .expect("bar command has types")
+        } else {
+            cmd.with_instrument_ids(fresh_ids)
+                .unwrap_or_else(|| cmd.clone())
+        };
+
+        (Some(dispatch), result)
+    }
+
+    fn retain_external_subscription(
+        &mut self,
+        client_id: ClientId,
+        key: SubscriptionKey,
+        command: SubscribeCommand,
+    ) -> anyhow::Result<bool> {
+        let key = (client_id, key);
+
+        if self
+            .subscriptions_external
+            .get_mut(&key)
+            .is_some_and(|active| active.acquisitions.contains(&command.command_id()))
+        {
+            return Ok(false);
+        }
+
+        // External owners share the first acquisition's source parameters
+        let params = self.subscriptions_external.get_mut(&key).map_or_else(
+            || command.params().cloned(),
+            |active| active.command.params().cloned(),
+        );
+
+        match &command {
+            SubscribeCommand::BookDeltas(command) => {
+                let mut command = command.clone();
+                command.params = params;
+                self.subscribe_book_deltas(&command)?;
+            }
+            SubscribeCommand::BookDepth(command) => {
+                let mut command = command.clone();
+                command.params = params;
+                self.subscribe_book_depth(&command)?;
+            }
+            _ => {}
+        }
+
+        Ok(self
+            .subscriptions_external
+            .retain(key, command.command_id(), command))
     }
 
     fn unsubscribe_external(&mut self, client_id: ClientId, cmd: &UnsubscribeCommand) {
@@ -1378,6 +1479,25 @@ impl DataEngine {
 
         for member in split_unsubscribe(cmd) {
             let key = (client_id, SubscriptionKey::from_unsubscribe(&member));
+            if matches!(
+                member,
+                UnsubscribeCommand::BookDeltas(_) | UnsubscribeCommand::BookDepth(_)
+            ) && self.subscriptions_external.contains(&key)
+            {
+                if !self.release_book_subscription(&member) {
+                    continue;
+                }
+
+                match &member {
+                    UnsubscribeCommand::BookDeltas(command) => {
+                        self.unsubscribe_book_deltas(command);
+                    }
+                    UnsubscribeCommand::BookDepth(command) => {
+                        self.unsubscribe_book_depth(command);
+                    }
+                    _ => unreachable!("only delta and depth subscriptions retain external books"),
+                }
+            }
 
             let (acquisition_id, command) = match self.subscriptions_external.release(&key) {
                 SubscriptionRelease::Retained => continue,
@@ -1505,6 +1625,8 @@ impl DataEngine {
 
     fn execute_request_inner(&mut self, req: RequestCommand) -> anyhow::Result<()> {
         Self::validate_request(&req)?;
+        #[cfg(feature = "streaming")]
+        self.validate_catalog_update(&req)?;
 
         // Skip requests for external clients
         if let Some(cid) = req.client_id()
@@ -1852,15 +1974,40 @@ impl DataEngine {
         self.process_response_envelope(envelope);
     }
 
-    fn process_response_envelope(&mut self, envelope: DataResponseEnvelope) {
+    fn process_response_envelope(&mut self, mut envelope: DataResponseEnvelope) {
+        let accepted = match envelope.response() {
+            Some(DataResponse::Instrument(response)) => self.cache_instrument(&response.data),
+            Some(DataResponse::Instruments(response)) => {
+                let mut accepted = true;
+                for instrument in &response.data {
+                    accepted &= self.cache_instrument(instrument);
+                }
+
+                accepted
+            }
+            _ => true,
+        };
+
+        if !accepted {
+            envelope = DataResponseEnvelope::terminal(
+                *envelope.correlation_id(),
+                Some("Instrument currency integrity check failed".into()),
+            );
+        }
+
         let request = self.inflight_requests.remove(envelope.correlation_id());
         #[cfg(feature = "streaming")]
-        if envelope.completed()
-            && envelope.failure_reason().is_none()
-            && let (Some(request), Some(response)) = (&request, envelope.response())
-        {
-            self.update_catalog_from_response(response, request);
-        }
+        let envelope = match (&request, envelope.response()) {
+            (Some(request), Some(response))
+                if envelope.completed() && envelope.failure_reason().is_none() =>
+            {
+                match self.update_catalog_from_response(response, request) {
+                    Ok(()) => envelope,
+                    Err(e) => envelope.with_failure(e.to_string()),
+                }
+            }
+            _ => envelope,
+        };
 
         #[cfg(not(feature = "streaming"))]
         let _ = request;
@@ -1956,12 +2103,7 @@ impl DataEngine {
         let correlation_id = *resp.correlation_id();
 
         match resp {
-            DataResponse::Instrument(r) => {
-                self.handle_instrument_response(r.data.clone());
-            }
-            DataResponse::Instruments(r) => {
-                self.handle_instruments(&r.data);
-            }
+            DataResponse::Instrument(_) | DataResponse::Instruments(_) => {}
             DataResponse::Quotes(r) => {
                 if !log_if_empty_response(
                     &r.data,

@@ -174,9 +174,10 @@ In both backtest and sandbox, contingent actions respect venue receipt:
 
 Stopping the client discards anything still in flight:
 
-- A discarded submit, modify, or targeted cancel is rejected (`OrderRejected`, `OrderModifyRejected`,
-  `OrderCancelRejected`) so its order does not stay `SUBMITTED` or pending forever. The sandbox
-  generates no order status reports, so nothing else would resolve it.
+- A discarded submit produces `OrderRejected`. A discarded modify or targeted cancel produces
+  `OrderModifyDenied` or `OrderCancelDenied`, with its command ID. Each denial resolves only its
+  matching pending command and preserves later fills or terminal state. The sandbox generates no
+  order status reports, so nothing else would resolve a stranded command.
 - A discarded `CancelAllOrders` is dropped. The strategy marks no order `PENDING_CANCEL` for it,
   so no pending state needs releasing.
 

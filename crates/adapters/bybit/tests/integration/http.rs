@@ -15,7 +15,15 @@
 
 //! Integration tests for Bybit HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -32,16 +40,20 @@ use nautilus_bybit::{
             BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode,
             BybitOrderSmpType, BybitOrderType, BybitPositionIdx, BybitProductType,
             BybitRepayStatus, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
+            BybitWithdrawAccountType, BybitWithdrawFeeType, BybitWithdrawForceChain,
+            BybitWithdrawStatus, BybitWithdrawType,
         },
         parse::parse_linear_instrument,
         urls::bybit_http_base_url,
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
+        error::BybitHttpError,
         models::BybitInstrumentLinearResponse,
         query::{
             BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitNativeTpSlParams,
-            BybitPositionListParamsBuilder, BybitWalletBalanceParams,
+            BybitPositionListParamsBuilder, BybitWalletBalanceParams, BybitWithdrawParamsBuilder,
+            BybitWithdrawalRecordsParamsBuilder,
         },
     },
 };
@@ -50,11 +62,11 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
     enums::{
-        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        AvgPxReconciliation, LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
-    instruments::{CurrencyPair, InstrumentAny},
+    instruments::{CurrencyPair, Instrument, InstrumentAny},
     reports::FillReport,
     types::{Currency, Money, Price, Quantity},
 };
@@ -62,8 +74,158 @@ use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
+
+#[rstest]
+#[case(0, "PostOnly", Some("Qy000878"))]
+#[case(2, "PostOnly", None)]
+#[case(0, "GTC", Some("Qy000878"))]
+#[case(2, "GTC", Some("Qy000878"))]
+#[tokio::test]
+async fn test_http_attribution_uses_cached_detected_mm_level(
+    #[case] mm_level: u8,
+    #[case] time_in_force: &str,
+    #[case] expected_referer: Option<&str>,
+) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    state.mm_level.store(mm_level, Ordering::Relaxed);
+    let client = BybitHttpClient::with_credentials(
+        "test-key".to_string(),
+        "test-secret".to_string(),
+        Some(format!("http://{addr}")),
+        2,
+        0,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 0);
+    client.get_account_details().await.unwrap();
+    let request = json!({
+        "category":"linear", "symbol":"BTCUSDT", "side":"Buy",
+        "orderType":"Limit", "qty":"0.001", "price":"50000", "timeInForce":time_in_force,
+    });
+    client.place_order(&request).await.unwrap();
+    client.clone().place_order(&request).await.unwrap();
+    let submissions = state.order_submissions.lock().await.clone();
+
+    assert_eq!(state.account_queries.load(Ordering::Relaxed), 1);
+    assert_eq!(submissions.len(), 2);
+
+    for order in submissions {
+        assert_eq!(order.referer.as_deref(), expected_referer);
+        assert_eq!(order.raw_body, request);
+    }
+}
+
+#[rstest]
+#[case(0)]
+#[case(2)]
+#[case(3)]
+#[tokio::test]
+async fn test_http_mm_detection_does_not_queue_orders_and_retries(#[case] failures: usize) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    state.mm_level.store(2, Ordering::Relaxed);
+    state
+        .account_query_failures
+        .store(failures, Ordering::Relaxed);
+    state.account_query_blocked.store(true, Ordering::Relaxed);
+    let client = BybitHttpClient::with_credentials(
+        "test-key".to_string(),
+        "test-secret".to_string(),
+        Some(format!("http://{addr}")),
+        2,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let request = json!({
+        "category":"linear", "symbol":"BTCUSDT", "side":"Buy",
+        "orderType":"Limit", "qty":"0.001", "price":"50000", "timeInForce":"PostOnly",
+    });
+    tokio::time::timeout(Duration::from_secs(2), client.place_order(&request))
+        .await
+        .unwrap()
+        .unwrap();
+    wait_until_async(
+        || async { state.account_queries.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let first = state.order_submissions.lock().await[0].clone();
+    state.account_query_blocked.store(false, Ordering::Relaxed);
+    state.account_query_gate.notify_one();
+
+    if failures < 3 {
+        wait_until_async(
+            || async {
+                client.clone().place_order(&request).await.unwrap();
+                state
+                    .order_submissions
+                    .lock()
+                    .await
+                    .last()
+                    .unwrap()
+                    .referer
+                    .is_none()
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+    } else {
+        wait_until_async(
+            || async { state.account_queries.load(Ordering::Relaxed) == 3 },
+            Duration::from_secs(10),
+        )
+        .await;
+        client.clone().place_order(&request).await.unwrap();
+    }
+
+    let submissions = state.order_submissions.lock().await.clone();
+
+    assert_eq!(first.referer.as_deref(), Some("Qy000878"));
+    assert_eq!(
+        submissions.last().unwrap().referer.as_deref(),
+        if failures < 3 { None } else { Some("Qy000878") }
+    );
+    assert_eq!(
+        state.account_queries.load(Ordering::Relaxed),
+        (failures + 1).min(3)
+    );
+    assert_eq!(state.account_query_failures.load(Ordering::Relaxed), 0);
+}
+
+async fn handle_account_details(State(state): State<TestServerState>) -> Response {
+    state.account_queries.fetch_add(1, Ordering::Relaxed);
+    if state.account_query_blocked.load(Ordering::Relaxed) {
+        state.account_query_gate.notified().await;
+    }
+
+    if state
+        .account_query_failures
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"retCode":10000,"retMsg":"Temporary failure"})),
+        )
+            .into_response();
+    }
+
+    let mut response = load_test_data("http_get_user_query_api.json");
+    response["result"]["mktMakerLevel"] = json!(state.mm_level.load(Ordering::Relaxed).to_string());
+    Json(response).into_response()
+}
 
 #[derive(Debug, Clone, Copy)]
 enum RequiredInstrumentCachePath {
@@ -77,6 +239,7 @@ enum RequiredInstrumentCachePath {
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 struct CapturedOrder {
+    referer: Option<String>,
     category: String,
     symbol: String,
     side: String,
@@ -99,6 +262,11 @@ struct CapturedOrder {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestServerState {
+    mm_level: Arc<AtomicU8>,
+    account_queries: Arc<AtomicUsize>,
+    account_query_failures: Arc<AtomicUsize>,
+    account_query_blocked: Arc<AtomicBool>,
+    account_query_gate: Arc<tokio::sync::Notify>,
     request_count: Arc<tokio::sync::Mutex<usize>>,
     execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     wallet_balance_requests: Arc<tokio::sync::Mutex<usize>>,
@@ -114,6 +282,11 @@ struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
+            mm_level: Arc::new(AtomicU8::new(0)),
+            account_queries: Arc::new(AtomicUsize::new(0)),
+            account_query_failures: Arc::new(AtomicUsize::new(0)),
+            account_query_blocked: Arc::new(AtomicBool::new(false)),
+            account_query_gate: Arc::new(tokio::sync::Notify::new()),
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
             execution_response: Arc::default(),
             wallet_balance_requests: Arc::new(tokio::sync::Mutex::new(0)),
@@ -427,6 +600,9 @@ async fn handle_post_order_with_capture(
     }
 
     let captured = CapturedOrder {
+        referer: headers
+            .get("X-Referer")
+            .map(|value| value.to_str().unwrap().to_string()),
         category: order_req
             .get("category")
             .and_then(|v| v.as_str())
@@ -1052,6 +1228,7 @@ async fn handle_get_orders_history_reconciliation(
 #[allow(dead_code)]
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
+        .route("/v5/user/query-api", get(handle_account_details))
         .route("/v5/market/time", get(handle_get_server_time))
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/market/kline", get(handle_get_klines))
@@ -1520,6 +1697,414 @@ async fn test_get_instruments_option() {
 
     let response = client.get_instruments_option(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
+}
+
+#[rstest]
+#[case::instruments("instruments")]
+#[case::statuses("statuses")]
+#[case::combined("combined")]
+#[tokio::test]
+async fn test_option_bulk_instruments_paginate_all_base_coins(#[case] path: &str) {
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get({
+            let queries = queries.clone();
+            move |Query(params): Query<HashMap<String, String>>| {
+                let queries = queries.clone();
+                async move {
+                    queries.lock().await.push(params.clone());
+                    let mut response = load_test_data("http_get_instruments_option.json");
+                    if params.contains_key("cursor") {
+                        response["result"]["list"][0]["symbol"] = json!("SOL-26JUN26-200-P");
+                        response["result"]["list"][0]["baseCoin"] = json!("SOL");
+                    } else {
+                        response["result"]["nextPageCursor"] = json!("second-page");
+                    }
+
+                    Json(response)
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let (instruments, statuses) = match path {
+        "instruments" => (
+            client
+                .request_instruments(BybitProductType::Option, None, None)
+                .await
+                .unwrap(),
+            None,
+        ),
+        "statuses" => (
+            Vec::new(),
+            Some(
+                client
+                    .request_instrument_statuses(BybitProductType::Option)
+                    .await
+                    .unwrap(),
+            ),
+        ),
+        "combined" => {
+            let (instruments, statuses) = client
+                .request_instruments_with_statuses(BybitProductType::Option)
+                .await
+                .unwrap();
+            (instruments, Some(statuses))
+        }
+        _ => unreachable!(),
+    };
+
+    server.abort();
+
+    let expected_ids = vec![
+        InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT"),
+        InstrumentId::from("SOL-26JUN26-200-P-OPTION.BYBIT"),
+    ];
+
+    if path != "statuses" {
+        assert_eq!(
+            instruments.iter().map(|i| i.id()).collect::<Vec<_>>(),
+            expected_ids
+        );
+    }
+
+    if let Some(statuses) = statuses {
+        assert_eq!(statuses.len(), expected_ids.len());
+
+        for id in expected_ids {
+            assert_eq!(statuses[&id], MarketStatusAction::Trading);
+        }
+    }
+
+    let first = HashMap::from([
+        ("category".to_string(), "option".to_string()),
+        ("baseCoin".to_string(), "All".to_string()),
+        ("limit".to_string(), "1000".to_string()),
+    ]);
+    let mut second = first.clone();
+    second.insert("cursor".to_string(), "second-page".to_string());
+    assert_eq!(*queries.lock().await, vec![first, second]);
+}
+
+#[rstest]
+#[case::spot(
+    BybitProductType::Spot,
+    "Trading",
+    "0",
+    "",
+    MarketStatusAction::Trading
+)]
+#[case::option(
+    BybitProductType::Option,
+    "Delivering",
+    "123",
+    "",
+    MarketStatusAction::PreClose
+)]
+#[case::linear_perpetual(
+    BybitProductType::Linear,
+    "Trading",
+    "0",
+    "LinearPerpetual",
+    MarketStatusAction::Trading
+)]
+#[case::linear_scheduled(
+    BybitProductType::Linear,
+    "Trading",
+    "123",
+    "LinearPerpetual",
+    MarketStatusAction::PreClose
+)]
+#[case::linear_prelaunch(
+    BybitProductType::Linear,
+    "PreLaunch",
+    "123",
+    "LinearPerpetual",
+    MarketStatusAction::PreOpen
+)]
+#[case::linear_future(
+    BybitProductType::Linear,
+    "Trading",
+    "123",
+    "LinearFutures",
+    MarketStatusAction::Trading
+)]
+#[case::inverse_perpetual(
+    BybitProductType::Inverse,
+    "Trading",
+    "0",
+    "InversePerpetual",
+    MarketStatusAction::Trading
+)]
+#[case::inverse_scheduled(
+    BybitProductType::Inverse,
+    "Trading",
+    "123",
+    "InversePerpetual",
+    MarketStatusAction::PreClose
+)]
+#[case::inverse_prelaunch(
+    BybitProductType::Inverse,
+    "PreLaunch",
+    "123",
+    "InversePerpetual",
+    MarketStatusAction::PreOpen
+)]
+#[case::inverse_future(
+    BybitProductType::Inverse,
+    "Trading",
+    "123",
+    "InverseFutures",
+    MarketStatusAction::Trading
+)]
+#[tokio::test]
+async fn test_instrument_statuses_preserve_market_actions(
+    #[case] product_type: BybitProductType,
+    #[case] status: &str,
+    #[case] delivery_time: &str,
+    #[case] contract_type: &str,
+    #[case] expected: MarketStatusAction,
+) {
+    let mut response = load_test_data(&format!(
+        "http_get_instruments_{}.json",
+        product_type.as_str(),
+    ));
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    let id = InstrumentId::from(format!(
+        "{}{}.BYBIT",
+        definition["symbol"].as_str().unwrap(),
+        product_type.suffix(),
+    ));
+    definition["status"] = json!(status);
+    definition["deliveryTime"] = json!(delivery_time);
+    definition["contractType"] = json!(contract_type);
+    definition["priceFilter"]["tickSize"] = json!("not-a-price");
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let statuses = client
+        .request_instrument_statuses(product_type)
+        .await
+        .unwrap();
+    server.abort();
+
+    assert_eq!(statuses, [(id, expected)].into_iter().collect());
+}
+
+#[rstest]
+#[case::spot(BybitProductType::Spot, None, None)]
+#[case::linear(BybitProductType::Linear, None, None)]
+#[case::inverse(BybitProductType::Inverse, None, None)]
+#[case::base_coin(BybitProductType::Option, None, Some("ETH"))]
+#[case::symbol(BybitProductType::Option, Some("ETH-26JUN26-16000-P"), None)]
+#[case::symbol_and_base_coin(BybitProductType::Option, Some("ETH-26JUN26-16000-P"), Some("ETH"))]
+#[tokio::test]
+async fn test_instrument_filters_preserved(
+    #[case] product_type: BybitProductType,
+    #[case] symbol: Option<&str>,
+    #[case] base_coin: Option<&str>,
+) {
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get({
+            let queries = queries.clone();
+            move |Query(params): Query<HashMap<String, String>>| {
+                let queries = queries.clone();
+                async move {
+                    queries.lock().await.push(params);
+                    let mut response = load_test_data("http_get_instruments_option.json");
+                    response["result"]["list"] = json!([]);
+                    Json(response)
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = client
+        .request_instruments(
+            product_type,
+            symbol.map(str::to_string),
+            base_coin.map(Ustr::from),
+        )
+        .await
+        .unwrap();
+    server.abort();
+
+    let category = serde_json::to_value(product_type).unwrap();
+    let mut expected = HashMap::from([
+        (
+            "category".to_string(),
+            category.as_str().unwrap().to_string(),
+        ),
+        ("limit".to_string(), "1000".to_string()),
+    ]);
+
+    if let Some(symbol) = symbol {
+        expected.insert("symbol".to_string(), symbol.to_string());
+    }
+
+    if let Some(base_coin) = base_coin {
+        expected.insert("baseCoin".to_string(), base_coin.to_string());
+    }
+
+    assert_eq!(instruments, Vec::new());
+    assert_eq!(*queries.lock().await, vec![expected]);
+}
+
+#[rstest]
+#[case::beyond_quantity_range("54180000000000", true)]
+#[case::malformed("not-a-quantity", false)]
+#[case::negative("-1", false)]
+#[tokio::test]
+async fn test_instruments_with_unrepresentable_max_order_qty(
+    #[case] max_order_qty: &str,
+    #[case] kept: bool,
+    #[values(
+        BybitProductType::Spot,
+        BybitProductType::Linear,
+        BybitProductType::Inverse,
+        BybitProductType::Option
+    )]
+    product_type: BybitProductType,
+    #[values(false, true)] with_statuses: bool,
+) {
+    let mut response = load_test_data(&format!(
+        "http_get_instruments_{}.json",
+        product_type.as_str(),
+    ));
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    let id = InstrumentId::from(format!(
+        "{}{}.BYBIT",
+        definition["symbol"].as_str().unwrap(),
+        product_type.suffix(),
+    ));
+    definition["lotSizeFilter"]["maxOrderQty"] = json!(max_order_qty);
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = if with_statuses {
+        client
+            .request_instruments_with_statuses(product_type)
+            .await
+            .unwrap()
+            .0
+    } else {
+        client
+            .request_instruments(product_type, None, None)
+            .await
+            .unwrap()
+    };
+
+    server.abort();
+
+    let parsed: Vec<_> = instruments
+        .iter()
+        .map(|instrument| (instrument.id(), instrument.max_quantity()))
+        .collect();
+    let expected = if kept { vec![(id, None)] } else { Vec::new() };
+    assert_eq!(parsed, expected);
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_keeps_babydogeusdt_spot() {
+    // BABYDOGEUSDT lot size and tick size as Bybit lists them, other fields from the fixture
+    let mut response = load_test_data("http_get_instruments_spot.json");
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    definition["symbol"] = json!("BABYDOGEUSDT");
+    definition["baseCoin"] = json!("BABYDOGE");
+    definition["lotSizeFilter"]["basePrecision"] = json!("1");
+    definition["lotSizeFilter"]["minOrderQty"] = json!("1");
+    definition["lotSizeFilter"]["maxOrderQty"] = json!("54180000000000");
+    definition["priceFilter"]["tickSize"] = json!("0.0000000000001");
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = client
+        .request_instruments(
+            BybitProductType::Spot,
+            Some("BABYDOGEUSDT".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+    server.abort();
+
+    assert_eq!(instruments.len(), 1);
+    let instrument = &instruments[0];
+    assert_eq!(
+        instrument.id(),
+        InstrumentId::from("BABYDOGEUSDT-SPOT.BYBIT")
+    );
+    assert_eq!(instrument.price_increment(), Price::from("0.0000000000001"));
+    assert_eq!(instrument.size_increment(), Quantity::from("1"));
+    assert_eq!(instrument.min_quantity(), Some(Quantity::from("1")));
+    assert_eq!(instrument.max_quantity(), None);
 }
 
 #[rstest]
@@ -3308,6 +3893,7 @@ async fn test_request_bars_continues_pagination_when_first_page_only_partial() {
 #[allow(dead_code)]
 fn create_order_capture_test_router(state: TestServerState) -> Router {
     Router::new()
+        .route("/v5/user/query-api", get(handle_account_details))
         .route("/v5/market/time", get(handle_get_server_time))
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/order/create", post(handle_post_order_with_capture))
@@ -5272,6 +5858,367 @@ async fn test_fetch_all_sub_api_keys_walks_cursor() {
     );
 }
 
+// -------------------------------------------------------------------------------------------------
+// Withdrawal endpoints (/v5/asset/withdraw/*) tests
+// -------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+struct WithdrawServerState {
+    bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    failures_remaining: Arc<tokio::sync::Mutex<usize>>,
+    record_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
+    exhaust_quota: Arc<tokio::sync::Mutex<bool>>,
+    repeat_cursor: Arc<tokio::sync::Mutex<bool>>,
+}
+
+async fn handle_withdraw_create(
+    State(state): State<WithdrawServerState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    state
+        .bodies
+        .lock()
+        .await
+        .push(serde_json::from_slice(&body).unwrap());
+
+    let mut failures = state.failures_remaining.lock().await;
+    if *failures > 0 {
+        *failures -= 1;
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let mut response = Json(json!({
+        "retCode": 0,
+        "retMsg": "success",
+        "result": {"id": "10195"},
+        "retExtInfo": {},
+        "time": 1672196571239i64
+    }))
+    .into_response();
+
+    if *state.exhaust_quota.lock().await {
+        let reset_ms = Timestamp::now().as_millisecond() + 60_000;
+        let headers = response.headers_mut();
+        headers.insert("X-Bapi-Limit", "5".parse().unwrap());
+        headers.insert("X-Bapi-Limit-Status", "0".parse().unwrap());
+        headers.insert(
+            "X-Bapi-Limit-Reset-Timestamp",
+            reset_ms.to_string().parse().unwrap(),
+        );
+    }
+
+    response
+}
+
+async fn handle_withdraw_query_record(
+    State(state): State<WithdrawServerState>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    let query = uri.query().unwrap_or_default().to_string();
+    state.record_queries.lock().await.push(query.clone());
+
+    if !query.contains("cursor=") || *state.repeat_cursor.lock().await {
+        return Json(load_test_data("http_get_withdraw_query_record.json")).into_response();
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "success",
+        "result": {
+            "rows": [{
+                "coin": "BTC", "chain": "BTC", "amount": "0.5", "txID": "",
+                "status": "Pending", "toAddress": "bc1qexample", "tag": "",
+                "withdrawFee": "0.0001", "createTime": "1742700000000",
+                "updateTime": "1742700000000", "withdrawId": "131500000",
+                "withdrawType": 0
+            }],
+            "nextPageCursor": ""
+        },
+        "retExtInfo": {},
+        "time": 1750777316807i64
+    }))
+    .into_response()
+}
+
+async fn start_withdraw_server(failures: usize) -> (SocketAddr, WithdrawServerState) {
+    let state = WithdrawServerState::default();
+    *state.failures_remaining.lock().await = failures;
+
+    let router = Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/asset/withdraw/create", post(handle_withdraw_create))
+        .route(
+            "/v5/asset/withdraw/query-record",
+            get(handle_withdraw_query_record),
+        )
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    wait_for_server(addr, "/v5/market/time").await;
+    (addr, state)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_sends_required_fields() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24.5".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+    let response = client.withdraw(&params).await.unwrap();
+
+    assert_eq!(response.result.id, "10195");
+
+    let bodies = state.bodies.lock().await.clone();
+    assert_eq!(bodies.len(), 1);
+    let body = bodies[0].as_object().unwrap();
+    assert_eq!(body["coin"], "USDT");
+    assert_eq!(
+        body["address"],
+        "0x99ced129603abc771c0dabe935c326ff6c86645d"
+    );
+    assert_eq!(body["amount"], "24.5");
+    assert_eq!(body["accountType"], "FUND");
+    assert_eq!(body["timestamp"], 1_700_000_000_000_i64);
+
+    for key in [
+        "chain",
+        "tag",
+        "feeType",
+        "forceChain",
+        "requestId",
+        "questionnaire",
+    ] {
+        assert!(!body.contains_key(key), "unexpected {key} in {body:?}");
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_sends_optional_fields() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("XRP".to_string())
+        .chain("XRP".to_string())
+        .address("rExampleAddress".to_string())
+        .tag("123456".to_string())
+        .amount("10".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::All)
+        .fee_type(BybitWithdrawFeeType::Gross)
+        .force_chain(BybitWithdrawForceChain::OnChain)
+        .request_id("persisted123".to_string())
+        .questionnaire("{}".to_string())
+        .build()
+        .unwrap();
+    client.withdraw(&params).await.unwrap();
+
+    let bodies = state.bodies.lock().await.clone();
+    let body = &bodies[0];
+    assert_eq!(body["chain"], "XRP");
+    assert_eq!(body["tag"], "123456");
+    assert_eq!(body["accountType"], "FUND,UTA,EARN");
+    assert_eq!(body["feeType"], 1);
+    assert_eq!(body["forceChain"], 1);
+    assert_eq!(body["requestId"], "persisted123");
+    assert_eq!(body["questionnaire"], "{}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_with_request_id_is_sent_once() {
+    let (addr, state) = start_withdraw_server(1).await;
+    let client = BybitRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        1,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .request_id("retry123".to_string())
+        .build()
+        .unwrap();
+    let result = client.withdraw(&params).await;
+
+    assert!(result.is_err());
+    let bodies = state.bodies.lock().await.clone();
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0]["requestId"], "retry123");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_without_request_id_is_sent_once() {
+    let (addr, state) = start_withdraw_server(1).await;
+    let client = BybitRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        1,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+    let result = client.withdraw(&params).await;
+
+    assert!(result.is_err());
+    assert_eq!(state.bodies.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_without_request_id_cancels_while_waiting_for_quota() {
+    let (addr, state) = start_withdraw_server(0).await;
+    *state.exhaust_quota.lock().await = true;
+    let client = Arc::new(user_raw_test_client(format!("http://{addr}")));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+
+    // First response reports the quota exhausted for 60s
+    client.withdraw(&params).await.unwrap();
+
+    let handle = tokio::spawn({
+        let client = Arc::clone(&client);
+        let params = params.clone();
+        async move { client.withdraw(&params).await }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    client.cancel_all_requests();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("withdraw did not observe cancellation")
+        .unwrap();
+
+    assert!(matches!(result, Err(BybitHttpError::Canceled(_))));
+    assert_eq!(state.bodies.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_withdrawal_records_rejects_repeated_cursor() {
+    let (addr, state) = start_withdraw_server(0).await;
+    *state.repeat_cursor.lock().await = true;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawalRecordsParamsBuilder::default()
+        .withdraw_type(BybitWithdrawType::All)
+        .limit(2)
+        .build()
+        .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.fetch_all_withdrawal_records(&params),
+    )
+    .await
+    .expect("pagination did not stop on a repeated cursor");
+
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("did not advance"), "{err}");
+    assert_eq!(state.record_queries.lock().await.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_withdrawal_records_walks_cursor() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawalRecordsParamsBuilder::default()
+        .withdraw_type(BybitWithdrawType::All)
+        .limit(2)
+        .build()
+        .unwrap();
+    let records = client.fetch_all_withdrawal_records(&params).await.unwrap();
+
+    assert_eq!(records.len(), 3);
+
+    assert_eq!(records[0].withdraw_id, "131629076");
+    assert_eq!(
+        records[0].tx_id,
+        "0x3d7bddb797f0e86420c982c0723653b8b728fd0ec9953b6b354445848d83a185"
+    );
+    assert_eq!(records[0].amount, dec!(41.43008));
+    assert_eq!(records[0].withdraw_fee, dec!(5));
+    assert_eq!(records[0].status, BybitWithdrawStatus::Success);
+    assert_eq!(records[0].withdraw_type, BybitWithdrawType::OnChain);
+
+    assert_eq!(records[1].tx_id, "");
+    assert_eq!(records[1].status, BybitWithdrawStatus::CancelByUser);
+    assert_eq!(records[1].withdraw_type, BybitWithdrawType::Internal);
+
+    assert_eq!(records[2].withdraw_id, "131500000");
+    assert_eq!(records[2].status, BybitWithdrawStatus::Pending);
+
+    let log = state.record_queries.lock().await.clone();
+    assert_eq!(log.len(), 2, "expected exactly two page requests: {log:?}");
+    for query in &log {
+        assert!(query.contains("withdrawType=2"), "filter lost: {log:?}");
+        assert!(query.contains("limit=2"), "limit lost: {log:?}");
+    }
+    assert!(
+        !log[0].contains("cursor="),
+        "first page must not carry a cursor: {log:?}"
+    );
+    assert!(
+        log[1].contains("cursor=eyJtaW5JRCI6MTMxNjAzNDU4LCJtYXhJRCI6MTMxNjI5MDc2fQ"),
+        "second page must carry cursor: {log:?}"
+    );
+}
+
 #[rstest]
 #[case(false, "cache", "Instrument ETHUSDT-LINEAR not found in cache")]
 #[case(true, "cache", "Instrument ETHUSDT-LINEAR not found in cache")]
@@ -5576,4 +6523,110 @@ async fn start_position_report_server(
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     wait_for_server(addr, "/v5/market/time").await;
     (addr, state)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_state_changing_http_commands_are_sent_once() {
+    let hits = Arc::new(tokio::sync::Mutex::new(HashMap::<String, usize>::new()));
+
+    let app = Router::new().fallback({
+        let hits = hits.clone();
+        move |request: axum::extract::Request| {
+            let hits = hits.clone();
+            async move {
+                let path = request.uri().path().to_string();
+                *hits.lock().await.entry(path).or_insert(0) += 1;
+                (StatusCode::INTERNAL_SERVER_ERROR, "unavailable")
+            }
+        }
+    });
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        5,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instruments: BybitInstrumentLinearResponse =
+        serde_json::from_value(load_test_data("http_get_instruments_linear.json")).unwrap();
+    let definition = instruments
+        .result
+        .list
+        .into_iter()
+        .find(|definition| definition.symbol == "BTCUSDT")
+        .unwrap();
+    let instrument = parse_linear_instrument(&definition, 0.into(), 0.into()).unwrap();
+    let instrument_id = instrument.id();
+    client.cache_instrument(instrument);
+
+    let account_id = AccountId::new("BYBIT-001");
+
+    let assert_one = |path: &str, counts: &HashMap<String, usize>| {
+        assert_eq!(counts.get(path).copied().unwrap_or(0), 1, "{path}");
+    };
+
+    client
+        .place_order(&json!({"category": "linear", "symbol": "BTCUSDT"}))
+        .await
+        .unwrap_err();
+    client
+        .cancel_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            Some(ClientOrderId::from("O-1")),
+            Some(VenueOrderId::from("venue-1")),
+        )
+        .await
+        .unwrap_err();
+    client
+        .modify_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            Some(ClientOrderId::from("O-1")),
+            Some(VenueOrderId::from("venue-1")),
+            Some(Quantity::from("0.001")),
+            Some(Price::from("100")),
+            None,
+        )
+        .await
+        .unwrap_err();
+    client
+        .cancel_all_orders(account_id, BybitProductType::Linear, instrument_id)
+        .await
+        .unwrap_err();
+    client
+        .borrow_spot("USDT", Quantity::from("1"))
+        .await
+        .unwrap_err();
+    client
+        .repay_spot_borrow("USDT", Some(Quantity::from("1")))
+        .await
+        .unwrap_err();
+    client.get_server_time().await.unwrap_err();
+
+    let counts = hits.lock().await;
+    assert_one("/v5/order/create", &counts);
+    assert_one("/v5/order/cancel", &counts);
+    assert_one("/v5/order/amend", &counts);
+    assert_one("/v5/order/cancel-all", &counts);
+    assert_one("/v5/account/borrow", &counts);
+    assert_one("/v5/account/no-convert-repay", &counts);
+    assert!(
+        counts.get("/v5/market/time").copied().unwrap_or(0) > 1,
+        "a read must still retry, counts={counts:?}"
+    );
 }

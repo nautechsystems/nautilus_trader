@@ -26,7 +26,8 @@
 //! [`RateLimiter`](crate::ratelimiter::RateLimiter) instances. Sharing a limiter across clients
 //! enforces one process-wide budget for scopes such as an IP address or account. The client accepts
 //! default and per-request headers, repeated query values, raw bodies, and client-level and
-//! per-request timeouts.
+//! per-request timeouts. Default header values are marked sensitive: `Debug` hides them, and
+//! HTTP/2 excludes them from the header compression table.
 //!
 //! # Proxy routing
 //!
@@ -83,14 +84,14 @@ pub mod client;
 pub mod error;
 pub mod types;
 
+mod stream;
+
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod connector;
 #[cfg(all(feature = "simulation", madsim))]
 mod simulation;
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod transport;
-
-mod stream;
 
 #[cfg(all(test, not(all(feature = "simulation", madsim))))]
 mod tests;

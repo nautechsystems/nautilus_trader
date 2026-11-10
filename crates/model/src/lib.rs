@@ -115,6 +115,9 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+// Generated custom data code uses the crate's public name
+extern crate self as nautilus_model;
+
 // Re-exported so `enum_strum_serde!` can reach serde through `$crate`, which works in a consumer
 // that renames its serde dependency or does not depend on it directly.
 #[doc(hidden)]
@@ -138,6 +141,11 @@ pub mod venues;
 
 pub(crate) mod expressions;
 
+mod deserialization;
+
+#[cfg(feature = "defi")]
+pub mod defi;
+
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
@@ -146,11 +154,6 @@ pub mod python;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
-
-#[cfg(feature = "defi")]
-pub mod defi;
-
-mod deserialization;
 
 /// Generates custom-data model behavior.
 pub use nautilus_macros::custom_data;

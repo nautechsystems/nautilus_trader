@@ -153,10 +153,19 @@ pub trait ExecutionClient {
         false
     }
 
+    /// Returns whether order status reconciliation requires authoritative fills.
+    ///
+    /// When true, order status alone cannot create inferred fills. Missing executions and dependent
+    /// status transitions wait for venue fills from private updates or reconciliation. Defaults to
+    /// `false`. Position-only synthetic corrections are unaffected.
+    fn requires_authoritative_fills(&self) -> bool {
+        false
+    }
+
     /// Returns whether this client can execute orders for the given instrument venue.
     ///
-    /// Single-venue clients should use the default behavior. Routing brokers can
-    /// override this when their client venue identifies the broker rather than
+    /// Single-venue clients should use the default behavior. Routing execution providers can
+    /// override this when their client venue identifies the provider rather than
     /// the instrument's exchange venue.
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.venue() == venue

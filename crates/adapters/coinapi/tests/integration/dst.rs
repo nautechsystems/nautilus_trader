@@ -13,27 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use jiff::{SignedDuration, Timestamp};
 use nautilus_coinapi::{
-    config::CoinApiDataClientConfig,
+    config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
     http::{
         client::{CoinApiHttpClient, CoinApiHttpConfig},
         error::Error,
+        models::Symbol,
+        parse::parse_instruments,
         query::{
             BookQuery, ExchangesQuery, HISTORY_LIMIT_MAX, HistoryQuery, HistoryRange, OhlcvQuery,
             SymbolsQuery, TradesQuery,
         },
     },
+    loaders::CoinApiDataLoader,
 };
 use nautilus_core::{UnixNanos, string::secret::SecretString};
-use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
+use nautilus_model::{
+    data::Bar,
+    identifiers::InstrumentId,
+    instruments::Instrument,
+    types::{Price, Quantity},
+};
 use nautilus_network::{
     dst::{net::TcpListener, task, time},
     retry::{RetryConfig, RetryError},
 };
 use rstest::rstest;
+use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const SYMBOL: &str = "TEST_SPOT_BTC_USD";
@@ -67,8 +76,12 @@ fn range(limit: u32) -> HistoryQuery {
 }
 
 async fn peer(
-    responses: Vec<(u16, &'static str, &'static str)>,
+    responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
 ) -> (task::JoinHandle<Vec<String>>, CoinApiHttpConfig) {
+    let responses: Vec<_> = responses
+        .into_iter()
+        .map(|(status, headers, body)| (status, headers, body.into()))
+        .collect();
     let (listener, address) = listener().await;
 
     let config = CoinApiHttpConfig {
@@ -738,7 +751,7 @@ async fn invalid_parameters_do_not_consume_credits() {
             .get_ohlcv(
                 SYMBOL,
                 &OhlcvQuery {
-                    period_id: String::new(),
+                    period_id: "".into(),
                     range: range(1)
                 }
             )
@@ -811,7 +824,7 @@ async fn range_keys(
             (keys, pages.is_truncated)
         }
         _ => {
-            let pages = client.get_ohlcv_range(SYMBOL, "1MIN", range).await?;
+            let pages = client.get_ohlcv_range(SYMBOL, "1MIN".into(), range).await?;
             let keys = pages.records.iter().map(|o| o.time_period_start).collect();
             (keys, pages.is_truncated)
         }
@@ -913,6 +926,150 @@ async fn range_full_page_at_limit_is_complete() {
     assert!(!is_truncated);
     assert_eq!(requests.len(), 1);
     assert_request(&requests[0], &history_target("quotes", at(0), 3), &config);
+}
+
+#[rstest]
+#[case(1, 98, true)]
+#[case(2, 100, false)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_limit_after_filtering_leading_period(
+    #[case] credit_budget: u64,
+    #[case] count: i64,
+    #[case] truncated: bool,
+) {
+    let first: Vec<Timestamp> = (0..100).map(at).collect();
+    let mut responses = vec![(200, "", page("ohlcv", &first))];
+    if !truncated {
+        responses.push((200, "", page("ohlcv", &[at(99), at(100)])));
+    }
+
+    let (peer, config) = peer(responses).await;
+
+    let client = client(CoinApiHttpConfig {
+        credit_budget,
+        ..config.clone()
+    });
+
+    let mut range = history_range(Some(100));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    assert_eq!(keys, (1..=count).map(at).collect::<Vec<_>>());
+    assert_eq!(is_truncated, truncated);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), credit_budget as usize);
+    assert_request(
+        &requests[0],
+        &history_target("ohlcv", range.time_start, 100),
+        &config,
+    );
+
+    if !truncated {
+        assert_request(&requests[1], &history_target("ohlcv", at(99), 2), &config);
+    }
+
+    assert_eq!(client.credits_remaining(), 0);
+}
+
+#[rstest]
+#[case(1)]
+#[case(2)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_small_limit_skips_leading_period(#[case] limit: usize) {
+    let mut responses = vec![(200, "", page("ohlcv", &[at(0), at(1)]))];
+    if limit == 2 {
+        responses.push((200, "", page("ohlcv", &[at(1), at(2)])));
+    }
+
+    let (peer, config) = peer(responses).await;
+    let client = client(config.clone());
+    let mut range = history_range(Some(limit));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    assert_eq!(keys, (1..=limit as i64).map(at).collect::<Vec<_>>());
+    assert!(!is_truncated);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), limit);
+    assert_request(
+        &requests[0],
+        &history_target("ohlcv", range.time_start, 2),
+        &config,
+    );
+
+    if limit == 2 {
+        assert_request(&requests[1], &history_target("ohlcv", at(1), 2), &config);
+    }
+
+    assert_eq!(client.credits_remaining(), 100 - limit as u64);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_ohlcv_limit_one_caps_retained_periods() {
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &[at(0), at(1)]))]).await;
+    let client = client(config.clone());
+
+    let result = range_keys(&client, "ohlcv", &history_range(Some(1)))
+        .await
+        .unwrap();
+
+    assert_eq!(result, (vec![at(0)], false));
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_request(&requests[0], &history_target("ohlcv", at(0), 2), &config);
+    assert_eq!(client.credits_remaining(), 99);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_leading_period_restart_cannot_exceed_budget() {
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &[at(0), at(1)]))]).await;
+
+    let client = client(CoinApiHttpConfig {
+        credit_budget: 1,
+        ..config
+    });
+
+    let mut range = history_range(Some(2));
+    range.time_start += SignedDuration::from_nanos(500);
+
+    let result = range_keys(&client, "ohlcv", &range).await;
+
+    assert!(matches!(result, Err(Error::CreditBudget)));
+    assert_eq!(peer.await.unwrap().len(), 1);
+    assert_eq!(client.credits_remaining(), 0);
+}
+
+#[rstest]
+#[case(0)]
+#[case(500)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn range_full_page_reaching_end_is_complete(#[case] end_nanos: i64) {
+    let times: Vec<Timestamp> = (0..100).map(at).collect();
+    let (peer, config) = peer(vec![(200, "", page("ohlcv", &times))]).await;
+    let client = client(config);
+    let mut range = history_range(Some(100));
+    range.time_start += SignedDuration::from_nanos(500);
+    range.time_end = at(2) + SignedDuration::from_nanos(end_nanos);
+
+    let (keys, is_truncated) = range_keys(&client, "ohlcv", &range).await.unwrap();
+
+    let expected = if end_nanos == 0 {
+        vec![at(1)]
+    } else {
+        vec![at(1), at(2)]
+    };
+
+    assert_eq!(keys, expected);
+    assert!(!is_truncated);
+    assert_eq!(peer.await.unwrap().len(), 1);
+    assert_eq!(client.credits_remaining(), 99);
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -1113,7 +1270,7 @@ async fn range_without_credits_never_sends() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn range_between_grid_points_is_empty_without_request(#[case] family: &str) {
-    let (peer, config) = peer(vec![]).await;
+    let (peer, config) = peer(Vec::<(u16, &'static str, &'static str)>::new()).await;
     let client = client(config);
 
     let range = HistoryRange {
@@ -1366,7 +1523,7 @@ async fn instrument_loading_skips_unmapped_symbols() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn instrument_loading_rejects_invalid_price_precision(#[case] precision: u8) {
-    let (peer, config) = peer(vec![]).await;
+    let (peer, config) = peer(Vec::<(u16, &'static str, &'static str)>::new()).await;
     let client = client(config);
 
     let error = client
@@ -1388,3 +1545,410 @@ async fn instrument_loading_rejects_invalid_price_precision(#[case] precision: u
 }
 
 mod websocket;
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_reuses_metadata_for_multiple_requests() {
+    let (peer, http) = peer(vec![
+        (200, "", include_str!("../../test_data/symbols_spot.json")),
+        (200, "", include_str!("../../test_data/trades.json")),
+        (200, "", include_str!("../../test_data/trades.json")),
+    ])
+    .await;
+    let id = InstrumentId::from("BTC-USD.COINBASE");
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let selections = vec![CoinApiInstrumentSelection {
+        exchange_id: "COINBASE".into(),
+        query: SymbolsQuery::default(),
+        instrument_ids: vec![id],
+    }];
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+    let instruments = loader
+        .request_instruments(&selections, &Default::default())
+        .await
+        .unwrap();
+    let start = UnixNanos::from("2026-09-23T09:09:00Z".parse::<Timestamp>().unwrap());
+    let end = UnixNanos::from("2026-09-23T09:10:00Z".parse::<Timestamp>().unwrap());
+    let first = loader.request_trades(id, start, end, None).await.unwrap();
+    let second = loader.request_trades(id, start, end, None).await.unwrap();
+    let requests = peer.await.unwrap();
+    assert_eq!(instruments.len(), 1);
+    assert_eq!(instruments[0].id(), id);
+    assert_eq!(loader.instrument(id).unwrap(), instruments[0]);
+    assert_eq!(first, second);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].instrument_id, id);
+    assert_eq!(first[0].price.to_string(), "85988.49");
+    assert_eq!(first[0].size.to_string(), "0.01000000");
+    assert_eq!(first[0].ts_event.as_u64(), 1_790_154_540_082_275_000);
+    assert_eq!(requests.len(), 3);
+    assert!(requests[0].starts_with("GET /v1/symbols/COINBASE/active "));
+    assert!(requests[1].starts_with("GET /v1/trades/COINBASE_SPOT_BTC_USD/history?"));
+    assert!(
+        requests[1]
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("&limit=9900 HTTP/1.1")
+    );
+    assert!(
+        requests[2]
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("&limit=9800 HTTP/1.1")
+    );
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_rejects_credit_truncated_history_without_partial_results() {
+    let source: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/trades.json")).unwrap();
+    let start: Timestamp = "2026-09-23T09:09:00Z".parse().unwrap();
+
+    let rows: Vec<_> = (0..100)
+        .map(|index| {
+            let mut row = source[0].clone();
+            row["time_exchange"] = (start + SignedDuration::from_secs(index))
+                .to_string()
+                .into();
+            row
+        })
+        .collect();
+
+    let body = serde_json::to_string(&rows).unwrap();
+    let (peer, http) = peer(vec![(200, "", body)]).await;
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        credit_budget: 1,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let symbols: Vec<Symbol> =
+        serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
+    let (instruments, _) = parse_instruments(&symbols, UnixNanos::default());
+    let id = InstrumentId::from("BTC-USD.COINBASE");
+    let item = instruments
+        .into_iter()
+        .find(|item| item.instrument.id() == id)
+        .unwrap();
+    loader
+        .add_instrument(item.instrument, Some(item.symbol_id), None)
+        .unwrap();
+    let end = start + SignedDuration::from_secs(600);
+    let error = loader
+        .request_trades(id, UnixNanos::from(start), UnixNanos::from(end), None)
+        .await
+        .unwrap_err();
+    let requests = peer.await.unwrap();
+    assert_eq!(
+        error.to_string(),
+        "CoinAPI history truncated after 99 records with 0 credits remaining; no partial result returned; use a shorter window or a new loader with a larger credit_budget"
+    );
+    assert_eq!(requests.len(), 1);
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_failed_batch_refresh_preserves_registry() {
+    let (peer, http) = peer(vec![
+        (200, "", include_str!("../../test_data/symbols_spot.json")),
+        (404, "", include_str!("../../test_data/error.json")),
+    ])
+    .await;
+    let id = InstrumentId::from("BTC-USD.COINBASE");
+    let missing = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+    let selections = vec![
+        CoinApiInstrumentSelection {
+            exchange_id: "COINBASE".into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![id],
+        },
+        CoinApiInstrumentSelection {
+            exchange_id: "BINANCE".into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![missing],
+        },
+    ];
+
+    let symbols: Vec<Symbol> =
+        serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
+    let (definitions, _) = parse_instruments(&symbols, UnixNanos::from(17));
+    let old = definitions
+        .into_iter()
+        .find(|item| item.instrument.id() == id)
+        .unwrap();
+    loader
+        .add_instrument(old.instrument.clone(), Some(old.symbol_id), Some(27_576))
+        .unwrap();
+    let error = loader
+        .request_instruments(&selections, &Default::default())
+        .await
+        .unwrap_err();
+    let requests = peer.await.unwrap();
+    assert!(error.to_string().contains("404"), "{error:#}");
+    assert_eq!(loader.instrument(id).unwrap(), old.instrument);
+    assert_eq!(
+        loader.instrument(missing).unwrap_err().to_string(),
+        format!("No loaded instrument {missing}")
+    );
+    assert_eq!(requests.len(), 2);
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_rejects_invalid_history_record_without_partial_results() {
+    let mut rows: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/trades.json")).unwrap();
+    rows.push(rows[0].clone());
+    rows[1]["price"] = "85988.491".parse::<serde_json::Number>().unwrap().into();
+    let (peer, http) = peer(vec![(200, "", serde_json::to_string(&rows).unwrap())]).await;
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let symbols: Vec<Symbol> =
+        serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
+    let (definitions, _) = parse_instruments(&symbols, UnixNanos::default());
+    let id = InstrumentId::from("BTC-USD.COINBASE");
+    let item = definitions
+        .into_iter()
+        .find(|item| item.instrument.id() == id)
+        .unwrap();
+    loader
+        .add_instrument(item.instrument, Some(item.symbol_id), None)
+        .unwrap();
+    let start = UnixNanos::from("2026-09-23T09:09:00Z".parse::<Timestamp>().unwrap());
+    let end = UnixNanos::from("2026-09-23T09:10:00Z".parse::<Timestamp>().unwrap());
+    let error = loader
+        .request_trades(id, start, end, NonZeroUsize::new(2))
+        .await
+        .unwrap_err();
+    let requests = peer.await.unwrap();
+    assert_eq!(
+        error.to_string(),
+        "price 85988.491 is finer than instrument precision 2"
+    );
+    assert_eq!(requests.len(), 1);
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_bars_exclude_periods_closing_after_end() {
+    let mut rows: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/ohlcv.json")).unwrap();
+    rows[0]["price_close"] = "85998.70".parse::<serde_json::Number>().unwrap().into();
+    for field in [
+        "time_period_start",
+        "time_period_end",
+        "time_open",
+        "time_close",
+    ] {
+        rows[0][field] = rows[0][field]
+            .as_str()
+            .unwrap()
+            .replace("2026-09-23", "2020-09-23")
+            .into();
+    }
+
+    rows.push(rows[0].clone());
+    rows[1]["time_period_start"] = "2020-09-23T09:10:00Z".into();
+    rows[1]["time_period_end"] = "2020-09-23T09:11:00Z".into();
+    let (peer, http) = peer(vec![(200, "", serde_json::to_string(&rows).unwrap())]).await;
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let symbols: Vec<Symbol> =
+        serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
+    let (definitions, _) = parse_instruments(&symbols, UnixNanos::default());
+    let id = InstrumentId::from("BTC-USD.COINBASE");
+    let item = definitions
+        .into_iter()
+        .find(|item| item.instrument.id() == id)
+        .unwrap();
+    loader
+        .add_instrument(item.instrument, Some(item.symbol_id), None)
+        .unwrap();
+    let start = UnixNanos::from("2020-09-23T09:09:00Z".parse::<Timestamp>().unwrap());
+    let end = UnixNanos::from("2020-09-23T09:10:30Z".parse::<Timestamp>().unwrap());
+    let bar_type = "BTC-USD.COINBASE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
+    let bars = loader
+        .request_bars(bar_type, start, end, NonZeroUsize::new(2))
+        .await
+        .unwrap();
+    let requests = peer.await.unwrap();
+    let timestamp = UnixNanos::from("2020-09-23T09:10:00Z".parse::<Timestamp>().unwrap());
+    assert_eq!(
+        bars,
+        [Bar::new(
+            bar_type,
+            Price::from("85988.49"),
+            Price::from("86007.23"),
+            Price::from("85986.91"),
+            Price::from("85998.70"),
+            Quantity::from("0.97075568"),
+            timestamp,
+            timestamp,
+        )]
+    );
+    assert_eq!(requests.len(), 1);
+}
+
+#[rstest]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn loader_maps_numeric_symbols_from_requested_metadata() {
+    let mut symbols: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
+    let kraken = symbols
+        .iter_mut()
+        .find(|symbol| symbol["symbol_id"] == "KRAKEN_SPOT_BTC_USD")
+        .unwrap();
+    kraken["symbol_id_int"] = serde_json::Value::Null;
+    let body = serde_json::to_string(&symbols).unwrap();
+    let (peer, http) = peer(vec![
+        (200, "", body.clone()),
+        (200, "", body.clone()),
+        (200, "", body),
+    ])
+    .await;
+
+    let selections = [
+        ("BINANCE", "BTCUSDT.BINANCE"),
+        ("COINBASE", "BTC-USD.COINBASE"),
+        ("KRAKEN", "BTC/USD.KRAKEN"),
+    ];
+
+    let http = CoinApiHttpConfig {
+        base_url: http.base_url,
+        retry: RetryConfig {
+            max_retries: 0,
+            ..http.retry
+        },
+        ..Default::default()
+    };
+
+    let loader =
+        CoinApiDataLoader::with_http_config(Some(SecretString::from("test-api-key")), http);
+
+    let instrument_selections: Vec<_> = selections
+        .iter()
+        .map(|(exchange, id)| CoinApiInstrumentSelection {
+            exchange_id: (*exchange).into(),
+            query: SymbolsQuery::default(),
+            instrument_ids: vec![InstrumentId::from(*id)],
+        })
+        .collect();
+
+    let instruments = loader
+        .request_instruments(&instrument_selections, &Default::default())
+        .await
+        .unwrap();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("TP-1MIN.csv");
+    let mut lines = vec![
+        "symbol_id;time_period_start;time_period_end;time_open;time_close;px_open;px_high;px_low;px_close;sx_cnt;sx_sum".to_owned(),
+    ];
+    lines.extend(["138123", "27576", "599", "1"].map(|id| {
+        format!("{id};2025-09-11T00:00:00.0000000;2025-09-11T00:01:00.0000000;2025-09-11T00:00:01.0000000;2025-09-11T00:00:59.0000000;1;2;0.5;1.5;3;4")
+    }));
+
+    fs::write(&path, lines.join("\n")).unwrap();
+    let bars = loader.load_bars(&path, None, None).unwrap();
+    let requests = peer.await.unwrap();
+    let end = UnixNanos::from("2025-09-11T00:01:00Z".parse::<Timestamp>().unwrap());
+
+    let expected: Vec<_> = [
+        "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+        "BTC-USD.COINBASE-1-MINUTE-LAST-EXTERNAL",
+    ]
+    .map(|bar_type| {
+        Bar::new(
+            bar_type.parse().unwrap(),
+            Price::from("1.00"),
+            Price::from("2.00"),
+            Price::from("0.50"),
+            Price::from("1.50"),
+            Quantity::from("4"),
+            end,
+            end,
+        )
+    })
+    .into();
+
+    assert_eq!(bars, expected);
+    assert_eq!(
+        instruments
+            .iter()
+            .map(|instrument| instrument.id())
+            .collect::<Vec<_>>(),
+        selections.map(|(_, id)| InstrumentId::from(id)),
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.lines().next().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "GET /v1/symbols/BINANCE/active HTTP/1.1",
+            "GET /v1/symbols/COINBASE/active HTTP/1.1",
+            "GET /v1/symbols/KRAKEN/active HTTP/1.1",
+        ],
+    );
+}

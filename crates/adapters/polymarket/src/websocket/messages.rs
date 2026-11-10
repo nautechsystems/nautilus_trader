@@ -178,6 +178,8 @@ pub struct PolymarketBookSnapshot {
     pub neg_risk: Option<bool>,
     #[serde(default)]
     pub last_trade_price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// A single price change entry within a quotes message.

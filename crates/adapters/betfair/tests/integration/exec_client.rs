@@ -1818,8 +1818,8 @@ async fn test_submit_order_error_emits_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_price_and_quantity_rejects() {
-    let (addr, _state) = start_mock_http().await;
+async fn test_modify_order_price_and_quantity_denied() {
+    let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
 
@@ -1853,26 +1853,50 @@ async fn test_modify_order_price_and_quantity_rejects() {
         None,
         None, // correlation_id
     );
+    let command_id = cmd.command_id;
+    let ts_start = get_atomic_clock_realtime().get_time_ns();
     client.modify_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
-        .expect("timeout waiting for modify rejected")
+        .expect("timeout waiting for modify denied")
         .expect("channel closed");
 
+    let ts_end = get_atomic_clock_realtime().get_time_ns();
+
     match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
-            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-MOD-001"));
-            assert!(
-                rejected
-                    .reason
-                    .contains("cannot modify price and quantity simultaneously"),
-                "Expected simultaneous modify reason, found: {}",
-                rejected.reason,
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) => {
+            assert_eq!(denied.trader_id, order.trader_id());
+            assert_eq!(denied.strategy_id, order.strategy_id());
+            assert_eq!(denied.instrument_id, order.instrument_id());
+            assert_eq!(denied.venue_order_id, Some(VenueOrderId::from("123")));
+            assert_eq!(denied.account_id, Some(AccountId::from("BETFAIR-001")));
+            assert_eq!(denied.causation_id, Some(command_id));
+            assert!((ts_start..=ts_end).contains(&denied.ts_event));
+            assert!((denied.ts_event..=ts_end).contains(&denied.ts_init));
+            assert_ne!(denied.event_id, order.init_event().event_id);
+            assert_eq!(denied.client_order_id, ClientOrderId::from("O-MOD-001"));
+            assert_eq!(
+                denied.reason.as_str(),
+                "cannot modify price and quantity simultaneously on Betfair"
             );
         }
-        other => panic!("Expected ModifyRejected event, found: {other:?}"),
+        other => panic!("Expected ModifyDenied event, found: {other:?}"),
     }
+
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        serde_json::to_value(
+            cache
+                .borrow()
+                .order_ref(&order.client_order_id())
+                .unwrap()
+                .as_ref()
+        )
+        .unwrap(),
+        serde_json::to_value(&order).unwrap(),
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -1881,8 +1905,8 @@ async fn test_modify_order_price_and_quantity_rejects() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_no_effective_change_rejects() {
-    let (addr, _state) = start_mock_http().await;
+async fn test_modify_order_no_effective_change_denied() {
+    let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
 
@@ -1916,24 +1940,50 @@ async fn test_modify_order_no_effective_change_rejects() {
         None,
         None, // correlation_id
     );
+    let command_id = cmd.command_id;
+    let ts_start = get_atomic_clock_realtime().get_time_ns();
     client.modify_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
-        .expect("timeout waiting for modify rejected")
+        .expect("timeout waiting for modify denied")
         .expect("channel closed");
 
+    let ts_end = get_atomic_clock_realtime().get_time_ns();
+
     match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
-            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-MOD-002"));
-            assert!(
-                rejected.reason.contains("no effective change"),
-                "Expected no effective change reason, found: {}",
-                rejected.reason,
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) => {
+            assert_eq!(denied.trader_id, order.trader_id());
+            assert_eq!(denied.strategy_id, order.strategy_id());
+            assert_eq!(denied.instrument_id, order.instrument_id());
+            assert_eq!(denied.venue_order_id, Some(VenueOrderId::from("123")));
+            assert_eq!(denied.account_id, Some(AccountId::from("BETFAIR-001")));
+            assert_eq!(denied.causation_id, Some(command_id));
+            assert!((ts_start..=ts_end).contains(&denied.ts_event));
+            assert!((denied.ts_event..=ts_end).contains(&denied.ts_init));
+            assert_ne!(denied.event_id, order.init_event().event_id);
+            assert_eq!(denied.client_order_id, ClientOrderId::from("O-MOD-002"));
+            assert_eq!(
+                denied.reason.as_str(),
+                "no effective change in price or quantity"
             );
         }
-        other => panic!("Expected ModifyRejected event, found: {other:?}"),
+        other => panic!("Expected ModifyDenied event, found: {other:?}"),
     }
+
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        serde_json::to_value(
+            cache
+                .borrow()
+                .order_ref(&order.client_order_id())
+                .unwrap()
+                .as_ref()
+        )
+        .unwrap(),
+        serde_json::to_value(&order).unwrap(),
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -6891,12 +6941,10 @@ async fn test_cancel_order_without_venue_id_emits_no_rejected_locally() {
     server.await.unwrap();
 }
 
-/// A modify with a quantity *increase* (not allowed on Betfair) must emit a
-/// ModifyRejected explaining the constraint. Only reductions are valid.
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_quantity_increase_rejects() {
-    let (addr, _state) = start_mock_http().await;
+async fn test_modify_order_quantity_increase_denied() {
+    let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
 
@@ -6930,24 +6978,50 @@ async fn test_modify_order_quantity_increase_rejects() {
         None,
         None, // correlation_id
     );
+    let command_id = cmd.command_id;
+    let ts_start = get_atomic_clock_realtime().get_time_ns();
     client.modify_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
-        .expect("timeout waiting for modify rejected")
+        .expect("timeout waiting for modify denied")
         .expect("channel closed");
 
+    let ts_end = get_atomic_clock_realtime().get_time_ns();
+
     match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(rej)) => {
-            assert_eq!(rej.client_order_id, ClientOrderId::from("O-MOD-INC"));
-            assert!(
-                rej.reason.contains("can only reduce quantity"),
-                "expected reduce-only reason, was: {}",
-                rej.reason,
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) => {
+            assert_eq!(denied.trader_id, order.trader_id());
+            assert_eq!(denied.strategy_id, order.strategy_id());
+            assert_eq!(denied.instrument_id, order.instrument_id());
+            assert_eq!(denied.venue_order_id, Some(VenueOrderId::from("123")));
+            assert_eq!(denied.account_id, Some(AccountId::from("BETFAIR-001")));
+            assert_eq!(denied.causation_id, Some(command_id));
+            assert!((ts_start..=ts_end).contains(&denied.ts_event));
+            assert!((denied.ts_event..=ts_end).contains(&denied.ts_init));
+            assert_ne!(denied.event_id, order.init_event().event_id);
+            assert_eq!(denied.client_order_id, ClientOrderId::from("O-MOD-INC"));
+            assert_eq!(
+                denied.reason.as_str(),
+                "can only reduce quantity on Betfair"
             );
         }
-        other => panic!("Expected ModifyRejected, was {other:?}"),
+        other => panic!("Expected ModifyDenied, was {other:?}"),
     }
+
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        serde_json::to_value(
+            cache
+                .borrow()
+                .order_ref(&order.client_order_id())
+                .unwrap()
+                .as_ref()
+        )
+        .unwrap(),
+        serde_json::to_value(&order).unwrap(),
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());

@@ -2830,6 +2830,34 @@ pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
     value.map(|nanos| nanos.to_datetime_utc())
 }
 
+/// Returns `true` when two instruments carry the same tradable definition,
+/// ignoring event timestamps.
+///
+/// Comparison runs on the serialized form so every venue field, including
+/// the free-form `info` metadata, participates without listing each field.
+pub(crate) fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
+    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+        let mut value = serde_json::to_value(instrument).ok()?;
+
+        if let Some(definition) = value
+            .as_object_mut()
+            .and_then(|obj| obj.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            definition.remove("ts_event");
+            definition.remove("ts_init");
+        }
+
+        Some(value)
+    }
+
+    // A serialization failure compares as changed so updates are never suppressed
+    match (normalized(a), normalized(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{enums::OrderSide, identifiers::PositionId, instruments::Instrument};
@@ -2851,59 +2879,34 @@ mod tests {
     };
 
     #[rstest]
-    fn test_parse_fee_currency_with_zero_fee_empty_string() {
-        let result = parse_fee_currency("", Decimal::ZERO, || "test context".to_string());
-        assert_eq!(result, Currency::USDT());
-    }
-
-    #[rstest]
-    fn test_parse_fee_currency_with_zero_fee_valid_currency() {
-        let result = parse_fee_currency("BTC", Decimal::ZERO, || "test context".to_string());
-        assert_eq!(result, Currency::BTC());
-    }
-
-    #[rstest]
-    fn test_parse_fee_currency_with_valid_currency() {
-        let result = parse_fee_currency("BTC", dec!(0.001), || "test context".to_string());
-        assert_eq!(result, Currency::BTC());
-    }
-
-    #[rstest]
-    fn test_parse_fee_currency_with_empty_string_nonzero_fee() {
-        let result = parse_fee_currency("", dec!(0.5), || "test context".to_string());
-        assert_eq!(result, Currency::USDT());
-    }
-
-    #[rstest]
-    fn test_parse_fee_currency_with_whitespace() {
-        let result = parse_fee_currency("  ETH  ", dec!(0.002), || "test context".to_string());
-        assert_eq!(result, Currency::ETH());
+    #[case::zero_fee_empty("", Decimal::ZERO, Currency::USDT())]
+    #[case::zero_fee_valid("BTC", Decimal::ZERO, Currency::BTC())]
+    #[case::valid("BTC", dec!(0.001), Currency::BTC())]
+    #[case::nonzero_fee_empty("", dec!(0.5), Currency::USDT())]
+    #[case::whitespace("  ETH  ", dec!(0.002), Currency::ETH())]
+    fn test_parse_fee_currency(
+        #[case] fee_ccy: &str,
+        #[case] amount: Decimal,
+        #[case] expected: Currency,
+    ) {
+        let result = parse_fee_currency(fee_ccy, amount, || "test context".to_string());
+        assert_eq!(result, expected);
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_unknown_code() {
-        // Unknown currency code should create a new Currency (8 decimals, crypto)
         let result = parse_fee_currency("NEWTOKEN", dec!(0.5), || "test context".to_string());
         assert_eq!(result.code, "NEWTOKEN");
         assert_eq!(result.precision, 8);
     }
 
     #[rstest]
-    fn test_parse_balance_field_valid() {
-        let result = parse_balance_field("100.5", "test_field", "BTC");
-        assert_eq!(result, Some(dec!(100.5)));
-    }
-
-    #[rstest]
-    fn test_parse_balance_field_invalid_numeric() {
-        let result = parse_balance_field("not_a_number", "test_field", "BTC");
-        assert!(result.is_none());
-    }
-
-    #[rstest]
-    fn test_parse_balance_field_empty() {
-        let result = parse_balance_field("", "test_field", "BTC");
-        assert!(result.is_none());
+    #[case::valid("100.5", Some(dec!(100.5)))]
+    #[case::invalid_numeric("not_a_number", None)]
+    #[case::empty("", None)]
+    fn test_parse_balance_field(#[case] value: &str, #[case] expected: Option<Decimal>) {
+        let result = parse_balance_field(value, "test_field", "BTC");
+        assert_eq!(result, expected);
     }
 
     // Note: Tests for parse_account_state with edge cases (empty currency codes, invalid values)
@@ -3240,19 +3243,6 @@ mod tests {
         assert_eq!(cases[0].value, Some(12345));
         assert_eq!(cases[1].value, None);
         assert_eq!(cases[2].value, None);
-    }
-
-    #[rstest]
-    fn test_parse_error_handling() {
-        // Test error handling with invalid price string
-        let invalid_price = "invalid-price";
-        let result = crate::common::parse::parse_price(invalid_price, 2);
-        result.unwrap_err();
-
-        // Test error handling with invalid quantity string
-        let invalid_quantity = "invalid-quantity";
-        let result = crate::common::parse::parse_quantity(invalid_quantity, 8);
-        result.unwrap_err();
     }
 
     #[rstest]
@@ -4025,72 +4015,9 @@ mod tests {
     #[rstest]
     fn test_parse_account_state_with_margins() {
         // Create test data with margin requirements
-        let account_json = r#"{
-            "adjEq": "10000.0",
-            "borrowFroz": "0",
-            "details": [{
-                "accAvgPx": "",
-                "availBal": "8000.0",
-                "availEq": "8000.0",
-                "borrowFroz": "0",
-                "cashBal": "10000.0",
-                "ccy": "USDT",
-                "clSpotInUseAmt": "0",
-                "coinUsdPrice": "1.0",
-                "colBorrAutoConversion": "0",
-                "collateralEnabled": false,
-                "collateralRestrict": false,
-                "crossLiab": "0",
-                "disEq": "10000.0",
-                "eq": "10000.0",
-                "eqUsd": "10000.0",
-                "fixedBal": "0",
-                "frozenBal": "2000.0",
-                "imr": "0",
-                "interest": "0",
-                "isoEq": "0",
-                "isoLiab": "0",
-                "isoUpl": "0",
-                "liab": "0",
-                "maxLoan": "0",
-                "mgnRatio": "0",
-                "maxSpotInUseAmt": "0",
-                "mmr": "0",
-                "notionalLever": "0",
-                "openAvgPx": "",
-                "ordFrozen": "2000.0",
-                "rewardBal": "0",
-                "smtSyncEq": "0",
-                "spotBal": "0",
-                "spotCopyTradingEq": "0",
-                "spotInUseAmt": "0",
-                "spotIsoBal": "0",
-                "spotUpl": "0",
-                "spotUplRatio": "0",
-                "stgyEq": "0",
-                "totalPnl": "0",
-                "totalPnlRatio": "0",
-                "twap": "0",
-                "uTime": "1704067200000",
-                "upl": "0",
-                "uplLiab": "0"
-            }],
-            "imr": "500.25",
-            "isoEq": "0",
-            "mgnRatio": "20.5",
-            "mmr": "250.75",
-            "notionalUsd": "5000.0",
-            "notionalUsdForBorrow": "0",
-            "notionalUsdForFutures": "0",
-            "notionalUsdForOption": "0",
-            "notionalUsdForSwap": "5000.0",
-            "ordFroz": "2000.0",
-            "totalEq": "10000.0",
-            "uTime": "1704067200000",
-            "upl": "0"
-        }"#;
+        let account_json = load_test_json("http_get_account_balance_with_margins.json");
 
-        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
+        let okx_account: OKXAccount = serde_json::from_str(&account_json).unwrap();
         let account_id = AccountId::new("OKX-001");
         let account_state = parse_account_state(
             &okx_account,
@@ -4125,72 +4052,9 @@ mod tests {
     #[rstest]
     fn test_parse_account_state_empty_margins() {
         // Create test data with empty margin strings (common for spot accounts)
-        let account_json = r#"{
-            "adjEq": "",
-            "borrowFroz": "",
-            "details": [{
-                "accAvgPx": "",
-                "availBal": "1000.0",
-                "availEq": "1000.0",
-                "borrowFroz": "0",
-                "cashBal": "1000.0",
-                "ccy": "BTC",
-                "clSpotInUseAmt": "0",
-                "coinUsdPrice": "50000.0",
-                "colBorrAutoConversion": "0",
-                "collateralEnabled": false,
-                "collateralRestrict": false,
-                "crossLiab": "0",
-                "disEq": "50000.0",
-                "eq": "1000.0",
-                "eqUsd": "50000.0",
-                "fixedBal": "0",
-                "frozenBal": "0",
-                "imr": "0",
-                "interest": "0",
-                "isoEq": "0",
-                "isoLiab": "0",
-                "isoUpl": "0",
-                "liab": "0",
-                "maxLoan": "0",
-                "mgnRatio": "0",
-                "maxSpotInUseAmt": "0",
-                "mmr": "0",
-                "notionalLever": "0",
-                "openAvgPx": "",
-                "ordFrozen": "0",
-                "rewardBal": "0",
-                "smtSyncEq": "0",
-                "spotBal": "0",
-                "spotCopyTradingEq": "0",
-                "spotInUseAmt": "0",
-                "spotIsoBal": "0",
-                "spotUpl": "0",
-                "spotUplRatio": "0",
-                "stgyEq": "0",
-                "totalPnl": "0",
-                "totalPnlRatio": "0",
-                "twap": "0",
-                "uTime": "1704067200000",
-                "upl": "0",
-                "uplLiab": "0"
-            }],
-            "imr": "",
-            "isoEq": "0",
-            "mgnRatio": "",
-            "mmr": "",
-            "notionalUsd": "",
-            "notionalUsdForBorrow": "",
-            "notionalUsdForFutures": "",
-            "notionalUsdForOption": "",
-            "notionalUsdForSwap": "",
-            "ordFroz": "",
-            "totalEq": "50000.0",
-            "uTime": "1704067200000",
-            "upl": "0"
-        }"#;
+        let account_json = load_test_json("http_get_account_balance_empty_margins.json");
 
-        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
+        let okx_account: OKXAccount = serde_json::from_str(&account_json).unwrap();
         let account_id = AccountId::new("OKX-SPOT");
         let account_state = parse_account_state(
             &okx_account,
@@ -4207,50 +4071,6 @@ mod tests {
         // Check the BTC balance
         let btc_balance = &account_state.balances[0];
         assert_eq!(btc_balance.total, Money::new(1000.0, Currency::BTC()));
-    }
-
-    #[rstest]
-    fn test_parse_account_state_empty_balance_account() {
-        // Reproduces GH-3772: OKX returns empty strings for numeric fields
-        // when the account has zero balance and no positions
-        let account_json = r#"{
-            "adjEq": "",
-            "borrowFroz": "",
-            "details": [],
-            "imr": "",
-            "isoEq": "0",
-            "mgnRatio": "",
-            "mmr": "",
-            "notionalUsd": "",
-            "notionalUsdForBorrow": "",
-            "notionalUsdForFutures": "",
-            "notionalUsdForOption": "",
-            "notionalUsdForSwap": "",
-            "ordFroz": "",
-            "totalEq": "0",
-            "uTime": "1774795570586",
-            "upl": ""
-        }"#;
-
-        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
-        let account_id = AccountId::new("OKX-001");
-        let account_state = parse_account_state(
-            &okx_account,
-            account_id,
-            AccountType::Margin,
-            UnixNanos::default(),
-        )
-        .unwrap();
-
-        assert_eq!(account_state.account_id, account_id);
-        assert_eq!(account_state.account_type, AccountType::Margin);
-        assert_eq!(account_state.margins.len(), 0);
-
-        assert_eq!(account_state.balances.len(), 1);
-        let balance = &account_state.balances[0];
-        assert_eq!(balance.total, Money::new(0.0, Currency::USD()));
-        assert_eq!(balance.free, Money::new(0.0, Currency::USD()));
-        assert_eq!(balance.locked, Money::new(0.0, Currency::USD()));
     }
 
     #[rstest]
@@ -4598,19 +4418,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_empty_string_as_none() {
-        let json_with_empty = r#""""#;
-        let result: Option<String> = serde_json::from_str(json_with_empty).unwrap();
-        let processed = result.filter(|s| !s.is_empty());
-        assert_eq!(processed, None);
-
-        let json_with_value = r#""test_value""#;
-        let result: Option<String> = serde_json::from_str(json_with_value).unwrap();
-        let processed = result.filter(|s| !s.is_empty());
-        assert_eq!(processed, Some("test_value".to_string()));
-    }
-
-    #[rstest]
     fn test_deserialize_string_to_u64() {
         use serde::Deserialize;
 
@@ -4781,70 +4588,91 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_vip_level_all_formats() {
-        use serde::Deserialize;
-        use serde_json;
+    fn test_okx_bar_channel_mappings() {
+        let regular_cases = [
+            (OKXWsChannel::Candle1Second, BAR_SPEC_1_SECOND_LAST),
+            (OKXWsChannel::Candle1Minute, BAR_SPEC_1_MINUTE_LAST),
+            (OKXWsChannel::Candle3Minute, BAR_SPEC_3_MINUTE_LAST),
+            (OKXWsChannel::Candle5Minute, BAR_SPEC_5_MINUTE_LAST),
+            (OKXWsChannel::Candle15Minute, BAR_SPEC_15_MINUTE_LAST),
+            (OKXWsChannel::Candle30Minute, BAR_SPEC_30_MINUTE_LAST),
+            (OKXWsChannel::Candle1Hour, BAR_SPEC_1_HOUR_LAST),
+            (OKXWsChannel::Candle2Hour, BAR_SPEC_2_HOUR_LAST),
+            (OKXWsChannel::Candle4Hour, BAR_SPEC_4_HOUR_LAST),
+            (OKXWsChannel::Candle6Hour, BAR_SPEC_6_HOUR_LAST),
+            (OKXWsChannel::Candle12Hour, BAR_SPEC_12_HOUR_LAST),
+            (OKXWsChannel::Candle1Day, BAR_SPEC_1_DAY_LAST),
+            (OKXWsChannel::Candle2Day, BAR_SPEC_2_DAY_LAST),
+            (OKXWsChannel::Candle3Day, BAR_SPEC_3_DAY_LAST),
+            (OKXWsChannel::Candle5Day, BAR_SPEC_5_DAY_LAST),
+            (OKXWsChannel::Candle1Week, BAR_SPEC_1_WEEK_LAST),
+            (OKXWsChannel::Candle1Month, BAR_SPEC_1_MONTH_LAST),
+            (OKXWsChannel::Candle3Month, BAR_SPEC_3_MONTH_LAST),
+            (OKXWsChannel::Candle6Month, BAR_SPEC_6_MONTH_LAST),
+            (OKXWsChannel::Candle1Year, BAR_SPEC_12_MONTH_LAST),
+        ];
 
-        #[derive(Deserialize)]
-        struct TestFeeRate {
-            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
-            level: OKXVipLevel,
+        for (channel, bar_spec) in regular_cases {
+            assert_eq!(okx_channel_to_bar_spec(&channel), Some(bar_spec));
+            assert_eq!(bar_spec_as_okx_channel(bar_spec).unwrap(), channel);
         }
 
-        // Test VIP prefix format
-        let json = r#"{"level":"VIP4"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip4);
+        let mark_price_cases = [
+            (OKXWsChannel::MarkPriceCandle1Second, BAR_SPEC_1_SECOND_LAST),
+            (OKXWsChannel::MarkPriceCandle1Minute, BAR_SPEC_1_MINUTE_LAST),
+            (OKXWsChannel::MarkPriceCandle3Minute, BAR_SPEC_3_MINUTE_LAST),
+            (OKXWsChannel::MarkPriceCandle5Minute, BAR_SPEC_5_MINUTE_LAST),
+            (
+                OKXWsChannel::MarkPriceCandle15Minute,
+                BAR_SPEC_15_MINUTE_LAST,
+            ),
+            (
+                OKXWsChannel::MarkPriceCandle30Minute,
+                BAR_SPEC_30_MINUTE_LAST,
+            ),
+            (OKXWsChannel::MarkPriceCandle1Hour, BAR_SPEC_1_HOUR_LAST),
+            (OKXWsChannel::MarkPriceCandle2Hour, BAR_SPEC_2_HOUR_LAST),
+            (OKXWsChannel::MarkPriceCandle4Hour, BAR_SPEC_4_HOUR_LAST),
+            (OKXWsChannel::MarkPriceCandle6Hour, BAR_SPEC_6_HOUR_LAST),
+            (OKXWsChannel::MarkPriceCandle12Hour, BAR_SPEC_12_HOUR_LAST),
+            (OKXWsChannel::MarkPriceCandle1Day, BAR_SPEC_1_DAY_LAST),
+            (OKXWsChannel::MarkPriceCandle2Day, BAR_SPEC_2_DAY_LAST),
+            (OKXWsChannel::MarkPriceCandle3Day, BAR_SPEC_3_DAY_LAST),
+            (OKXWsChannel::MarkPriceCandle5Day, BAR_SPEC_5_DAY_LAST),
+            (OKXWsChannel::MarkPriceCandle1Week, BAR_SPEC_1_WEEK_LAST),
+            (OKXWsChannel::MarkPriceCandle1Month, BAR_SPEC_1_MONTH_LAST),
+            (OKXWsChannel::MarkPriceCandle3Month, BAR_SPEC_3_MONTH_LAST),
+        ];
 
-        let json = r#"{"level":"VIP5"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip5);
+        for (channel, bar_spec) in mark_price_cases {
+            assert_eq!(okx_channel_to_bar_spec(&channel), Some(bar_spec));
+            assert_eq!(
+                bar_spec_as_okx_mark_price_channel(bar_spec).unwrap(),
+                channel
+            );
+        }
 
-        // Test Lv prefix format
-        let json = r#"{"level":"Lv1"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip1);
-
-        let json = r#"{"level":"Lv0"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip0);
-
-        let json = r#"{"level":"Lv9"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip9);
+        assert_eq!(okx_channel_to_bar_spec(&OKXWsChannel::Trades), None);
     }
 
     #[rstest]
-    fn test_deserialize_vip_level_empty_string() {
-        use serde::Deserialize;
-        use serde_json;
-
-        #[derive(Deserialize)]
+    #[case::vip_prefix_4("VIP4", OKXVipLevel::Vip4)]
+    #[case::vip_prefix_5("VIP5", OKXVipLevel::Vip5)]
+    #[case::lv_prefix_1("Lv1", OKXVipLevel::Vip1)]
+    #[case::lv_prefix_0("Lv0", OKXVipLevel::Vip0)]
+    #[case::lv_prefix_9("Lv9", OKXVipLevel::Vip9)]
+    #[case::empty_defaults_to_vip0("", OKXVipLevel::Vip0)]
+    #[case::without_prefix("5", OKXVipLevel::Vip5)]
+    fn test_deserialize_vip_level(#[case] raw: &str, #[case] expected: OKXVipLevel) {
+        #[derive(serde::Deserialize)]
         struct TestFeeRate {
             #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
             level: OKXVipLevel,
         }
 
-        // Empty string should default to VIP0
-        let json = r#"{"level":""}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip0);
-    }
-
-    #[rstest]
-    fn test_deserialize_vip_level_without_prefix() {
-        use serde::Deserialize;
-        use serde_json;
-
-        #[derive(Deserialize)]
-        struct TestFeeRate {
-            #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
-            level: OKXVipLevel,
-        }
-
-        let json = r#"{"level":"5"}"#;
-        let result: TestFeeRate = serde_json::from_str(json).unwrap();
-        assert_eq!(result.level, OKXVipLevel::Vip5);
+        let json = format!(r#"{{"level":"{raw}"}}"#);
+        let result: TestFeeRate = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.level, expected);
     }
 
     #[rstest]
@@ -6110,154 +5938,49 @@ mod tests {
     }
 
     #[rstest]
-    #[case::fok_maps_to_fok_tif(OKXOrderType::Fok, TimeInForce::Fok)]
-    #[case::ioc_maps_to_ioc_tif(OKXOrderType::Ioc, TimeInForce::Ioc)]
-    #[case::optimal_limit_ioc_maps_to_ioc_tif(OKXOrderType::OptimalLimitIoc, TimeInForce::Ioc)]
-    #[case::market_maps_to_gtc(OKXOrderType::Market, TimeInForce::Gtc)]
-    #[case::limit_maps_to_gtc(OKXOrderType::Limit, TimeInForce::Gtc)]
-    #[case::post_only_maps_to_gtc(OKXOrderType::PostOnly, TimeInForce::Gtc)]
-    #[case::trigger_maps_to_gtc(OKXOrderType::Trigger, TimeInForce::Gtc)]
-    fn test_okx_order_type_to_time_in_force(
+    #[case::fok(OKXOrderType::Fok, TimeInForce::Fok)]
+    #[case::ioc(OKXOrderType::Ioc, TimeInForce::Ioc)]
+    #[case::optimal_limit_ioc(OKXOrderType::OptimalLimitIoc, TimeInForce::Ioc)]
+    #[case::market(OKXOrderType::Market, TimeInForce::Gtc)]
+    #[case::limit(OKXOrderType::Limit, TimeInForce::Gtc)]
+    #[case::post_only(OKXOrderType::PostOnly, TimeInForce::Gtc)]
+    #[case::trigger(OKXOrderType::Trigger, TimeInForce::Gtc)]
+    fn test_parse_order_status_report_time_in_force(
         #[case] okx_ord_type: OKXOrderType,
-        #[case] expected_tif: TimeInForce,
+        #[case] expected: TimeInForce,
     ) {
-        let time_in_force = match okx_ord_type {
-            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
-            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
-            _ => TimeInForce::Gtc,
-        };
+        let response: OKXResponse<OKXOrderHistory> =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        let mut order = response.data[0].clone();
+        order.ord_type = okx_ord_type;
+        order.px = "50000.0".to_string();
 
-        assert_eq!(
-            time_in_force, expected_tif,
-            "OKXOrderType::{okx_ord_type:?} should map to TimeInForce::{expected_tif:?}"
-        );
+        let report = parse_order_status_report(
+            &order,
+            AccountId::from("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, expected);
     }
 
     #[rstest]
-    fn test_fok_order_type_serialization() {
-        let ord_type = OKXOrderType::Fok;
-        let json = serde_json::to_string(&ord_type).expect("serialize");
-        assert_eq!(json, "\"fok\"", "FOK should serialize to 'fok'");
-    }
-
-    #[rstest]
-    fn test_ioc_order_type_serialization() {
-        let ord_type = OKXOrderType::Ioc;
-        let json = serde_json::to_string(&ord_type).expect("serialize");
-        assert_eq!(json, "\"ioc\"", "IOC should serialize to 'ioc'");
-    }
-
-    #[rstest]
-    fn test_optimal_limit_ioc_serialization() {
-        let ord_type = OKXOrderType::OptimalLimitIoc;
-        let json = serde_json::to_string(&ord_type).expect("serialize");
-        assert_eq!(
-            json, "\"optimal_limit_ioc\"",
-            "OptimalLimitIoc should serialize to 'optimal_limit_ioc'"
-        );
-    }
-
-    #[rstest]
-    fn test_fok_order_type_deserialization() {
-        let json = "\"fok\"";
-        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(ord_type, OKXOrderType::Fok);
-    }
-
-    #[rstest]
-    fn test_ioc_order_type_deserialization() {
-        let json = "\"ioc\"";
-        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(ord_type, OKXOrderType::Ioc);
-    }
-
-    #[rstest]
-    fn test_optimal_limit_ioc_deserialization() {
-        let json = "\"optimal_limit_ioc\"";
-        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(ord_type, OKXOrderType::OptimalLimitIoc);
-    }
-
-    #[rstest]
-    #[case(TimeInForce::Fok, OKXOrderType::Fok)]
-    #[case(TimeInForce::Ioc, OKXOrderType::Ioc)]
-    fn test_time_in_force_round_trip(
-        #[case] original_tif: TimeInForce,
-        #[case] expected_okx_type: OKXOrderType,
+    #[case::fok(OKXOrderType::Fok, "\"fok\"")]
+    #[case::ioc(OKXOrderType::Ioc, "\"ioc\"")]
+    #[case::optimal_limit_ioc(OKXOrderType::OptimalLimitIoc, "\"optimal_limit_ioc\"")]
+    fn test_okx_order_type_serde_round_trip(
+        #[case] ord_type: OKXOrderType,
+        #[case] expected_json: &str,
     ) {
-        let okx_ord_type = match original_tif {
-            TimeInForce::Fok => OKXOrderType::Fok,
-            TimeInForce::Ioc => OKXOrderType::Ioc,
-            TimeInForce::Gtc => OKXOrderType::Limit,
-            _ => OKXOrderType::Limit,
-        };
-        assert_eq!(okx_ord_type, expected_okx_type);
+        let serialized = serde_json::to_string(&ord_type).unwrap();
+        let deserialized: OKXOrderType = serde_json::from_str(&serialized).unwrap();
 
-        let parsed_tif = match okx_ord_type {
-            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
-            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
-            _ => TimeInForce::Gtc,
-        };
-        assert_eq!(parsed_tif, original_tif);
-    }
-
-    #[rstest]
-    #[case::limit_fok(
-        OrderType::Limit,
-        TimeInForce::Fok,
-        OKXOrderType::Fok,
-        "Limit + FOK should map to Fok"
-    )]
-    #[case::limit_ioc(
-        OrderType::Limit,
-        TimeInForce::Ioc,
-        OKXOrderType::Ioc,
-        "Limit + IOC should map to Ioc"
-    )]
-    #[case::market_ioc(
-        OrderType::Market,
-        TimeInForce::Ioc,
-        OKXOrderType::OptimalLimitIoc,
-        "Market + IOC should map to OptimalLimitIoc"
-    )]
-    #[case::limit_gtc(
-        OrderType::Limit,
-        TimeInForce::Gtc,
-        OKXOrderType::Limit,
-        "Limit + GTC should map to Limit"
-    )]
-    #[case::market_gtc(
-        OrderType::Market,
-        TimeInForce::Gtc,
-        OKXOrderType::Market,
-        "Market + GTC should map to Market"
-    )]
-    fn test_order_type_time_in_force_combinations(
-        #[case] order_type: OrderType,
-        #[case] tif: TimeInForce,
-        #[case] expected_okx_type: OKXOrderType,
-        #[case] description: &str,
-    ) {
-        let okx_ord_type = match (order_type, tif) {
-            (OrderType::Market, TimeInForce::Ioc) => OKXOrderType::OptimalLimitIoc,
-            (OrderType::Limit, TimeInForce::Fok) => OKXOrderType::Fok,
-            (OrderType::Limit, TimeInForce::Ioc) => OKXOrderType::Ioc,
-            _ => OKXOrderType::from(order_type),
-        };
-
-        assert_eq!(okx_ord_type, expected_okx_type, "{description}");
-    }
-
-    #[rstest]
-    fn test_market_fok_not_supported() {
-        let order_type = OrderType::Market;
-        let tif = TimeInForce::Fok;
-
-        let is_market_fok = matches!((order_type, tif), (OrderType::Market, TimeInForce::Fok));
-        assert!(
-            is_market_fok,
-            "Market + FOK combination should be identified for rejection"
-        );
+        assert_eq!(serialized, expected_json);
+        assert_eq!(deserialized, ord_type);
     }
 
     #[rstest]

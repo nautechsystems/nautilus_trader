@@ -16,6 +16,32 @@
 use super::*;
 
 #[rstest]
+fn test_mixed_instrument_historical_quotes_cache_by_row(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+    let quotes = [pipeline_quote(a, 1_000), pipeline_quote(b, 2_000)];
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    data_engine.response(leg_quotes_response(
+        UUID4::new(),
+        a,
+        client_id,
+        quotes.to_vec(),
+        None,
+        None,
+    ));
+
+    assert_eq!(cache.borrow().quotes(&a), Some(vec![quotes[0]]));
+    assert_eq!(cache.borrow().quotes(&b), Some(vec![quotes[1]]));
+}
+
+#[rstest]
 #[case::envelope(false)]
 #[case::partial_failure(true)]
 fn test_response_envelope_preserves_root_and_source_correlation(

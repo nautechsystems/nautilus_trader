@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Chain;
+
 use super::*;
 
 #[rstest]
@@ -1512,10 +1515,10 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
-    let chain = Arc::new(chains::ARBITRUM.clone());
+    let chain = Arc::new(Chain::new(Blockchain::Fuji, 43113));
 
     let dex = Arc::new(Dex::new(
-        chains::ARBITRUM.clone(),
+        (*chain).clone(),
         DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
@@ -1588,23 +1591,32 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     let id_a = pool_a.instrument_id;
     let id_b = pool_b.instrument_id;
     let id_invalid = pool_invalid.instrument_id;
-    let expected_invalid = pool_invalid.clone();
     let venue = id_a.venue;
 
     let expected = |pool: &Pool| {
+        let base_code = format!(
+            "{}@{}",
+            pool.token0.symbol,
+            pool.token0.chain.name.to_string().to_uppercase()
+        );
+        let quote_code = format!(
+            "{}@{}",
+            pool.token1.symbol,
+            pool.token1.chain.name.to_string().to_uppercase()
+        );
         InstrumentAny::CurrencyPair(
             CurrencyPair::builder()
                 .instrument_id(pool.instrument_id)
                 .raw_symbol(pool.instrument_id.symbol)
                 .base_currency(Currency::new(
-                    "BASE",
+                    base_code.as_str(),
                     8,
                     0,
                     "Base token",
                     CurrencyType::Crypto,
                 ))
                 .quote_currency(Currency::new(
-                    "QUOTE",
+                    quote_code.as_str(),
                     6,
                     0,
                     "Quote token",
@@ -1642,7 +1654,7 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     assert_ne!(id_a, id_b);
     assert_eq!(cache.instrument(&id_a), Some(&expected_a));
     assert_eq!(selected, Some(&expected_b));
-    assert_eq!(cache.pool(&id_invalid), Some(&expected_invalid));
+    assert_eq!(cache.pool(&id_invalid), None);
     assert_eq!(cache.instrument(&id_invalid), None);
     assert_eq!(cache.instruments(&venue, None).len(), 2);
     assert_eq!(messages.len(), 2);

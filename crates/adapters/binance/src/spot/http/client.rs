@@ -34,10 +34,16 @@
 use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
 use ahash::AHashMap;
+use anyhow::Context;
+use indexmap::{IndexMap, map::Entry};
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    collections::AtomicMap, datetime::SECONDS_IN_DAY, hex, nanos::UnixNanos, time::AtomicTime,
+    collections::AtomicMap,
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, SECONDS_IN_DAY},
+    hex,
+    nanos::UnixNanos,
+    time::AtomicTime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
@@ -86,6 +92,7 @@ use super::{
     },
 };
 use crate::{
+    book::pacing::{SnapshotAdmission, SnapshotPermit},
     common::{
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_NO_SUCH_ORDER_CODE,
@@ -98,6 +105,8 @@ use crate::{
             BinanceEnvironment, BinanceOrderStatus, BinanceProductType, BinanceRateLimitInterval,
             BinanceRateLimitType, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
         },
+        http::BinanceHttpBackoff,
+        http_weights::request_weight_spot,
         instruments::BinanceInstrumentSelector,
         models::BinanceErrorResponse,
         parse::{
@@ -365,6 +374,8 @@ pub struct BinanceRawSpotHttpClient {
     recv_window: Option<u64>,
     order_rate_keys: Vec<String>,
     json_responses: bool,
+    backoff: BinanceHttpBackoff,
+    command_order_quota: Option<bool>,
 }
 
 impl BinanceRawSpotHttpClient {
@@ -428,6 +439,14 @@ impl BinanceRawSpotHttpClient {
             _ => return Err(BinanceSpotHttpError::MissingCredentials),
         };
 
+        let backoff = BinanceHttpBackoff::new(
+            BinanceProductType::Spot,
+            environment,
+            base_url_override.as_deref(),
+            proxy_url.as_deref(),
+            credential.as_ref(),
+        );
+
         let base_url = base_url_override.unwrap_or_else(|| {
             get_http_base_url(BinanceProductType::Spot, environment).to_string()
         });
@@ -455,6 +474,8 @@ impl BinanceRawSpotHttpClient {
             recv_window,
             order_rate_keys: order_keys,
             json_responses,
+            backoff,
+            command_order_quota: None,
         })
     }
 
@@ -521,6 +542,7 @@ impl BinanceRawSpotHttpClient {
                 "Accept".to_string(),
                 "application/json".to_string(),
             )])),
+            None,
         )
         .await
     }
@@ -564,6 +586,7 @@ impl BinanceRawSpotHttpClient {
                 "Accept".to_string(),
                 "application/json".to_string(),
             )])),
+            None,
         )
         .await
     }
@@ -581,7 +604,8 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.request(Method::DELETE, path, params, true, true).await
+        self.request(Method::DELETE, path, params, true, false)
+            .await
     }
 
     /// Performs a signed DELETE request and requests a JSON response.
@@ -602,11 +626,12 @@ impl BinanceRawSpotHttpClient {
             path,
             params,
             true,
-            true,
+            false,
             Some(HashMap::from([(
                 "Accept".to_string(),
                 "application/json".to_string(),
             )])),
+            None,
         )
         .await
     }
@@ -622,10 +647,14 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.request_with_extra_headers(method, path, params, signed, use_order_quota, None)
+        self.request_with_extra_headers(method, path, params, signed, use_order_quota, None, None)
             .await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "REST admission carries the snapshot reservation through read retries"
+    )]
     async fn request_with_extra_headers<P>(
         &self,
         method: Method,
@@ -634,6 +663,7 @@ impl BinanceRawSpotHttpClient {
         signed: bool,
         use_order_quota: bool,
         extra_headers: Option<HashMap<String, String>>,
+        snapshot: Option<&SnapshotAdmission>,
     ) -> BinanceSpotHttpResult<Vec<u8>>
     where
         P: Serialize + ?Sized,
@@ -646,17 +676,19 @@ impl BinanceRawSpotHttpClient {
                 signed,
                 use_order_quota,
                 extra_headers.clone(),
+                snapshot,
             )
         };
 
         if method != Method::GET {
             return operation().await;
         }
+
         self.retry_manager
             .invocation(
                 path,
                 operation,
-                BinanceSpotHttpError::is_retryable,
+                |e| self.command_order_quota.is_none() && e.is_retryable(),
                 |e| match e {
                     RetryError::Canceled => {
                         BinanceSpotHttpError::Canceled("HTTP requests canceled".to_string())
@@ -677,6 +709,10 @@ impl BinanceRawSpotHttpClient {
             .await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "REST admission carries the snapshot reservation through read retries"
+    )]
     async fn request_with_extra_headers_once<P>(
         &self,
         method: Method,
@@ -685,6 +721,7 @@ impl BinanceRawSpotHttpClient {
         signed: bool,
         use_order_quota: bool,
         extra_headers: Option<HashMap<String, String>>,
+        snapshot: Option<&SnapshotAdmission>,
     ) -> BinanceSpotHttpResult<Vec<u8>>
     where
         P: Serialize + ?Sized,
@@ -697,12 +734,37 @@ impl BinanceRawSpotHttpClient {
 
         let mut headers = extra_headers.unwrap_or_default();
 
-        if signed {
-            let cred = self
-                .credential
-                .as_ref()
-                .ok_or(BinanceSpotHttpError::MissingCredentials)?;
+        let credential = if signed {
+            Some(
+                self.credential
+                    .as_ref()
+                    .ok_or(BinanceSpotHttpError::MissingCredentials)?,
+            )
+        } else {
+            None
+        };
 
+        let permit = match snapshot {
+            Some(snapshot) => Some(snapshot.acquire().await),
+            None => None,
+        };
+
+        let keys = self.rate_limit_keys(&method, path, &query, use_order_quota);
+        self.backoff
+            .admit(
+                &self.client,
+                keys,
+                use_order_quota || self.command_order_quota.unwrap_or(false),
+                method == Method::GET && self.command_order_quota.is_none(),
+            )
+            .await
+            .map_err(|()| BinanceSpotHttpError::RateLimitBlocked)?;
+
+        if let Some(permit) = permit {
+            permit.commit();
+        }
+
+        if let Some(cred) = credential {
             if !query.is_empty() {
                 query.push('&');
             }
@@ -723,7 +785,6 @@ impl BinanceRawSpotHttpClient {
         }
 
         let url = self.build_url(path, &query);
-        let keys = self.rate_limit_keys(use_order_quota);
 
         let response = self
             .client
@@ -734,7 +795,7 @@ impl BinanceRawSpotHttpClient {
                 Some(headers),
                 None,
                 None,
-                Some(keys),
+                None,
             )
             .await?;
 
@@ -765,15 +826,20 @@ impl BinanceRawSpotHttpClient {
         url
     }
 
-    fn rate_limit_keys(&self, use_orders: bool) -> Vec<String> {
+    fn rate_limit_keys(
+        &self,
+        method: &Method,
+        path: &str,
+        query: &str,
+        use_orders: bool,
+    ) -> Vec<Ustr> {
+        let weight = request_weight_spot(method, path, query);
+        let mut keys = vec![Ustr::from(BINANCE_GLOBAL_RATE_KEY); weight as usize];
         if use_orders {
-            let mut keys = Vec::with_capacity(1 + self.order_rate_keys.len());
-            keys.push(BINANCE_GLOBAL_RATE_KEY.to_string());
-            keys.extend(self.order_rate_keys.iter().cloned());
-            keys
-        } else {
-            vec![BINANCE_GLOBAL_RATE_KEY.to_string()]
+            keys.extend(self.order_rate_keys.iter().map(|key| Ustr::from(key)));
         }
+
+        keys
     }
 
     fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceSpotHttpResult<T> {
@@ -785,6 +851,7 @@ impl BinanceRawSpotHttpClient {
         if let Ok(body_str) = std::str::from_utf8(body)
             && let Ok(err) = serde_json::from_str::<BinanceErrorResponse>(body_str)
         {
+            self.backoff.observe(status, Some(err.code), retry_after);
             return Err(BinanceSpotHttpError::BinanceError {
                 code: err.code,
                 message: err.msg,
@@ -795,6 +862,8 @@ impl BinanceRawSpotHttpClient {
 
         // Try to decode SBE error response
         if let Some((code, message)) = Self::try_decode_sbe_error(body) {
+            self.backoff
+                .observe(status, Some(i64::from(code)), retry_after);
             return Err(BinanceSpotHttpError::BinanceError {
                 code: code.into(),
                 message,
@@ -803,6 +872,7 @@ impl BinanceRawSpotHttpClient {
             });
         }
 
+        self.backoff.observe(status, None, retry_after);
         Err(BinanceSpotHttpError::UnexpectedStatus {
             status,
             body: hex::encode(body),
@@ -976,13 +1046,43 @@ impl BinanceRawSpotHttpClient {
     ///
     /// Returns an error if the request fails or SBE decoding fails.
     pub async fn depth(&self, params: &DepthParams) -> BinanceSpotHttpResult<BinanceDepth> {
+        self.depth_with_admission(params, None).await
+    }
+
+    pub(crate) async fn depth_paced(
+        &self,
+        params: &DepthParams,
+        permit: SnapshotPermit,
+    ) -> BinanceSpotHttpResult<BinanceDepth> {
+        self.depth_with_admission(params, Some(&SnapshotAdmission::new(permit)))
+            .await
+    }
+
+    async fn depth_with_admission(
+        &self,
+        params: &DepthParams,
+        snapshot: Option<&SnapshotAdmission>,
+    ) -> BinanceSpotHttpResult<BinanceDepth> {
+        let headers = self
+            .json_responses
+            .then(|| HashMap::from([("Accept".to_string(), "application/json".to_string())]));
+        let bytes = self
+            .request_with_extra_headers(
+                Method::GET,
+                "depth",
+                Some(params),
+                false,
+                false,
+                headers,
+                snapshot,
+            )
+            .await?;
+
         if self.json_responses {
-            let bytes = self.get_json("depth", Some(params)).await?;
             let response: SpotDepthJson = serde_json::from_slice(&bytes)
                 .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
             spot_depth_from_json(response)
         } else {
-            let bytes = self.get("depth", Some(params)).await?;
             Ok(parse::decode_depth(&bytes)?)
         }
     }
@@ -1093,6 +1193,7 @@ impl BinanceRawSpotHttpClient {
                 "Accept".to_string(),
                 "application/json".to_string(),
             )])),
+            None,
         )
         .await
     }
@@ -1327,6 +1428,13 @@ impl BinanceRawSpotHttpClient {
             .ok_or(BinanceSpotHttpError::MissingCredentials)?;
 
         let encoded_batch = Self::percent_encode(batch_json);
+        let use_order_quota = method == Method::POST;
+        let keys = self.rate_limit_keys(&method, path, "", use_order_quota);
+        self.backoff
+            .admit(&self.client, keys, use_order_quota, false)
+            .await
+            .map_err(|()| BinanceSpotHttpError::RateLimitBlocked)?;
+
         let timestamp = Timestamp::now().as_millisecond();
         let mut query = format!("batchOrders={encoded_batch}&timestamp={timestamp}");
 
@@ -1345,8 +1453,6 @@ impl BinanceRawSpotHttpClient {
             cred.api_key().to_string(),
         );
 
-        let keys = self.rate_limit_keys(true);
-
         let response = self
             .client
             .request(
@@ -1356,7 +1462,7 @@ impl BinanceRawSpotHttpClient {
                 Some(headers),
                 None,
                 None,
-                Some(keys),
+                None,
             )
             .await?;
 
@@ -1580,9 +1686,21 @@ impl BinanceRawSpotHttpClient {
         end_time: Option<i64>,
         limit: Option<u32>,
     ) -> BinanceSpotHttpResult<Vec<BinanceOrderResponse>> {
+        self.all_orders_with_cursor(symbol, None, start_time, end_time, limit)
+            .await
+    }
+
+    async fn all_orders_with_cursor(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        limit: Option<u32>,
+    ) -> BinanceSpotHttpResult<Vec<BinanceOrderResponse>> {
         let params = AllOrdersParams {
             symbol: symbol.to_string(),
-            order_id: None,
+            order_id,
             start_time,
             end_time,
             limit,
@@ -1793,6 +1911,7 @@ impl BinanceRawSpotHttpClient {
         }
 
         let order = self
+            .for_command(true)
             .query_order(
                 &params.symbol,
                 params.cancel_order_id,
@@ -1864,7 +1983,8 @@ impl BinanceRawSpotHttpClient {
 
         if params.order_id.is_none() {
             params.order_id = Some(
-                self.query_order(&params.symbol, None, Some(id))
+                self.for_command(false)
+                    .query_order(&params.symbol, None, Some(id))
                     .await
                     .map_err(|e| {
                         BinanceSpotHttpError::ValidationError(format!(
@@ -1877,6 +1997,13 @@ impl BinanceRawSpotHttpClient {
 
         params.orig_client_order_id = None;
         Ok(())
+    }
+
+    fn for_command(&self, use_order_quota: bool) -> Self {
+        Self {
+            command_order_quota: Some(use_order_quota),
+            ..self.clone()
+        }
     }
 
     /// Cancels all open orders for a symbol.
@@ -1960,6 +2087,17 @@ impl BinanceRawSpotHttpClient {
             .as_ref()
             .ok_or(BinanceSpotHttpError::MissingCredentials)?;
 
+        let keys = vec![Ustr::from(BINANCE_GLOBAL_RATE_KEY)];
+        self.backoff
+            .admit(
+                &self.client,
+                keys,
+                false,
+                method == Method::GET && self.command_order_quota.is_none(),
+            )
+            .await
+            .map_err(|()| BinanceSpotHttpError::RateLimitBlocked)?;
+
         let query = params
             .map(serde_urlencoded::to_string)
             .transpose()
@@ -1974,8 +2112,6 @@ impl BinanceRawSpotHttpClient {
             cred.api_key().to_string(),
         );
 
-        let keys = vec![BINANCE_GLOBAL_RATE_KEY.to_string()];
-
         let response = self
             .client
             .request(
@@ -1985,7 +2121,7 @@ impl BinanceRawSpotHttpClient {
                 Some(headers),
                 None,
                 None,
-                Some(keys),
+                None,
             )
             .await?;
 
@@ -2547,7 +2683,8 @@ const fn spot_sbe_time_in_force(time_in_force: BinanceTimeInForce) -> SbeTimeInF
         BinanceTimeInForce::Gtc => SbeTimeInForce::Gtc,
         BinanceTimeInForce::Ioc => SbeTimeInForce::Ioc,
         BinanceTimeInForce::Fok => SbeTimeInForce::Fok,
-        BinanceTimeInForce::Gtx
+        BinanceTimeInForce::GteGtc
+        | BinanceTimeInForce::Gtx
         | BinanceTimeInForce::Gtd
         | BinanceTimeInForce::Rpi
         | BinanceTimeInForce::Unknown => SbeTimeInForce::NonRepresentable,
@@ -2758,6 +2895,14 @@ impl BinanceSpotHttpClient {
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
         self.instruments_cache.get_cloned(symbol)
+    }
+
+    pub(crate) fn instrument_ids_reconciliation(&self) -> Vec<InstrumentId> {
+        self.instruments_cache
+            .load()
+            .values()
+            .map(|instrument| instrument.id())
+            .collect()
     }
 
     /// Tests connectivity to the API.
@@ -3087,6 +3232,16 @@ impl BinanceSpotHttpClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> anyhow::Result<OrderBook> {
+        self.request_book_snapshot_with_permit(instrument_id, depth, None)
+            .await
+    }
+
+    pub(crate) async fn request_book_snapshot_with_permit(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+        permit: Option<SnapshotPermit>,
+    ) -> anyhow::Result<OrderBook> {
         if depth.is_some_and(|value| value == 0 || value > 5000) {
             anyhow::bail!("Binance Spot order-book depth must be between 1 and 5000");
         }
@@ -3095,7 +3250,12 @@ impl BinanceSpotHttpClient {
             symbol: instrument_id.symbol.to_string(),
             limit: depth,
         };
-        let snapshot = self.inner.depth(&params).await?;
+
+        let snapshot = match permit {
+            Some(permit) => self.inner.depth_paced(&params, permit).await?,
+            None => self.inner.depth(&params).await?,
+        };
+
         let ts_event = self.generate_ts_init();
         Self::parse_book_snapshot_response(instrument_id, &instrument, &snapshot, ts_event)
     }
@@ -3334,6 +3494,92 @@ impl BinanceSpotHttpClient {
                 )
             })
             .collect()
+    }
+
+    pub(crate) async fn request_order_history(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        start: Option<UnixNanos>,
+        end: UnixNanos,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        const PAGE_LIMIT: u32 = 1_000;
+        const MAX_INTERVAL_MS: i64 = SECONDS_IN_DAY as i64 * 1_000;
+
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let end_ms = end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+        let mut window_start = start.map(|time| time.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+        let mut reports = IndexMap::new();
+
+        loop {
+            let window_end = window_start.map_or(end_ms, |start_ms| {
+                start_ms.saturating_add(MAX_INTERVAL_MS - 1).min(end_ms)
+            });
+
+            let mut order_id = window_start.is_none().then_some(0);
+            let window_end_micros = window_end
+                .saturating_add(1)
+                .saturating_mul((NANOSECONDS_IN_MILLISECOND / NANOSECONDS_IN_MICROSECOND) as i64)
+                .saturating_sub(1);
+
+            loop {
+                let orders = self
+                    .inner
+                    .all_orders_with_cursor(
+                        instrument_id.symbol.as_str(),
+                        order_id,
+                        window_start.filter(|_| order_id.is_none()),
+                        order_id.is_none().then_some(window_end),
+                        Some(PAGE_LIMIT),
+                    )
+                    .await?;
+                let page_len = orders.len();
+
+                let Some(last_id) = orders.iter().map(|order| order.order_id).max() else {
+                    break;
+                };
+
+                let past_end = orders.iter().any(|order| order.time > window_end_micros);
+                for order in orders
+                    .into_iter()
+                    .filter(|order| order.time <= window_end_micros)
+                {
+                    let Entry::Vacant(entry) = reports.entry(order.order_id) else {
+                        continue;
+                    };
+
+                    let report = parse_order_status_report_sbe(
+                        &order,
+                        account_id,
+                        &instrument,
+                        BINANCE_NAUTILUS_SPOT_BROKER_ID,
+                        end,
+                    )?;
+                    entry.insert(report);
+                }
+
+                if page_len < PAGE_LIMIT as usize || past_end {
+                    break;
+                }
+
+                let next_id = last_id
+                    .checked_add(1)
+                    .context("Binance Spot order ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_id > order_id.unwrap_or_default(),
+                    "Binance Spot order history pagination made no progress"
+                );
+                order_id = Some(next_id);
+            }
+
+            if window_start.is_none() || window_end >= end_ms {
+                break;
+            }
+
+            window_start = Some(window_end + 1);
+        }
+
+        Ok(reports.into_values().collect())
     }
 
     /// Requests fill reports (trade history) for an instrument.
@@ -3769,12 +4015,359 @@ fn log_instrument_parse_error(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    use axum::{
+        Router,
+        http::{Method, StatusCode},
+        response::IntoResponse,
+        routing::any,
+    };
     use nautilus_model::instruments::stubs::currency_pair_btcusdt;
+    use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock};
     use nautilus_testkit::http::assert_http_redirect_rejected;
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
     use crate::spot::http::models::BinancePriceLevel;
+
+    #[tokio::test]
+    async fn test_weighted_concurrent_clients_share_atomic_quota() {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let captured = requests.clone();
+        let response = include_str!("../../../test_data/spot/http_json/server_time_response.json");
+
+        let app = Router::new().fallback(any(move || {
+            let captured = captured.clone();
+            async move {
+                captured.fetch_add(1, Ordering::Relaxed);
+                response
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let quota = Quota::with_period(Duration::from_secs(3600))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(30).unwrap());
+
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(Ustr::from(BINANCE_GLOBAL_RATE_KEY), quota)],
+        ));
+        let mut client = BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            Some("key".into()),
+            Some("secret".into()),
+            Some(url.clone()),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .for_command(false);
+        client.client = HttpClient::builder()
+            .rate_limiters(vec![limiter.clone()])
+            .build()
+            .unwrap();
+        let other = client.clone();
+
+        let (first, second) = tokio::join!(
+            async { client.get("exchangeInfo", None::<&()>).await },
+            async { other.get("exchangeInfo", None::<&()>).await }
+        );
+        let successes = usize::from(first.is_ok()) + usize::from(second.is_ok());
+        let blocked = usize::from(matches!(first, Err(BinanceSpotHttpError::RateLimitBlocked)))
+            + usize::from(matches!(
+                second,
+                Err(BinanceSpotHttpError::RateLimitBlocked)
+            ));
+        let mut remaining = 0;
+        while limiter
+            .check_key(&Ustr::from(BINANCE_GLOBAL_RATE_KEY))
+            .is_ok()
+        {
+            remaining += 1;
+        }
+
+        server.abort();
+
+        assert_eq!(successes, 1);
+        assert_eq!(blocked, 1);
+        assert_eq!(remaining, 10);
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_weighted_history_pages_consume_each_page() {
+        let cursors = Arc::new(Mutex::new(Vec::new()));
+        let captured = cursors.clone();
+        let response = include_str!("../../../test_data/spot/http_json/server_time_response.json");
+
+        let app = Router::new().fallback(any(move |uri: axum::http::Uri| {
+            let captured = captured.clone();
+            async move {
+                let query: AHashMap<String, String> =
+                    serde_urlencoded::from_str(uri.query().unwrap()).unwrap();
+                captured.lock().push(query["fromId"].clone());
+                response
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let quota = Quota::with_period(Duration::from_secs(3600))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(40).unwrap());
+
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(Ustr::from(BINANCE_GLOBAL_RATE_KEY), quota)],
+        ));
+        let mut client = BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            Some("key".into()),
+            Some("secret".into()),
+            Some(url.clone()),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .for_command(false);
+        client.client = HttpClient::builder()
+            .rate_limiters(vec![limiter.clone()])
+            .build()
+            .unwrap();
+        let mut responses = Vec::new();
+
+        for from_id in [1, 101] {
+            let params = [
+                ("symbol", "BTCUSDT".to_string()),
+                ("fromId", from_id.to_string()),
+            ];
+            responses.push(
+                client
+                    .get_signed_json("myTrades", Some(&params))
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let exhausted = limiter
+            .check_key(&Ustr::from(BINANCE_GLOBAL_RATE_KEY))
+            .is_err();
+        server.abort();
+
+        assert_eq!(responses, vec![response.as_bytes().to_vec(); 2]);
+        assert_eq!(*cursors.lock(), ["1", "101"]);
+        assert!(exhausted);
+    }
+
+    #[rstest]
+    #[case("time", 1)]
+    #[case("exchangeInfo", 20)]
+    #[tokio::test]
+    async fn test_weighted_request_consumes_endpoint_cost(#[case] path: &str, #[case] weight: u32) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let captured = requests.clone();
+        let response = include_str!("../../../test_data/spot/http_json/server_time_response.json");
+
+        let app = Router::new().fallback(any(move || {
+            let captured = captured.clone();
+            async move {
+                captured.fetch_add(1, Ordering::Relaxed);
+                response
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let quota = Quota::with_period(Duration::from_secs(3600))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(weight).unwrap());
+
+        let limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
+            None,
+            vec![(Ustr::from(BINANCE_GLOBAL_RATE_KEY), quota)],
+        ));
+        let mut client = BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            None,
+            None,
+            Some(url),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .for_command(false);
+        client.client = HttpClient::builder()
+            .rate_limiters(vec![limiter.clone()])
+            .build()
+            .unwrap();
+
+        let first = client.get(path, None::<&()>).await;
+        let blocked = client.get("time", None::<&()>).await;
+        let exhausted = limiter
+            .check_key(&Ustr::from(BINANCE_GLOBAL_RATE_KEY))
+            .is_err();
+        server.abort();
+
+        assert_eq!(first.unwrap(), response.as_bytes());
+        assert!(matches!(
+            blocked,
+            Err(BinanceSpotHttpError::RateLimitBlocked)
+        ));
+        assert!(exhausted);
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_weighted_read_retry_consumes_each_attempt() {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let captured = requests.clone();
+        let response = include_str!("../../../test_data/spot/http_json/server_time_response.json");
+
+        let app = Router::new().fallback(any(move || {
+            let captured = captured.clone();
+            async move {
+                if captured.fetch_add(1, Ordering::Relaxed) == 0 {
+                    (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response()
+                } else {
+                    (StatusCode::OK, response).into_response()
+                }
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let quota = Quota::with_period(Duration::from_secs(3600))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(40).unwrap());
+
+        let limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
+            None,
+            vec![(Ustr::from(BINANCE_GLOBAL_RATE_KEY), quota)],
+        ));
+        let mut client = BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            None,
+            None,
+            Some(url),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        client.client = HttpClient::builder()
+            .rate_limiters(vec![limiter.clone()])
+            .build()
+            .unwrap();
+
+        client.retry_manager = Arc::new(RetryManager::new(RetryConfig {
+            max_retries: 1,
+            initial_delay_ms: 1,
+            max_delay_ms: 1,
+            jitter_ms: 0,
+            ..crate::common::http::retry_config()
+        }));
+
+        let path = "exchangeInfo";
+        let result = client.get(path, None::<&()>).await;
+        let exhausted = limiter
+            .check_key(&Ustr::from(BINANCE_GLOBAL_RATE_KEY))
+            .is_err();
+        server.abort();
+
+        assert_eq!(result.unwrap(), response.as_bytes());
+        assert_eq!(requests.load(Ordering::Relaxed), 2);
+        assert!(exhausted);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_cancel_bypasses_exhausted_order_bucket() {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let app = Router::new().fallback(any(move |method: Method| {
+            let captured = captured.clone();
+            async move {
+                captured.lock().push(method.clone());
+
+                let body = if method == Method::DELETE {
+                    include_str!("../../../test_data/spot/http_json/cancel_order_response.json")
+                        .to_string()
+                } else {
+                    "{}".into()
+                };
+
+                (StatusCode::OK, body).into_response()
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut client = BinanceRawSpotHttpClient::new_with_json_responses(
+            BinanceEnvironment::Live,
+            Some("key".into()),
+            Some("secret".into()),
+            Some(url),
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        client.client = HttpClient::builder()
+            .keyed_quotas(
+                client
+                    .order_rate_keys
+                    .iter()
+                    .map(|key| {
+                        (
+                            key.clone(),
+                            Quota::per_minute(std::num::NonZeroU32::MIN)
+                                .allow_burst(std::num::NonZeroU32::MIN),
+                        )
+                    })
+                    .collect(),
+            )
+            .build()
+            .unwrap();
+
+        let first = client.post_signed("order", None::<&()>).await;
+        let blocked = client.post_signed("order", None::<&()>).await;
+        let cancel = tokio::time::timeout(Duration::from_millis(250), async {
+            client.cancel_order("LTCBTC", Some(4), None).await
+        })
+        .await
+        .unwrap();
+
+        server.abort();
+
+        assert!(first.is_ok());
+        assert!(matches!(
+            blocked,
+            Err(BinanceSpotHttpError::RateLimitBlocked)
+        ));
+        assert_eq!(cancel.unwrap().order_id, 4);
+        assert_eq!(*requests.lock(), [Method::POST, Method::DELETE]);
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {

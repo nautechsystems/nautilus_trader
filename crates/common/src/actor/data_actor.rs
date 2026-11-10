@@ -182,6 +182,21 @@ pub trait DataActorNative {
     /// Returns the mutable actor core.
     fn core_mut(&mut self) -> &mut DataActorCore;
 
+    /// Dispatches framework startup and the user-facing start callback.
+    ///
+    /// Overrides call [`DataActor::on_start`] once after successful framework startup.
+    /// The default implementation only calls [`DataActor::on_start`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if framework startup or the user callback fails.
+    fn dispatch_start(&mut self) -> anyhow::Result<()>
+    where
+        Self: DataActor,
+    {
+        DataActor::on_start(self)
+    }
+
     /// Returns the mutable clock borrow for the actor.
     ///
     /// # Panics
@@ -830,10 +845,12 @@ pub trait DataActor {
     // panics-doc-ok
     /// Adds the `synthetic` instrument to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist it.
+    /// Returns an error if a synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error.
     ///
     /// # Panics
     ///
@@ -848,10 +865,12 @@ pub trait DataActor {
     // panics-doc-ok
     /// Updates the `synthetic` instrument in the cache, replacing the existing entry.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if no synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist the replacement.
+    /// Returns an error if no synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error.
     ///
     /// # Panics
     ///
@@ -2193,6 +2212,10 @@ pub trait DataActor {
     ///
     /// The ATM price is always derived from the exchange-provided forward price
     /// embedded in each option greeks/ticker update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot interval is zero.
     fn subscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
@@ -2200,7 +2223,8 @@ pub trait DataActor {
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) where
+    ) -> anyhow::Result<()>
+    where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
@@ -2224,7 +2248,7 @@ pub trait DataActor {
             snapshot_interval_ms,
             client_id,
             params,
-        );
+        )
     }
 
     #[cfg(feature = "defi")]
@@ -3336,7 +3360,7 @@ where
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
-        DataActor::on_start(self)
+        DataActorNative::dispatch_start(self)
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
@@ -4635,10 +4659,12 @@ impl DataActorCore {
 
     /// Adds the `synthetic` instrument to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist it. Panics if the actor is not registered
+    /// Returns an error if a synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error. Panics if the actor is not registered
     /// with a trader. // panics-doc-ok
     pub fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         self.check_registered();
@@ -4652,11 +4678,13 @@ impl DataActorCore {
 
     /// Updates the `synthetic` instrument in the cache, replacing the existing entry.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if no synthetic with the same ID already exists, or if the
-    /// backing cache fails to persist the replacement. Panics if the actor is not
-    /// registered with a trader. // panics-doc-ok
+    /// Returns an error if no synthetic with the same ID already exists or the backing reports
+    /// a DeFi currency integrity error. Panics if the actor is not registered
+    /// with a trader. // panics-doc-ok
     pub fn update_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         self.check_registered();
 
@@ -5616,6 +5644,10 @@ impl DataActorCore {
     }
 
     /// Subscribes the actor to option chain snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot interval is zero.
     #[expect(
         clippy::too_many_arguments,
         reason = "subscription command mirrors the option chain request fields"
@@ -5629,7 +5661,7 @@ impl DataActorCore {
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
 
         let correlation_id = self
@@ -5651,12 +5683,14 @@ impl DataActorCore {
             client_id,
             Some(series_id.venue),
             params,
-        );
+        )?;
+
         subscribe.correlation_id = correlation_id;
         let command = DataCommand::Subscribe(SubscribeCommand::OptionChain(subscribe));
 
         self.set_option_chain_subscription(topic, handler, command.clone());
         self.send_data_cmd(command);
+        Ok(())
     }
 
     /// Unsubscribes the actor from data.

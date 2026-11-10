@@ -102,3 +102,71 @@ impl Drop for PendingSnapshot {
 pub async fn snapshot_expired(cancel: &CancellationToken, timeout: Duration) -> bool {
     !timeout.is_zero() && time::timeout(timeout, cancel.cancelled()).await.is_err()
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::disabled(Duration::ZERO, false, false)]
+    #[case::cancelled(Duration::from_secs(3), true, false)]
+    #[case::expired(Duration::from_secs(3), false, true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn snapshot_deadline_outcome(
+        #[case] timeout: Duration,
+        #[case] cancelled: bool,
+        #[case] expected: bool,
+    ) {
+        let cancel = CancellationToken::new();
+        if cancelled {
+            cancel.cancel();
+        }
+
+        let started = Instant::now();
+
+        let expired = snapshot_expired(&cancel, timeout).await;
+
+        assert_eq!(expired, expected);
+
+        if expected {
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            assert_eq!(started.elapsed(), timeout);
+            #[cfg(all(feature = "simulation", madsim))]
+            assert!(
+                started.elapsed() >= timeout
+                    && started.elapsed() < timeout + Duration::from_millis(1)
+            );
+        } else {
+            assert_eq!(started.elapsed(), Duration::ZERO);
+        }
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn cancellation_interrupts_pending_snapshot_deadline() {
+        let cancel = CancellationToken::new();
+        let started = Instant::now();
+        let wait = snapshot_expired(&cancel, Duration::from_secs(3));
+        tokio::pin!(wait);
+
+        assert!(futures_util::poll!(&mut wait).is_pending());
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        tokio::time::advance(Duration::from_secs(1)).await;
+        #[cfg(all(feature = "simulation", madsim))]
+        madsim::time::advance(Duration::from_secs(1));
+        cancel.cancel();
+        let expired = wait.await;
+
+        assert!(!expired);
+        assert_eq!(started.elapsed(), Duration::from_secs(1));
+    }
+}

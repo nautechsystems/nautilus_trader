@@ -1,0 +1,51 @@
+[
+  {
+    "timestamp_ms": 1703123456789,
+    "method": "GET",
+    "path": "/trade-api/v2/portfolio/balance",
+    "payload": "1703123456789GET/trade-api/v2/portfolio/balance",
+    "signature": "hkBtGNHKCfMll7XdniCzUygg/ek7JdCINuVOaGq0bDS3feQIdYVMirJSybX93bQtj8CMmr3q0RiAToeTeMOwBg=="
+  },
+  {
+    "timestamp_ms": 1703123456789,
+    "method": "POST",
+    "path": "/trade-api/v2/portfolio/events/orders",
+    "payload": "1703123456789POST/trade-api/v2/portfolio/events/orders",
+    "signature": "/ro4N0xtMcM9TBedlEcPA5AL1SsWyOiIo3UPU4/aeQ/H6c6rvS4ymxWhdFIT2dLRprk+g8Dju8XU1AY4/NDkDg=="
+  },
+  {
+    "timestamp_ms": 1703123456789,
+    "method": "GET",
+    "path": "/custom/v3/portfolio/balance",
+    "payload": "1703123456789GET/custom/v3/portfolio/balance",
+    "signature": "kthCf51Ig0M27vCucslz6snaA25JZNdhwH5jYJh1SWDO+UCZ31n+yZ7b5peijVBiQyF5T4qhDgjca101h+wXDw=="
+  },
+  {
+    "timestamp_ms": 1703123456789,
+    "method": "GET",
+    "path": "/trade-api/ws/v2",
+    "payload": "1703123456789GET/trade-api/ws/v2",
+    "signature": "GpkXLSIK8avqVF1CPnKos7fulth1qYoYZjI5qzovCmuzcKV0/qCnl8R5kVmiu2d6dLYPcYVo2r2OgcCWv1uwAw=="
+  },
+  {
+    "timestamp_ms": 1703123456,
+    "method": "GET",
+    "path": "/trade-api/v2/portfolio/balance",
+    "payload": "1703123456GET/trade-api/v2/portfolio/balance",
+    "signature": "27Ckm+drV1UezGS1CqFTIcCCmPfm4d1imy4z0IhrqSUsXdQzBjgS2P3QIeWaQxeurvBaGUEM8o6A5KrqRjrNBw=="
+  },
+  {
+    "timestamp_ms": 1703123456790,
+    "method": "GET",
+    "path": "/trade-api/v2/portfolio/balance",
+    "payload": "1703123456790GET/trade-api/v2/portfolio/balance",
+    "signature": "PNxTrLwLArTpg2Vol1tP6IcZ9a5LYKtFBogJnVJGN1+ShbufUgVipHe2EhdM88cFBZj0FKMCWf9zU4jf2aZTCw=="
+  },
+  {
+    "timestamp_ms": 1703123456789,
+    "method": "GET",
+    "path": "/portfolio/balance",
+    "payload": "1703123456789GET/portfolio/balance",
+    "signature": "LJX8FHl13vaUpJTEUTAq7KlOhSq8zJ+ZmzMMtVAyDqzSBwD38dMCh0LQovamVSDptusQSS8nEsa2j3PNYhH/Dg=="
+  }
+]

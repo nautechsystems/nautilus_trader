@@ -15,21 +15,23 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for [Databento](https://databento.com).
 //!
-//! The `nautilus-databento` crate provides a complete integration with the Databento API for
-//! accessing institutional-grade market data feeds across multiple venues and asset classes.
+//! The `nautilus-databento` crate provides live and historical market data across venues and asset classes
+//! through Databento's official Rust client. It loads Databento Binary Encoding (DBN) files, decodes
+//! market events and instrument definitions into Nautilus types, and supports live-node integration
+//! and optional Python bindings. It provides no order execution.
+//!
+//! The official Databento API reference can be found at <https://databento.com/docs>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case:
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `arrow`: Enables Apache Arrow data support.
 //! - `extension-module`: Builds as a Python extension module.
@@ -39,6 +41,12 @@
 //! - `live` (default): Enables live data functionality, including the `data`, `factories`, and
 //!   `live` modules.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/databento/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/databento/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -62,9 +70,6 @@ pub mod types;
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
-#[cfg(feature = "python")]
-pub mod python;
-
 #[cfg(feature = "live")]
 pub mod data;
 
@@ -73,3 +78,6 @@ pub mod factories;
 
 #[cfg(feature = "live")]
 pub mod live;
+
+#[cfg(feature = "python")]
+pub mod python;

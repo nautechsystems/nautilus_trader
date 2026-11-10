@@ -29,6 +29,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
+    matching_engine::config::OrderPriorityResetPolicy,
     models::{
         fee::{FeeModelAny, FeeModelHandle},
         fill::{FillModelAny, FillModelHandle},
@@ -363,6 +364,9 @@ pub struct SimulatedVenueConfig {
     /// If open orders are canceled before liquidating positions.
     #[builder(default = true)]
     pub liquidation_cancel_open_orders: bool,
+    /// The queue-priority reset policy for successful modify commands.
+    #[builder(default)]
+    pub order_priority_reset_policy: OrderPriorityResetPolicy,
 }
 
 impl<S: simulated_venue_config_builder::IsComplete> SimulatedVenueConfigBuilder<S> {
@@ -545,6 +549,8 @@ pub struct BacktestVenueConfig {
     /// If open orders should be canceled before closing positions during liquidation.
     #[builder(default = true)]
     liquidation_cancel_open_orders: bool,
+    #[builder(default)]
+    order_priority_reset_policy: OrderPriorityResetPolicy,
 }
 
 impl<S: backtest_venue_config_builder::IsComplete> BacktestVenueConfigBuilder<S> {
@@ -716,6 +722,11 @@ impl BacktestVenueConfig {
     #[must_use]
     pub fn allow_cash_borrowing(&self) -> bool {
         self.allow_cash_borrowing
+    }
+
+    #[must_use]
+    pub fn order_priority_reset_policy(&self) -> OrderPriorityResetPolicy {
+        self.order_priority_reset_policy
     }
 
     #[must_use]
@@ -1202,6 +1213,11 @@ mod tests {
     use nautilus_execution::models::fee::MakerTakerFeeModel;
     #[cfg(feature = "streaming")]
     use nautilus_persistence::config::{CatalogBackendType, CatalogCompression};
+    #[cfg(feature = "python")]
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -1288,6 +1304,66 @@ mod tests {
     #[rstest]
     fn test_minimal_config_is_valid() {
         assert!(minimal_builder!().build().is_ok());
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_order_priority_reset_policy_python_keyword(
+        #[values(
+            OrderPriorityResetPolicy::PriceChange,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+            OrderPriorityResetPolicy::AnyModify
+        )]
+        policy: OrderPriorityResetPolicy,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("order_priority_reset_policy", policy)
+                .unwrap();
+            let config = py
+                .get_type::<BacktestVenueConfig>()
+                .call(
+                    ("SIM", "NETTING", "MARGIN", vec!["1_000 USD"]),
+                    Some(&kwargs),
+                )
+                .unwrap();
+            assert_eq!(
+                config
+                    .getattr("order_priority_reset_policy")
+                    .unwrap()
+                    .extract::<OrderPriorityResetPolicy>()
+                    .unwrap(),
+                policy
+            );
+            let config = config.extract::<BacktestVenueConfig>().unwrap();
+            assert_eq!(config.order_priority_reset_policy(), policy);
+        });
+    }
+
+    #[rstest]
+    fn test_order_priority_reset_policy_defaults_and_builder() {
+        let defaults = minimal_builder!().build().unwrap();
+        assert_eq!(
+            defaults.order_priority_reset_policy(),
+            OrderPriorityResetPolicy::PriceChange
+        );
+        assert_eq!(
+            minimal_simulated_builder!()
+                .build()
+                .unwrap()
+                .order_priority_reset_policy,
+            OrderPriorityResetPolicy::PriceChange
+        );
+        let config = minimal_builder!()
+            .order_priority_reset_policy(OrderPriorityResetPolicy::AnyModify)
+            .build()
+            .unwrap();
+        assert_eq!(
+            config.order_priority_reset_policy(),
+            OrderPriorityResetPolicy::AnyModify
+        );
     }
 
     #[rstest]

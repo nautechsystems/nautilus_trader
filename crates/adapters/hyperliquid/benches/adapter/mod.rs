@@ -58,14 +58,14 @@ pub mod signing;
 #[path = "../../src/websocket/mod.rs"]
 pub mod websocket;
 
+#[allow(dead_code, unused_imports)]
+#[path = "../../src/book/mod.rs"]
+mod book;
+
 #[cfg(feature = "python")]
 #[allow(dead_code, unused_imports)]
 #[path = "../../src/python/mod.rs"]
 pub mod python;
-
-#[allow(dead_code, unused_imports)]
-#[path = "../../src/book/mod.rs"]
-mod book;
 
 pub use crate::{
     config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},

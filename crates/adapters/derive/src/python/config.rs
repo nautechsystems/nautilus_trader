@@ -17,7 +17,7 @@
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{PyResult, pymethods};
 use rust_decimal::Decimal;
@@ -66,8 +66,8 @@ impl DeriveDataClientConfig {
         let defaults = Self::default();
 
         let config = Self {
-            base_url_rest,
-            base_url_ws,
+            base_url_rest: base_url_rest.map(SecretString::from),
+            base_url_ws: base_url_ws.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -87,6 +87,20 @@ impl DeriveDataClientConfig {
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
+    }
+
+    #[getter]
+    fn base_url_rest(&self) -> Option<String> {
+        self.base_url_rest
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
+    }
+
+    #[getter]
+    fn base_url_ws(&self) -> Option<String> {
+        self.base_url_ws
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
     }
 
     #[getter]
@@ -128,6 +142,7 @@ impl DeriveExecutionClientConfig {
         max_per_instrument_matching_requests_per_second = None,
         transport_backend = None,
         cancel_on_disconnect = None,
+        load_ids = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -154,16 +169,17 @@ impl DeriveExecutionClientConfig {
         max_per_instrument_matching_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
         cancel_on_disconnect: Option<bool>,
-    ) -> Self {
+        load_ids: Option<Vec<InstrumentId>>,
+    ) -> PyResult<Self> {
         let defaults = Self::default();
 
-        Self {
+        let config = Self {
             account_id: account_id.unwrap_or(defaults.account_id),
             wallet_address,
             session_key: session_key.map(SecretString::from),
             subaccount_id,
-            base_url_rest,
-            base_url_ws,
+            base_url_rest: base_url_rest.map(SecretString::from),
+            base_url_ws: base_url_ws.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -183,7 +199,27 @@ impl DeriveExecutionClientConfig {
             max_matching_requests_per_second,
             max_per_instrument_matching_requests_per_second,
             cancel_on_disconnect: cancel_on_disconnect.unwrap_or(defaults.cancel_on_disconnect),
-        }
+            load_ids,
+        };
+
+        config
+            .validate_load_ids()
+            .map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
+    }
+
+    #[getter]
+    fn base_url_rest(&self) -> Option<String> {
+        self.base_url_rest
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
+    }
+
+    #[getter]
+    fn base_url_ws(&self) -> Option<String> {
+        self.base_url_ws
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
     }
 
     #[getter]
@@ -202,6 +238,116 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::unset(None)]
+    #[case::empty(Some(vec![]))]
+    #[case::explicit(Some(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("BTC-PERP.DERIVE")]))]
+    fn test_python_load_ids(#[case] load_ids: Option<Vec<InstrumentId>>) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("load_ids", load_ids.clone()).unwrap();
+            let config = py
+                .get_type::<DeriveExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let getter = config
+                .getattr("load_ids")
+                .unwrap()
+                .extract::<Option<Vec<InstrumentId>>>()
+                .unwrap();
+            let rust_config = config
+                .extract::<PyRef<DeriveExecutionClientConfig>>()
+                .unwrap();
+            assert_eq!(getter, load_ids);
+            assert_eq!(rust_config.load_ids, load_ids);
+            assert_eq!(rust_config.max_fee_per_contract, None);
+        });
+    }
+
+    #[rstest]
+    #[case::duplicate(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("ETH-PERP.DERIVE")], "duplicate load_ids")]
+    #[case::other_venue(vec![InstrumentId::from("ETH-PERP.BINANCE")], "invalid load_ids: ETH-PERP.BINANCE is not a DERIVE instrument")]
+    fn test_python_load_ids_reject_invalid_selection(
+        #[case] ids: Vec<InstrumentId>,
+        #[case] expected: &str,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("load_ids", ids).unwrap();
+            let error = py
+                .get_type::<DeriveExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(error.value(py).str().unwrap().to_str().unwrap(), expected);
+        });
+    }
+
+    #[rstest]
+    fn test_python_endpoint_overrides(
+        #[values(false, true)] execution: bool,
+        #[values(false, true)] overrides: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let rest = "https://REST_USER:REST_PASSWORD@rest.example/REST_PATH?token=REST_QUERY#REST_FRAGMENT";
+            let ws = "wss://WS_USER:WS_PASSWORD@stream.example/WS_PATH?token=WS_QUERY#WS_FRAGMENT";
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("base_url_rest", overrides.then_some(rest))
+                .unwrap();
+            kwargs
+                .set_item("base_url_ws", overrides.then_some(ws))
+                .unwrap();
+            kwargs
+                .set_item(
+                    "proxy_url",
+                    "http://PROXY_USER:PROXY_PASSWORD@proxy.example",
+                )
+                .unwrap();
+
+            let (class, name) = if execution {
+                kwargs
+                    .set_item("session_key", "SESSION_KEY_SENTINEL")
+                    .unwrap();
+                (
+                    py.get_type::<DeriveExecutionClientConfig>(),
+                    "DeriveExecutionClientConfig",
+                )
+            } else {
+                (
+                    py.get_type::<DeriveDataClientConfig>(),
+                    "DeriveDataClientConfig",
+                )
+            };
+
+            let config = class.call((), Some(&kwargs)).unwrap();
+            let rest_getter = config
+                .getattr("base_url_rest")
+                .unwrap()
+                .extract::<Option<String>>()
+                .unwrap();
+            let ws_getter = config
+                .getattr("base_url_ws")
+                .unwrap()
+                .extract::<Option<String>>()
+                .unwrap();
+            let has_proxy = config
+                .getattr("has_proxy_url")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap();
+
+            assert_eq!(rest_getter.as_deref(), overrides.then_some(rest));
+            assert_eq!(ws_getter.as_deref(), overrides.then_some(ws));
+            assert!(has_proxy);
+            assert_eq!(config.repr().unwrap().to_str().unwrap(), name);
+            assert_eq!(config.str().unwrap().to_str().unwrap(), name);
+        });
+    }
 
     #[rstest]
     #[case::default(None, false)]

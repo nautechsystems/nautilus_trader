@@ -43,6 +43,7 @@ def test_counts_exclude_setup_and_peak_tracks_simultaneous_allocations() -> None
         "cache_xrate_profile::steady_lookup",
         "cache_xrate_profile::first_lookup",
     ]
+
     strings = "".join(f"s {len(name):x} {name}\n" for name in names)
     stream = (
         "v 10500 3\n"

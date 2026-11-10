@@ -138,14 +138,17 @@ catalog.write_bars(bars, skip_disjoint_check=True)
 
 The built-in market-data writers are:
 
-- `write_quote_ticks`
-- `write_trade_ticks`
 - `write_order_book_deltas`
 - `write_order_book_depths`
+- `write_quote_ticks`
+- `write_trade_ticks`
 - `write_bars`
 - `write_mark_price_updates`
 - `write_index_price_updates`
+- `write_funding_rate_updates`
 - `write_option_greeks`
+- `write_instrument_statuses`
+- `write_instrument_closes`
 
 Each writer accepts optional `start` and `end` overrides as UNIX nanoseconds. The data in one call
 must have one identity, such as one instrument ID or bar type, and must be ordered by `ts_init`.
@@ -218,21 +221,24 @@ Source schemas can change sampling or trade IDs, but catalog keys do not disting
 Set `params={"update_catalog": True}` to write successful source responses back to the catalog.
 Use `"catalog_name"` to select a registered catalog explicitly.
 
-Write-back requires a client that reports completion explicitly, such as Databento or a Python adapter.
+Write-back requires a client that reports completion explicitly, such as Databento, OKX, or a Python adapter.
+OKX reports completion only for instrument requests whose fetches and parsing all succeeded, and for bar, trade, and
+funding rate windows it returned in full; see [OKX historical requests](../../integrations/okx.md#historical-requests).
 Other clients return data without updating the catalog and log why write-back is skipped.
 
 Write-back applies these coverage rules:
 
 - Failed and intermediate responses skip write-back. Requests split across multiple source envelopes
   also skip write-back, including parent-symbol book-delta requests that return multiple payloads.
-- Requests with a record limit skip write-back. Decoded row counts cannot prove whether the source
-  exhausted that limit.
+- Requests with a record limit, a source schema, or no registered catalog are rejected. Decoded row
+  counts cannot prove whether the source exhausted a limit.
 - Batches with instruments or bar types outside the request skip write-back because their source
   coverage intervals are unknown.
 - Successful empty responses can extend known-empty coverage when both bounds are available and the
   backend supports it.
 
-Catalog write failures are logged and do not discard the returned data.
+Catalog write failures and batches outside the request fail the request without discarding the
+returned data.
 
 ## `BacktestDataConfig`: backtest data
 
@@ -240,10 +246,10 @@ Catalog write failures are logged and do not discard the returned data.
 
 ### Core parameters
 
-- `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
-  `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
-  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads each instrument class the catalog
-  holds for the selected identifiers.
+- `data_type` is a `NautilusDataType` value: `Instrument`, `OrderBookDelta`, `OrderBookDepth`, `QuoteTick`,
+  `TradeTick`, `Bar`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `OptionGreeks`,
+  `InstrumentStatus`, or `InstrumentClose`. `Instrument` loads each instrument class the catalog holds
+  for the selected identifiers.
 - `catalog` is a required `DataCatalogConfig` that supplies the source for instrument and replay data loading.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
@@ -491,8 +497,24 @@ process.
 ### Consolidate catalog
 
 Combine small Parquet files to reduce file count and query overhead. With no bounds, `consolidate_catalog()`
-processes each leaf data directory in the catalog. `consolidate_data(...)` operates on one directory. Supply
-an instrument ID for data types partitioned by instrument.
+processes each leaf data directory in the catalog. `consolidate_data(...)` processes each directory for
+the selected data type and preserves instrument partitions. Supply an identifier to select one directory;
+for bars, use the bar type.
+
+Both methods reject gaps and overlaps before replacing files in each directory. If a directory fails
+validation, earlier directories stay consolidated and later ones are not processed. Set
+`ensure_contiguous_files=False` to merge gaps or overlaps intentionally. The combined filename marks the
+full span as covered, including gaps. Instrument snapshots can contain gaps, so a strict catalog-wide
+call can stop at an instrument directory.
+
+Consolidation writes the combined file before deleting its source files. If source deletion fails,
+queries use the combined file and exclude its superseded sources, so the error does not duplicate data.
+Catalog writes, deletions, and renames finish pending cleanup before changing files.
+
+- Retry the same consolidation call after resolving the storage error.
+- Leave the directory's `.consolidation.json` marker in place; cleanup removes it.
+- Serialize mutations within a directory and its subdirectories.
+- Finish pending cleanup before copying or backing up the catalog.
 
 ```python
 catalog.consolidate_catalog()
@@ -516,8 +538,8 @@ catalog.consolidate_data(
 Split data files into fixed periods. Durations and time bounds use nanoseconds. Both methods accept
 optional bounds. Supply an identifier to the data-type method for data partitioned by instrument.
 
-- **Catalog-wide method**: Processes quotes, trades, order book deltas, order book depths, bars,
-  index prices, mark prices, instrument closes, and registered custom types. It logs a warning
+- **Catalog-wide method**: Processes order book deltas, order book depths, quotes, trades, bars,
+  mark prices, index prices, instrument closes, and registered custom types. It logs a warning
   and skips other types.
 - **Data-type method**: Rejects instrument and record selectors, which have no period-typed rewrite. Use
   `consolidate_data(...)` for those.
@@ -558,7 +580,8 @@ instrument ID for data partitioned by instrument. The time bounds work as follow
 - Omitting `end` extends the range to the end.
 - For `delete_data_range(...)`, omitting both bounds removes all matching data.
 
-`delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
+`delete_data_range(...)` supports order book deltas, order book depth, quotes, trades, bars, mark prices,
+index prices, funding rate updates, option Greeks, instrument status updates, instrument closes, and
 registered custom types. Pass `NautilusDataType.OrderBookDepth` for order book depth and
 `NautilusDataType.Custom("MarketTickPython")` for a custom data type.
 

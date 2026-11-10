@@ -33,6 +33,7 @@ pub use crate::events::{
         accepted::OrderAccepted,
         accepted_batch::OrderAcceptedBatch,
         any::OrderEventAny,
+        cancel_denied::OrderCancelDenied,
         cancel_rejected::OrderCancelRejected,
         canceled::OrderCanceled,
         canceled_batch::OrderCanceledBatch,
@@ -43,6 +44,7 @@ pub use crate::events::{
         fill_voided::OrderFillVoided,
         filled::OrderFilled,
         initialized::OrderInitialized,
+        modify_denied::OrderModifyDenied,
         modify_rejected::OrderModifyRejected,
         pending_cancel::OrderPendingCancel,
         pending_update::OrderPendingUpdate,
@@ -80,6 +82,18 @@ impl HasTsInit for OrderInitialized {
 }
 
 impl HasTsInit for OrderDenied {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for OrderModifyDenied {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for OrderCancelDenied {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

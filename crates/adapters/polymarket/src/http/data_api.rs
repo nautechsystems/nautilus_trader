@@ -15,7 +15,7 @@
 
 //! Provides the HTTP client for the Polymarket Data API v2.
 
-use std::{collections::HashMap, convert::Infallible, result::Result as StdResult};
+use std::{collections::HashMap, result::Result as StdResult};
 
 use anyhow::Context;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
@@ -259,7 +259,7 @@ impl PolymarketDataApiHttpClient {
         // carries the page size onward.
         const PAGE_SIZE: u32 = 500;
 
-        let protocol = CursorProtocol::<Infallible>::gamma(PATH_POSITIONS);
+        let protocol = CursorProtocol::gamma(PATH_POSITIONS);
         let paginator = Paginator::new(PATH_POSITIONS, protocol, CollectAll::new());
         let completed = paginator
             .run(
@@ -271,7 +271,7 @@ impl PolymarketDataApiHttpClient {
                             position.as_ref().map(|cursor| cursor.as_ref()),
                         )
                         .await?;
-                    Ok(FetchOutcome::Page {
+                    Ok(FetchOutcome {
                         rows: page.data,
                         wire: page.pagination.next_cursor,
                     })
@@ -361,7 +361,8 @@ impl PolymarketDataApiHttpClient {
             anyhow::bail!("limit must be greater than zero");
         }
 
-        let protocol = CursorProtocol::<TradeTickStop>::gamma(PATH_TRADES);
+        let protocol = CursorProtocol::gamma(PATH_TRADES);
+
         let reducer = TradeTickReducer {
             rows: Vec::new(),
             instrument_id,
@@ -386,7 +387,7 @@ impl PolymarketDataApiHttpClient {
                         .await
                         .map_err(anyhow::Error::new)?;
                     let rows = validate_trade_page_scope(page.data, condition_id)?;
-                    Ok::<_, anyhow::Error>(FetchOutcome::Page {
+                    Ok::<_, anyhow::Error>(FetchOutcome {
                         rows,
                         wire: page.pagination.next_cursor,
                     })

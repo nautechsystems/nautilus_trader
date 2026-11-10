@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::error::Error;
-use crate::http::models::BookLevel;
+use crate::{
+    common::enums::{OhlcvPeriod, TakerSide},
+    http::models::BookLevel,
+};
 
 /// A market data stream type accepted in `subscribe_data_type`.
 #[derive(
@@ -69,14 +72,15 @@ impl DataType {
 pub struct Channel {
     pub data_type: DataType,
     /// Required for and only valid with [`DataType::Ohlcv`], for example `1MIN`.
-    pub period_id: Option<Ustr>,
+    pub period_id: Option<OhlcvPeriod>,
 }
 
 impl Channel {
     pub(super) fn validate(&self) -> Result<(), Error> {
         match (self.data_type, self.period_id) {
             (DataType::Ohlcv, Some(period))
-                if !period.is_empty() && period.bytes().all(|b| b.is_ascii_alphanumeric()) =>
+                if !period.as_ref().is_empty()
+                    && period.as_ref().bytes().all(|b| b.is_ascii_alphanumeric()) =>
             {
                 Ok(())
             }
@@ -147,7 +151,7 @@ pub(super) struct Hello {
     subscribe_data_type: Vec<DataType>,
     subscribe_filter_symbol_id: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    subscribe_filter_period_id: Vec<Ustr>,
+    subscribe_filter_period_id: Vec<OhlcvPeriod>,
 }
 
 impl Hello {
@@ -162,11 +166,11 @@ impl Hello {
         symbols.sort_unstable();
         symbols.dedup();
 
-        let mut periods: Vec<Ustr> = subscriptions
+        let mut periods: Vec<OhlcvPeriod> = subscriptions
             .iter()
             .filter_map(|s| s.channel.period_id)
             .collect();
-        periods.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+        periods.sort_unstable_by(|a, b| a.as_ref().cmp(b.as_ref()));
         periods.dedup();
 
         Self {
@@ -261,7 +265,7 @@ pub struct Trade {
     pub price: Decimal,
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub size: Decimal,
-    pub taker_side: Ustr,
+    pub taker_side: TakerSide,
 }
 
 /// An OHLCV period update, sent on close or while the period is still open.
@@ -269,7 +273,7 @@ pub struct Trade {
 pub struct Ohlcv {
     pub symbol_id: Ustr,
     pub sequence: u64,
-    pub period_id: Ustr,
+    pub period_id: OhlcvPeriod,
     pub time_period_start: Timestamp,
     pub time_period_end: Timestamp,
     pub time_open: Timestamp,
@@ -608,7 +612,7 @@ mod tests {
         Subscription {
             channel: Channel {
                 data_type,
-                period_id: period_id.map(Ustr::from),
+                period_id: period_id.map(OhlcvPeriod::from),
             },
             symbol_id: symbol_id.into(),
         }
@@ -675,7 +679,7 @@ mod tests {
         let subscription = Subscription {
             channel: Channel {
                 data_type,
-                period_id: period_id.map(Ustr::from),
+                period_id: period_id.map(OhlcvPeriod::from),
             },
             symbol_id: symbol_id.into(),
         };

@@ -60,8 +60,8 @@ use super::{
     messages::{
         AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
         LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
-        LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
-        TX_BATCH_ID_PREFIX,
+        LighterWsOrderBook, LighterWsRequest, LighterWsTx, NautilusWsMessage,
+        SendTxRejectionSource, TX_BATCH_ID_PREFIX,
     },
     parse::{
         parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
@@ -1401,6 +1401,8 @@ impl FeedHandler {
                 liquidation_trades,
                 ..
             } => self.handle_trades(&trades, &liquidation_trades, ts_init),
+            LighterWsFrame::AccountTxSubscribed { .. } => Vec::new(),
+            LighterWsFrame::AccountTx { channel, txs } => self.handle_account_tx(channel, txs),
             LighterWsFrame::AccountOrders { ref orders, .. }
             | LighterWsFrame::AccountAllOrders { ref orders, .. } => {
                 if self.exec_account.is_none() {
@@ -1509,6 +1511,22 @@ impl FeedHandler {
             LighterWsFrame::Shutdown { .. } => Vec::new(),
             LighterWsFrame::Height { .. } => raw_message(&frame),
         }
+    }
+
+    fn handle_account_tx(&self, channel: Ustr, txs: Vec<LighterWsTx>) -> Vec<NautilusWsMessage> {
+        let Some((_, account_index)) = self.exec_account else {
+            return raw_message(&LighterWsFrame::AccountTx { channel, txs });
+        };
+
+        if channel.as_str() != format!("account_tx:{account_index}") {
+            log::warn!("Ignoring Lighter transaction update for unexpected channel {channel}");
+            return Vec::new();
+        }
+
+        vec![NautilusWsMessage::AccountTx {
+            connection_epoch: 0,
+            txs,
+        }]
     }
 
     fn handle_order_book(
@@ -2396,7 +2414,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{LighterCandleResolution, LighterTxType},
+        common::enums::{LighterCandleResolution, LighterTxStatus, LighterTxType},
         websocket::messages::{LighterMarketSelection, LighterWsCandle, LighterWsChannel},
     };
 
@@ -3307,6 +3325,68 @@ mod tests {
     }
 
     #[rstest]
+    #[case::execution_context(true)]
+    #[case::raw_without_context(false)]
+    fn account_tx_routes_execution_results(#[case] execution_context: bool) {
+        let mut handler = make_handler_with_account();
+        if !execution_context {
+            handler.exec_account = None;
+        }
+
+        let frame: LighterWsFrame =
+            serde_json::from_str(include_str!("../../test_data/ws_account_tx_update.json"))
+                .unwrap();
+        let messages = handler.handle_frame(frame.clone(), UnixNanos::from(11));
+        assert_eq!(messages.len(), 1);
+        let message = messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_connection_epoch(7);
+
+        if execution_context {
+            let NautilusWsMessage::AccountTx {
+                connection_epoch,
+                txs,
+            } = message
+            else {
+                panic!("expected account transaction results");
+            };
+
+            assert_eq!(connection_epoch, 7);
+            assert_eq!(
+                txs,
+                vec![LighterWsTx {
+                    hash: "abc123".to_string(),
+                    status: LighterTxStatus::Executed,
+                    event_info: "{\"ae\":\"\"}".to_string(),
+                }]
+            );
+        } else {
+            let NautilusWsMessage::Raw(value) = message else {
+                panic!("expected raw transaction update");
+            };
+
+            assert_eq!(value, serde_json::to_value(frame).unwrap());
+        }
+    }
+
+    #[rstest]
+    fn account_tx_rejects_wrong_account_channel() {
+        let mut handler = make_handler_with_account();
+        let mut frame: LighterWsFrame =
+            serde_json::from_str(include_str!("../../test_data/ws_account_tx_update.json"))
+                .unwrap();
+
+        let LighterWsFrame::AccountTx { channel, .. } = &mut frame else {
+            unreachable!()
+        };
+
+        *channel = Ustr::from("account_tx:1235");
+        assert!(handler.handle_frame(frame, UnixNanos::from(11)).is_empty());
+    }
+
+    #[rstest]
     fn handle_frame_routes_account_orders_to_execution_reports() {
         let mut handler = make_handler_with_account();
         let frame: super::LighterWsFrame = serde_json::from_str(WS_ACCOUNT_ORDERS_UPDATE).unwrap();
@@ -3840,12 +3920,7 @@ mod tests {
 
     #[rstest]
     fn handle_frame_routes_account_assets_and_user_stats_to_unified_state() {
-        // Fixture is the captured production no-position payload (10 USDC
-        // on spot, 40 USDC pledged as perp collateral, no resting orders).
-        // Lighter runs unified margin: both legs are deployable equity, so
-        // total = balance + margin_balance, locked = locked_balance only,
-        // and MarginBalance.initial = 0 because user_stats.collateral ==
-        // available_balance (no margin in use).
+        // The snapshot holds 50 USDC in total and reports 40 USDC available
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
@@ -3864,11 +3939,9 @@ mod tests {
                 assert_eq!(state.base_currency, None);
                 assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
-                // balance 10 + margin_balance 40 = 50 total; locked = 0
-                // (no resting spot orders); free = 50 (all deployable).
                 assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("40.000000 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 assert_eq!(state.margins[0].currency, usdc);
                 assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
@@ -3889,9 +3962,8 @@ mod tests {
         // The 5 mUSDC haircut on margin_balance is the entry fee. The
         // 0.827055 USDC gap between collateral and available_balance is
         // the initial margin pledged to the open position. AccountBalance
-        // is unchanged in shape; perp-margin-in-use lives on
-        // MarginBalance, not in `locked`. Maintenance is zero because
-        // Lighter doesn't publish a maintenance value on user_stats.
+        // also includes funds outside the venue's reported availability.
+        // Maintenance is zero because user_stats does not publish it.
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_WITH_POSITION).unwrap();
@@ -3912,8 +3984,8 @@ mod tests {
                 // the trailing digit to 8 decimals, matching the
                 // production log).
                 assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10.82705556 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("39.16831400 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 // initial = collateral 39.995369 - available 39.168314 = 0.827055
                 assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));

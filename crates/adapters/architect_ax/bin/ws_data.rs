@@ -26,7 +26,7 @@
 //! ```bash
 //! AX_API_KEY=your_key \
 //!   AX_API_SECRET=your_secret \
-//!   cargo run --bin architect-ws-data -p nautilus-architect
+//!   cargo run --bin ax-ws-data -p nautilus-architect-ax
 //! ```
 
 use std::time::Duration;

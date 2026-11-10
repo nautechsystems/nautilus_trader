@@ -2553,7 +2553,20 @@ impl ExecutionClient for BetfairExecutionClient {
                         CommandFailure::Ambiguous(_) => log::warn!(
                             "Ambiguous cancel response for {client_order_id}, awaiting OCM reconciliation: {e}",
                         ),
-                        CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                        CommandFailure::NotSent(_) => {
+                            let reason = format!("cancel-order error: {e}");
+                            let ts_event = clock.get_time_ns();
+                            emitter.emit_order_cancel_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                Some(venue_order_id),
+                                &reason,
+                                ts_event,
+                                Some(cmd.command_id),
+                            );
+                        }
+                        CommandFailure::VenueRejected(_) => {
                             let reason = format!("cancel-order error: {e}");
                             let ts_event = clock.get_time_ns();
                             emitter.emit_order_cancel_rejected_event(
@@ -2563,6 +2576,7 @@ impl ExecutionClient for BetfairExecutionClient {
                                 Some(venue_order_id),
                                 &reason,
                                 ts_event,
+                                Some(cmd.command_id),
                             );
                         }
                     }
@@ -2635,9 +2649,19 @@ impl ExecutionClient for BetfairExecutionClient {
                 Err(CommandFailure::Ambiguous(_)) => log::warn!(
                     "Ambiguous cancel report for {client_order_id}, awaiting OCM reconciliation",
                 ),
-                Err(
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason),
-                ) => {
+                Err(CommandFailure::NotSent(reason)) => {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_cancel_denied_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(venue_order_id),
+                        &reason,
+                        ts_event,
+                        Some(cmd.command_id),
+                    );
+                }
+                Err(CommandFailure::VenueRejected(reason)) => {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
@@ -2646,6 +2670,7 @@ impl ExecutionClient for BetfairExecutionClient {
                         Some(venue_order_id),
                         &reason,
                         ts_event,
+                        Some(cmd.command_id),
                     );
                 }
             }
@@ -2683,13 +2708,14 @@ impl ExecutionClient for BetfairExecutionClient {
         // Betfair does not support atomic price+quantity modification
         if has_price_change && has_quantity_change {
             let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 instrument_id,
                 cmd.client_order_id,
                 Some(venue_order_id),
                 "cannot modify price and quantity simultaneously on Betfair",
                 ts_event,
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -2851,8 +2877,8 @@ impl ExecutionClient for BetfairExecutionClient {
                                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
                             }
                             Err(
-                                CommandFailure::NotSent(reason)
-                                | CommandFailure::VenueRejected(reason),
+                                ref failure @ (CommandFailure::NotSent(ref reason)
+                                | CommandFailure::VenueRejected(ref reason)),
                             ) => {
                                 emit_replace_failure(
                                     &ocm_state,
@@ -2863,7 +2889,9 @@ impl ExecutionClient for BetfairExecutionClient {
                                     client_order_id,
                                     venue_order_id,
                                     &old_bet_id,
-                                    &reason,
+                                    reason,
+                                    failure,
+                                    cmd.command_id,
                                 );
                             }
                         }
@@ -2879,7 +2907,8 @@ impl ExecutionClient for BetfairExecutionClient {
                                     "Ambiguous replace response for {client_order_id}, awaiting reconciliation: {e}",
                                 );
                             }
-                            CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                            failure @ (CommandFailure::NotSent(_)
+                            | CommandFailure::VenueRejected(_)) => {
                                 emit_replace_failure(
                                     &ocm_state,
                                     &emitter,
@@ -2890,6 +2919,8 @@ impl ExecutionClient for BetfairExecutionClient {
                                     venue_order_id,
                                     &old_bet_id,
                                     &format!("modify-order error: {e}"),
+                                    &failure,
+                                    cmd.command_id,
                                 );
                             }
                         }
@@ -2908,13 +2939,14 @@ impl ExecutionClient for BetfairExecutionClient {
 
             if new_qty >= existing_qty {
                 let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_modify_rejected_event(
+                self.emitter.emit_order_modify_denied_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     Some(venue_order_id),
                     "can only reduce quantity on Betfair",
                     ts_event,
+                    Some(cmd.command_id),
                 );
                 return Ok(());
             }
@@ -2951,7 +2983,23 @@ impl ExecutionClient for BetfairExecutionClient {
                             CommandFailure::Ambiguous(_) => log::warn!(
                                 "Ambiguous quantity reduction for {client_order_id}, awaiting reconciliation: {e}",
                             ),
-                            CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                            CommandFailure::NotSent(_) => {
+                                ocm_state
+                                    .lock()
+                                    .clear_pending_reduction(&client_order_id, &reduction_bet_id);
+
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_modify_denied_event(
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    Some(venue_order_id),
+                                    &format!("modify-order error: {e}"),
+                                    ts_event,
+                                    Some(cmd.command_id),
+                                );
+                            }
+                            CommandFailure::VenueRejected(_) => {
                                 ocm_state
                                     .lock()
                                     .clear_pending_reduction(&client_order_id, &reduction_bet_id);
@@ -2964,6 +3012,7 @@ impl ExecutionClient for BetfairExecutionClient {
                                     Some(venue_order_id),
                                     &format!("modify-order error: {e}"),
                                     ts_event,
+                                    Some(cmd.command_id),
                                 );
                             }
                         }
@@ -2989,10 +3038,23 @@ impl ExecutionClient for BetfairExecutionClient {
                             Err(CommandFailure::Ambiguous(_)) => log::warn!(
                                 "Ambiguous quantity reduction report for {client_order_id}, awaiting reconciliation",
                             ),
-                            Err(
-                                CommandFailure::NotSent(reason)
-                                | CommandFailure::VenueRejected(reason),
-                            ) => {
+                            Err(CommandFailure::NotSent(reason)) => {
+                                ocm_state
+                                    .lock()
+                                    .clear_pending_reduction(&client_order_id, &reduction_bet_id);
+
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_modify_denied_event(
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    Some(venue_order_id),
+                                    &reason,
+                                    ts_event,
+                                    Some(cmd.command_id),
+                                );
+                            }
+                            Err(CommandFailure::VenueRejected(reason)) => {
                                 ocm_state
                                     .lock()
                                     .clear_pending_reduction(&client_order_id, &reduction_bet_id);
@@ -3005,6 +3067,7 @@ impl ExecutionClient for BetfairExecutionClient {
                                     Some(venue_order_id),
                                     &reason,
                                     ts_event,
+                                    Some(cmd.command_id),
                                 );
                             }
                             Ok(()) => {
@@ -3065,13 +3128,14 @@ impl ExecutionClient for BetfairExecutionClient {
             });
         } else {
             let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 strategy_id,
                 instrument_id,
                 client_order_id,
                 Some(venue_order_id),
                 "no effective change in price or quantity",
                 ts_event,
+                Some(cmd.command_id),
             );
         }
 
@@ -3139,6 +3203,7 @@ impl ExecutionClient for BetfairExecutionClient {
             };
 
             cancels.push(CancelOrderData {
+                command_id: cmd.command_id,
                 strategy_id: order.strategy_id(),
                 instrument_id: order.instrument_id(),
                 client_order_id,
@@ -3180,6 +3245,7 @@ impl ExecutionClient for BetfairExecutionClient {
                         .order(&cancel.client_order_id)
                         .is_some_and(|order| is_sp_order(&order));
                     cancels.push(CancelOrderData {
+                        command_id: cancel.command_id,
                         strategy_id: cancel.strategy_id,
                         instrument_id: cancel.instrument_id,
                         client_order_id: cancel.client_order_id,
@@ -3427,6 +3493,7 @@ const MAX_CANCEL_ORDERS_INSTRUCTIONS: usize = 60;
 
 #[derive(Clone, Copy, Debug)]
 struct CancelOrderData {
+    command_id: UUID4,
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
@@ -3472,7 +3539,11 @@ impl BetfairExecutionClient {
                                 "Ambiguous {task_name} response for {} orders, awaiting OCM reconciliation: {e}",
                                 cancels.len(),
                             ),
-                            CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                            CommandFailure::NotSent(_) => {
+                                let reason = format!("{task_name} error: {e}");
+                                emit_cancel_denials(&emitter, clock, cancels, &reason);
+                            }
+                            CommandFailure::VenueRejected(_) => {
                                 let reason = format!("{task_name} error: {e}");
 
                                 if emit_rejections {
@@ -3486,6 +3557,7 @@ impl BetfairExecutionClient {
                                             Some(cancel.venue_order_id),
                                             &reason,
                                             ts_event,
+                                            Some(cancel.command_id),
                                         );
                                     }
                                 } else {
@@ -3540,10 +3612,15 @@ impl BetfairExecutionClient {
                             "Ambiguous cancel result for {}, awaiting OCM reconciliation",
                             cancel.client_order_id,
                         ),
-                        Err(
-                            CommandFailure::NotSent(reason)
-                            | CommandFailure::VenueRejected(reason),
-                        ) => {
+                        Err(CommandFailure::NotSent(reason)) => {
+                            emit_cancel_denials(
+                                &emitter,
+                                clock,
+                                std::slice::from_ref(cancel),
+                                &reason,
+                            );
+                        }
+                        Err(CommandFailure::VenueRejected(reason)) => {
                             if emit_rejections {
                                 emitter.emit_order_cancel_rejected_event(
                                     cancel.strategy_id,
@@ -3552,6 +3629,7 @@ impl BetfairExecutionClient {
                                     Some(cancel.venue_order_id),
                                     &reason,
                                     clock.get_time_ns(),
+                                    Some(cancel.command_id),
                                 );
                             } else {
                                 log::warn!(
@@ -3566,6 +3644,27 @@ impl BetfairExecutionClient {
 
             Ok(())
         });
+    }
+}
+
+fn emit_cancel_denials(
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    cancels: &[CancelOrderData],
+    reason: &str,
+) {
+    let ts_event = clock.get_time_ns();
+
+    for cancel in cancels {
+        emitter.emit_order_cancel_denied_event(
+            cancel.strategy_id,
+            cancel.instrument_id,
+            cancel.client_order_id,
+            Some(cancel.venue_order_id),
+            reason,
+            ts_event,
+            Some(cancel.command_id),
+        );
     }
 }
 
@@ -5581,6 +5680,8 @@ fn emit_replace_failure(
     venue_order_id: VenueOrderId,
     old_bet_id: &str,
     reason: &str,
+    failure: &CommandFailure,
+    causation_id: UUID4,
 ) {
     let ts_event = clock.get_time_ns();
     let old_terminal = {
@@ -5595,6 +5696,18 @@ fn emit_replace_failure(
         }
         old_terminal
     };
+
+    if matches!(failure, CommandFailure::NotSent(_)) {
+        emitter.emit_order_modify_denied_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            reason,
+            ts_event,
+            Some(causation_id),
+        );
+    }
 
     if old_terminal {
         let canceled = OrderCanceled::new(
@@ -5611,7 +5724,7 @@ fn emit_replace_failure(
             None,
         );
         emitter.send_order_event(OrderEventAny::Canceled(canceled));
-    } else {
+    } else if !matches!(failure, CommandFailure::NotSent(_)) {
         emitter.emit_order_modify_rejected_event(
             strategy_id,
             instrument_id,
@@ -5619,6 +5732,7 @@ fn emit_replace_failure(
             Some(venue_order_id),
             reason,
             ts_event,
+            Some(causation_id),
         );
     }
 }

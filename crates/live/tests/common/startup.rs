@@ -30,6 +30,7 @@ use nautilus_common::{
     clock::Clock,
     factories::{ClientConfig, ExecutionClientFactory},
     messages::execution::CancelOrder,
+    msgbus::{self, MessagingSwitchboard},
     nautilus_actor,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
@@ -41,7 +42,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
-    instruments::{Instrument, stubs::crypto_perpetual_ethusdt},
+    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     reports::ExecutionMassStatus,
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
@@ -65,10 +66,13 @@ nautilus_actor!(StartupActor);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartupMassStatusClientState {
     pub(crate) connected: Arc<AtomicBool>,
+    pub(crate) bulk_position_coverage_unavailable: Arc<AtomicBool>,
     pub(crate) disconnect_attempted: Arc<AtomicBool>,
     pub(crate) factory_trader_id: Arc<Mutex<Option<TraderId>>>,
     pub(crate) factory_clock_id: Arc<Mutex<Option<usize>>>,
     pub(crate) mass_status_requested: Arc<AtomicBool>,
+    pub(crate) recovered_instrument: Arc<Mutex<Option<InstrumentAny>>>,
+    pub(crate) instrument_updates: Arc<AtomicUsize>,
     pub(crate) mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
     pub(crate) registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
     pub(crate) cancel_orders_received: Arc<AtomicUsize>,
@@ -90,6 +94,7 @@ pub(crate) struct StartupMassStatusExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    oms_type: OmsType,
     handles_all_order_venues: bool,
 }
 
@@ -103,6 +108,7 @@ pub(crate) struct StartupMassStatusExecutionClientFactory {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    oms_type: OmsType,
     handles_all_order_venues: bool,
 }
 
@@ -115,6 +121,7 @@ impl StartupMassStatusExecutionClient {
         client_id: ClientId,
         account_id: AccountId,
         venue: Venue,
+        oms_type: OmsType,
         handles_all_order_venues: bool,
     ) -> Self {
         Self {
@@ -123,6 +130,7 @@ impl StartupMassStatusExecutionClient {
             client_id,
             account_id,
             venue,
+            oms_type,
             handles_all_order_venues,
         }
     }
@@ -145,6 +153,7 @@ impl StartupMassStatusExecutionClientFactory {
             client_id: ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID),
             account_id: AccountId::from("STARTUP-MASS-STATUS-001"),
             venue: crypto_perpetual_ethusdt().id().venue,
+            oms_type: OmsType::Hedging,
             handles_all_order_venues: false,
         }
     }
@@ -163,6 +172,12 @@ impl StartupMassStatusExecutionClientFactory {
 
     pub(crate) fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
+        self
+    }
+
+    #[allow(dead_code, reason = "only the spec target selects NETTING accounting")]
+    pub(crate) fn with_oms_type(mut self, oms_type: OmsType) -> Self {
+        self.oms_type = oms_type;
         self
     }
 }
@@ -184,6 +199,7 @@ impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
             self.client_id,
             self.account_id,
             self.venue,
+            self.oms_type,
             self.handles_all_order_venues,
         )))
     }
@@ -220,7 +236,14 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
     }
 
     fn oms_type(&self) -> OmsType {
-        OmsType::Hedging
+        self.oms_type
+    }
+
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        !self
+            .state
+            .bulk_position_coverage_unavailable
+            .load(Ordering::Relaxed)
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -278,6 +301,12 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
             .mass_status_requested
             .store(true, Ordering::Relaxed);
 
+        let recovered = self.state.recovered_instrument.lock().take();
+        if let Some(instrument) = recovered {
+            let endpoint = MessagingSwitchboard::data_engine_process_data();
+            msgbus::send_data(endpoint, instrument.into());
+        }
+
         match self.behavior {
             StartupMassStatusBehavior::Available => Ok(self.state.mass_status.lock().clone()),
             StartupMassStatusBehavior::Unavailable => Ok(None),
@@ -286,6 +315,12 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
                 std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
             }
         }
+    }
+
+    fn on_instrument(&mut self, _instrument: InstrumentAny) {
+        self.state
+            .instrument_updates
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     fn register_external_order(

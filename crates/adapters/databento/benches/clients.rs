@@ -38,7 +38,10 @@ use nautilus_databento::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoMessage, HandlerCommand},
 };
-use nautilus_model::{data::Data, identifiers::Symbol};
+use nautilus_model::{
+    data::Data,
+    identifiers::{Symbol, futures::FuturesYearDigits},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -173,7 +176,8 @@ fn mbo_subscription() -> Subscription {
 }
 
 async fn run_live_trade_burst(server: &MockLsgServer, addr: &str, records: u64) -> u64 {
-    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(addr, TEST_DATASET);
+    let (cmd_tx, mut msg_rx, handler) = create_test_handler(addr, TEST_DATASET);
+    let mut handler = handler.with_futures_year_digits(FuturesYearDigits::Two);
 
     server.authenticate();
     server.expect_subscription();
@@ -225,7 +229,8 @@ async fn start_live_mbo_session(
     tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
     tokio::task::JoinHandle<anyhow::Result<()>>,
 ) {
-    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(addr, TEST_DATASET);
+    let (cmd_tx, mut msg_rx, handler) = create_test_handler(addr, TEST_DATASET);
+    let mut handler = handler.with_futures_year_digits(FuturesYearDigits::Two);
 
     server.authenticate();
     server.expect_subscription();

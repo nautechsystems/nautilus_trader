@@ -272,10 +272,15 @@ The snapshot preserves:
 The cache stores snapshots by position ID. The active cache entry then represents the new cycle, while
 previous snapshots stay accessible. The Portfolio includes their realized PnL in instrument totals.
 
-A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the cycle
-boundaries the stored snapshots describe. Thus, the engine replaces them with the cycles the corrected history
-actually closes, keeping each counted once. See
-[Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
+A fill void invalidates archived cycle boundaries when it increases a prior-cycle trade's voided quantity
+or restores an archived cycle:
+
+- **Archive update**: The engine replaces the archive with one snapshot of corrected PnL for closed cycles
+  before the current one, or removes it if none remain. Archived and current PnL each count once.
+- **Replacement fields**: Earlier cycles supply `realized_pnl`; the current cycle supplies quantities,
+  prices, commissions, and `trade_ids`. `events` is empty.
+
+See [Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
 
 :::note
 This closed-cycle archive differs from optional position state snapshots:

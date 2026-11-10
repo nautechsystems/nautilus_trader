@@ -40,13 +40,13 @@ use serde_json::json;
 
 const TRADER_ID: &str = "TESTER-001";
 const NODE_NAME: &str = "DATABENTO-TESTER-001";
-const INSTRUMENT_ID: &str = "ESZ6.XCME";
+const INSTRUMENT_ID: &str = "ESZ26.XCME";
 const PRICE_PRECISION: Option<u8> = None;
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
 
 // Alternative instrument with a price-precision override:
-// const INSTRUMENT_ID: &str = "6EM6.XCME";
+// const INSTRUMENT_ID: &str = "6EM26.XCME";
 // const PRICE_PRECISION: Option<u8> = Some(5);
 
 #[tokio::main]

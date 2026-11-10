@@ -5,6 +5,7 @@
 //! The input drives snapshots, updates, reconnects, resubscriptions, and depth messages for one
 //! book. A reference model of the resting orders predicts whether each L3 snapshot and contiguous
 //! update is valid and which deltas it emits; level batches are checked against their messages.
+//! Within each snapshot episode, emitted sequences differ from venue sequences by a fixed offset.
 //! Across the whole run:
 //!
 //! - Emitted sequences strictly rise, including across reconnects and resubscriptions.
@@ -87,15 +88,11 @@ struct Run {
     instrument: InstrumentAny,
     tracker: BookSyncTracker,
     now: Instant,
-    // Venue sequence of the last message sent to the tracker
     sent: u64,
-    // Venue sequence of the last accepted message, while the book is synced
     synced: Option<u64>,
     emitted: Option<u64>,
-    // Emitted minus venue sequence within the current snapshot episode
     offset: Option<u64>,
     depth_emitted: Option<u64>,
-    // Resting L3 orders by venue identifier, as last emitted
     orders: AHashMap<&'static str, BookOrder>,
 }
 

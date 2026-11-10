@@ -1,8 +1,9 @@
 # OrderModifyRejected
 
 `OrderModifyRejected` records that a `ModifyOrder` command was rejected. The `ExecutionEngine`
-applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. A trading venue,
-simulated matching engine, or local risk control can reject the request.
+applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. A trading venue or
+simulated matching engine can reject the request. Local refusals before sending produce
+[`OrderModifyDenied`](order_modify_denied.md).
 
 Typical transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handler:
 `on_order_modify_rejected`.

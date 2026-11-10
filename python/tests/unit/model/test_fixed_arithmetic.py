@@ -32,6 +32,7 @@ from nautilus_trader.model import Quantity
 
 
 USD = Currency.from_str("USD")
+
 TST = Currency(
     code="TST",
     precision=FIXED_PRECISION,
@@ -39,7 +40,9 @@ TST = Currency(
     name="Test currency",
     currency_type=CurrencyType.CRYPTO,
 )
+
 WEI_PRECISION = 18
+
 WEI = Currency(
     code="WEI",
     precision=WEI_PRECISION,
@@ -47,6 +50,7 @@ WEI = Currency(
     name="Wei currency",
     currency_type=CurrencyType.CRYPTO,
 )
+
 FRACTIONAL = Currency(
     code="FRC",
     precision=3,
@@ -54,6 +58,7 @@ FRACTIONAL = Currency(
     name="Fractional currency",
     currency_type=CurrencyType.CRYPTO,
 )
+
 DECIMAL_MAX = Decimal(79228162514264337593543950335)
 DECIMAL_MIN = Decimal(-79228162514264337593543950335)
 FLOAT_MIN_SUBNORMAL = float.fromhex("0x0.0000000000001p-1022")
@@ -63,6 +68,7 @@ TYPE_CASES = [
     pytest.param(Quantity, id="quantity"),
     pytest.param(Money, id="money"),
 ]
+
 OPERAND_CASES = [
     pytest.param("same_type", id="same-type"),
     pytest.param("decimal", id="decimal"),
@@ -70,6 +76,7 @@ OPERAND_CASES = [
     pytest.param("int", id="int"),
     pytest.param("str", id="str"),
 ]
+
 ARITHMETIC_CASES = [
     pytest.param("__add__", 2, 3, 5, id="add"),
     pytest.param("__radd__", 2, 3, 5, id="radd"),
@@ -84,7 +91,9 @@ ARITHMETIC_CASES = [
     pytest.param("__mod__", 7, 3, 1, id="mod"),
     pytest.param("__rmod__", 3, 7, 1, id="rmod"),
 ]
+
 ARITHMETIC_DUNDERS = [case.values[0] for case in ARITHMETIC_CASES]
+
 ZERO_DIVISOR_DUNDERS = [
     "__truediv__",
     "__rtruediv__",
@@ -93,17 +102,20 @@ ZERO_DIVISOR_DUNDERS = [
     "__mod__",
     "__rmod__",
 ]
+
 DIRECT_ZERO_DIVISOR_DUNDERS = ["__truediv__", "__floordiv__", "__mod__"]
 FLOAT_OVERFLOW_DUNDERS = ["__mul__", "__rmul__"]
 FLOAT_DIVISION_OVERFLOW_DUNDERS = ["__truediv__", "__floordiv__"]
 FLOAT_REFLECTED_DIVISION_OVERFLOW_DUNDERS = ["__rtruediv__", "__rfloordiv__"]
 ADD_SUB_DUNDERS = ["__add__", "__radd__", "__sub__", "__rsub__"]
+
 UNSUPPORTED_OPERAND_CASES = [
     pytest.param(object(), "object", id="object"),
     pytest.param(None, "NoneType", id="none"),
     pytest.param("not-a-number", "str", id="invalid-numeric-string"),
     pytest.param(10**100, "int", id="decimal-overflowing-int"),
 ]
+
 FRACTIONAL_DECIMAL_CASES = [
     pytest.param("__add__", "1.250", "2.375", "3.625", id="add"),
     pytest.param("__radd__", "1.250", "2.375", "3.625", id="radd"),
@@ -118,6 +130,7 @@ FRACTIONAL_DECIMAL_CASES = [
     pytest.param("__mod__", "3.750", "1.4", "0.950", id="mod"),
     pytest.param("__rmod__", "1.400", "3.75", "0.95", id="rmod"),
 ]
+
 FLOAT_INFINITY_CASES = [
     pytest.param("__add__", math.inf, id="add"),
     pytest.param("__radd__", math.inf, id="radd"),
@@ -170,10 +183,13 @@ def make_operand(type_: type, kind: object, value: object) -> object:
     """
     if kind == "same_type":
         return make_value(type_, value)
+
     if kind == "decimal":
         return Decimal(value)
+
     if kind == "float":
         return float(value)
+
     if kind == "int":
         return int(value)
     return str(value)
@@ -708,6 +724,7 @@ def test_arithmetic_dunder_decimal_division_overflow_raises(
         operand = DECIMAL_MIN if negative else DECIMAL_MAX
     else:
         receiver = make_value(type_, 8)
+
         operand = Decimal(
             "-0.0000000000000000000000000001" if negative else "0.0000000000000000000000000001",
         )
@@ -744,6 +761,7 @@ def test_addition_subtraction_dunder_mixed_scale_raises(type_: type, dunder: str
     Test addition subtraction dunder mixed scale raises.
     """
     lhs_currency = TST
+
     rhs_currency = Currency(
         code=TST.code,
         precision=FIXED_PRECISION + 1,
@@ -751,6 +769,7 @@ def test_addition_subtraction_dunder_mixed_scale_raises(type_: type, dunder: str
         name=TST.name,
         currency_type=CurrencyType.CRYPTO,
     )
+
     lhs = make_raw_value(type_, 2, currency=lhs_currency)
     rhs = make_raw_value(
         type_,
@@ -791,17 +810,19 @@ def test_addition_subtraction_dunder_compatible_standard_scales_succeeds(
         name=TST.name,
         currency_type=CurrencyType.CRYPTO,
     )
+
+    scale = 10**FIXED_PRECISION
     receiver = make_raw_value(
         type_,
-        receiver_raw,
+        receiver_raw * scale,
         precision=0,
         currency=zero_precision_currency,
     )
-    operand = make_raw_value(type_, operand_raw)
+    operand = make_raw_value(type_, operand_raw * scale)
 
     result = getattr(receiver, dunder)(operand)
 
-    expected_raw = 3 if "add" in dunder else 1
+    expected_raw = (3 if "add" in dunder else 1) * scale
     assert type(result) is type_
     assert result.raw == expected_raw
 

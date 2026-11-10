@@ -16,20 +16,19 @@
 //! Python bindings for the example strategy and actor configs.
 
 use nautilus_common::python::config_error_to_pyvalue_err;
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::BarType,
-    enums::TimeInForce,
-    identifiers::{ActorId, ClientId, InstrumentId, StrategyId},
+    enums::{BookType, TimeInForce},
+    identifiers::{ClientId, InstrumentId, StrategyId},
     types::Quantity,
 };
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
-use crate::examples::{
-    actors::BookImbalanceActorConfig,
-    strategies::{
-        CompositeMarketMakerConfig, DeltaNeutralVolConfig, EmaCrossConfig, GridMarketMakerConfig,
-        HurstVpinDirectionalConfig,
-    },
+use crate::examples::strategies::{
+    CompositeMarketMakerConfig, DeltaNeutralVolConfig, EmaCrossConfig, GridMarketMakerConfig,
+    HurstVpinDirectionalConfig, OrderBookImbalanceConfig,
 };
 
 macro_rules! impl_strategy_config_base_getters {
@@ -57,6 +56,7 @@ impl_strategy_config_base_getters!(GridMarketMakerConfig);
 impl_strategy_config_base_getters!(EmaCrossConfig);
 impl_strategy_config_base_getters!(DeltaNeutralVolConfig);
 impl_strategy_config_base_getters!(HurstVpinDirectionalConfig);
+impl_strategy_config_base_getters!(OrderBookImbalanceConfig);
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -617,25 +617,99 @@ impl HurstVpinDirectionalConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BookImbalanceActorConfig {
-    /// Configuration for the order book imbalance actor.
+impl OrderBookImbalanceConfig {
+    /// Configuration for the current-book imbalance strategy.
     #[new]
-    #[pyo3(signature = (instrument_ids, log_interval=100, actor_id=None))]
+    #[pyo3(signature = (
+        instrument_id,
+        max_trade_size,
+        strategy_id=None,
+        order_id_tag=None,
+        trigger_min_size=None,
+        trigger_imbalance_ratio=None,
+        min_seconds_between_triggers=1.0,
+        book_type=BookType::L2_MBP,
+        time_in_force=TimeInForce::Fok,
+        log_interval=0,
+        dry_run=false,
+    ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
-        instrument_ids: Vec<InstrumentId>,
+        instrument_id: InstrumentId,
+        max_trade_size: Quantity,
+        strategy_id: Option<StrategyId>,
+        order_id_tag: Option<String>,
+        trigger_min_size: Option<Decimal>,
+        trigger_imbalance_ratio: Option<Decimal>,
+        min_seconds_between_triggers: f64,
+        book_type: BookType,
+        time_in_force: TimeInForce,
         log_interval: u64,
-        actor_id: Option<ActorId>,
-    ) -> Self {
-        Self::builder()
-            .instrument_ids(instrument_ids)
+        dry_run: bool,
+    ) -> PyResult<Self> {
+        let mut config = Self::builder()
+            .instrument_id(instrument_id)
+            .max_trade_size(max_trade_size)
+            .min_seconds_between_triggers(min_seconds_between_triggers)
+            .book_type(book_type)
+            .time_in_force(time_in_force)
             .log_interval(log_interval)
-            .maybe_actor_id(actor_id)
-            .build()
+            .dry_run(dry_run)
+            .build();
+
+        if let Some(id) = strategy_id {
+            config.base.strategy_id = Some(id);
+        }
+
+        if let Some(tag) = order_id_tag {
+            config.base.order_id_tag = Some(tag);
+        }
+
+        if let Some(size) = trigger_min_size {
+            config.trigger_min_size = size;
+        }
+
+        if let Some(ratio) = trigger_imbalance_ratio {
+            config.trigger_imbalance_ratio = ratio;
+        }
+
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
-    fn instrument_ids(&self) -> Vec<InstrumentId> {
-        self.instrument_ids.clone()
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    fn max_trade_size(&self) -> Quantity {
+        self.max_trade_size
+    }
+
+    #[getter]
+    fn trigger_min_size(&self) -> Decimal {
+        self.trigger_min_size
+    }
+
+    #[getter]
+    fn trigger_imbalance_ratio(&self) -> Decimal {
+        self.trigger_imbalance_ratio
+    }
+
+    #[getter]
+    fn min_seconds_between_triggers(&self) -> f64 {
+        self.min_seconds_between_triggers
+    }
+
+    #[getter]
+    fn book_type(&self) -> BookType {
+        self.book_type
+    }
+
+    #[getter]
+    fn time_in_force(&self) -> TimeInForce {
+        self.time_in_force
     }
 
     #[getter]
@@ -644,7 +718,7 @@ impl BookImbalanceActorConfig {
     }
 
     #[getter]
-    fn actor_id(&self) -> Option<ActorId> {
-        self.actor_id
+    fn dry_run(&self) -> bool {
+        self.dry_run
     }
 }

@@ -32,10 +32,8 @@
 //! [maturin](https://github.com/PyO3/maturin) and therefore provides a broad set of feature flags
 //! to toggle bindings and optional dependencies:
 //!
-//! - `adapters` (default): Enables all adapter Python bindings except Betfair, CoinAPI, and blockchain.
+//! - `adapters` (default): Enables all adapter Python bindings except blockchain.
 //! - `arrow`: Enables Apache Arrow support in dependent crates.
-//! - `betfair`: Enables the Betfair adapter and its Python bindings.
-//! - `coinapi`: Enables the CoinAPI adapter and its Python bindings.
 //! - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 //! - `extension-module`: Builds as a Python extension module and is automatically enabled by
 //!   `maturin`.
@@ -216,7 +214,7 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     }
 
-    #[cfg(feature = "betfair")]
+    #[cfg(feature = "adapters")]
     {
         let n = "betfair";
         let submodule = pyo3::wrap_pymodule!(nautilus_betfair::python::betfair);
@@ -240,7 +238,7 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     }
 
-    #[cfg(feature = "coinapi")]
+    #[cfg(feature = "adapters")]
     {
         let n = "coinapi";
         let submodule = pyo3::wrap_pymodule!(nautilus_coinapi::python::coinapi);
@@ -290,8 +288,24 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[cfg(feature = "adapters")]
     {
+        let n = "finfeed";
+        let submodule = pyo3::wrap_pymodule!(nautilus_finfeed::python::finfeed);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    }
+
+    #[cfg(feature = "adapters")]
+    {
         let n = "hyperliquid";
         let submodule = pyo3::wrap_pymodule!(nautilus_hyperliquid::python::hyperliquid);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    }
+
+    #[cfg(feature = "adapters")]
+    {
+        let n = "kalshi";
+        let submodule = pyo3::wrap_pymodule!(nautilus_kalshi::python::kalshi);
         m.add_wrapped(submodule)?;
         sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     }

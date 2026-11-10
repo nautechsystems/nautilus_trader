@@ -24,7 +24,10 @@ use std::{
     fmt::{Debug, Display},
     num::NonZeroU64,
     rc::Rc,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+    },
 };
 
 use nautilus_core::{
@@ -190,6 +193,7 @@ impl Ord for ScheduledTimeEvent {
 /// Wraps a Python callable that handles time events.
 pub struct PythonTimeEventCallback {
     callback: Py<PyAny>,
+    cancellations: Vec<Arc<AtomicBool>>,
 }
 
 #[cfg(feature = "python")]
@@ -197,7 +201,10 @@ impl PythonTimeEventCallback {
     /// Wraps a Python callable as a time event callback.
     #[must_use]
     pub const fn new(callback: Py<PyAny>) -> Self {
-        Self { callback }
+        Self {
+            callback,
+            cancellations: Vec::new(),
+        }
     }
 
     /// Invokes the Python callback for `event`.
@@ -205,6 +212,14 @@ impl PythonTimeEventCallback {
     /// Logs and suppresses any exception raised by the callback.
     pub fn call(&self, event: TimeEvent) {
         Python::attach(|py| {
+            if self
+                .cancellations
+                .iter()
+                .any(|canceled| canceled.load(AtomicOrdering::Acquire))
+            {
+                return;
+            }
+
             if let Err(e) = self.callback.call1(py, (event,)) {
                 let exception = crate::python::logging::format_exception(&e);
 
@@ -293,6 +308,35 @@ impl TimeEventCallback {
             Self::Python(callback) => callback.call(event),
             Self::Rust(callback) => callback(event),
             Self::RustLocal(callback) => callback(event),
+        }
+    }
+
+    pub(crate) fn with_cancellation(self, canceled: Arc<AtomicBool>) -> Self {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(callback) => Python::attach(|py| {
+                let mut cancellations = callback.cancellations.clone();
+                cancellations.push(canceled);
+                let callback = callback.callback.clone_ref(py);
+                Self::Python(Arc::new(PythonTimeEventCallback {
+                    callback,
+                    cancellations,
+                }))
+            }),
+            Self::Rust(callback) => Self::from(move |event| {
+                if canceled.load(AtomicOrdering::Acquire) {
+                    return;
+                }
+
+                callback(event);
+            }),
+            Self::RustLocal(callback) => Self::RustLocal(Rc::new(move |event| {
+                if canceled.load(AtomicOrdering::Acquire) {
+                    return;
+                }
+
+                callback(event);
+            })),
         }
     }
 }

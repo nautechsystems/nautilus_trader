@@ -29,8 +29,8 @@ use nautilus_model::{
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
-        StrategyId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
+        PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::SyntheticInstrument,
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -113,28 +113,105 @@ impl PyCache {
         self.0.borrow_mut().dispose();
     }
 
-    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
-    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
+    fn py_purge_closed_orders(
+        &mut self,
+        ts_now: u64,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
         self.0
             .borrow_mut()
-            .purge_closed_orders(ts_now.into(), buffer_secs);
+            .purge_closed_orders(ts_now.into(), buffer_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
-    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
+    fn py_purge_closed_positions(
+        &mut self,
+        ts_now: u64,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
         self.0
             .borrow_mut()
-            .purge_closed_positions(ts_now.into(), buffer_secs);
+            .purge_closed_positions(ts_now.into(), buffer_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "purge_order")]
-    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
-        self.0.borrow_mut().purge_order(client_order_id);
+    #[pyo3(name = "delete_actor")]
+    fn py_delete_actor(&self, actor_id: ActorId) -> PyResult<()> {
+        self.0
+            .borrow()
+            .delete_actor(&actor_id)
+            .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "purge_position")]
-    fn py_purge_position(&mut self, position_id: PositionId) {
-        self.0.borrow_mut().purge_position(position_id);
+    #[pyo3(name = "delete_strategy")]
+    fn py_delete_strategy(&self, strategy_id: StrategyId) -> PyResult<()> {
+        self.0
+            .borrow()
+            .delete_strategy(&strategy_id)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "heartbeat")]
+    fn py_heartbeat(&self, timestamp: u64) -> PyResult<()> {
+        self.0
+            .borrow()
+            .heartbeat(timestamp.into())
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_instrument")]
+    fn py_load_instrument(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let instrument = self
+            .0
+            .borrow_mut()
+            .load_instrument(&instrument_id)
+            .map_err(to_pyvalue_err)?;
+        instrument
+            .map(|instrument| instrument_any_to_pyobject(py, instrument))
+            .transpose()
+    }
+
+    #[pyo3(name = "load_synthetic")]
+    fn py_load_synthetic(
+        &mut self,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<SyntheticInstrument>> {
+        self.0
+            .borrow_mut()
+            .load_synthetic(&instrument_id)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "purge_order", signature = (client_order_id, purge_from_database=false))]
+    fn py_purge_order(
+        &mut self,
+        client_order_id: ClientOrderId,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .purge_order(client_order_id, purge_from_database)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "purge_position", signature = (position_id, purge_from_database=false))]
+    fn py_purge_position(
+        &mut self,
+        position_id: PositionId,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .purge_position(position_id, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "purge_instrument")]
@@ -142,11 +219,17 @@ impl PyCache {
         self.0.borrow_mut().purge_instrument(instrument_id);
     }
 
-    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
-    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0, purge_from_database=false))]
+    fn py_purge_account_events(
+        &mut self,
+        ts_now: u64,
+        lookback_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
         self.0
             .borrow_mut()
-            .purge_account_events(ts_now.into(), lookback_secs);
+            .purge_account_events(ts_now.into(), lookback_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "get")]
@@ -260,10 +343,16 @@ impl PyCache {
             .collect()
     }
 
-    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "mark_price")]
-    fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
-        self.0.borrow().mark_price(&instrument_id).copied()
+    /// Returns the mark price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "mark_price", signature = (instrument_id, index=0))]
+    fn py_mark_price(&self, instrument_id: InstrumentId, index: usize) -> Option<MarkPriceUpdate> {
+        self.0
+            .borrow()
+            .mark_price_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
@@ -275,10 +364,20 @@ impl PyCache {
         self.0.borrow().mark_prices(&instrument_id)
     }
 
-    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "index_price")]
-    fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
-        self.0.borrow().index_price(&instrument_id).copied()
+    /// Returns the index price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "index_price", signature = (instrument_id, index=0))]
+    fn py_index_price(
+        &self,
+        instrument_id: InstrumentId,
+        index: usize,
+    ) -> Option<IndexPriceUpdate> {
+        self.0
+            .borrow()
+            .index_price_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
@@ -290,10 +389,20 @@ impl PyCache {
         self.0.borrow().index_prices(&instrument_id)
     }
 
-    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "funding_rate")]
-    fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
-        self.0.borrow().funding_rate(&instrument_id).copied()
+    /// Returns the funding rate update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "funding_rate", signature = (instrument_id, index=0))]
+    fn py_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+        index: usize,
+    ) -> Option<FundingRateUpdate> {
+        self.0
+            .borrow()
+            .funding_rate_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.
@@ -1771,31 +1880,153 @@ impl Cache {
     ///
     /// Only orders that have been closed for at least this amount of time will be purged.
     /// A value of 0 means purge all closed orders regardless of when they were closed.
-    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
-    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
-        self.purge_closed_orders(ts_now.into(), buffer_secs);
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
+    fn py_purge_closed_orders(
+        &mut self,
+        ts_now: u64,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.purge_closed_orders(ts_now.into(), buffer_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     /// Purges all closed positions from the cache that are older than `buffer_secs`.
-    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
-    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
-        self.purge_closed_positions(ts_now.into(), buffer_secs);
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0, purge_from_database=false))]
+    fn py_purge_closed_positions(
+        &mut self,
+        ts_now: u64,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.purge_closed_positions(ts_now.into(), buffer_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Deletes persisted actor state. Does nothing without a database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "delete_actor")]
+    fn py_delete_actor(&self, actor_id: ActorId) -> PyResult<()> {
+        self.delete_actor(&actor_id).map_err(to_pyvalue_err)
+    }
+
+    /// Deletes persisted strategy state. Does nothing without a database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "delete_strategy")]
+    fn py_delete_strategy(&self, strategy_id: StrategyId) -> PyResult<()> {
+        self.delete_strategy(&strategy_id).map_err(to_pyvalue_err)
+    }
+
+    /// Persists the heartbeat timestamp. Does nothing without a database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "heartbeat")]
+    fn py_heartbeat(&self, timestamp: u64) -> PyResult<()> {
+        self.heartbeat(timestamp.into()).map_err(to_pyvalue_err)
+    }
+
+    /// Loads an instrument from memory, falling back to the database and caching the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading the instrument fails.
+    #[pyo3(name = "load_instrument")]
+    fn py_load_instrument(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let instrument = self
+            .load_instrument(&instrument_id)
+            .map_err(to_pyvalue_err)?;
+        instrument
+            .map(|instrument| instrument_any_to_pyobject(py, instrument))
+            .transpose()
+    }
+
+    /// Loads a synthetic from memory, falling back to the database and caching the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ID is not synthetic or loading the instrument fails.
+    #[pyo3(name = "load_synthetic")]
+    fn py_load_synthetic(
+        &mut self,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<SyntheticInstrument>> {
+        self.load_synthetic(&instrument_id).map_err(to_pyvalue_err)
     }
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
     /// For safety, an order is prevented from being purged if it's open.
-    #[pyo3(name = "purge_order")]
-    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
-        self.purge_order(client_order_id);
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "purge_order", signature = (client_order_id, purge_from_database=false))]
+    fn py_purge_order(
+        &mut self,
+        client_order_id: ClientOrderId,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.purge_order(client_order_id, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
     ///
     /// For safety, a position is prevented from being purged if it's open.
-    #[pyo3(name = "purge_position")]
-    fn py_purge_position(&mut self, position_id: PositionId) {
-        self.purge_position(position_id);
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "purge_position", signature = (position_id, purge_from_database=false))]
+    fn py_purge_position(
+        &mut self,
+        position_id: PositionId,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.purge_position(position_id, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     /// Purges the instrument with the `instrument_id` from the cache.
@@ -1810,17 +2041,35 @@ impl Cache {
     /// Purges all account state events which are outside the lookback window.
     ///
     /// Only events which are outside the lookback window will be purged.
-    /// A value of 0 means purge all account state events.
-    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
-    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
-        self.purge_account_events(ts_now.into(), lookback_secs);
+    /// A value of 0 purges all but the latest account state event.
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    /// Redis and PostgreSQL log the request and retain the full account history for replay.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing reports a DeFi currency integrity error.
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0, purge_from_database=false))]
+    fn py_purge_account_events(
+        &mut self,
+        ts_now: u64,
+        lookback_secs: u64,
+        purge_from_database: bool,
+    ) -> PyResult<()> {
+        self.purge_account_events(ts_now.into(), lookback_secs, purge_from_database)
+            .map_err(to_pyvalue_err)
     }
 
     /// Adds the `currency` to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the currency to the backing database fails.
+    /// Returns an error if the currency definition conflicts with existing state or the backing
+    /// reports a DeFi currency integrity error.
     #[pyo3(name = "add_currency")]
     fn py_add_currency(&mut self, currency: Currency) -> PyResult<()> {
         self.add_currency(currency).map_err(to_pyvalue_err)
@@ -1828,9 +2077,12 @@ impl Cache {
 
     /// Adds the `instrument` to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the instrument to the backing database fails.
+    /// Returns an error if the instrument or its currency identities conflict with existing state,
+    /// or the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -1883,18 +2135,18 @@ impl Cache {
 
     /// Adds the `order` to the cache indexed with any given identifiers.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Parameters
     ///
-    /// `override_existing`: If the added order should 'override' any existing order and replace
-    /// it in the cache. This is currently used for emulated orders which are
-    /// being released and transformed into another type.
+    /// `replace_existing`: Replaces an existing order with the same client order ID. Emulated
+    /// orders use this when release transforms them into another order type.
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
-    /// or if persisting the order to the backing database fails. The order and every index are
-    /// committed to memory before persistence is attempted, so a persistence error leaves the
-    /// cache internally consistent.
+    /// Returns an error if the client order ID exists and `replace_existing` is false, a
+    /// replacement claims another order's venue order ID, or the backing reports a DeFi currency
+    /// integrity error.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -2061,11 +2313,12 @@ impl Cache {
     /// For `OmsType.Unspecified`, IDs matching `{instrument_id}-{strategy_id}` resolve to
     /// `OmsType.Netting`. Other IDs retain the supplied OMS type.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails. After
-    /// serialization succeeds, the complete operation is committed to memory before persistence
-    /// is attempted, so a persistence error leaves the cache internally consistent.
+    /// Returns an error if validating or serializing the position metadata fails, or the backing
+    /// reports a DeFi currency integrity error.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(
@@ -2087,9 +2340,12 @@ impl Cache {
     /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
     /// unless a backing database has to persist the frame.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     #[pyo3(name = "snapshot_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
@@ -2186,9 +2442,11 @@ impl Cache {
 
     /// Adds the `quote` tick to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the quote tick to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_quote")]
     fn py_add_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         self.add_quote(quote).map_err(to_pyvalue_err)
@@ -2196,9 +2454,11 @@ impl Cache {
 
     /// Adds the `trade` tick to the cache.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the trade tick to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_trade")]
     fn py_add_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         self.add_trade(trade).map_err(to_pyvalue_err)
@@ -2209,9 +2469,11 @@ impl Cache {
     /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
     /// `ts_event` replaces the front bar for time bars.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the bar to the backing database fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_bar")]
     fn py_add_bar(&mut self, bar: Bar) -> PyResult<()> {
         self.add_bar(bar).map_err(to_pyvalue_err)

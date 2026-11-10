@@ -151,6 +151,8 @@ only CLEAR rows for an instrument, their zero precision stays unchanged. Raw pri
 stay unchanged; zero fields decode with the chosen precision, while an undefined price remains
 undefined at precision zero.
 
+Databento MBO CLEAR rows with an undefined price follow this rule, including CLEAR-only snapshots.
+
 The catalog requires disjoint closed `ts_init` intervals per identifier directory. For bars, promotion
 removes rows that exactly match all persisted rows at the same `ts_init`, including schema, precision
 metadata, OHLCV, and `ts_event`. With `use_ts_event_for_ts_init=True`, `ts_init` is replaced with

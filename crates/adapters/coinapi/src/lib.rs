@@ -14,11 +14,41 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
-//! [CoinAPI Market Data API](https://www.coinapi.io/products/market-data-api?ref=nautilus).
+//! [CoinAPI Market Data API](https://www.coinapi.io/products/market-data-api?ref=nautilus),
+//! provided by API Bricks.
 //!
-//! This crate targets market data only; order execution is outside its scope.
+//! This crate provides authenticated REST and WebSocket access, native venue instrument definitions,
+//! live market data, historical requests, and loaders for downloaded flat files.
+//! Order execution and account management are unsupported.
+//!
+//! [`http::client::CoinApiHttpClient`] returns typed provider results, and
+//! [`websocket::client::CoinApiWebSocketClient`] exposes raw market-data streams.
+//! [`data::CoinApiDataClient`] uses explicit instrument selections and shares a finite lifetime REST
+//! credit allowance across all REST requests, including retries. Metadata and current book snapshots
+//! cost one credit per attempt. Historical requests can return truncated results when that allowance
+//! runs out. CoinAPI and native adapters must load disjoint instrument sets within a node; separate
+//! client IDs do not isolate definitions or feeds.
+//!
+//! L2 market-by-price (MBP) and L3 market-by-order (MBO) deltas include snapshot gating and sequence
+//! gap recovery. Every book subscription shares one WebSocket book channel; L3 requires individual
+//! order IDs. Bars publish when a later period arrives, and reconnects discard retained periods to
+//! avoid incomplete bars. Historical book snapshots are unsupported.
+//!
+//! [`loaders::CoinApiDataLoader`] loads local exports and historical REST data with retained metadata.
+//! Optional Python bindings expose provider identity, configuration, factories, and the standalone data loader.
+//!
+//! The official CoinAPI API reference can be found at <https://www.coinapi.io/products/market-data-api/docs?ref=nautilus>.
+//!
+//! # NautilusTrader
+//!
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
+//!
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
+//!
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -26,9 +56,23 @@
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `python`: Enables Python bindings for identity, configuration, factories, and the standalone data loader
+//!   through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes HTTP and WebSocket through deterministic transport when built with
 //!   `cfg(madsim)`.
+//!
+//! # Integrator Attribution
+//!
+//! REST requests and WebSocket handshakes include `X-Referrer: nautilus` for API Bricks usage attribution.
+//! The fixed header contains no credential or account data.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/coinapi/#integrator-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/coinapi/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -41,11 +85,13 @@
 pub mod book;
 pub mod common;
 pub mod config;
-pub mod csv;
 pub mod data;
 pub mod factories;
 pub mod http;
+pub mod loaders;
 pub mod websocket;
+
+mod csv;
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -29,6 +29,8 @@ create_case() {
     "$case_dir/crates/execution/src/matching_engine" \
     "$case_dir/crates/adapters/coinapi/src/http" \
     "$case_dir/crates/adapters/coinapi/src/websocket" \
+    "$case_dir/crates/adapters/finfeed/src/data" \
+    "$case_dir/crates/adapters/finfeed/src/http" \
     "$case_dir/crates/adapters/okx/src/book" \
     "$case_dir/crates/adapters/okx/src/common" \
     "$case_dir/crates/adapters/okx/src/http" \
@@ -36,10 +38,25 @@ create_case() {
   : > "$case_dir/crates/live/src/execution/manager.rs"
   : > "$case_dir/crates/execution/src/matching_engine/mod.rs"
   for adapter_path in \
-    config.rs data.rs \
+    config.rs data.rs loaders.rs \
     http/client.rs http/models.rs http/query.rs \
     websocket/client.rs websocket/messages.rs websocket/parse.rs; do
     : > "$case_dir/crates/adapters/coinapi/src/$adapter_path"
+  done
+  for adapter_path in \
+    config.rs data.rs history.rs parse.rs data/poll.rs loaders.rs \
+    http/client.rs http/models.rs http/query.rs instruments.rs; do
+    : > "$case_dir/crates/adapters/finfeed/src/$adapter_path"
+  done
+  for adapter_path in \
+    book/sync.rs config.rs data.rs execution.rs \
+    execution/account.rs execution/batch.rs execution/context.rs \
+    execution/mutation.rs execution/reports.rs execution/settlement.rs \
+    execution/snapshot.rs execution/stream.rs execution/submit.rs \
+    http/client.rs http/quota.rs providers.rs \
+    websocket/client.rs websocket/handler.rs; do
+    mkdir -p "$(dirname "$case_dir/crates/adapters/kalshi/src/$adapter_path")"
+    : > "$case_dir/crates/adapters/kalshi/src/$adapter_path"
   done
   for adapter_path in \
     book/mod.rs book/recovery.rs book/sync.rs \
@@ -256,6 +273,10 @@ printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/websocket/subscription.rs"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/derive/src/data.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/finfeed/src/instruments.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/kalshi/src/data.rs"
 run_hook "$adapter_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected the audited OKX path to reject a raw Tokio timer"
@@ -272,6 +293,8 @@ rg -Fq "Error (rule7): crates/adapters/okx/src/config.rs:1" "$adapter_case/plain
 rg -Fq "Error (rule7): crates/adapters/okx/src/http/query.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/subscription.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/derive/src/data.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/finfeed/src/instruments.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/kalshi/src/data.rs:1" "$adapter_case/plain.txt"
 
 # A missing audited file must fail loudly; split book files must stay gated
 missing_case="$CASE_ROOT/missing-adapter"

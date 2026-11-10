@@ -72,6 +72,7 @@ pub use orders::{
     reconcile_fill_report, reconcile_order_report, reconcile_order_report_with_commission,
     should_reconciliation_update,
 };
+pub(crate) use positions::fill_precedes_reconciled_position;
 pub use positions::{
     calculate_reconciliation_price, check_position_reconciliation,
     fill_precedes_snapshot_reconciled_position, position_prices_match,

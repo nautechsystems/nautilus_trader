@@ -42,7 +42,7 @@ pub trait FromU16 {
         Self: Sized;
 }
 
-/// An account type provided by a trading venue or broker.
+/// An account type provided by a trading venue or execution provider.
 #[repr(C)]
 #[derive(
     Copy,
@@ -776,7 +776,7 @@ pub enum InstrumentClass {
     FuturesSpread = 4,
     /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     Forward = 5,
-    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD provider to exchange the difference in the value of a financial product between the time the contract opens and closes.
     Cfd = 6,
     /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
     Bond = 7,

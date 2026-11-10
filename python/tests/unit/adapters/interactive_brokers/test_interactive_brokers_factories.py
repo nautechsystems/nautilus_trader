@@ -66,6 +66,7 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
     """
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     contract = {"secType": "STK", "symbol": "MSFT", "exchange": "SMART"}
+
     config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
         load_ids={instrument_id},
@@ -81,6 +82,7 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
         filter_callable="package.module:filter_instrument",
         cache_path="cache/instruments.json",
     )
+
     provider = InteractiveBrokersInstrumentProvider(config)
 
     assert config.symbology_method == SymbologyMethod.RAW
@@ -122,21 +124,21 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
     assert provider.find(instrument_id) is None
 
 
-def test_interactive_brokers_example_futures_symbols_keep_the_venue_local_symbol() -> None:
+def test_interactive_brokers_example_futures_ids_use_two_digit_years() -> None:
     """
-    Test interactive brokers example futures symbols keep the venue local symbol.
+    Test canonical futures IDs while preserving native local symbols.
     """
-    assert ib_common.contract_month_code(2026, 12) == "Z6"
+    assert ib_common.contract_month_code(2026, 12) == "Z26"
     assert ib_common.active_quarterly_contract(
         symbol="ES",
         venue="XCME",
         today=ib_common.dt.date(2026, 1, 1),
-    ) == ("ESH6", "ESH6.XCME", "20260320")
+    ) == ("ESH6", "ESH26.XCME", "20260320")
     assert ib_common.active_monthly_contract(
         symbol="CL",
         venue="XNYM",
         today=ib_common.dt.date(2026, 1, 1),
-    ) == ("CLH6", "CLH6.XNYM", "202603")
+    ) == ("CLH6", "CLH26.XNYM", "202603")
 
 
 def test_live_node_builder_accepts_interactive_brokers_data_factory() -> None:
@@ -329,10 +331,12 @@ def test_trade_selection_and_idle_config() -> None:
     Test trade selection and idle config.
     """
     default = InteractiveBrokersDataClientConfig()
+
     selected = InteractiveBrokersDataClientConfig(
         all_last_trades=False,
         subscription_idle_timeout_secs=17,
     )
+
     assert default.all_last_trades is True
     assert default.subscription_idle_timeout_secs is None
     assert selected.all_last_trades is False
@@ -376,6 +380,7 @@ def test_subscription_idle_custom_data_preserves_fields(last_received: int | Non
         456,
         789,
     )
+
     custom = CustomData(DataType("InteractiveBrokersSubscriptionIdle"), event)
     payload = custom.data
     assert isinstance(payload, InteractiveBrokersSubscriptionIdle)

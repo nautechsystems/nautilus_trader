@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod data_client;
 mod exec_client;
 mod http_private;
 mod http_public;

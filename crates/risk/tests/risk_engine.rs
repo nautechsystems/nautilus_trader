@@ -85,24 +85,24 @@ use nautilus_model::{
         },
     },
     instruments::{
-        Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument,
-        InstrumentAny, OptionSpread, PerpetualContract,
+        Commodity, CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, Equity,
+        FuturesSpread, Instrument, InstrumentAny, OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
-            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt, default_fx_ccy,
-            equity_aapl, ethbtc_quanto, futures_contract_es, futures_spread_es, gbpusd_sim,
-            option_spread, perpetual_contract_eurusd,
+            crypto_future_btcusdt, crypto_option_btc_deribit, crypto_perpetual_ethusdt,
+            currency_pair_btcusdt, default_fx_ccy, equity_aapl, ethbtc_quanto, futures_contract_es,
+            futures_spread_es, gbpusd_sim, option_spread, perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
     types::{
-        AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity,
+        AccountBalance, Currency, MONEY_MAX, MarginBalance, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, check_fixed_precision},
         money::MONEY_RAW_MAX,
     },
 };
-use nautilus_portfolio::Portfolio;
+use nautilus_portfolio::{Portfolio, manager::AccountsManager};
 use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
 use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
@@ -460,6 +460,14 @@ fn instrument_option_spread(option_spread: OptionSpread) -> InstrumentAny {
 #[fixture]
 fn instrument_commodity(commodity_gold: Commodity) -> InstrumentAny {
     InstrumentAny::Commodity(commodity_gold)
+}
+
+#[fixture]
+fn instrument_crypto_option(mut crypto_option_btc_deribit: CryptoOption) -> InstrumentAny {
+    crypto_option_btc_deribit.is_inverse = true;
+    crypto_option_btc_deribit.quote_currency = Currency::BTC();
+    crypto_option_btc_deribit.min_notional = Some(Money::from("0.0001 BTC"));
+    InstrumentAny::CryptoOption(crypto_option_btc_deribit)
 }
 
 #[fixture]
@@ -6692,7 +6700,7 @@ fn test_submit_order_for_emulation_sends_command_to_emulator() {}
 
 // MODIFY ORDER TESTS
 #[rstest]
-fn test_modify_order_when_no_order_found_logs_error(
+fn test_modify_order_when_no_order_found_emits_correlated_denial(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -6731,11 +6739,24 @@ fn test_modify_order_when_no_order_found_logs_error(
         None, // correlation_id
     );
 
+    let command_id = modify_order.command_id;
     risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
 
     let saved_process_messages =
         get_process_order_event_handler_messages(&process_order_event_handler);
-    assert_eq!(saved_process_messages.len(), 0);
+    assert_eq!(saved_process_messages.len(), 1);
+
+    let OrderEventAny::ModifyDenied(event) = &saved_process_messages[0] else {
+        panic!("Expected modify denial");
+    };
+
+    assert_eq!(event.causation_id, Some(command_id));
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.strategy_id, strategy_id_ema_cross);
+    assert_eq!(event.instrument_id, instrument_audusd.id());
+    assert_eq!(event.reason, "Order not found in cache");
+    assert_eq!(event.venue_order_id, None);
+    assert_eq!(event.account_id, None);
 }
 
 #[rstest]
@@ -6808,7 +6829,7 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
         get_process_order_event_handler_messages(&process_order_event_handler);
     assert_eq!(saved_process_messages.len(), 6);
     let first_message = saved_process_messages.first().unwrap();
-    assert_eq!(first_message.event_type(), OrderEventType::ModifyRejected);
+    assert_eq!(first_message.event_type(), OrderEventType::ModifyDenied);
     assert_eq!(
         first_message.message().unwrap(),
         Ustr::from("Exceeded MAX_ORDER_MODIFY_RATE")
@@ -7005,7 +7026,7 @@ fn test_risk_rejects_when_checks_cannot_complete(
         if path == "submit" {
             OrderEventType::Denied
         } else {
-            OrderEventType::ModifyRejected
+            OrderEventType::ModifyDenied
         }
     );
     assert!(commands.is_empty());
@@ -7021,6 +7042,7 @@ fn test_risk_rejects_when_checks_cannot_complete(
 #[case::missing_rate("100 EUR", "empty", true)]
 #[case::disconnected_rate("100 EUR", "disconnected", true)]
 #[case::conversion_overflow("100 EUR", "overflow", true)]
+#[case::alternate_rate("100 EUR", "alternate", false)]
 fn test_order_risk_in_account_base_currency(
     #[case] balance: &str,
     #[case] rate: &str,
@@ -7060,34 +7082,38 @@ fn test_order_risk_in_account_base_currency(
     cache.add_account(account).unwrap();
 
     if rate != "empty" {
-        let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
-            Symbol::from(if rate == "disconnected" {
-                "AUD/USD"
-            } else {
-                "USDT/EUR"
-            }),
-            Some(Venue::from("BINANCE")),
-        ));
-        cache.add_instrument(instrument.clone()).unwrap();
-        cache
-            .add_quote(QuoteTick::new(
-                instrument.id(),
-                Price::from(if rate == "overflow" {
-                    "1000000.00000"
-                } else {
-                    "0.90000"
-                }),
-                Price::from(if rate == "overflow" {
-                    "1000000.00000"
-                } else {
-                    "0.95000"
-                }),
-                Quantity::from("1"),
-                Quantity::from("1"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            ))
-            .unwrap();
+        let pairs: &[(&str, &str, &str)] = match rate {
+            "disconnected" => &[("AUD/USD", "0.90000", "0.95000")],
+            "overflow" => &[("USDT/EUR", "1000000.00000", "1000000.00000")],
+            "alternate" => &[
+                ("USDT/AUD", "1000000000", "1000000000"),
+                ("AUD/CAD", "1000000000", "1000000000"),
+                ("CAD/CHF", "1000000000", "1000000000"),
+                ("CHF/EUR", "1000000000", "1000000000"),
+                ("USDT/GBP", "0.90000", "0.95000"),
+                ("GBP/EUR", "1.00000", "1.00000"),
+            ],
+            _ => &[("USDT/EUR", "0.90000", "0.95000")],
+        };
+
+        for &(symbol, bid, ask) in pairs {
+            let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+                Symbol::from(symbol),
+                Some(Venue::from("BINANCE")),
+            ));
+            cache.add_instrument(instrument.clone()).unwrap();
+            cache
+                .add_quote(QuoteTick::new(
+                    instrument.id(),
+                    Price::from(bid),
+                    Price::from(ask),
+                    Quantity::from("1"),
+                    Quantity::from("1"),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                ))
+                .unwrap();
+        }
     }
 
     let mut order = OrderTestBuilder::new(OrderType::Limit)
@@ -7168,7 +7194,9 @@ fn test_order_risk_in_account_base_currency(
             } else {
                 dec!(100000000000000)
             };
-            let error = Money::from_decimal(value, Currency::EUR()).unwrap_err();
+
+            let error = Money::from_decimal_native(value, Currency::EUR()).unwrap_err();
+
             OrderDeniedReason::ValidationFailed {
                 detail: format!("Account currency conversion failed: {error}"),
             }
@@ -7202,7 +7230,7 @@ fn test_order_risk_in_account_base_currency(
             if path == "submit" {
                 OrderEventType::Denied
             } else {
-                OrderEventType::ModifyRejected
+                OrderEventType::ModifyDenied
             }
         );
         assert!(commands.is_empty());
@@ -7325,7 +7353,7 @@ fn test_modify_priced_order_uses_limit_for_risk(
             }
         };
 
-        assert_modify_rejected(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
         assert!(commands.is_empty());
     } else {
         assert!(events.is_empty());
@@ -7419,7 +7447,7 @@ fn test_modify_market_to_limit_credits_unpriced_original_at_market(
             }
         };
 
-        assert_modify_rejected(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
         assert!(commands.is_empty());
     } else {
         assert!(events.is_empty());
@@ -7497,7 +7525,7 @@ fn test_priced_trailing_limit_validates_offset_without_trigger(
     if rejected {
         let reason = OrderDeniedReason::UnsupportedTrailingOffsetType { offset_type }.to_string();
         if modify {
-            assert_modify_rejected(&events, std::slice::from_ref(&order), &reason);
+            assert_modify_denied(&events, std::slice::from_ref(&order), &reason);
         } else {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].event_type(), OrderEventType::Denied);
@@ -7604,7 +7632,7 @@ fn test_modify_order_rechecks_max_notional(
             }
         };
 
-        assert_modify_rejected(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
         assert!(commands.is_empty());
     }
 
@@ -7772,7 +7800,7 @@ fn test_modify_order_checks_cash_increase(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if let Some(notional) = denied_notional {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             std::slice::from_ref(&order),
             &OrderDeniedReason::NotionalExceedsFreeBalance {
@@ -8716,7 +8744,7 @@ fn test_batch_modify_orders_checks_cumulative_cash_increase(
             }
         };
 
-        assert_modify_rejected(&events, &orders, &reason.to_string());
+        assert_modify_denied(&events, &orders, &reason.to_string());
         assert!(commands.is_empty());
     } else {
         assert!(events.is_empty());
@@ -8768,7 +8796,7 @@ fn test_modify_order_checks_margin_increase(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if let Some(margin) = denied_margin {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             &[order],
             &OrderDeniedReason::InitialMarginExceedsFreeBalance {
@@ -8839,7 +8867,7 @@ fn test_batch_modify_orders_checks_cumulative_margin_increase(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if let Some(margin) = denied_margin {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             &orders,
             &OrderDeniedReason::CumulativeInitialMarginExceedsFreeBalance {
@@ -8936,7 +8964,7 @@ fn test_modify_order_checks_asset_increase(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if denied {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             &[order],
             &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
@@ -9008,7 +9036,7 @@ fn test_modify_order_preserves_position_reducing_checks(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if denied {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             &[order],
             &OrderDeniedReason::InitialMarginExceedsFreeBalance {
@@ -9047,32 +9075,35 @@ fn test_modify_order_risk_rejection_restores_pending_update(
             .build(),
         AccountId::from("SIM-001"),
     );
-    order
-        .apply(OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            order.account_id(),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            order.venue_order_id(),
-        )))
-        .unwrap();
+    let command = modify_command(&order, Some(Quantity::from("2000")), None, None);
+
+    let mut pending = OrderPendingUpdate::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        order.venue_order_id(),
+    );
+    pending.causation_id = Some(command.command_id);
+    order.apply(OrderEventAny::PendingUpdate(pending)).unwrap();
     cache.add_order(order.clone(), None, None, true).unwrap();
     let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
     risk_engine.set_max_notional_per_order(order.instrument_id(), dec!(1000));
 
-    risk_engine.execute(TradingCommand::ModifyOrder(modify_command(
-        &order,
-        Some(Quantity::from("2000")),
-        None,
-        None,
-    )));
+    risk_engine.execute(TradingCommand::ModifyOrder(command.clone()));
     let events = get_process_order_event_handler_messages(&process_order_event_handler);
     assert_eq!(events.len(), 1);
+
+    let OrderEventAny::ModifyDenied(denied) = &events[0] else {
+        panic!("Expected modify denial");
+    };
+
+    assert_eq!(denied.causation_id, Some(command.command_id));
     order.apply(events[0].clone()).unwrap();
 
     assert_eq!(order.status(), OrderStatus::Accepted);
@@ -9185,7 +9216,7 @@ fn test_modify_order_checks_betting_liability_increase(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if denied {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             &[order],
             &OrderDeniedReason::NotionalExceedsFreeBalance {
@@ -9446,7 +9477,7 @@ fn test_modify_trailing_order_rejects_calculation_failure(
         OrderDeniedReason::UnsupportedTrailingOffsetType { offset_type }
     };
 
-    assert_modify_rejected(&events, &[order], &reason.to_string());
+    assert_modify_denied(&events, &[order], &reason.to_string());
     assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
 }
 
@@ -9513,7 +9544,7 @@ fn test_modify_orders_reject_invalid_notional_limit(
 
     risk.execute(command);
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         &orders,
         &OrderDeniedReason::InvalidMaxNotionalPerOrder {
@@ -9651,7 +9682,7 @@ fn test_batch_modify_orders_reserves_closing_capacity(
             }
         };
 
-        assert_modify_rejected(&events, &orders, &reason.to_string());
+        assert_modify_denied(&events, &orders, &reason.to_string());
         assert!(commands.is_empty());
     } else {
         assert!(events.is_empty());
@@ -9741,7 +9772,7 @@ fn test_modify_cash_order_credits_only_open_exposure(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if denied {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             std::slice::from_ref(&order),
             &OrderDeniedReason::NotionalExceedsFreeBalance {
@@ -9841,7 +9872,7 @@ fn test_modify_market_order_missing_price_keeps_asset_checks(
         }
     };
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         &[order],
         &reason.to_string(),
@@ -9921,7 +9952,7 @@ fn test_modify_order_rejects_original_exposure_calculation_failure(
         None,
     )));
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         std::slice::from_ref(&order),
         &reason.to_string(),
@@ -9976,7 +10007,7 @@ fn test_modify_order_rejects_betting_account_instrument_mismatch(
         None,
     )));
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         &[order],
         &OrderDeniedReason::BettingBalanceLockedCalculationFailed {
@@ -10077,7 +10108,7 @@ fn test_modify_inverse_order_collateral_checks(
             .try_calculate_notional_value(quantity, price, None)
             .unwrap_err()
             .to_string();
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             std::slice::from_ref(&order),
             &OrderDeniedReason::NotionalCalculationFailed { detail }.to_string(),
@@ -10087,7 +10118,7 @@ fn test_modify_inverse_order_collateral_checks(
         assert!(events.is_empty());
         assert_eq!(commands, vec![command]);
     } else {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             std::slice::from_ref(&order),
             &OrderDeniedReason::InitialMarginExceedsFreeBalance {
@@ -10162,7 +10193,7 @@ fn test_modify_cash_sell_cannot_credit_closing_exposure(
         None,
     )));
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         &[order],
         &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
@@ -10282,7 +10313,7 @@ fn test_modify_trailing_order_rejects_missing_original_price(
         Some(Price::from("100.00")),
     )));
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         std::slice::from_ref(&order),
         &OrderDeniedReason::MarketPriceUnavailable {
@@ -10387,7 +10418,7 @@ fn test_batch_modify_orders_error_paths(
             assert!(commands.is_empty());
         }
         "rate_limit" => {
-            assert_modify_rejected(&events, &orders, "Exceeded MAX_ORDER_MODIFY_RATE");
+            assert_modify_denied(&events, &orders, "Exceeded MAX_ORDER_MODIFY_RATE");
             assert!(commands.is_empty());
 
             let single = TradingCommand::ModifyOrder(modify_command(
@@ -10409,7 +10440,7 @@ fn test_batch_modify_orders_error_paths(
         }
         "mismatch" => {
             assert_eq!(events.len(), 2);
-            assert_modify_rejected(
+            assert_modify_denied(
                 &events[..1],
                 &orders[1..],
                 &format!(
@@ -10417,7 +10448,7 @@ fn test_batch_modify_orders_error_paths(
                     instrument_eth_usdt.id()
                 ),
             );
-            assert_modify_rejected(
+            assert_modify_denied(
                 &events[1..],
                 &orders[..1],
                 "BatchModifyOrders rejected because one or more child modifications failed validation",
@@ -10425,7 +10456,7 @@ fn test_batch_modify_orders_error_paths(
             assert!(commands.is_empty());
         }
         "missing" => {
-            assert_modify_rejected(
+            assert_modify_denied(
                 &events,
                 &orders[..1],
                 "BatchModifyOrders rejected because one or more child modifications failed validation",
@@ -10494,7 +10525,7 @@ fn test_modify_price_rechecks_cached_quantity_bounds(
         None,
     )));
 
-    assert_modify_rejected(
+    assert_modify_denied(
         &get_process_order_event_handler_messages(&process_order_event_handler),
         std::slice::from_ref(&order),
         &reason.to_string(),
@@ -10608,7 +10639,7 @@ fn test_batch_modify_rejection_tolerates_cache_reset_in_callback(
         _ => unreachable!(),
     };
 
-    assert_modify_rejected(&events.borrow(), std::slice::from_ref(rejected), &reason);
+    assert_modify_denied(&events.borrow(), std::slice::from_ref(rejected), &reason);
     assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
 
     for order in &orders {
@@ -10683,7 +10714,7 @@ fn test_modify_quote_quantity_sell_uses_greater_limit_or_bid(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if exceed_limit {
-        assert_modify_rejected(
+        assert_modify_denied(
             &events,
             std::slice::from_ref(&order),
             &OrderDeniedReason::NotionalExceedsMaxPerOrder {
@@ -10799,12 +10830,12 @@ fn assert_cached_order_unchanged(risk: &RiskEngine, original: &OrderAny) {
     assert_eq!(cached.event_count(), original.event_count());
 }
 
-fn assert_modify_rejected(events: &[OrderEventAny], orders: &[OrderAny], reason: &str) {
+fn assert_modify_denied(events: &[OrderEventAny], orders: &[OrderAny], reason: &str) {
     assert_eq!(events.len(), orders.len());
 
     for (event, order) in events.iter().zip(orders) {
-        let OrderEventAny::ModifyRejected(event) = event else {
-            panic!("Expected OrderModifyRejected, received {event:?}")
+        let OrderEventAny::ModifyDenied(event) = event else {
+            panic!("Expected OrderModifyDenied, received {event:?}")
         };
 
         assert_eq!(event.trader_id, order.trader_id());
@@ -10816,8 +10847,6 @@ fn assert_modify_rejected(events: &[OrderEventAny], orders: &[OrderAny], reason:
         assert_eq!(event.reason, Ustr::from(reason));
         assert_eq!(event.ts_event, UnixNanos::default());
         assert_eq!(event.ts_init, UnixNanos::default());
-        assert!(!event.reconciliation);
-        assert_eq!(event.causation_id, None);
     }
 }
 
@@ -11010,7 +11039,7 @@ fn test_batch_modify_orders_counts_each_child_against_rate_limit(
         saved_execute_messages.first(),
         Some(TradingCommand::ModifyOrders(command)) if command.modifies.len() == 2
     ));
-    assert_modify_rejected(&events, &[order1], "Exceeded MAX_ORDER_MODIFY_RATE");
+    assert_modify_denied(&events, &[order1], "Exceeded MAX_ORDER_MODIFY_RATE");
 }
 
 #[rstest]
@@ -11113,7 +11142,7 @@ fn test_batch_modify_orders_rejects_all_children_when_one_child_fails_validation
     assert!(
         saved_process_messages
             .iter()
-            .all(|event| { event.event_type() == OrderEventType::ModifyRejected })
+            .all(|event| { event.event_type() == OrderEventType::ModifyDenied })
     );
     assert!(saved_process_messages.iter().any(|event| {
         event.client_order_id() == order1.client_order_id()
@@ -12878,6 +12907,163 @@ fn test_submit_order_margin_account_within_free_balance(
 }
 
 #[rstest]
+#[case::within_available("1000.0", None)]
+#[case::at_available("5000.0", None)]
+#[case::above_available("6000.0", Some("300 USDG"))]
+fn test_submit_order_after_reported_margin_initialization(
+    #[case] price: &str,
+    #[case] denied_margin: Option<&str>,
+    strategy_id_ema_cross: StrategyId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let currency = Currency::USDG();
+    let account_id = AccountId::new("LIGHTER_ROBINHOOD-001");
+    let mut perp = btcusd_bybit();
+    perp.id = InstrumentId::from("BTC-PERP.LIGHTER_ROBINHOOD");
+    perp.quote_currency = currency;
+    perp.settlement_currency = currency;
+    perp.is_inverse = false;
+    perp.margin_init = dec!(0.05);
+    perp.margin_maint = dec!(0.03);
+    let instrument = InstrumentAny::CryptoPerpetual(perp);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("10000.0"),
+        Price::from("10001.0"),
+        Quantity::from("2"),
+        Quantity::from("3"),
+        0.into(),
+        0.into(),
+    );
+
+    cache.borrow_mut().add_quote(quote).unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut portfolio = Portfolio::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        None,
+    );
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000 USDG"),
+            Money::from("750 USDG"),
+            Money::from("250 USDG"),
+        )],
+        vec![MarginBalance::new(
+            Money::from("750 USDG"),
+            Money::from("0 USDG"),
+            None,
+        )],
+        true,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        None,
+    );
+
+    portfolio.update_account(&state);
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .account_id(account_id)
+        .order_side(OrderSide::Buy)
+        .last_qty(Quantity::from("1"))
+        .last_px(Price::from("10000.0"))
+        .currency(currency)
+        .position_id(PositionId::new("P-5578"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    portfolio.initialize_orders();
+    portfolio.initialize_positions();
+
+    let mut risk_engine = RiskEngine::new(
+        RiskEngineConfig::default(),
+        portfolio,
+        clock,
+        Rc::clone(&cache),
+    );
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from(price))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submit = SubmitOrder::new(
+        trader_id,
+        None,
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit));
+    let process = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(
+        cache
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .balance_free(Some(currency)),
+        Some(Money::from("250 USDG"))
+    );
+
+    if let Some(margin) = denied_margin {
+        assert_eq!(process.len(), 1);
+        assert_eq!(process[0].event_type(), OrderEventType::Denied);
+        assert_eq!(
+            process[0].message().unwrap(),
+            Ustr::from(
+                &OrderDeniedReason::InitialMarginExceedsFreeBalance {
+                    free_balance: Money::from("250 USDG"),
+                    initial_margin: Money::from(margin),
+                }
+                .to_string()
+            )
+        );
+        assert_eq!(execute.len(), 0);
+    } else {
+        assert_eq!(process.len(), 0);
+        assert_eq!(execute.len(), 1);
+        assert_eq!(execute[0].instrument_id(), instrument.id());
+
+        let TradingCommand::SubmitOrder(submit) = &execute[0] else {
+            panic!("expected order submission");
+        };
+
+        assert_eq!(submit.client_order_id, order.client_order_id());
+    }
+}
+
+#[rstest]
 #[case::within_balance("100 USDT", None)]
 #[case::exceeds_balance("0.4 USDT", Some(("0.4 USDT", "0.5 USDT")))]
 fn test_submit_order_margin_account_quanto_checks_settlement_balance(
@@ -14443,7 +14629,7 @@ fn test_modify_order_when_trading_restricted_then_rejects(
     assert_eq!(saved_process_messages.len(), 1);
     assert_eq!(
         saved_process_messages[0].event_type(),
-        OrderEventType::ModifyRejected
+        OrderEventType::ModifyDenied
     );
     assert_eq!(
         saved_process_messages[0].message().unwrap(),
@@ -14526,7 +14712,7 @@ fn test_modify_order_with_invalid_price_precision_then_rejects(
     assert_eq!(saved_process_messages.len(), 1);
     assert_eq!(
         saved_process_messages[0].event_type(),
-        OrderEventType::ModifyRejected
+        OrderEventType::ModifyDenied
     );
     assert_eq!(
         saved_process_messages[0].message().unwrap(),
@@ -14607,7 +14793,7 @@ fn test_modify_order_with_invalid_quantity_precision_then_rejects(
     assert_eq!(saved_process_messages.len(), 1);
     assert_eq!(
         saved_process_messages[0].event_type(),
-        OrderEventType::ModifyRejected
+        OrderEventType::ModifyDenied
     );
     assert_eq!(
         saved_process_messages[0].message().unwrap(),
@@ -15280,7 +15466,7 @@ fn test_modify_order_ignores_positions_of_other_accounts(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
 
     if let Some(reason) = denial {
-        assert_modify_rejected(&events, &[order], reason);
+        assert_modify_denied(&events, &[order], reason);
         assert!(commands.is_empty());
     } else {
         assert!(events.is_empty());
@@ -16863,4 +17049,1901 @@ impl EmulatedExecution {
         drain_trading_cmd_queue();
         assert!(trading_cmd_queue_is_empty());
     }
+}
+
+#[rstest]
+#[case::long(PositionSide::Long, OrderSide::Sell)]
+#[case::short(PositionSide::Short, OrderSide::Buy)]
+fn test_submit_orders_reserve_closing_capacity_between_commands(
+    #[case] position_side: PositionSide,
+    #[case] side: OrderSide,
+    #[values(
+        OrderStatus::Initialized,
+        OrderStatus::Submitted,
+        OrderStatus::Accepted,
+        OrderStatus::Rejected
+    )]
+    first_status: OrderStatus,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_eth_usdt.clone()).unwrap();
+    let mut account = margin_account_with_usdt_balance("109 USDT", "100 USDT", "9 USDT");
+    account.set_default_leverage(dec!(10));
+    cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_position_for_close_position(
+        &mut cache,
+        &instrument_eth_usdt,
+        Quantity::from("1.000"),
+        PositionId::from("P-001"),
+        position_side,
+    );
+
+    let orders = ["O-001", "O-002"].map(|id| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("0.700"))
+            .price(Price::from("1000.00"))
+            .reduce_only(false)
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let first_command = submit_order_command(&orders[0]);
+    let second_command = submit_order_command(&orders[1]);
+    risk.execute(first_command.clone());
+    if first_status != OrderStatus::Initialized {
+        let mut cache = risk.cache().borrow_mut();
+        let submitted = OrderSubmittedSpec::builder()
+            .trader_id(orders[0].trader_id())
+            .strategy_id(orders[0].strategy_id())
+            .instrument_id(orders[0].instrument_id())
+            .client_order_id(orders[0].client_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
+        cache
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
+
+        if first_status == OrderStatus::Accepted {
+            let accepted = OrderAcceptedSpec::builder()
+                .trader_id(orders[0].trader_id())
+                .strategy_id(orders[0].strategy_id())
+                .instrument_id(orders[0].instrument_id())
+                .client_order_id(orders[0].client_order_id())
+                .account_id(AccountId::from("BINANCE-001"))
+                .venue_order_id(VenueOrderId::from("V-001"))
+                .build();
+            cache
+                .update_order(&OrderEventAny::Accepted(accepted))
+                .unwrap();
+        } else if first_status == OrderStatus::Rejected {
+            let rejected = OrderRejectedSpec::builder()
+                .trader_id(orders[0].trader_id())
+                .strategy_id(orders[0].strategy_id())
+                .instrument_id(orders[0].instrument_id())
+                .client_order_id(orders[0].client_order_id())
+                .build();
+            cache
+                .update_order(&OrderEventAny::Rejected(rejected))
+                .unwrap();
+        }
+    }
+
+    risk.execute(second_command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if first_status == OrderStatus::Rejected {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![first_command, second_command]);
+    } else {
+        assert_eq!(events.len(), 1);
+
+        let reason = OrderDeniedReason::InitialMarginExceedsFreeBalance {
+            free_balance: Money::from("9 USDT"),
+            initial_margin: Money::from("70 USDT"),
+        };
+
+        assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+        assert_eq!(commands, vec![first_command]);
+    }
+}
+
+#[rstest]
+fn test_submit_negative_price_sales_reserve_funding(
+    #[values(false, true)] list: bool,
+    #[values(false, true)] pending_credit: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] first_side: OrderSide,
+    instrument_commodity: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_commodity.clone()).unwrap();
+    let mut state = cash_account_state_million_usd("1000 USD", "0 USD", "1000 USD");
+    state.account_id = AccountId::from(format!("{}-001", instrument_commodity.id().venue).as_str());
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+
+    let orders = [("O-001", first_side), ("O-002", OrderSide::Sell)].map(|(id, side)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_commodity.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("100"))
+            .price(Price::from(if side == OrderSide::Buy {
+                "6.00"
+            } else {
+                "-6.00"
+            }))
+            .reduce_only(false)
+            .build()
+    });
+
+    let mut all_orders = Vec::new();
+    if pending_credit {
+        all_orders.push(
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument_commodity.id())
+                .client_order_id(ClientOrderId::from("O-CREDIT"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("100"))
+                .price(Price::from("-6.00"))
+                .build(),
+        );
+    }
+
+    all_orders.extend(orders.iter().cloned());
+    for order in &all_orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let submissions: Vec<_> = all_orders.iter().map(submit_order_command).collect();
+
+    if list {
+        let order_list = OrderList::new(
+            OrderListId::from("OL-PROBE"),
+            instrument_commodity.id(),
+            orders[0].strategy_id(),
+            all_orders
+                .iter()
+                .map(|order| order.client_order_id())
+                .collect(),
+            UnixNanos::default(),
+        );
+
+        let command = SubmitOrderList::new(
+            orders[0].trader_id(),
+            None,
+            orders[0].strategy_id(),
+            order_list,
+            all_orders
+                .iter()
+                .map(|order| order.init_event().clone())
+                .collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        engine.execute(TradingCommand::SubmitOrderList(command));
+    } else {
+        for command in &submissions {
+            engine.execute(command.clone());
+        }
+    }
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(events.len(), if list { all_orders.len() + 1 } else { 1 });
+
+    let reason = if list {
+        OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+            free_balance: Money::from("1000 USD"),
+            cumulative_notional: Money::from("1200 USD"),
+        }
+    } else {
+        OrderDeniedReason::NotionalExceedsFreeBalance {
+            free_balance: Money::from("400 USD"),
+            notional: Money::from("-600 USD"),
+        }
+    };
+
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+
+    if list {
+        assert!(commands.is_empty());
+        let denied_ids: Vec<_> = events[1..]
+            .iter()
+            .map(|event| event.client_order_id())
+            .collect();
+        let expected_ids: Vec<_> = all_orders
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect();
+        assert_eq!(denied_ids, expected_ids);
+    } else {
+        assert_eq!(commands, submissions[..submissions.len() - 1]);
+    }
+
+    assert_eq!(
+        instrument_commodity.calculate_notional_value(
+            orders[0].quantity(),
+            orders[0].price().unwrap(),
+            None
+        ),
+        Money::from(if first_side == OrderSide::Buy {
+            "600 USD"
+        } else {
+            "-600 USD"
+        })
+    );
+}
+
+#[rstest]
+fn test_submit_betting_list_combines_funding_across_sides(
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::Betting(betting());
+
+    let state = AccountState::new(
+        AccountId::from("BETFAIR-001"),
+        AccountType::Betting,
+        vec![AccountBalance::new(
+            Money::from("1000 GBP"),
+            Money::from("0 GBP"),
+            Money::from("1000 GBP"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::GBP()),
+    );
+
+    let account = BettingAccount::new(state, true);
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Betting(account.clone()))
+        .unwrap();
+
+    let orders = [("O-001", OrderSide::Buy), ("O-002", OrderSide::Sell)].map(|(id, side)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("600"))
+            .price(Price::from("2.00"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        assert_eq!(
+            account
+                .calculate_balance_locked(
+                    &instrument,
+                    order.order_side(),
+                    order.quantity(),
+                    order.price().unwrap(),
+                    None
+                )
+                .unwrap(),
+            Money::from("600 GBP")
+        );
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("OL-BET"),
+        instrument.id(),
+        orders[0].strategy_id(),
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+
+    let command = TradingCommand::SubmitOrderList(SubmitOrderList::new(
+        orders[0].trader_id(),
+        None,
+        orders[0].strategy_id(),
+        order_list,
+        orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    let mut engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    engine.execute(command);
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(events.len(), 3);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from("1000 GBP"),
+        cumulative_notional: Money::from("1200 GBP"),
+    };
+
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
+
+#[rstest]
+#[case::insufficient("-6.00", "-12.00", "100 USD", true)]
+#[case::boundary("-6.00", "-12.00", "600 USD", false)]
+#[case::credit_to_debit("6.00", "-12.00", "600 USD", true)]
+#[case::decrease("-12.00", "-6.00", "100 USD", false)]
+fn test_modify_negative_price_sale_checks_disposal_increase(
+    #[case] previous_price: &str,
+    #[case] price: &str,
+    #[case] free: &str,
+    #[case] denied: bool,
+    #[values(false, true)] reduce_only: bool,
+    instrument_commodity: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let account_id = AccountId::from(format!("{}-001", instrument_commodity.id().venue).as_str());
+    let previous_price = Price::from(previous_price);
+    let free = Money::from(free);
+    let locked = Money::from_decimal(
+        (-previous_price.as_decimal()).max(Decimal::ZERO) * dec!(100),
+        Currency::USD(),
+    )
+    .unwrap();
+    let total = free + locked;
+    let mut state =
+        cash_account_state_million_usd(&total.to_string(), &locked.to_string(), &free.to_string());
+    state.account_id = account_id;
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_commodity.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+
+    if reduce_only {
+        add_position_for_account(
+            &mut cache,
+            &instrument_commodity,
+            account_id,
+            Quantity::from("100"),
+            PositionId::from("P-DISPOSAL"),
+            PositionSide::Long,
+        );
+    }
+
+    let order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_commodity.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("100"))
+            .price(previous_price)
+            .reduce_only(reduce_only)
+            .build(),
+        account_id,
+    );
+    cache.add_order(order.clone(), None, None, true).unwrap();
+    let command =
+        TradingCommand::ModifyOrder(modify_command(&order, None, Some(Price::from(price)), None));
+    let mut engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    engine.execute(command.clone());
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if denied {
+        let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+            free_balance: free,
+            notional: Money::from("-1200 USD"),
+        };
+
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+
+    assert_cached_order_unchanged(&engine, &order);
+}
+
+#[rstest]
+fn test_batch_modify_betting_orders_combines_funding_across_sides(
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::Betting(betting());
+    let account_id = AccountId::from("BETFAIR-001");
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Betting,
+        vec![AccountBalance::new(
+            Money::from("300 GBP"),
+            Money::from("200 GBP"),
+            Money::from("100 GBP"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::GBP()),
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Betting(BettingAccount::new(state, true)))
+        .unwrap();
+
+    let orders = [("O-001", OrderSide::Buy), ("O-002", OrderSide::Sell)].map(|(id, side)| {
+        accept_order(
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(id))
+                .side(side)
+                .quantity(Quantity::from("100"))
+                .price(Price::from("2.00"))
+                .build(),
+            account_id,
+        )
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, true).unwrap();
+    }
+
+    let command = TradingCommand::ModifyOrders(BatchModifyOrders::new(
+        orders[0].trader_id(),
+        None,
+        orders[0].strategy_id(),
+        instrument.id(),
+        orders
+            .iter()
+            .map(|order| modify_command(order, Some(Quantity::from("160")), None, None))
+            .collect(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    let mut engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    engine.execute(command);
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from("100 GBP"),
+        cumulative_notional: Money::from("120 GBP"),
+    };
+
+    assert_modify_denied(&events, &orders, &reason.to_string());
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+
+    for order in &orders {
+        assert_cached_order_unchanged(&engine, order);
+    }
+}
+
+#[rstest]
+fn test_accepted_negative_price_sale_keeps_funding_reserved(
+    #[values(false, true)] reduce_only: bool,
+    instrument_commodity: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let account_id = AccountId::from(format!("{}-001", instrument_commodity.id().venue).as_str());
+    let mut state = cash_account_state_million_usd("1000 USD", "0 USD", "1000 USD");
+    state.account_id = account_id;
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_commodity.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    add_position_for_account(
+        &mut cache,
+        &instrument_commodity,
+        account_id,
+        Quantity::from("200"),
+        PositionId::from("P-DISPOSAL"),
+        PositionSide::Long,
+    );
+
+    let orders = ["O-001", "O-002"].map(|id| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_commodity.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("-6.00"))
+            .reduce_only(reduce_only)
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let first_command = submit_order_command(&orders[0]);
+    risk.execute(first_command.clone());
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(orders[0].trader_id())
+        .strategy_id(orders[0].strategy_id())
+        .instrument_id(orders[0].instrument_id())
+        .client_order_id(orders[0].client_order_id())
+        .account_id(account_id)
+        .build();
+    let accepted = order_accepted(
+        &orders[0],
+        Some(VenueOrderId::from("V-001")),
+        Some(account_id),
+    );
+
+    let (order, account) = {
+        let mut cache = risk.cache().borrow_mut();
+        cache
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
+        cache
+            .update_order(&OrderEventAny::Accepted(accepted))
+            .unwrap();
+
+        (
+            cache.order(&orders[0].client_order_id()).unwrap().clone(),
+            cache.account(&account_id).unwrap().clone(),
+        )
+    };
+
+    let manager = AccountsManager::new(Rc::clone(risk.clock()), Rc::clone(risk.cache()));
+    let (_, state) = manager
+        .update_orders(
+            &account,
+            &instrument_commodity,
+            &[&order],
+            UnixNanos::default(),
+        )
+        .unwrap();
+    risk.cache()
+        .borrow_mut()
+        .update_account_state(&state)
+        .unwrap();
+
+    risk.execute(submit_order_command(&orders[1]));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(
+        state.balances,
+        vec![AccountBalance::new(
+            Money::from("1000 USD"),
+            Money::from("600 USD"),
+            Money::from("400 USD"),
+        )]
+    );
+    assert_eq!(events.len(), 1);
+    assert_submit_denied(
+        &events[0],
+        &orders[1],
+        notional_exceeds_free_balance("400 USD", "-600 USD").as_str(),
+    );
+    assert_eq!(commands, vec![first_command]);
+}
+
+#[rstest]
+#[case::multi_insufficient("1.5 BTC", None, "0.9 BTC", "1 BTC", true, "10000.00000")]
+#[case::multi_boundary("1.6 BTC", None, "0.9 BTC", "1 BTC", false, "10000.00000")]
+#[case::single_insufficient(
+    "1.5 BTC",
+    Some(Currency::BTC()),
+    "0.9 BTC",
+    "1 BTC",
+    true,
+    "10000.00000"
+)]
+#[case::single_boundary(
+    "1.6 BTC",
+    Some(Currency::BTC()),
+    "0.9 BTC",
+    "1 BTC",
+    false,
+    "10000.00000"
+)]
+#[case::converted_insufficient(
+    "15000 USD",
+    Some(Currency::USD()),
+    "9000 USD",
+    "10000 USD",
+    true,
+    "10000.00000"
+)]
+#[case::converted_boundary(
+    "16000 USD",
+    Some(Currency::USD()),
+    "9000 USD",
+    "10000 USD",
+    false,
+    "10000.00000"
+)]
+#[case::converted_micro_insufficient(
+    "16000.000015 USD",
+    Some(Currency::USD()),
+    "10000.000009 USD",
+    "10000.00001 USD",
+    true,
+    "10000.00001"
+)]
+#[case::converted_micro_boundary(
+    "16000.000016 USD",
+    Some(Currency::USD()),
+    "10000.00001 USD",
+    "10000.00001 USD",
+    false,
+    "10000.00001"
+)]
+fn test_negative_price_sale_funds_disposal_and_inventory(
+    #[case] total: &str,
+    #[case] account_currency: Option<Currency>,
+    #[case] remaining: &str,
+    #[case] inventory: &str,
+    #[case] denied: bool,
+    #[case] rate: &str,
+    instrument_crypto_option: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let total = Money::from_str_exact(total).unwrap();
+
+    let state = AccountState::new(
+        AccountId::from("DERIBIT-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            Money::zero(total.currency),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        account_currency,
+    );
+
+    let mut cache = Cache::default();
+    let fx = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("BTC/USD"),
+        Some(Venue::from("DERIBIT")),
+    ));
+    cache.add_instrument(fx.clone()).unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            fx.id(),
+            Price::from(rate),
+            Price::from(rate),
+            Quantity::from("10"),
+            Quantity::from("10"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    cache
+        .add_instrument(instrument_crypto_option.clone())
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_crypto_option.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("-0.600"))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let command = submit_order_command(&order);
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk.execute(command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if denied {
+        assert_eq!(events.len(), 1);
+
+        let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+            free_balance: Money::from_str_exact(remaining).unwrap(),
+            cumulative_notional: Money::from_str_exact(inventory).unwrap(),
+        };
+
+        assert_submit_denied(&events[0], &order, &reason.to_string());
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+}
+
+#[rstest]
+fn test_modify_disposal_checks_asset_increase_without_cash_increase(
+    instrument_crypto_option: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let account_id = AccountId::from("DERIBIT-001");
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("2.5 BTC"),
+            Money::from("1.6 BTC"),
+            Money::from("0.9 BTC"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(instrument_crypto_option.clone())
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    let order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_crypto_option.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("-0.600"))
+            .build(),
+        account_id,
+    );
+    cache.add_order(order.clone(), None, None, true).unwrap();
+    let command = TradingCommand::ModifyOrder(modify_command(
+        &order,
+        Some(Quantity::from("2.0")),
+        Some(Price::from("-0.300")),
+        None,
+    ));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk.execute(command);
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from("0.9 BTC"),
+        cumulative_notional: Money::from("1 BTC"),
+    };
+
+    assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+    assert_cached_order_unchanged(&risk, &order);
+}
+
+#[rstest]
+fn test_order_list_combines_sale_inventory_and_purchase_funding(
+    instrument_crypto_option: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let total = Money::from("1.2 BTC");
+
+    let state = AccountState::new(
+        AccountId::from("DERIBIT-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            Money::zero(Currency::BTC()),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(instrument_crypto_option.clone())
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+
+    let orders = [
+        ("O-001", OrderSide::Sell, "-0.100"),
+        ("O-002", OrderSide::Buy, "0.200"),
+    ]
+    .map(|(id, side, price)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_crypto_option.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from(price))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let list = OrderList::new(
+        OrderListId::from("OL-CASH"),
+        instrument_crypto_option.id(),
+        orders[0].strategy_id(),
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+
+    let command = TradingCommand::SubmitOrderList(SubmitOrderList::new(
+        orders[0].trader_id(),
+        None,
+        orders[0].strategy_id(),
+        list,
+        orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk.execute(command);
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from("0.2 BTC"),
+        cumulative_notional: Money::from("0.3 BTC"),
+    };
+
+    assert_eq!(events.len(), 3);
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
+
+#[rstest]
+#[case::unchanged("1.0", false)]
+#[case::increased("2.0", true)]
+fn test_modify_disposal_to_credit_checks_inventory_increase(
+    #[case] quantity: &str,
+    #[case] denied: bool,
+    instrument_crypto_option: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let account_id = AccountId::from("DERIBIT-001");
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1.6 BTC"),
+            Money::from("1.6 BTC"),
+            Money::from("0 BTC"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::BTC()),
+    );
+
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(instrument_crypto_option.clone())
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    let order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_crypto_option.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("-0.600"))
+            .build(),
+        account_id,
+    );
+    cache.add_order(order.clone(), None, None, true).unwrap();
+    let command = TradingCommand::ModifyOrder(modify_command(
+        &order,
+        Some(Quantity::from(quantity)),
+        Some(Price::from("0.600")),
+        None,
+    ));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk.execute(command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if denied {
+        let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+            free_balance: Money::from("0 BTC"),
+            cumulative_notional: Money::from("1 BTC"),
+        };
+
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+
+    assert_cached_order_unchanged(&risk, &order);
+}
+
+#[rstest]
+#[case::multi(None, "1 BTC", true, OrderSide::Sell, "10000.00", "10000.00")]
+#[case::single_native(
+    Some(Currency::BTC()),
+    "1 BTC",
+    true,
+    OrderSide::Sell,
+    "10000.00",
+    "10000.00"
+)]
+#[case::single_quote(
+    Some(Currency::USDT()),
+    "10000 USDT",
+    true,
+    OrderSide::Sell,
+    "10000.00",
+    "10000.00"
+)]
+#[case::funded_multi(None, "2 BTC", false, OrderSide::Sell, "10000.00", "10000.00")]
+#[case::funded_single_native(
+    Some(Currency::BTC()),
+    "2 BTC",
+    false,
+    OrderSide::Sell,
+    "10000.00",
+    "10000.00"
+)]
+#[case::funded_single_quote(
+    Some(Currency::USDT()),
+    "20000 USDT",
+    false,
+    OrderSide::Sell,
+    "10000.00",
+    "10000.00"
+)]
+#[case::spread_insufficient(
+    Some(Currency::USDT()),
+    "19999 USDT",
+    true,
+    OrderSide::Buy,
+    "9999.00",
+    "10000.00"
+)]
+#[case::spread_boundary(
+    Some(Currency::USDT()),
+    "20000 USDT",
+    false,
+    OrderSide::Buy,
+    "9999.00",
+    "10000.00"
+)]
+fn test_pending_cash_close_reserves_sale_inventory(
+    #[case] account_currency: Option<Currency>,
+    #[case] balance: &str,
+    #[case] denied: bool,
+    #[case] second_side: OrderSide,
+    #[case] bid: &str,
+    #[case] ask: &str,
+    #[values(false, true)] list: bool,
+    currency_pair_btcusdt: CurrencyPair,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
+    let account_id = AccountId::from("BINANCE-001");
+    let total = Money::from(balance);
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            Money::zero(total.currency),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        account_currency,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            instrument.id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10"),
+            Quantity::from("10"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    add_position_for_account(
+        &mut cache,
+        &instrument,
+        account_id,
+        Quantity::from("1"),
+        PositionId::from("P-CASH"),
+        PositionSide::Long,
+    );
+
+    let orders = [("O-001", OrderSide::Sell), ("O-002", second_side)].map(|(id, side)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10000.00"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    let expected = if list {
+        let order_list = OrderList::new(
+            OrderListId::from("OL-CLOSE"),
+            instrument.id(),
+            orders[0].strategy_id(),
+            orders.iter().map(Order::client_order_id).collect(),
+            UnixNanos::default(),
+        );
+
+        let command = TradingCommand::SubmitOrderList(SubmitOrderList::new(
+            orders[0].trader_id(),
+            None,
+            orders[0].strategy_id(),
+            order_list,
+            orders
+                .iter()
+                .map(|order| order.init_event().clone())
+                .collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        risk.execute(command.clone());
+        vec![command]
+    } else {
+        let commands: Vec<_> = orders.iter().map(submit_order_command).collect();
+        for command in &commands {
+            risk.execute(command.clone());
+        }
+
+        commands
+    };
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    let unit = if total.currency == Currency::BTC() {
+        Money::from("1 BTC")
+    } else {
+        Money::from("10000 USDT")
+    };
+
+    let (event_count, forwarded_count) = match (denied, list) {
+        (false, _) => (0, expected.len()),
+        (true, false) => (1, 1),
+        (true, true) => (3, 0),
+    };
+
+    assert_eq!(events.len(), event_count);
+
+    if denied {
+        let reason = match (list, second_side) {
+            (false, OrderSide::Buy) => OrderDeniedReason::NotionalExceedsFreeBalance {
+                free_balance: total - unit,
+                notional: unit,
+            },
+            (true, OrderSide::Sell) => OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: total,
+                cumulative_notional: unit + unit,
+            },
+            _ => OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: total - unit,
+                cumulative_notional: unit,
+            },
+        };
+
+        assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    }
+
+    assert_eq!(commands, expected[..forwarded_count]);
+}
+
+#[rstest]
+fn test_pending_cash_close_uses_fresh_bid_and_ask_rates(
+    instrument_crypto_option: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let fx = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("BTC/USD"),
+        Some(instrument_crypto_option.id().venue),
+    ));
+
+    let quote = |bid: &str, ask: &str, timestamp: u64| {
+        QuoteTick::new(
+            fx.id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("1"),
+            Quantity::from("2"),
+            UnixNanos::new(timestamp),
+            UnixNanos::new(timestamp + 1),
+        )
+    };
+
+    let mut state = cash_account_state_million_usd("14000 USD", "0 USD", "14000 USD");
+    state.account_id = AccountId::from("DERIBIT-001");
+    let account_id = state.account_id;
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(instrument_crypto_option.clone())
+        .unwrap();
+    cache.add_instrument(fx.clone()).unwrap();
+    cache
+        .add_quote(quote("9000.00000", "10000.00000", 10))
+        .unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    add_position_for_account(
+        &mut cache,
+        &instrument_crypto_option,
+        account_id,
+        Quantity::from("1.0"),
+        PositionId::from("P-FX"),
+        PositionSide::Long,
+    );
+
+    let orders = [
+        ("O-CLOSE", OrderSide::Sell),
+        ("O-FIRST", OrderSide::Buy),
+        ("O-NEXT", OrderSide::Buy),
+    ]
+    .map(|(id, side)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_crypto_option.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("0.500"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let commands = orders.each_ref().map(submit_order_command);
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    risk.execute(commands[0].clone());
+    risk.execute(commands[1].clone());
+    risk.cache()
+        .borrow_mut()
+        .add_quote(quote("7000.00000", "8000.00000", 20))
+        .unwrap();
+    risk.execute(commands[2].clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+        free_balance: Money::from("4000 USD"),
+        notional: Money::from("0.5 BTC"),
+    };
+
+    assert_eq!(events.len(), 1);
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    assert_eq!(
+        get_execute_order_event_handler_messages(&execute_order_event_handler),
+        vec![commands[0].clone(), commands[2].clone()],
+    );
+}
+
+#[rstest]
+fn test_single_currency_cash_list_combines_both_sides(
+    #[values(OrderSide::Buy, OrderSide::Sell)] first_side: OrderSide,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(Symbol::from("USD/JPY"), None));
+    let account_id = AccountId::from("SIM-001");
+    let total = Money::from("150000 USD");
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            Money::zero(Currency::USD()),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("150.000"),
+            Price::from("150.000"),
+            Quantity::from("1000000"),
+            Quantity::from("1000000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let second_side = if first_side == OrderSide::Buy {
+        OrderSide::Sell
+    } else {
+        OrderSide::Buy
+    };
+
+    let orders = [("O-001", first_side), ("O-002", second_side)].map(|(id, side)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("150.000"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let list = OrderList::new(
+        OrderListId::from("OL-CASH"),
+        instrument.id(),
+        orders[0].strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    let command = TradingCommand::SubmitOrderList(SubmitOrderList::new(
+        orders[0].trader_id(),
+        None,
+        orders[0].strategy_id(),
+        list,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk.execute(command);
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from("50000 USD"),
+        cumulative_notional: Money::from("100000 USD"),
+    };
+
+    assert_eq!(events.len(), 3);
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
+
+#[rstest]
+fn test_negative_price_sale_funding_preserves_native_precision(
+    mut commodity_gold: Commodity,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    commodity_gold.size_precision = 1;
+    commodity_gold.size_increment = Quantity::from("0.1");
+    let instrument = InstrumentAny::Commodity(commodity_gold);
+    let total = Money::from_decimal_native(dec!(0.018), Currency::USD()).unwrap();
+
+    let state = AccountState::new(
+        AccountId::from("COMEX-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            Money::zero(Currency::USD()),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+
+    let orders = ["O-001", "O-002", "O-003", "O-004"].map(|id| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.3"))
+            .price(Price::from("-0.02"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let commands: Vec<_> = orders.iter().map(submit_order_command).collect();
+    for command in &commands {
+        risk.execute(command.clone());
+    }
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+        free_balance: Money::zero(Currency::USD()),
+        notional: Money::from_decimal_native(dec!(-0.006), Currency::USD()).unwrap(),
+    };
+
+    assert_eq!(events.len(), 1);
+    assert_submit_denied(&events[0], &orders[3], &reason.to_string());
+    assert_eq!(
+        get_execute_order_event_handler_messages(&execute_order_event_handler),
+        commands[..3]
+    );
+}
+
+#[rstest]
+#[case::funded("-0.04", dec!(0.006), false)]
+#[case::insufficient("-0.03", dec!(0.002), true)]
+#[case::decrease("-0.01", dec!(0), false)]
+fn test_modify_disposal_preserves_native_funding_delta(
+    #[case] price: &str,
+    #[case] free: Decimal,
+    #[case] denied: bool,
+    mut commodity_gold: Commodity,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    commodity_gold.size_precision = 1;
+    commodity_gold.size_increment = Quantity::from("0.1");
+    let instrument = InstrumentAny::Commodity(commodity_gold);
+    let account_id = AccountId::from("COMEX-001");
+    let free = Money::from_decimal_native(free, Currency::USD()).unwrap();
+    let locked = Money::from_decimal_native(dec!(0.006), Currency::USD()).unwrap();
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(locked + free, locked, free)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    let order = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.3"))
+            .price(Price::from("-0.02"))
+            .build(),
+        account_id,
+    );
+    cache.add_order(order.clone(), None, None, true).unwrap();
+    let command =
+        TradingCommand::ModifyOrder(modify_command(&order, None, Some(Price::from(price)), None));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk.execute(command.clone());
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if denied {
+        let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+            free_balance: free,
+            notional: Money::from_decimal_native(dec!(-0.009), Currency::USD()).unwrap(),
+        };
+
+        assert_modify_denied(&events, std::slice::from_ref(&order), &reason.to_string());
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+
+    assert_cached_order_unchanged(&risk, &order);
+}
+
+#[rstest]
+#[case::multi(None, "2 BTC", "0.1 BTC")]
+#[case::single_native(Some(Currency::BTC()), "2 BTC", "0.1 BTC")]
+#[case::single_quote(Some(Currency::USDT()), "20000 USDT", "1000 USDT")]
+fn test_batch_modify_cash_sales_reserves_only_inventory_increases(
+    #[case] currency: Option<Currency>,
+    #[case] balance: &str,
+    #[case] increase: &str,
+    #[values(false, true)] increase_quantity: bool,
+    currency_pair_btcusdt: CurrencyPair,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
+    let account_id = AccountId::from("BINANCE-001");
+    let total = Money::from(balance);
+
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            total,
+            total,
+            Money::zero(total.currency),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        currency,
+    );
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(state)))
+        .unwrap();
+    cache
+        .add_quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("10000.00"),
+            Price::from("10000.00"),
+            Quantity::from("10"),
+            Quantity::from("10"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    add_position_for_account(
+        &mut cache,
+        &instrument,
+        account_id,
+        Quantity::from("1"),
+        PositionId::from("P-CASH"),
+        PositionSide::Long,
+    );
+
+    let orders = ["O-001", "O-002"].map(|id| {
+        accept_order(
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(id))
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from("1.0"))
+                .price(Price::from("10000.00"))
+                .build(),
+            account_id,
+        )
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, true).unwrap();
+    }
+
+    let quantity = if increase_quantity { "1.1" } else { "1.0" };
+
+    let price = if increase_quantity {
+        "10000.00"
+    } else {
+        "9999.00"
+    };
+
+    let modifications = vec![
+        modify_command(&orders[0], None, Some(Price::from("9999.00")), None),
+        modify_command(
+            &orders[1],
+            Some(Quantity::from(quantity)),
+            Some(Price::from(price)),
+            None,
+        ),
+    ];
+    let command = TradingCommand::ModifyOrders(BatchModifyOrders::new(
+        orders[0].trader_id(),
+        None,
+        orders[0].strategy_id(),
+        instrument.id(),
+        modifications,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk.execute(command.clone());
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if increase_quantity {
+        let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+            free_balance: Money::zero(total.currency),
+            cumulative_notional: Money::from(increase),
+        };
+
+        assert_modify_denied(&events, &orders, &reason.to_string());
+        assert!(commands.is_empty());
+    } else {
+        assert!(events.is_empty());
+        assert_eq!(commands, vec![command]);
+    }
+
+    for order in &orders {
+        assert_cached_order_unchanged(&risk, order);
+    }
+}
+
+#[rstest]
+#[case::cash_long(AccountType::Cash, PositionSide::Long, OrderSide::Sell)]
+#[case::margin_long(AccountType::Margin, PositionSide::Long, OrderSide::Sell)]
+#[case::margin_short(AccountType::Margin, PositionSide::Short, OrderSide::Buy)]
+fn test_nonreducing_submissions_reserve_closing_capacity(
+    #[case] account_type: AccountType,
+    #[case] position_side: PositionSide,
+    #[case] side: OrderSide,
+    #[values(false, true)] submitted: bool,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = instrument_eth_usdt;
+
+    let account = if account_type == AccountType::Cash {
+        let total = Money::from("2 ETH");
+
+        let state = AccountState::new(
+            AccountId::from("BINANCE-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                total,
+                Money::zero(Currency::ETH()),
+                total,
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        AccountAny::Cash(cash_account(state))
+    } else {
+        let mut account = margin_account_with_usdt_balance("360 USDT", "200 USDT", "160 USDT");
+        account.set_default_leverage(dec!(10));
+        AccountAny::Margin(account)
+    };
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache.add_account(account).unwrap();
+    add_position_for_close_position(
+        &mut cache,
+        &instrument,
+        Quantity::from("1.000"),
+        PositionId::from("P-001"),
+        position_side,
+    );
+
+    let orders = [("O-001", "1.500"), ("O-002", "0.700")].map(|(id, quantity)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from(quantity))
+            .price(Price::from("1000.00"))
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let first = submit_order_command(&orders[0]);
+    risk.execute(first.clone());
+
+    if submitted {
+        let submitted = OrderSubmittedSpec::builder()
+            .trader_id(orders[0].trader_id())
+            .strategy_id(orders[0].strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(orders[0].client_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
+        risk.cache()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
+    }
+
+    risk.execute(submit_order_command(&orders[1]));
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    let reason = if account_type == AccountType::Cash {
+        OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+            free_balance: Money::from("0.5 ETH"),
+            cumulative_notional: Money::from("0.7 ETH"),
+        }
+    } else {
+        OrderDeniedReason::InitialMarginExceedsFreeBalance {
+            free_balance: Money::from("10 USDT"),
+            initial_margin: Money::from("70 USDT"),
+        }
+    };
+
+    assert_eq!(events.len(), 1);
+    assert_submit_denied(&events[0], &orders[1], &reason.to_string());
+    assert_eq!(
+        get_execute_order_event_handler_messages(&execute_order_event_handler),
+        vec![first]
+    );
+}
+
+#[rstest]
+#[case::unfilled_parent(false, true, false)]
+#[case::filled_parent(true, true, true)]
+#[case::unlinked_exits(false, false, true)]
+fn test_oto_children_reserve_closing_capacity_only_after_parent_fill(
+    #[case] parent_filled: bool,
+    #[case] linked_to_parent: bool,
+    #[case] close_denied: bool,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let instrument = instrument_eth_usdt;
+    let account_id = AccountId::from("BINANCE-001");
+    let position_id = PositionId::from("P-OTO");
+    let mut account = margin_account_with_usdt_balance("200 USDT", "200 USDT", "0 USDT");
+    account.set_default_leverage(dec!(10));
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_position_for_account(
+        &mut cache,
+        &instrument,
+        account_id,
+        Quantity::from("1.000"),
+        position_id,
+        PositionSide::Long,
+    );
+    let parent_id = ClientOrderId::from("O-ENTRY");
+    let stop_id = ClientOrderId::from("O-STOP");
+    let take_id = ClientOrderId::from("O-TAKE");
+    let mut parent = accept_order(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1000.00"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![stop_id, take_id])
+            .build(),
+        account_id,
+    );
+
+    if parent_filled {
+        let mut fill = order_filled(
+            &parent,
+            &instrument,
+            None,
+            Some(account_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        fill.position_id = Some(position_id);
+        parent.apply(OrderEventAny::Filled(fill)).unwrap();
+    }
+
+    let expected_filled = if parent_filled {
+        Quantity::from("1.000")
+    } else {
+        Quantity::from("0.000")
+    };
+
+    assert_eq!(parent.filled_qty(), expected_filled);
+    cache
+        .add_order(parent, Some(position_id), None, true)
+        .unwrap();
+    let mut stop = OrderTestBuilder::new(OrderType::StopMarket);
+    stop.instrument_id(instrument.id())
+        .client_order_id(stop_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("900.00"))
+        .reduce_only(true)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![take_id]);
+    let mut take = OrderTestBuilder::new(OrderType::Limit);
+    take.instrument_id(instrument.id())
+        .client_order_id(take_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1100.00"))
+        .reduce_only(true)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![stop_id]);
+
+    if linked_to_parent {
+        stop.parent_order_id(parent_id);
+        take.parent_order_id(parent_id);
+    }
+
+    let orders = [stop.build(), take.build()];
+    let close = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-CLOSE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1000.00"))
+        .build();
+
+    for order in orders.iter().chain(std::iter::once(&close)) {
+        cache
+            .add_order(order.clone(), Some(position_id), None, false)
+            .unwrap();
+    }
+
+    let mut risk = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let mut expected = Vec::new();
+
+    for order in &orders {
+        let command = submit_order_command(order);
+        risk.execute(command.clone());
+        expected.push(command);
+        let submitted = OrderSubmittedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .build();
+        risk.cache()
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
+    }
+
+    let command = submit_order_command(&close);
+    risk.execute(command.clone());
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+
+    if close_denied {
+        let reason = OrderDeniedReason::InitialMarginExceedsFreeBalance {
+            free_balance: Money::from("0 USDT"),
+            initial_margin: Money::from("100 USDT"),
+        };
+
+        assert_eq!(events.len(), 1);
+        assert_submit_denied(&events[0], &close, &reason.to_string());
+    } else {
+        assert!(events.is_empty());
+        expected.push(command);
+    }
+
+    assert_eq!(
+        get_execute_order_event_handler_messages(&execute_order_event_handler),
+        expected
+    );
+
+    for order in &orders {
+        assert_eq!(
+            risk.cache()
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
+    }
+}
+
+fn assert_submit_denied(event: &OrderEventAny, order: &OrderAny, reason: &str) {
+    let OrderEventAny::Denied(event) = event else {
+        panic!("Expected OrderDenied, received {event:?}");
+    };
+
+    assert_eq!(event.trader_id, order.trader_id());
+    assert_eq!(event.strategy_id, order.strategy_id());
+    assert_eq!(event.instrument_id, order.instrument_id());
+    assert_eq!(event.client_order_id, order.client_order_id());
+    assert_eq!(event.reason, Ustr::from(reason));
+    assert_eq!(event.ts_event, UnixNanos::default());
+    assert_eq!(event.ts_init, UnixNanos::default());
 }

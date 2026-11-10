@@ -37,14 +37,13 @@ use nautilus_model::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
-        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionAdjusted, PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     python::instruments::pyobject_to_instrument_any,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -330,11 +329,13 @@ impl PyStreamingFeatherWriter {
         try_write!(OrderRejected, "OrderRejected");
         try_write!(OrderPendingCancel, "OrderPendingCancel");
         try_write!(OrderCanceled, "OrderCanceled");
+        try_write!(OrderCancelDenied, "OrderCancelDenied");
         try_write!(OrderCancelRejected, "OrderCancelRejected");
         try_write!(OrderExpired, "OrderExpired");
         try_write!(OrderTriggered, "OrderTriggered");
         try_write!(OrderPendingUpdate, "OrderPendingUpdate");
         try_write!(OrderReleased, "OrderReleased");
+        try_write!(OrderModifyDenied, "OrderModifyDenied");
         try_write!(OrderModifyRejected, "OrderModifyRejected");
         try_write!(OrderUpdated, "OrderUpdated");
         try_write!(OrderFilled, "OrderFilled");
@@ -349,8 +350,6 @@ impl PyStreamingFeatherWriter {
         try_write!(FillReport, "FillReport");
         try_write!(PositionStatusReport, "PositionStatusReport");
         try_write!(ExecutionMassStatus, "ExecutionMassStatus");
-        try_write!(GreeksData, "GreeksData");
-        try_write!(PortfolioGreeks, "PortfolioGreeks");
 
         // Try instrument types (uses type_str attribute for dispatch)
         if let Ok(instrument) = pyobject_to_instrument_any(py, data.clone_ref(py)) {

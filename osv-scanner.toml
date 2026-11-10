@@ -63,6 +63,18 @@ reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2"
 id = "RUSTSEC-2026-0306"
 reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller"
 
+# Remove when wasmtimer replaces pin-utils
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0441"
+reason = "pin-utils unmaintained, via Alloy's browser-WASM-only wasmtimer; excluded from native builds"
+
+# SQLx 0.9 resolves SQLite into Cargo.lock but no workspace feature builds it.
+# Its libsqlite3-sys requirement excludes the fixed 0.39 release. Keep cargo-deny
+# unsuppressed so enabling SQLite makes the resolved-graph audit fail.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0459"
+reason = "SQLx SQLite is lockfile-only; no workspace feature builds it, and cargo-deny still gates its use"
+
 # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
 # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
 # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
@@ -125,10 +137,3 @@ reason = "zstd-safe seekable streaming compression is disabled"
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0406"
 reason = "zstd-safe multithreaded contexts are disabled"
-
-# The advisory describes cursor bytes stored inside block data. Versions 0.9.0
-# and 0.10.4 store position separately and have no ReadBuffer. The 0.12 series
-# resolves to patched 0.12.1; recheck this exception if these versions change.
-[[IgnoredVulns]]
-id = "GHSA-qwgh-2vcv-g2f7"
-reason = "block-buffer 0.9.0 and 0.10.4 use separate cursor fields; inline-cursor corruption does not apply"

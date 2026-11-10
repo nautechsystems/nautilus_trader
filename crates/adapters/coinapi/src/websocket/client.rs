@@ -33,6 +33,7 @@ use std::{
 };
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
     Message, RECONNECTED, dst,
     websocket::{
@@ -49,7 +50,7 @@ use super::{
     messages::{Channel, CoinApiWsMessage, DataType, Frame, Hello, ScopeChange, Subscription},
 };
 use crate::{
-    book::sync::BookSubscriptions,
+    book::sync::{BookReceipts, BookSubscriptions, BookWrite, BookWrites},
     common::{consts::COINAPI_NAUTILUS_REFERRER, credential::is_valid_api_key},
 };
 
@@ -64,7 +65,6 @@ const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
 const RECONNECT_JITTER_MS: u64 = 500;
 const TOPIC_DELIMITER: char = ':';
 const PERIOD_DELIMITER: char = '.';
-const PAYLOAD_EXCERPT_BYTES: usize = 128;
 
 // Live probes found that back-to-back hellos can leave a connection streaming nothing, and that
 // CoinAPI closes a connection once hellos exceed about one every two seconds per IP
@@ -108,8 +108,8 @@ pub struct CoinApiWebSocketClient {
     connection: Arc<tokio::sync::Mutex<Option<Connection>>>,
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     next_connection_id: AtomicU64,
+    out_tx: StreamSender,
     books: Option<Arc<BookSubscriptions>>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>,
 }
 
 impl CoinApiWebSocketClient {
@@ -155,8 +155,8 @@ impl CoinApiWebSocketClient {
             connection: Arc::new(tokio::sync::Mutex::new(None)),
             hello_at: Arc::new(Mutex::new(None)),
             next_connection_id: AtomicU64::new(0),
+            out_tx: StreamSender::Public(out_tx),
             books: None,
-            out_tx,
         };
 
         Ok((client, out_rx))
@@ -198,24 +198,35 @@ impl CoinApiWebSocketClient {
     ///
     /// Returns an error if connecting or sending fails; every change in the batch is reverted.
     pub async fn apply(&self, changes: &[ScopeChange]) -> Result<Vec<(ScopeChange, Error)>, Error> {
-        self.apply_registered(changes, &[]).await
+        self.apply_registered(changes, &[], &[]).await
     }
 
-    pub(crate) fn bind_books(&mut self, books: Arc<BookSubscriptions>) {
+    pub(crate) fn bind_books(
+        &mut self,
+        books: Arc<BookSubscriptions>,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<StreamMessage> {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.books = Some(books);
+        self.out_tx = StreamSender::Bound(sender);
+        receiver
     }
 
     pub(crate) async fn apply_registered(
         &self,
         changes: &[ScopeChange],
         registrations: &[Option<Arc<AtomicBool>>],
+        gates: &[Option<SnapshotGate>],
     ) -> Result<Vec<(ScopeChange, Error)>, Error> {
         let mut rejected = Vec::new();
         let mut valid = Vec::with_capacity(changes.len());
 
         for (index, change) in changes.iter().enumerate() {
             match change.subscription().validate() {
-                Ok(()) => valid.push((*change, registrations.get(index).cloned().flatten())),
+                Ok(()) => valid.push((
+                    *change,
+                    registrations.get(index).cloned().flatten(),
+                    gates.get(index).cloned().flatten(),
+                )),
                 Err(e) => rejected.push((*change, e)),
             }
         }
@@ -226,7 +237,7 @@ impl CoinApiWebSocketClient {
         if fresh
             && !valid
                 .iter()
-                .any(|(change, _)| matches!(change, ScopeChange::Subscribe(_)))
+                .any(|(change, _, _)| matches!(change, ScopeChange::Subscribe(_)))
         {
             return Ok(rejected);
         }
@@ -282,6 +293,27 @@ impl CoinApiWebSocketClient {
         subscription: Subscription,
         paused: impl FnOnce(),
     ) -> Result<(), Error> {
+        self.resubscribe_inner(subscription, paused, None)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn resubscribe_book(
+        &self,
+        subscription: Subscription,
+        paused: impl FnOnce(),
+        gate: SnapshotGate,
+    ) -> Result<Option<BookWrites>, Error> {
+        self.resubscribe_inner(subscription, paused, Some(gate))
+            .await
+    }
+
+    async fn resubscribe_inner(
+        &self,
+        subscription: Subscription,
+        paused: impl FnOnce(),
+        gate: Option<SnapshotGate>,
+    ) -> Result<Option<BookWrites>, Error> {
         subscription.validate()?;
 
         if !subscription.channel.data_type.is_book() {
@@ -321,7 +353,11 @@ impl CoinApiWebSocketClient {
             paused();
         }
 
-        send_paced(connection, &scope).await
+        let snapshots = gate
+            .map(|gate| (subscription, None, gate))
+            .into_iter()
+            .collect::<Vec<_>>();
+        send_paced_books(connection, &scope, &snapshots).await
     }
 
     /// Closes the connection and forgets its subscriptions; repeated calls are safe.
@@ -360,8 +396,10 @@ impl CoinApiWebSocketClient {
             .map_err(|e| Error::Validation(e.to_string()))?;
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let books = self.books.clone();
         let handler: MessageHandler = Arc::new(move |message| {
-            let _ = raw_tx.send(message);
+            let receipts = books.as_ref().map(|books| books.sync.receipts());
+            let _ = raw_tx.send((message, receipts));
         });
 
         let client = WebSocketClient::builder()
@@ -378,12 +416,12 @@ impl CoinApiWebSocketClient {
 
         let handler = ConnectionHandler {
             id,
-            client: Arc::clone(&client),
-            subscriptions: subscriptions.clone(),
-            auth: auth.clone(),
-            connection: Arc::downgrade(&self.connection),
-            out_tx: self.out_tx.clone(),
             api_key: self.api_key.clone(),
+            client: Arc::clone(&client),
+            connection: Arc::downgrade(&self.connection),
+            auth: auth.clone(),
+            subscriptions: subscriptions.clone(),
+            out_tx: self.out_tx.clone(),
             books: self.books.clone(),
         };
 
@@ -392,33 +430,35 @@ impl CoinApiWebSocketClient {
         Ok(Connection {
             id,
             client,
-            subscriptions,
             auth,
-            task,
+            subscriptions,
             hello_at: Arc::clone(&self.hello_at),
             restarted_at: None,
+            task,
+            books: self.books.clone(),
         })
     }
 }
 
-type RegisteredChange = (ScopeChange, Option<Arc<AtomicBool>>);
+type RegisteredChange = (ScopeChange, Option<Arc<AtomicBool>>, Option<SnapshotGate>);
 
 struct Connection {
     id: u64,
     client: Arc<WebSocketClient>,
-    subscriptions: SubscriptionState,
     auth: AuthTracker,
-    task: dst::task::JoinHandle<()>,
+    subscriptions: SubscriptionState,
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     restarted_at: Option<dst::time::Instant>,
+    task: dst::task::JoinHandle<()>,
+    books: Option<Arc<BookSubscriptions>>,
 }
 
 impl Debug for Connection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Connection))
             .field("id", &self.id)
-            .field("subscriptions", &self.subscriptions)
             .field("auth", &self.auth.auth_state())
+            .field("subscriptions", &self.subscriptions)
             .finish_non_exhaustive()
     }
 }
@@ -440,18 +480,40 @@ impl Connection {
             return Ok(true);
         }
 
-        if let Err(e) = send_paced(self, &scope).await {
-            revert(&self.subscriptions, &applied);
-            return Err(e);
-        }
+        let snapshots = changes
+            .iter()
+            .filter_map(|(change, registration, gate)| {
+                if let ScopeChange::Subscribe(subscription) = change
+                    && applied.contains(change)
+                    && let Some(gate) = gate
+                {
+                    Some((*subscription, registration.clone(), gate.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let writes = match send_paced_books(self, &scope, &snapshots).await {
+            Ok(writes) => writes,
+            Err(e) => {
+                revert(&self.subscriptions, &applied);
+                return Err(e);
+            }
+        };
 
         self.commit_scope(changes, &applied);
+
+        if let Some(writes) = writes {
+            writes.commit();
+        }
+
         Ok(true)
     }
 
     fn commit_scope(&self, changes: &[RegisteredChange], applied: &[ScopeChange]) {
         // Retirement takes this same connection lock, so it observes every committed registration
-        for (change, registration) in changes {
+        for (change, registration, _) in changes {
             if matches!(change, ScopeChange::Subscribe(_))
                 && applied.contains(change)
                 && let Some(registration) = registration
@@ -474,7 +536,7 @@ impl Connection {
     ) -> Vec<ScopeChange> {
         let mut applied = Vec::with_capacity(changes.len());
 
-        for (change, _) in changes {
+        for (change, _, _) in changes {
             let change = *change;
             let topic = topic(change.subscription());
 
@@ -512,21 +574,53 @@ impl Drop for Connection {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct StreamMessage {
+    pub(crate) message: CoinApiWsMessage,
+    pub(crate) write: Option<Arc<BookWrite>>,
+}
+
+#[derive(Debug, Clone)]
+enum StreamSender {
+    Public(tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>),
+    Bound(tokio::sync::mpsc::UnboundedSender<StreamMessage>),
+}
+
+impl StreamSender {
+    fn send(&self, message: CoinApiWsMessage, receipts: Option<&BookReceipts>) {
+        match self {
+            Self::Public(sender) => {
+                let _ = sender.send(message);
+            }
+            Self::Bound(sender) => {
+                let write = message.subscription().and_then(|subscription| {
+                    receipts.and_then(|receipts| receipts.get(&subscription).cloned())
+                });
+
+                let _ = sender.send(StreamMessage { message, write });
+            }
+        }
+    }
+}
+
 // Holds the slot weakly so dropping the public client drops the connection and aborts this task
 struct ConnectionHandler {
     id: u64,
-    client: Arc<WebSocketClient>,
-    subscriptions: SubscriptionState,
-    auth: AuthTracker,
-    connection: Weak<tokio::sync::Mutex<Option<Connection>>>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>,
     api_key: SecretString,
+    client: Arc<WebSocketClient>,
+    connection: Weak<tokio::sync::Mutex<Option<Connection>>>,
+    auth: AuthTracker,
+    subscriptions: SubscriptionState,
+    out_tx: StreamSender,
     books: Option<Arc<BookSubscriptions>>,
 }
 
 impl ConnectionHandler {
-    async fn run(self, mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>) {
-        while let Some(message) = raw_rx.recv().await {
+    async fn run(
+        self,
+        mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<(Message, Option<BookReceipts>)>,
+    ) {
+        while let Some((message, receipts)) = raw_rx.recv().await {
             let Message::Text(bytes) = message else {
                 continue;
             };
@@ -537,7 +631,7 @@ impl ConnectionHandler {
             }
 
             match Frame::decode(&bytes) {
-                Ok(Frame::Data(message)) => self.route(message),
+                Ok(Frame::Data(message)) => self.route(message, receipts.as_ref()),
                 Ok(Frame::Heartbeat) => self.confirm_session(),
                 Ok(Frame::Reconnect(notice)) => {
                     log::info!(
@@ -552,31 +646,34 @@ impl ConnectionHandler {
                     self.retire(message).await;
                     return;
                 }
-                Ok(Frame::Unknown(kind)) => log::debug!("Ignoring CoinAPI frame type {kind}"),
+                Ok(Frame::Unknown(_)) => log::debug!("Ignoring unknown CoinAPI frame type"),
                 Err(e) => {
-                    let excerpt =
-                        String::from_utf8_lossy(&bytes[..bytes.len().min(PAYLOAD_EXCERPT_BYTES)]);
-                    log::warn!("Failed to decode CoinAPI frame: {e}");
-                    log::debug!("Undecodable CoinAPI frame excerpt: {excerpt}");
+                    log::warn!(
+                        "Failed to decode CoinAPI frame: category={:?}, line={}, column={}, bytes={}",
+                        e.classify(),
+                        e.line(),
+                        e.column(),
+                        bytes.len()
+                    );
                 }
             }
         }
     }
 
-    fn route(&self, message: CoinApiWsMessage) {
+    fn route(&self, message: CoinApiWsMessage, receipts: Option<&BookReceipts>) {
         let Some(subscription) = message.subscription() else {
             return;
         };
 
         // The combined scope also delivers pairs nobody subscribed to
         if !is_subscribed(&self.subscriptions, &subscription) {
-            log::trace!("Dropping unsubscribed CoinAPI {subscription:?}");
+            log::trace!("Dropping unsubscribed CoinAPI frame");
             return;
         }
 
         self.subscriptions.confirm_subscribe(&topic(&subscription));
         self.confirm_session();
-        let _ = self.out_tx.send(message);
+        self.out_tx.send(message, receipts);
     }
 
     fn confirm_session(&self) {
@@ -602,7 +699,7 @@ impl ConnectionHandler {
         // A change in flight can reach the replacement socket first, so the replay waits its turn
         match send_paced(connection, &scope(&self.subscriptions)).await {
             Ok(()) => {
-                let _ = self.out_tx.send(CoinApiWsMessage::Reconnected);
+                self.out_tx.send(CoinApiWsMessage::Reconnected, None);
             }
             Err(e) => log::error!("Failed to replay CoinAPI scope: {e}"),
         }
@@ -627,7 +724,7 @@ impl ConnectionHandler {
             books.retire();
         }
 
-        let _ = self.out_tx.send(CoinApiWsMessage::Error(message));
+        self.out_tx.send(CoinApiWsMessage::Error(message), None);
 
         // Dropping the owned connection aborts this task, so nothing may await after it
         if guard
@@ -641,6 +738,14 @@ impl ConnectionHandler {
 
 // Waits out the client's `hello` interval, then sends `scope`
 async fn send_paced(connection: &Connection, scope: &[Subscription]) -> Result<(), Error> {
+    send_paced_books(connection, scope, &[]).await.map(|_| ())
+}
+
+async fn send_paced_books(
+    connection: &Connection,
+    scope: &[Subscription],
+    snapshots: &[(Subscription, Option<Arc<AtomicBool>>, SnapshotGate)],
+) -> Result<Option<BookWrites>, Error> {
     let hello_at = *connection.hello_at.lock();
     if let Some(hello_at) = hello_at {
         dst::time::sleep_until(hello_at + HELLO_INTERVAL_MIN).await;
@@ -648,10 +753,16 @@ async fn send_paced(connection: &Connection, scope: &[Subscription]) -> Result<(
 
     // A caller cancelled during the write leaves the queued hello to the writer, so the interval
     // starts before the write as well as after it
+    let writes = connection
+        .books
+        .as_ref()
+        .map(|books| books.begin_writes(snapshots));
     *connection.hello_at.lock() = Some(dst::time::Instant::now());
     let result = send_scope(&connection.client, scope).await;
     *connection.hello_at.lock() = Some(dst::time::Instant::now());
-    result
+
+    result?;
+    Ok(writes)
 }
 
 // Restores the subscription state from before a batch whose `hello` failed
@@ -772,7 +883,7 @@ fn parse_topic(topic: &str) -> Option<Subscription> {
     let (channel, symbol_id) = split_topic(topic, TOPIC_DELIMITER);
 
     let (data_type, period_id) = match channel.split_once(PERIOD_DELIMITER) {
-        Some((data_type, period)) => (data_type, Some(Ustr::from(period))),
+        Some((data_type, period)) => (data_type, Some(period.into())),
         None => (channel, None),
     };
 

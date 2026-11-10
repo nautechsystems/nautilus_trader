@@ -57,9 +57,12 @@ Read the Deribit documentation with this NautilusTrader integration guide.
 
 ## Product support
 
-Each client loads only the product families listed in its `product_types` configuration, once on connect.
-Neither client refreshes the instrument set afterwards, so restart the node to pick up newly listed
-instruments. On the data client, `auto_load_missing_instruments` instead fetches an uncached instrument on
+Each client loads the product families listed in its `product_types` configuration on connect, plus any
+`load_ids` those families did not already include. The data client then refreshes those product families
+every `update_instruments_interval_mins` and publishes the definitions,
+including new listings. A failed refresh keeps the cached definitions and retries at the next interval.
+The execution client does not refresh its instrument caches, so restart the node to trade newly listed
+instruments. On the data client, `auto_load_missing_instruments` also fetches an uncached instrument on
 first subscribe. See [Lazy-load on subscribe](#lazy-load-on-subscribe).
 
 | Product type      | Data feed | Trading | Notes                                          |
@@ -143,6 +146,20 @@ Examples:
 ```python
 InstrumentId.from_str("BTC_USDC.DERIBIT")
 ```
+
+When present, Deribit's `is_cbe_routed` and `is_csr` flags are copied into instrument `info`.
+A spot pair is treated as routed to Coinbase Exchange if either key exists.
+The adapter rejects these features locally for routed pairs:
+
+- Order types other than `MARKET`, `LIMIT`, and `STOP_LIMIT`.
+- Time in force other than `GTC`, `IOC`, and `FOK`.
+- Stop-limit triggers other than `LAST_PRICE` or `DEFAULT`.
+- Reduce-only, iceberg, and contingent orders, including brackets.
+- Public trade and bar history requests and subscriptions.
+
+Post-only remains supported with `reject_post_only=true`. Order book data remains supported.
+Fills arrive through the user streams even when placement responses contain no trades.
+See the [Deribit JSON-RPC changelog](https://docs.deribit.com/changelogs/jsonrpc).
 
 ### Future combos
 
@@ -305,6 +322,9 @@ Live subscriptions are served from WebSocket channels. Historical requests go ov
 takes an `{interval}` resolves it through the `interval` subscription parameter and the default selection
 rules described under [Order book subscriptions](#order-book-subscriptions).
 
+The adapter rejects trade and bar subscriptions and history requests for [routed spot pairs](#spot).
+Order book data remains available.
+
 | Nautilus subscription | Deribit channel                                                           | Notes                                                                      |
 | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Instruments           | `instrument.state.{kind}.{currency}`                                      | `kind` and `currency` params both default to `any`.                        |
@@ -436,36 +456,76 @@ tick-by-tick book updates.
 
 ### Sequence gap recovery
 
-The adapter records the `change_id` of each non-grouped book message it applies and checks the
-`prev_change_id` of each incremental update against it. Grouped snapshots do not read or update this
-sequence state.
+The adapter tracks one `change_id` chain per instrument across its non-grouped book channels and
+checks the `prev_change_id` of each incremental update against it. A delta that arrives before the
+first snapshot is dropped. Grouped channels stream standalone snapshots, so each grouped channel
+tracks its own book; its snapshots need no chain validation.
 
 When a gap is detected (a missed message), or a level in a book message fails conversion to `Price`
-or `Quantity` (for example, a value beyond their range), the adapter automatically:
+or `Quantity` (for example, a value beyond their range), the adapter starts a bounded recovery that
+automatically:
 
-1. Drops that message, and every further delta for the affected instrument.
-2. Unsubscribes from that instrument's non-grouped book channels.
+1. Drops that message, and every further frame for the affected book.
+2. Unsubscribes from the book's channels.
 3. Resubscribes once the unsubscribe is acknowledged, to obtain a fresh snapshot.
-4. Resumes normal processing once each resubscribed channel delivers a snapshot that converts,
+4. Resumes normal processing once a resubscribed channel delivers a snapshot that converts,
    reseeding the sequence from it.
 
-During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
-unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
+During recovery, the strategy will not receive stale or incomplete book updates. A user-initiated
+unsubscribe while a recovery runs cancels the recovery instead of reopening the channel. Recovery
+retries transient failures with backoff, then keeps retrying on a 1-15 minute ceiling until a fresh
+snapshot arrives. A rejected resubscribe retries within the budget for retryable venue codes
+and skips to the ceiling otherwise.
 
-A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every interval,
-so the adapter never resyncs it. It drops a snapshot that fails conversion. The next snapshot replaces the
-book.
+A replacement resubscribes only after the venue acknowledges the unsubscribe for every channel;
+until then the attempt keeps the unsubscribe in flight and each retry re-sends it. Deribit echoes
+unsubscribed channels even when they were already gone, so a rejected resubscribe cannot stall
+later attempts waiting for an acknowledgement that never comes. Each replacement resubscribes at
+most once; a retrying attempt ignores late acknowledgements to earlier attempts.
+
+The adapter polls book health every second. `book_snapshot_timeout_secs` (default 10) bounds each
+wait for an initial or post-reconnect snapshot, and each phase of a recovery replacement: the
+unsubscribe/resubscribe round trip, then the snapshot wait. One attempt can therefore take up to
+twice the timeout. `book_stale_threshold_secs` (default 120) recovers a book whose frames stop
+arriving, including a book still waiting for its subscribe acknowledgement. A zero value disables
+the corresponding timer; with both disabled, only sequence gaps and conversion failures start a
+recovery.
+
+A book on a quiet instrument legitimately goes minutes without frames, and each quiet spell longer
+than the stale threshold triggers an unsubscribe/resubscribe cycle. Set the threshold to zero to
+disable stale recovery when that churn is unwanted; gaps and snapshot timeouts still start a
+recovery.
 
 :::warning[Subscribe each instrument to one non-grouped book channel]
 `DeribitWebSocketClient::subscribe_book` can open non-grouped channels such as `book.{instrument}.raw`
-and `book.{instrument}.100ms`. These channels share one sequence and resync state per instrument.
-If a resync starts while one still awaits its initial snapshot, that channel can stay unsubscribed
-until the next reconnect. This warning does not apply to grouped depth subscriptions.
+and `book.{instrument}.100ms`. These channels share one sequence and recovery state per instrument,
+so subscribing both interleaves their `prev_change_id` chains and keeps triggering gap recovery.
+This warning does not apply to grouped depth subscriptions.
 :::
 
 The adapter logs a warning and skips a malformed level, including a value that does not parse as a
 decimal. A level whose amount rounds to zero at the instrument's size precision is treated as
 absent: snapshots skip it, incremental updates delete it, and the adapter logs a warning.
+
+### Live recovery validation
+
+The `deribit-book-stress` harness replays Deribit's public mainnet grouped feeds
+(`book.BTC-PERPETUAL.none.10.100ms` and `book.ETH-PERPETUAL.none.10.100ms`) through a
+fault-injecting relay and compares every emitted snapshot batch with its raw venue frame. It reads
+mainnet because testnet books outside ETH-PERPETUAL sit silent for minutes, so absence faults are
+untestable there. The harness subscribes read-only public channels and places no orders.
+
+```bash
+bash scripts/strip-adapter-env.bash -- cargo test -p nautilus-deribit --features examples --test deribit-book-stress -- --scenario churn --timeout 10
+bash scripts/strip-adapter-env.bash -- cargo test -p nautilus-deribit --features examples --test deribit-book-stress -- --scenario initial --timeout 10
+bash scripts/strip-adapter-env.bash -- cargo test -p nautilus-deribit --features examples --test deribit-book-stress -- --scenario disabled --timeout 0
+bash scripts/strip-adapter-env.bash -- cargo test -p nautilus-deribit --features examples --test deribit-book-stress -- --scenario edges --timeout 2
+```
+
+Raw-channel sequencing and gap recovery are covered by the mock-based conformance test
+`test_book_gap_recovery_emits_valid_stream`, which drives a gap through the shared recovery runner
+and checks the emitted stream with `BookStreamChecker`. Authenticated raw legs need testnet
+credentials and continuous flow, so the live harness does not cover them.
 
 ## Funding rates
 
@@ -546,6 +606,7 @@ self.subscribe_data(
 
 ## Orders capability
 
+An order's instrument must be loaded by the execution client's `product_types` or `load_ids`.
 The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
 If validation or event queuing fails, the adapter returns an error without sending the order.
 The execution engine handles that error as `OrderDenied`.
@@ -554,6 +615,7 @@ For order lists, the adapter validates every member and queues all `OrderSubmitt
 before sending any member. A validation or queuing failure prevents all venue requests for that list.
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
+Routed spot pairs have the additional restrictions listed under [Spot](#spot).
 
 ### Order types
 
@@ -578,12 +640,12 @@ Below are the order types, execution instructions, and time-in-force options sup
 
 ### Time in force
 
-| Time in force | Supported | Notes                                                |
-| ------------- | --------- | ---------------------------------------------------- |
-| `GTC`         | ✓         | Good till canceled (`good_til_cancelled`).           |
-| `GTD`         | ✓         | Good till day. Expires at 8:00 UTC (`good_til_day`). |
-| `IOC`         | ✓         | Immediate or cancel (`immediate_or_cancel`).         |
-| `FOK`         | ✓         | Fill or kill (`fill_or_kill`).                       |
+| Time in force | Supported | Notes                                                   |
+| ------------- | --------- | ------------------------------------------------------- |
+| `GTC`         | ✓         | Good till canceled (`good_til_cancelled`).              |
+| `GTD`         | ✓         | Derivatives only; expires at 8:00 UTC (`good_til_day`). |
+| `IOC`         | ✓         | Immediate or cancel (`immediate_or_cancel`).            |
+| `FOK`         | ✓         | Fill or kill (`fill_or_kill`).                          |
 
 Deribit applies time in force to limit-style orders. The adapter omits `time_in_force`
 for `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` orders because Deribit rejects that
@@ -640,8 +702,9 @@ Deribit offers two post-only modes:
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
 The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
-If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
-event is emitted with the `due_post_only` flag set to `true`.
+The adapter emits `OrderRejected` with `due_post_only=true` for error code `11054` or an order result
+with `order_state="rejected"` and `reject_reason="post_only_reject"`. Other rejections set this flag to
+`false`. These rules also apply to rejections forwarded from Coinbase Exchange.
 
 This allows strategies to differentiate between:
 
@@ -665,8 +728,8 @@ This provides several advantages:
 - **Same price**: Keeps queue position.
 - **Increasing quantity or changing price**: Loses queue position (treated as new order).
 
-A modify command must carry the venue order ID and a price. If either is missing, the adapter rejects the
-command locally without reaching Deribit. Quantity is optional and falls back to the cached order's current
+A modify command must carry the venue order ID and a price. If either is missing, the adapter emits
+`OrderModifyDenied` without reaching Deribit. Quantity is optional and falls back to the cached order's current
 quantity.
 
 ### Position management
@@ -959,15 +1022,18 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
 | `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
 | `auth_timeout_secs`                | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
-| `update_instruments_interval_mins` | `60`       | Accepted but not yet acted on; instruments load once on connect.   |
+| `update_instruments_interval_mins` | `60`       | Instrument refresh interval in minutes; `0` disables it.           |
+| `book_snapshot_timeout_secs`       | `10`       | Snapshot wait bound in seconds; `0` disables it.                   |
+| `book_stale_threshold_secs`        | `120`      | Stale-feed threshold in seconds; `0` disables it.                  |
 | `auto_load_missing_instruments`    | `False`    | Lazy-load uncached instruments on subscribe.                       |
+| `load_ids`                         | `None`     | Extra instruments to load on connect. Empty or unset adds none.    |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                       |
 
 #### Lazy-load on subscribe
 
 `subscribe_*` commands look up the instrument in the local cache before sending the WebSocket subscribe so the
 handler can parse the inbound frames. With `auto_load_missing_instruments = False` (the default), a
-subscription returns an error if its instrument was not preloaded by the configured `product_types`. It does
+subscription returns an error if its instrument was not preloaded by `product_types` or `load_ids`. It does
 not silently succeed and then drop subsequent frames at the handler.
 
 To load missing instruments on first subscribe, set `auto_load_missing_instruments = True`. The client fetches
@@ -991,11 +1057,22 @@ are logged and the WebSocket subscribe is skipped.
 | `retry_delay_initial_ms` | `1,000`    | Initial delay in milliseconds before retrying.                     |
 | `retry_delay_max_ms`     | `10,000`   | Maximum delay in milliseconds between retries.                     |
 | `auth_timeout_secs`      | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
+| `load_ids`               | `None`     | Reconciliation scope. Empty or unset means every instrument.       |
 | `transport_backend`      | `Sockudo`  | WebSocket transport backend.                                       |
 
 `transport_backend` selects between the `Sockudo` and `Tungstenite` WebSocket transports. The default is
 `Sockudo` when the `transport-sockudo` Cargo feature is enabled, as in published Python wheels. A Rust build
 without that feature defaults to `Tungstenite`.
+
+Set the same `load_ids` on the data and execution clients. A non-empty set is the only reconciliation
+scope: records for other instruments are omitted, including instruments `product_types` already loaded.
+With `load_ids` unset or empty, an unresolved open order or non-flat position fails the report request.
+An unresolved closed order or fill inside the request window fails a direct report request. A bounded
+mass-status query keeps the other reports and marks that history incomplete. An unbounded query does not.
+See [Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety). Also set
+`reconciliation_instrument_ids` to the same set, or a continuous position check can treat an omitted
+position as flat. Connect loads named instruments that
+`product_types` did not already cache. Report generation does not fetch missing instruments.
 
 ### Production configuration
 

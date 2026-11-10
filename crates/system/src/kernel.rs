@@ -535,7 +535,8 @@ impl NautilusKernel {
     }
 
     fn determine_machine_id() -> anyhow::Result<String> {
-        sysinfo::System::host_name().ok_or_else(|| anyhow::anyhow!("Failed to determine hostname"))
+        sysinfo::System::host_name()
+            .map_err(|e| anyhow::anyhow!("Failed to determine hostname: {e}"))
     }
 
     fn initialize_logging(
@@ -940,9 +941,13 @@ impl NautilusKernel {
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
     ///
+    /// Component-state persistence is best effort. State collection and DeFi integrity errors are
+    /// returned after cleanup, while persistence write failures are logged.
+    ///
     /// # Errors
     ///
-    /// Returns an error if actor or strategy state cannot be saved.
+    /// Returns an error if collecting component state fails, the backing reports a DeFi currency
+    /// integrity error, or flushing the streaming writer fails.
     #[allow(unknown_lints)]
     #[expect(
         clippy::unused_async,
@@ -971,11 +976,13 @@ impl NautilusKernel {
         self.flush_streaming_writer()
     }
 
-    /// Saves actor and strategy state at most once for the current trader run.
+    /// Collects actor and strategy state at most once for the current trader run and attempts
+    /// persistence. Persistence failures are logged without failing the save.
     ///
     /// # Errors
     ///
-    /// Returns an error if a component callback or cache persistence operation fails.
+    /// Returns an error if collecting component state fails or the backing reports a DeFi
+    /// currency integrity error.
     pub fn save_trader_state(&mut self) -> anyhow::Result<()> {
         if !std::mem::take(&mut self.state_save_armed) {
             return Ok(());
@@ -1186,20 +1193,28 @@ impl NautilusKernel {
     ///
     /// Data clients are connected first so that instruments are published
     /// and can be drained into the cache before execution clients connect.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any data client fails to connect.
     #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
-    pub async fn connect_data_clients(&mut self) {
+    pub async fn connect_data_clients(&mut self) -> anyhow::Result<()> {
         log::info!("Connecting data clients...");
-        self.data_engine.borrow_mut().connect().await;
+        self.data_engine.borrow_mut().connect().await
     }
 
     /// Connects execution engine clients.
     ///
     /// Must be called after data clients are connected and instrument events
     /// have been drained into the cache, so execution clients can load instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any execution client fails to connect.
     #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
-    pub async fn connect_exec_clients(&mut self) {
+    pub async fn connect_exec_clients(&mut self) -> anyhow::Result<()> {
         log::info!("Connecting execution clients...");
-        self.exec_engine.borrow_mut().connect().await;
+        self.exec_engine.borrow_mut().connect().await
     }
 
     /// Disconnects all engine clients.
@@ -2027,7 +2042,7 @@ mod lifecycle_tests {
     }
 
     #[rstest]
-    fn test_state_save_reports_all_persistence_errors() {
+    fn test_state_save_persistence_errors_do_not_fail_finalization() {
         let actor_id = ActorId::from("FAIL-UPDATE-ACTOR");
         let strategy_id = StrategyId::from("FAIL-UPDATE-STRATEGY-001");
         let (database, control) = TestCacheDatabaseControl::create();
@@ -2044,15 +2059,9 @@ mod lifecycle_tests {
         kernel.start();
         kernel.start_trader().unwrap();
         kernel.stop_trader();
-        let error = finalize(&mut kernel).unwrap_err();
+        finalize(&mut kernel).unwrap();
         kernel.dispose();
 
-        assert_eq!(
-            error.to_string(),
-            "Failed to save component state: actor FAIL-UPDATE-ACTOR persistence: test actor \
-             update failure; strategy FAIL-UPDATE-STRATEGY-001 persistence: test strategy update \
-             failure"
-        );
         assert_eq!(
             control.events(),
             vec![

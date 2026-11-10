@@ -65,6 +65,7 @@ use crate::subscription::{
 /// Wraps a [`DataClient`], managing subscription state and forwarding commands.
 pub struct DataClientAdapter {
     pub(crate) client: Box<dyn DataClient>,
+    pub(crate) is_stopped: bool,
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub handles_book_deltas: bool,
@@ -151,6 +152,7 @@ impl DataClientAdapter {
     ) -> Self {
         Self {
             client,
+            is_stopped: false,
             client_id,
             venue,
             handles_book_deltas: handles_order_book_deltas,
@@ -293,6 +295,15 @@ impl DataClientAdapter {
 
         let command_id = cmd.command_id();
 
+        if self.is_stopped {
+            self.retain_subscriptions(pending, false, retain_on_failure);
+            log::debug!(
+                "Skipped subscribe after stop: client_id={}, command_id={command_id}",
+                self.client_id()
+            );
+            return;
+        }
+
         let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(&cmd),
@@ -329,17 +340,17 @@ impl DataClientAdapter {
             );
         }
 
-        self.retain_subscriptions(pending, &result, retain_on_failure);
+        self.retain_subscriptions(pending, result.is_ok(), retain_on_failure);
     }
 
     fn retain_subscriptions(
         &mut self,
         pending: Vec<(SubscriptionKey, SubscribeCommand)>,
-        result: &anyhow::Result<()>,
+        succeeded: bool,
         retain_on_failure: bool,
     ) {
         for (key, member) in pending {
-            let accepted = result.is_ok() || self.has_active_subscription(&member);
+            let accepted = succeeded || self.has_active_subscription(&member);
             // Engine-owned intent survives failure until its matching release
             if !accepted && !retain_on_failure {
                 continue;

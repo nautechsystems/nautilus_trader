@@ -78,6 +78,7 @@ class EMACrossTWAP(EMACross):
         """
         super().__init__(config)
         self._exec_algorithm_id = ExecAlgorithmId(config.exec_algorithm_id)
+
         self._exec_algorithm_params = {
             "horizon_secs": str(config.twap_horizon_secs),
             "interval_secs": str(config.twap_interval_secs),
@@ -86,6 +87,7 @@ class EMACrossTWAP(EMACross):
     def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         client_order_id = ClientOrderId(f"{self.strategy_id}-{self._order_count}")
+
         order = MarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -103,4 +105,5 @@ class EMACrossTWAP(EMACross):
             exec_algorithm_params=self._exec_algorithm_params,
             exec_spawn_id=client_order_id,
         )
+
         self.submit_order(order)

@@ -18,31 +18,18 @@
 //! The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC) and data
 //! models for the official **dYdX v4 API**.
 //!
-//! # Official Documentation
-//!
-//! | Resource                             | Reference                                              |
-//! |--------------------------------------|--------------------------------------------------------|
-//! | Main documentation                   | <https://docs.dydx.xyz>                                |
-//! | Indexer HTTP API                     | <https://docs.dydx.xyz/indexer-client/http> |
-//! | Indexer WebSocket API                | <https://docs.dydx.xyz/indexer-client/websockets> |
-//! | Order types                          | <https://docs.dydx.xyz/concepts/trading/orders>        |
-//! | Permissioned keys                    | <https://docs.dydx.xyz/concepts/trading/authenticators> |
-//! | Validator client (gRPC)              | <https://docs.dydx.xyz/node-client> |
+//! The official dYdX API reference can be found at <https://docs.dydx.xyz/>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -50,6 +37,16 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! Orders built by the gRPC `OrderBuilder` set `order_router_address` to NautilusTrader's address.
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/dydx/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

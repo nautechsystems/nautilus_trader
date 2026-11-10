@@ -22,10 +22,18 @@ use std::{collections::HashMap, sync::Arc};
 
 use ahash::AHashMap;
 use anyhow::Context;
-use arrow::{datatypes::Schema, record_batch::RecordBatch};
-use nautilus_serialization::arrow::{KEY_IDENTIFIER, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION};
+use arrow::{
+    array::UInt64Array,
+    compute::{SortColumn, SortOptions, concat_batches, lexsort_to_indices, take_record_batch},
+    datatypes::Schema,
+    record_batch::RecordBatch,
+};
+use nautilus_serialization::arrow::{
+    KEY_IDENTIFIER, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, U64ColumnRef,
+};
 use object_store::{
-    ObjectStore, ObjectStoreExt, PutMode, PutOptions, buffered::BufReader, path::Path as ObjectPath,
+    ObjectMeta, ObjectStore, ObjectStoreExt, PutMode, PutOptions, buffered::BufReader,
+    path::Path as ObjectPath,
 };
 use parquet::{
     arrow::{
@@ -43,6 +51,7 @@ use parquet::{
 };
 use url::Url;
 
+use super::consolidation_state;
 pub(crate) use crate::common::paths::file_uri_to_native_path;
 pub use crate::common::paths::normalize_path_to_uri;
 
@@ -119,6 +128,7 @@ pub async fn write_batches_to_object_store(
         max_row_group_size,
         key_value_metadata,
         PutMode::Overwrite,
+        None,
     )
     .await
 }
@@ -139,10 +149,15 @@ pub(crate) async fn write_batches_to_object_store_create(
         max_row_group_size,
         key_value_metadata,
         PutMode::Create,
+        None,
     )
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "private writer keeps storage mode and footer identity separate"
+)]
 async fn write_batches_to_object_store_with_mode(
     batches: &[RecordBatch],
     object_store: Arc<dyn ObjectStore>,
@@ -151,6 +166,7 @@ async fn write_batches_to_object_store_with_mode(
     max_row_group_size: Option<usize>,
     key_value_metadata: Option<Vec<KeyValue>>,
     put_mode: PutMode,
+    created_by: Option<String>,
 ) -> anyhow::Result<()> {
     let Some(first) = batches.first() else {
         anyhow::bail!("Cannot write Parquet file {path} with no record batches");
@@ -168,6 +184,10 @@ async fn write_batches_to_object_store_with_mode(
         ))
         .set_sorting_columns(sorting_columns)
         .set_key_value_metadata(key_value_metadata);
+
+    if let Some(created_by) = created_by {
+        props_builder = props_builder.set_created_by(created_by);
+    }
 
     if schema.index_of(KEY_IDENTIFIER).is_ok() {
         props_builder =
@@ -308,18 +328,87 @@ pub async fn combine_parquet_files_from_object_store(
     max_row_group_size: Option<usize>,
     deduplicate: Option<bool>,
 ) -> anyhow::Result<()> {
-    if file_paths.len() <= 1 {
+    let Some(merged) =
+        read_combined_batches(object_store.clone(), &file_paths, deduplicate).await?
+    else {
         return Ok(());
+    };
+
+    write_batches_to_object_store(
+        &merged.batches,
+        object_store.clone(),
+        new_file_path,
+        compression,
+        max_row_group_size,
+        None,
+    )
+    .await?;
+
+    for source in merged.sources {
+        if source.location != *new_file_path {
+            object_store.delete(&source.location).await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn consolidate_parquet_files_from_object_store(
+    object_store: Arc<dyn ObjectStore>,
+    file_paths: Vec<ObjectPath>,
+    new_file_path: &ObjectPath,
+    compression: Option<Compression>,
+    max_row_group_size: Option<usize>,
+    deduplicate: Option<bool>,
+) -> anyhow::Result<()> {
+    let Some(merged) =
+        read_combined_batches(object_store.clone(), &file_paths, deduplicate).await?
+    else {
+        return Ok(());
+    };
+
+    let created_by =
+        consolidation_state::begin(&object_store, new_file_path, &merged.sources).await?;
+    write_batches_to_object_store_with_mode(
+        &merged.batches,
+        object_store.clone(),
+        new_file_path,
+        compression,
+        max_row_group_size,
+        None,
+        PutMode::Overwrite,
+        Some(created_by),
+    )
+    .await?;
+    let directory = new_file_path.parent().unwrap_or_default();
+    consolidation_state::recover(&object_store, &directory).await
+}
+
+struct MergedParquet {
+    batches: Vec<RecordBatch>,
+    sources: Vec<ObjectMeta>,
+}
+
+async fn read_combined_batches(
+    object_store: Arc<dyn ObjectStore>,
+    file_paths: &[ObjectPath],
+    deduplicate: Option<bool>,
+) -> anyhow::Result<Option<MergedParquet>> {
+    if file_paths.len() <= 1 {
+        return Ok(None);
     }
 
     let mut all_batches: Vec<RecordBatch> = Vec::new();
     let mut schema_with_metadata: Option<Arc<arrow::datatypes::Schema>> = None;
     let mut schema_source: Option<&ObjectPath> = None;
     let mut field_metadata_sources = HashMap::new();
+    let mut sources = Vec::with_capacity(file_paths.len());
 
     // Read all files from object store
-    for path in &file_paths {
-        let data = object_store.get(path).await?.bytes().await?;
+    for path in file_paths {
+        let object = object_store.get(path).await?;
+        sources.push(object.meta.clone());
+        let data = object.bytes().await?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
 
         let candidate_schema = builder.schema().clone();
@@ -358,12 +447,11 @@ pub async fn combine_parquet_files_from_object_store(
     // Re-apply the preserved schema metadata to all collected batches so that
     // write_batches_to_object_store (which uses batches[0].schema()) can encode
     // the correct Arrow schema metadata into the combined output file.
-    if let Some(schema) = &schema_with_metadata {
-        all_batches = all_batches
-            .into_iter()
-            .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
-            .collect::<Result<Vec<_>, _>>()?;
-    }
+    let schema = schema_with_metadata.expect("non-empty source files provide a schema");
+    all_batches = all_batches
+        .into_iter()
+        .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Deduplicate rows if requested
     let batches_to_write = if deduplicate.unwrap_or(false) {
@@ -372,25 +460,72 @@ pub async fn combine_parquet_files_from_object_store(
         all_batches
     };
 
-    // Write combined batches to new location
-    write_batches_to_object_store(
-        &batches_to_write,
-        object_store.clone(),
-        new_file_path,
-        compression,
-        max_row_group_size,
-        None,
-    )
-    .await?;
+    let batches_to_write = sort_consolidation_batches(batches_to_write)?;
+    Ok(Some(MergedParquet {
+        batches: batches_to_write,
+        sources,
+    }))
+}
 
-    // Remove the merged files
-    for path in &file_paths {
-        if path != new_file_path {
-            object_store.delete(path).await?;
+fn sort_consolidation_batches(batches: Vec<RecordBatch>) -> anyhow::Result<Vec<RecordBatch>> {
+    let Some(first) = batches.first() else {
+        return Ok(batches);
+    };
+
+    if first.column_by_name("ts_init").is_none() {
+        return Ok(batches);
+    }
+
+    let mut previous = 0;
+    let mut ordered = true;
+
+    for batch in &batches {
+        let array = batch
+            .column_by_name("ts_init")
+            .expect("consistent batch schema");
+        let timestamps = U64ColumnRef::try_from_array(array.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("Unsupported consolidation ts_init type"))?;
+
+        for row in 0..batch.num_rows() {
+            let timestamp = timestamps
+                .value(row)
+                .ok_or_else(|| anyhow::anyhow!("Invalid consolidation ts_init value"))?;
+            ordered &= previous <= timestamp;
+            previous = timestamp;
         }
     }
 
-    Ok(())
+    if ordered {
+        return Ok(batches);
+    }
+
+    let schema = first.schema();
+    let batch = concat_batches(&schema, &batches)?;
+    let original_index = Arc::new(UInt64Array::from_iter_values(0..batch.num_rows() as u64));
+
+    let options = Some(SortOptions {
+        descending: false,
+        nulls_first: false,
+    });
+
+    let indices = lexsort_to_indices(
+        &[
+            SortColumn {
+                values: batch
+                    .column_by_name("ts_init")
+                    .expect("ts_init exists")
+                    .clone(),
+                options,
+            },
+            SortColumn {
+                values: original_index,
+                options,
+            },
+        ],
+        None,
+    )?;
+
+    Ok(vec![take_record_batch(&batch, &indices)?])
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -945,6 +1080,64 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn combine_accepts_an_output_outside_the_source_directory() {
+        use futures::TryStreamExt;
+
+        let store: Arc<dyn ObjectStore> = Arc::new(object_store::memory::InMemory::new());
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::UInt64,
+            false,
+        )]));
+
+        let paths = [
+            ObjectPath::from("inputs/one.parquet"),
+            ObjectPath::from("inputs/two.parquet"),
+        ];
+
+        for (path, value) in paths.iter().zip([11, 22]) {
+            let batch = RecordBatch::try_new(
+                schema.clone(),
+                vec![Arc::new(UInt64Array::from(vec![value]))],
+            )
+            .unwrap();
+            write_batches_to_object_store(&[batch], store.clone(), path, None, None, None)
+                .await
+                .unwrap();
+        }
+
+        let target = ObjectPath::from("outputs/combined.parquet");
+        combine_parquet_files_from_object_store(
+            store.clone(),
+            paths.to_vec(),
+            &target,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let (batches, actual_schema) = read_parquet_from_object_store(store.clone(), &target)
+            .await
+            .unwrap();
+        let actual = concat_batches(&actual_schema, &batches).unwrap();
+        let expected =
+            RecordBatch::try_new(schema, vec![Arc::new(UInt64Array::from(vec![11, 22]))]).unwrap();
+        let remaining = store.list(None).try_collect::<Vec<_>>().await.unwrap();
+
+        assert_eq!(actual, expected);
+        assert_eq!(
+            remaining
+                .iter()
+                .map(|meta| &meta.location)
+                .collect::<Vec<_>>(),
+            vec![&target]
+        );
+    }
 
     fn consolidation_depth_schema(
         price_precision: &str,

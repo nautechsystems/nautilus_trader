@@ -1,0 +1,622 @@
+{
+  "definitions": {
+    "live": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-10-17T03:45:00Z",
+        "created_time": "2026-10-15T20:01:37.233287Z",
+        "custom_strike": {
+          "round_digits": "2"
+        },
+        "event_ticker": "KXBTC15M-26OCT162345",
+        "exchange_index": 2,
+        "expected_expiration_time": "2026-10-17T03:50:00Z",
+        "expiration_time": "2026-10-24T03:45:00Z",
+        "expiration_value": "",
+        "floor_strike": 81469.24,
+        "last_price_dollars": "0.4900",
+        "latest_expiration_time": "2026-10-24T03:45:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "0.5200",
+        "no_bid_dollars": "0.5100",
+        "no_sub_title": "Target price: TBD",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-10-17T03:50:00Z",
+        "open_interest_fp": "251068.55",
+        "open_time": "2026-10-17T03:30:00Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "0.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "tapered_deci_cent",
+        "price_ranges": [
+          {
+            "end": "0.1000",
+            "start": "0.0000",
+            "step": "0.0010"
+          },
+          {
+            "end": "0.9000",
+            "start": "0.1000",
+            "step": "0.0100"
+          },
+          {
+            "end": "1.0000",
+            "start": "0.9000",
+            "step": "0.0010"
+          }
+        ],
+        "result": "",
+        "rules_primary": "If the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:45 PM EDT on Oct 16, 2026 is at least the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:30 PM EDT on October 16, 2026, then the market resolves to Yes.",
+        "rules_secondary": "Not all cryptocurrency price data is the same. While checking a source like Google or Coinbase may help guide your decision, the price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices, rounded to the nearest 2 decimal places.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 1,
+        "status": "active",
+        "strike_type": "greater_or_equal",
+        "ticker": "KXBTC15M-26OCT162345-45",
+        "title": "BTC price up in next 15 mins?",
+        "updated_time": "2026-10-17T03:30:00.568718Z",
+        "volume_24h_fp": "135537.14",
+        "volume_fp": "618483.38",
+        "yes_ask_dollars": "0.4900",
+        "yes_ask_size_fp": "3605.29",
+        "yes_bid_dollars": "0.4800",
+        "yes_bid_size_fp": "5737.47",
+        "yes_sub_title": "Target Price: $81,469.24"
+      },
+      "event": {
+        "category": "Crypto",
+        "collateral_return_type": "",
+        "event_ticker": "KXBTC15M-26OCT162345",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "fifteen_min"
+        },
+        "series_ticker": "KXBTC15M",
+        "settlement_sources": [
+          {
+            "name": "CF Benchmarks",
+            "url": "https://www.cfbenchmarks.com/"
+          }
+        ],
+        "strike_date": "2026-10-17T03:45:00Z",
+        "strike_period": "",
+        "sub_title": "Oct 16 - 11:30PM EDT to 11:45PM EDT",
+        "title": "BTC 15 min · $81,469.24 target"
+      }
+    },
+    "archived": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-08-16T23:40:05Z",
+        "created_time": "2026-08-16T23:24:25.396247Z",
+        "early_close_condition": "This market will close and expire early if the event occurs.",
+        "event_ticker": "KXBRASILEIROBTOTAL-26AUG16AMGATH",
+        "exchange_index": 0,
+        "expected_expiration_time": "2026-08-17T03:30:00Z",
+        "expiration_time": "2026-08-19T03:30:00Z",
+        "expiration_value": "4",
+        "floor_strike": 6.5,
+        "last_price_dollars": "0.0000",
+        "latest_expiration_time": "2026-08-19T03:30:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "1.0000",
+        "no_bid_dollars": "0.0000",
+        "no_sub_title": "Over 6.5 goals scored",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-08-17T01:30:00Z",
+        "open_interest_fp": "0.00",
+        "open_time": "2026-08-16T23:25:20Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "1.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "linear_cent",
+        "price_ranges": [
+          {
+            "end": "1.0000",
+            "start": "0.0000",
+            "step": "0.0100"
+          }
+        ],
+        "result": "no",
+        "rules_primary": "If over 6.5 goals are scored in the America FC vs Athletic Club Sjdr professional Brasileiro Serie B soccer game originally scheduled for Aug 16, 2026 after 90 minutes plus stoppage time (does not include extra time or penalties), then the market resolves to Yes.",
+        "rules_secondary": "Kalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 30,
+        "settlement_ts": "2026-08-16T23:41:42.461604Z",
+        "settlement_value_dollars": "0.0000",
+        "status": "finalized",
+        "strike_type": "greater",
+        "ticker": "KXBRASILEIROBTOTAL-26AUG16AMGATH-7",
+        "title": "Will over 6.5 goals be scored?",
+        "updated_time": "2026-08-16T23:41:42.64543Z",
+        "volume_24h_fp": "0.00",
+        "volume_fp": "0.00",
+        "yes_ask_dollars": "1.0000",
+        "yes_ask_size_fp": "0.00",
+        "yes_bid_dollars": "0.0000",
+        "yes_bid_size_fp": "0.00",
+        "yes_sub_title": "Over 6.5 goals scored"
+      },
+      "event": {
+        "category": "Sports",
+        "collateral_return_type": "",
+        "event_ticker": "KXBRASILEIROBTOTAL-26AUG16AMGATH",
+        "exchange_index": 0,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "competition": "Brasileiro Serie B",
+          "competition_scope": "Point Total"
+        },
+        "series_ticker": "KXBRASILEIROBTOTAL",
+        "settlement_sources": [
+          {
+            "name": "Fox Sports",
+            "url": "https://www.foxsports.com"
+          },
+          {
+            "name": "ESPN",
+            "url": "https://espn.com"
+          }
+        ],
+        "strike_period": "",
+        "sub_title": "AMG vs ATH (Aug 16)",
+        "title": "America FC vs Athletic Club Sjdr: Total Goals"
+      }
+    },
+    "unsupported": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-10-31T06:22:00Z",
+        "created_time": "2026-10-17T03:32:48.928361Z",
+        "custom_strike": {
+          "esports_competitor": "05f692cd-4d6e-4a74-ac78-15e426ffd954"
+        },
+        "early_close_condition": "This market will close and expire after a winner is declared.",
+        "event_ticker": "KXESOCCERGAME-26OCT170222MORDSTRU",
+        "exchange_index": 0,
+        "expected_expiration_time": "2026-10-17T09:22:00Z",
+        "expiration_time": "2026-10-31T06:22:00Z",
+        "expiration_value": "",
+        "last_price_dollars": "0.0000",
+        "latest_expiration_time": "2026-10-31T06:22:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "1.0000",
+        "no_bid_dollars": "0.0100",
+        "no_sub_title": "Tie",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-10-17T09:22:00Z",
+        "open_interest_fp": "0.00",
+        "open_time": "2026-10-17T03:33:00Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "0.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "linear_cent",
+        "price_ranges": [
+          {
+            "end": "1.0000",
+            "start": "0.0000",
+            "step": "0.0100"
+          }
+        ],
+        "result": "",
+        "rules_primary": "If Stade Brestois 29 (Strudl) and Toulouse FC (Mordor) tie in the Toulouse FC (Mordor) vs Stade Brestois 29 (Strudl) professional Valhalla Cup 4 2026 Week #42 eSoccer match originally scheduled for Oct 17, 2026 at 2:22 AM EDT, then the market resolves to Yes.",
+        "rules_secondary": "This market is based on the outcome after 90 minutes plus stoppage time. This does not include extra time or penalties. If the match is cancelled or postponed more than 2 weeks from its originally scheduled start, all markets will resolve to $0.33. If the match is postponed but begins within 2 weeks of its originally scheduled start time, the market will remain open and resolve based on the official final result.\n\nKalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 180,
+        "status": "active",
+        "strike_type": "structured",
+        "ticker": "KXESOCCERGAME-26OCT170222MORDSTRU-TIE",
+        "title": "Game ends in a tie",
+        "updated_time": "2026-10-17T03:33:00.187689Z",
+        "volume_24h_fp": "0.00",
+        "volume_fp": "0.00",
+        "yes_ask_dollars": "0.9900",
+        "yes_ask_size_fp": "20.00",
+        "yes_bid_dollars": "0.0000",
+        "yes_bid_size_fp": "0.00",
+        "yes_sub_title": "Tie"
+      },
+      "event": {
+        "category": "Sports",
+        "collateral_return_type": "MECNET",
+        "event_ticker": "KXESOCCERGAME-26OCT170222MORDSTRU",
+        "exchange_index": 0,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": true,
+        "product_metadata": {
+          "competition": "eSoccer",
+          "competition_scope": "Game"
+        },
+        "series_ticker": "KXESOCCERGAME",
+        "settlement_sources": [
+          {
+            "name": "DRAFTED.GG",
+            "url": "https://drafted.gg/"
+          }
+        ],
+        "strike_period": "",
+        "sub_title": "MORD vs STRU (Oct 17)",
+        "title": "eSoccer: Toulouse FC (Mordor) vs Stade Brestois 29 (Strudl)"
+      }
+    },
+    "settled": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-10-17T03:30:00Z",
+        "created_time": "2026-10-15T20:01:36.994295Z",
+        "custom_strike": {
+          "round_digits": "2"
+        },
+        "event_ticker": "KXBTC15M-26OCT162330",
+        "exchange_index": 2,
+        "expected_expiration_time": "2026-10-17T03:35:00Z",
+        "expiration_time": "2026-10-24T03:30:00Z",
+        "expiration_value": "81469.24",
+        "floor_strike": 81340.25,
+        "last_price_dollars": "0.9990",
+        "latest_expiration_time": "2026-10-24T03:30:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "1.0000",
+        "no_bid_dollars": "0.0000",
+        "no_sub_title": "Target price: TBD",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-10-17T03:35:00Z",
+        "open_interest_fp": "1042303.52",
+        "open_time": "2026-10-17T03:15:00Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "0.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "tapered_deci_cent",
+        "price_ranges": [
+          {
+            "end": "0.1000",
+            "start": "0.0000",
+            "step": "0.0010"
+          },
+          {
+            "end": "0.9000",
+            "start": "0.1000",
+            "step": "0.0100"
+          },
+          {
+            "end": "1.0000",
+            "start": "0.9000",
+            "step": "0.0010"
+          }
+        ],
+        "result": "yes",
+        "rules_primary": "If the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:30 PM EDT on Oct 16, 2026 is at least the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:15 PM EDT on October 16, 2026, then the market resolves to Yes.",
+        "rules_secondary": "Not all cryptocurrency price data is the same. While checking a source like Google or Coinbase may help guide your decision, the price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices, rounded to the nearest 2 decimal places.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 1,
+        "settlement_ts": "2026-10-17T03:30:01.821169Z",
+        "settlement_value_dollars": "1.0000",
+        "status": "finalized",
+        "strike_type": "greater_or_equal",
+        "ticker": "KXBTC15M-26OCT162330-30",
+        "title": "BTC price up in next 15 mins?",
+        "updated_time": "2026-10-17T03:30:02.153416Z",
+        "volume_24h_fp": "3057898.64",
+        "volume_fp": "3057898.64",
+        "yes_ask_dollars": "1.0000",
+        "yes_ask_size_fp": "0.00",
+        "yes_bid_dollars": "0.0000",
+        "yes_bid_size_fp": "0.00",
+        "yes_sub_title": "Target Price: $81,340.25"
+      },
+      "event": {
+        "category": "Crypto",
+        "collateral_return_type": "",
+        "event_ticker": "KXBTC15M-26OCT162330",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "fifteen_min"
+        },
+        "series_ticker": "KXBTC15M",
+        "settlement_sources": [
+          {
+            "name": "CF Benchmarks",
+            "url": "https://www.cfbenchmarks.com/"
+          }
+        ],
+        "strike_date": "2026-10-17T03:30:00Z",
+        "strike_period": "",
+        "sub_title": "Oct 16 - 11:15PM EDT to 11:30PM EDT",
+        "title": "BTC 15 min · $81,340.25 target"
+      }
+    },
+    "closed": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-10-17T03:37:57Z",
+        "created_time": "2026-10-17T03:12:52.756304Z",
+        "custom_strike": {
+          "football_team": "15f75603-cb42-4000-8110-af3c069e7c1d"
+        },
+        "early_close_condition": "This market will close and expire early if the event occurs.",
+        "event_ticker": "KXNCAAFTEAMTOTAL-26OCT16WASHPUR",
+        "exchange_index": 0,
+        "expected_expiration_time": "2026-10-17T06:00:00Z",
+        "expiration_time": "2026-10-19T00:00:00Z",
+        "expiration_value": "Home: 26, Away: 38",
+        "floor_strike": 51.5,
+        "last_price_dollars": "0.0100",
+        "latest_expiration_time": "2026-10-19T00:00:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "1.0000",
+        "no_bid_dollars": "0.0000",
+        "no_sub_title": "Washington over 51.5 points",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-10-17T03:00:00Z",
+        "open_interest_fp": "376.46",
+        "open_time": "2026-10-17T03:15:00Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "0.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "linear_cent",
+        "price_ranges": [
+          {
+            "end": "1.0000",
+            "start": "0.0000",
+            "step": "0.0100"
+          }
+        ],
+        "result": "no",
+        "rules_primary": "If Washington scores over 51.5 points in the Washington vs Purdue college football game originally scheduled for Oct 16, 2026, then the market resolves to Yes.",
+        "rules_secondary": "If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is not started within 48 hours, the market will resolve to a fair price.\n\nKalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the NCAA. All trademarks, logos, and brand names are the property of their respective owners.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 180,
+        "settlement_value_dollars": "0.0000",
+        "status": "determined",
+        "strike_type": "greater",
+        "ticker": "KXNCAAFTEAMTOTAL-26OCT16WASHPUR-WASH52",
+        "title": "Washington over 51.5 points scored",
+        "updated_time": "2026-10-17T03:38:56.648886Z",
+        "volume_24h_fp": "376.46",
+        "volume_fp": "376.46",
+        "yes_ask_dollars": "1.0000",
+        "yes_ask_size_fp": "0.00",
+        "yes_bid_dollars": "0.0000",
+        "yes_bid_size_fp": "0.00",
+        "yes_sub_title": "Washington over 51.5 points"
+      },
+      "event": {
+        "category": "Sports",
+        "collateral_return_type": "",
+        "event_ticker": "KXNCAAFTEAMTOTAL-26OCT16WASHPUR",
+        "exchange_index": 0,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "competition": "NCAA Football",
+          "competition_scope": "Team Total"
+        },
+        "series_ticker": "KXNCAAFTEAMTOTAL",
+        "settlement_sources": [
+          {
+            "name": "ESPN",
+            "url": "https://www.espn.com"
+          },
+          {
+            "name": "NCAA",
+            "url": "https://www.ncaa.com/sports/football/fbs"
+          }
+        ],
+        "strike_period": "",
+        "sub_title": "WASH vs PUR (Oct 16)",
+        "title": "Washington vs Purdue: Team Total"
+      }
+    },
+    "decimal_strike": {
+      "market": {
+        "can_close_early": true,
+        "close_time": "2026-10-17T21:00:00Z",
+        "created_time": "2026-10-16T09:00:55.797578Z",
+        "event_ticker": "KXBTCD-26OCT1717",
+        "exchange_index": 2,
+        "expected_expiration_time": "2026-10-17T21:05:00Z",
+        "expiration_time": "2026-10-24T21:00:00Z",
+        "expiration_value": "",
+        "floor_strike": 91749.99,
+        "last_price_dollars": "0.0100",
+        "latest_expiration_time": "2026-10-24T21:00:00Z",
+        "market_type": "binary",
+        "no_ask_dollars": "1.0000",
+        "no_bid_dollars": "0.9900",
+        "no_sub_title": "$91,750 or above",
+        "notional_value_dollars": "1.0000",
+        "occurrence_datetime": "2026-10-17T21:05:00Z",
+        "open_interest_fp": "3.00",
+        "open_time": "2026-10-16T20:00:00Z",
+        "previous_price_dollars": "0.0000",
+        "previous_yes_ask_dollars": "0.0000",
+        "previous_yes_bid_dollars": "0.0000",
+        "price_level_structure": "linear_cent",
+        "price_ranges": [
+          {
+            "end": "1.0000",
+            "start": "0.0000",
+            "step": "0.0100"
+          }
+        ],
+        "result": "",
+        "rules_primary": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 91749.99 at 5 PM EDT on Oct 17, 2026, then the market resolves to Yes.",
+        "rules_secondary": "Not all cryptocurrency price data is the same. While checking a source like Google or Coinbase may help guide your decision, the price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices.",
+        "settlement_bounds_type": "default",
+        "settlement_timer_seconds": 60,
+        "status": "active",
+        "strike_type": "greater",
+        "subtitle": "$91,750 or above",
+        "ticker": "KXBTCD-26OCT1717-T91749.99",
+        "title": "Bitcoin price on Oct 17, 2026?",
+        "updated_time": "2026-10-16T20:00:00.80112Z",
+        "volume_24h_fp": "3.00",
+        "volume_fp": "3.00",
+        "yes_ask_dollars": "0.0100",
+        "yes_ask_size_fp": "12641.00",
+        "yes_bid_dollars": "0.0000",
+        "yes_bid_size_fp": "0.00",
+        "yes_sub_title": "$91,750 or above"
+      },
+      "event": {
+        "category": "Crypto",
+        "collateral_return_type": "DIRECNET",
+        "event_ticker": "KXBTCD-26OCT1717",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "daily"
+        },
+        "series_ticker": "KXBTCD",
+        "settlement_sources": [
+          {
+            "name": "CF Benchmarks",
+            "url": "https://www.cfbenchmarks.com/data/indices/BRTI?ref=blog.cfbenchmarks.com"
+          }
+        ],
+        "strike_date": "2026-10-17T21:00:00Z",
+        "strike_period": "",
+        "sub_title": "On Oct 17, 2026 at 5pm EDT",
+        "title": "BTC price on Oct 17, 2026 at 5pm EDT?"
+      }
+    }
+  },
+  "series": {
+    "series": {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Crypto"
+      ],
+      "category": "Crypto",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/CRYPTO.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/CRYPTO.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "fifteen_min",
+      "last_updated_ts": "2026-10-08T16:24:37.117847Z",
+      "product_metadata": {
+        "important_info": {
+          "id": "CRYPTO15M-bulk-2026-04-20",
+          "markdown": "**Important information:** The price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices.",
+          "message": "",
+          "title": ""
+        }
+      },
+      "settlement_sources": [
+        {
+          "name": "CF Benchmarks",
+          "url": "https://www.cfbenchmarks.com/"
+        }
+      ],
+      "tags": [
+        "15 min",
+        "Bitcoin",
+        "Crypto",
+        "BTC"
+      ],
+      "ticker": "KXBTC15M",
+      "title": "Bitcoin price up down"
+    }
+  },
+  "grids": {
+    "whole": [
+      {
+        "start": "0.0000",
+        "end": "1.0000",
+        "step": "0.0100"
+      }
+    ],
+    "subcent": [
+      {
+        "start": "0.0000",
+        "end": "1.0000",
+        "step": "0.0010"
+      }
+    ],
+    "half": [
+      {
+        "start": "0.0000",
+        "end": "1.0000",
+        "step": "0.0050"
+      }
+    ],
+    "nonuniform": [
+      {
+        "start": "0.0000",
+        "end": "0.1000",
+        "step": "0.0020"
+      },
+      {
+        "start": "0.1000",
+        "end": "0.9000",
+        "step": "0.0050"
+      },
+      {
+        "start": "0.9000",
+        "end": "1.0000",
+        "step": "0.0020"
+      }
+    ],
+    "float_boundary": [
+      {
+        "start": "0.0100",
+        "end": "0.1000",
+        "step": "0.0100"
+      }
+    ]
+  },
+  "invalid_grids": {
+    "empty": [],
+    "overlap": [
+      {
+        "start": "0",
+        "end": "0.9",
+        "step": "0.01"
+      },
+      {
+        "start": "0.5",
+        "end": "1",
+        "step": "0.01"
+      }
+    ],
+    "negative": [
+      {
+        "start": "-0.1",
+        "end": "1",
+        "step": "0.01"
+      }
+    ],
+    "zero_step": [
+      {
+        "start": "0",
+        "end": "1",
+        "step": "0"
+      }
+    ],
+    "excess_precision": [
+      {
+        "start": "0",
+        "end": "1",
+        "step": "0.0000001"
+      }
+    ]
+  },
+  "selected_legs": [
+    {
+      "event_ticker": "SELECTED-EVENT",
+      "market_ticker": "SELECTED-MARKET",
+      "side": "yes",
+      "yes_settlement_value_dollars": "0.2500"
+    }
+  ]
+}

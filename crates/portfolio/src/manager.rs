@@ -386,11 +386,6 @@ impl AccountsManager {
         orders_open: &[&OrderAny],
         ts_event: UnixNanos,
     ) -> Option<AccountState> {
-        if orders_open.is_empty() {
-            account.clear_balance_locked(instrument.id());
-            return Some(self.generate_unleveraged_account_state(account, ts_event));
-        }
-
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
 
         for order in orders_open {
@@ -402,76 +397,36 @@ impl AccountsManager {
             );
             assert!(order.is_open(), "Order is not open");
 
-            if order.price().is_none() && order.trigger_price().is_none() {
+            let Some(price) = order.price().or_else(|| order.trigger_price()) else {
+                continue;
+            };
+
+            let cash_disposal = order.is_sell() && price.is_negative();
+            if order.is_reduce_only() && !cash_disposal {
                 continue;
             }
 
-            if order.is_reduce_only() {
-                continue; // Does not contribute to locked balance
-            }
-
-            let price = if order.price().is_some() {
-                order.price()
-            } else {
-                order.trigger_price()
-            };
-
-            let mut locked = match account.calculate_balance_locked(
-                instrument,
-                order.order_side(),
-                order.leaves_qty(),
-                price?,
-                None,
-            ) {
-                Ok(locked) => locked,
+            let amounts = match Self::cash_order_locks(account, instrument, order, price) {
+                Ok(amounts) => amounts,
                 Err(e) => {
                     log::error!("Cannot calculate balance locked: {e}");
                     return None;
                 }
             };
 
-            if let Some(base_curr) = account.base_currency() {
-                if let Some(xrate) = self.calculate_xrate_to_base(
-                    account.base_currency(),
-                    instrument,
-                    locked.currency,
-                    order.order_side(),
-                ) {
-                    let amount = locked.as_decimal().checked_mul(xrate).or_else(|| {
-                        log::error!(
-                            "Cannot calculate balance locked: exchange-rate conversion overflow"
-                        );
-                        None
-                    })?;
-
-                    locked = match Money::from_decimal_native(amount, base_curr) {
-                        Ok(money) => money,
-                        Err(e) => {
-                            log::error!("Cannot calculate balance locked: {e}");
-                            return None;
-                        }
-                    };
-                } else {
-                    log::error!(
-                        "Cannot calculate balance locked: insufficient data for {}/{}",
-                        locked.currency,
-                        base_curr
-                    );
-                    return None;
-                }
-            }
-
-            if let Some(total) = total_locked.get_mut(&locked.currency) {
-                let Some(sum) = total.checked_add(locked) else {
+            for locked in amounts.into_iter().flatten() {
+                let locked =
+                    self.convert_balance_locked(account, instrument, order.order_side(), locked)?;
+                let total = total_locked
+                    .entry(locked.currency)
+                    .or_insert_with(|| Money::zero(locked.currency));
+                *total = total.checked_add(locked).or_else(|| {
                     log::error!(
                         "Cannot calculate balance locked: {} total exceeds Money bounds",
                         locked.currency
                     );
-                    return None;
-                };
-                *total = sum;
-            } else {
-                total_locked.insert(locked.currency, locked);
+                    None
+                })?;
             }
         }
 
@@ -1402,6 +1357,81 @@ impl AccountsManager {
         )
     }
 
+    fn cash_order_locks(
+        account: &CashAccount,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        price: Price,
+    ) -> anyhow::Result<[Option<Money>; 2]> {
+        let locked = if order.is_reduce_only() {
+            None
+        } else {
+            Some(account.calculate_balance_locked(
+                instrument,
+                order.order_side(),
+                order.leaves_qty(),
+                price,
+                None,
+            )?)
+        };
+
+        let disposal = if order.is_sell()
+            && price.is_negative()
+            && (order.is_reduce_only() || instrument.base_currency().is_some())
+        {
+            Some(account.calculate_balance_locked(
+                instrument,
+                OrderSide::Buy,
+                order.leaves_qty(),
+                -price,
+                None,
+            )?)
+        } else {
+            None
+        };
+
+        Ok([locked, disposal])
+    }
+
+    fn convert_balance_locked(
+        &self,
+        account: &CashAccount,
+        instrument: &InstrumentAny,
+        side: OrderSide,
+        locked: Money,
+    ) -> Option<Money> {
+        let Some(base_curr) = account.base_currency() else {
+            return Some(locked);
+        };
+
+        let Some(xrate) = self.calculate_xrate_to_base(
+            account.base_currency(),
+            instrument,
+            locked.currency,
+            side,
+        ) else {
+            log::error!(
+                "Cannot calculate balance locked: insufficient data for {}/{}",
+                locked.currency,
+                base_curr
+            );
+            return None;
+        };
+
+        let amount = locked.as_decimal().checked_mul(xrate).or_else(|| {
+            log::error!("Cannot calculate balance locked: exchange-rate conversion overflow");
+            None
+        })?;
+
+        match Money::from_decimal_native(amount, base_curr) {
+            Ok(money) => Some(money),
+            Err(e) => {
+                log::error!("Cannot calculate balance locked: {e}");
+                None
+            }
+        }
+    }
+
     fn calculate_xrate_to_base(
         &self,
         base_currency: Option<Currency>,
@@ -1507,7 +1537,7 @@ fn base_account_mut(account: &mut AccountAny) -> &mut BaseAccount {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     use nautilus_common::{cache::Cache, clock::VirtualClock};
     use nautilus_model::{
@@ -1528,8 +1558,8 @@ mod tests {
         instruments::{
             CryptoFuture, CurrencyPair, Instrument, InstrumentAny,
             stubs::{
-                audusd_sim, betting, currency_pair_btcusdt, currency_pair_ethusdt, default_fx_ccy,
-                ethbtc_quanto,
+                audusd_sim, betting, commodity_gold, crypto_future_btcusdt, currency_pair_btcusdt,
+                currency_pair_ethusdt, default_fx_ccy, ethbtc_quanto,
             },
         },
         orders::{OrderAny, OrderTestBuilder},
@@ -1540,8 +1570,138 @@ mod tests {
         },
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    #[case::whole("1", "-6.00", dec!(6))]
+    #[case::fractional("0.3", "-0.02", dec!(0.006))]
+    #[case::subcurrency("0.3", "-0.00000001", dec!(0.000000003))]
+    fn test_update_orders_locks_negative_price_disposal(
+        #[case] quantity: &str,
+        #[case] price: &str,
+        #[case] expected: Decimal,
+        #[values(false, true)] base_asset: bool,
+        #[values(false, true)] reduce_only: bool,
+    ) {
+        let instrument = if base_asset {
+            InstrumentAny::CryptoFuture(crypto_future_btcusdt(
+                8,
+                6,
+                Price::from("0.00000001"),
+                Quantity::from("0.000001"),
+            ))
+        } else {
+            let mut commodity = commodity_gold();
+            commodity.price_precision = 8;
+            commodity.price_increment = Price::from("0.00000001");
+            commodity.size_precision = 1;
+            commodity.size_increment = Quantity::from("0.1");
+            InstrumentAny::Commodity(commodity)
+        };
+
+        let quantity = Quantity::from(quantity);
+        let quote = instrument.quote_currency();
+        let account_id = AccountId::from("SIM-001");
+        let quote_total = Money::from_decimal(dec!(1000), quote).unwrap();
+        let mut balances = vec![AccountBalance::new(
+            quote_total,
+            Money::zero(quote),
+            quote_total,
+        )];
+
+        if let Some(base) = instrument.base_currency() {
+            let total = Money::from_decimal(dec!(2), base).unwrap();
+            balances.push(AccountBalance::new(total, Money::zero(base), total));
+        }
+
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            balances,
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let account = AccountAny::Cash(CashAccount::new(state, true, false));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let manager = AccountsManager::new(clock, cache);
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(quantity)
+            .price(Price::from(price))
+            .reduce_only(reduce_only)
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .build();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        let accepted = OrderAcceptedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .build();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        let (account, state) = manager
+            .update_orders(&account, &instrument, &[&order], UnixNanos::default())
+            .unwrap();
+
+        let locked = Money::from_decimal_native(expected, quote).unwrap();
+        let free = quote_total - locked;
+        assert_eq!(account.balance_total(Some(quote)), Some(quote_total));
+        assert_eq!(account.balance_locked(Some(quote)), Some(locked));
+        assert_eq!(account.balance_free(Some(quote)), Some(free));
+        let quote_balance = state
+            .balances
+            .iter()
+            .find(|balance| balance.currency == quote)
+            .unwrap();
+        assert_eq!(
+            *quote_balance,
+            AccountBalance::new(quote_total, locked, free)
+        );
+        assert_eq!(state.balances.len(), if base_asset { 2 } else { 1 });
+
+        if let Some(base) = instrument.base_currency() {
+            let total = Money::from_decimal(dec!(2), base).unwrap();
+
+            let locked = Money::from_decimal(
+                if reduce_only {
+                    dec!(0)
+                } else {
+                    quantity.as_decimal()
+                },
+                base,
+            )
+            .unwrap();
+
+            let free = total - locked;
+            assert_eq!(account.balance_total(Some(base)), Some(total));
+            assert_eq!(account.balance_locked(Some(base)), Some(locked));
+            assert_eq!(account.balance_free(Some(base)), Some(free));
+            let balance = state
+                .balances
+                .iter()
+                .find(|balance| balance.currency == base)
+                .unwrap();
+            assert_eq!(*balance, AccountBalance::new(total, locked, free));
+        }
+    }
 
     #[rstest]
     fn test_update_balance_locked_with_base_currency_multiple_orders() {
@@ -1764,7 +1924,7 @@ mod tests {
             .unwrap();
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
-        let events_before = cash.base.events.clone();
+        let events_before = Arc::clone(&cash.base.events);
         instrument.quote_currency = Currency::new(
             "USD",
             usd.precision + 1,
@@ -1823,7 +1983,7 @@ mod tests {
         );
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
-        let events_before = cash.base.events.clone();
+        let events_before = Arc::clone(&cash.base.events);
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1893,7 +2053,7 @@ mod tests {
         );
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
-        let events_before = betting_account.base.events.clone();
+        let events_before = Arc::clone(&betting_account.base.events);
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Sell)
@@ -2131,7 +2291,7 @@ mod tests {
             .unwrap();
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
-        let events_before = betting_account.base.events.clone();
+        let events_before = Arc::clone(&betting_account.base.events);
         instrument.currency = Currency::new(
             "GBP",
             gbp.precision + 1,
@@ -2539,7 +2699,7 @@ mod tests {
         );
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
@@ -2844,7 +3004,7 @@ mod tests {
             .unwrap();
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         #[allow(
             clippy::useless_conversion,
@@ -2899,7 +3059,7 @@ mod tests {
             .unwrap();
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         let quantity_raw = MONEY_RAW_MAX.try_into().unwrap();
         let mut first = OrderTestBuilder::new(OrderType::Market)

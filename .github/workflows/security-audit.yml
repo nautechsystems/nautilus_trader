@@ -6,6 +6,7 @@ name: security-audit
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
 #   - Calls from build.yml: audit jobs run for audit-relevant changes, while
 #     test-ci and test-pre-commit force every audit job and nightly skips them.
+#     A valid development override skips the audit jobs and leaves the gate green.
 #   - Pull requests not targeting develop: GitHub path filters create a workflow
 #     run only when audit-relevant paths change.
 #   - Pushes to test-security: GitHub path filters create a workflow run only
@@ -61,8 +62,7 @@ on:
       - scripts/security-audit.py
       - scripts/tool-version.sh
       - scripts/uv-version.sh
-      - scripts/ci/check-security-audit-result.sh
-      - scripts/ci/check-security-gate-result.bash
+      - scripts/ci/check-security-gate-override.bash
       - scripts/ci/configure-r2-aws.bash
       - scripts/ci/create-docker-manifest.bash
       - scripts/ci/merge-nightly.bash
@@ -86,17 +86,46 @@ on:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
-# The two audit job names and their "Run ..." step names are checked by
-# scripts/ci/check-security-audit-result.sh. Keep both files in sync.
 jobs:
+  override:
+    name: security override
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-22.04
+    environment: r2-develop
+    outputs:
+      override_active: ${{ steps.override.outputs.override_active }}
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check security gate override
+        id: override
+        env:
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+        run: bash scripts/ci/check-security-gate-override.bash
+
   changes:
     name: changes
+    needs: override
+    if: >-
+      !cancelled() &&
+      (needs.override.result == 'success' || needs.override.result == 'skipped')
     runs-on: ubuntu-22.04
     outputs:
       audit_needed: ${{ steps.filter.outputs.audit_needed }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -115,7 +144,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           FORCE_AUDIT: ${{ inputs.force }}
-          SKIP_AUDIT: ${{ inputs.skip }}
+          SKIP_AUDIT: ${{ inputs.skip || needs.override.outputs.override_active == 'true' }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
@@ -131,7 +160,9 @@ jobs:
   zizmor:
     name: zizmor
     needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -139,7 +170,7 @@ jobs:
       security-events: write
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -164,7 +195,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: true
@@ -185,7 +216,7 @@ jobs:
           (github.event_name != 'pull_request' ||
           !github.event.pull_request.head.repo.fork)
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -193,11 +224,13 @@ jobs:
   supply-chain:
     name: supply-chain
     needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -242,7 +275,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ steps.uv-version.outputs.version }}
           prune-cache: true
@@ -271,7 +304,7 @@ jobs:
       SUPPLY_CHAIN_RESULT: ${{ needs.supply-chain.result }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-

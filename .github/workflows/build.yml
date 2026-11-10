@@ -59,7 +59,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
-      recovery-only: ${{ steps.plan.outputs.recovery_only }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
       github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
@@ -71,7 +70,7 @@ jobs:
       tag_name: ${{ steps.release-tag.outputs.tag_name }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -99,8 +98,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
-          REF_NAME: ${{ github.ref_name }}
-          CI_RELEASE_REPAIR_TREE: ${{ vars.CI_RELEASE_REPAIR_TREE }}
         run: bash scripts/ci/plan.sh
 
       - name: Plan wheel publication
@@ -145,7 +142,7 @@ jobs:
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -173,7 +170,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: false
@@ -241,7 +238,7 @@ jobs:
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -286,7 +283,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -300,7 +297,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
@@ -370,7 +367,7 @@ jobs:
     steps: &python-build-steps
       - name: Harden runner
         # https://github.com/step-security/harden-runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -391,7 +388,9 @@ jobs:
 
       - name: Select Python build environment
         env:
-          PYTHON_VERSION: ${{ github.job == 'build-python314' && '3.14' || '3.13' }}
+          PYTHON_VERSION: >-
+            ${{ github.job == 'build-python315' && '3.15'
+            || github.job == 'build-python314' && '3.14' || '3.13' }}
           BUILD_ENVIRONMENT: ${{ runner.environment }}
         run: |
           echo "PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_ENV"
@@ -478,6 +477,17 @@ jobs:
     services: *python-build-services
     steps: *python-build-steps
 
+  build-python315:
+    if: *python-build-condition
+    needs: *python-build-needs
+    name: build - python 3.15 (ubuntu-22.04)
+    runs-on: *python-build-runner
+    permissions: *python-build-permissions
+    defaults: *python-build-defaults
+    env: *python-build-env
+    services: *python-build-services
+    steps: *python-build-steps
+
   python-checks:
     name: python checks
     if: always() && github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/test-pre-commit'
@@ -486,6 +496,8 @@ jobs:
       - pre-commit
       - test-scripts
       - build
+      - build-python314
+      - build-python315
     runs-on: ubuntu-22.04
     env:
       PLAN_RESULT: ${{ needs.plan.result }}
@@ -493,9 +505,11 @@ jobs:
       SCRIPT_TESTS_RESULT: ${{ needs.test-scripts.result }}
       RUN_TESTS: ${{ needs.plan.outputs.run-tests }}
       BUILD_RESULT: ${{ needs.build.result }}
+      BUILD_PYTHON314_RESULT: ${{ needs.build-python314.result }}
+      BUILD_PYTHON315_RESULT: ${{ needs.build-python315.result }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -583,7 +597,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -666,6 +680,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: depot-ubuntu-22.04-arm-8
     defaults:
       run:
@@ -676,7 +691,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -737,6 +752,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: macos-latest
     defaults:
       run:
@@ -747,7 +763,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -810,6 +826,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: depot-windows-2022-8
     defaults:
       run:
@@ -868,18 +885,18 @@ jobs:
   security-gate-nightly:
     name: security-gate-nightly
     runs-on: ubuntu-latest
-    outputs:
-      result: ${{ steps.result.outputs.result }}
+    environment: r2-nightly
     needs:
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -892,13 +909,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check security gate override
+        id: override
+        env:
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+        run: bash scripts/ci/check-security-gate-override.bash
+
       - name: Install cargo-audit
+        if: steps.override.outputs.override_active != 'true'
         uses: $/.github/actions/cargo-tool-install
         with:
           tool-name: cargo-audit
 
       - name: Run cargo-audit
         id: cargo-audit
+        if: steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: |
           status=0
@@ -907,10 +932,12 @@ jobs:
           exit "$status"
 
       - name: Install osv-scanner
+        if: steps.override.outputs.override_active != 'true'
         run: bash scripts/install-osv-scanner.sh
 
       - name: Run osv-scanner
         id: osv-scan
+        if: steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: |
           "$HOME/.cargo/bin/osv-scanner" scan source \
@@ -923,23 +950,24 @@ jobs:
 
       - name: Check OSV severity
         id: osv-severity
-        if: steps.osv-scan.outcome == 'failure'
+        if: steps.osv-scan.outcome == 'failure' && steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: bash scripts/ci/osv-severity-gate.sh osv-results.json
 
-      - name: Record security gate result
-        id: result
+      - name: Require successful security gate
         if: always()
         env:
+          OVERRIDE_ACTIVE: ${{ steps.override.outputs.override_active }}
           CARGO_AUDIT_OUTCOME: ${{ steps.cargo-audit.outcome }}
           OSV_SCAN_OUTCOME: ${{ steps.osv-scan.outcome }}
           OSV_SEVERITY_OUTCOME: ${{ steps.osv-severity.outcome }}
         run: |
-          if [ "$CARGO_AUDIT_OUTCOME" = "success" ] &&
-            { [ "$OSV_SCAN_OUTCOME" = "success" ] || [ "$OSV_SEVERITY_OUTCOME" = "success" ]; }; then
-            echo "result=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failure" >> "$GITHUB_OUTPUT"
+          if [ "$OVERRIDE_ACTIVE" = "true" ]; then
+            echo "Security audits skipped by override"
+          elif [ "$CARGO_AUDIT_OUTCOME" != "success" ] ||
+            { [ "$OSV_SCAN_OUTCOME" != "success" ] && [ "$OSV_SEVERITY_OUTCOME" != "success" ]; }; then
+            echo "::error::Nightly security gate failed"
+            exit 1
           fi
 
   publish:
@@ -947,6 +975,7 @@ jobs:
       - plan
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -962,13 +991,12 @@ jobs:
       !cancelled() &&
       needs.build.result == 'success' &&
       needs.build-python314.result == 'success' &&
+      needs.build-python315.result == 'success' &&
       needs.build-linux-arm.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
       needs.rust-tests-linux-x86.result == 'success' &&
-      (needs.security-audit.result == 'success' ||
-       (needs.plan.outputs.publish_development == 'true' &&
-        needs.security-audit.result == 'failure')) &&
+      needs.security-audit.result == 'success' &&
       github.event_name == 'push' &&
       needs.plan.outputs.publish_r2 == 'true' &&
       (needs.plan.outputs.wheel_matrix != 'nightly' ||
@@ -988,7 +1016,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1004,22 +1032,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require successful nightly security gate
-        if: needs.plan.outputs.wheel_matrix == 'nightly'
-        env:
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
-          SECURITY_GATE_RESULT: ${{ needs.security-gate-nightly.outputs.result }}
-          SECURITY_GATE_SHA: ${{ github.sha }}
-        run: bash scripts/ci/check-security-gate-result.bash
-
-      - name: Require successful security audit
-        if: needs.security-audit.result != 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
-        run: bash scripts/ci/check-security-audit-result.sh
-
       - name: Set up Python
         # https://github.com/actions/setup-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -1032,7 +1044,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
@@ -1072,7 +1084,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1102,7 +1114,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1133,17 +1145,14 @@ jobs:
     name: release cargo publish preflight
     runs-on: ubuntu-latest
     needs:
-      - plan
       - cargo-deny
       - cargo-vet
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-      needs.plan.outputs.recovery-only != 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1179,18 +1188,15 @@ jobs:
 
   release-docs-features-preflight:
     name: release docs/features preflight
-    needs: plan
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-      needs.plan.outputs.recovery-only != 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
     env:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/release-docs-features-preflight
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1215,7 +1221,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-hack
 
@@ -1236,6 +1242,7 @@ jobs:
       - plan
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -1254,7 +1261,7 @@ jobs:
       tag_name: ${{ steps.metadata.outputs.tag_name }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1339,7 +1346,7 @@ jobs:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1369,7 +1376,7 @@ jobs:
 
       - name: Upload sdist artifact
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-sdist
           path: dist/nautilus_trader-*.tar.gz
@@ -1390,7 +1397,7 @@ jobs:
       contents: write # Required for uploading release assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1405,7 +1412,7 @@ jobs:
 
       - name: Download sdist artifact
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-sdist
           path: release-sdist
@@ -1428,6 +1435,7 @@ jobs:
     needs:
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -1443,7 +1451,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.tag-release.outputs.package_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1470,14 +1478,14 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
 
       - name: Download built wheels
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -1510,7 +1518,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1536,7 +1544,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1546,7 +1554,7 @@ jobs:
 
       - name: Download built wheel artifacts
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -1581,7 +1589,7 @@ jobs:
 
       - name: Upload wheel attestation siblings
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-wheel-attestation-siblings
           path: |
@@ -1603,7 +1611,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1666,7 +1674,7 @@ jobs:
       attestations: write # Required for GitHub artifact attestations
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1692,7 +1700,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1702,7 +1710,7 @@ jobs:
 
       - name: Download sdist artifact
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-sdist
           path: dist
@@ -1736,7 +1744,7 @@ jobs:
 
       - name: Upload sdist attestation sibling
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-sdist-attestation-sibling
           path: |
@@ -1761,7 +1769,7 @@ jobs:
       contents: write # Required for uploading release integrity assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1795,7 +1803,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1858,7 +1866,7 @@ jobs:
 
       - name: Download attestation sibling artifacts
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: release-attestations
           pattern: "release-*-attestation-*"
@@ -1874,7 +1882,7 @@ jobs:
       - name: Retain release verification diagnostics
         if: failure() || cancelled()
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-verification
@@ -1905,7 +1913,7 @@ jobs:
       contents: write # Required for publishing the draft release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1963,7 +1971,7 @@ jobs:
       - name: Retain release publication diagnostics
         if: failure() || cancelled()
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-publication
@@ -1986,7 +1994,7 @@ jobs:
       attestations: write
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -2023,7 +2031,7 @@ jobs:
           echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
 
       # https://github.com/astral-sh/setup-uv
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -2084,7 +2092,7 @@ jobs:
 
       - name: Retain recovery attestations
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-recovery-attestations-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -2097,7 +2105,7 @@ jobs:
         if: always()
         continue-on-error: true
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-pypi-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

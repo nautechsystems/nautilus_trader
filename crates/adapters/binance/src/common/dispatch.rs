@@ -19,11 +19,17 @@
 //! identity registered in [`WsDispatchState`]. User data stream messages route by registered identity:
 //! - Tracked orders produce typed order events (OrderAccepted, OrderFilled, etc.).
 //! - Untracked orders fall back to execution reports for reconciliation.
+//!
+//! Tracked terminal orders retain bounded replay evidence: order status reports are suppressed,
+//! and unseen late trades produce fill reports.
+
+use std::sync::Arc;
 
 use ahash::AHashSet;
 use dashmap::{DashMap, mapref::entry::Entry};
+use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{AtomicSet, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
@@ -32,11 +38,13 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
     },
     orders::{Order, OrderAny},
-    reports::OrderStatusReport,
+    reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
 use ustr::Ustr;
+
+pub(crate) const DEDUP_CAPACITY: usize = 10_000;
 
 /// The type of operation a pending WS API request represents.
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +61,7 @@ pub enum PendingOperation {
 /// the pending request is removed and used to emit the correct order event.
 #[derive(Debug, Clone)]
 pub struct PendingRequest {
+    pub command_id: Option<UUID4>,
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub operation: PendingOperation,
@@ -101,22 +110,25 @@ struct AlgoOrderIds {
 ///
 /// Orders with a registered identity produce typed order events. Untracked orders
 /// fall back to execution reports for reconciliation. For restored orders, accepted and filled
-/// state, plus the trade IDs known at restoration, remain available until terminal cleanup,
-/// independent of the bounded deduplication caches.
+/// state remains available until terminal cleanup, independent of the bounded deduplication caches.
+/// Restored trade IDs remain available in the bounded terminal replay evidence after cleanup.
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
+    pub(crate) cancels_unresolved: Arc<AtomicSet<ClientOrderId>>,
     pub(crate) order_lists: DashMap<ClientOrderId, OrderListIdentity>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
     order_updates: DashMap<ClientOrderId, OrderBinding>,
     orders_restored: DashMap<ClientOrderId, RestoredOrderState>,
+    orders_terminal: Mutex<FifoCacheMap<ClientOrderId, TerminalOrderState, DEDUP_CAPACITY>>,
     replacements: DashMap<ClientOrderId, PendingReplacement>,
-    emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
-    filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
+    seen_trade_ids: Arc<Mutex<FifoCache<(Ustr, i64), DEDUP_CAPACITY>>>,
+    emitted_accepted: Mutex<FifoCache<ClientOrderId, DEDUP_CAPACITY>>,
+    filled_orders: Mutex<FifoCache<ClientOrderId, DEDUP_CAPACITY>>,
     /// Cancel-replace request IDs mapped to their `cancelNewClientOrderId`.
     pub cancel_replace_request_ids: DashMap<String, String>,
-    cancel_replace_outcomes: Mutex<FifoCacheMap<String, CancelReplaceOutcome, 10_000>>,
+    cancel_replace_outcomes: Mutex<FifoCacheMap<String, CancelReplaceOutcome, DEDUP_CAPACITY>>,
 }
 
 impl Default for WsDispatchState {
@@ -124,11 +136,14 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
+            cancels_unresolved: Arc::new(AtomicSet::new()),
             order_lists: DashMap::new(),
             algo_order_ids: DashMap::new(),
             order_updates: DashMap::new(),
             orders_restored: DashMap::new(),
+            orders_terminal: Mutex::new(FifoCacheMap::new()),
             replacements: DashMap::new(),
+            seen_trade_ids: Arc::new(Mutex::new(FifoCache::new())),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
             cancel_replace_request_ids: DashMap::new(),
@@ -149,6 +164,10 @@ impl WsDispatchState {
         let Entry::Vacant(entry) = self.order_identities.entry(cid) else {
             return;
         };
+
+        if self.is_terminal(&cid) {
+            return;
+        }
 
         let accepted = order.ts_accepted().is_some();
         self.orders_restored.insert(
@@ -199,6 +218,52 @@ impl WsDispatchState {
         });
     }
 
+    pub(crate) fn restore_terminal_fills(
+        &self,
+        orders: &IndexMap<VenueOrderId, OrderStatusReport>,
+        fills: &[FillReport],
+    ) {
+        for report in orders.values() {
+            let Some(cid) = report
+                .client_order_id
+                .filter(|_| report.order_status.is_closed())
+            else {
+                continue;
+            };
+
+            if self
+                .order_updates
+                .get(&cid)
+                .is_some_and(|binding| binding.superseded.contains(&report.venue_order_id))
+            {
+                continue;
+            }
+
+            self.cleanup_terminal(cid);
+            self.clear_terminal_status_pending(&cid);
+        }
+
+        let mut seen = self.seen_trade_ids.lock();
+
+        for fill in fills {
+            let Some(order) = orders.get(&fill.venue_order_id) else {
+                continue;
+            };
+
+            if !order.order_status.is_closed()
+                || order.instrument_id != fill.instrument_id
+                || fill.ts_event > order.ts_last
+            {
+                continue;
+            }
+
+            if let Ok(trade_id) = fill.trade_id.as_str().parse::<i64>() {
+                let symbol = super::symbol::format_binance_symbol(&fill.instrument_id);
+                seen.add((Ustr::from(symbol.as_str()), trade_id));
+            }
+        }
+    }
+
     pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
         self.orders_restored
             .get(cid)
@@ -235,13 +300,20 @@ impl WsDispatchState {
                 .is_none_or(|binding| binding.current.venue_order_id == venue_order_id)
     }
 
+    pub(crate) fn seen_trade_ids(&self) -> Arc<Mutex<FifoCache<(Ustr, i64), DEDUP_CAPACITY>>> {
+        self.seen_trade_ids.clone()
+    }
+
     pub(crate) fn has_trade(
         &self,
         cid: &ClientOrderId,
         key: &(Ustr, i64),
-        seen_trade_ids: &Mutex<FifoCache<(Ustr, i64), 10_000>>,
+        seen_trade_ids: &Mutex<FifoCache<(Ustr, i64), DEDUP_CAPACITY>>,
     ) -> bool {
         self.orders_restored.get(cid).is_some_and(|order| {
+            let trade_id = TradeId::new(key.1.to_string());
+            order.trade_ids.contains(&trade_id)
+        }) || self.orders_terminal.lock().get(cid).is_some_and(|order| {
             let trade_id = TradeId::new(key.1.to_string());
             order.trade_ids.contains(&trade_id)
         }) || seen_trade_ids.lock().contains(key)
@@ -450,9 +522,21 @@ impl WsDispatchState {
             .and_then(|(_, pending)| pending.canceled)
     }
 
-    /// Removes all tracking state for a terminal order.
+    pub(crate) fn is_terminal(&self, cid: &ClientOrderId) -> bool {
+        self.orders_terminal.lock().contains_key(cid)
+    }
+
+    /// Removes active order context, retaining bounded replay evidence for tracked orders.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
-        self.order_identities.remove(&cid);
+        if self.cancels_unresolved.contains(&cid) {
+            self.cancels_unresolved.remove(&cid);
+        }
+
+        if let Entry::Occupied(entry) = self.order_identities.entry(cid) {
+            self.mark_terminal(cid);
+            entry.remove();
+        }
+
         self.order_lists.remove(&cid);
         self.algo_order_ids.remove(&cid);
         self.order_updates.remove(&cid);
@@ -461,6 +545,82 @@ impl WsDispatchState {
         self.emitted_accepted.lock().remove(&cid);
         self.filled_orders.lock().remove(&cid);
     }
+
+    pub(crate) fn mark_terminal(&self, cid: ClientOrderId) {
+        self.mark_terminal_status(cid, None, None);
+    }
+
+    pub(crate) fn mark_terminal_status_pending(
+        &self,
+        cid: ClientOrderId,
+        strategy_id: StrategyId,
+        qty_pending: Option<Quantity>,
+    ) {
+        self.mark_terminal_status(cid, Some(strategy_id), qty_pending);
+    }
+
+    pub(crate) fn has_terminal_qty_pending(&self, cid: &ClientOrderId) -> bool {
+        self.orders_terminal
+            .lock()
+            .get(cid)
+            .is_some_and(|order| order.qty_pending.is_some())
+    }
+
+    pub(crate) fn resolve_terminal_qty(
+        &self,
+        cid: &ClientOrderId,
+        quantity: Quantity,
+    ) -> Option<StrategyId> {
+        let mut terminal = self.orders_terminal.lock();
+        let order = terminal.get_mut(cid)?;
+        let (strategy_id, previous) = order.qty_pending.take()?;
+        (previous != quantity).then_some(strategy_id)
+    }
+
+    pub(crate) fn take_terminal_status_pending(&self, cid: &ClientOrderId) -> Option<StrategyId> {
+        let mut terminal = self.orders_terminal.lock();
+        let order = terminal.get_mut(cid)?;
+        order.strategy_pending.take()
+    }
+
+    pub(crate) fn clear_terminal_status_pending(&self, cid: &ClientOrderId) {
+        if let Some(order) = self.orders_terminal.lock().get_mut(cid) {
+            order.strategy_pending = None;
+            order.qty_pending = None;
+        }
+    }
+
+    fn mark_terminal_status(
+        &self,
+        cid: ClientOrderId,
+        strategy_pending: Option<StrategyId>,
+        qty_pending: Option<Quantity>,
+    ) {
+        let mut terminal = self.orders_terminal.lock();
+        if terminal.contains_key(&cid) {
+            return;
+        }
+
+        let trade_ids = self
+            .orders_restored
+            .remove(&cid)
+            .map_or_else(AHashSet::new, |(_, order)| order.trade_ids);
+        terminal.insert(
+            cid,
+            TerminalOrderState {
+                trade_ids,
+                strategy_pending,
+                qty_pending: strategy_pending.zip(qty_pending),
+            },
+        );
+    }
+}
+
+#[derive(Debug)]
+struct TerminalOrderState {
+    trade_ids: AHashSet<TradeId>,
+    strategy_pending: Option<StrategyId>,
+    qty_pending: Option<(StrategyId, Quantity)>,
 }
 
 #[derive(Debug)]
@@ -531,7 +691,7 @@ pub fn ensure_accepted_emitted(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::OrderType,
+        enums::{OrderStatus, OrderType},
         events::order::spec::{OrderFilledSpec, OrderUpdatedSpec},
         identifiers::AccountId,
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -582,7 +742,7 @@ mod tests {
         state.insert_accepted(cid);
         state.insert_filled(cid);
 
-        for index in 0..10_001 {
+        for index in 0..=DEDUP_CAPACITY {
             let other = ClientOrderId::from(format!("other-{index}"));
             state.insert_accepted(other);
             state.insert_filled(other);
@@ -605,7 +765,9 @@ mod tests {
         assert!(state.has_emitted_accepted(&cid));
         assert!(state.has_filled(&cid));
 
+        state.cancels_unresolved.insert(cid);
         state.cleanup_terminal(cid);
+        assert!(!state.cancels_unresolved.contains(&cid));
         assert!(!state.order_identities.contains_key(&cid));
         assert!(!state.orders_restored.contains_key(&cid));
         assert!(!state.has_emitted_accepted(&cid));
@@ -643,6 +805,77 @@ mod tests {
     }
 
     #[rstest]
+    fn test_terminal_eviction_preserves_active_context(
+        #[values(false, true)] status_pending: bool,
+    ) {
+        let state = WsDispatchState::default();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from("active-retained"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .quantity(Quantity::from("3"))
+            .price(Price::from("50000.00"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            AccountId::from("BINANCE-001"),
+            VenueOrderId::from("312"),
+        );
+        order.apply(accepted).unwrap();
+        state.restore_order(&order, None, 2);
+        let identity = state
+            .order_identities
+            .get(&order.client_order_id())
+            .unwrap()
+            .clone();
+
+        for index in 0..=DEDUP_CAPACITY {
+            let cid = ClientOrderId::from(format!("terminal-{index}"));
+            state.order_identities.insert(cid, identity.clone());
+            if status_pending {
+                state.mark_terminal_status_pending(
+                    cid,
+                    identity.strategy_id,
+                    Some(identity.quantity),
+                );
+            }
+
+            state.cleanup_terminal(cid);
+        }
+
+        state.cleanup_terminal(ClientOrderId::from("external"));
+        assert_eq!(state.orders_terminal.lock().len(), DEDUP_CAPACITY);
+        assert!(!state.is_terminal(&ClientOrderId::from("terminal-0")));
+        assert!(state.is_terminal(&ClientOrderId::from("terminal-1")));
+        assert_eq!(
+            state.take_terminal_status_pending(&ClientOrderId::from("terminal-0")),
+            None
+        );
+        assert_eq!(
+            state.take_terminal_status_pending(&ClientOrderId::from("terminal-1")),
+            status_pending.then_some(identity.strategy_id)
+        );
+        assert_eq!(
+            state.take_terminal_status_pending(&ClientOrderId::from("terminal-1")),
+            None
+        );
+        assert!(state.is_terminal(&ClientOrderId::from(format!("terminal-{DEDUP_CAPACITY}"))));
+        assert!(!state.is_terminal(&ClientOrderId::from("external")));
+        assert!(!state.is_terminal(&order.client_order_id()));
+        assert_eq!(state.order_identities.len(), 1);
+        assert!(state.has_emitted_accepted(&order.client_order_id()));
+        assert_eq!(
+            state.record_order_update(
+                order.client_order_id(),
+                VenueOrderId::from("312"),
+                Quantity::from("3"),
+                Price::from("50000.00"),
+                None
+            ),
+            Some(false)
+        );
+    }
+
+    #[rstest]
     fn test_restore_order_retains_partial_fills() {
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
@@ -673,6 +906,26 @@ mod tests {
         assert!(state.has_emitted_accepted(&order.client_order_id()));
         assert!(state.has_filled(&order.client_order_id()));
         let seen_trade_ids = Mutex::new(FifoCache::new());
+        assert!(state.has_trade(
+            &order.client_order_id(),
+            &(Ustr::from("BTCUSDT"), 9182),
+            &seen_trade_ids
+        ));
+        assert!(!state.has_trade(
+            &order.client_order_id(),
+            &(Ustr::from("BTCUSDT"), 9183),
+            &seen_trade_ids
+        ));
+        state.mark_terminal(order.client_order_id());
+        state.cleanup_terminal(order.client_order_id());
+        state.cleanup_terminal(order.client_order_id());
+        assert!(state.is_terminal(&order.client_order_id()));
+        state.restore_order(&order, None, 2);
+        assert!(
+            !state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
         assert!(state.has_trade(
             &order.client_order_id(),
             &(Ustr::from("BTCUSDT"), 9182),
@@ -825,5 +1078,37 @@ mod tests {
             None
         );
         assert_eq!(state.reject_replace(order.client_order_id()), Some(pending));
+
+        let mut report = OrderStatusReport::new(
+            account_id,
+            order.instrument_id(),
+            Some(order.client_order_id()),
+            old_id,
+            Some(order.order_side()),
+            order.order_type(),
+            order.time_in_force(),
+            OrderStatus::Canceled,
+            order.quantity(),
+            Quantity::from("0"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        state.restore_terminal_fills(&IndexMap::from([(old_id, report.clone())]), &[]);
+        assert!(!state.is_terminal(&order.client_order_id()));
+        assert!(
+            state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
+        report.venue_order_id = current_id;
+        state.restore_terminal_fills(&IndexMap::from([(current_id, report)]), &[]);
+        assert!(state.is_terminal(&order.client_order_id()));
+        assert!(
+            !state
+                .order_identities
+                .contains_key(&order.client_order_id())
+        );
     }
 }

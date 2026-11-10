@@ -79,6 +79,7 @@ def parse_log(path: Path) -> object:
                 "side": s.group("side").upper(),
                 "qty": float(s.group("qty")),
             }
+
             continue
         a = ACCEPTED.search(line)
         if a:
@@ -88,6 +89,7 @@ def parse_log(path: Path) -> object:
         if c:
             cancels[c.group("id")] = pd.Timestamp(c.group("ts"))
             continue
+
     return (
         pd.DataFrame(requotes),
         submits,
@@ -174,6 +176,7 @@ def panel_b_order_lifetime(submits, accepts, cancels) -> go.Figure:
                     "lifetime_secs": (cancels[cid] - accepts[cid]).total_seconds(),
                 },
             )
+
     if not rows:
         apply_layout(fig, "Order lifetime distribution (no completed orders)", height=420)
         return fig
@@ -208,6 +211,7 @@ def panel_c_orders_per_cycle(submits, accepts) -> go.Figure:
     if not submits:
         apply_layout(fig, "Orders per requote cycle (no orders)", height=420)
         return fig
+
     rows = pd.DataFrame(
         [
             {
@@ -218,6 +222,7 @@ def panel_c_orders_per_cycle(submits, accepts) -> go.Figure:
             for k, v in submits.items()
         ],
     )
+
     rows["bucket"] = rows["ts"].dt.floor("250ms")
     counts = (
         rows.groupby("bucket")
@@ -317,6 +322,7 @@ def main() -> None:
         f"requotes={len(requotes)} submits={len(submits)} "
         f"accepts={len(accepts)} cancels={len(cancels)}",
     )
+
     panels = {
         "panel_a_grid_overlay.png": panel_a_grid_overlay(requotes),
         "panel_b_order_lifetime.png": panel_b_order_lifetime(submits, accepts, cancels),

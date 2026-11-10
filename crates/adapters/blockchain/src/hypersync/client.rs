@@ -109,7 +109,11 @@ impl HyperSyncClient {
     ) -> anyhow::Result<Self> {
         let mut config = hypersync_client::ClientConfig::default();
 
-        let hypersync_url = validate_execution_endpoint(chain.hypersync_url.as_str(), "HyperSync")
+        let hypersync_url = chain
+            .hypersync_url
+            .as_deref()
+            .ok_or_else(|| ConfigError::missing_field("chain.hypersync_url"))?;
+        let hypersync_url = validate_execution_endpoint(hypersync_url, "HyperSync")
             .map_err(|e| ConfigError::invalid_value("chain.hypersync_url", e.to_string()))?;
 
         config.url = hypersync_url.to_string();
@@ -909,7 +913,7 @@ mod tests {
         };
 
         let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
-        chain.hypersync_url = "https://42161.hypersync.xyz".to_string();
+        chain.hypersync_url = Some("https://42161.hypersync.xyz".to_string());
         let chain = Arc::new(chain);
         let error = HyperSyncClient::new(
             Arc::clone(&chain),
@@ -959,9 +963,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_constructor_rejects_missing_endpoint_before_loading_token() {
+        let chain = Arc::new(Chain::new(Blockchain::Saakuru, 7_225_878));
+        let error = HyperSyncClient::new(chain, None, tokio_util::sync::CancellationToken::new())
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::missing_field("chain.hypersync_url")),
+        );
+    }
+
+    #[rstest]
     fn test_constructor_rejects_remote_cleartext_before_loading_token() {
         let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
-        chain.hypersync_url = "http://localhost:8080".to_string();
+        chain.hypersync_url = Some("http://localhost:8080".to_string());
 
         let error = HyperSyncClient::new(
             Arc::new(chain),

@@ -133,13 +133,20 @@ impl Currency {
     /// - If `overwrite` is `true`, any existing currency will be replaced.
     /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
     ///
-    /// This function does not return an error.
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "currency registration only inserts into the registry"
-    )]
+    /// Registered DeFi tokens retain their first name and amount definition, including when
+    /// `overwrite` is `true`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the amount definition conflicts with a registered DeFi token.
     pub fn register(currency: Self, overwrite: bool) -> CorrectnessResult<()> {
         let mut map = CURRENCY_MAP.lock();
+
+        #[cfg(feature = "defi")]
+        if let Some(registered) = crate::defi::currency::check_registration(currency)? {
+            map.insert(registered.code.to_string(), registered);
+            return Ok(());
+        }
 
         if !overwrite && map.contains_key(currency.code.as_str()) {
             // If overwrite is false and the currency already exists, simply return
@@ -206,6 +213,11 @@ impl Currency {
 
             if let Err(e) = Self::register(currency, false) {
                 log::error!("Failed to register currency '{code_str}': {e}");
+
+                #[cfg(feature = "defi")]
+                if let Some((registered, _)) = crate::defi::currency::lookup(currency.code) {
+                    return registered;
+                }
             }
 
             currency

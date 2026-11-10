@@ -104,7 +104,8 @@ mod macros;
 
 #[doc(hidden)]
 pub mod _macro_reexports {
-    pub use nautilus_common::actor::{DataActorCore, DataActorNative};
+    pub use anyhow;
+    pub use nautilus_common::actor::{DataActor, DataActorCore, DataActorNative};
 }
 
 pub mod algorithm;
@@ -114,6 +115,9 @@ pub mod strategy;
 
 #[cfg(feature = "examples")]
 pub mod examples;
+
+#[cfg(test)]
+mod cache_database;
 
 pub use algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,

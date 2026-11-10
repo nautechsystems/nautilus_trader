@@ -68,6 +68,8 @@ class BetfairDataClientConfig:
     def subscribe_cricket_data(self) -> bool: ...
     @property
     def book_snapshot_timeout_secs(self) -> int: ...
+    @property
+    def certs_dir(self) -> str | None: ...
     def __init__(
         self,
         account_currency: str | None = None,
@@ -97,6 +99,7 @@ class BetfairDataClientConfig:
         subscribe_race_data: bool = False,
         subscribe_cricket_data: bool = False,
         book_snapshot_timeout_secs: int | None = None,
+        certs_dir: str | None = None,
     ) -> None: ...
     @property
     def username(self) -> str | None: ...
@@ -148,6 +151,8 @@ class BetfairExecutionClientConfig:
     def use_market_version(self) -> bool: ...
     @property
     def stream_gap_recovery_lookback_mins(self) -> int: ...
+    @property
+    def certs_dir(self) -> str | None: ...
     def __init__(
         self,
         account_id: model.AccountId | None = None,
@@ -173,6 +178,7 @@ class BetfairExecutionClientConfig:
         reconcile_market_ids: typing.Sequence[str] | None = None,
         use_market_version: bool = False,
         stream_gap_recovery_lookback_mins: int = 10,
+        certs_dir: str | None = None,
     ) -> None: ...
     @property
     def username(self) -> str | None: ...

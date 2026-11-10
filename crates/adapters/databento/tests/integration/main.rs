@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "live")]
-#[path = "../common/mod.rs"]
-mod common;
+mod mbo_promotion;
+mod python;
 
 #[cfg(feature = "live")]
 mod batches;
+
+#[cfg(feature = "live")]
+#[path = "../common/mod.rs"]
+mod common;
 #[cfg(feature = "live")]
 mod feed_handler;
-mod python;

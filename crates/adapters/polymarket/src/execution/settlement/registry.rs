@@ -17,9 +17,12 @@
 //! One synchronized record per venue trade tracks venue settlement separately from per-leg core
 //! application. The registry is the sole adapter authority for fill creation and correction:
 //! stream evidence and targeted terminal REST results transition records through the settled
-//! state machine, observed core events resolve pending applications, and reconciliation report
-//! generation is gated on unresolved evidence. Terminal, pending, and hard-faulted records are
-//! retained for the lifetime of the initialized client; capacity exhaustion faults the client.
+//! state machine, and observed core events resolve pending applications. Fill, position, and
+//! mass-status reports stay gated on unresolved evidence. Order-status reports stay available
+//! while a leg only awaits application. Hydration, a hard fault, a quarantine, an owed REST
+//! read, an unknown submit, or a post-reconnect trade read still fail them. Terminal, pending,
+//! and hard-faulted records are retained for the lifetime of the initialized client; capacity
+//! exhaustion faults the client.
 //!
 //! Observed fills that carry no venue trade ID (maker fills rebuilt from reconciliation reports)
 //! are held as unbound legs keyed by their deterministic leg trade ID, and move into their trade
@@ -39,7 +42,7 @@ use nautilus_model::{
     reports::FillReport,
     types::Money,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -51,6 +54,12 @@ use super::{
     },
 };
 use crate::common::enums::PolymarketTradeStatus;
+
+#[derive(Default)]
+pub(crate) struct CollectedFillReports {
+    pub(crate) reports: Vec<FillReport>,
+    pub(crate) venue_trade_ids: AHashMap<TradeId, String>,
+}
 
 /// Registry state guarded by one mutex.
 ///
@@ -585,6 +594,15 @@ impl SettlementRegistry {
         self.inner.lock().settled_on_arrival.contains(trade_id)
     }
 
+    /// Locks settlement authority until the returned view is dropped.
+    ///
+    /// Acquire collateral locks first when using the view to release spend.
+    pub(crate) fn confirmed_fills(&self) -> ConfirmedFills<'_> {
+        ConfirmedFills {
+            inner: self.inner.lock(),
+        }
+    }
+
     /// Returns whether the trade reached a confirmed settlement (stream or REST).
     ///
     /// A hard fault does not clear this outcome. Terminal bookkeeping uses
@@ -653,14 +671,16 @@ impl SettlementRegistry {
     ///
     /// Contradictory retained evidence fails the report closed; only a targeted complete-trade
     /// REST result may transition or hard-fault the trade.
-    /// Retained leg economics take precedence over non-terminal REST copies.
+    /// Retained leg economics take precedence over non-terminal REST copies. Construction does not
+    /// mark the fill settled for collateral; callers pass accepted reports to
+    /// [`Self::accept_fill_reports`].
     pub(crate) fn build_fill_report(
         &self,
         venue_trade_id: &str,
         incoming: &AdmittedLeg,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         anyhow::ensure!(
             inner.client_fault.is_none(),
             "settlement registry is faulted"
@@ -715,10 +735,90 @@ impl SettlementRegistry {
             }
         }
 
-        // Reconciliation emits this report after the trade is confirmed, so collateral must not
-        // lock it against a snapshot that already excludes the spend.
-        inner.settled_on_arrival.insert(incoming.trade_id);
         Ok(report)
+    }
+
+    /// Revalidates collected fills against current evidence and marks them settled for collateral.
+    ///
+    /// Reconciliation emits these reports after confirmation, so collateral accounting must not
+    /// lock their spend against a snapshot that already excludes it.
+    pub(crate) fn accept_fill_reports(
+        &self,
+        collected: &CollectedFillReports,
+    ) -> anyhow::Result<()> {
+        let reports = &collected.reports;
+        let mut inner = self.inner.lock();
+        anyhow::ensure!(
+            inner.client_fault.is_none(),
+            "settlement registry is faulted"
+        );
+
+        for report in reports {
+            let venue_trade_id =
+                collected
+                    .venue_trade_ids
+                    .get(&report.trade_id)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "collected fill {} has no venue trade identity",
+                            report.trade_id
+                        )
+                    })?;
+
+            let record = inner.records.get(venue_trade_id);
+
+            if let Some(record) = record {
+                anyhow::ensure!(
+                    record.settlement != SettlementState::RestFailed && !record.is_unresolved(),
+                    "collected fill {} no longer has resolved confirmed evidence",
+                    report.trade_id,
+                );
+            }
+
+            let retained = record.and_then(|record| {
+                record
+                    .legs
+                    .iter()
+                    .find(|leg| leg.trade_id == report.trade_id)
+            });
+
+            anyhow::ensure!(
+                !record.is_some_and(|record| record.settlement.is_rest_terminal())
+                    || retained.is_some(),
+                "collected fill {} adds a leg to retained terminal settlement",
+                report.trade_id,
+            );
+            let stored = retained.or_else(|| inner.unbound_legs.get(&report.trade_id));
+
+            if let Some(stored) = stored {
+                let incoming = AdmittedLeg {
+                    venue_order_id: report.venue_order_id,
+                    trade_id: report.trade_id,
+                    instrument_id: report.instrument_id,
+                    order_side: report.order_side,
+                    liquidity_side: report.liquidity_side,
+                    last_qty: report.last_qty,
+                    last_px: report.last_px,
+                    commission: report.commission.clone(),
+                    taker_fee_basis: None,
+                    ts_event: report.ts_event,
+                };
+
+                let compare_economics = record
+                    .is_some_and(|record| record.settlement.is_rest_terminal())
+                    || stored.application == LegApplication::FillObserved;
+                anyhow::ensure!(
+                    !leg_evidence_conflicts(stored, &incoming, compare_economics),
+                    "collected fill {} contradicts current retained evidence",
+                    report.trade_id
+                );
+            }
+        }
+
+        inner
+            .settled_on_arrival
+            .extend(reports.iter().map(|report| report.trade_id));
+        Ok(())
     }
 
     /// Returns per-order quantities from effective core fills plus validated report legs.
@@ -730,6 +830,52 @@ impl SettlementRegistry {
         &self,
         reports: &[FillReport],
         orders: impl IntoIterator<Item = &'a OrderAny>,
+    ) -> anyhow::Result<AHashMap<VenueOrderId, Decimal>> {
+        self.filled_quantities(reports, orders, RetainedFailedFill::Fail)
+    }
+
+    /// Returns order-status quantity caps without failing while a void is still pending.
+    ///
+    /// Fill and mass-status reports still use [`Self::report_filled_quantities`], which rejects a
+    /// retained `FAILED` fill. An order-status check must not drop the account's other orders for
+    /// that wait. [`Self::order_status_keeps_cached_fill`] stops the venue quantity from
+    /// undercutting the cached fill before the void applies.
+    pub(crate) fn order_status_filled_quantities<'a>(
+        &self,
+        reports: &[FillReport],
+        orders: impl IntoIterator<Item = &'a OrderAny>,
+    ) -> anyhow::Result<AHashMap<VenueOrderId, Decimal>> {
+        self.filled_quantities(reports, orders, RetainedFailedFill::AllowVoidPending)
+    }
+
+    /// Returns whether an order-status report must keep this order's cached fill quantity.
+    pub(crate) fn order_status_keeps_cached_fill(&self, order: &OrderAny) -> bool {
+        let Ok(fills) = order_report_fills(order) else {
+            return false;
+        };
+
+        let inner = self.inner.lock();
+        fills.iter().any(|(fill, quantity, _)| {
+            !quantity.is_zero()
+                && inner
+                    .leg_trade_ids
+                    .get(&fill.trade_id)
+                    .and_then(|key| inner.records.get(key))
+                    .is_some_and(|record| {
+                        record.settlement == SettlementState::RestFailed
+                            && record.legs.iter().any(|leg| {
+                                leg.trade_id == fill.trade_id
+                                    && leg.application == LegApplication::VoidPending
+                            })
+                    })
+        })
+    }
+
+    fn filled_quantities<'a>(
+        &self,
+        reports: &[FillReport],
+        orders: impl IntoIterator<Item = &'a OrderAny>,
+        retained_failed_fill: RetainedFailedFill,
     ) -> anyhow::Result<AHashMap<VenueOrderId, Decimal>> {
         let inner = self.inner.lock();
         let mut quantities = AHashMap::<VenueOrderId, Decimal>::new();
@@ -747,10 +893,13 @@ impl SettlementRegistry {
                             .leg_trade_ids
                             .get(&fill.trade_id)
                             .and_then(|key| inner.records.get(key))
-                            .is_some_and(|record| record.settlement == SettlementState::RestFailed),
+                            .is_some_and(|record| {
+                                retained_failed_fill.blocks(record, &fill.trade_id)
+                            }),
                     "core fill {} retains quantity after targeted REST FAILED settlement",
                     fill.trade_id,
                 );
+
                 *floors.entry(fill.venue_order_id).or_default() += quantity;
                 if !inferred && included.insert(fill.trade_id) {
                     *quantities.entry(fill.venue_order_id).or_default() += quantity;
@@ -778,6 +927,7 @@ impl SettlementRegistry {
     /// economics from incomplete coverage.
     ///
     /// A record without admitted legs has no known instrument, so it blocks every scope.
+    /// Order-status reports use [`Self::ensure_order_status_available`] instead.
     pub(crate) fn ensure_resolved(
         &self,
         instrument_id: Option<InstrumentId>,
@@ -787,7 +937,53 @@ impl SettlementRegistry {
             report,
             |leg| instrument_id.is_none_or(|id| leg.instrument_id == id),
             |_, order| instrument_id.is_none_or(|id| order.instrument_id == id),
+            SettlementRecord::is_unresolved,
         )
+    }
+
+    /// Fails an order-status report while the registry is hydrating, or while a hard fault, a
+    /// quarantine, an owed targeted REST read, an unknown submit, or a post-reconnect trade
+    /// read would report fills incorrectly.
+    ///
+    /// A leg that only awaits application does not fail the check.
+    pub(crate) fn ensure_order_status_available(
+        &self,
+        instrument_id: Option<InstrumentId>,
+        report: &str,
+    ) -> anyhow::Result<()> {
+        self.ensure_no_blockers(
+            report,
+            |leg| instrument_id.is_none_or(|id| leg.instrument_id == id),
+            |_, order| instrument_id.is_none_or(|id| order.instrument_id == id),
+            SettlementRecord::blocks_order_status,
+        )
+    }
+
+    /// Returns whether an order-status quantity cap must ignore this trade.
+    ///
+    /// A leg that only awaits application is not confirmed quantity yet. Counting it would let
+    /// reconciliation infer a second fill, and failing the report would drop the account's other
+    /// orders. A hard fault, quarantine, owed REST read, or retained `FAILED` settlement still
+    /// goes through the normal fill check.
+    pub(crate) fn omits_order_status_quantity(&self, venue_trade_id: &str) -> bool {
+        let inner = self.inner.lock();
+        inner.records.get(venue_trade_id).is_some_and(|record| {
+            record.settlement != SettlementState::RestFailed
+                && !record.blocks_order_status()
+                && record.is_unresolved()
+        })
+    }
+
+    /// Returns whether this order has a leg waiting for the engine, even if REST omitted the
+    /// trade.
+    pub(crate) fn order_awaits_application(&self, venue_order_id: &VenueOrderId) -> bool {
+        let inner = self.inner.lock();
+        inner.records.values().any(|record| {
+            !record.blocks_order_status()
+                && record.legs.iter().any(|leg| {
+                    &leg.venue_order_id == venue_order_id && record.leg_awaits_application(leg)
+                })
+        })
     }
 
     /// Fails report generation while evidence touching one venue order is unresolved.
@@ -800,6 +996,7 @@ impl SettlementRegistry {
             &format!("{report} for venue order {venue_order_id}"),
             |leg| leg.venue_order_id == *venue_order_id,
             |uncertain_order_id, _| uncertain_order_id == venue_order_id,
+            SettlementRecord::is_unresolved,
         )
     }
 
@@ -854,6 +1051,7 @@ impl SettlementRegistry {
         report: &str,
         in_scope: impl Fn(&SettlementLeg) -> bool,
         order_in_scope: impl Fn(&VenueOrderId, &UncertainOrder) -> bool,
+        blocks: impl Fn(&SettlementRecord) -> bool,
     ) -> anyhow::Result<()> {
         let inner = self.inner.lock();
         anyhow::ensure!(
@@ -865,8 +1063,7 @@ impl SettlementRegistry {
             .records
             .values()
             .filter(|record| {
-                (record.legs.is_empty() || record.legs.iter().any(&in_scope))
-                    && record.is_unresolved()
+                (record.legs.is_empty() || record.legs.iter().any(&in_scope)) && blocks(record)
             })
             .count();
 
@@ -948,6 +1145,33 @@ impl TakerFeeBasisLookup for SettlementRegistry {
                 .find(|leg| &leg.venue_order_id == venue_order_id)
                 .and_then(|leg| leg.taker_fee_basis)
         })
+    }
+}
+
+/// A synchronized view of fill confirmations that blocks settlement changes until dropped.
+#[derive(Debug)]
+pub(crate) struct ConfirmedFills<'a> {
+    inner: MutexGuard<'a, RegistryInner>,
+}
+
+impl ConfirmedFills<'_> {
+    /// Returns whether a fill belongs to confirmed settlement with no retained fault.
+    pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
+        if self.inner.client_fault.is_some() {
+            return false;
+        }
+
+        self.inner
+            .leg_trade_ids
+            .get(trade_id)
+            .and_then(|key| self.inner.records.get(key))
+            .is_some_and(|record| {
+                record.hard_fault.is_none()
+                    && matches!(
+                        record.settlement,
+                        SettlementState::StreamConfirmed | SettlementState::RestConfirmed
+                    )
+            })
     }
 }
 
@@ -1365,6 +1589,27 @@ fn insert_stream_gap_order(
         });
 }
 
+#[derive(Clone, Copy)]
+enum RetainedFailedFill {
+    Fail,
+    AllowVoidPending,
+}
+
+impl RetainedFailedFill {
+    fn blocks(self, record: &SettlementRecord, trade_id: &TradeId) -> bool {
+        if record.settlement != SettlementState::RestFailed {
+            return false;
+        }
+
+        match self {
+            Self::Fail => true,
+            Self::AllowVoidPending => !record.legs.iter().any(|leg| {
+                &leg.trade_id == trade_id && leg.application == LegApplication::VoidPending
+            }),
+        }
+    }
+}
+
 fn faulted_record_touches_order(record: &SettlementRecord, venue_order_id: &VenueOrderId) -> bool {
     record
         .legs
@@ -1755,6 +2000,78 @@ pub(crate) mod tests {
         }
     }
 
+    #[rstest]
+    #[case::confirmed(PolymarketTradeStatus::Confirmed, true)]
+    #[case::matched(PolymarketTradeStatus::Matched, false)]
+    #[case::failed(PolymarketTradeStatus::Failed, false)]
+    fn fill_confirmation_uses_the_bound_venue_trade(
+        #[case] status: PolymarketTradeStatus,
+        #[case] expected: bool,
+        #[values(false, true)] rest: bool,
+    ) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.note_order_submitted(leg.venue_order_id);
+        let evidence = trade(status, vec![leg.clone()]);
+        if rest {
+            registry.admit_rest_result(&evidence);
+        } else {
+            registry.admit_stream_trade(&evidence);
+        }
+
+        let confirmed = registry.confirmed_fills();
+
+        assert_eq!(confirmed.contains(&leg.trade_id), expected);
+        assert!(!confirmed.contains(&TradeId::from("UNKNOWN")));
+    }
+
+    #[rstest]
+    fn fill_confirmation_withdraws_authority_on_faults(#[values(false, true)] client_fault: bool) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+        assert!(registry.confirmed_fills().contains(&leg.trade_id));
+
+        if client_fault {
+            force_client_fault(&registry, "capacity exhausted");
+        } else {
+            force_trade_fault(&registry, TRADE, "contradictory evidence");
+        }
+
+        assert!(!registry.confirmed_fills().contains(&leg.trade_id));
+    }
+
+    #[rstest]
+    fn fill_confirmation_blocks_faults_until_release(#[values(false, true)] client_fault: bool) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+        std::thread::scope(|scope| {
+            let confirmed = registry.confirmed_fills();
+            let (attempted, attempt) = std::sync::mpsc::sync_channel(0);
+            let registry = &registry;
+            let fault = scope.spawn(move || {
+                attempted.send(registry.inner.try_lock().is_none()).unwrap();
+                if client_fault {
+                    force_client_fault(registry, "capacity exhausted");
+                } else {
+                    force_trade_fault(registry, TRADE, "contradictory evidence");
+                }
+            });
+
+            assert!(
+                attempt
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+            );
+            assert!(confirmed.contains(&leg.trade_id));
+            drop(confirmed);
+            fault.join().unwrap();
+        });
+
+        assert!(!registry.confirmed_fills().contains(&leg.trade_id));
+    }
+
     fn applied_fill(leg: &AdmittedLeg, venue_trade_id: Option<&str>) -> OrderFilled {
         let info = venue_trade_id.map(|id| {
             let mut info = IndexMap::new();
@@ -2027,12 +2344,59 @@ pub(crate) mod tests {
                     .to_string()
                     .contains("retains quantity after targeted REST FAILED")
             );
+            assert!(
+                registry
+                    .order_status_filled_quantities(&reports, [&order])
+                    .unwrap_err()
+                    .to_string()
+                    .contains("retains quantity after targeted REST FAILED")
+            );
         }
 
         assert_eq!(
             settlement_state(&registry, TRADE),
             Some(SettlementState::RestFailed)
         );
+    }
+
+    #[rstest]
+    fn test_order_status_quantity_keeps_cached_fill_while_void_is_pending() {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker-a");
+        let fill = applied_fill(&leg, None);
+        registry.observe_fill_applied(&fill);
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Failed, vec![leg.clone()]));
+        let order = filled_order(&fill, &[]);
+
+        let blocked = registry.report_filled_quantities(&[], [&order]);
+        let quantities = registry
+            .order_status_filled_quantities(&[], [&order])
+            .expect("pending void should not fail the order-status quantity cap");
+
+        assert_eq!(
+            leg_application(&registry, &leg.trade_id),
+            Some(LegApplication::VoidPending)
+        );
+        assert!(
+            blocked
+                .unwrap_err()
+                .to_string()
+                .contains("retains quantity after targeted REST FAILED")
+        );
+        assert_eq!(
+            quantities,
+            AHashMap::from_iter([(leg.venue_order_id, fill.last_qty.as_decimal())])
+        );
+        assert!(registry.order_status_keeps_cached_fill(&order));
+        assert!(
+            registry
+                .ensure_order_status_available(None, "order status reports")
+                .is_ok()
+        );
+        assert!(registry.ensure_resolved(None, "fill reports").is_err());
+
+        registry.observe_void_applied(&applied_void(&fill));
+        assert!(!registry.order_status_keeps_cached_fill(&order));
     }
 
     #[rstest]
@@ -2132,6 +2496,151 @@ pub(crate) mod tests {
         assert_eq!(report.client_order_id, None);
         assert_eq!(report.venue_position_id, None);
         assert_eq!(report.avg_px, None);
+    }
+
+    #[rstest]
+    #[case::report_routed(false, false)]
+    #[case::observed_during_collection(true, false)]
+    #[case::terminal_during_collection(false, true)]
+    fn test_report_acceptance_preserves_non_terminal_economics_policy(
+        #[case] observed: bool,
+        #[case] terminal: bool,
+    ) {
+        let registry = live_registry();
+        let leg = taker_leg();
+        registry.note_order_submitted(leg.venue_order_id);
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![leg.clone()]));
+        registry.note_leg_reported(&leg.trade_id);
+
+        let incoming = AdmittedLeg {
+            last_qty: Quantity::from("11.00"),
+            last_px: Price::from("0.60"),
+            commission: Money::from("0.01 pUSD"),
+            ts_event: UnixNanos::from(2_000),
+            ..leg
+        };
+
+        let report = registry
+            .build_fill_report(TRADE, &incoming, UnixNanos::from(3_000))
+            .unwrap();
+
+        let collected = CollectedFillReports {
+            reports: vec![report],
+            venue_trade_ids: AHashMap::from_iter([(leg.trade_id, TRADE.to_string())]),
+        };
+
+        if observed {
+            registry.observe_fill_applied(&applied_fill(&leg, Some(TRADE)));
+        }
+
+        if terminal {
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+        }
+
+        let result = registry.accept_fill_reports(&collected);
+
+        assert_eq!(collected.reports[0].last_qty, incoming.last_qty);
+        assert_eq!(collected.reports[0].last_px, incoming.last_px);
+        assert_eq!(collected.reports[0].commission, incoming.commission);
+        assert_eq!(collected.reports[0].ts_event, incoming.ts_event);
+
+        if observed || terminal {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "collected fill {} contradicts current retained evidence",
+                    leg.trade_id
+                )
+            );
+            assert!(!registry.settled_on_arrival(&leg.trade_id));
+        } else {
+            result.unwrap();
+            assert!(registry.settled_on_arrival(&leg.trade_id));
+        }
+    }
+
+    #[rstest]
+    fn report_construction_defers_collateral_settlement_until_acceptance() {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker-a");
+        let report = registry
+            .build_fill_report(TRADE, &leg, UnixNanos::from(1))
+            .unwrap();
+        assert!(!registry.settled_on_arrival(&leg.trade_id));
+
+        registry
+            .accept_fill_reports(&CollectedFillReports {
+                reports: vec![report],
+                venue_trade_ids: AHashMap::from_iter([(leg.trade_id, TRADE.to_string())]),
+            })
+            .unwrap();
+
+        assert!(registry.settled_on_arrival(&leg.trade_id));
+    }
+
+    #[rstest]
+    #[case::failed_same_legs(PolymarketTradeStatus::Failed, false)]
+    #[case::failed_changed_legs(PolymarketTradeStatus::Failed, true)]
+    #[case::confirmed_changed_legs(PolymarketTradeStatus::Confirmed, true)]
+    fn report_acceptance_rejects_new_terminal_settlement_without_marking_collateral(
+        #[values(false, true)] unrelated_prefix: bool,
+        #[case] status: PolymarketTradeStatus,
+        #[case] changed_legs: bool,
+    ) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker-a");
+        let report = registry
+            .build_fill_report(TRADE, &leg, UnixNanos::from(1))
+            .unwrap();
+        let terminal = trade(
+            status,
+            vec![if changed_legs {
+                maker_leg("0xmaker-b")
+            } else {
+                leg.clone()
+            }],
+        );
+        registry.admit_rest_result(&terminal);
+
+        let mut reports = Vec::new();
+        let mut unrelated = maker_leg("UNRELATED");
+        unrelated.trade_id = TradeId::from("unrelated-trade");
+
+        if unrelated_prefix {
+            reports.push(
+                registry
+                    .build_fill_report("unrelated-trade", &unrelated, UnixNanos::from(1))
+                    .unwrap(),
+            );
+        }
+
+        reports.push(report);
+
+        let collected = CollectedFillReports {
+            reports,
+            venue_trade_ids: AHashMap::from_iter([
+                (leg.trade_id, TRADE.to_string()),
+                (unrelated.trade_id, "unrelated-trade".to_string()),
+            ]),
+        };
+
+        let error = registry.accept_fill_reports(&collected).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            if status == PolymarketTradeStatus::Failed {
+                format!(
+                    "collected fill {} no longer has resolved confirmed evidence",
+                    leg.trade_id
+                )
+            } else {
+                format!(
+                    "collected fill {} adds a leg to retained terminal settlement",
+                    leg.trade_id
+                )
+            }
+        );
+        assert!(!registry.settled_on_arrival(&leg.trade_id));
+        assert!(!registry.settled_on_arrival(&unrelated.trade_id));
     }
 
     fn applied_void(fill: &OrderFilled) -> OrderFillVoided {
@@ -3005,6 +3514,8 @@ pub(crate) mod tests {
         ));
         let void_pending = leg_application(&registry, &observed.trade_id);
         let unresolved_before_void = registry.ensure_resolved(None, "mass status");
+        let order_status_before_void =
+            registry.ensure_order_status_available(None, "order status reports");
         registry.observe_void_applied(&applied_void(voided_fill(&failed)));
 
         assert_eq!(voided_trade_ids(&failed), vec![observed.trade_id]);
@@ -3015,6 +3526,7 @@ pub(crate) mod tests {
         );
         assert_eq!(void_pending, Some(LegApplication::VoidPending));
         assert!(unresolved_before_void.is_err());
+        order_status_before_void.expect("pending void should not block order status");
         assert_eq!(
             leg_application(&registry, &observed.trade_id),
             Some(LegApplication::VoidObserved)
@@ -3744,6 +4256,66 @@ pub(crate) mod tests {
             Some(SettlementState::RestConfirmed)
         );
         assert_eq!(registry.pending_resolutions(), vec![TRADE.to_string()]);
+    }
+
+    #[rstest]
+    fn test_provisional_fill_keeps_order_status_available_and_blocks_fill_reports() {
+        let registry = live_registry();
+        admit_pending_fill(&registry);
+
+        let order_status = registry.ensure_order_status_available(None, "order status reports");
+        let fills = registry.ensure_resolved(None, "fill reports");
+        let mass_status = registry.ensure_resolved(None, "mass status");
+
+        assert!(order_status.is_ok());
+        assert!(registry.order_awaits_application(&VenueOrderId::from("0xtaker")));
+        assert!(!registry.order_awaits_application(&VenueOrderId::from("0xother")));
+        assert_eq!(
+            fills.unwrap_err().to_string(),
+            "cannot generate fill reports: Polymarket settlement registry holds 1 record(s) \
+             with unresolved evidence"
+        );
+        assert_eq!(
+            mass_status.unwrap_err().to_string(),
+            "cannot generate mass status: Polymarket settlement registry holds 1 record(s) \
+             with unresolved evidence"
+        );
+    }
+
+    #[rstest]
+    #[case::hard_fault("hard_fault")]
+    #[case::quarantine("quarantine")]
+    #[case::rest_owed("rest_owed")]
+    fn test_order_status_still_blocks_incomplete_fill_evidence(#[case] kind: &str) {
+        let registry = live_registry();
+        admit_pending_fill(&registry);
+        match kind {
+            "hard_fault" => force_trade_fault(&registry, TRADE, "core declined the fill"),
+            "quarantine" => registry.quarantine_invalid_trade(TRADE),
+            "rest_owed" => {
+                registry.begin_session();
+            }
+            other => panic!("unexpected blocker {other}"),
+        }
+
+        let order_status = registry.ensure_order_status_available(None, "order status reports");
+        let fills = registry.ensure_resolved(None, "fill reports");
+
+        assert_eq!(
+            order_status.unwrap_err().to_string(),
+            "cannot generate order status reports: Polymarket settlement registry holds 1 \
+             record(s) with unresolved evidence"
+        );
+        assert!(fills.is_err());
+        assert!(!registry.order_awaits_application(&VenueOrderId::from("0xtaker")));
+    }
+
+    fn admit_pending_fill(registry: &SettlementRegistry) -> AdmittedLeg {
+        let leg = taker_leg();
+        registry.note_order_submitted(leg.venue_order_id);
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![leg.clone()]));
+        registry.note_leg_enqueued(&leg.trade_id);
+        leg
     }
 
     #[rstest]

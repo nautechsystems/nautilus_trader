@@ -573,7 +573,7 @@ impl FeedHandler {
                                     }
 
                                     if let HyperliquidWsMessage::SubscriptionResponse { data } = &msg {
-                                        let key = subscription_to_key(&data.subscription);
+                                        let key = subscription_response_key(&data.subscription, &self.subscriptions);
                                         match data.method.as_str() {
                                             "subscribe" => self.subscriptions.confirm_subscribe(&key),
                                             "unsubscribe" => {
@@ -789,6 +789,14 @@ impl FeedHandler {
         let mut result = Vec::new();
 
         match msg {
+            HyperliquidWsMessage::ClearinghouseState { data } => {
+                result.push(NautilusWsMessage::ClearinghouseState(
+                    data.clearinghouse_state,
+                ));
+            }
+            HyperliquidWsMessage::SpotState { data } => {
+                result.push(NautilusWsMessage::SpotState(data.spot_state));
+            }
             HyperliquidWsMessage::OrderUpdates { data } => {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_order_updates(
@@ -1664,6 +1672,25 @@ fn should_retry_post_send(error: &PostSendError) -> bool {
     )
 }
 
+fn subscription_response_key(
+    sub: &SubscriptionRequest,
+    subscriptions: &SubscriptionState,
+) -> String {
+    let key = subscription_to_key(sub);
+
+    let SubscriptionRequest::SpotState { user, .. } = sub else {
+        return key;
+    };
+
+    // Spot acknowledgements omit isPortfolioMargin; retain the tracked request's flag
+    let prefix = format!("{}:{user}:", HyperliquidWsChannel::SpotState.as_str());
+    subscriptions
+        .all_topics()
+        .into_iter()
+        .find(|topic| topic.starts_with(&prefix))
+        .unwrap_or(key)
+}
+
 pub(super) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
     match sub {
         SubscriptionRequest::AllMids { dex } => {
@@ -1681,6 +1708,21 @@ pub(super) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
         }
         SubscriptionRequest::WebData2 { user } => {
             format!("{}:{user}", HyperliquidWsChannel::WebData2.as_str())
+        }
+        SubscriptionRequest::ClearinghouseState { user } => {
+            format!(
+                "{}:{user}",
+                HyperliquidWsChannel::ClearinghouseState.as_str()
+            )
+        }
+        SubscriptionRequest::SpotState {
+            user,
+            is_portfolio_margin,
+        } => {
+            format!(
+                "{}:{user}:{is_portfolio_margin}",
+                HyperliquidWsChannel::SpotState.as_str()
+            )
         }
         SubscriptionRequest::Candle { coin, interval } => {
             format!(

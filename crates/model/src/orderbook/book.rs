@@ -1350,9 +1350,12 @@ impl OrderBook {
     /// Replays `deltas` through a fresh book of the given type and returns
     /// a [`QuoteTick`] for every best-bid/ask price change.
     ///
+    /// Both quote sizes use the maximum size precision at the best bid and ask.
+    /// Aggregation rescales quantities exactly without rounding.
+    ///
     /// # Panics
     ///
-    /// Panics if `deltas` is empty.
+    /// Panics if `deltas` is empty or an aggregate size cannot be represented.
     #[must_use]
     pub fn deltas_to_quotes(book_type: BookType, deltas: &[OrderBookDelta]) -> Vec<QuoteTick> {
         assert!(!deltas.is_empty(), "`deltas` must not be empty");
@@ -1378,9 +1381,27 @@ impl OrderBook {
             last_bbo = Some(bbo);
             let bid_level = book.bids.top().unwrap();
             let ask_level = book.asks.top().unwrap();
-            let precision = bid_level.first().unwrap().size.precision;
-            let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
-            let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
+            let precision = bid_level
+                .iter()
+                .chain(ask_level.iter())
+                .map(|order| order.size.precision)
+                .max()
+                .expect("Best bid and ask levels contain orders");
+
+            let [bid_sz, ask_sz] = [bid_level, ask_level].map(|level| {
+                level
+                    .iter()
+                    .fold(Quantity::zero(precision), |total, order| {
+                        let size = order
+                            .size
+                            .checked_rescale(precision)
+                            .expect("Book order size must fit the quote precision");
+                        total
+                            .checked_add(size)
+                            .expect("Total book size must fit the quote quantity")
+                    })
+            });
+
             let quote = QuoteTick::new(
                 instrument_id,
                 bid_px,

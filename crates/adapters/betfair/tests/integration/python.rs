@@ -31,7 +31,10 @@ use nautilus_common::{
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+};
 use rstest::rstest;
 
 const SMOKE_USERNAME: &str = "smoke_user";
@@ -170,4 +173,57 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(betfair_config.account_id, account_id);
     assert_eq!(client.client_id(), ClientId::from("BETFAIR-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
+}
+
+#[rstest]
+#[case("BetfairDataClientConfig", None)]
+#[case("BetfairDataClientConfig", Some("/data/certs"))]
+#[case("BetfairExecutionClientConfig", None)]
+#[case("BetfairExecutionClientConfig", Some("/execution/certs"))]
+fn test_python_config_certs_dir(#[case] class: &str, #[case] certs_dir: Option<&str>) {
+    Python::initialize();
+    Python::attach(|py| {
+        let config_class = if class == "BetfairDataClientConfig" {
+            py.get_type::<BetfairDataClientConfig>()
+        } else {
+            py.get_type::<BetfairExecutionClientConfig>()
+        };
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("username", SMOKE_USERNAME).unwrap();
+        kwargs.set_item("password", SMOKE_PASSWORD).unwrap();
+        kwargs.set_item("app_key", SMOKE_APP_KEY).unwrap();
+        if let Some(dir) = certs_dir {
+            kwargs.set_item("certs_dir", dir).unwrap();
+        }
+
+        let config = config_class.call((), Some(&kwargs)).unwrap();
+        let credential = if class == "BetfairDataClientConfig" {
+            config
+                .extract::<BetfairDataClientConfig>()
+                .unwrap()
+                .credential()
+                .unwrap()
+        } else {
+            config
+                .extract::<BetfairExecutionClientConfig>()
+                .unwrap()
+                .credential()
+                .unwrap()
+        };
+
+        assert_eq!(
+            config
+                .getattr("certs_dir")
+                .unwrap()
+                .extract::<Option<String>>()
+                .unwrap()
+                .as_deref(),
+            certs_dir
+        );
+        assert_eq!(credential.certs_dir(), certs_dir);
+        assert_eq!(credential.username(), SMOKE_USERNAME);
+        assert_eq!(credential.password(), SMOKE_PASSWORD);
+        assert_eq!(credential.app_key(), SMOKE_APP_KEY);
+    });
 }

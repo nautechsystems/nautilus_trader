@@ -22,6 +22,8 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import GreeksCalculator
@@ -32,6 +34,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import Equity
+from nautilus_trader.model import GreeksData
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
@@ -76,6 +79,12 @@ class _YieldCurveStrategy(_CustomDataStrategy):
         super().on_data(data)
 
 
+class _CustomDataForwardingStrategy(_CustomDataStrategy):
+    def on_data(self, data: CustomData) -> None:
+        super().on_data(data)
+        self.publish_data(self.output_type, CustomData(self.output_type, data.data))
+
+
 class _YieldCurveGreeksStrategy(_YieldCurveStrategy):
     def on_stop(self) -> None:
         """
@@ -100,6 +109,7 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
     instrument_id = InstrumentId.from_str("CUSTOM.TEST")
     metadata = {"source": "python", "venue": "TEST"}
     data_type = DataType("RustTestCustomData", metadata, str(instrument_id))
+
     custom_data = [
         CustomData(
             data_type,
@@ -110,6 +120,7 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
             RustTestCustomData(instrument_id, 2.5, False, 2, 2),
         ),
     ]
+
     catalog.write_custom_data(custom_data)
     loaded = catalog.query_custom_data(
         NautilusDataType.Custom("RustTestCustomData"),
@@ -146,14 +157,17 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_strategy(strategy)
 
     try:
@@ -185,6 +199,7 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
         ],
     )
     loaded = catalog.query_custom_data(NautilusDataType.Custom("YieldCurve"))
+
     strategy = _YieldCurveStrategy(
         StrategyConfig(
             strategy_id=StrategyId("YIELD-CURVE-STRATEGY"),
@@ -192,14 +207,17 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_strategy(strategy)
 
     try:
@@ -214,6 +232,66 @@ def test_catalog_yield_curves_replay_to_caching_strategy(tmp_path: Path) -> None
         engine.dispose()
 
 
+@pytest.mark.parametrize("kind", ["GreeksData", "PortfolioGreeks", "YieldCurve"])
+def test_catalog_greeks_custom_data_replays_and_reaches_another_actor(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """
+    Replay native Greeks custom data in time order and forward it to another actor.
+    """
+    if kind == "YieldCurve":
+        values = [
+            YieldCurve("USD", [0.0], [0.04], 9, 11),
+            YieldCurve("USD", [0.0], [0.05], 19, 23),
+        ]
+    else:
+        values = [
+            GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11),
+            GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 2.5, 8.0, 23),
+        ]
+
+        if kind == "PortfolioGreeks":
+            values = [value.to_portfolio_greeks() for value in values]
+
+    data_type = DataType(kind, {"source": "catalog"}, "GREEKS-INPUT")
+    output_type = DataType(kind, {"source": "actor"}, "GREEKS-OUTPUT")
+    originals = [CustomData(data_type, value) for value in values]
+    expected_payloads = [json.loads(item.to_json_bytes())["payload"] for item in originals]
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    catalog.write_custom_data(originals)
+    loaded = catalog.query_custom_data(NautilusDataType.Custom(kind))
+    sender = _CustomDataForwardingStrategy(StrategyConfig(strategy_id=StrategyId("SENDER-001")))
+    sender.data_type = data_type
+    sender.output_type = output_type
+    sender.received = []
+    receiver = _CustomDataStrategy(StrategyConfig(strategy_id=StrategyId("RECEIVER-002")))
+    receiver.data_type = output_type
+    receiver.received = []
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_strategy(sender)
+    engine.add_strategy(receiver)
+
+    try:
+        engine.add_data(list(reversed(loaded)), validate=True, sort=True)
+        engine.run()
+
+        assert engine.get_result().iterations == 2
+
+        for actor, expected_type in ((sender, data_type), (receiver, output_type)):
+            assert [item.data_type for item in actor.received] == [expected_type] * 2
+            assert [custom_data_backend_kind(item) for item in actor.received] == ["native"] * 2
+            assert [type(item.data).__name__ for item in actor.received] == [kind] * 2
+            assert [item.ts_init for item in actor.received] == [11, 23]
+            assert [
+                json.loads(item.to_json_bytes())["payload"] for item in actor.received
+            ] == expected_payloads
+    finally:
+        engine.dispose()
+
+
 def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
     """
     Use a yield curve a strategy caches in place of the flat interest rate.
@@ -221,6 +299,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
     now_ns = int(datetime(2025, 3, 8, 12, tzinfo=UTC).timestamp() * 1_000_000_000)
     expiration_ns = int(datetime(2025, 4, 7, 12, tzinfo=UTC).timestamp() * 1_000_000_000)
     usd = Currency.from_str("USD")
+
     underlying = Equity(
         instrument_id=InstrumentId.from_str("AAPL.OPRA"),
         raw_symbol=Symbol("AAPL"),
@@ -232,6 +311,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
         ts_event=0,
         ts_init=0,
     )
+
     option = OptionContract(
         instrument_id=InstrumentId.from_str("AAPL250407C00149000.OPRA"),
         raw_symbol=Symbol("AAPL250407C00149000"),
@@ -250,8 +330,10 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
         ts_event=0,
         ts_init=0,
     )
+
     data_type = DataType("YieldCurve", {"curve_name": "USD"})
     curve = YieldCurve("USD", [0.0], [0.07], now_ns - 1, now_ns - 1)
+
     quotes = [
         QuoteTick(
             option.id,
@@ -272,6 +354,7 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
             now_ns,
         ),
     ]
+
     strategy = _YieldCurveGreeksStrategy(
         StrategyConfig(
             strategy_id=StrategyId("YIELD-CURVE-GREEKS-STRATEGY"),
@@ -279,16 +362,19 @@ def test_cached_yield_curve_sets_calculator_interest_rate() -> None:
             log_commands=False,
         ),
     )
+
     strategy.data_type = data_type
     strategy.received = []
     strategy.option_id = option.id
     strategy.valuation_ns = now_ns
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
             run_analysis=False,
         ),
     )
+
     engine.add_venue(
         venue=Venue("OPRA"),
         oms_type=OmsType.NETTING,

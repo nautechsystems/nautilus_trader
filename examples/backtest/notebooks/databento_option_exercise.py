@@ -114,6 +114,7 @@ class OptionExerciseStrategy(Strategy):
 if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parents[3]
     data_dir = repo_root / "test_data" / "databento" / "options_exercise" / "databento"
+
     loader = DatabentoDataLoader(
         repo_root / "crates" / "adapters" / "databento" / "publishers.json",
     )
@@ -143,11 +144,13 @@ if __name__ == "__main__":
         for index, bar in enumerate(bars)
     ]
 
-    future_id = InstrumentId.from_str("ESH6.XCME")
-    option_id = InstrumentId.from_str("EW2F6 C7000.XCME")
+    future_id = InstrumentId.from_str("ESH26.XCME")
+    option_id = InstrumentId.from_str("EW2F26 C7000.XCME")
+
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     XCME = Venue("XCME")
     USD = Currency.from_str("USD")
     engine.add_venue(

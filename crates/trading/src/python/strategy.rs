@@ -75,11 +75,11 @@ use nautilus_model::{
     },
     enums::{BookType, OmsType, OrderSide, PositionSide, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
@@ -546,12 +546,32 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_order_modify_denied(&self, event: OrderModifyDenied) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_modify_denied", (event.into_py_any(py)?,))
+            })?;
+        }
+
+        Ok(())
+    }
+
     fn dispatch_on_order_modify_rejected(&self, event: OrderModifyRejected) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_modify_rejected", (event.into_py_any(py)?,))
             })?;
         }
+        Ok(())
+    }
+
+    fn dispatch_on_order_cancel_denied(&self, event: OrderCancelDenied) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_cancel_denied", (event.into_py_any(py)?,))
+            })?;
+        }
+
         Ok(())
     }
 
@@ -1047,10 +1067,24 @@ impl Strategy for PyStrategyInner {
         );
     }
 
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {
+        self.logger.log_callback_error(
+            "on_order_modify_denied",
+            self.dispatch_on_order_modify_denied(event),
+        );
+    }
+
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
         self.logger.log_callback_error(
             "on_order_modify_rejected",
             self.dispatch_on_order_modify_rejected(event),
+        );
+    }
+
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {
+        self.logger.log_callback_error(
+            "on_order_cancel_denied",
+            self.dispatch_on_order_cancel_denied(event),
         );
     }
 
@@ -2284,6 +2318,13 @@ impl PyStrategy {
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let order = pyobject_to_order_any(py, order)?;
+        let order = self
+            .inner()
+            .try_cache_ref()
+            .map_err(to_pyruntime_err)?
+            .order_owned(&order.client_order_id())
+            .unwrap_or(order);
+
         let params_map = match params {
             Some(dict) => from_pydict(py, &dict)?,
             None => None,
@@ -2453,8 +2494,16 @@ impl PyStrategy {
     fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_order_modify_denied")]
+    fn py_on_order_modify_denied(_slf: &Bound<'_, Self>, event: OrderModifyDenied) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
     fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_order_cancel_denied")]
+    fn py_on_order_cancel_denied(_slf: &Bound<'_, Self>, event: OrderCancelDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
@@ -3084,7 +3133,8 @@ impl PyStrategy {
             snapshot_interval_ms,
             client_id,
             params_map,
-        );
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(())
     }
 
@@ -4268,19 +4318,20 @@ mod tests {
             OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         events::{
-            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-            OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-            OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-            OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+            OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+            OrderEmulated, OrderEventAny, OrderExpired, OrderInitialized, OrderModifyDenied,
+            OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+            OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged,
+            PositionClosed, PositionEvent, PositionOpened,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, OptionSeriesId,
-            OrderListId, PositionId, StrategyId, TradeId, TraderId, Venue,
+            OrderListId, PositionId, StrategyId, TradeId, TraderId, Venue, VenueOrderId,
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
-        orders::{Order, OrderTestBuilder},
+        orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         python::orders::order_any_to_pyobject,
         types::{Currency, Money, Price, Quantity},
@@ -4352,7 +4403,9 @@ class TrackingStrategy:
         "on_order_triggered",
         "on_order_pending_update",
         "on_order_pending_cancel",
+        "on_order_modify_denied",
         "on_order_modify_rejected",
+        "on_order_cancel_denied",
         "on_order_cancel_rejected",
         "on_order_updated",
         "on_order_canceled",
@@ -6772,7 +6825,9 @@ class IndicatorEventStrategy:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
@@ -6871,10 +6926,24 @@ class IndicatorEventStrategy:
                         );
                         Ok(())
                     }
+                    "on_order_modify_denied" => {
+                        Strategy::on_order_modify_denied(
+                            rust_strategy.inner_mut(),
+                            OrderModifyDenied::default(),
+                        );
+                        Ok(())
+                    }
                     "on_order_modify_rejected" => {
                         Strategy::on_order_modify_rejected(
                             rust_strategy.inner_mut(),
                             OrderModifyRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_cancel_denied" => {
+                        Strategy::on_order_cancel_denied(
+                            rust_strategy.inner_mut(),
+                            OrderCancelDenied::default(),
                         );
                         Ok(())
                     }
@@ -7109,7 +7178,9 @@ class IndicatorEventStrategy:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
@@ -7171,8 +7242,14 @@ class IndicatorEventStrategy:
                 "on_order_pending_cancel" => {
                     Some(OrderPendingCancel::default().into_py_any(py).unwrap())
                 }
+                "on_order_modify_denied" => {
+                    Some(OrderModifyDenied::default().into_py_any(py).unwrap())
+                }
                 "on_order_modify_rejected" => {
                     Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_denied" => {
+                    Some(OrderCancelDenied::default().into_py_any(py).unwrap())
                 }
                 "on_order_cancel_rejected" => {
                     Some(OrderCancelRejected::default().into_py_any(py).unwrap())
@@ -7218,6 +7295,73 @@ class IndicatorEventStrategy:
             } else {
                 assert!(result.is_none());
             }
+        });
+    }
+
+    #[rstest::rstest]
+    #[case::cached(true)]
+    #[case::not_cached(false)]
+    fn test_query_order_refreshes_python_snapshot(#[case] cached: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let (_, strategy) = create_registered_tracking_strategy(py);
+            let cache = strategy.inner().core.cache_rc();
+            let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(None);
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_queue_execute(),
+                handler,
+            );
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(strategy.strategy_id())
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .client_order_id(ClientOrderId::from("O-QUERY-REFRESH-001"))
+                .quantity(Quantity::from(123))
+                .price(Price::from("1.23456"))
+                .build();
+            let argument = order_any_to_pyobject(py, order.clone()).unwrap();
+            let account_id = AccountId::from("SIM-009");
+            let venue_order_id = VenueOrderId::from("V-QUERY-REFRESH-009");
+
+            let before = if cached {
+                let mut cache = cache.borrow_mut();
+                cache.add_order(order.clone(), None, None, true).unwrap();
+                let submitted = TestOrderEventStubs::submitted(&order, account_id);
+                cache.update_order(&submitted).unwrap();
+                let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+                Some(cache.update_order(&accepted).unwrap())
+            } else {
+                None
+            };
+
+            let client_id = ClientId::from("QUERY-CLIENT");
+            let instance = Py::new(py, strategy).unwrap();
+            instance
+                .call_method1(py, "query_order", (argument, client_id))
+                .unwrap();
+            let commands = messages.get_messages();
+
+            assert_eq!(commands.len(), 1);
+
+            let TradingCommand::QueryOrder(command) = &commands[0] else {
+                panic!("Unexpected command: {:?}", commands[0]);
+            };
+
+            assert_eq!(command.trader_id, order.trader_id());
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.strategy_id, order.strategy_id());
+            assert_eq!(command.instrument_id, order.instrument_id());
+            assert_eq!(command.client_order_id, order.client_order_id());
+            assert_eq!(command.venue_order_id, cached.then_some(venue_order_id));
+            assert_eq!(command.ts_init, UnixNanos::default());
+            assert_eq!(command.params, None);
+            assert_eq!(command.correlation_id, None);
+            let after = cache.borrow().order_owned(&order.client_order_id());
+            assert_eq!(
+                serde_json::to_value(&after).unwrap(),
+                serde_json::to_value(&before).unwrap()
+            );
         });
     }
 

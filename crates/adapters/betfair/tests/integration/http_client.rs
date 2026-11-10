@@ -15,9 +15,20 @@
 
 //! Integration tests for `BetfairHttpClient`.
 
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+
 use nautilus_betfair::{
-    common::consts::{METHOD_GET_ACCOUNT_FUNDS, METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS},
-    http::error::BetfairHttpError,
+    common::{
+        consts::{METHOD_GET_ACCOUNT_FUNDS, METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS},
+        credential::BetfairCredential,
+    },
+    http::{client::BetfairHttpClient, error::BetfairHttpError},
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -726,4 +737,345 @@ async fn test_send_betting_unexpected_status_surfaces_error() {
         }
         other => panic!("Expected UnexpectedStatus, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cert_login_stores_session_token_and_sends_form() {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+
+    client.connect().await.unwrap();
+
+    let token = client.session_token().await.unwrap();
+    assert_eq!(token.expose_secret(), "xxxsessionTokenxxx=");
+    assert!(client.is_connected().await);
+    assert_eq!(
+        state.login_count.load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+    let requests = state.cert_login_requests.lock();
+    assert_eq!(requests.len(), 1);
+    let (headers, body) = &requests[0];
+    assert_eq!(headers["X-Application"], "cert-app-key");
+    assert_eq!(headers["Accept"], "application/json");
+    assert_eq!(headers["Content-Type"], "application/x-www-form-urlencoded");
+    assert!(!headers.contains_key("X-Authentication"));
+    assert_eq!(
+        body.as_ref(),
+        b"username=cert%2Buser%40example.com&password=p%26ss%3Dword%2B%20%25"
+    );
+}
+
+#[rstest]
+#[case("CERT_AUTH_REQUIRED")]
+#[case("INVALID_USERNAME_OR_PASSWORD")]
+#[case("NO_ERROR")]
+#[case("SOME_FUTURE_CODE")]
+#[tokio::test]
+async fn test_cert_login_failure_returns_status(#[case] status: &str) {
+    let (addr, state) = start_mock_http().await;
+    let mut response = load_json_fixture("rest/cert_login.json");
+    response["loginStatus"] = Value::String(status.to_string());
+    *state.login_response_override.lock() = Some(response.to_string());
+    let (client, _certs) = create_cert_http_client(addr);
+
+    let result = client.connect().await;
+
+    assert!(
+        matches!(result, Err(BetfairHttpError::LoginFailed { status: actual }) if actual == status)
+    );
+    assert_eq!(client.session_token().await, None);
+    assert!(!client.is_connected().await);
+    assert_eq!(state.cert_login_requests.lock().len(), 1);
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(""))]
+#[case(Some(" \t"))]
+#[case(Some("token\r\ninjected: value"))]
+#[case(Some("token\0"))]
+#[tokio::test]
+async fn test_cert_login_success_with_invalid_token_fails(#[case] token: Option<&str>) {
+    let (addr, state) = start_mock_http().await;
+    let mut response = load_json_fixture("rest/cert_login.json");
+    response["sessionToken"] = token.map_or(Value::Null, |value| Value::String(value.to_string()));
+    *state.login_response_override.lock() = Some(response.to_string());
+    let (client, _certs) = create_cert_http_client(addr);
+
+    let result = client.connect().await;
+
+    assert!(
+        matches!(result, Err(BetfairHttpError::LoginFailed { status }) if status == "SUCCESS without a valid session token")
+    );
+    assert_eq!(client.session_token().await, None);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cert_login_reconnect_refreshes_token_and_keep_alive_works() {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+    client.connect().await.unwrap();
+    let initial_token = client.session_token().await.unwrap();
+    let mut response = load_json_fixture("rest/cert_login.json");
+    response["sessionToken"] = Value::String("cert-replacement-token".to_string());
+    *state.login_response_override.lock() = Some(response.to_string());
+
+    client.reconnect().await.unwrap();
+    let replacement_token = client.session_token().await.unwrap();
+    client.keep_alive().await.unwrap();
+
+    assert_eq!(initial_token.expose_secret(), "xxxsessionTokenxxx=");
+    assert_eq!(replacement_token.expose_secret(), "cert-replacement-token");
+    assert_eq!(state.cert_login_requests.lock().len(), 2);
+    assert_eq!(
+        state.login_count.load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+    assert_eq!(
+        state
+            .keep_alive_count
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_cert_login_concurrent_connect_stress() {
+    for _ in 0..16 {
+        let (addr, state) = start_mock_http().await;
+        let (client, _certs) = create_cert_http_client(addr);
+        let client = Arc::new(client);
+        let barrier = Arc::new(tokio::sync::Barrier::new(65));
+        let mut tasks = tokio::task::JoinSet::new();
+
+        for _ in 0..64 {
+            let client = Arc::clone(&client);
+            let barrier = Arc::clone(&barrier);
+            tasks.spawn(async move {
+                barrier.wait().await;
+                client.connect().await.unwrap();
+                client.session_token().await.unwrap()
+            });
+        }
+
+        barrier.wait().await;
+
+        while let Some(token) = tasks.join_next().await {
+            assert_eq!(token.unwrap().expose_secret(), "xxxsessionTokenxxx=");
+        }
+
+        assert_eq!(state.cert_login_requests.lock().len(), 1);
+        assert_eq!(state.login_count.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cert_login_disconnect_waits_for_pending_login() {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+    let client = Arc::new(client);
+    let token = client.cancellation_token();
+
+    let gate = MockResponseGate {
+        method: "certlogin".to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+
+    *state.identity_response_gate.lock() = Some(gate.clone());
+
+    let connection = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move { client.connect().await }
+    });
+
+    wait_for_mock_state(&state, "certificate login response held", |_| {
+        gate.waiters.load(Ordering::Relaxed) == 1
+    })
+    .await;
+
+    let disconnect = client.disconnect();
+    tokio::pin!(disconnect);
+    assert!(futures_util::poll!(&mut disconnect).is_pending());
+
+    gate.semaphore.add_permits(1);
+    connection.await.unwrap().unwrap();
+    disconnect.await;
+
+    assert_eq!(client.session_token().await, None);
+    assert!(token.is_cancelled());
+    assert!(!client.cancellation_token().is_cancelled());
+    assert_eq!(state.cert_login_requests.lock().len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cert_login_reconnect_waits_for_older_keep_alive() {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+    let client = Arc::new(client);
+    client.connect().await.unwrap();
+    let mut keep_alive_response = load_json_fixture("rest/login_success.json");
+    keep_alive_response["token"] = Value::String("xxxsessionTokenxxx=".to_string());
+    *state.keep_alive_response_override.lock() = Some(keep_alive_response.to_string());
+
+    let gate = MockResponseGate {
+        method: "keepAlive".to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+
+    *state.identity_response_gate.lock() = Some(gate.clone());
+
+    let renewal = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move { client.keep_alive().await }
+    });
+
+    wait_for_mock_state(&state, "keep-alive response held", |_| {
+        gate.waiters.load(Ordering::Relaxed) == 1
+    })
+    .await;
+
+    let mut response = load_json_fixture("rest/cert_login.json");
+    response["sessionToken"] = Value::String("new-cert-token".to_string());
+    *state.login_response_override.lock() = Some(response.to_string());
+    let reconnect = client.reconnect();
+    tokio::pin!(reconnect);
+    assert!(futures_util::poll!(&mut reconnect).is_pending());
+    assert_eq!(
+        client
+            .session_token()
+            .await
+            .as_ref()
+            .map(|token| token.expose_secret()),
+        Some("xxxsessionTokenxxx="),
+    );
+
+    gate.semaphore.add_permits(1);
+    renewal.await.unwrap().unwrap();
+    reconnect.await.unwrap();
+
+    assert_eq!(
+        client.session_token().await.unwrap().expose_secret(),
+        "new-cert-token"
+    );
+    assert_eq!(state.cert_login_requests.lock().len(), 2);
+    assert_eq!(state.keep_alive_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cert_login_failed_reconnect_clears_token_then_recovers() {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+    client.connect().await.unwrap();
+    let mut response = load_json_fixture("rest/cert_login.json");
+    response["loginStatus"] = Value::String("CERT_AUTH_REQUIRED".to_string());
+    *state.login_response_override.lock() = Some(response.to_string());
+
+    let result = client.reconnect().await;
+    let failed_token = client.session_token().await;
+    *state.login_response_override.lock() = None;
+    client.connect().await.unwrap();
+
+    assert!(
+        matches!(result, Err(BetfairHttpError::LoginFailed { status }) if status == "CERT_AUTH_REQUIRED")
+    );
+    assert_eq!(failed_token, None);
+    assert_eq!(
+        client.session_token().await.unwrap().expose_secret(),
+        "xxxsessionTokenxxx="
+    );
+    assert_eq!(state.cert_login_requests.lock().len(), 3);
+}
+
+#[rstest]
+fn test_cert_login_requires_client_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    std::fs::write(directory.path().join("client.crt"), cert.pem()).unwrap();
+    let credential =
+        test_credential().with_certs_dir(directory.path().to_str().unwrap().to_string());
+
+    let result = BetfairHttpClient::new(credential, Some(5), None, None, None, None, None);
+
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("client auth required")
+    );
+}
+
+#[rstest]
+#[case("invalid_json")]
+#[case("missing_status")]
+#[case("null_status")]
+#[case("number_status")]
+#[case("number_token")]
+#[tokio::test]
+async fn test_cert_login_malformed_response_does_not_authenticate(#[case] case: &str) {
+    let (addr, state) = start_mock_http().await;
+    let (client, _certs) = create_cert_http_client(addr);
+    let mut response = load_json_fixture("rest/cert_login.json");
+
+    match case {
+        "missing_status" => {
+            response.as_object_mut().unwrap().remove("loginStatus");
+        }
+        "null_status" => response["loginStatus"] = Value::Null,
+        "number_status" => response["loginStatus"] = Value::from(42),
+        "number_token" => response["sessionToken"] = Value::from(42),
+        "invalid_json" => {}
+        _ => unreachable!(),
+    }
+
+    let mut body = response.to_string();
+    if case == "invalid_json" {
+        body.truncate(1);
+    }
+
+    *state.login_response_override.lock() = Some(body);
+
+    let result = client.connect().await;
+
+    assert!(matches!(result, Err(BetfairHttpError::JsonError(_))));
+    assert_eq!(client.session_token().await, None);
+    assert_eq!(state.cert_login_requests.lock().len(), 1);
+}
+
+fn create_cert_http_client(addr: SocketAddr) -> (BetfairHttpClient, tempfile::TempDir) {
+    let directory = tempfile::tempdir().unwrap();
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    std::fs::write(directory.path().join("client.crt"), cert.pem()).unwrap();
+    std::fs::write(directory.path().join("client.key"), key.serialize_pem()).unwrap();
+    let credential = BetfairCredential::new(
+        "cert+user@example.com".to_string(),
+        "p&ss=word+ %".to_string(),
+        "cert-app-key".to_string(),
+    )
+    .with_certs_dir(directory.path().to_str().unwrap().to_string());
+    let client = BetfairHttpClient::new(credential, Some(5), Some(0), None, None, None, None)
+        .unwrap()
+        .with_urls(
+            format!("http://{addr}/api/login"),
+            format!("http://{addr}/betting"),
+            format!("http://{addr}/accounts"),
+            format!("http://{addr}/navigation"),
+        );
+    (client, directory)
 }

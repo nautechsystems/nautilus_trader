@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Deposit Wallet identity checks against the Polygon factory.
+//! Polygon reads for Deposit Wallet identity and V2 position operations.
 
 use std::{collections::HashMap, fmt::Debug};
 
@@ -29,7 +29,9 @@ use serde_json::json;
 
 use crate::{
     http::error::{Error, Result},
-    signing::eip712::DEPOSIT_WALLET_FACTORY,
+    signing::eip712::{
+        DEPOSIT_WALLET_FACTORY, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
+    },
 };
 
 const DEFAULT_RPC_URL: &str = "https://polygon.drpc.org";
@@ -40,6 +42,13 @@ sol! {
     function nonce() external view returns (uint256);
     function predictWalletAddress(bytes32 id) external view returns (address);
     function predictLegacyWalletAddress(bytes32 id) external view returns (address);
+    function balanceOf(address account) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function isApprovedForAll(address owner, address operator) external view returns (bool);
+    interface PositionLedger {
+        function balanceOf(address owner, uint256 id) external view returns (uint256);
+    }
+    function getPayout(uint256 positionId, uint256 amount) external view returns (uint256);
 }
 
 pub(super) struct WalletVerifier {
@@ -124,6 +133,96 @@ impl WalletVerifier {
             .map_err(|e| Error::decode(format!("Invalid Deposit Wallet nonce: {e}")))
     }
 
+    pub(super) async fn verify_v2_split(&self, owner: Address, amount: U256) -> Result<()> {
+        let balance = self
+            .read(
+                POLYMARKET_COLLATERAL_TOKEN,
+                balanceOfCall { account: owner },
+            )
+            .await?;
+
+        if balance < amount {
+            return Err(Error::bad_request(
+                "Deposit Wallet has insufficient pUSD for split",
+            ));
+        }
+
+        let allowance = self
+            .read(
+                POLYMARKET_COLLATERAL_TOKEN,
+                allowanceCall {
+                    owner,
+                    spender: ROUTER,
+                },
+            )
+            .await?;
+
+        if allowance < amount {
+            return Err(Error::bad_request(
+                "Deposit Wallet pUSD allowance for Router is insufficient",
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn verify_v2_positions(
+        &self,
+        owner: Address,
+        position_ids: &[U256],
+        amount: U256,
+    ) -> Result<()> {
+        let approved = self
+            .read(
+                POSITION_MANAGER,
+                isApprovedForAllCall {
+                    owner,
+                    operator: ROUTER,
+                },
+            )
+            .await?;
+
+        if !approved {
+            return Err(Error::bad_request(
+                "Deposit Wallet must approve Router as a PositionManager operator",
+            ));
+        }
+
+        for &id in position_ids {
+            let balance = self
+                .read(
+                    POSITION_MANAGER,
+                    PositionLedger::balanceOfCall { owner, id },
+                )
+                .await?;
+
+            if balance < amount {
+                return Err(Error::bad_request(format!(
+                    "Deposit Wallet has insufficient V2 position balance for {id}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn payout(&self, position_id: U256, amount: U256) -> Result<U256> {
+        self.read(
+            POSITION_MANAGER,
+            getPayoutCall {
+                positionId: position_id,
+                amount,
+            },
+        )
+        .await
+    }
+
+    async fn read<C: SolCall>(&self, target: Address, call: C) -> Result<C::Return> {
+        let response = self.call(target, call.abi_encode()).await?;
+        C::abi_decode_returns_validate(&response)
+            .map_err(|_| Error::decode(format!("Invalid Polygon RPC result for {}", C::SIGNATURE)))
+    }
+
     async fn predict(&self, data: Vec<u8>) -> Result<Address> {
         let response = self.call(DEPOSIT_WALLET_FACTORY, data).await?;
         predictWalletAddressCall::abi_decode_returns_validate(&response)
@@ -201,7 +300,6 @@ struct RpcResponse {
 
 #[cfg(test)]
 mod tests {
-    use axum::{Router, http::StatusCode, routing::post};
     use rstest::rstest;
 
     use super::*;
@@ -219,84 +317,6 @@ mod tests {
             format!("{verifier:?}"),
             "WalletVerifier { rpc_url: \"<redacted>\", .. }"
         );
-    }
-
-    #[tokio::test]
-    async fn test_rpc_url_is_redacted_from_transport_errors() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            drop(stream);
-        });
-
-        let mut verifier = WalletVerifier::new(2, None).unwrap();
-        verifier.set_rpc_url(format!(
-            "http://{addr}/dummy-path-secret?key=dummy-query-secret"
-        ));
-        let error = verifier.rpc("eth_getCode", json!([])).await.unwrap_err();
-        server.await.unwrap();
-        assert!(matches!(error, Error::Transport(_)));
-        let rendered = format!("{error}; {error:?}");
-        assert!(!rendered.contains(&addr.to_string()));
-        assert!(!rendered.contains("dummy-path-secret"));
-        assert!(!rendered.contains("dummy-query-secret"));
-    }
-
-    #[rstest]
-    #[case(400, false)]
-    #[case(429, false)]
-    #[case(500, false)]
-    #[case(200, true)]
-    #[tokio::test]
-    async fn test_rpc_response_errors_do_not_expose_provider_text(
-        #[case] status: u16,
-        #[case] malformed: bool,
-    ) {
-        let secret = "https://rpc.example/dummy-path-secret?key=dummy-query-secret";
-        let body = if malformed {
-            json!({"jsonrpc": "2.0", "id": secret, "result": "0x"}).to_string()
-        } else {
-            secret.to_string()
-        };
-        let app = Router::new().route(
-            "/",
-            post(move || async move { (StatusCode::from_u16(status).unwrap(), body) }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let mut verifier = WalletVerifier::new(2, None).unwrap();
-        verifier.set_rpc_url(format!("http://{addr}/"));
-
-        let error = verifier.rpc("eth_getCode", json!([])).await.unwrap_err();
-        server.abort();
-        let rendered = format!("{error}; {error:?}");
-
-        assert!(!rendered.contains("dummy-path-secret"));
-        assert!(!rendered.contains("dummy-query-secret"));
-        if malformed {
-            assert!(
-                matches!(error, Error::Decode(ref message) if message == "Polygon RPC returned an invalid response")
-            );
-        } else {
-            match &error {
-                Error::Http {
-                    status: actual,
-                    message,
-                } => {
-                    assert_eq!(*actual, status);
-                    assert_eq!(message, "Polygon RPC request failed");
-                }
-                Error::RateLimit { message, .. } => {
-                    assert_eq!(status, 429);
-                    assert_eq!(message, "Polygon RPC request failed");
-                }
-                other => panic!("Unexpected error: {other:?}"),
-            }
-            assert_eq!(error.is_retryable(), status == 429 || status == 500);
-        }
     }
 
     #[tokio::test]

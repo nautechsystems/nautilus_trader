@@ -43,6 +43,7 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `defi`: Enables token currency identity checks and recovery for Redis and Postgres.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
@@ -80,3 +81,6 @@ pub mod redis;
 
 #[cfg(feature = "postgres")]
 pub mod sql;
+
+#[cfg(all(feature = "defi", any(feature = "redis", feature = "postgres")))]
+mod defi;

@@ -37,6 +37,8 @@ pub mod writer;
 
 pub(crate) mod metadata;
 
+mod consolidation_state;
+
 /// Default number of rows in a Parquet row group.
 pub const DEFAULT_ROW_GROUP_SIZE: usize = 131_072;
 
@@ -177,6 +179,34 @@ mod tests {
                 .iter()
                 .all(|column| column.compression() == expected)
         );
+    }
+
+    #[rstest]
+    #[case::bare("")]
+    #[case::dotted("./")]
+    fn open_catalog_resolves_relative_path(#[case] prefix: &str) {
+        let directory = TempDir::new_in(".").unwrap();
+        let name = directory.path().file_name().unwrap().to_string_lossy();
+        let config = DataCatalogConfig::new(format!("{prefix}{name}"), None, None);
+        let mut catalog = open_catalog(&config.connect_config()).unwrap();
+
+        catalog
+            .write_to_parquet(&[quote(1)], None, None, None)
+            .unwrap();
+
+        let quotes = catalog
+            .query::<QuoteTick>(None, None, None, None, None, true)
+            .unwrap();
+
+        assert_eq!(quotes, vec![quote(1)]);
+        quote_file_metadata(&catalog, &directory);
+    }
+
+    #[rstest]
+    fn open_catalog_rejects_empty_path() {
+        let config = DataCatalogConfig::new(String::new(), None, None);
+
+        assert!(open_catalog(&config.connect_config()).is_err());
     }
 
     #[rstest]

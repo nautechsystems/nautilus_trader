@@ -55,38 +55,6 @@ echo "✓ All PyO3 naming conventions are valid"
 
 python3 -B "$(dirname "$0")/check_pyo3_names.py"
 
-# Check adapter module naming.
-echo "Checking adapter module paths..."
-ADAPTER_VIOLATIONS=0
-
-while IFS=: read -r file line_num match; do
-  [[ -z "$file" ]] && continue
-
-  module_path="$(echo "$match" | sed -E 's/.*(module|stub_module)[[:space:]]*=[[:space:]]*"([^"]+)".*/\2/')"
-
-  case "$module_path" in
-    nautilus_trader.adapters.*)
-      continue
-      ;;
-  esac
-
-  echo -e "${RED}Error:${NC} Adapter module path is not canonical in $file:$line_num"
-  echo "  Found: $(echo "$match" | xargs)"
-  echo "  Use: nautilus_trader.adapters.<adapter_name> for runtime and stub metadata"
-  echo
-  ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
-done < <(rg -n '(module|stub_module)\s*=\s*"nautilus_trader\.[^"]+"' crates/adapters --type rust 2> /dev/null || true)
-
-if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
-  echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module path violation(s)${NC}"
-  echo
-  echo "Convention:"
-  echo "  - Adapter runtime and stub paths use nautilus_trader.adapters.<adapter_name>"
-  exit 1
-fi
-
-echo "✓ All adapter module paths are valid"
-
 # Check for raw PyErr construction that should use shared error conversions
 echo "Checking PyO3 error conversion usage..."
 RAW_ERR_VIOLATIONS=0

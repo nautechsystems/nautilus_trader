@@ -562,8 +562,8 @@ Each constructor takes the identity as a string, followed by `price_precision` a
 
 ### Fixed-point precision and raw values
 
-NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity`. Raw values must match the
-scale for their declared precision.
+NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity`. Raw values must match their
+declared precision.
 
 #### Raw value requirements
 
@@ -572,26 +572,39 @@ When constructing `Price` or `Quantity` with `from_raw()`, use a raw value from:
 - The `.raw` field of an existing value, such as `price.raw`.
 - NautilusTrader fixed-point conversion functions.
 
-For decimal values from current Arrow columns, use `Price.from_decimal` or
-`Quantity.from_decimal` rather than `from_raw()`.
+Catalog price and size columns for fixed-point market data use `Decimal128(38, 16)`. Decoded values are
+decimals: use `Price.from_decimal` or `Quantity.from_decimal`. Physical mantissas use the storage scale,
+which can differ from the model's raw integer scale. Use `from_raw()` only for integers at the active model scale.
 
-:::warning[Unvalidated raw values]
-For a precision below `FIXED_PRECISION`, the raw value must be divisible by
-`10^(FIXED_PRECISION - precision)`. Construction does not reject an invalid multiple, which can
-produce an incorrect value.
+**Decimal construction**: `from_decimal()` infers precision up to the supported maximum and rounds excess
+fractional digits half to even. Use `from_decimal_dp()` to choose precision explicitly. Unsupported explicit
+precision and out-of-range values still produce errors.
+
+:::warning[Invalid raw values]
+For precision below `FIXED_PRECISION`, the raw value must be divisible by
+`10^(FIXED_PRECISION - precision)`. Raw construction rejects extra fractional digits without rounding:
+
+- **Rust**: `from_raw` panics; `from_raw_checked` returns an error.
+- **Python**: Raises `ValueError`.
+
 :::
 
-Current catalog price and size columns for fixed-point market data use `Decimal128(38, 16)`. Their decoded
-values are decimals. Their physical mantissas use the storage scale, which can differ from the model's raw
-integer scale. Use `from_raw()` only for integers already encoded at the active model scale.
+#### Arithmetic and price adjustments
 
-#### Legacy raw value correction
+These operations can retain raw digits beyond the declared precision:
 
-Older catalog writers could introduce floating-point errors by calculating raw values with
-`int(value * FIXED_SCALAR)`. Explicit migration corrects affected price and quantity values to the
-nearest valid scale multiple for their precision while leaving sentinel values unchanged. These
-catalogs require explicit migration before runtime queries. The correction adds a small amount of
-work during Arrow decoding.
+- **Quantity multiplication (Rust)**: Retains the maximum operand precision.
+- **Continuous-future spread adjustments**: Retain the original price precision.
+
+Arrow can write quantities and adjusted bars with these extra digits, but strict decoding rejects them.
+Before raw reconstruction, serialization, or persistence, explicitly rescale to sufficient precision or round
+the raw values.
+
+#### Legacy raw values
+
+Older catalog writers could introduce floating-point errors with `int(value * FIXED_SCALAR)`. Legacy catalogs
+require explicit migration before runtime queries. Migration does not round raw values; built-in rows with
+extra digits fail. Regenerate affected data or correct its precision or scaling before migration.
 
 ### Transformation pipeline
 

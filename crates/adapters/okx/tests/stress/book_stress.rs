@@ -157,17 +157,23 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
             2 => {
                 let targets = [ids[round / 6 % 2], ids[4 + round / 6 % 2]];
 
-                for id in &targets {
-                    let mut fault = session.fault(id);
+                let recoveries = targets.map(|id| {
+                    let mut fault = session.fault(&id);
                     fault.corrupt = 1;
-                    fault.hold_snapshot = true;
-                }
+                    fault.hold_snapshot_after_corrupt = true;
+                    (id, fault.unsubscribes)
+                });
 
                 session
                     .until(
                         Duration::from_secs(20),
                         "replacement snapshots held before unsubscribe",
-                        |s| targets.iter().all(|id| s.fault(id).hold),
+                        |s| {
+                            recoveries.iter().all(|(id, unsubscribes)| {
+                                let fault = s.fault(id);
+                                fault.hold && fault.unsubscribes > *unsubscribes
+                            })
+                        },
                     )
                     .await;
 
@@ -496,13 +502,16 @@ async fn boundaries(args: &StressArgs, ids: &[InstrumentId; 8]) -> String {
         let mut fault = session.fault(&id);
         let unsubscribes = fault.unsubscribes;
         fault.corrupt = 1;
-        fault.hold_snapshot = true;
+        fault.hold_snapshot_after_corrupt = true;
         (id, unsubscribes, fault.held)
     });
 
     session
         .until(Duration::from_secs(20), "replacement snapshots held", |s| {
-            before.iter().all(|(id, _, held)| s.fault(id).held > *held)
+            before.iter().all(|(id, unsubscribes, held)| {
+                let fault = s.fault(id);
+                fault.held > *held && fault.unsubscribes > *unsubscribes
+            })
         })
         .await;
 

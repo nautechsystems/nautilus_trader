@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
+use indexmap::IndexMap;
+use nautilus_model::enums::OrderSide;
 
 use super::*;
 
@@ -189,48 +191,57 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
 
     let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
-    let depth = stub_depth10();
+    let mut depth = stub_depth10();
+    depth.bids[0].size = Quantity::from("120");
+    depth.asks[0].size = Quantity::from("230");
+    depth.ts_event = UnixNanos::from(123);
+    depth.ts_init = UnixNanos::from(456);
     let instrument_id = depth.instrument_id;
 
     let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("230"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
+    );
     data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
-    let messages = saver.get_messages();
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = depth;
+    unchanged.ts_event = UnixNanos::from(124);
+    unchanged.ts_init = UnixNanos::from(457);
+    data_engine.process_data(Data::BookDepth(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    changed.bids[0].price = Price::from("99.50");
+    changed.ts_event = UnixNanos::from(125);
+    changed.ts_init = UnixNanos::from(458);
+    data_engine.process_data(Data::BookDepth(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_price: Price::from("99.50"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
     assert_eq!(
-        messages.len(),
-        1,
-        "depth should emit exactly one synthetic quote",
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
     );
-    let cached_quote = cache.borrow().quote(&instrument_id).copied();
-    assert!(cached_quote.is_some(), "synthetic quote should be cached",);
-
-    // Same top-of-book: must not republish
-    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
-    assert_eq!(saver.get_messages().len(), 1);
-
-    // Shifted top-of-book: must republish
-    let mut shifted = depth.clone();
-
-    shifted.bids[0] = BookOrder::new(
-        depth.bids[0].side,
-        Price::new(98.50, 2),
-        depth.bids[0].size,
-        depth.bids[0].order_id,
-    );
-    shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
-    shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::BookDepth(Box::new(shifted)));
-
-    let messages = saver.get_messages();
-    assert_eq!(
-        messages.len(),
-        2,
-        "different top-of-book must republish the synthetic quote",
-    );
-    assert_eq!(messages[1].bid_price, Price::new(98.50, 2));
 }
 
 #[rstest]
@@ -861,7 +872,16 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
 
     let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
-    let deltas = stub_deltas();
+    let mut deltas = stub_deltas();
+    for delta in &mut deltas.deltas {
+        delta.ts_event = UnixNanos::from(123);
+        delta.ts_init = UnixNanos::from(456);
+        if delta.order.side == Some(OrderSide::Buy) {
+            delta.order.size = Quantity::from("120");
+        }
+    }
+
+    let deltas = OrderBookDeltas::new(deltas.instrument_id, deltas.deltas);
     let instrument_id = deltas.instrument_id;
     let venue = instrument_id.venue;
 
@@ -869,7 +889,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache,
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -895,18 +915,56 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    let deltas = Box::new(deltas);
-    data_engine.process_data(Data::BookDeltas(deltas.clone()));
-
-    assert_eq!(
-        saver.get_messages().len(),
-        1,
-        "managed BookDeltas with emit_quotes_from_book must publish a top-of-book quote",
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("100"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
     );
+    data_engine.process_data(Data::BookDeltas(Box::new(deltas.clone())));
 
-    // Same deltas, same top-of-book: idempotent
-    data_engine.process_data(Data::BookDeltas(deltas));
-    assert_eq!(saver.get_messages().len(), 1);
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = deltas;
+    for delta in &mut unchanged.deltas {
+        delta.ts_event = UnixNanos::from(124);
+        delta.ts_init = UnixNanos::from(457);
+    }
+
+    let unchanged = OrderBookDeltas::new(instrument_id, unchanged.deltas);
+    data_engine.process_data(Data::BookDeltas(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    for delta in &mut changed.deltas {
+        delta.ts_event = UnixNanos::from(125);
+        delta.ts_init = UnixNanos::from(458);
+        if delta.order.side == Some(OrderSide::Buy) {
+            delta.order.size = Quantity::from("130");
+        }
+    }
+
+    let changed = OrderBookDeltas::new(instrument_id, changed.deltas);
+    data_engine.process_data(Data::BookDeltas(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_size: Quantity::from("130"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
+    assert_eq!(
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
+    );
 }
 
 #[rstest]
@@ -925,7 +983,11 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
 
     let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), Some(config));
 
-    let depth = stub_depth10();
+    let mut depth = stub_depth10();
+    depth.bids[0].size = Quantity::from("120");
+    depth.asks[0].size = Quantity::from("230");
+    depth.ts_event = UnixNanos::from(123);
+    depth.ts_init = UnixNanos::from(456);
     let instrument_id = depth.instrument_id;
     let venue = instrument_id.venue;
 
@@ -933,7 +995,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache,
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -959,28 +1021,63 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth(Box::new(depth)));
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("230"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
+    );
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
-    let messages = saver.get_messages();
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = depth;
+    unchanged.ts_event = UnixNanos::from(124);
+    unchanged.ts_init = UnixNanos::from(457);
+    data_engine.process_data(Data::BookDepth(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    changed.bids[0].price = Price::from("99.50");
+    changed.ts_event = UnixNanos::from(125);
+    changed.ts_init = UnixNanos::from(458);
+    data_engine.process_data(Data::BookDepth(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_price: Price::from("99.50"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
     assert_eq!(
-        messages.len(),
-        1,
-        "managed depth subscription with emit_quotes_from_book must publish a top-of-book quote",
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
     );
 }
 
 #[rstest]
-#[case::deltas(BookSubscriptionKind::Deltas)]
-#[case::depth(BookSubscriptionKind::Depth)]
+#[case::deltas_managed(BookSubscriptionKind::Deltas, true)]
+#[case::deltas_unmanaged(BookSubscriptionKind::Deltas, false)]
+#[case::depth_managed(BookSubscriptionKind::Depth, true)]
+#[case::depth_unmanaged(BookSubscriptionKind::Depth, false)]
 fn test_shared_book_subscription_retries_after_client_failure(
     #[case] kind: BookSubscriptionKind,
+    #[case] managed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
-    venue: Venue,
 ) {
+    let venue = audusd_sim.id.venue;
     let mut data_engine = data_engine.borrow_mut();
     let recorder = Rc::new(RefCell::new(Vec::new()));
     register_failing_subscribe_client(
@@ -1002,7 +1099,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
             command_id,
             UnixNanos::from(1),
             NonZeroUsize::new(5),
-            true,
+            managed,
             None,
             None,
         )),
@@ -1014,7 +1111,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
             command_id,
             UnixNanos::from(1),
             NonZeroUsize::new(5),
-            true,
+            managed,
             None,
             None,
         )),
@@ -1023,8 +1120,12 @@ fn test_shared_book_subscription_retries_after_client_failure(
     let first = subscribe(UUID4::new());
     let second = subscribe(UUID4::new());
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     data_engine.execute(DataCommand::Subscribe(first));
     assert!(recorder.borrow().is_empty());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
+    assert!(data_engine.subscribed_book_deltas().is_empty());
+    assert!(data_engine.subscribed_book_depth().is_empty());
 
     data_engine.execute(DataCommand::Subscribe(second.clone()));
 
@@ -1056,6 +1157,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
     };
 
     data_engine.execute(DataCommand::Unsubscribe(unsubscribe(UUID4::new())));
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(
         recorder.borrow().as_slice(),
         std::slice::from_ref(&expected_subscribe)
@@ -1063,6 +1165,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
 
     let expected_unsubscribe = DataCommand::Unsubscribe(unsubscribe(UUID4::new()));
     data_engine.execute(expected_unsubscribe.clone());
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(
         recorder.borrow().as_slice(),
         &[expected_subscribe, expected_unsubscribe]
@@ -1106,11 +1209,14 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
         ))
     };
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     data_engine.execute(DataCommand::Subscribe(subscribe(
         first_command_id,
         UnixNanos::from(1),
     )));
     assert!(recorder.borrow().is_empty());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
+    assert!(data_engine.subscribed_book_deltas().is_empty());
 
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
@@ -1151,9 +1257,11 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
     };
 
     data_engine.execute(unsubscribe());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(recorder.borrow().len(), 1);
     data_engine.execute(unsubscribe());
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     let recorded = recorder.borrow();
     assert_eq!(recorded.len(), 2);
 
@@ -1822,6 +1930,31 @@ fn test_process_book_snapshot_publish_for_multiple_intervals_same_instrument(
     assert_eq!(fast_saver.get_messages()[0].instrument_id, audusd_sim.id);
     assert!(!slow_saver.get_messages().is_empty());
     assert_eq!(slow_saver.get_messages()[0].instrument_id, audusd_sim.id);
+
+    let initial_counts = (
+        fast_saver.get_messages().len(),
+        slow_saver.get_messages().len(),
+    );
+    assert_eq!(initial_counts, (4, 1));
+    let interval_ns =
+        DurationNanos::from_millis(fast_interval_ms.get().try_into().unwrap()).as_u64();
+
+    for (advance_ns, fast_delta, slow_delta) in [
+        (interval_ns - 1, 0, 0),
+        (1, 1, 1),
+        (interval_ns, 2, 1),
+        (interval_ns, 3, 2),
+    ] {
+        advance_clock_and_dispatch(&clock, advance_ns);
+        assert_eq!(
+            fast_saver.get_messages().len(),
+            initial_counts.0 + fast_delta
+        );
+        assert_eq!(
+            slow_saver.get_messages().len(),
+            initial_counts.1 + slow_delta
+        );
+    }
 }
 
 #[rstest]
@@ -1936,6 +2069,153 @@ fn test_managed_book_rejects_other_source_and_ignores_unmanaged_updates(
 }
 
 #[rstest]
+#[case::l2_to_l1(BookType::L2_MBP, BookType::L1_MBP)]
+#[case::l1_to_l2(BookType::L1_MBP, BookType::L2_MBP)]
+#[case::l1_reuse(BookType::L1_MBP, BookType::L1_MBP)]
+#[case::l2_reuse(BookType::L2_MBP, BookType::L2_MBP)]
+fn test_managed_book_resubscription_uses_requested_type(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] previous_type: BookType,
+    #[case] requested_type: BookType,
+    #[values("deltas", "depth", "snapshots")] source: &str,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+
+    let subscribe = |book_type| {
+        let mut command = match source {
+            "deltas" | "depth" => {
+                book_source_command(audusd_sim.id, client_id, source == "depth", true)
+            }
+            "snapshots" => SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+                audusd_sim.id,
+                book_type,
+                Some(client_id),
+                Some(audusd_sim.id.venue),
+                UUID4::new(),
+                UnixNanos::from(101),
+                NonZeroUsize::new(25),
+                NonZeroUsize::new(100).unwrap(),
+                None,
+                None,
+            )),
+            _ => unreachable!(),
+        };
+
+        match &mut command {
+            SubscribeCommand::BookDeltas(cmd) => cmd.book_type = book_type,
+            SubscribeCommand::BookDepth(cmd) => cmd.book_type = book_type,
+            SubscribeCommand::BookSnapshots(_) => {}
+            _ => unreachable!(),
+        }
+
+        command
+    };
+
+    let first = subscribe(previous_type);
+    engine.execute_subscribe(first.clone()).unwrap();
+    let mut snapshot = stub_depth10();
+    snapshot.instrument_id = audusd_sim.id;
+    snapshot.flags = RecordFlag::F_SNAPSHOT as u8;
+    snapshot.sequence = 109;
+    snapshot.ts_event = UnixNanos::from(113);
+    snapshot.ts_init = UnixNanos::from(127);
+    let mut full_book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+    full_book.apply_depth(&snapshot).unwrap();
+    let data = if source == "depth" {
+        Data::BookDepth(Box::new(snapshot.clone()))
+    } else {
+        let deltas = full_book.to_deltas(snapshot.ts_event, snapshot.ts_init);
+        Data::BookDeltas(Box::new(deltas))
+    };
+
+    engine.process_data(data.clone());
+    let previous = engine
+        .cache()
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .unwrap()
+        .clone();
+    let shared = subscribe(previous_type);
+    engine.execute_subscribe(shared.clone()).unwrap();
+    engine
+        .execute_unsubscribe(&first.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(131),
+            Some(first.command_id()),
+        ))
+        .unwrap();
+    {
+        let cache = engine.cache().borrow();
+        let book = cache.order_book(&audusd_sim.id).unwrap();
+        assert_eq!(book.book_type, previous_type);
+        assert_eq!(book.sequence, snapshot.sequence);
+        assert_eq!(book.ts_last, snapshot.ts_event);
+        assert_eq!(book.update_count, previous.update_count);
+        assert_eq!(book.bids_as_map(None), previous.bids_as_map(None));
+        assert_eq!(book.asks_as_map(None), previous.asks_as_map(None));
+    }
+
+    engine
+        .execute_unsubscribe(&shared.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(137),
+            Some(shared.command_id()),
+        ))
+        .unwrap();
+    engine.execute_subscribe(subscribe(requested_type)).unwrap();
+    {
+        let cache = engine.cache().borrow();
+        let book = cache.order_book(&audusd_sim.id).unwrap();
+        assert_eq!(book.book_type, requested_type);
+
+        if previous_type == requested_type {
+            assert_eq!(book.sequence, snapshot.sequence);
+            assert_eq!(book.ts_last, snapshot.ts_event);
+            assert_eq!(book.update_count, previous.update_count);
+            assert_eq!(book.bids_as_map(None), previous.bids_as_map(None));
+            assert_eq!(book.asks_as_map(None), previous.asks_as_map(None));
+        } else {
+            assert_eq!(book.sequence, 0);
+            assert_eq!(book.ts_last, UnixNanos::default());
+            assert_eq!(book.update_count, 0);
+            assert_eq!(book.bids(None).count(), 0);
+            assert_eq!(book.asks(None).count(), 0);
+        }
+    }
+
+    engine.process_data(data);
+    let cache = engine.cache().borrow();
+    let book = cache.order_book(&audusd_sim.id).unwrap();
+
+    let levels = if requested_type == BookType::L1_MBP {
+        1
+    } else {
+        10
+    };
+
+    let expected_bids: IndexMap<_, _> = snapshot
+        .bids
+        .iter()
+        .take(levels)
+        .map(|order| (order.price.as_decimal(), order.size.as_decimal()))
+        .collect();
+    let expected_asks: IndexMap<_, _> = snapshot
+        .asks
+        .iter()
+        .take(levels)
+        .map(|order| (order.price.as_decimal(), order.size.as_decimal()))
+        .collect();
+    assert_eq!(book.instrument_id, audusd_sim.id);
+    assert_eq!(book.book_type, requested_type);
+    assert_eq!(book.sequence, snapshot.sequence);
+    assert_eq!(book.ts_last, snapshot.ts_event);
+    assert_eq!(book.bids_as_map(None), expected_bids);
+    assert_eq!(book.asks_as_map(None), expected_asks);
+}
+
+#[rstest]
 #[case::deltas_unmanaged_first(false, true)]
 #[case::deltas_unmanaged_last(false, false)]
 #[case::depth_unmanaged_first(true, true)]
@@ -2044,6 +2324,15 @@ fn test_managed_book_rejects_incompatible_configuration(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
         1
     );
+    assert_eq!(
+        engine
+            .cache()
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .unwrap()
+            .book_type,
+        BookType::L2_MBP,
+    );
 }
 
 #[rstest]
@@ -2110,6 +2399,25 @@ fn test_interval_and_managed_depth_conflict(
 }
 
 #[rstest]
+fn test_book_subscription_ownership_clears_on_reset(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let unrelated = InstrumentId::from("EUR/USD.SIM");
+    assert!(!engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+    let command = book_source_command(audusd_sim.id, client_id, false, false);
+    engine.execute_subscribe(command).unwrap();
+    assert!(engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+    engine.reset();
+    assert!(!engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+}
+
+#[rstest]
 fn test_parent_book_owner_keeps_original_targets(
     managed_book_engine: Rc<RefCell<DataEngine>>,
     client_id: ClientId,
@@ -2132,7 +2440,12 @@ fn test_parent_book_owner_keeps_original_targets(
     };
 
     command.params = Some(parent_params());
+    assert!(!engine.has_book_subscription(&parent_id));
+    assert!(!engine.has_book_subscription(&first_id));
     engine.execute_subscribe(original.clone()).unwrap();
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(!engine.has_book_subscription(&second_id));
 
     cache
         .borrow_mut()
@@ -2146,6 +2459,9 @@ fn test_parent_book_owner_keeps_original_targets(
 
     command.command_id = UUID4::new();
     engine.execute_subscribe(expanded.clone()).unwrap();
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(engine.has_book_subscription(&second_id));
     assert_eq!(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
         1
@@ -2172,6 +2488,10 @@ fn test_parent_book_owner_keeps_original_targets(
         0
     );
 
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(!engine.has_book_subscription(&second_id));
+
     engine
         .execute_subscribe(book_source_command(second_id, client_id, true, true))
         .unwrap();
@@ -2195,6 +2515,9 @@ fn test_parent_book_owner_keeps_original_targets(
         msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(second_id)),
         1
     );
+    assert!(!engine.has_book_subscription(&parent_id));
+    assert!(!engine.has_book_subscription(&first_id));
+    assert!(engine.has_book_subscription(&second_id));
 }
 
 #[rstest]

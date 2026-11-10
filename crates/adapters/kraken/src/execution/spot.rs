@@ -16,7 +16,7 @@
 //! Kraken Spot execution client implementation.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -47,7 +47,8 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -532,6 +533,7 @@ impl KrakenSpotExecutionClient {
 
     fn cancel_via_rest(&self, cmd: &CancelOrder) {
         let account_id = self.core.account_id;
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -563,6 +565,7 @@ impl KrakenSpotExecutionClient {
                     client_order_id,
                     venue_order_id,
                     failure,
+                    command_id,
                 );
             }
             Ok(())
@@ -686,6 +689,7 @@ impl KrakenSpotExecutionClient {
     }
 
     fn amend_via_rest(&self, cmd: &ModifyOrder) {
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -720,7 +724,19 @@ impl KrakenSpotExecutionClient {
                             "modify_order outcome is ambiguous for client_order_id={client_order_id}: {reason}"
                         );
                     }
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                    CommandFailure::NotSent(reason) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("modify-order error: {reason}"),
+                            ts_event,
+                            Some(command_id),
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_modify_rejected_event(
                             strategy_id,
@@ -729,6 +745,7 @@ impl KrakenSpotExecutionClient {
                             venue_order_id,
                             &format!("modify-order error: {reason}"),
                             ts_event,
+                            Some(command_id),
                         );
                     }
                 },
@@ -785,6 +802,90 @@ impl KrakenSpotExecutionClient {
                 );
             }
         }
+    }
+
+    /// Returns the instruments of this account's cached open LONG positions that the startup
+    /// wallet read may report as flat, sorted.
+    ///
+    /// Only instruments with bulk position coverage qualify. A covered instrument is withheld,
+    /// with a warning, when the engine cache lacks it, since the engine would stop startup on its
+    /// report, or when a SELL on it may have filled without the startup reports showing the fill.
+    fn wallet_flat_candidates(&self, order_reports: &[OrderStatusReport]) -> Vec<InstrumentId> {
+        let cache = self.core.cache();
+        let account_id = self.core.account_id;
+        let instrument_ids: BTreeSet<InstrumentId> = cache
+            .positions_open(
+                Some(&*KRAKEN_VENUE),
+                None,
+                None,
+                Some(&account_id),
+                Some(PositionSide::Long),
+            )
+            .iter()
+            .map(|position| position.instrument_id)
+            .collect();
+
+        let mut candidates = Vec::new();
+
+        for instrument_id in instrument_ids {
+            if !self.provides_bulk_position_coverage(instrument_id) {
+                continue;
+            }
+
+            if cache.instrument(&instrument_id).is_none() {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: instrument not in cache"
+                );
+                continue;
+            }
+
+            // A SELL that is not terminal could fill before the Balance read
+            if let Some(report) = order_reports.iter().find(|report| {
+                report.instrument_id == instrument_id
+                    && report.order_side == Some(OrderSide::Sell)
+                    && !report.order_status.is_closed()
+            }) {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: SELL order {} is not terminal",
+                    report.venue_order_id,
+                );
+                continue;
+            }
+
+            // A cached SELL the startup reports cannot place may have filled unseen
+            let open_sells = cache.orders_open(
+                Some(&*KRAKEN_VENUE),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(OrderSide::Sell),
+            );
+            let inflight_sells = cache.orders_inflight(
+                Some(&*KRAKEN_VENUE),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(OrderSide::Sell),
+            );
+
+            if let Some(order) = open_sells.iter().chain(&inflight_sells).find(|order| {
+                order.venue_order_id().is_none_or(|venue_order_id| {
+                    !order_reports
+                        .iter()
+                        .any(|report| report.venue_order_id == venue_order_id)
+                })
+            }) {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: cached SELL order {} has no order report",
+                    order.client_order_id(),
+                );
+                continue;
+            }
+
+            candidates.push(instrument_id);
+        }
+
+        candidates
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -1356,16 +1457,29 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
-        let position_reports = self
-            .http
-            .request_position_status_reports(
-                account_id,
-                None,
-                self.config.spot_account_type,
-                self.config.use_spot_position_reports,
-                Ustr::from(self.config.spot_positions_quote_currency.as_str()),
-            )
-            .await?;
+        let quote_currency = Ustr::from(self.config.spot_positions_quote_currency.as_str());
+        let position_reports = if self.config.spot_account_type != AccountType::Margin
+            && self.config.use_spot_position_reports
+        {
+            let flat_candidates = self.wallet_flat_candidates(&order_reports);
+            self.http
+                .request_wallet_position_reports_with_flats(
+                    account_id,
+                    quote_currency,
+                    &flat_candidates,
+                )
+                .await?
+        } else {
+            self.http
+                .request_position_status_reports(
+                    account_id,
+                    None,
+                    self.config.spot_account_type,
+                    self.config.use_spot_position_reports,
+                    quote_currency,
+                )
+                .await?
+        };
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -1656,8 +1770,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         let http = self.http.clone();
 
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         self.spawn_task("cancel_all_orders", async move {
-            batch_cancel_orders_for_spot(&http, &cancels).await;
+            batch_cancel_orders_for_spot(&http, &cancels, &emitter, clock).await;
             Ok(())
         });
 
@@ -1683,8 +1799,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let http = self.http.clone();
         let cancels = cmd.cancels;
 
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         self.spawn_task("batch_cancel_orders", async move {
-            batch_cancel_orders_for_spot(&http, &cancels).await;
+            batch_cancel_orders_for_spot(&http, &cancels, &emitter, clock).await;
             Ok(())
         });
 
@@ -1744,16 +1862,26 @@ enum SpotBatchCancelId {
 
 const SPOT_BATCH_CANCEL_LIMIT: usize = 50;
 
-async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[CancelOrder]) {
+async fn batch_cancel_orders_for_spot(
+    http: &KrakenSpotHttpClient,
+    cancels: &[CancelOrder],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
     let mut ids = Vec::new();
 
     for cancel in cancels {
         match batch_cancel_item_for_spot(http, cancel) {
-            Ok(id) => ids.push(id),
+            Ok(id) => ids.push((id, cancel)),
             Err(CommandFailure::NotSent(reason)) => {
-                log::warn!(
-                    "Batch cancel command failed local validation for {}: {reason}",
-                    cancel.client_order_id
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
                 );
             }
             Err(CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason)) => {
@@ -1770,7 +1898,7 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
         let mut orders = Vec::new();
         let mut cl_ord_ids = Vec::new();
 
-        for id in chunk {
+        for (id, _) in chunk {
             match id {
                 SpotBatchCancelId::VenueOrderId(venue_order_id) => {
                     orders.push(venue_order_id.clone());
@@ -1793,16 +1921,40 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
                     );
                 }
             }
-            Err(e) => match command_failure_from_cancel_error(e) {
-                CommandFailure::NotSent(reason) => {
-                    log::warn!("Batch cancel failed local validation: {reason}");
-                }
-                CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
-                    log::warn!(
-                        "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
-                    );
-                }
-            },
+            Err(e) => handle_batch_cancel_failure(
+                command_failure_from_cancel_error(e),
+                chunk,
+                emitter,
+                clock,
+            ),
+        }
+    }
+}
+
+fn handle_batch_cancel_failure(
+    failure: CommandFailure,
+    chunk: &[(SpotBatchCancelId, &CancelOrder)],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            for (_, cancel) in chunk {
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
+                );
+            }
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            log::warn!(
+                "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
+            );
         }
     }
 }
@@ -1827,6 +1979,10 @@ fn batch_cancel_item_for_spot(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn handle_cancel_failure(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
@@ -1835,6 +1991,7 @@ fn handle_cancel_failure(
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
     failure: CommandFailure,
+    causation_id: UUID4,
 ) {
     match failure {
         CommandFailure::VenueRejected(reason) => {
@@ -1845,10 +2002,19 @@ fn handle_cancel_failure(
                 venue_order_id,
                 &reason,
                 clock.get_time_ns(),
+                Some(causation_id),
             );
         }
         CommandFailure::NotSent(reason) => {
-            log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
+            emitter.emit_order_cancel_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+                Some(causation_id),
+            );
         }
         CommandFailure::Ambiguous(reason) => {
             log::warn!(
@@ -1910,31 +2076,40 @@ mod tests {
         cache::{Cache, InstrumentLookupError},
         clock::VirtualClock,
         factories::ExecutionClientFactory,
-        messages::execution::CancelOrder,
+        live::sender::EventSender,
+        messages::{ExecutionEvent, execution::CancelOrder},
     };
-    use nautilus_core::{Params, UUID4, UnixNanos};
-    use nautilus_model::identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::ExecutionEventEmitter;
+    use nautilus_model::{
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+        },
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use serde_json::json;
 
     use super::{
-        AccountType, ClientId, CommandFailure, ExecutionClientCore,
-        KrakenSpotCancelOrderParamsBuilder, KrakenSpotExecutionClient, OmsType,
-        batch_cancel_item_for_spot, cancel_order_for_spot, resolve_leverage, resolve_use_ws_trade,
+        AccountType, ClientId, CommandFailure, ExecutionClientCore, KrakenSpotExecutionClient,
+        OmsType, batch_cancel_item_for_spot, cancel_order_for_spot, handle_cancel_failure,
+        resolve_leverage, resolve_use_ws_trade,
     };
     use crate::{
         common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
         config::KrakenExecutionClientConfig,
         factories::KrakenExecutionClientFactory,
-        http::KrakenSpotHttpClient,
+        http::{KrakenHttpError, KrakenSpotHttpClient},
     };
 
     const TEST_INSTRUMENT_ID: &str = "BTC/USDT.KRAKEN";
 
+    /// The REST cancel fallback transmits exactly once with retries at their default, and its
+    /// failure surfaces as one ambiguous attempt: a retransmitted cancel may act on the venue
+    /// twice, and a rejection would misreport an order the venue may already have canceled.
     #[tokio::test]
-    async fn test_execution_config_max_retries_zero_disables_spot_cancel_retries() {
+    async fn test_spot_rest_cancel_sends_once_and_stays_ambiguous_with_retries_enabled() {
         let request_count = Arc::new(AtomicUsize::new(0));
         let handler_count = request_count.clone();
         let router = Router::new().route(
@@ -1966,19 +2141,161 @@ mod tests {
             api_key: "test-key".into(),
             api_secret: "c2VjcmV0".into(),
             base_url: Some(format!("http://{addr}")),
-            max_retries: 0,
             ..Default::default()
         };
         let client = KrakenSpotExecutionClient::new(core, config).unwrap();
-        let params = KrakenSpotCancelOrderParamsBuilder::default()
-            .txid("V-001".to_string())
-            .build()
-            .unwrap();
+        cache_test_spot_instrument(&client.http);
 
-        let result = client.http.inner.cancel_order(&params).await;
+        let result = cancel_order_for_spot(
+            &client.http,
+            AccountId::from("KRAKEN-001"),
+            InstrumentId::from(TEST_INSTRUMENT_ID),
+            Some(ClientOrderId::from("C-001")),
+            Some(VenueOrderId::from("V-001")),
+        )
+        .await;
 
-        assert!(result.is_err());
+        match result {
+            Err(CommandFailure::Ambiguous(reason)) => {
+                assert!(
+                    reason.contains("HTTP error 429"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            _ => panic!("Expected ambiguous cancel failure"),
+        }
+
         assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    }
+
+    /// The execution config's retry budget reaches the spot HTTP client for authenticated
+    /// reads: with `max_retries: 1` an always-failing token request is sent exactly twice.
+    /// A broken wiring (client default of 3) would send four times; a send-once read would
+    /// send once. This restores the config wiring coverage the deleted `max_retries: 0`
+    /// test provided.
+    #[tokio::test]
+    async fn test_execution_config_max_retries_reaches_spot_http_reads() {
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let handler_count = request_count.clone();
+        let router = Router::new().route(
+            "/0/private/GetWebSocketsToken",
+            post(move || {
+                let handler_count = handler_count.clone();
+                async move {
+                    handler_count.fetch_add(1, Ordering::Relaxed);
+
+                    StatusCode::TOO_MANY_REQUESTS
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("KRAKEN"),
+            *KRAKEN_VENUE,
+            OmsType::Netting,
+            AccountId::from("KRAKEN-001"),
+            AccountType::Cash,
+            None,
+            cache,
+        );
+
+        let config = KrakenExecutionClientConfig {
+            api_key: "test-key".into(),
+            api_secret: "c2VjcmV0".into(),
+            base_url: Some(format!("http://{addr}")),
+            max_retries: 1,
+            ..Default::default()
+        };
+
+        let client = KrakenSpotExecutionClient::new(core, config).unwrap();
+
+        let result = client.http.inner.get_websockets_token().await;
+
+        let error = result.expect_err("always-429 token request must fail");
+        assert!(
+            matches!(error, KrakenHttpError::NetworkError(ref message) if message.contains("HTTP error 429")),
+            "unexpected error: {error:?}"
+        );
+        assert_eq!(request_count.load(Ordering::Relaxed), 2);
+    }
+
+    /// An ambiguous cancel failure emits no rejection or denial: reconciliation, not an event,
+    /// resolves an order the venue may already have acted on.
+    #[rstest]
+    fn test_ambiguous_cancel_failure_emits_no_rejection() {
+        let clock = get_atomic_clock_realtime();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            AccountId::from("KRAKEN-001"),
+            AccountType::Cash,
+            None,
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let sender: EventSender<ExecutionEvent> = tx.into();
+        emitter.set_sender(sender);
+
+        handle_cancel_failure(
+            &emitter,
+            clock,
+            StrategyId::from("S-001"),
+            InstrumentId::from(TEST_INSTRUMENT_ID),
+            ClientOrderId::from("C-001"),
+            Some(VenueOrderId::from("V-001")),
+            CommandFailure::Ambiguous("HTTP error 429: rate limited".to_string()),
+            UUID4::new(),
+        );
+
+        assert!(
+            rx.try_recv().is_err(),
+            "ambiguous failure must emit no event"
+        );
+
+        // Control: a venue rejection does emit, so the absent event above is meaningful.
+        handle_cancel_failure(
+            &emitter,
+            clock,
+            StrategyId::from("S-001"),
+            InstrumentId::from(TEST_INSTRUMENT_ID),
+            ClientOrderId::from("C-001"),
+            Some(VenueOrderId::from("V-001")),
+            CommandFailure::VenueRejected("EOrder: Unknown order".to_string()),
+            UUID4::new(),
+        );
+
+        assert!(rx.try_recv().is_ok(), "venue rejection must emit an event");
+    }
+
+    fn cache_test_spot_instrument(http: &KrakenSpotHttpClient) -> InstrumentId {
+        let instrument_id = InstrumentId::from(TEST_INSTRUMENT_ID);
+
+        http.cache_instrument(InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
+
+        instrument_id
     }
 
     fn params_with(key: &str, val: serde_json::Value) -> Params {

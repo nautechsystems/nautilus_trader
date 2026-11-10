@@ -15,22 +15,40 @@
 
 use ahash::AHashMap;
 use nautilus_common::signal::Signal;
+#[cfg(feature = "defi")]
+use nautilus_common::{cache::CacheSnapshotRef, defi::cache::InstrumentMigration};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurve},
+    },
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
     position::Position,
     types::Currency,
 };
-use sqlx::{PgPool, Postgres, Row, Transaction};
+#[cfg(feature = "defi")]
+use nautilus_model::{
+    defi::{
+        Blockchain,
+        currency::{self, TokenCurrency},
+    },
+    enums::OrderStatus,
+    orders::Order,
+};
+use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
+#[cfg(feature = "defi")]
+use ustr::Ustr;
 
 use super::models::{orders::OrderSnapshotRow, positions::PositionSnapshotRow, types::SignalRow};
+#[cfg(feature = "defi")]
+use crate::defi::{contract_conflict, currency_references, integrity_error, validate_marker};
 use crate::sql::models::{
     accounts::AccountEventRow,
     data::{BarRow, InstrumentCloseRow, QuoteTickRow, TradeTickRow},
@@ -43,6 +61,8 @@ use crate::sql::models::{
     orders::{OrderEventAnyRow, OrderFilledRow},
     types::CurrencyRow,
 };
+
+pub(super) const CACHE_DATABASE_KEY_PREFIX: &str = "cache-database:";
 
 #[derive(Debug)]
 pub struct DatabaseQueries;
@@ -64,7 +84,8 @@ impl DatabaseQueries {
     /// Deletes the order, position and account rows of `trader_id` via the provided `pool`.
     ///
     /// Shared reference data (currencies, instruments, instrument closes), market data, the
-    /// general key-value table, signals, custom data and blockchain tables are left untouched.
+    /// user general entries, signals, custom data, and blockchain tables are left untouched.
+    /// This trader's saved component state and heartbeat are removed; shared synthetics remain.
     ///
     /// # Errors
     ///
@@ -89,6 +110,11 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to delete rows for {trader_id}: {e}"))?;
         }
 
+        sqlx::query("DELETE FROM general WHERE starts_with(id, $1)")
+            .bind(trader_key_prefix(*trader_id))
+            .execute(&mut *transaction)
+            .await?;
+
         transaction
             .commit()
             .await
@@ -111,6 +137,97 @@ impl DatabaseQueries {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
+    }
+
+    /// Deletes a raw key-value entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn delete(pool: &PgPool, key: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM general WHERE id = $1")
+            .bind(key)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Deletes an order's events, snapshot, and order-position mapping for one trader.
+    /// Position fill histories remain available independently of the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any database operation fails. A failure rolls back the deletion.
+    pub async fn delete_order(
+        pool: &PgPool,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        for statement in [
+            "DELETE FROM order_position_index WHERE trader_id = $1 AND client_order_id = $2",
+            "DELETE FROM order_event WHERE trader_id = $1 AND client_order_id = $2",
+            "DELETE FROM \"order\" WHERE trader_id = $1 AND id = $2",
+        ] {
+            sqlx::query(statement)
+                .bind(trader_id.to_string())
+                .bind(client_order_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Deletes a position's fill history, snapshot, and order-position mappings for one trader.
+    /// Order event histories remain available independently of the position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any database operation fails. A failure rolls back the deletion.
+    pub async fn delete_position(
+        pool: &PgPool,
+        trader_id: TraderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        for statement in [
+            "DELETE FROM order_position_index WHERE trader_id = $1 AND position_id = $2",
+            "DELETE FROM position_event WHERE trader_id = $1 AND position_id = $2",
+            "DELETE FROM position WHERE trader_id = $1 AND id = $2",
+        ] {
+            sqlx::query(statement)
+                .bind(trader_id.to_string())
+                .bind(position_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub(super) async fn load_synthetic(
+        pool: &PgPool,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        let key = format!("{CACHE_DATABASE_KEY_PREFIX}synthetic:{instrument_id}");
+        let value = Self::load_value(pool, &key).await?;
+        value
+            .map(|value| serde_json::from_slice(&value).map_err(Into::into))
+            .transpose()
+    }
+
+    pub(super) async fn load_value(pool: &PgPool, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        Ok(
+            sqlx::query_scalar("SELECT value FROM general WHERE id = $1")
+                .bind(key)
+                .fetch_optional(pool)
+                .await?,
+        )
     }
 
     /// Loads all entries from the `general` table via the provided `pool`.
@@ -138,6 +255,46 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the INSERT operation fails.
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
+        #[cfg(feature = "defi")]
+        if currency::check(currency)
+            .map_err(integrity_error)?
+            .is_some()
+        {
+            let mut transaction = pool.begin().await?;
+            Self::write_token_currency(&mut transaction, currency).await?;
+            transaction.commit().await?;
+            return Ok(());
+        }
+
+        #[cfg(feature = "defi")]
+        if currency.code.contains('@') {
+            let mut transaction = pool.begin().await?;
+            Self::insert_currency(&mut *transaction, currency).await?;
+            let tagged: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM defi_currency WHERE currency_id = $1)",
+            )
+            .bind(currency.code.as_str())
+            .fetch_one(&mut *transaction)
+            .await?;
+
+            if tagged {
+                return Err(integrity_error(format!(
+                    "Missing token metadata for {}",
+                    currency.code
+                )));
+            }
+
+            transaction.commit().await?;
+            return Ok(());
+        }
+
+        Self::insert_currency(pool, currency).await.map(|_| ())
+    }
+
+    async fn insert_currency<'e>(
+        executor: impl sqlx::Executor<'e, Database = Postgres>,
+        currency: Currency,
+    ) -> anyhow::Result<u64> {
         sqlx::query(
             "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
         )
@@ -146,9 +303,9 @@ impl DatabaseQueries {
             .bind(i32::from(currency.iso4217))
             .bind(currency.name.as_str())
             .bind(CurrencyTypePg(currency.currency_type))
-            .execute(pool)
+            .execute(executor)
             .await
-            .map(|_| ())
+            .map(|result| result.rows_affected())
             .map_err(|e| anyhow::anyhow!("Failed to insert into currency table: {e}"))
     }
 
@@ -158,11 +315,21 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SELECT operation fails.
     pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
-        sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency ORDER BY id ASC")
+        let currencies = sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency ORDER BY id ASC")
             .fetch_all(pool)
             .await
-            .map(|rows| rows.into_iter().map(|row| row.0).collect())
-            .map_err(|e| anyhow::anyhow!("Failed to load currencies: {e}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load currencies: {e}"))?;
+        #[cfg(feature = "defi")]
+        let mut metadata = Self::load_token_metadata(pool, None).await?;
+        currencies
+            .into_iter()
+            .map(|row| {
+                #[cfg(feature = "defi")]
+                return Self::restore_token_currency(row.0, metadata.remove(&row.0.code));
+                #[cfg(not(feature = "defi"))]
+                Ok(row.0)
+            })
+            .collect()
     }
 
     /// Loads a single `Currency` entry by `code` via the provided `pool`.
@@ -171,12 +338,24 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SELECT operation fails.
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
-        sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency WHERE id = $1")
+        let currency = sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency WHERE id = $1")
             .bind(code)
             .fetch_optional(pool)
             .await
-            .map(|currency| currency.map(|row| row.0))
-            .map_err(|e| anyhow::anyhow!("Failed to load currency: {e}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load currency: {e}"))?;
+
+        #[cfg(feature = "defi")]
+        if let Some(row) = currency {
+            let metadata = Self::load_token_metadata(pool, Some(code))
+                .await?
+                .remove(&row.0.code);
+            Self::restore_token_currency(row.0, metadata).map(Some)
+        } else {
+            Ok(None)
+        }
+
+        #[cfg(not(feature = "defi"))]
+        Ok(currency.map(|row| row.0))
     }
 
     /// Inserts or updates an `InstrumentAny` entry via the provided `pool`.
@@ -186,6 +365,21 @@ impl DatabaseQueries {
     /// Returns an error if the INSERT or UPDATE operation fails.
     pub async fn add_instrument(
         pool: &PgPool,
+        kind: &str,
+        instrument: Box<dyn Instrument>,
+    ) -> anyhow::Result<()> {
+        #[cfg(feature = "defi")]
+        {
+            let codes = currency::instrument_codes(instrument.as_ref()).map_err(integrity_error)?;
+            return Self::write_token_instrument(pool, kind, instrument, &codes, None).await;
+        }
+
+        #[cfg(not(feature = "defi"))]
+        Self::write_instrument(pool, kind, instrument).await
+    }
+
+    async fn write_instrument<'e>(
+        executor: impl sqlx::Executor<'e, Database = Postgres>,
         kind: &str,
         instrument: Box<dyn Instrument>,
     ) -> anyhow::Result<()> {
@@ -237,10 +431,452 @@ impl DatabaseQueries {
             .bind(instrument.ts_init().to_string())
             .bind(instrument.ts_event().to_string())
             .bind(instrument.info().map(serde_json::to_string).transpose()?)
-            .execute(pool)
+            .execute(executor)
             .await
             .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert item {} into instrument table: {:?}", instrument.id(), e))
+    }
+
+    #[cfg(feature = "defi")]
+    async fn load_token_metadata(
+        pool: &PgPool,
+        code: Option<&str>,
+    ) -> anyhow::Result<AHashMap<Ustr, TokenCurrency>> {
+        let exists: bool = sqlx::query_scalar("SELECT to_regclass('defi_currency') IS NOT NULL")
+            .fetch_one(pool)
+            .await
+            .map_err(integrity_error)?;
+
+        if !exists {
+            return Ok(AHashMap::new());
+        }
+
+        let rows =
+            sqlx::query("SELECT * FROM defi_currency WHERE ($1::TEXT IS NULL OR currency_id = $1)")
+                .bind(code)
+                .fetch_all(pool)
+                .await
+                .map_err(integrity_error)?;
+        rows.iter()
+            .map(|row| {
+                let code: String = row.try_get("currency_id").map_err(integrity_error)?;
+                Ok((Ustr::from(&code), Self::token_metadata(row)?))
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "defi")]
+    fn token_metadata(row: &sqlx::postgres::PgRow) -> anyhow::Result<TokenCurrency> {
+        let chain_id: i64 = row.try_get("chain_id").map_err(integrity_error)?;
+        let name: String = row.try_get("chain_name").map_err(integrity_error)?;
+        Ok(TokenCurrency {
+            chain_id: u32::try_from(chain_id).map_err(integrity_error)?,
+            address: row.try_get("address").map_err(integrity_error)?,
+            symbol: row.try_get("symbol").map_err(integrity_error)?,
+            chain_name: name.parse::<Blockchain>().map_err(integrity_error)?,
+        })
+    }
+
+    #[cfg(feature = "defi")]
+    fn restore_token_currency(
+        currency: Currency,
+        metadata: Option<TokenCurrency>,
+    ) -> anyhow::Result<Currency> {
+        if let Some(metadata) = metadata {
+            return currency::register(currency, metadata).map_err(integrity_error);
+        }
+
+        if currency::lookup(currency.code).is_some() {
+            return Err(integrity_error(format!(
+                "Missing token metadata for {}",
+                currency.code
+            )));
+        }
+
+        Ok(currency)
+    }
+
+    #[cfg(feature = "defi")]
+    fn instrument_marker(row: &sqlx::postgres::PgRow) -> anyhow::Result<Vec<String>> {
+        match row.try_get::<Option<Vec<String>>, _>("defi_currency_codes") {
+            Ok(Some(codes)) if codes.is_empty() => {
+                Err(integrity_error("Empty DeFi instrument dependency marker"))
+            }
+            Ok(codes) => Ok(codes.unwrap_or_default()),
+            Err(sqlx::Error::ColumnNotFound(_)) => Ok(Vec::new()),
+            Err(e) => Err(integrity_error(e)),
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    async fn restore_instrument_dependencies(
+        pool: &PgPool,
+        row: &sqlx::postgres::PgRow,
+        metadata: &AHashMap<Ustr, TokenCurrency>,
+    ) -> anyhow::Result<()> {
+        let codes = Self::instrument_marker(row)?;
+        let mut expected = Vec::new();
+        let mut references = Vec::new();
+
+        for field in ["base_currency", "quote_currency", "settlement_currency"] {
+            if let Some(code) = row
+                .try_get::<Option<String>, _>(field)
+                .map_err(integrity_error)?
+            {
+                if metadata.contains_key(&Ustr::from(&code))
+                    || currency::lookup(Ustr::from(&code)).is_some()
+                {
+                    expected.push(code.clone());
+                }
+
+                references.push(code);
+            }
+        }
+
+        expected.sort_unstable();
+        expected.dedup();
+        if expected != codes {
+            return Err(integrity_error(
+                "Instrument token dependencies differ from its marker",
+            ));
+        }
+
+        for code in &codes {
+            let currency = Self::load_currency(pool, code)
+                .await
+                .map_err(integrity_error)?
+                .ok_or_else(|| integrity_error(format!("Missing token currency {code}")))?;
+
+            if currency::lookup(currency.code).is_none() {
+                return Err(integrity_error(format!(
+                    "Missing token metadata for {code}"
+                )));
+            }
+        }
+
+        if !codes.is_empty()
+            && references
+                .iter()
+                .any(|code| Currency::try_from_str(code).is_none())
+        {
+            return Err(integrity_error(
+                "A marked instrument has an unresolved currency",
+            ));
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    async fn write_token_currency(
+        transaction: &mut Transaction<'_, Postgres>,
+        currency: Currency,
+    ) -> anyhow::Result<()> {
+        let metadata = currency::check(currency)
+            .map_err(integrity_error)?
+            .ok_or_else(|| {
+                integrity_error(format!("Missing token definition for {}", currency.code))
+            })?;
+
+        let inserted = Self::insert_currency(&mut **transaction, currency).await?;
+        let row = sqlx::query("SELECT * FROM currency WHERE id = $1 FOR UPDATE")
+            .bind(currency.code.as_str())
+            .fetch_one(&mut **transaction)
+            .await?;
+        let row = CurrencyRow::from_row(&row).map_err(integrity_error)?;
+
+        if inserted == 1 {
+            sqlx::query("INSERT INTO defi_currency (currency_id, chain_id, address, symbol, chain_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (chain_id, address) DO NOTHING")
+                .bind(currency.code.as_str()).bind(i64::from(metadata.chain_id)).bind(&metadata.address)
+                .bind(&metadata.symbol).bind(metadata.chain_name.to_string())
+                .execute(&mut **transaction).await?;
+        }
+
+        let bound_code: Option<String> = sqlx::query_scalar(
+            "SELECT currency_id FROM defi_currency WHERE chain_id = $1 AND address = $2",
+        )
+        .bind(i64::from(metadata.chain_id))
+        .bind(&metadata.address)
+        .fetch_optional(&mut **transaction)
+        .await?;
+
+        if let Some(code) = bound_code
+            && code != currency.code.as_str()
+        {
+            return Err(contract_conflict(&code));
+        }
+
+        let tag = sqlx::query("SELECT * FROM defi_currency WHERE currency_id = $1")
+            .bind(currency.code.as_str())
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| {
+                integrity_error(format!(
+                    "Legacy currency or missing metadata for {}",
+                    currency.code
+                ))
+            })?;
+
+        let stored_metadata = Self::token_metadata(&tag)?;
+        currency::register(row.0, stored_metadata).map_err(integrity_error)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    pub(crate) async fn add_defi_instrument(
+        pool: &PgPool,
+        instrument: InstrumentAny,
+        migration: Option<InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        let codes = currency::instrument_codes(&instrument).map_err(integrity_error)?;
+        if codes.is_empty() {
+            return Self::add_instrument_any(pool, instrument).await;
+        }
+
+        match instrument {
+            InstrumentAny::CurrencyPair(pair) => {
+                Self::write_token_instrument(
+                    pool,
+                    "CURRENCY_PAIR",
+                    Box::new(pair),
+                    &codes,
+                    migration.as_ref(),
+                )
+                .await
+            }
+            _ => Err(integrity_error("DeFi persistence supports currency pairs")),
+        }
+    }
+
+    pub(crate) async fn add_instrument_any(
+        pool: &PgPool,
+        instrument_any: InstrumentAny,
+    ) -> anyhow::Result<()> {
+        match instrument_any {
+            InstrumentAny::Betting(instrument) => {
+                Self::add_instrument(pool, "BETTING", Box::new(instrument)).await
+            }
+            InstrumentAny::BinaryOption(instrument) => {
+                Self::add_instrument(pool, "BINARY_OPTION", Box::new(instrument)).await
+            }
+            InstrumentAny::CryptoFuture(instrument) => {
+                Self::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument)).await
+            }
+            InstrumentAny::CryptoFuturesSpread(instrument) => {
+                Self::add_instrument(pool, "CRYPTO_FUTURES_SPREAD", Box::new(instrument)).await
+            }
+            InstrumentAny::CryptoOption(instrument) => {
+                Self::add_instrument(pool, "CRYPTO_OPTION", Box::new(instrument)).await
+            }
+            InstrumentAny::CryptoOptionSpread(instrument) => {
+                Self::add_instrument(pool, "CRYPTO_OPTION_SPREAD", Box::new(instrument)).await
+            }
+            InstrumentAny::CryptoPerpetual(instrument) => {
+                Self::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument)).await
+            }
+            InstrumentAny::CurrencyPair(instrument) => {
+                Self::add_instrument(pool, "CURRENCY_PAIR", Box::new(instrument)).await
+            }
+            InstrumentAny::Equity(equity) => {
+                Self::add_instrument(pool, "EQUITY", Box::new(equity)).await
+            }
+            InstrumentAny::FuturesContract(instrument) => {
+                Self::add_instrument(pool, "FUTURES_CONTRACT", Box::new(instrument)).await
+            }
+            InstrumentAny::FuturesSpread(instrument) => {
+                Self::add_instrument(pool, "FUTURES_SPREAD", Box::new(instrument)).await
+            }
+            InstrumentAny::OptionContract(instrument) => {
+                Self::add_instrument(pool, "OPTION_CONTRACT", Box::new(instrument)).await
+            }
+            InstrumentAny::Commodity(instrument) => {
+                Self::add_instrument(pool, "COMMODITY", Box::new(instrument)).await
+            }
+            InstrumentAny::IndexInstrument(instrument) => {
+                Self::add_instrument(pool, "INDEX_INSTRUMENT", Box::new(instrument)).await
+            }
+            InstrumentAny::Cfd(instrument) => {
+                Self::add_instrument(pool, "CFD", Box::new(instrument)).await
+            }
+            InstrumentAny::OptionSpread(instrument) => {
+                Self::add_instrument(pool, "OPTION_SPREAD", Box::new(instrument)).await
+            }
+            InstrumentAny::PerpetualContract(instrument) => {
+                Self::add_instrument(pool, "PERPETUAL_CONTRACT", Box::new(instrument)).await
+            }
+            InstrumentAny::TokenizedAsset(instrument) => {
+                Self::add_instrument(pool, "TOKENIZED_ASSET", Box::new(instrument)).await
+            }
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_legacy_replacement(
+        transaction: &mut Transaction<'_, Postgres>,
+        id: &str,
+    ) -> anyhow::Result<()> {
+        let history: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM position WHERE instrument_id = $1 UNION ALL SELECT 1 FROM position_event WHERE instrument_id = $1)")
+            .bind(id).fetch_one(&mut **transaction).await?;
+
+        let archives: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT value FROM general WHERE id LIKE $1")
+                .bind(format!("{}%", CacheSnapshotRef::POSITION_PREFIX))
+                .fetch_all(&mut **transaction)
+                .await?;
+        let mut history = history;
+        for blob in archives {
+            history |= CacheSnapshotRef::position_instrument_id(&blob)
+                .map_err(integrity_error)?
+                .to_string()
+                == id;
+        }
+
+        if history {
+            return Err(integrity_error(format!(
+                "Instrument {id} has position history; retain its legacy currencies"
+            )));
+        }
+
+        let rows = sqlx::query("SELECT * FROM order_event WHERE instrument_id = $1 ORDER BY trader_id, client_order_id, created_at ASC")
+            .bind(id).fetch_all(&mut **transaction).await?;
+        let mut events: AHashMap<(String, String), Vec<OrderEventAny>> = AHashMap::new();
+
+        for row in rows {
+            let trader = row.try_get("trader_id").map_err(integrity_error)?;
+            let order = row.try_get("client_order_id").map_err(integrity_error)?;
+            events
+                .entry((trader, order))
+                .or_default()
+                .push(OrderEventAnyRow::from_row(&row).map_err(integrity_error)?.0);
+        }
+
+        for events in events.values() {
+            let order = OrderAny::from_events(events.clone()).map_err(integrity_error)?;
+            if !order.is_closed() {
+                return Err(integrity_error(format!(
+                    "Instrument {id} has nonterminal orders"
+                )));
+            }
+        }
+
+        let snapshots =
+            sqlx::query(r#"SELECT trader_id, id, status FROM "order" WHERE instrument_id = $1"#)
+                .bind(id)
+                .fetch_all(&mut **transaction)
+                .await?;
+
+        for row in snapshots {
+            let key = (
+                row.try_get::<String, _>("trader_id")
+                    .map_err(integrity_error)?,
+                row.try_get::<String, _>("id").map_err(integrity_error)?,
+            );
+
+            if !events.contains_key(&key) {
+                let status: String = row.try_get("status").map_err(integrity_error)?;
+                if !status
+                    .parse::<OrderStatus>()
+                    .map_err(integrity_error)?
+                    .is_closed()
+                {
+                    return Err(integrity_error(format!(
+                        "Instrument {id} has nonterminal orders"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    async fn write_token_instrument(
+        pool: &PgPool,
+        kind: &str,
+        instrument: Box<dyn Instrument>,
+        codes: &[String],
+        migration: Option<&InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        let references = currency_references(instrument.as_ref());
+        let id = instrument.id().to_string();
+        let mut transaction = pool.begin().await?;
+        // Serialize changes to one instrument before checking its previous currency identities
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(&id)
+            .execute(&mut *transaction)
+            .await?;
+        let previous = sqlx::query("SELECT * FROM instrument WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+
+        if let Some(row) = previous {
+            let previous_codes = Self::instrument_marker(&row)?;
+            if previous_codes.is_empty() {
+                if !codes.is_empty() {
+                    migration
+                        .ok_or_else(|| {
+                            integrity_error(
+                                "Historical replacement requires the cache migration check",
+                            )
+                        })?
+                        .validate()
+                        .map_err(integrity_error)?;
+
+                    Self::check_legacy_replacement(&mut transaction, &id).await?;
+                }
+            } else if previous_codes != codes {
+                return Err(integrity_error(
+                    "Cannot change a persisted token instrument's currency identities",
+                ));
+            } else {
+                let base: Option<String> = row.try_get("base_currency").map_err(integrity_error)?;
+                let quote: String = row.try_get("quote_currency").map_err(integrity_error)?;
+                let settlement: Option<String> = row
+                    .try_get("settlement_currency")
+                    .map_err(integrity_error)?;
+
+                if base
+                    != instrument
+                        .base_currency()
+                        .map(|currency| currency.code.to_string())
+                    || quote != instrument.quote_currency().code.as_str()
+                    || settlement != Some(instrument.settlement_currency().code.to_string())
+                {
+                    return Err(integrity_error(
+                        "Cannot change a persisted token instrument's currency identities",
+                    ));
+                }
+            }
+        }
+
+        for code in codes {
+            let (currency, _) = currency::lookup(Ustr::from(code))
+                .ok_or_else(|| integrity_error(format!("Missing token definition for {code}")))?;
+            Self::write_token_currency(&mut transaction, currency).await?;
+        }
+
+        Self::write_instrument(&mut *transaction, kind, instrument).await?;
+        let mut persisted: Vec<String> =
+            sqlx::query_scalar("SELECT currency_id FROM defi_currency WHERE currency_id = ANY($1)")
+                .bind(&references)
+                .fetch_all(&mut *transaction)
+                .await?;
+
+        persisted.sort_unstable();
+        if persisted != codes {
+            return Err(integrity_error(
+                "Instrument token dependencies differ from persisted currency definitions",
+            ));
+        }
+
+        sqlx::query("UPDATE instrument SET defi_currency_codes = $2 WHERE id = $1")
+            .bind(id)
+            .bind((!codes.is_empty()).then_some(codes))
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     /// Loads a single `InstrumentAny` entry by `instrument_id` via the provided `pool`.
@@ -252,14 +888,25 @@ impl DatabaseQueries {
         pool: &PgPool,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        sqlx::query_as::<_, InstrumentAnyRow>("SELECT * FROM instrument WHERE id = $1")
+        let row = sqlx::query("SELECT * FROM instrument WHERE id = $1")
             .bind(instrument_id.to_string())
             .fetch_optional(pool)
-            .await
-            .map(|instrument| instrument.map(|row| row.0))
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to load instrument with id {instrument_id},error is: {e}")
-            })
+            .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        #[cfg(feature = "defi")]
+        {
+            let metadata = Self::load_token_metadata(pool, None).await?;
+            Self::restore_instrument_dependencies(pool, &row, &metadata).await?;
+        }
+
+        let instrument = InstrumentAnyRow::from_row(&row)?.0;
+        #[cfg(feature = "defi")]
+        validate_marker(&instrument, &Self::instrument_marker(&row)?)?;
+        Ok(Some(instrument))
     }
 
     /// Loads all `InstrumentAny` entries via the provided `pool`.
@@ -268,11 +915,23 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SELECT operation fails.
     pub async fn load_instruments(pool: &PgPool) -> anyhow::Result<Vec<InstrumentAny>> {
-        sqlx::query_as::<_, InstrumentAnyRow>("SELECT * FROM instrument")
+        let rows = sqlx::query("SELECT * FROM instrument")
             .fetch_all(pool)
-            .await
-            .map(|rows| rows.into_iter().map(|row| row.0).collect())
-            .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
+            .await?;
+        let mut instruments = Vec::with_capacity(rows.len());
+        #[cfg(feature = "defi")]
+        let metadata = Self::load_token_metadata(pool, None).await?;
+
+        for row in rows {
+            #[cfg(feature = "defi")]
+            Self::restore_instrument_dependencies(pool, &row, &metadata).await?;
+            let instrument = InstrumentAnyRow::from_row(&row)?.0;
+            #[cfg(feature = "defi")]
+            validate_marker(&instrument, &Self::instrument_marker(&row)?)?;
+            instruments.push(instrument);
+        }
+
+        Ok(instruments)
     }
 
     /// Inserts or replaces an `InstrumentClose`.
@@ -320,6 +979,76 @@ impl DatabaseQueries {
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
         .map_err(|e| anyhow::anyhow!("Failed to load instrument closes: {e}"))
+    }
+
+    pub(crate) async fn add_greeks(pool: &PgPool, greeks: &GreeksData) -> anyhow::Result<()> {
+        let value = serde_json::to_value(greeks)?;
+        sqlx::query(
+            "INSERT INTO greeks (instrument_id, value) VALUES ($1, $2) \
+             ON CONFLICT (instrument_id) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(greeks.instrument_id.to_string())
+        .bind(value)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_greeks(
+        pool: &PgPool,
+    ) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
+        let rows = sqlx::query("SELECT instrument_id, value FROM greeks")
+            .fetch_all(pool)
+            .await?;
+        let mut greeks = AHashMap::with_capacity(rows.len());
+        for row in rows {
+            let key: String = row.try_get("instrument_id")?;
+            let instrument_id = key.parse::<InstrumentId>()?;
+            let data: GreeksData = serde_json::from_value(row.try_get("value")?)?;
+            anyhow::ensure!(
+                data.instrument_id == instrument_id,
+                "Greeks key ID {instrument_id} did not match payload ID {}",
+                data.instrument_id
+            );
+            greeks.insert(instrument_id, data);
+        }
+
+        Ok(greeks)
+    }
+
+    pub(crate) async fn add_yield_curve(pool: &PgPool, curve: &YieldCurve) -> anyhow::Result<()> {
+        let value = serde_json::to_value(curve)?;
+        sqlx::query(
+            "INSERT INTO yield_curve (curve_name, value) VALUES ($1, $2) \
+             ON CONFLICT (curve_name) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(&curve.curve_name)
+        .bind(value)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_yield_curves(
+        pool: &PgPool,
+    ) -> anyhow::Result<AHashMap<String, YieldCurve>> {
+        let rows = sqlx::query("SELECT curve_name, value FROM yield_curve")
+            .fetch_all(pool)
+            .await?;
+        let mut curves = AHashMap::with_capacity(rows.len());
+        for row in rows {
+            let name: String = row.try_get("curve_name")?;
+            let curve: YieldCurve = serde_json::from_value(row.try_get("value")?)?;
+            anyhow::ensure!(
+                curve.curve_name == name,
+                "Yield curve key {name} did not match payload name {}",
+                curve.curve_name
+            );
+            curve.validate()?;
+            curves.insert(name, curve);
+        }
+
+        Ok(curves)
     }
 
     /// Inserts an `OrderInitialized` event via the provided `pool`.
@@ -1985,5 +2714,43 @@ impl DatabaseQueries {
             results.push(custom);
         }
         Ok(results)
+    }
+}
+
+pub(super) fn trader_key_prefix(trader_id: TraderId) -> String {
+    format!(
+        "{CACHE_DATABASE_KEY_PREFIX}trader:{}:{trader_id}:",
+        trader_id.as_str().len()
+    )
+}
+
+#[cfg(all(test, feature = "defi"))]
+mod tests {
+    use nautilus_model::instruments::stubs::audusd_sim;
+    use sqlx::{Error, postgres::PgPoolOptions};
+
+    use super::DatabaseQueries;
+    use crate::defi::IntegrityError;
+
+    #[tokio::test]
+    async fn test_token_write_closed_pool_preserves_database_error() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        pool.close().await;
+        let error = DatabaseQueries::write_token_instrument(
+            &pool,
+            "CurrencyPair",
+            Box::new(audusd_sim()),
+            &[],
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(!error.is::<IntegrityError>());
+        assert!(matches!(
+            error.downcast_ref::<Error>(),
+            Some(Error::PoolClosed)
+        ));
     }
 }

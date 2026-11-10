@@ -31,7 +31,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -186,6 +186,8 @@ pub(crate) struct MockState {
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub accounts_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
+    pub cert_login_requests: Arc<Mutex<Vec<(HeaderMap, Bytes)>>>,
+    pub identity_response_gate: Arc<Mutex<Option<MockResponseGate>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
     state_tx: watch::Sender<u64>,
@@ -255,6 +257,8 @@ impl Default for MockState {
             accounts_overrides: Arc::default(),
             accounts_error_overrides: Arc::default(),
             login_response_override: Arc::default(),
+            cert_login_requests: Arc::default(),
+            identity_response_gate: Arc::default(),
             keep_alive_response_override: Arc::default(),
             keep_alive_status_override: Arc::default(),
             state_tx,
@@ -313,6 +317,24 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     )
 }
 
+async fn handle_cert_login(
+    State(state): State<MockState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    state.cert_login_requests.lock().push((headers, body));
+    let response = state
+        .login_response_override
+        .lock()
+        .clone()
+        .unwrap_or_else(|| load_fixture("rest/cert_login.json"));
+    wait_identity_response_gate(&state, "certlogin").await;
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        response,
+    )
+}
+
 async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
     state.publish();
@@ -326,12 +348,24 @@ async fn handle_keep_alive(State(state): State<MockState>) -> Response {
         .lock()
         .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
         .unwrap_or(StatusCode::OK);
+    wait_identity_response_gate(&state, "keepAlive").await;
     (
         status,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,
     )
         .into_response()
+}
+
+async fn wait_identity_response_gate(state: &MockState, method: &str) {
+    let gate = state.identity_response_gate.lock().clone();
+    if let Some(gate) = gate
+        && gate.method == method
+    {
+        gate.waiters.fetch_add(1, Ordering::Relaxed);
+        state.publish();
+        gate.semaphore.acquire().await.unwrap().forget();
+    }
 }
 
 async fn handle_navigation() -> impl IntoResponse {
@@ -745,6 +779,8 @@ pub(crate) async fn start_mock_http() -> (SocketAddr, MockState) {
 
     let router = Router::new()
         .route("/login", post(handle_login))
+        .route("/api/certlogin", post(handle_cert_login))
+        .route("/api/keepAlive", post(handle_keep_alive))
         .route("/keepAlive", post(handle_keep_alive))
         .route("/betting", post(handle_betting))
         .route("/accounts", post(handle_accounts))

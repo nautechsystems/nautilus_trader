@@ -413,7 +413,7 @@ mod tests {
             Some(betting_account_state_changed.clone())
         );
         assert_eq!(
-            betting_account.events,
+            *betting_account.events,
             vec![betting_account_state, betting_account_state_changed]
         );
         assert_eq!(betting_account.event_count(), 2);

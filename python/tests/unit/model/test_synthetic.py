@@ -188,6 +188,7 @@ def test_synthetic_instrument_change_formula() -> None:
         ts_event=0,
         ts_init=0,
     )
+
     price1 = synthetic.calculate([100.0, 200.0])
 
     new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 4"

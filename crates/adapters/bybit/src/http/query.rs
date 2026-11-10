@@ -29,6 +29,7 @@ use crate::common::{
         BybitOrderFilter, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus, BybitOrderType,
         BybitPositionIdx, BybitPositionMode, BybitProductType, BybitStopOrderType,
         BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        BybitWithdrawAccountType, BybitWithdrawFeeType, BybitWithdrawForceChain, BybitWithdrawType,
     },
     parse::opt_bool_as_int,
 };
@@ -391,6 +392,74 @@ pub struct BybitRepayParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option), default)]
     pub repayment_type: Option<String>,
+}
+
+/// Body parameters for `POST /v5/asset/withdraw/create`.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWithdrawParams {
+    pub coin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub chain: Option<String>,
+    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub tag: Option<String>,
+    pub amount: String,
+    pub timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub force_chain: Option<BybitWithdrawForceChain>,
+    pub account_type: BybitWithdrawAccountType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub fee_type: Option<BybitWithdrawFeeType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub questionnaire: Option<String>,
+}
+
+/// Query parameters for `GET /v5/asset/withdraw/query-record`.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw/withdraw-record>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(default)]
+pub struct BybitWithdrawalRecordsParams {
+    #[serde(rename = "withdrawID", skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub withdraw_id: Option<String>,
+    #[serde(rename = "txID", skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub tx_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub coin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub withdraw_type: Option<BybitWithdrawType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub start_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub end_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub cursor: Option<String>,
 }
 
 /// Order entry payload for `POST /v5/order/create-batch`.

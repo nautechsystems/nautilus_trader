@@ -19,18 +19,28 @@ use nautilus_common::{
     actor::DataActor,
     cache::Cache,
     clock::{Clock, VirtualClock},
-    timer::TimeEvent,
+    messages::execution::TradingCommand,
+    msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{QuoteTick, greeks::OptionGreekValues, option_chain::OptionGreeks},
-    enums::{OrderSide, TimeInForce},
+    enums::{OmsType, OptionKind, OrderSide, OrderType, TimeInForce},
     events::{
-        OrderDenied, OrderExpired, OrderRejected,
-        order::spec::{OrderDeniedSpec, OrderExpiredSpec, OrderRejectedSpec},
+        OrderDenied, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
+        order::spec::{
+            OrderDeniedSpec, OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec,
+            OrderRejectedSpec,
+        },
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
-    instruments::{CryptoPerpetual, InstrumentAny},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
+        TraderId,
+    },
+    instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_option_btc_deribit},
+    orders::{Order, OrderAny, builder::OrderTestBuilder},
+    position::Position,
     types::{Currency, Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
@@ -873,4 +883,583 @@ fn test_mark_iv_default_none() {
     let strategy = create_strategy();
     assert!(strategy.call_mark_iv.is_none());
     assert!(strategy.put_mark_iv.is_none());
+}
+
+#[rstest]
+fn test_on_reset_restores_constructor_state() {
+    use nautilus_common::component::Component;
+
+    let mut strategy = create_initialized_strategy();
+    let expected_config = format!("{:?}", strategy.config);
+    register_strategy(&mut strategy);
+    strategy.initialize().unwrap();
+    let call_id = strategy.call_instrument_id.unwrap();
+    let put_id = strategy.put_instrument_id.unwrap();
+    strategy.subscribed_greeks = vec![call_id, put_id];
+    strategy.call_delta = 0.31;
+    strategy.put_delta = -0.42;
+    strategy.call_mark_iv = Some(0.55);
+    strategy.put_mark_iv = Some(0.60);
+    strategy.call_quote = Some(quote_tick(call_id, "100.0", "101.0"));
+    strategy.put_quote = Some(quote_tick(put_id, "90.0", "91.0"));
+    strategy.call_greeks = Some(OptionGreeks {
+        instrument_id: call_id,
+        ..Default::default()
+    });
+
+    strategy.put_greeks = Some(OptionGreeks {
+        instrument_id: put_id,
+        ..Default::default()
+    });
+
+    strategy.call_position = -2.0;
+    strategy.put_position = -3.0;
+    strategy.hedge_position = 4.0;
+    strategy
+        .order_filled_qty
+        .insert(ClientOrderId::from("O-RESET"), 7.into());
+    strategy.hedge_pending = true;
+    strategy.entry_attempted = true;
+
+    strategy.reset().unwrap();
+
+    assert_eq!(strategy.call_instrument_id, None);
+    assert_eq!(strategy.put_instrument_id, None);
+    assert!(strategy.subscribed_greeks.is_empty());
+    assert_eq!(strategy.call_delta, 0.0);
+    assert_eq!(strategy.put_delta, 0.0);
+    assert_eq!(strategy.call_mark_iv, None);
+    assert_eq!(strategy.put_mark_iv, None);
+    assert_eq!(strategy.call_quote, None);
+    assert_eq!(strategy.put_quote, None);
+    assert_eq!(strategy.call_greeks, None);
+    assert_eq!(strategy.put_greeks, None);
+    assert!(!strategy.call_delta_ready);
+    assert!(!strategy.put_delta_ready);
+    assert_eq!(strategy.call_position, 0.0);
+    assert_eq!(strategy.put_position, 0.0);
+    assert_eq!(strategy.hedge_position, 0.0);
+    assert!(strategy.order_filled_qty.is_empty());
+    assert!(!strategy.hedge_pending);
+    assert!(!strategy.entry_attempted);
+    assert_eq!(format!("{:?}", strategy.config), expected_config);
+    assert!(strategy.is_ready());
+}
+
+#[rstest]
+fn test_full_hedge_fill_void_restores_timer_hedge() {
+    let mut strategy = create_initialized_strategy();
+    register_strategy(&mut strategy);
+    let instrument = InstrumentAny::CryptoPerpetual(hedge_swap_integer_sized());
+    let strategy_id = strategy.strategy_id().unwrap();
+    let fill = OrderFilledSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-HEDGE-VOID"))
+        .position_id(PositionId::from("P-HEDGE-VOID"))
+        .last_qty(Quantity::from(2))
+        .last_px(Price::from("70000.0"))
+        .build();
+    let mut position = Position::new(&instrument, fill.clone());
+    let order = filled_order(&fill);
+    let cache = strategy.core.cache_rc();
+    {
+        let mut cache = cache.borrow_mut();
+        cache.add_instrument(instrument).unwrap();
+        cache.add_position(&position, OmsType::Hedging).unwrap();
+        cache
+            .add_order(order, fill.position_id, None, true)
+            .unwrap();
+    }
+
+    strategy.call_position = -10.0;
+    strategy.hedge_pending = true;
+    strategy.on_order_filled(&fill);
+    assert_eq!(strategy.hedge_position, 2.0);
+    assert_eq!(strategy.portfolio_delta(), 0.0);
+    assert!(!strategy.hedge_pending);
+
+    let voided = OrderFillVoidedSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .trade_id(fill.trade_id)
+        .position_id(position.id)
+        .voided_qty(fill.last_qty)
+        .last_px(fill.last_px)
+        .build();
+    position
+        .apply_fill_void(voided.clone(), fill.last_qty, None)
+        .unwrap();
+    {
+        let mut cache = cache.borrow_mut();
+        cache.update_position(&position).unwrap();
+        cache
+            .update_order(&OrderEventAny::FillVoided(voided.clone()))
+            .unwrap();
+    }
+
+    strategy.on_order_fill_voided(&voided);
+    assert_eq!(position.signed_qty, 0.into());
+    assert_eq!(strategy.hedge_position, 0.0);
+    assert_eq!(strategy.portfolio_delta(), -2.0);
+
+    let (handler, commands) = get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        handler,
+    );
+
+    let timer = TimeEvent::new(
+        Ustr::from("delta_rehedge"),
+        UUID4::new(),
+        0.into(),
+        0.into(),
+    );
+
+    DataActor::on_time_event(&mut strategy, &timer).unwrap();
+    let messages = commands.get_messages();
+    assert_eq!(messages.len(), 1);
+
+    let TradingCommand::SubmitOrder(command) = &messages[0] else {
+        panic!("Expected submit order");
+    };
+
+    let cache = cache.borrow();
+    let hedge = cache.order(&command.client_order_id).unwrap();
+    assert_eq!(hedge.instrument_id(), fill.instrument_id);
+    assert_eq!(hedge.strategy_id(), strategy_id);
+    assert_eq!(hedge.order_type(), OrderType::Market);
+    assert_eq!(hedge.order_side(), OrderSide::Buy);
+    assert_eq!(hedge.quantity(), Quantity::from(2));
+    assert_eq!(command.client_id, Some(strategy.config.client_id));
+    assert!(strategy.hedge_pending);
+}
+
+#[rstest]
+#[case(0, [-6.0, -8.0, 7.0], [-2.0, -8.0, 7.0])]
+#[case(1, [-6.0, -8.0, 7.0], [-6.0, -3.0, 7.0])]
+#[case(2, [-6.0, -8.0, 7.0], [-6.0, -8.0, 1.0])]
+fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
+    #[case] leg: usize,
+    #[case] mut initial: [f64; 3],
+    #[case] mut expected: [f64; 3],
+) {
+    let (mut strategy, mut positions) = start_strategy_with_positions();
+    assert_eq!(
+        [
+            strategy.call_position,
+            strategy.put_position,
+            strategy.hedge_position
+        ],
+        initial
+    );
+
+    for position in &positions {
+        assert_eq!(
+            strategy.order_filled_qty[&position.opening_order_id],
+            position.events[0].last_qty.as_decimal()
+        );
+    }
+
+    let position = &mut positions[leg];
+    let fill = position.events[0].clone();
+    let cache = strategy.core.cache_rc();
+    let instrument = cache
+        .borrow()
+        .instrument(&fill.instrument_id)
+        .unwrap()
+        .clone();
+    let foreign_fill = OrderFilledSpec::builder()
+        .strategy_id(StrategyId::from("OTHER-003"))
+        .instrument_id(fill.instrument_id)
+        .client_order_id(ClientOrderId::from("O-LATER-FOREIGN"))
+        .position_id(PositionId::from("P-LATER-FOREIGN"))
+        .last_qty(Quantity::from(9))
+        .last_px(fill.last_px)
+        .build();
+    let foreign = Position::new(&instrument, foreign_fill);
+    cache
+        .borrow_mut()
+        .add_position(&foreign, OmsType::Hedging)
+        .unwrap();
+
+    let own_fill = OrderFilledSpec::builder()
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(ClientOrderId::from("O-LATER-OWN"))
+        .position_id(PositionId::from("P-LATER-OWN"))
+        .last_qty(Quantity::from(2))
+        .last_px(fill.last_px)
+        .build();
+    let own = Position::new(&instrument, own_fill.clone());
+    cache
+        .borrow_mut()
+        .add_position(&own, OmsType::Hedging)
+        .unwrap();
+    strategy.on_order_filled(&own_fill);
+    initial[leg] += 2.0;
+    expected[leg] += 2.0;
+    strategy.hedge_pending = true;
+
+    let mut voided = OrderFillVoidedSpec::builder()
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .trade_id(fill.trade_id)
+        .order_side(fill.order_side)
+        .position_id(position.id)
+        .voided_qty(Quantity::from(1))
+        .last_px(fill.last_px)
+        .build();
+    position
+        .apply_fill_void(voided.clone(), Quantity::from(1), None)
+        .unwrap();
+    cache.borrow_mut().update_position(position).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(voided.clone()))
+        .unwrap();
+    strategy.on_order_fill_voided(&voided);
+    let mut partial = initial;
+    partial[leg] += if fill.order_side == OrderSide::Buy {
+        -1.0
+    } else {
+        1.0
+    };
+
+    assert_eq!(
+        [
+            strategy.call_position,
+            strategy.put_position,
+            strategy.hedge_position
+        ],
+        partial
+    );
+
+    voided.voided_qty = fill.last_qty;
+    voided.correction_id = Ustr::from("CORRECTION-FULL");
+    position
+        .apply_fill_void(voided.clone(), fill.last_qty, None)
+        .unwrap();
+    cache.borrow_mut().update_position(position).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(voided.clone()))
+        .unwrap();
+    strategy.on_order_fill_voided(&voided);
+    strategy.on_order_fill_voided(&voided);
+    assert_eq!(
+        [
+            strategy.call_position,
+            strategy.put_position,
+            strategy.hedge_position
+        ],
+        expected
+    );
+    assert_eq!(strategy.order_filled_qty[&fill.client_order_id], 0.into());
+    assert!(strategy.hedge_pending);
+}
+
+fn start_strategy_with_positions() -> (DeltaNeutralVol, [Position; 3]) {
+    let mut strategy = create_selected_strategy();
+    strategy.config.option_family = "BTC".to_string();
+    register_strategy(&mut strategy);
+    let mut call = crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+    call.id = strategy.call_instrument_id.unwrap();
+    call.option_kind = OptionKind::Call;
+    let mut put = crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+    put.id = strategy.put_instrument_id.unwrap();
+
+    let instruments = [
+        InstrumentAny::CryptoOption(call),
+        InstrumentAny::CryptoOption(put),
+        InstrumentAny::CryptoPerpetual(hedge_swap_integer_sized()),
+    ];
+
+    let strategy_id = strategy.strategy_id().unwrap();
+    let cache = strategy.core.cache_rc();
+    let mut own_positions = Vec::new();
+
+    for (leg, instrument) in instruments.iter().enumerate() {
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let side = if leg == 2 {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+
+        for (owner, qty) in [
+            (StrategyId::from("EXTERNAL-002"), [2, 3, 1][leg]),
+            (strategy_id, [4, 5, 6][leg]),
+        ] {
+            let client_order_id = format!("O-{leg}-{owner}");
+            let position_id = format!("P-{leg}-{owner}");
+            let fill = OrderFilledSpec::builder()
+                .strategy_id(owner)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::new(client_order_id))
+                .position_id(PositionId::new(position_id))
+                .last_qty(Quantity::from(qty))
+                .last_px(Price::from("100.0"))
+                .order_side(side)
+                .build();
+            let order = filled_order(&fill);
+            cache
+                .borrow_mut()
+                .add_order(order, fill.position_id, None, true)
+                .unwrap();
+            let position = Position::new(instrument, fill);
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Hedging)
+                .unwrap();
+
+            if owner == strategy_id {
+                own_positions.push(position);
+            }
+        }
+    }
+
+    strategy
+        .core
+        .clock_mut()
+        .register_default_handler(TimeEventCallback::from(|_: TimeEvent| {}));
+    DataActor::on_start(&mut strategy).unwrap();
+    (strategy, own_positions.try_into().unwrap())
+}
+
+#[rstest]
+fn test_fill_void_ignores_other_strategy_fills_in_shared_venue_position() {
+    let (mut strategy, mut positions) = start_strategy_with_positions();
+    let position = &mut positions[2];
+    let instrument_id = position.instrument_id;
+    let cache = strategy.core.cache_rc();
+    let foreign_fill = OrderFilledSpec::builder()
+        .strategy_id(StrategyId::from("OTHER-003"))
+        .instrument_id(instrument_id)
+        .position_id(position.id)
+        .client_order_id(ClientOrderId::from("O-SHARED-FOREIGN"))
+        .trade_id(TradeId::from("T-SHARED-FOREIGN"))
+        .last_qty(Quantity::from(9))
+        .last_px(Price::from("100.0"))
+        .build();
+    position.apply(&foreign_fill);
+    let own_fill = OrderFilledSpec::builder()
+        .strategy_id(strategy.strategy_id().unwrap())
+        .instrument_id(instrument_id)
+        .position_id(position.id)
+        .client_order_id(ClientOrderId::from("O-SHARED-OWN"))
+        .trade_id(TradeId::from("T-SHARED-OWN"))
+        .last_qty(Quantity::from(2))
+        .last_px(Price::from("100.0"))
+        .build();
+    position.apply(&own_fill);
+    let order = filled_order(&own_fill);
+    cache
+        .borrow_mut()
+        .add_order(order, Some(position.id), None, true)
+        .unwrap();
+    cache.borrow_mut().update_position(position).unwrap();
+    strategy.on_order_filled(&own_fill);
+    assert_eq!(position.signed_qty, 17.into());
+    assert_eq!(strategy.hedge_position, 9.0);
+
+    let voided = OrderFillVoidedSpec::builder()
+        .strategy_id(own_fill.strategy_id)
+        .instrument_id(instrument_id)
+        .position_id(position.id)
+        .client_order_id(own_fill.client_order_id)
+        .trade_id(own_fill.trade_id)
+        .voided_qty(own_fill.last_qty)
+        .last_px(own_fill.last_px)
+        .build();
+    position
+        .apply_fill_void(voided.clone(), own_fill.last_qty, None)
+        .unwrap();
+    cache.borrow_mut().update_position(position).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(voided.clone()))
+        .unwrap();
+    strategy.on_order_fill_voided(&voided);
+    assert_eq!(position.signed_qty, 15.into());
+    assert_eq!(strategy.call_position, -6.0);
+    assert_eq!(strategy.put_position, -8.0);
+    assert_eq!(strategy.hedge_position, 7.0);
+    assert_eq!(
+        strategy.order_filled_qty[&own_fill.client_order_id],
+        0.into()
+    );
+}
+
+#[rstest]
+fn test_timer_drops_applied_quantities_for_purged_orders() {
+    let (mut strategy, positions) = start_strategy_with_positions();
+    let purged_id = positions[0].opening_order_id;
+    strategy
+        .core
+        .cache_rc()
+        .borrow_mut()
+        .purge_order(purged_id, false)
+        .unwrap();
+
+    let timer = TimeEvent::new(
+        Ustr::from("delta_rehedge"),
+        UUID4::new(),
+        0.into(),
+        0.into(),
+    );
+
+    DataActor::on_time_event(&mut strategy, &timer).unwrap();
+    assert_eq!(strategy.order_filled_qty.len(), 2);
+    assert!(!strategy.order_filled_qty.contains_key(&purged_id));
+    assert_eq!(
+        strategy.order_filled_qty[&positions[1].opening_order_id],
+        5.into()
+    );
+    assert_eq!(
+        strategy.order_filled_qty[&positions[2].opening_order_id],
+        6.into()
+    );
+    assert_eq!(
+        [
+            strategy.call_position,
+            strategy.put_position,
+            strategy.hedge_position
+        ],
+        [-6.0, -8.0, 7.0]
+    );
+}
+
+#[rstest]
+fn test_fill_void_preserves_other_fills_on_same_order() {
+    let mut strategy = create_initialized_strategy();
+    register_strategy(&mut strategy);
+    let instrument = InstrumentAny::CryptoPerpetual(hedge_swap_integer_sized());
+    let strategy_id = strategy.strategy_id().unwrap();
+    let first = OrderFilledSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-PARTIAL-FILLS"))
+        .position_id(PositionId::from("P-PARTIAL-FILLS"))
+        .trade_id(TradeId::from("T-FIRST"))
+        .last_qty(Quantity::from(2))
+        .last_px(Price::from("100.0"))
+        .build();
+    let mut second = first.clone();
+    second.trade_id = TradeId::from("T-SECOND");
+    second.event_id = UUID4::new();
+    second.last_qty = Quantity::from(3);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(first.client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(5))
+        .submit(true)
+        .build();
+    let cache = strategy.core.cache_rc();
+    cache
+        .borrow_mut()
+        .add_order(order, first.position_id, None, true)
+        .unwrap();
+    let mut position = Position::new(&instrument, first.clone());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(first.clone()))
+        .unwrap();
+    strategy.hedge_pending = true;
+    strategy.on_order_filled(&first);
+    assert_eq!(strategy.hedge_position, 2.0);
+    assert_eq!(strategy.order_filled_qty[&first.client_order_id], 2.into());
+    assert!(strategy.hedge_pending);
+
+    position.apply(&second);
+    cache.borrow_mut().update_position(&position).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(second.clone()))
+        .unwrap();
+    strategy.on_order_filled(&second);
+    assert_eq!(strategy.hedge_position, 5.0);
+    assert_eq!(strategy.order_filled_qty[&first.client_order_id], 5.into());
+    assert!(!strategy.hedge_pending);
+
+    let voided = OrderFillVoidedSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(first.instrument_id)
+        .position_id(position.id)
+        .client_order_id(first.client_order_id)
+        .trade_id(first.trade_id)
+        .voided_qty(first.last_qty)
+        .last_px(first.last_px)
+        .build();
+    position
+        .apply_fill_void(voided.clone(), first.last_qty, None)
+        .unwrap();
+    cache.borrow_mut().update_position(&position).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(voided.clone()))
+        .unwrap();
+    strategy.on_order_fill_voided(&voided);
+    assert_eq!(position.signed_qty, 3.into());
+    assert_eq!(strategy.hedge_position, 3.0);
+    assert_eq!(strategy.order_filled_qty[&first.client_order_id], 3.into());
+    assert!(!strategy.hedge_pending);
+}
+
+#[rstest]
+fn test_fill_void_without_cached_order_preserves_exposure(#[values(false, true)] tracked: bool) {
+    let mut strategy = create_initialized_strategy();
+    register_strategy(&mut strategy);
+    strategy.call_position = -2.0;
+    strategy.put_position = -3.0;
+    strategy.hedge_position = 4.0;
+    strategy.hedge_pending = true;
+    let client_order_id = ClientOrderId::from("O-NOT-CACHED");
+    if tracked {
+        strategy.order_filled_qty.insert(client_order_id, 6.into());
+    }
+
+    let voided = OrderFillVoidedSpec::builder()
+        .instrument_id(strategy.config.hedge_instrument_id)
+        .client_order_id(client_order_id)
+        .build();
+    strategy.on_order_fill_voided(&voided);
+    assert_eq!(
+        [
+            strategy.call_position,
+            strategy.put_position,
+            strategy.hedge_position
+        ],
+        [-2.0, -3.0, 4.0]
+    );
+    assert_eq!(
+        strategy.order_filled_qty.get(&client_order_id).copied(),
+        tracked.then_some(6.into())
+    );
+    assert!(strategy.hedge_pending);
+}
+
+fn filled_order(fill: &OrderFilled) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .side(fill.order_side)
+        .quantity(fill.last_qty)
+        .submit(true)
+        .build();
+    order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+    order
 }

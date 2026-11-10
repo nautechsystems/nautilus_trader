@@ -59,7 +59,21 @@ export BETFAIR_PASSWORD=<your_password>
 export BETFAIR_APP_KEY=<your_app_key>
 ```
 
-The adapter uses Betfair's interactive login endpoint. It does not use client certificates.
+The adapter uses interactive login by default.
+
+### Certificate login
+
+For [certificate login](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687915/Non-Interactive+bot+login),
+set `certs_dir` on each `BetfairDataClientConfig` or `BetfairExecutionClientConfig` that needs it.
+
+- **Files**: Upload the certificate to your Betfair account first. The directory must contain a matching
+  client certificate and unencrypted PEM private key; client creation fails without a matching pair.
+- **Trust**: That client's HTTP requests use bundled roots plus other certificates in the directory instead of
+  system trust. Use a dedicated directory with restricted write access: those certificates become trust anchors.
+- **Direct Rust clients**: Set the directory with `BetfairCredential::with_certs_dir` when constructing
+  `BetfairHttpClient`.
+
+Keep-alive uses the interactive SSO endpoint for both login methods.
 
 ## Timestamp policy
 
@@ -585,10 +599,11 @@ an ambiguous cancellation remains `PENDING_CANCEL` until OCM or reconciliation r
 adapter does not emit a rejection because Betfair may have applied the request. Once a dispatched
 attempt has an unknown outcome, a later failed attempt cannot make the overall result definitive.
 
-Definitive placement, cancellation, and modification failures normally emit `OrderRejected`,
-`OrderCancelRejected`, and `OrderModifyRejected`, respectively. A definitive price replacement
-failure instead emits `OrderCanceled` once the old-bet cancel has arrived because that bet is no
-longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
+Local modification and cancellation failures proven not sent emit `OrderModifyDenied` and
+`OrderCancelDenied`, respectively. Definitive placement failures emit `OrderRejected`; definitive venue
+cancellation and modification failures emit `OrderCancelRejected` and `OrderModifyRejected`, respectively.
+A definitive price replacement failure instead emits `OrderCanceled` once the old-bet cancel has
+arrived because that bet is no longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
 except on BSP bets, where the venue has not applied the cancel: there it emits
 `OrderCancelRejected` and the bet stays open until BSP reconciliation.
 
@@ -856,6 +871,7 @@ The adapter configures stream liveness and message size as follows:
 | `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                                  |
 | `subscribe_cricket_data`            | `False`  | Subscribe to cricket CCM updates.                          |
 | `book_snapshot_timeout_secs`        | `10`     | Initial and recovery market image wait; `0` disables it.   |
+| `certs_dir`                         | `None`   | Client certificate/key directory for certificate login.    |
 
 :::warning
 When `stream_conflate_ms` is `None`, the adapter omits `conflateMs` from the subscription and leaves
@@ -890,6 +906,7 @@ receive every price update.
 | `reconcile_market_ids`              | `None`        | Explicit startup reconciliation market IDs.                        |
 | `use_market_version`                | `False`       | Attach market version to orders; currently has no effect.          |
 | `stream_gap_recovery_lookback_mins` | `10`          | Lookback window for the post-reconnect mass-status reconciliation. |
+| `certs_dir`                         | `None`        | Client certificate/key directory for certificate login.            |
 
 ## Contributing
 

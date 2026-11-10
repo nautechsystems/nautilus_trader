@@ -14,26 +14,25 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for
-//! [Coinbase Advanced
-//! Trade](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview).
+//! Coinbase Advanced Trade.
 //!
-//! The `nautilus-coinbase` crate provides integration with the Coinbase Advanced Trade API for
-//! trading spot, futures, and perpetuals on the Coinbase exchange.
+//! The `nautilus-coinbase` crate provides instrument loading, live market data, and order execution for
+//! spot, futures, and perpetuals through the **Coinbase Advanced Trade API**. It includes authenticated
+//! HTTP and WebSocket clients, live-node factories, and optional Python bindings.
+//!
+//! The official Coinbase Advanced Trade API reference can be found at
+//! <https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -41,6 +40,12 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/coinbase/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinbase/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

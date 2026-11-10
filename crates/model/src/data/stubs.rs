@@ -33,7 +33,7 @@ use crate::{
         MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
-    types::{Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 
 impl Default for QuoteTick {
@@ -526,4 +526,20 @@ pub fn stub_custom_data(
     };
     let data_type = DataType::new("StubCustomData", metadata, identifier);
     CustomData::new(Arc::new(inner), data_type)
+}
+
+/// Model-owned custom data for cross-crate Arrow generation tests.
+#[nautilus_model::custom_data(pyo3, export_fields)]
+pub struct StubRemoteData {
+    pub instrument_id: InstrumentId,
+    pub price: Price,
+    pub optional_price: Option<Price>,
+    #[custom_data_field(native_enum)]
+    pub side: AggressorSide,
+    pub params: Params,
+    #[custom_data_field(serde)]
+    pub balances: Vec<Money>,
+    pub curve: Vec<f64>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }

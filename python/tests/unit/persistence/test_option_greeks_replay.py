@@ -119,6 +119,7 @@ def test_catalog_loaded_greeks_reach_on_option_greeks(catalog: ParquetDataCatalo
             log_commands=False,
         ),
     )
+
     recorder.received = []
 
     # Act: a catalog-loaded greeks object is a valid `on_option_greeks` payload

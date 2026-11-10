@@ -105,15 +105,12 @@ impl Debug for HandlerCommand {
 
 /// Carrier for a single user-channel order update.
 ///
-/// Pairs the parsed [`OrderStatusReport`] with the resolved instrument and
-/// the raw venue payload so downstream consumers (e.g. the execution client)
-/// can diff cumulative quantity and fees against their own tracked state.
+/// Pairs the parsed [`OrderStatusReport`] with the resolved instrument and raw venue payload.
+/// The execution client uses REST fill history for authoritative trade identities and values.
 ///
-/// `is_snapshot` is true when the wrapping `WsUserEvent` was a `snapshot`
-/// type. Snapshots restate the current cumulative state of every open order
-/// and must NOT be interpreted as fresh fills, otherwise a cold start (or
-/// any state-clearing reconnect) would synthesize phantom fills covering the
-/// entire pre-existing cumulative quantity.
+/// `is_snapshot` identifies a snapshot of open orders, including snapshots after reconnect.
+/// Snapshots restate cumulative quantities rather than fresh executions. The execution client
+/// suppresses unfilled snapshot reports without order context.
 #[derive(Debug, Clone)]
 pub struct UserOrderUpdate {
     pub report: Box<OrderStatusReport>,

@@ -36,7 +36,7 @@ use nautilus_model::{
     types::Money,
 };
 
-use super::Cache;
+use super::{Cache, handle_persistence_result};
 
 /// Cache-owned reference to a snapshot blob.
 ///
@@ -51,6 +51,9 @@ pub struct CacheSnapshotRef {
 }
 
 impl CacheSnapshotRef {
+    /// Prefix for durable position snapshot locations.
+    pub const POSITION_PREFIX: &str = "cache://position-snapshots/";
+
     /// Creates a new [`CacheSnapshotRef`].
     #[must_use]
     pub fn new(blob_ref: impl Into<String>, blob: impl Into<Bytes>) -> Self {
@@ -58,6 +61,21 @@ impl CacheSnapshotRef {
             blob_ref: blob_ref.into(),
             blob: blob.into(),
         }
+    }
+
+    /// Reads the instrument ID without resolving the snapshot's currency definitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON is malformed or the instrument ID is missing or invalid.
+    #[cfg(feature = "defi")]
+    pub fn position_instrument_id(blob: &[u8]) -> anyhow::Result<InstrumentId> {
+        #[derive(serde::Deserialize)]
+        struct Identity {
+            instrument_id: InstrumentId,
+        }
+
+        Ok(serde_json::from_slice::<Identity>(blob)?.instrument_id)
     }
 }
 
@@ -93,6 +111,35 @@ impl PositionSnapshotFrame {
 }
 
 impl Cache {
+    #[cfg(feature = "defi")]
+    pub(crate) fn has_position_history(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<bool> {
+        if self
+            .positions
+            .values()
+            .any(|position| position.borrow().instrument_id == *instrument_id)
+            || self
+                .position_snapshots
+                .values()
+                .flatten()
+                .any(|frame| frame.position.instrument_id == *instrument_id)
+        {
+            return Ok(true);
+        }
+
+        for (key, blob) in &self.general {
+            if key.starts_with(CacheSnapshotRef::POSITION_PREFIX)
+                && CacheSnapshotRef::position_instrument_id(blob)? == *instrument_id
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     /// Creates a snapshot of the `position` by cloning it, assigning a new ID, and storing it
     /// in the position snapshots.
     ///
@@ -101,9 +148,12 @@ impl Cache {
     /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
     /// unless a backing database has to persist the frame.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
         let (blob_ref, snapshot) = self.build_position_snapshot(position);
 
@@ -122,9 +172,15 @@ impl Cache {
     /// Behaves as [`Self::snapshot_position`] but encodes the frame eagerly, for callers that
     /// record the bytes or their content hash against a durable anchor.
     ///
+    /// Returning the reference does not confirm that its blob has been persisted. A durable
+    /// recovery anchor requires separate confirmation of blob storage.
+    ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if serializing or storing the position snapshot fails.
+    /// Returns an error if serializing the snapshot or validating its cache entry fails, or the
+    /// backing reports a DeFi currency integrity error.
     pub fn snapshot_position_encoded(
         &mut self,
         position: &Position,
@@ -142,9 +198,14 @@ impl Cache {
     ///
     /// A correction that reaches an earlier cycle moves the boundaries the existing frames
     /// describe, so they cannot be reconciled and are settled into one frame instead. Pass
-    /// `None` when the corrected history never goes flat, which leaves no archived cycle at all.
+    /// `None` when no closed cycle precedes the current one, which leaves no archived cycle.
     /// As with [`Self::purge_position`], the durable `cache://position-snapshots/...` entries
     /// stay in general cache state.
+    ///
+    /// The settled frame drops the fills it copies from `position`, which belong to the current
+    /// cycle rather than the settled ones, since consumers match frames to cycles by their fills.
+    /// It keeps the current cycle's `position.trade_ids`. Earlier cycles' trade history remains
+    /// in `position.replay_events`.
     ///
     /// Requires `closed_cycles_pnl` to account for every frame held, since this removes all of
     /// them. The position's replay log must therefore span every archived cycle for the ID. Any
@@ -168,6 +229,7 @@ impl Cache {
         if let Some(closed_cycles_pnl) = closed_cycles_pnl {
             let (_, mut settled) = self.build_position_snapshot(position);
             settled.realized_pnl = Some(closed_cycles_pnl);
+            settled.events.clear();
             self.store_position_snapshot(position.id, settled, None);
         }
     }
@@ -191,7 +253,8 @@ impl Cache {
         copied_position.id = PositionId::new(new_id);
 
         let blob_ref = format!(
-            "cache://position-snapshots/{}/{}",
+            "{}{}/{}",
+            CacheSnapshotRef::POSITION_PREFIX,
             position_id.as_str(),
             self.position_snapshot_count(&position_id),
         );
@@ -210,7 +273,7 @@ impl Cache {
         Ok(encoded)
     }
 
-    /// Stores the frame after any persist step, so a failed write does not advance the count.
+    // Stores the frame after encoding and any best-effort backing write
     fn store_position_snapshot(
         &mut self,
         position_id: PositionId,
@@ -303,9 +366,11 @@ impl Cache {
 
     /// Creates a snapshot of the `position` state in the database.
     ///
+    /// Persistence failures are logged without failing the operation.
+    ///
     /// # Errors
     ///
-    /// Returns an error if snapshotting the position state fails.
+    /// Returns an error if the backing reports a DeFi currency integrity error.
     pub fn snapshot_position_state(
         &mut self,
         position: &Position,
@@ -320,15 +385,10 @@ impl Cache {
         }
 
         if let Some(database) = &mut self.database {
-            database
-                .snapshot_position_state(position, ts_snapshot, unrealized_pnl)
-                .map_err(|e| {
-                    log::error!(
-                        "Failed to snapshot position state for {}: {e:?}",
-                        position.id
-                    );
-                    e
-                })?;
+            handle_persistence_result(
+                format_args!("snapshot position {}", position.id),
+                database.snapshot_position_state(position, ts_snapshot, unrealized_pnl),
+            )?;
         } else {
             log::warn!(
                 "Cannot snapshot position state for {} (no database configured)",
@@ -440,7 +500,7 @@ impl Cache {
 }
 
 fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {
-    let Some(rest) = blob_ref.strip_prefix("cache://position-snapshots/") else {
+    let Some(rest) = blob_ref.strip_prefix(CacheSnapshotRef::POSITION_PREFIX) else {
         anyhow::bail!("unsupported cache snapshot blob_ref {blob_ref}");
     };
 

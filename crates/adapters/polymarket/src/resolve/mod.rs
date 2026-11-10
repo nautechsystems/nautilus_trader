@@ -27,11 +27,12 @@ pub(crate) use self::{
         ResolveBatchErrorMode, ResolveContext, admit_data_resolution_instrument,
         apply_condition_resolution, apply_condition_resolution_with_assets,
         apply_watched_condition_resolution, fetch_and_apply_resolutions_by_condition_ids,
-        pause_and_reconcile_resolve_watch_entries,
+        pause_and_reconcile_resolve_watch_entries, request_resolution_markets,
     },
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,
         parse_condition_ids_from_request_params, request_params_has_explicit_condition_selector,
+        validate_ws_resolution,
     },
     summary::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveRequestSummary,

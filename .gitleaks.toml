@@ -31,4 +31,7 @@ regexes = [
   "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
   # Public Pyth price-feed ID captured from the Polymarket public API.
   "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+  # Binance PAPI route next to its query in the adapter request-weight test
+  # table; the route contains the word "api" with no secret value present.
+  "apiTradingStatus\", \"symbol=BTCUSDT",
 ]

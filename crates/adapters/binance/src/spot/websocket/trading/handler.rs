@@ -50,7 +50,7 @@ use crate::{
     common::credential::{SigningCredential, canonical_ws_query_string},
     spot::{
         enums::BinanceSpotUserDataEventType,
-        http::parse,
+        http::{models::BinanceCancelOpenOrdersResponse, parse},
         sbe::spot::{
             ReadBuf,
             error_response_codec::ErrorResponseDecoder,
@@ -690,11 +690,7 @@ impl BinanceSpotWsTradingHandler {
                 })
             }
             BinanceSpotWsTradingRequestMeta::CancelOrder => {
-                let response = parse::decode_cancel_order(&result_data)?;
-                Ok(BinanceSpotWsTradingMessage::OrderCanceled {
-                    request_id,
-                    response,
-                })
+                Self::decode_cancel_order(request_id, &result_data)
             }
             BinanceSpotWsTradingRequestMeta::CancelReplaceOrder => {
                 let (cancel_response, new_order_response) =
@@ -720,6 +716,26 @@ impl BinanceSpotWsTradingHandler {
                 log::debug!("User data stream subscribed (SBE response)");
                 Ok(BinanceSpotWsTradingMessage::UserDataSubscribed {
                     subscription_id: request_id,
+                })
+            }
+        }
+    }
+
+    fn decode_cancel_order(
+        request_id: String,
+        result_data: &[u8],
+    ) -> Result<BinanceSpotWsTradingMessage, BinanceWsApiError> {
+        match parse::decode_cancel_order_or_list(result_data)? {
+            BinanceCancelOpenOrdersResponse::Order(response) => {
+                Ok(BinanceSpotWsTradingMessage::OrderCanceled {
+                    request_id,
+                    response,
+                })
+            }
+            response @ BinanceCancelOpenOrdersResponse::OrderList(_) => {
+                Ok(BinanceSpotWsTradingMessage::AllOrdersCanceled {
+                    request_id,
+                    responses: vec![response],
                 })
             }
         }

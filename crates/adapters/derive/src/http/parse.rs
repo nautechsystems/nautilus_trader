@@ -352,8 +352,11 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
         Some(position.average_price),
     );
 
-    // Perpetual averages include opening fees, which Nautilus books as fill commissions
-    if position.instrument_type == DeriveInstrumentType::Perp {
+    // Perpetual and option averages include opening fees, which Nautilus books as fill commissions
+    if matches!(
+        position.instrument_type,
+        DeriveInstrumentType::Perp | DeriveInstrumentType::Option
+    ) {
         Ok(report.with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly))
     } else {
         Ok(report)
@@ -506,11 +509,8 @@ pub fn parse_derive_subaccount_to_balances(
 }
 
 fn price_from_decimal(value: Decimal, precision: Option<u8>, field: &str) -> anyhow::Result<Price> {
-    match precision {
-        Some(precision) => Price::from_decimal_dp(value, precision),
-        None => Price::from_decimal(value.normalize()),
-    }
-    .with_context(|| format!("invalid Derive {field}"))
+    let precision = precision.unwrap_or_else(|| value.normalize().scale() as u8);
+    Price::from_decimal_dp(value, precision).with_context(|| format!("invalid Derive {field}"))
 }
 
 fn quantity_from_decimal(
@@ -518,11 +518,8 @@ fn quantity_from_decimal(
     precision: Option<u8>,
     field: &str,
 ) -> anyhow::Result<Quantity> {
-    match precision {
-        Some(precision) => Quantity::from_decimal_dp(value, precision),
-        None => Quantity::from_decimal(value.normalize()),
-    }
-    .with_context(|| format!("invalid Derive {field}"))
+    let precision = precision.unwrap_or_else(|| value.normalize().scale() as u8);
+    Quantity::from_decimal_dp(value, precision).with_context(|| format!("invalid Derive {field}"))
 }
 
 fn parse_client_order_id(
@@ -1374,7 +1371,7 @@ mod tests {
 
     #[rstest]
     #[case::perp(DeriveInstrumentType::Perp, AvgPxReconciliation::OpeningOnly)]
-    #[case::option(DeriveInstrumentType::Option, AvgPxReconciliation::Match)]
+    #[case::option(DeriveInstrumentType::Option, AvgPxReconciliation::OpeningOnly)]
     #[case::spot(DeriveInstrumentType::Erc20, AvgPxReconciliation::Match)]
     fn test_parse_position_report_uses_instrument_precision(
         #[case] instrument_type: DeriveInstrumentType,
@@ -1792,7 +1789,8 @@ mod tests {
         position.amount = amount;
         subaccount.positions = vec![position];
 
-        let expected = Quantity::from_decimal(amount).expect_err("unrepresentable test amount");
+        let expected = Quantity::from_decimal_dp(amount, amount.scale() as u8)
+            .expect_err("unrepresentable test amount");
         let err = parse_derive_subaccount_to_balances(&subaccount).unwrap_err();
 
         assert_eq!(

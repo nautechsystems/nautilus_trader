@@ -60,7 +60,10 @@ use crate::{
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient},
         models::LighterOrder,
-        query::{LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery},
+        query::{
+            LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
+            LighterAccountOrdersQuery,
+        },
     },
     signing::{auth_token::build_auth_token_for, nonce::NonceManager},
     websocket::parse::{ParsedOrderEvent, parse_ws_order_status_report},
@@ -547,16 +550,18 @@ pub(crate) enum PendingSendTxKind {
     },
     /// One native grouped transaction owning all of its order identities.
     CreateGroup { orders: Vec<(OrderAny, i64)> },
-    /// Cancel-order submit. Emit a rejection only for a pending cancellation.
+    /// Cancel-order submit. An implicit OCO peer has no command ID.
     Cancel {
+        command_id: Option<UUID4>,
         emit_cancel_rejected: bool,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
     },
-    /// Modify-order submit. On rejection: emit `OrderModifyRejected`.
+    /// Modify-order submit. Emit a denial if not sent, or a rejection on a venue refusal.
     Modify {
+        command_id: UUID4,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -747,11 +752,31 @@ struct PendingOrderActionState {
     action: PendingOrderAction,
     submission: Option<PendingCancel>,
     modify: Option<PendingModify>,
+    cancel_commands: Vec<(UUID4, PendingOrderAction)>,
+}
+
+impl PendingOrderActionState {
+    fn refresh_action(&mut self) -> bool {
+        let action = self
+            .submission
+            .as_ref()
+            .map(|_| self.action)
+            .or_else(|| self.cancel_commands.last().map(|(_, action)| *action))
+            .or_else(|| self.modify.as_ref().map(|_| PendingOrderAction::Modify));
+
+        if let Some(action) = action {
+            self.action = action;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // Pending state owns the probe lifetime, including waits for REST quota
 #[derive(Debug)]
 struct PendingCancel {
+    command_id: UUID4,
     identity: (u64, i64),
     cancellation: DropGuard,
 }
@@ -761,6 +786,8 @@ struct PendingModify {
     command_id: UUID4,
     shape: Option<OrderShapeSnapshot>,
     submission: Option<(u64, i64)>,
+    transaction: Option<PendingSendTx>,
+    executed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -853,81 +880,61 @@ struct PositionSnapshot {
 
 /// Per-client WebSocket dispatch state.
 ///
-/// Threaded into the consumption loop and the order-action methods; cloned
-/// freely thanks to interior `Arc` sharing on each field.
+/// Clones share state between the consumption loop and order-action methods
+/// through per-field `Arc`s.
+///
+/// # Account State
+///
+/// Account and position queries use WebSocket snapshots because Lighter has no
+/// equivalent REST snapshots. Connection readiness waits for every account stream's
+/// first frame.
+///
+/// - **Snapshot consistency**: Position reports and coverage share one lock to keep
+///   reconciliation from combining data from different frames.
+/// - **Query scope**: Mass-status queries visit account-active markets to avoid a
+///   full-market REST quota bottleneck.
+///
+/// # Order Lifecycle
+///
+/// - **Identity updates**: Create identity replacement and generation-checked
+///   sequencer-rejection cleanup share a lock.
+/// - **Pending actions**: Venue frames and reconciliation reports cannot bypass
+///   a pending action's confirming event or rejection.
+/// - **Shape changes**: Snapshots distinguish modifications from venue echoes,
+///   reconnect replay, and partial-fill updates. `OrderAccepted` seeds the snapshot;
+///   `OrderUpdated` refreshes it.
+/// - **Response attribution**: Pending submissions retain attribution when sendTx
+///   errors lack correlation fields.
+///
+/// # Replay Protection
+///
+/// - **Retired identities**: Late trade frames and reconnect replay retain attribution.
+///   Client indices remain reserved while their retired entries are retained.
+/// - **Fills**: Trade deduplication spans live frames, reconnect replay, and HTTP
+///   reconciliation to prevent duplicate fills.
+/// - **Triggers**: Trigger deduplication suppresses repeated `Ready` frames after
+///   an order triggers.
 #[derive(Debug, Clone)]
 pub(crate) struct WsDispatchState {
-    /// Maps the venue-side `client_order_index` (i64) we derive at submit
-    /// time back to the originating Nautilus [`ClientOrderId`]. The venue
-    /// echoes the index on `account_*` order frames; the consumption loop
-    /// uses this map to substitute the original cloid before forwarding.
     pub(crate) cloid_map: Arc<DashMap<i64, ClientOrderId>>,
-    /// Terminal identity retained for late account-trade frames and reconnect
-    /// replay. Active indices are never reused while their retired entry is
-    /// inside this bounded process replay horizon.
     pub(crate) retired_orders: Arc<RetiredOrderCache>,
-    /// Maps Nautilus [`ClientOrderId`] to the venue-assigned
-    /// [`VenueOrderId`]. Populated by the consumption loop on the first
-    /// `OrderStatusReport` and consumed by `cancel_order` / `modify_order`.
     pub(crate) venue_id_map: Arc<DashMap<ClientOrderId, VenueOrderId>>,
-    /// Optimistic nonce allocator keyed by `(account_index, api_key_index)`.
     pub(crate) nonce_manager: Arc<NonceManager>,
-    /// Last [`AccountState`] received from the WebSocket account stream,
-    /// used to back `query_account` since the venue does not currently
-    /// expose a REST account snapshot endpoint.
     pub(crate) last_account_state: Arc<Mutex<Option<AccountState>>>,
-    /// Set of account-active `market_index` values surfaced by account
-    /// streams or reconciliation reports. Mass-status reconciliation
-    /// iterates over this set because Lighter's `accountActiveOrders` is
-    /// per-market and the venue's REST quota would make a full-market
-    /// fan-out prohibitively slow.
     pub(crate) active_markets: Arc<DashSet<i64>>,
-    /// WS-driven position reports and their coverage state. Lighter has no REST
-    /// equivalent, so both values share one lock to keep reconciliation from
-    /// pairing reports from one frame with completeness from another.
     position_snapshot: Arc<Mutex<PositionSnapshot>>,
-    /// Identity context for orders this client submitted. Keyed on the
-    /// originating [`ClientOrderId`]; populated by the execution client at
-    /// submit time, consumed by the consumption loop to decide whether an
-    /// inbound venue frame should produce a typed `OrderEventAny` or fall
-    /// back to a report for an externally-managed order.
     pub(crate) order_identities: Arc<DashMap<ClientOrderId, OrderIdentity>>,
     order_restorations: Arc<DashMap<VenueOrderId, OrderAny>>,
-    /// Serializes create identity replacement against generation-checked
-    /// sequencer-rejection cleanup.
     create_registry: Arc<Mutex<()>>,
-    /// Trade ids already routed to `OrderFilled` / `FillReport`. The venue
-    /// can re-emit the same `account_all_trades` payload across reconnects
-    /// and HTTP reconciliation seeds this bounded source-aware cache so a
-    /// later live replay cannot double-book a reported fill.
     pub(crate) seen_trade_ids: Arc<TradeDedupCache>,
-    /// Cloids for which `OrderTriggered` has already been emitted. The
-    /// venue keeps surfacing `trigger_status = Ready` on every subsequent
-    /// `Open` frame for a conditional order once the trigger fires; the
-    /// dedup keeps the engine from receiving phantom `Triggered` repeats.
     pub(crate) triggered_emitted: Arc<DashSet<ClientOrderId>>,
-    /// Last known order-shape snapshot per tracked cloid. The consumption
-    /// loop diffs incoming `Open` frames against this map to distinguish
-    /// a real modify (qty / price / trigger changed) from a venue echo
-    /// (snapshot, reconnect replay, partial-fill update). The snapshot
-    /// is initialized on the first emitted `OrderAccepted` and refreshed
-    /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     pub(crate) order_events: Arc<Mutex<AHashMap<ClientOrderId, DeferredOrderEvents>>>,
     pub(crate) terminals_pending: Arc<Mutex<AHashMap<ClientOrderId, PendingTerminal>>>,
     pub(crate) terminals_recover: Arc<tokio::sync::Notify>,
     fill_sequence: Arc<AtomicU64>,
-    /// Local lifecycle action that a venue frame or reconciliation report
-    /// must not bypass before its confirming event or rejection arrives.
     pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderActionState>>,
-    /// FIFO queue of submits awaiting a venue response. The consumption loop
-    /// pops on every `SendTxAck` / `SendTxRejected` so it can attribute a
-    /// rejection back to the originating order (sendTx error frames carry no
-    /// correlation field). Single-account WS connection, so one global queue.
     pub(crate) pending_sendtx: Arc<Mutex<VecDeque<PendingSendTx>>>,
-    /// First-frame readiness flags handed to the WS feed handler so
-    /// `connect()` blocks until every account stream has produced a frame.
-    /// Cloned cheaply since the inner state is shared via `Arc`.
     pub(crate) account_streams_ready: Arc<AccountStreamsReady>,
 }
 
@@ -1159,6 +1166,20 @@ impl WsDispatchState {
         for (order, _) in pending.kind.creates() {
             self.mark_order_submission(&order.client_order_id(), pending.nonce);
         }
+
+        if let PendingSendTxKind::Modify {
+            client_order_id,
+            command_id,
+            ..
+        } = pending.kind
+            && let Some(mut state) = self.pending_order_actions.get_mut(&client_order_id)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.command_id == command_id
+            && modify.submission == Some((pending.connection_epoch, pending.nonce))
+        {
+            modify.transaction = Some(pending.clone());
+        }
+
         self.pending_sendtx.lock().push_back(pending);
     }
 
@@ -1236,13 +1257,10 @@ impl WsDispatchState {
         connection_epoch: u64,
         tx_hash: &str,
     ) -> Option<PendingSendTx> {
-        let tx_hash = tx_hash
-            .strip_prefix("0x")
-            .or_else(|| tx_hash.strip_prefix("0X"))
-            .unwrap_or(tx_hash);
         let mut q = self.pending_sendtx.lock();
+
         let pos = q.iter().position(|p| {
-            p.connection_epoch == connection_epoch && p.tx_hash.eq_ignore_ascii_case(tx_hash)
+            p.connection_epoch == connection_epoch && tx_hash_matches(&p.tx_hash, tx_hash)
         })?;
         q.remove(pos)
     }
@@ -1300,24 +1318,6 @@ impl WsDispatchState {
         self.order_snapshots.insert(cloid, snapshot);
     }
 
-    pub(crate) fn set_pending_order_action(
-        &self,
-        cloid: ClientOrderId,
-        action: PendingOrderAction,
-    ) {
-        let mut state =
-            self.pending_order_actions
-                .entry(cloid)
-                .or_insert(PendingOrderActionState {
-                    action,
-                    submission: None,
-                    modify: None,
-                });
-
-        state.action = action;
-        state.submission = None;
-    }
-
     pub(crate) fn set_pending_modify_action(&self, cmd: &ModifyOrder) -> bool {
         let mut state = self
             .pending_order_actions
@@ -1326,6 +1326,7 @@ impl WsDispatchState {
                 action: PendingOrderAction::Modify,
                 submission: None,
                 modify: None,
+                cancel_commands: Vec::new(),
             });
 
         if state.modify.is_some() || state.action != PendingOrderAction::Modify {
@@ -1336,6 +1337,8 @@ impl WsDispatchState {
             command_id: cmd.command_id,
             shape: None,
             submission: None,
+            transaction: None,
+            executed: false,
         });
 
         true
@@ -1384,6 +1387,45 @@ impl WsDispatchState {
         self.pending_order_actions
             .get(cloid)
             .and_then(|state| state.modify.as_ref().and_then(|modify| modify.submission))
+    }
+
+    pub(crate) fn pending_modify_by_hash(&self, hash: &str) -> Option<PendingSendTx> {
+        self.pending_order_actions.iter().find_map(|state| {
+            state
+                .modify
+                .as_ref()?
+                .transaction
+                .as_ref()
+                .filter(|tx| tx_hash_matches(&tx.tx_hash, hash))
+                .cloned()
+        })
+    }
+
+    pub(crate) fn set_pending_modify_executed(
+        &self,
+        cloid: &ClientOrderId,
+        pending: &PendingSendTx,
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.submission == Some((pending.connection_epoch, pending.nonce))
+            && modify
+                .transaction
+                .as_ref()
+                .is_some_and(|tx| tx.tx_hash == pending.tx_hash)
+        {
+            modify.executed = true;
+        }
+    }
+
+    pub(crate) fn pending_modify_executed(&self, cloid: &ClientOrderId) -> Option<PendingSendTx> {
+        self.pending_order_actions.get(cloid).and_then(|state| {
+            let modify = state.modify.as_ref()?;
+            modify
+                .executed
+                .then(|| modify.transaction.clone())
+                .flatten()
+        })
     }
 
     pub(crate) fn clear_pending_modify_if_nonce(
@@ -1450,55 +1492,121 @@ impl WsDispatchState {
             .map(|entry| entry.action)
     }
 
-    pub(crate) fn clear_pending_order_action_if(
+    pub(crate) fn register_cancel_command(
+        &self,
+        cloid: ClientOrderId,
+        command_id: UUID4,
+        emit_cancel_rejected: bool,
+    ) {
+        let action = PendingOrderAction::cancel(emit_cancel_rejected);
+
+        let mut state =
+            self.pending_order_actions
+                .entry(cloid)
+                .or_insert(PendingOrderActionState {
+                    action,
+                    submission: None,
+                    modify: None,
+                    cancel_commands: Vec::new(),
+                });
+
+        if !state
+            .cancel_commands
+            .iter()
+            .any(|(id, _)| *id == command_id)
+        {
+            state.cancel_commands.push((command_id, action));
+        }
+
+        state.refresh_action();
+    }
+
+    pub(crate) fn clear_pending_cancel_if_command(
         &self,
         cloid: &ClientOrderId,
-        action: PendingOrderAction,
+        command_id: UUID4,
     ) -> bool {
         let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
             return false;
         };
 
-        if entry.get().action != action {
+        let mut removed = false;
+
+        if let Some(index) = entry
+            .get()
+            .cancel_commands
+            .iter()
+            .position(|(id, _)| *id == command_id)
+        {
+            entry.get_mut().cancel_commands.remove(index);
+            removed = true;
+        }
+
+        if entry
+            .get()
+            .submission
+            .as_ref()
+            .is_some_and(|submission| submission.command_id == command_id)
+        {
+            entry.get_mut().submission = None;
+            removed = true;
+        }
+
+        if !removed {
             return false;
         }
 
-        if action != PendingOrderAction::Modify && entry.get().modify.is_some() {
-            entry.get_mut().action = PendingOrderAction::Modify;
-            entry.get_mut().submission = None;
-        } else {
+        if !entry.get_mut().refresh_action() {
             entry.remove();
         }
 
         true
     }
 
-    pub(crate) fn set_pending_cancel_nonce(
+    pub(crate) fn promote_pending_cancel(
         &self,
         cloid: &ClientOrderId,
+        command_id: UUID4,
         connection_epoch: u64,
         nonce: i64,
         emit_cancel_rejected: bool,
-    ) {
-        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
-            && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
-        {
-            if state
-                .submission
-                .as_ref()
-                .is_some_and(|submission| submission.identity == (connection_epoch, nonce))
-            {
-                return;
-            }
+    ) -> bool {
+        let _events = self.order_events.lock();
 
-            state.submission = Some(PendingCancel {
-                identity: (connection_epoch, nonce),
-                cancellation: CancellationToken::new().drop_guard(),
-            });
-        }
+        let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
+            return false;
+        };
+
+        let Some(index) = entry
+            .get()
+            .cancel_commands
+            .iter()
+            .position(|(id, _)| *id == command_id)
+        else {
+            return false;
+        };
+
+        entry.get_mut().cancel_commands.remove(index);
+        let state = entry.get_mut();
+        state.action = PendingOrderAction::cancel(emit_cancel_rejected);
+        state.submission = Some(PendingCancel {
+            command_id,
+            identity: (connection_epoch, nonce),
+            cancellation: CancellationToken::new().drop_guard(),
+        });
+
+        true
     }
 
     pub(crate) fn pending_cancel_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
+        self.pending_cancel_identity(cloid)
+            .map(|(_, identity)| identity)
+    }
+
+    pub(crate) fn pending_cancel_identity(
+        &self,
+        cloid: &ClientOrderId,
+    ) -> Option<(UUID4, (u64, i64))> {
         self.pending_order_actions
             .get(cloid)
             .filter(|state| {
@@ -1511,7 +1619,7 @@ impl WsDispatchState {
                 state
                     .submission
                     .as_ref()
-                    .map(|submission| submission.identity)
+                    .map(|submission| (submission.command_id, submission.identity))
             })
     }
 
@@ -1569,10 +1677,8 @@ impl WsDispatchState {
             return false;
         }
 
-        if entry.get().modify.is_some() {
-            entry.get_mut().action = PendingOrderAction::Modify;
-            entry.get_mut().submission = None;
-        } else {
+        entry.get_mut().submission = None;
+        if !entry.get_mut().refresh_action() {
             entry.remove();
         }
 
@@ -2441,6 +2547,18 @@ fn update_position_reports(
     removed
 }
 
+pub(crate) fn tx_hash_matches(left: &str, right: &str) -> bool {
+    let left = left
+        .strip_prefix("0x")
+        .or_else(|| left.strip_prefix("0X"))
+        .unwrap_or(left);
+    let right = right
+        .strip_prefix("0x")
+        .or_else(|| right.strip_prefix("0X"))
+        .unwrap_or(right);
+    left.eq_ignore_ascii_case(right)
+}
+
 /// Standalone derivation so the fixed-seed contract is testable without
 /// constructing a full dispatch state, and so the seed lives in one place.
 pub(crate) fn derive_client_order_index_static(cloid: &ClientOrderId) -> i64 {
@@ -2726,6 +2844,24 @@ pub(crate) async fn collect_order_while_pending(
     };
 
     let auth = mint_auth_token(credential)?;
+
+    if let Some(order) = collect_account_order(
+        http_client,
+        credential,
+        lookup,
+        market_index,
+        &auth,
+        &is_pending,
+    )
+    .await?
+    {
+        return Ok(Some(order));
+    }
+
+    if !is_pending() {
+        return Ok(None);
+    }
+
     let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
         authorization: None,
         auth: Some(auth.clone()),
@@ -2757,7 +2893,8 @@ pub(crate) async fn collect_order_while_pending(
     }
 
     if lookup.target_venue_index.is_none() {
-        // Lighter reuses client indexes, so they cannot identify terminal history
+        // Lighter reuses client indexes, so paginated inactive history cannot safely
+        // identify an order by client index alone.
         return Ok(None);
     }
 
@@ -2813,6 +2950,72 @@ pub(crate) async fn collect_order_while_pending(
             }
             _ => break,
         }
+    }
+
+    Ok(None)
+}
+
+async fn collect_account_order(
+    http_client: &LighterHttpClient,
+    credential: &Credential,
+    lookup: &OrderReportLookup,
+    market_index: i64,
+    auth: &SecretString,
+    is_pending: impl Fn() -> bool,
+) -> anyhow::Result<Option<LighterOrder>> {
+    let Some(client_order_index) = lookup.target_client_index else {
+        return Ok(None);
+    };
+
+    let query = Zeroizing::new(LighterAccountOrdersQuery {
+        authorization: None,
+        auth: Some(auth.clone()),
+        account_index: credential.account_index(),
+        client_order_indexes: vec![client_order_index],
+    });
+
+    let response = match http_client.get_account_orders(&query).await {
+        Ok(response) => response,
+        Err(_) => {
+            log::debug!(
+                "Lighter accountOrders lookup failed, falling back to per-market order queries"
+            );
+            return Ok(None);
+        }
+    };
+
+    if !is_pending() {
+        return Ok(None);
+    }
+
+    let mut matches = response.orders.iter().filter(|order| {
+        if order.market_index != market_index {
+            return false;
+        }
+
+        if lookup.target_venue_index.is_none() && order.status.is_terminal() {
+            return false;
+        }
+
+        order_matches_lookup(
+            order.order_index,
+            order.client_order_index,
+            lookup.target_venue_index,
+            lookup.target_client_index,
+        )
+    });
+
+    let account_match = matches.next();
+
+    if lookup.target_venue_index.is_none() {
+        anyhow::ensure!(
+            matches.next().is_none(),
+            "ambiguous Lighter account-order lookup for client_order_index {client_order_index}",
+        );
+    }
+
+    if let Some(order) = account_match {
+        return Ok(Some(order.clone()));
     }
 
     Ok(None)
@@ -3086,6 +3289,76 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    impl WsDispatchState {
+        pub(crate) fn set_pending_order_action(
+            &self,
+            cloid: ClientOrderId,
+            action: PendingOrderAction,
+        ) {
+            let mut state =
+                self.pending_order_actions
+                    .entry(cloid)
+                    .or_insert(PendingOrderActionState {
+                        action,
+                        submission: None,
+                        modify: None,
+                        cancel_commands: Vec::new(),
+                    });
+
+            state.action = action;
+            state.submission = None;
+        }
+
+        pub(crate) fn clear_pending_order_action_if(
+            &self,
+            cloid: &ClientOrderId,
+            action: PendingOrderAction,
+        ) -> bool {
+            let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
+                return false;
+            };
+
+            if entry.get().action != action {
+                return false;
+            }
+
+            if action != PendingOrderAction::Modify && entry.get().modify.is_some() {
+                entry.get_mut().action = PendingOrderAction::Modify;
+                entry.get_mut().submission = None;
+            } else {
+                entry.remove();
+            }
+
+            true
+        }
+
+        pub(crate) fn set_pending_cancel_nonce(
+            &self,
+            cloid: &ClientOrderId,
+            connection_epoch: u64,
+            nonce: i64,
+            emit_cancel_rejected: bool,
+        ) {
+            if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+                && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
+            {
+                if state
+                    .submission
+                    .as_ref()
+                    .is_some_and(|submission| submission.identity == (connection_epoch, nonce))
+                {
+                    return;
+                }
+
+                state.submission = Some(PendingCancel {
+                    command_id: UUID4::new(),
+                    identity: (connection_epoch, nonce),
+                    cancellation: CancellationToken::new().drop_guard(),
+                });
+            }
+        }
+    }
 
     fn cloid(s: &str) -> ClientOrderId {
         ClientOrderId::new(s)
@@ -4565,6 +4838,8 @@ mod tests {
     #[case::sell_floor(Decimal::new(7_915_055, 2), false, 2, 1, 7_914_263)]
     #[case::zero_bps_buy(Decimal::new(123_456, 2), true, 2, 0, 123_456)]
     #[case::zero_bps_sell(Decimal::new(123_456, 2), false, 2, 0, 123_456)]
+    #[case::maximum_bps_buy(Decimal::new(10_000, 2), true, 2, 9_999, 19_999)]
+    #[case::maximum_bps_sell(Decimal::new(10_000, 2), false, 2, 9_999, 1)]
     fn derive_market_order_price_ticks_cases(
         #[case] base: Decimal,
         #[case] is_buy: bool,
@@ -5112,6 +5387,116 @@ mod tests {
             state.pending_order_action(&id),
             Some(PendingOrderAction::Modify)
         );
+    }
+
+    #[rstest]
+    #[case::new_nonce(42)]
+    #[case::reused_nonce(41)]
+    fn cancel_promotion_consumes_command_once(#[case] nonce: i64) {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-PROMOTION");
+        let first = UUID4::new();
+        let second = UUID4::new();
+        state.register_cancel_command(id, first, true);
+        assert!(state.promote_pending_cancel(&id, first, 3, 41, true));
+        let old = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, second, false);
+
+        assert_eq!(state.pending_cancel_identity(&id), Some((first, (3, 41))));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Cancel)
+        );
+        assert!(!old.is_cancelled());
+        assert!(state.promote_pending_cancel(&id, second, 3, nonce, false));
+
+        let current = state.pending_cancel_token(&id, 3, nonce).unwrap();
+        assert!(!state.promote_pending_cancel(&id, second, 3, nonce, false));
+        assert!(!state.promote_pending_cancel(&id, first, 3, 41, true));
+        assert!(!state.clear_pending_cancel_if_command(&id, first));
+        assert_eq!(
+            state.pending_cancel_identity(&id),
+            Some((second, (3, nonce)))
+        );
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::CancelUnmarked)
+        );
+        assert!(old.is_cancelled());
+        assert!(!current.is_cancelled());
+    }
+
+    #[rstest]
+    #[case::marked(true)]
+    #[case::unmarked(false)]
+    fn cancel_refusal_preserves_submitted_and_queued_commands(#[case] marked: bool) {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-QUEUED");
+        let first = UUID4::new();
+        let refused = UUID4::new();
+        let queued = UUID4::new();
+
+        let modification = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-PERP.LIGHTER"),
+            id,
+            Some(VenueOrderId::from("789")),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        state.register_cancel_command(id, first, marked);
+        state.promote_pending_cancel(&id, first, 3, 41, marked);
+        let token = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, refused, !marked);
+        state.register_cancel_command(id, queued, !marked);
+
+        assert!(state.clear_pending_cancel_if_command(&id, refused));
+        assert!(!state.promote_pending_cancel(&id, refused, 3, 42, !marked));
+        assert_eq!(state.pending_cancel_identity(&id), Some((first, (3, 41))));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::cancel(marked))
+        );
+        assert!(!token.is_cancelled());
+        assert!(state.clear_pending_cancel_if_command(&id, first));
+        assert_eq!(state.pending_cancel_identity(&id), None);
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::cancel(!marked))
+        );
+        assert!(!state.set_pending_modify_action(&modification));
+        assert!(token.is_cancelled());
+        assert!(state.clear_pending_cancel_if_command(&id, queued));
+        assert_eq!(state.pending_order_action(&id), None);
+        assert!(state.set_pending_modify_action(&modification));
+    }
+
+    #[rstest]
+    fn cancel_terminal_report_invalidates_queued_promotions() {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-TERMINAL");
+        let first = UUID4::new();
+        let second = UUID4::new();
+        state.register_cancel_command(id, first, true);
+        state.promote_pending_cancel(&id, first, 3, 41, true);
+        let token = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, second, false);
+        let mut report = stub_open_order_status_report(id.as_str());
+        report.order_status = OrderStatus::Canceled;
+        let report = state.preserve_pending_order_status(report);
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert!(!state.promote_pending_cancel(&id, second, 3, 42, false));
+        assert_eq!(state.pending_cancel_identity(&id), None);
+        assert_eq!(state.pending_order_action(&id), None);
+        assert!(token.is_cancelled());
     }
 
     #[rstest]

@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Deterministic two-way encoder for Binance Link broker ID prefixing.
+//! Deterministic two-way encoder for Binance integration prefixes.
 //!
-//! The Binance broker ID is automatically prefixed to supported system-generated
+//! The Binance integration ID is automatically prefixed to supported system-generated
 //! client order IDs placed through the Binance adapter. Prefixing is transparent
 //! to strategies and requires no user configuration.
 //! Inbound order events are decoded back to the original `ClientOrderId`
@@ -27,7 +27,7 @@
 //! `^[\.A-Z\:/a-z0-9_-]{1,36}$`.
 //!
 //! Internal Nautilus `ClientOrderId` values (O-format: 23+ chars, UUID: 32-36
-//! chars) exceed the 36-char limit when combined with the broker prefix. This
+//! chars) exceed the 36-char limit when combined with the integration prefix. This
 //! module provides compact, deterministic, two-way encoding via pure functions.
 //!
 //! [Link and Trade]: https://www.binance.com/en/support/faq/detail/a78a065d0c4846aaa1af474d8e712ab9
@@ -39,10 +39,10 @@
 //! Short tag: x-TD67BGP9A{base62_payload}
 //! ```
 //!
-//! The prefix `x-{BROKER_ID}-` is 11 chars (for an 8-char broker ID), leaving
-//! 25 chars for the encoded component. Spot and Futures use separate broker
+//! The prefix `x-{BROKER_ID}-` is 11 chars (for an 8-char integration ID), leaving
+//! 25 chars for the encoded component. Spot and Futures use separate integration
 //! IDs defined in [`consts`](super::consts). The supplementary `A` format omits
-//! the separator after the broker ID and occupies 24 characters in total.
+//! the separator after the integration ID and occupies 24 characters in total.
 //!
 //! # Signal chars
 //!
@@ -176,8 +176,7 @@ const O_TAGS_B62_LEN: usize = 13;
 const O_TAGS_COUNT_BITS: u32 = 22;
 const O_TAGS_COUNT_MAX: u32 = (1 << O_TAGS_COUNT_BITS) - 1;
 
-/// Encodes a `ClientOrderId` into a Binance-compatible string with broker ID
-/// prefix.
+/// Encodes a `ClientOrderId` into a Binance-compatible string with an integration prefix.
 ///
 /// The encoding is deterministic and reversible with [`decode_broker_id`].
 #[must_use]
@@ -229,7 +228,7 @@ pub fn encode_broker_id(client_order_id: &ClientOrderId, broker_id: &str) -> Str
 
 /// Decodes an encoded string back to the original `ClientOrderId` value.
 ///
-/// If the string starts with a known broker prefix, the payload is decoded and
+/// If the string starts with a known integration prefix, the payload is decoded and
 /// the original ID is reconstructed. Strings without a recognized prefix are
 /// returned as-is for backward compatibility.
 #[must_use]
@@ -245,12 +244,12 @@ pub fn decode_broker_id(encoded: &str, broker_id: &str) -> String {
 
 /// Decodes and validates an inbound Binance client order ID.
 ///
-/// Strings without the expected broker prefix are treated as legacy IDs and
+/// Strings without the expected integration prefix are treated as legacy IDs and
 /// validated without decoding.
 ///
 /// # Errors
 ///
-/// Returns an error if the broker-prefixed encoding is malformed or the
+/// Returns an error if the integration encoding is malformed or the
 /// decoded client order ID is invalid.
 pub(crate) fn decode_client_order_id(
     encoded: &str,

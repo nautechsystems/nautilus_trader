@@ -910,6 +910,7 @@ fn reject_modify_replacement(
         Some(old_venue_order_id),
         &sanitize_error_text(reason),
         ts_event,
+        None,
     );
 
     if let Some(cancel_ts) = cancel_ts {
@@ -1399,13 +1400,10 @@ fn uncertain_order_trades(
     let mut selected = AHashMap::new();
     let mut order_trades = Vec::new();
 
-    for trade in trades.iter().filter(|trade| {
-        trade.taker_order_id == venue_order_id.as_str()
-            || trade
-                .maker_orders
-                .iter()
-                .any(|maker| maker.order_id == venue_order_id.as_str())
-    }) {
+    for trade in trades
+        .iter()
+        .filter(|trade| trade_touches_order(trade, venue_order_id))
+    {
         match admit_selected_trade(&mut selected, trade) {
             Ok(true) => order_trades.push(trade),
             Ok(false) => {}

@@ -20,7 +20,7 @@
 //! Targeted requests collect order status and missing fills for the manager and live node.
 //! The manager owns cache-dependent decisions; the live node owns recurring task lifecycles.
 
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 #[cfg(feature = "node")]
 use std::{cell::RefCell, rc::Rc};
 
@@ -277,6 +277,7 @@ impl ReconciliationFillQueue {
 /// Information about an inflight order check.
 #[derive(Debug, Clone)]
 pub(super) struct InflightCheck {
+    pub command_ids: Vec<UUID4>,
     pub submitted_at: dst::time::Instant,
     pub retry_count: u32,
     // `Instant` debug output is runtime-specific and intentionally only useful
@@ -342,7 +343,11 @@ pub(crate) async fn request_targeted_order_reports(
             if let Some(candidate) =
                 targeted_report_response(&query, client_id, response, &mut coverage_complete)
             {
-                if terminal_report_has_missing_fills(&candidate, query.filled_qty) {
+                if order_report_has_missing_fills(
+                    &candidate,
+                    query.filled_qty,
+                    client.requires_authoritative_fills(),
+                ) {
                     let command = targeted_fill_command(&query, &candidate);
 
                     match client.generate_fill_reports(command).await {
@@ -406,10 +411,22 @@ pub(crate) async fn collect_targeted_order_reports(
             return false;
         };
 
+        let requires_authoritative_fills = result.client_id.is_some_and(|client_id| {
+            clients.iter().any(|client| {
+                client.client_id() == client_id && client.requires_authoritative_fills()
+            })
+        });
+
         let fill_query = result
             .report
             .as_ref()
-            .filter(|report| terminal_report_has_missing_fills(report, query.filled_qty))
+            .filter(|report| {
+                order_report_has_missing_fills(
+                    report,
+                    query.filled_qty,
+                    requires_authoritative_fills,
+                )
+            })
             .map(|report| (targeted_fill_command(&query, report), report.clone()));
         let client_id = result.client_id;
         let result_index = results.borrow().len();
@@ -604,15 +621,41 @@ fn targeted_report_matches(query: &TargetedOrderQuery, report: &OrderStatusRepor
     instrument_matches && order_matches
 }
 
-/// Checks whether a canceled or expired report has more fills than the cached order.
-pub(super) fn terminal_report_has_missing_fills(
+/// Checks whether a report needs authoritative fills before status reconciliation.
+pub(super) fn order_report_has_missing_fills(
     report: &OrderStatusReport,
     cached_filled_qty: Quantity,
+    requires_authoritative_fills: bool,
 ) -> bool {
-    matches!(
-        report.order_status,
-        OrderStatus::Canceled | OrderStatus::Expired
-    ) && report.filled_qty > cached_filled_qty
+    report.filled_qty > cached_filled_qty
+        && (requires_authoritative_fills
+            || matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired
+            ))
+}
+
+/// Preserves later confirmed amendments for clients requiring authoritative fills.
+pub(super) fn preserve_order_amendment<'a>(
+    order: &OrderAny,
+    report: &'a OrderStatusReport,
+    requires_authoritative_fills: bool,
+) -> Cow<'a, OrderStatusReport> {
+    if !requires_authoritative_fills || !should_reconciliation_update(order, report) {
+        return Cow::Borrowed(report);
+    }
+
+    if !order.events().iter().any(|event| {
+        matches!(event, OrderEventAny::Updated(updated) if updated.ts_event > report.ts_last)
+    }) {
+        return Cow::Borrowed(report);
+    }
+
+    let mut current = report.clone();
+    current.quantity = order.quantity();
+    current.price = order.price();
+    current.trigger_price = order.trigger_price();
+    Cow::Owned(current)
 }
 
 /// Builds an order report from fills sharing the same order and venue position.
@@ -1556,6 +1599,7 @@ pub(super) mod tests {
     pub(crate) struct CommissionStubClient {
         outcome: CommissionOutcome,
         seen: RefCell<Option<(Quantity, Price, LiquiditySide)>>,
+        pub(crate) requires_authoritative_fills: bool,
     }
 
     impl CommissionStubClient {
@@ -1564,6 +1608,7 @@ pub(super) mod tests {
             Self {
                 outcome,
                 seen: RefCell::new(None),
+                requires_authoritative_fills: false,
             }
         }
 
@@ -1580,6 +1625,10 @@ pub(super) mod tests {
 
     #[async_trait::async_trait(?Send)]
     impl ExecutionClient for CommissionStubClient {
+        fn requires_authoritative_fills(&self) -> bool {
+            self.requires_authoritative_fills
+        }
+
         fn is_connected(&self) -> bool {
             true
         }

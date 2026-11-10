@@ -13,8 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[path = "../../benches/engine/canonical.rs"]
-mod canonical;
+#[path = "."]
+mod canonical {
+    include!("../../benches/engine/canonical.rs");
+
+    #[path = "canonical_reference.rs"]
+    mod tests;
+}
 
 use rstest::rstest;
 

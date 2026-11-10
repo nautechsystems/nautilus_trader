@@ -55,7 +55,7 @@ from nautilus_trader.trading import StrategyConfig
 INSTRUMENT_ID = InstrumentId.from_str(
     os.getenv("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", default_aapl_instrument_id()),
 )
-# Paper acceptance has also been verified with ESZ6.XCME while the stock market is closed.
+# Paper acceptance has also been verified with ESZ26.XCME while the stock market is closed.
 
 
 # %%
@@ -95,10 +95,13 @@ class ReconciliationExample(Strategy):
             return
 
         self._subscribed = True
+
         if env_bool("IB_V2_SUBSCRIBE_QUOTES"):
             self.subscribe_quotes(self.instrument_id, client_id=ib_client_id())
+
         if env_bool("IB_V2_SUBSCRIBE_TRADES"):
             self.subscribe_trades(self.instrument_id, client_id=ib_client_id())
+
         if env_bool("IB_V2_SUBSCRIBE_BARS"):
             self.subscribe_bars(self.bar_type, client_id=ib_client_id())
 
@@ -155,6 +158,7 @@ def main() -> None:
     node.add_strategy(ReconciliationExample())
 
     print(f"Built reconciliation node for {INSTRUMENT_ID}.", flush=True)
+
     if run_node:
         schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 20))
         node.run()

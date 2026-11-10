@@ -30,7 +30,10 @@ use nautilus_core::{
 };
 use nautilus_model::{
     enums::AssetClass,
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{
+        InstrumentId, Symbol,
+        futures::{format_futures_symbol, parse_futures_symbol, resolve_futures_year_from_expiry},
+    },
     instruments::{
         Cfd, Commodity, CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument,
         InstrumentAny, OptionContract, OptionSpread,
@@ -468,6 +471,29 @@ fn parse_option_contract(
     let underlying =
         if details.under_security_type == "IND" && !details.under_symbol.starts_with('^') {
             format!("^{}", details.under_symbol)
+        } else if details.under_security_type == "FUT" {
+            let option_code = instrument_id
+                .symbol
+                .as_str()
+                .split_once(' ')
+                .map(|(code, _)| code);
+            let digits = option_code
+                .and_then(parse_futures_symbol)
+                .map(|parsed| parsed.year_digits.len());
+
+            if digits == Some(2) {
+                parse_futures_symbol(&details.under_symbol)
+                    .and_then(|parsed| {
+                        let year = resolve_futures_year_from_expiry(
+                            parsed.year_digits,
+                            expiry.get(..4)?.parse::<i32>().ok()?,
+                        )?;
+                        format_futures_symbol(parsed.root, parsed.month_code, year, 2)
+                    })
+                    .unwrap_or_else(|| details.under_symbol.clone())
+            } else {
+                details.under_symbol.clone()
+            }
         } else {
             details.under_symbol.clone()
         };
@@ -1025,6 +1051,45 @@ mod tests {
         assert_eq!(future.price_increment, Price::from("0.0025"));
         assert_eq!(future.price_precision, 4);
         assert_eq!(future.multiplier, Quantity::from(5000));
+    }
+
+    #[rstest]
+    #[case("EW1F26 P5000.XCME", "ESZ6", "20251231", "ESZ26")]
+    #[case("EW1F30 P5000.XCME", "ESH0", "20291231", "ESH30")]
+    #[case("EW1F6 P5000.XCME", "ESZ6", "20251231", "ESZ6")]
+    fn test_futures_option_uses_actual_underlying(
+        #[case] instrument_id: InstrumentId,
+        #[case] underlying: &str,
+        #[case] expiry: &str,
+        #[case] expected: &str,
+    ) {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ES"),
+                security_type: SecurityType::FuturesOption,
+                currency: Currency::from("USD"),
+                local_symbol: "EW1F6 P5000".to_string(),
+                last_trade_date_or_contract_month: expiry.to_string(),
+                right: Some(OptionRight::Put),
+                strike: 5000.0,
+                multiplier: "50".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.25,
+            under_symbol: underlying.to_string(),
+            under_security_type: "FUT".to_string(),
+            ..Default::default()
+        };
+
+        let InstrumentAny::OptionContract(option) =
+            parse_ib_contract_to_instrument(&details, instrument_id).unwrap()
+        else {
+            panic!("expected option contract");
+        };
+
+        assert_eq!(option.underlying(), Some(Ustr::from(expected)));
+        assert_eq!(option.id(), instrument_id);
+        assert_eq!(option.raw_symbol(), NautilusSymbol::from("EW1F6 P5000"));
     }
 }
 

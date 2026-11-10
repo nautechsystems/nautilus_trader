@@ -79,10 +79,16 @@ pub enum BinanceError {
     Config(String),
 }
 
+pub(crate) const BINANCE_RATE_LIMIT_STATUS: u16 = 429;
+pub(crate) const BINANCE_IP_BAN_STATUS: u16 = 418;
+pub(crate) const BINANCE_RATE_LIMIT_BLOCKED_MESSAGE: &str = "Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown";
+
+pub(crate) const BINANCE_ORDER_RATE_LIMIT_CODE: i64 = -1015;
+
 /// Binance error codes indicating rate limiting or throttling.
 const BINANCE_RATE_LIMIT_ERROR_CODES: [i64; 2] = [
-    -1003, // Too many requests; WAF limit violated
-    -1015, // Too many new orders; rate limit violated
+    -1003,                         // Too many requests; WAF limit violated
+    BINANCE_ORDER_RATE_LIMIT_CODE, // Too many new orders; rate limit violated
 ];
 
 /// Returns `true` when the venue error code marks a transient rate-limit failure.
@@ -93,7 +99,7 @@ pub(crate) fn is_retryable_venue_code(code: i64) -> bool {
 /// Returns `true` when the HTTP status marks a transient failure (rate limited,
 /// auto-banned, or a server error).
 pub(crate) fn is_retryable_http_status(status: u16) -> bool {
-    status == 429 || status == 418 || status >= 500
+    status == BINANCE_RATE_LIMIT_STATUS || status == BINANCE_IP_BAN_STATUS || status >= 500
 }
 
 /// Returns `true` when the venue error code means execution status is unknown.

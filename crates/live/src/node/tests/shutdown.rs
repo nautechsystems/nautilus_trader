@@ -14,17 +14,81 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
-    clients::ExecutionReportTask,
+    clients::{DataClient, ExecutionReportTask},
     component::component_state,
     enums::ComponentState,
-    messages::execution::{CancelOrder, QueryOrder},
+    messages::{
+        data::UnsubscribeCommand,
+        execution::{CancelOrder, QueryOrder},
+    },
+    msgbus::stubs::get_any_saving_handler,
 };
+use nautilus_data::DataClientAdapter;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyDict};
 
 use super::*;
 #[cfg(feature = "python")]
 use crate::python::node::PyLiveNode;
+
+#[tokio::test]
+async fn test_final_drain_blocks_subscriptions_and_preserves_data_and_cleanup() {
+    let client_id = ClientId::from("EXTERNAL");
+
+    let config = LiveNodeConfig {
+        data_engine: crate::config::LiveDataEngineConfig {
+            external_clients: Some(vec![client_id]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("FinalDrainNode".to_string(), Some(config)).unwrap();
+    let topic = format!("commands.data.{client_id}");
+    let (handler, subscribes) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+
+    let subscribe = |instrument_id| {
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(client_id),
+            Some(Venue::from("SIM")),
+            UUID4::new(),
+            UnixNanos::from(40),
+            None,
+            None,
+        ))
+    };
+
+    let active = subscribe(InstrumentId::from("AUD/USD.SIM"));
+    node.kernel
+        .data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(active));
+    assert_eq!(subscribes.get_messages().len(), 1);
+
+    node.finalize_stop().await.unwrap();
+    let blocked = subscribe(InstrumentId::from("EUR/USD.SIM"));
+    let sender = nautilus_common::runner::get_data_cmd_sender();
+    sender.execute(DataCommand::Subscribe(blocked.clone()));
+    get_data_event_sender().send(stub_data_event()).unwrap();
+    node.drain_runner_pending();
+
+    assert_eq!(subscribes.get_messages().len(), 1);
+    assert_eq!(node.kernel.data_engine().command_count(), 2);
+    assert_eq!(node.kernel.data_engine().data_count(), 1);
+
+    let (handler, unsubscribes) = get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let unsubscribe = blocked.into_unsubscribe(UUID4::new(), UnixNanos::from(41), None);
+    sender.execute(DataCommand::Unsubscribe(unsubscribe.clone()));
+    node.drain_runner_pending();
+    assert_eq!(
+        serde_json::to_value(unsubscribes.get_messages()).unwrap(),
+        serde_json::to_value([unsubscribe]).unwrap()
+    );
+    node.dispose();
+}
 
 #[cfg(not(madsim))]
 #[rstest]
@@ -80,6 +144,186 @@ async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
     assert!(observed[0].contains("SHUTDOWN report collection:"));
     assert!(observed[0].contains("report worker failed"));
     assert_eq!(errors, observed);
+}
+
+#[rstest]
+#[case::execution_start(None, false)]
+#[case::execution_owned(Some(NodeRunMode::Owned), false)]
+#[case::execution_hosted(Some(NodeRunMode::Hosted), false)]
+#[case::data_start(None, true)]
+#[case::data_owned(Some(NodeRunMode::Owned), true)]
+#[case::data_hosted(Some(NodeRunMode::Hosted), true)]
+#[tokio::test]
+async fn test_client_connect_failure_aborts_startup(
+    #[case] mode: Option<NodeRunMode>,
+    #[case] data: bool,
+    #[values(false, true)] pending: bool,
+) {
+    let config = LiveNodeConfig {
+        exec_engine: crate::config::LiveExecutionEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        timeout_connection: if pending {
+            Duration::from_millis(100)
+        } else {
+            Duration::from_secs(30)
+        },
+        timeout_disconnection: Duration::from_millis(100),
+        delay_post_stop: Duration::ZERO,
+        timeout_shutdown: Duration::from_millis(100),
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("FailedConnectNode".to_string(), Some(config)).unwrap();
+    let (_, control) = TestCacheDatabaseControl::create();
+    node.add_strategy(StateStrategy::new(
+        StrategyId::from("CONNECT-001"),
+        control.clone(),
+        IndexMap::new(),
+    ))
+    .unwrap();
+    let connect_error = "password=SYN-password token=SYN-token";
+
+    let connect_delay = if pending {
+        Duration::from_secs(30)
+    } else {
+        Duration::ZERO
+    };
+
+    if data {
+        node.kernel.data_engine.borrow_mut().register_client(
+            DataClientAdapter::new(
+                ClientId::from("DATA"),
+                None,
+                true,
+                true,
+                Box::new(DataConnectClient {
+                    connected: false,
+                    connect_error,
+                    connect_delay,
+                }),
+            ),
+            None,
+        );
+    } else {
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(ShutdownClient {
+                connected: false,
+                connect_error: Some(connect_error),
+                connect_delay,
+                retain: false,
+                disconnect_event: Rc::default(),
+                submitted: Rc::default(),
+                queries: Rc::default(),
+                report_task: RefCell::default(),
+                disconnect_delay: Duration::ZERO,
+            }))
+            .unwrap();
+    }
+
+    let e = tokio::time::timeout(Duration::from_secs(2), async {
+        match mode {
+            None => node.start().await,
+            Some(mode) => node.run_with_mode(mode).await,
+        }
+    })
+    .await
+    .expect("failed connection waited for startup readiness")
+    .unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        match (data, pending) {
+            (true, true) => "data-connect timeout",
+            (true, false) => "Failed to connect data clients: DATA",
+            (false, true) => "exec-connect timeout",
+            (false, false) => "Failed to connect execution clients: SHUTDOWN",
+        }
+    );
+    assert_eq!(e.chain().count(), 1);
+    assert_eq!(node.state(), NodeState::Stopped);
+    assert_eq!(control.events(), Vec::<String>::new());
+
+    if data {
+        assert!(
+            node.kernel
+                .data_engine
+                .borrow_mut()
+                .get_client(Some(&ClientId::from("DATA")), None)
+                .unwrap()
+                .is_disconnected()
+        );
+    } else {
+        assert!(
+            !node
+                .kernel
+                .exec_engine
+                .borrow()
+                .get_client(&ClientId::from("SHUTDOWN"))
+                .unwrap()
+                .is_connected()
+        );
+    }
+}
+
+#[derive(Debug)]
+struct DataConnectClient {
+    connected: bool,
+    connect_error: &'static str,
+    connect_delay: Duration,
+}
+
+#[async_trait::async_trait(?Send)]
+impl DataClient for DataConnectClient {
+    fn client_id(&self) -> ClientId {
+        ClientId::from("DATA")
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        None
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        self.connected = true;
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        self.connected = false;
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected
+    }
+
+    fn is_disconnected(&self) -> bool {
+        !self.connected
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        if !self.connect_delay.is_zero() {
+            tokio::time::sleep(self.connect_delay).await;
+        }
+
+        anyhow::bail!("{}", self.connect_error)
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.connected = false;
+        Ok(())
+    }
 }
 
 #[cfg(not(madsim))]
@@ -183,6 +427,8 @@ fn shutdown_report_client(
 
     let client = LiveExecutionClient::new(Box::new(ShutdownClient {
         connected: true,
+        connect_error: None,
+        connect_delay: Duration::ZERO,
         retain: false,
         disconnect_event: Rc::default(),
         submitted: Rc::default(),
@@ -197,6 +443,8 @@ fn shutdown_report_client(
 #[derive(Debug)]
 struct ShutdownClient {
     connected: bool,
+    connect_error: Option<&'static str>,
+    connect_delay: Duration,
     retain: bool,
     disconnect_event: Rc<RefCell<Option<OrderEventAny>>>,
     submitted: Rc<RefCell<Vec<SubmitOrder>>>,
@@ -260,6 +508,18 @@ impl ExecutionClient for ShutdownClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         self.connected = false;
+        Ok(())
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        if !self.connect_delay.is_zero() {
+            tokio::time::sleep(self.connect_delay).await;
+        }
+
+        if let Some(message) = self.connect_error {
+            anyhow::bail!("{message}");
+        }
+
         Ok(())
     }
 
@@ -445,6 +705,8 @@ async fn test_submission_shutdown_boundary(
         policy,
         ShutdownClient {
             connected: false,
+            connect_error: None,
+            connect_delay: Duration::ZERO,
             retain: client_retains,
             disconnect_event: Rc::clone(&disconnect_event),
             submitted: Rc::default(),
@@ -532,6 +794,8 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
         SubmissionRecoveryPolicy::RetainUnresolved,
         ShutdownClient {
             connected: false,
+            connect_error: None,
+            connect_delay: Duration::ZERO,
             retain: false,
             disconnect_event: Rc::default(),
             submitted: submitted.clone(),
@@ -662,6 +926,8 @@ fn test_submission_shutdown_python_result(
         },
         ShutdownClient {
             connected: false,
+            connect_error: None,
+            connect_delay: Duration::ZERO,
             retain: false,
             disconnect_event: Rc::default(),
             submitted: Rc::default(),

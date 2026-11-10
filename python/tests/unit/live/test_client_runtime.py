@@ -734,6 +734,7 @@ async def test_runtime_rejects_wrong_thread(operation) -> None:
     runtime.bind(loop)
     task = asyncio.create_task(asyncio.sleep(0))
     await task
+
     args = {
         "bind": (loop,),
         "call": ("unused",),
@@ -1112,6 +1113,7 @@ async def test_independent_command_cancellation_continues_queue(source, native_l
                 if source == "self":
                     asyncio.current_task().cancel()
                     await asyncio.sleep(0)
+
                 if source == "child":
                     child = asyncio.create_task(asyncio.sleep(0))
                     child.cancel()

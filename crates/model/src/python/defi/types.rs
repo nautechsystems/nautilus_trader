@@ -78,8 +78,14 @@ impl Chain {
 
     #[getter]
     #[pyo3(name = "hypersync_url")]
-    fn py_hypersync_url(&self) -> &str {
-        &self.hypersync_url
+    fn py_hypersync_url(&self) -> Option<&str> {
+        self.hypersync_url.as_deref()
+    }
+
+    /// Sets or clears the HyperSync endpoint.
+    #[pyo3(name = "set_hypersync_url", signature = (hypersync_url=None))]
+    fn py_set_hypersync_url(&mut self, hypersync_url: Option<String>) {
+        self.hypersync_url = hypersync_url;
     }
 
     #[getter]
@@ -457,5 +463,41 @@ impl Pool {
     #[pyo3(name = "ts_init")]
     fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_chain_hypersync_endpoint() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let chain = Chain::new(Blockchain::Saakuru, 7_225_878);
+            let chain = Py::new(py, chain).unwrap();
+            let chain = chain.bind(py);
+            let endpoint = "https://indexer.example.com";
+            let unset = chain.getattr("hypersync_url").unwrap().is_none();
+
+            chain
+                .call_method1("set_hypersync_url", (endpoint,))
+                .unwrap();
+            let configured: String = chain.getattr("hypersync_url").unwrap().extract().unwrap();
+            chain.call_method0("set_hypersync_url").unwrap();
+            let cleared = chain.getattr("hypersync_url").unwrap().is_none();
+            let chain = chain.borrow();
+
+            assert!(unset);
+            assert_eq!(configured, endpoint);
+            assert!(cleared);
+            assert_eq!(chain.name, Blockchain::Saakuru);
+            assert_eq!(chain.chain_id, 7_225_878);
+            assert_eq!(chain.rpc_url, None);
+            assert_eq!(chain.native_currency_decimals, 18);
+        });
     }
 }

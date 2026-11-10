@@ -18,8 +18,11 @@
 use std::path::PathBuf;
 
 use nautilus_common::clients::DataClient;
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
-use nautilus_model::identifiers::ClientId;
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
+};
+use nautilus_model::identifiers::{ClientId, futures::FuturesYearDigits};
 use pyo3::prelude::*;
 
 use crate::data::{DatabentoDataClient, DatabentoDataClientConfig};
@@ -34,21 +37,29 @@ impl DatabentoDataClient {
     /// and `DatabentoHistoricalClient` for historical data requests. It supports multiple
     /// datasets simultaneously, with separate feed handlers per dataset.
     #[new]
-    #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true))]
+    #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true, futures_year_digits=None))]
     pub fn py_new(
         client_id: ClientId,
         api_key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
+        futures_year_digits: Option<u8>,
     ) -> PyResult<Self> {
-        let config = DatabentoDataClientConfig::new(
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
+        let mut config = DatabentoDataClientConfig::new(
             api_key,
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
         );
 
+        config.futures_year_digits = futures_year_digits;
         Self::new(client_id, config, get_atomic_clock_realtime()).map_err(to_pyruntime_err)
     }
 

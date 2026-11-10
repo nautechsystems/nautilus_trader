@@ -112,6 +112,7 @@ bytes = { workspace = true }
 criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
 name = "signing"

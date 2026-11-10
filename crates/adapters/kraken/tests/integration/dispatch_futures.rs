@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use nautilus_common::messages::ExecutionEvent;
+use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
 use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_kraken::{
     common::enums::{KrakenFillType, KrakenFuturesOrderType},
@@ -36,11 +36,12 @@ use nautilus_kraken::{
     },
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderType},
-    events::OrderEventAny,
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType},
+    events::{OrderEventAny, order::spec::OrderPendingUpdateSpec},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, crypto_perpetual::CryptoPerpetual},
-    types::{Currency, Price, Quantity},
+    orders::{Order, OrderTestBuilder},
+    types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -496,6 +497,226 @@ fn test_futures_open_orders_cancel_fill_driven_skipped() {
     );
 
     assert!(drain_events(&mut rx).is_empty());
+}
+
+/// A delta whose venue order ID the model cannot hold reaches neither the side caches nor a route,
+/// and a tracked order stays tracked so a later frame or reconciliation can still advance it.
+#[rstest]
+#[case::tracked_update(false, None, Some("uuid-invalid-1"), false)]
+#[case::tracked_cancel(true, Some("cancelled_by_user"), Some("uuid-invalid-1"), false)]
+#[case::tracked_partial_fill_removal(true, Some("partial_fill"), Some("uuid-invalid-1"), false)]
+#[case::tracked_full_fill_removal(true, Some("full_fill"), Some("uuid-invalid-1"), false)]
+#[case::tracked_already_filled(false, None, Some("uuid-invalid-1"), true)]
+#[case::external_update(false, None, None, false)]
+#[case::external_cancel(true, Some("cancelled_by_user"), None, false)]
+#[case::external_partial_fill_removal(true, Some("partial_fill"), None, false)]
+fn test_futures_delta_drops_an_invalid_venue_order_id_before_the_side_caches(
+    #[case] is_cancel: bool,
+    #[case] reason: Option<&str>,
+    #[case] cli_ord_id: Option<&str>,
+    #[case] already_filled: bool,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-1");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    if already_filled {
+        state.insert_filled(cid);
+    }
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_client_map = empty_string_map();
+    let venue_order_qty = empty_quantity_map();
+
+    let delta = make_open_orders_delta(
+        is_cancel,
+        reason,
+        dec!(0.0001),
+        Decimal::ZERO,
+        cli_ord_id,
+        "",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(order_instrument_map.load().is_empty());
+    assert!(venue_client_map.load().is_empty());
+    assert!(venue_order_qty.load().is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+    assert!(!state.emitted_accepted.contains(&cid));
+}
+
+/// A valid delta fills the side caches a cancel-only frame reads, and the tracked route reports the
+/// ID the delta carried.
+#[rstest]
+fn test_futures_delta_caches_a_valid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-valid-1");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_client_map = empty_string_map();
+    let venue_order_qty = empty_quantity_map();
+
+    let delta = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-valid-1"),
+        "v-valid-1",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert_eq!(
+        order_instrument_map.load().get("v-valid-1"),
+        Some(&InstrumentId::from(FUTURES_INSTRUMENT_ID))
+    );
+    assert_eq!(venue_client_map.load().get("v-valid-1"), Some(&cid));
+    assert_eq!(
+        venue_order_qty.load().get("v-valid-1"),
+        Some(&Quantity::from("0.0001"))
+    );
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = &events[0] else {
+        panic!("expected Accepted, was {:?}", events[0]);
+    };
+    assert_eq!(accepted.venue_order_id, VenueOrderId::from("v-valid-1"));
+}
+
+/// A cancel delta on the tracked route reports the ID the delta carried.
+#[rstest]
+fn test_futures_cancel_delta_tracked_reports_the_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-valid-2");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let delta = make_open_orders_delta(
+        true,
+        Some("cancelled_by_user"),
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-valid-2"),
+        "v-valid-2",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[1] else {
+        panic!("expected Canceled, was {:?}", events[1]);
+    };
+    assert_eq!(
+        canceled.venue_order_id,
+        Some(VenueOrderId::from("v-valid-2"))
+    );
+}
+
+/// A cancel-only frame is dropped before routing, so an invalid ID can neither cancel a tracked
+/// order nor report an external one.
+#[rstest]
+#[case::tracked(Some("uuid-invalid-2"))]
+#[case::external(None)]
+fn test_futures_open_orders_cancel_drops_an_invalid_venue_order_id(
+    #[case] cli_ord_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-2");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let cancel = make_open_orders_cancel(Some("cancelled_by_user"), cli_ord_id, "");
+    dispatch::futures::open_orders_cancel(
+        &cancel,
+        &state,
+        &emitter,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+}
+
+/// A fill with an invalid venue order ID is dropped on its own, and its sibling in the frame still
+/// reports.
+#[rstest]
+fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_venue_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let mut fills = make_fills_delta(None, "", "trade-invalid");
+    let sibling = make_fills_delta(None, "v-sibling", "trade-sibling");
+    fills.fills.extend(sibling.fills);
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    let ExecutionEvent::Report(ExecutionReport::Fill(report)) = &events[0] else {
+        panic!("expected a fill report, was {:?}", events[0]);
+    };
+    assert_eq!(report.venue_order_id, VenueOrderId::from("v-sibling"));
+    assert_eq!(report.trade_id, TradeId::from("trade-sibling"));
 }
 
 #[rstest]
@@ -1012,14 +1233,10 @@ fn test_truncated_id_map_resolves_full_client_order_id() {
 }
 
 #[rstest]
-fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
-    // Maker Protection: the REST cancel of a held order was acknowledged by
-    // the gateway (no dispatch event), and the converted order could not
-    // trade at release. The terminal cancel delta must converge the order
-    // with the venue reason preserved.
+fn test_futures_held_order_cancel_without_fills_emits_canceled_with_reason() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
-    let cid = ClientOrderId::new("uuid-mp-converted");
+    let cid = ClientOrderId::new("uuid-mp-unfilled");
     state.register_identity(
         cid,
         make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
@@ -1027,11 +1244,11 @@ fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
 
     let delta = make_open_orders_delta(
         true,
-        Some("IOC_WOULD_ENTER_BOOK"),
+        Some("cancelled_by_user"),
         dec!(0.0001),
         dec!(0.0),
-        Some("uuid-mp-converted"),
-        "v-mp-converted",
+        Some("uuid-mp-unfilled"),
+        "v-mp-unfilled",
     );
     dispatch::futures::open_orders_delta(
         &delta,
@@ -1057,16 +1274,13 @@ fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
         panic!("expected OrderCanceled, was {:?}", events[1]);
     };
 
-    assert_eq!(canceled.reason, Some(Ustr::from("IOC_WOULD_ENTER_BOOK")));
+    assert_eq!(canceled.reason, Some(Ustr::from("cancelled_by_user")));
     assert!(state.lookup_identity(&cid).is_none());
 }
 
 #[rstest]
-fn test_futures_converted_hold_fill_after_cancel_ack_converges() {
-    // Maker Protection core trap: the cancel was already acknowledged over
-    // REST, then the held order fills at release. The fill must still be
-    // processed, and the subsequent fill-driven removal must not emit a
-    // spurious cancel.
+fn test_futures_held_order_full_fill_before_cancel_response_converges() {
+    // A held order can fill before its cancel answers notFound
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-mp-filled");
@@ -1128,11 +1342,8 @@ fn test_futures_converted_hold_fill_after_cancel_ack_converges() {
 }
 
 #[rstest]
-fn test_futures_held_amend_cancel_absorbed_then_amend_outcome_drives_state() {
-    // Maker Protection: a cancel sent while an amend is held is absorbed by
-    // the gateway and never reaches the book, so dispatch never sees it. At
-    // release the amendment reprices the same order (modify ack), then it
-    // trades. The amend outcome alone must drive the order state.
+fn test_futures_held_amend_full_fill_leaves_nothing_to_cancel() {
+    // A held amend trades before cancellation can remove its remainder
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-mp-amend");
@@ -1211,6 +1422,232 @@ fn test_futures_held_amend_cancel_absorbed_then_amend_outcome_drives_state() {
         events[1],
         ExecutionEvent::Order(OrderEventAny::Filled(_))
     ));
+}
+
+#[rstest]
+#[case::fills_first(true)]
+#[case::orders_first(false)]
+fn test_futures_split_amend_reduction_then_reprice(#[case] fills_first: bool) {
+    let frames: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/ws_futures_split_amend.json")).unwrap();
+    let placement: KrakenFuturesOpenOrdersDelta =
+        serde_json::from_value(frames[0].clone()).unwrap();
+    let cid = ClientOrderId::from(placement.order.cli_ord_id.as_deref().unwrap());
+    let venue_order_id = VenueOrderId::from(placement.order.order_id.as_str());
+    let instrument_id = InstrumentId::from("PF_APEUSD.KRAKEN");
+    let strategy_id = StrategyId::from("EXEC_TESTER-001");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::new();
+    state.register_identity(
+        cid,
+        OrderIdentity {
+            strategy_id,
+            instrument_id,
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            quantity: Quantity::from("0.0040"),
+        },
+    );
+
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("PF_APEUSD"))
+        .base_currency(Currency::get_or_create_crypto("APE"))
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(4)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("0.0001"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let instruments = instruments_with(InstrumentAny::CryptoPerpetual(instrument));
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(emitter.trader_id())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(cid)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.0040"))
+        .price(Price::from("70000.0"))
+        .submit(true)
+        .build();
+
+    let resting = (
+        "0.0040",
+        "70000.0",
+        "0.0000",
+        "0.0040",
+        OrderStatus::Accepted,
+    );
+    let reduced = (
+        "0.0025",
+        "70000.0",
+        "0.0000",
+        "0.0025",
+        OrderStatus::Accepted,
+    );
+    let partial = (
+        "0.0025",
+        "70000.0",
+        "0.0007",
+        "0.0018",
+        OrderStatus::PartiallyFilled,
+    );
+    let repriced = (
+        "0.0025",
+        "70123.5",
+        "0.0007",
+        "0.0018",
+        OrderStatus::PartiallyFilled,
+    );
+
+    let sequence = if fills_first {
+        [
+            (0, resting),
+            (1, reduced),
+            (2, partial),
+            (3, partial),
+            (4, repriced),
+        ]
+    } else {
+        [
+            (0, resting),
+            (1, reduced),
+            (3, reduced),
+            (2, partial),
+            (4, repriced),
+        ]
+    };
+
+    let mut accepted = 0;
+    let mut updated = 0;
+    let mut filled = 0;
+
+    for (index, (quantity, price, expected_filled, leaves, status)) in sequence {
+        if index == 1 {
+            let pending = OrderPendingUpdateSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(cid)
+                .account_id(account_id())
+                .venue_order_id(venue_order_id)
+                .build();
+            order.apply(OrderEventAny::PendingUpdate(pending)).unwrap();
+            assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        }
+
+        if index == 2 {
+            let delta: KrakenFuturesFillsDelta =
+                serde_json::from_value(frames[index].clone()).unwrap();
+            dispatch::futures::fills_delta(
+                &delta,
+                &state,
+                &emitter,
+                &instruments,
+                &empty_string_map(),
+                &empty_string_map(),
+                account_id(),
+                UnixNanos::default(),
+            );
+        } else {
+            let delta: KrakenFuturesOpenOrdersDelta =
+                serde_json::from_value(frames[index].clone()).unwrap();
+            dispatch::futures::open_orders_delta(
+                &delta,
+                &state,
+                &emitter,
+                &instruments,
+                &empty_string_map(),
+                &empty_instrument_id_map(),
+                &empty_string_map(),
+                &empty_quantity_map(),
+                account_id(),
+                UnixNanos::default(),
+            );
+        }
+
+        let events = drain_events(&mut rx);
+        assert_eq!(
+            events.len(),
+            usize::from(index != 3),
+            "frame {index}: {events:?}"
+        );
+
+        for event in events {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("expected tracked order event, was {event:?}");
+            };
+
+            assert_eq!(event.trader_id(), order.trader_id());
+            assert_eq!(event.strategy_id(), strategy_id);
+            assert_eq!(event.instrument_id(), instrument_id);
+            assert_eq!(event.client_order_id(), cid);
+            assert_eq!(event.venue_order_id(), Some(venue_order_id));
+            assert_eq!(event.account_id(), Some(account_id()));
+
+            match (index, &event) {
+                (0, OrderEventAny::Accepted(_)) => accepted += 1,
+                (1 | 4, OrderEventAny::Updated(event)) => {
+                    updated += 1;
+                    assert_eq!(event.quantity, Quantity::from("0.0025"));
+
+                    assert_eq!(event.price, Some(Price::from(price)));
+                    assert_eq!(event.trigger_price, None);
+                    assert!(!event.reconciliation);
+                }
+                (2, OrderEventAny::Filled(event)) => {
+                    filled += 1;
+                    assert_eq!(
+                        event.trade_id,
+                        TradeId::from("f4651c55-bba6-477d-a013-8a07b2fd85d1")
+                    );
+                    assert_eq!(event.order_side, OrderSide::Buy);
+                    assert_eq!(event.order_type, OrderType::Limit);
+                    assert_eq!(event.last_qty, Quantity::from("0.0007"));
+                    assert_eq!(event.last_px, Price::from("70000.0"));
+                    assert_eq!(event.currency, Currency::USD());
+                    assert_eq!(event.liquidity_side, LiquiditySide::Maker);
+                    assert_eq!(event.commission, Some(Money::from("0.02 USD")));
+                }
+                _ => panic!("unexpected event for frame {index}: {event:?}"),
+            }
+
+            order.apply(event).unwrap();
+        }
+
+        assert_eq!(order.status(), status, "frame {index}");
+        assert_eq!(order.quantity(), Quantity::from(quantity));
+        assert_eq!(order.price(), Some(Price::from(price)));
+        assert_eq!(order.filled_qty(), Quantity::from(expected_filled));
+        assert_eq!(order.leaves_qty(), Quantity::from(leaves));
+        assert_eq!(order.client_order_id(), cid);
+        assert_eq!(order.venue_order_id(), Some(venue_order_id));
+        assert_eq!(order.account_id(), Some(account_id()));
+        assert!(order.is_open());
+        assert!(!order.is_closed());
+        let identity = state
+            .lookup_identity(&cid)
+            .expect("resting identity retained");
+        assert_eq!(identity.quantity, order.quantity());
+        assert_eq!(identity.strategy_id, strategy_id);
+        assert_eq!(identity.instrument_id, instrument_id);
+        assert_eq!(identity.order_side, OrderSide::Buy);
+        assert_eq!(identity.order_type, OrderType::Limit);
+        assert!(!state.filled_orders.contains(&cid));
+    }
+
+    assert_eq!((accepted, updated, filled), (1, 2, 1));
+    assert_eq!(order.event_count(), 7);
+    assert_eq!(order.avg_px(), Some(dec!(70000)));
+    assert_eq!(
+        state.previous_filled_qty(&cid),
+        Some(Quantity::from("0.0007"))
+    );
 }
 
 #[rstest]
@@ -1352,7 +1789,10 @@ fn register_tracked_identity(
 }
 
 #[rstest]
-fn test_futures_partial_removal_after_fills_emits_canceled() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_after_fills_emits_canceled(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-fill-first", "0.001");
@@ -1377,7 +1817,7 @@ fn test_futures_partial_removal_after_fills_emits_canceled() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0004),
         Some("uuid-mp-part-fill-first"),
@@ -1415,13 +1855,16 @@ fn test_futures_partial_removal_after_fills_emits_canceled() {
         panic!("expected OrderCanceled, was {:?}", events[2]);
     };
 
-    assert_eq!(canceled.reason, Some(Ustr::from("partial_fill")));
+    assert_eq!(canceled.reason, Some(Ustr::from(reason)));
     assert!(state.lookup_identity(&cid).is_none());
     assert!(state.pending_removal(&cid).is_none());
 }
 
 #[rstest]
-fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_before_fills_defers_cancel_until_fill(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-removal-first", "0.001");
@@ -1429,7 +1872,7 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0004),
         Some("uuid-mp-part-removal-first"),
@@ -1454,7 +1897,7 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
     );
     let pending = state.pending_removal(&cid).expect("removal parked");
     assert_eq!(pending.venue_filled, Quantity::from("0.0004"));
-    assert_eq!(pending.reason.as_deref(), Some("partial_fill"));
+    assert_eq!(pending.reason.as_deref(), Some(reason));
 
     let fills = make_fills_delta_with_qty(
         Some("uuid-mp-part-removal-first"),
@@ -1496,7 +1939,10 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
 }
 
 #[rstest]
-fn test_futures_partial_removal_deferred_across_multiple_fills() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_deferred_across_multiple_fills(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-multi", "0.001");
@@ -1504,7 +1950,7 @@ fn test_futures_partial_removal_deferred_across_multiple_fills() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0006),
         Some("uuid-mp-part-multi"),
@@ -1592,7 +2038,10 @@ fn test_futures_partial_removal_deferred_across_multiple_fills() {
 }
 
 #[rstest]
-fn test_futures_pending_removal_superseded_by_full_fill() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_pending_removal_superseded_by_full_fill(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-full", "0.0001");
@@ -1600,7 +2049,7 @@ fn test_futures_pending_removal_superseded_by_full_fill() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.0001),
         dec!(0.0001),
         Some("uuid-mp-part-full"),

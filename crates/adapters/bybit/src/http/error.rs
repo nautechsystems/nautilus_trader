@@ -122,7 +122,7 @@ pub enum BybitCancelOrderError {
     /// Bybit accepted the request envelope, but did not return an order ID.
     #[error("No order_id in cancel response")]
     MissingOrderId,
-    /// Bybit returned an order ID, but the immediate order lookup failed.
+    /// Bybit returned an order ID, but terminal status confirmation failed or timed out.
     #[error("Order lookup failed after cancellation: {source}")]
     PostCancelLookup {
         /// Source lookup error.
@@ -178,7 +178,7 @@ impl From<BybitErrorResponse> for BybitHttpError {
 pub(crate) fn is_bybit_ambiguous_order_error_code(code: i64) -> bool {
     matches!(
         code,
-        10000 | 10016 | 10019 | 170001 | 170007 | 170032 | 20006 | 500000
+        10000 | 10006 | 10016 | 10019 | 10429 | 170001 | 170007 | 170032 | 20006 | 500000
     )
 }
 
@@ -248,10 +248,11 @@ mod tests {
     #[case(20006, true)]
     #[case(500000, true)]
     #[case(429, false)]
-    #[case(10006, false)]
+    #[case(10006, true)]
     #[case(10403, false)]
-    #[case(10429, false)]
+    #[case(10429, true)]
     #[case(170005, false)]
+    #[case(170222, false)]
     #[case(20003, false)]
     fn test_order_error_ambiguity(#[case] code: i64, #[case] expected: bool) {
         assert_eq!(is_bybit_ambiguous_order_error_code(code), expected);

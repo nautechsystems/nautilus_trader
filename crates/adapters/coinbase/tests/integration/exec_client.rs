@@ -21,9 +21,11 @@
 //! tests pass bogus credentials that still sign with a valid EC key pair.
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
+    rc::Rc,
     sync::Arc,
     time::Duration,
 };
@@ -53,6 +55,7 @@ use nautilus_coinbase::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::VirtualClock,
     live::runner::replace_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -63,18 +66,23 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_live::{
+    ExecutionClientCore,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
-    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
-    events::OrderEventAny,
+    accounts::{AccountAny, CashAccount},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TradeId, TraderId, VenueOrderId,
     },
-    instruments::InstrumentAny,
-    orders::{Order, OrderList, builder::OrderTestBuilder},
-    types::{Price, Quantity},
+    instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
+    orders::{Order, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
@@ -364,6 +372,10 @@ const API_PREFIX: &str = "/api/v3/brokerage";
 
 fn create_router(state: TestState) -> Router {
     Router::new()
+        .route(
+            &format!("{API_PREFIX}/time"),
+            get(|| async { Json(json!({"iso": "2024-01-01T00:00:00Z"})) }),
+        )
         .route(
             &format!("{API_PREFIX}/orders/historical/batch"),
             get(handle_orders_batch),
@@ -1980,6 +1992,95 @@ async fn test_exec_client_position_reports_margin_single_hits_scoped_endpoint() 
     assert!(state.requests_for("/cfm/positions").is_empty());
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_position_check_preserves_spot_position_without_reports() {
+    let (client, _rx, cache) =
+        make_exec_client_with_events_and_cache("127.0.0.1:1".parse().unwrap(), AccountType::Cash);
+    let mut pair = currency_pair_btcusdt();
+    pair.id = InstrumentId::from("BTC-USD.COINBASE");
+    pair.quote_currency = Currency::USD();
+    let instrument = InstrumentAny::CurrencyPair(pair);
+
+    let account_state = AccountState::new(
+        client.account_id(),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100000 USD"),
+            Money::from("0 USD"),
+            Money::from("100000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            false,
+        )))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000000"))
+        .build();
+    let position_id = PositionId::from("P-SPOT-RETAINED");
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SPOT-OPEN")),
+        Some(position_id),
+        Some(Price::from("50000.00")),
+        None,
+        None,
+        None,
+        None,
+        Some(client.account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            position_check_threshold_ns: DurationNanos::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mut events = Vec::new();
+    for _ in 0..2 {
+        events.extend(manager.check_positions_consistency(&[&client]).await);
+    }
+
+    assert!(
+        events.is_empty(),
+        "Unexpected reconciliation events: {events:?}"
+    );
+    let cache = cache.borrow();
+    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+    let retained = cache.position(&position_id).unwrap();
+    assert_eq!(retained.quantity, position.quantity);
+    assert_eq!(retained.signed_decimal_qty(), position.signed_decimal_qty());
+    assert_eq!(retained.side, position.side);
+    assert_eq!(retained.avg_px_open, position.avg_px_open);
+    assert_eq!(retained.event_count(), position.event_count());
+}
+
 // Cash clients have no positions: the exec client's fast-path must return
 // empty without hitting the venue so a Cash/Margin factory mix-up does not
 // leak CFM traffic onto a spot account.
@@ -2257,6 +2358,124 @@ async fn test_exec_batch_cancel_partial_failure_uses_child_cancel_identity() {
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_repeated_target_resolves_each_command(#[values(1, 2)] count: usize) {
+    let state = TestState::default();
+    for _ in 0..count {
+        state.enqueue("/orders/batch_cancel", json!({"results": [{
+            "success": false, "failure_reason": "UNKNOWN_CANCEL_FAILURE_REASON", "order_id": "repeat-venue"
+        }]}));
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+    let account = AccountId::from("COINBASE-001");
+    let venue = VenueOrderId::from("repeat-venue");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-REPEAT"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("repeated-cancel"))
+        .quantity(Quantity::from("0.125"))
+        .price(Price::from("51000"))
+        .build();
+    order
+        .apply(TestOrderEventStubs::accepted(&order, account, venue))
+        .unwrap();
+
+    let cancels: Vec<_> = (0..count)
+        .map(|_| {
+            make_cancel_order(
+                order.client_order_id(),
+                order.instrument_id(),
+                order.strategy_id(),
+                Some(venue),
+            )
+        })
+        .collect();
+
+    let causes: Vec<_> = cancels.iter().map(|cmd| cmd.command_id).collect();
+    for cause in &causes {
+        let mut pending = OrderPendingCancel::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Some(account),
+            UUID4::new(),
+            1.into(),
+            1.into(),
+            false,
+            Some(venue),
+        );
+        pending.causation_id = Some(*cause);
+        order.apply(OrderEventAny::PendingCancel(pending)).unwrap();
+    }
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            order.trader_id(),
+            Some(*COINBASE_CLIENT_ID),
+            order.strategy_id(),
+            order.instrument_id(),
+            cancels,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    for (index, cause) in causes.iter().enumerate() {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) = event else {
+            panic!("expected correlated cancel rejection, was {event:?}");
+        };
+
+        assert_eq!(rejected.trader_id, order.trader_id());
+        assert_eq!(rejected.strategy_id, order.strategy_id());
+        assert_eq!(rejected.instrument_id, order.instrument_id());
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.account_id, Some(account));
+        assert_eq!(rejected.venue_order_id, Some(venue));
+        assert_eq!(rejected.causation_id, Some(*cause));
+        assert_eq!(
+            rejected.reason.as_str(),
+            "batch-cancel-rejected: UNKNOWN_CANCEL_FAILURE_REASON"
+        );
+        assert!(!rejected.reconciliation);
+        order
+            .apply(OrderEventAny::CancelRejected(*rejected))
+            .unwrap();
+        assert_eq!(
+            order.status(),
+            if index + 1 == count {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::PendingCancel
+            }
+        );
+    }
+
+    assert_eq!(order.quantity(), Quantity::from("0.125"));
+    assert_eq!(order.price(), Some(Price::from("51000")));
+    assert_eq!(
+        state
+            .requests_for("/orders/batch_cancel")
+            .iter()
+            .map(|req| req.body.clone())
+            .collect::<Vec<_>>(),
+        vec![Some(json!({"order_ids": ["repeat-venue"]})); count]
+    );
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]

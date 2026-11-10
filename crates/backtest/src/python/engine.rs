@@ -31,9 +31,12 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::python::{
-    fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
-    latency::pyobject_to_latency_model_any,
+use nautilus_execution::{
+    matching_engine::config::OrderPriorityResetPolicy,
+    python::{
+        fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
+        latency::pyobject_to_latency_model_any,
+    },
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -53,13 +56,10 @@ use nautilus_model::{
 };
 use nautilus_portfolio::python::PyPortfolio;
 #[cfg(feature = "examples")]
-use nautilus_trading::examples::{
-    actors::{BookImbalanceActor, BookImbalanceActorConfig},
-    strategies::{
-        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
-        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
-        HurstVpinDirectionalConfig,
-    },
+use nautilus_trading::examples::strategies::{
+    CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+    EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+    HurstVpinDirectionalConfig, OrderBookImbalance, OrderBookImbalanceConfig,
 };
 use nautilus_trading::{
     ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
@@ -168,6 +168,7 @@ impl PyBacktestEngine {
             liquidation_enabled = false,
             liquidation_trigger_ratio = None,
             liquidation_cancel_open_orders = true,
+            order_priority_reset_policy = OrderPriorityResetPolicy::PriceChange,
         )
     )]
     #[expect(
@@ -211,6 +212,7 @@ impl PyBacktestEngine {
         liquidation_enabled: bool,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
+        order_priority_reset_policy: OrderPriorityResetPolicy,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
@@ -280,6 +282,7 @@ impl PyBacktestEngine {
             .allow_cash_borrowing(allow_cash_borrowing)
             .frozen_account(frozen_account)
             .queue_position(queue_position)
+            .order_priority_reset_policy(order_priority_reset_policy)
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
             .liquidation_enabled(liquidation_enabled)
@@ -1096,11 +1099,8 @@ type BuiltinActorRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>)
 type BuiltinStrategyRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-fn builtin_actor_register(type_name: &str) -> Option<BuiltinActorRegister> {
-    match type_name {
-        "BookImbalanceActor" => Some(register_book_imbalance_actor),
-        _ => None,
-    }
+fn builtin_actor_register(_type_name: &str) -> Option<BuiltinActorRegister> {
+    None
 }
 
 #[cfg(feature = "examples")]
@@ -1111,6 +1111,7 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
         "EmaCross" => Some(register_ema_cross),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        "OrderBookImbalance" => Some(register_orderbook_imbalance),
         _ => None,
     }
 }
@@ -1190,13 +1191,13 @@ fn register_hurst_vpin_directional(
 }
 
 #[cfg(feature = "examples")]
-fn register_book_imbalance_actor(
+pub(super) fn register_orderbook_imbalance(
     engine: &mut BacktestEngine,
     config: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
-    let config = config.extract::<BookImbalanceActorConfig>()?;
+    let config = config.extract::<OrderBookImbalanceConfig>()?;
     engine
-        .add_actor(BookImbalanceActor::from_config(config))
+        .add_strategy(OrderBookImbalance::from_config(config).map_err(to_pyvalue_err)?)
         .map_err(to_pyruntime_err)
 }
 
@@ -1213,14 +1214,9 @@ mod tests {
     #[case("EmaCross")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
+    #[case("OrderBookImbalance")]
     fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
         assert!(super::builtin_strategy_register(type_name).is_some());
-    }
-
-    #[rstest]
-    #[case("BookImbalanceActor")]
-    fn test_builtin_actor_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::builtin_actor_register(type_name).is_some());
     }
 
     #[rstest]
@@ -1244,17 +1240,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builtin_actor_register_rejects_mismatched_config() {
-        Python::initialize();
-
-        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
-        Python::attach(|py| {
-            let register = super::builtin_actor_register("BookImbalanceActor").unwrap();
-            let config = PyDict::new(py);
-            let error = register(&mut engine, config.as_any()).unwrap_err();
-
-            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
-        });
+    fn test_builtin_actor_register_rejects_retired_imbalance() {
+        assert!(super::builtin_actor_register("BookImbalanceActor").is_none());
     }
 
     #[rstest]
@@ -1644,6 +1631,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 #[cfg(test)]
 mod model_tests {
     use nautilus_execution::{
+        matching_engine::config::OrderPriorityResetPolicy,
         models::fee::{FeeModelAny, MakerTakerFeeModel},
         python::{fee::PyFeeModel, fill::PyFillModel},
     };
@@ -1865,6 +1853,7 @@ mod model_tests {
                     false,
                     None,
                     true,
+                    OrderPriorityResetPolicy::PriceChange,
                 )
                 .unwrap();
 
@@ -1912,14 +1901,14 @@ mod lifecycle_tests {
     use indexmap::IndexMap;
     use nautilus_model::identifiers::ActorId;
     use nautilus_testkit::{cache::TestCacheDatabaseControl, components::StateActor};
-    use pyo3::{Python, exceptions::PyRuntimeError};
+    use pyo3::Python;
     use rstest::rstest;
 
     use super::PyBacktestEngine;
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
     #[rstest]
-    fn test_end_reports_state_persistence_error() {
+    fn test_end_continues_after_state_persistence_error() {
         Python::initialize();
 
         let actor_id = ActorId::from("PY-END-FAIL-SAVE-ACTOR");
@@ -1949,17 +1938,9 @@ mod lifecycle_tests {
         engine.0.kernel_mut().start_trader().unwrap();
         engine.0.kernel_mut().stop_trader();
 
-        let error = engine.py_end().unwrap_err();
+        engine.py_end().unwrap();
         engine.0.dispose();
 
-        Python::attach(|py| {
-            assert!(error.is_instance_of::<PyRuntimeError>(py));
-        });
-        assert_eq!(
-            error.to_string(),
-            "RuntimeError: Failed to save component state: actor PY-END-FAIL-SAVE-ACTOR \
-             persistence: test actor update failure"
-        );
         assert_eq!(
             control.events(),
             vec![

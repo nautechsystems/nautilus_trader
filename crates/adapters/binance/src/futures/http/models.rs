@@ -1240,7 +1240,7 @@ impl BinanceTimeInForce {
     /// Returns an error if the time in force is unknown.
     pub fn to_nautilus_time_in_force(&self) -> anyhow::Result<TimeInForce> {
         Ok(match self {
-            Self::Gtc => TimeInForce::Gtc,
+            Self::Gtc | Self::GteGtc => TimeInForce::Gtc,
             Self::Ioc => TimeInForce::Ioc,
             Self::Fok => TimeInForce::Fok,
             Self::Gtx => TimeInForce::Gtc, // GTX is GTC with post-only
@@ -1359,13 +1359,16 @@ pub enum BatchOrderResult {
     Error(BatchOrderError),
 }
 
-/// Error in a batch order response.
+/// Error for an individual batch operation.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BatchOrderError {
     /// Error code from Binance.
     pub code: i64,
     /// Error message.
     pub msg: String,
+    /// Whether a local identity lookup prevented submitting this item.
+    #[serde(skip)]
+    pub not_sent: bool,
 }
 
 /// Listen key response from user data stream endpoints.
@@ -1841,6 +1844,22 @@ mod tests {
 
     use super::*;
     use crate::common::testing::load_fixture_string;
+
+    #[rstest]
+    fn test_batch_error_cannot_deserialize_local_send_provenance(
+        #[values(false, true)] include_not_sent: bool,
+    ) {
+        let mut value = serde_json::json!({"code": -2011, "msg": "Unknown order"});
+        if include_not_sent {
+            value["not_sent"] = true.into();
+        }
+
+        let error: BatchOrderError = serde_json::from_value(value).unwrap();
+
+        assert_eq!(error.code, -2011);
+        assert_eq!(error.msg, "Unknown order");
+        assert!(!error.not_sent);
+    }
 
     fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
@@ -2926,6 +2945,42 @@ mod tests {
             report.expire_time,
             Some(UnixNanos::from_millis(1_700_000_601_000)),
         );
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_accepts_position_linked_gtc() {
+        let json = load_fixture_string("futures/http_json/algo_order_response.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["timeInForce"] = "GTE_GTC".into();
+        value["algoStatus"] = "CANCELED".into();
+        value["quantity"] = "0.000".into();
+        value["actualOrderId"] = "".into();
+        value["actualQty"] = "0.000".into();
+        value["closePosition"] = true.into();
+        value["reduceOnly"] = true.into();
+        let order: BinanceFuturesAlgoOrder = serde_json::from_value(value).unwrap();
+
+        let report = order
+            .to_order_status_report(
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_string(&order.time_in_force).unwrap(),
+            "\"GTE_GTC\""
+        );
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("123456789"));
+        assert_eq!(report.quantity, Quantity::from("0.000"));
+        assert_eq!(report.filled_qty, Quantity::from("0.000"));
+        assert_eq!(report.expire_time, None);
     }
 
     #[rstest]

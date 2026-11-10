@@ -16,11 +16,19 @@
 Test tester configs behavior.
 """
 
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.model import ActorId
+from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TimeInForce
@@ -35,6 +43,9 @@ def test_data_tester_config_readback() -> None:
     actor_id = ActorId("DATA-TESTER-001")
     client_id = ClientId("DATA-001")
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
+    request_start = datetime(2026, 10, 29, 1, 2, 3, 123456, tzinfo=UTC)
+    request_end = datetime(2026, 10, 29, 1, 7, 8, 654321, tzinfo=UTC)
+
     config = DataTesterConfig(
         actor_id=actor_id,
         client_id=client_id,
@@ -68,6 +79,10 @@ def test_data_tester_config_readback() -> None:
         stats_interval_secs=40,
         log_events=False,
         log_commands=False,
+        request_start=request_start,
+        request_end=request_end,
+        request_limit=23,
+        book_type=BookType.L3_MBO,
     )
 
     assert config.actor_id == actor_id
@@ -103,6 +118,62 @@ def test_data_tester_config_readback() -> None:
     assert config.stats_interval_secs == 40
     assert config.log_events is False
     assert config.log_commands is False
+    assert config.request_start == request_start
+    assert config.request_end == request_end
+    assert config.request_limit == 23
+    assert config.book_type == BookType.L3_MBO
+
+
+def test_data_tester_request_defaults() -> None:
+    """
+    Preserve request and book defaults when options are omitted.
+    """
+    config = DataTesterConfig()
+
+    assert config.request_start is None
+    assert config.request_end is None
+    assert config.request_limit is None
+    assert config.book_type == BookType.L2_MBP
+
+
+@pytest.mark.parametrize("end_delta", [timedelta(0), timedelta(seconds=1)])
+def test_data_tester_request_window_accepts_ordered_bounds(end_delta: timedelta) -> None:
+    """
+    Accept equal and increasing historical request bounds.
+    """
+    start = datetime(2026, 10, 29, tzinfo=UTC)
+    end = start + end_delta
+
+    config = DataTesterConfig(request_start=start, request_end=end)
+
+    assert config.request_start == start
+    assert config.request_end == end
+
+
+def test_data_tester_request_window_rejects_reversed_bounds() -> None:
+    """
+    Reject a historical window with its end before its start.
+    """
+    start = datetime(2026, 10, 29, tzinfo=UTC)
+
+    with pytest.raises(ValueError, match=r"request_start.*request_end"):
+        DataTesterConfig(request_start=start, request_end=start - timedelta(seconds=1))
+
+
+@pytest.mark.parametrize(
+    ("limit", "error", "message"),
+    [(0, ValueError, "invalid zero value"), (-1, OverflowError, "negative int")],
+)
+def test_data_tester_request_limit_rejects_non_positive(
+    limit: int,
+    error: type[Exception],
+    message: str,
+) -> None:
+    """
+    Reject zero and negative historical record limits.
+    """
+    with pytest.raises(error, match=message):
+        DataTesterConfig(request_limit=limit)
 
 
 def test_exec_tester_config_readback() -> None:
@@ -112,6 +183,7 @@ def test_exec_tester_config_readback() -> None:
     strategy_id = StrategyId("EXEC-TESTER-001")
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     client_id = ClientId("EXEC-001")
+
     config = ExecTesterConfig(
         strategy_id=strategy_id,
         order_id_tag="001",
@@ -131,6 +203,8 @@ def test_exec_tester_config_readback() -> None:
         enable_limit_sells=False,
         enable_stop_buys=True,
         enable_stop_sells=True,
+        bracket_contingency_type=ContingencyType.OCO,
+        bracket_tp_order_type=OrderType.MARKET_IF_TOUCHED,
         tob_offset_ticks=2,
         limit_time_in_force=TimeInForce.FOK,
         use_post_only=True,
@@ -168,6 +242,8 @@ def test_exec_tester_config_readback() -> None:
     assert config.enable_limit_sells is False
     assert config.enable_stop_buys is True
     assert config.enable_stop_sells is True
+    assert config.bracket_contingency_type == ContingencyType.OCO
+    assert config.bracket_tp_order_type == OrderType.MARKET_IF_TOUCHED
     assert config.tob_offset_ticks == 2
     assert config.limit_time_in_force == TimeInForce.FOK
     assert config.use_post_only is True
@@ -185,6 +261,32 @@ def test_exec_tester_config_readback() -> None:
     assert config.clamp_to_instrument_price_range is True
     assert config.log_events is False
     assert config.log_commands is False
+
+
+def test_exec_tester_config_bracket_defaults() -> None:
+    """
+    Test the existing bracket exit defaults.
+    """
+    config = ExecTesterConfig()
+
+    assert config.bracket_contingency_type == ContingencyType.OUO
+    assert config.bracket_tp_order_type == OrderType.LIMIT
+
+
+def test_exec_tester_config_legacy_positional_arguments() -> None:
+    """
+    Test that the original positional arguments retain their meanings.
+    """
+    # The original 63-argument constructor ends with clamp, log_events, and log_commands
+    legacy_args = [None] * 60 + [True, False, True]
+
+    config = ExecTesterConfig(*legacy_args)
+
+    assert config.clamp_to_instrument_price_range is True
+    assert config.log_events is False
+    assert config.log_commands is True
+    assert config.bracket_contingency_type == ContingencyType.OUO
+    assert config.bracket_tp_order_type == OrderType.LIMIT
 
 
 def test_exec_tester_config_defaults_to_hyphenated_client_order_ids() -> None:

@@ -29,7 +29,7 @@ use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol, Venue, futures::FuturesYearDigits},
     instruments::{Instrument, InstrumentAny},
 };
 
@@ -38,7 +38,7 @@ use super::{
         MboDeltaBuffer, decode_imbalance_msg, decode_mbo_msg, decode_record, decode_statistics_msg,
         decode_status_msg, is_supported_stat_type,
     },
-    symbology::decode_nautilus_instrument_id,
+    symbology::{decode_nautilus_instrument_id, resolve_futures_instrument_id},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 use crate::{
@@ -84,11 +84,13 @@ use crate::{
 )]
 #[derive(Debug)]
 pub struct DatabentoDataLoader {
+    futures_year_digits: FuturesYearDigits,
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     symbol_venue_map: AHashMap<Symbol, Venue>,
     price_precisions: AHashMap<Symbol, u8>,
+    futures_symbols: AHashMap<(PublisherId, u32, time::Date), Symbol>,
 }
 
 impl DatabentoDataLoader {
@@ -99,11 +101,13 @@ impl DatabentoDataLoader {
     /// Returns an error if locating or loading publishers data fails.
     pub fn new(publishers_filepath: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
+            futures_year_digits: FuturesYearDigits::default(),
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
             symbol_venue_map: AHashMap::new(),
             price_precisions: AHashMap::new(),
+            futures_symbols: AHashMap::new(),
         };
 
         // Load publishers
@@ -122,6 +126,13 @@ impl DatabentoDataLoader {
             .context("error loading publishers.json")?;
 
         Ok(loader)
+    }
+
+    /// Selects one- or two-digit years for futures instrument IDs.
+    #[must_use]
+    pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
+        self.futures_year_digits = futures_year_digits;
+        self
     }
 
     /// Load the publishers data from the file at the given `filepath`.
@@ -298,9 +309,35 @@ impl DatabentoDataLoader {
                             })?,
                     };
                     let instrument_id = InstrumentId::new(symbol, venue);
+                    let instrument_id = resolve_futures_instrument_id(
+                        &record,
+                        instrument_id,
+                        self.futures_year_digits,
+                        &self.symbol_venue_map,
+                        None,
+                    )?;
+                    self.symbol_venue_map.insert(instrument_id.symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    decode_instrument_def_msg(rec, instrument_id, Some(ts_init), decode_config)
+                    let instrument = decode_instrument_def_msg(
+                        rec,
+                        instrument_id,
+                        Some(ts_init),
+                        decode_config,
+                    )?;
+
+                    if instrument.is_some() && instrument_id.symbol != symbol {
+                        let date = time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(
+                            msg.ts_recv,
+                        ))?
+                        .date();
+                        self.futures_symbols.insert(
+                            (msg.hd.publisher_id, msg.hd.instrument_id, date),
+                            instrument_id.symbol,
+                        );
+                    }
+
+                    Ok(instrument)
                 })();
 
                 match result {
@@ -964,6 +1001,9 @@ impl DatabentoDataLoader {
             metadata_cache,
             &self.publisher_venue_map,
             &self.symbol_venue_map,
+            self.futures_year_digits,
+            &self.futures_symbols,
+            None,
         )
     }
 
@@ -1029,7 +1069,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use databento::dbn::encode::EncodeRecord;
+    use databento::dbn::{decode::DecodeRecord, encode::EncodeRecord};
     use nautilus_model::{
         enums::BookAction,
         types::{Price, Quantity},
@@ -1404,6 +1444,29 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1, "ESH1.GLBX")]
+    #[case(2, "ESH21.GLBX")]
+    fn test_load_cbbo_quotes_resolves_instrument_id(
+        loader: DatabentoDataLoader,
+        #[case] digits: u8,
+        #[case] expected: InstrumentId,
+    ) {
+        let loader = loader.with_futures_year_digits(digits.try_into().unwrap());
+        let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
+        let quotes = loader.load_cbbo_quotes(&path, None, Some(2)).unwrap();
+
+        assert_eq!(quotes.len(), 2);
+        assert_eq!(quotes[0].instrument_id, expected);
+        assert_eq!(quotes[1].instrument_id, expected);
+        assert_eq!(quotes[0].bid_price, Price::from("3720.25"));
+        assert_eq!(quotes[0].ask_price, Price::from("3720.50"));
+        assert_eq!(quotes[0].bid_size, Quantity::from(24));
+        assert_eq!(quotes[0].ask_size, Quantity::from(11));
+        assert_eq!(quotes[0].ts_event, 1609160400006136329);
+        assert_eq!(quotes[0].ts_init, 1609160400006136329);
+    }
+
+    #[rstest]
     fn test_load_tbbo_trades(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.tbbo.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
@@ -1617,5 +1680,103 @@ mod tests {
         assert!(first.ts_recv.as_u64() > 0, "ts_recv should be set");
         assert!(first.ts_init.as_u64() > 0, "ts_init should be set");
         assert!(first.sequence > 0, "sequence should be positive");
+    }
+
+    #[rstest]
+    #[case("futures_contract", "ESU6", "ESU26.GLBX")]
+    #[case("futures_spread", "ESU6-ESM7", "ESU26-ESM27.GLBX")]
+    fn test_loader_defaults_to_two_digit_years(
+        #[case] fixture: &str,
+        #[case] raw: &str,
+        #[case] expected: InstrumentId,
+    ) {
+        let publishers = Path::new(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("test_data/test_data.definition.{fixture}.dbn.zst"));
+        let mut loader = DatabentoDataLoader::new(Some(publishers.clone())).unwrap();
+        let mut legacy = DatabentoDataLoader::new(Some(publishers))
+            .unwrap()
+            .with_futures_year_digits(FuturesYearDigits::One);
+        let instruments = loader.load_instruments(&path, false, false, None).unwrap();
+        let legacy_instruments = legacy.load_instruments(&path, false, false, None).unwrap();
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(legacy_instruments.len(), 1);
+        assert_eq!(instruments[0].id(), expected);
+        assert_eq!(instruments[0].raw_symbol(), Symbol::from(raw));
+        assert_eq!(
+            legacy_instruments[0].id(),
+            InstrumentId::new(Symbol::from(raw), Venue::from("GLBX"))
+        );
+        assert_eq!(legacy_instruments[0].raw_symbol(), Symbol::from(raw));
+    }
+
+    #[rstest]
+    #[case("futures_contract", "ESU6", "ESU26.GLBX", "ESU36.GLBX")]
+    #[case("futures_spread", "ESU6-ESM7", "ESU26-ESM27.GLBX", "ESU36-ESM37.GLBX")]
+    fn test_loader_definition_year_is_scoped_to_record_date(
+        mut loader_without_seed: DatabentoDataLoader,
+        #[case] fixture: &str,
+        #[case] raw: &str,
+        #[case] expected: InstrumentId,
+        #[case] inferred: InstrumentId,
+    ) {
+        let loader = &mut loader_without_seed;
+        let path = test_data_path().join(format!("test_data.definition.{fixture}.dbn.zst"));
+        let mut decoder = Decoder::from_zstd_file(&path).unwrap();
+        let metadata_source = decoder.metadata().clone();
+        let mut definition = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        definition.ts_recv = "2028-01-01T00:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_nanosecond() as u64;
+        let replay_path =
+            std::env::temp_dir().join(format!("futures-{}.dbn.zst", nautilus_core::UUID4::new()));
+        let mut encoded = Vec::new();
+        {
+            let mut encoder =
+                dbn::encode::dbn::Encoder::with_zstd(&mut encoded, &metadata_source).unwrap();
+            encoder.encode_record(&definition).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        std::fs::write(&replay_path, encoded).unwrap();
+        let replayed = loader
+            .load_instruments(&replay_path, false, false, None)
+            .unwrap();
+        std::fs::remove_file(replay_path).unwrap();
+        assert_eq!(replayed[0].id(), expected);
+        let mut record = dbn::BboMsg::default_for_schema(dbn::Schema::Bbo1S);
+        record.hd.publisher_id = definition.hd.publisher_id;
+        record.hd.instrument_id = definition.hd.instrument_id;
+        record.ts_recv = definition.ts_recv;
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Bbo1S))
+            .start(record.ts_recv)
+            .stype_in(Some(dbn::SType::RawSymbol))
+            .stype_out(dbn::SType::InstrumentId)
+            .mappings(vec![dbn::SymbolMapping {
+                raw_symbol: raw.to_string(),
+                intervals: vec![dbn::MappingInterval {
+                    start_date: time::macros::date!(2028 - 01 - 01),
+                    end_date: time::macros::date!(2028 - 01 - 03),
+                    symbol: record.hd.instrument_id.to_string(),
+                }],
+            }])
+            .build();
+        let mut metadata = Some(MetadataCache::new(metadata));
+        let id = loader
+            .resolve_record_instrument_id(&dbn::RecordRef::from(&record), None, &mut metadata)
+            .unwrap();
+        assert_eq!(id, expected);
+        record.ts_recv += 86_400_000_000_000;
+        let next_day = loader
+            .resolve_record_instrument_id(&dbn::RecordRef::from(&record), None, &mut metadata)
+            .unwrap();
+        assert_eq!(next_day, inferred);
     }
 }

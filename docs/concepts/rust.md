@@ -88,11 +88,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.66"
-nautilus-common = "0.66"
-nautilus-execution = "0.66"
-nautilus-model = { version = "0.66", features = ["test-support"] }
-nautilus-trading = { version = "0.66", features = ["examples"] }
+nautilus-backtest = "0.67"
+nautilus-common = "0.67"
+nautilus-execution = "0.67"
+nautilus-model = { version = "0.67", features = ["test-support"] }
+nautilus-trading = { version = "0.67", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -102,8 +102,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.66"
-nautilus-okx = "0.66"
+nautilus-live = "0.67"
+nautilus-okx = "0.67"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the same git source. This avoids
@@ -200,8 +200,8 @@ override what you need.
 
 For a step-by-step walkthrough, see the
 [Write an Actor (Rust)](../how_to/write_rust_actor.md) how-to guide.
-For a complete example, see
-[`BookImbalanceActor`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/actors/imbalance).
+For an actor with market-data subscriptions, see
+[`DataTester`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/testkit/src/testers/data).
 
 ## Strategies
 
@@ -212,6 +212,10 @@ stores the runtime strategy state. Runtime registration requires the native wiri
 Normal strategy logic uses `Strategy` methods and facade methods on `self` to reach that state. Strategies
 also override order event handlers on the `Strategy` trait, such as `on_order_filled` (`OrderFilled`) and
 `on_order_canceled` (`OrderCanceled`).
+
+The built-in [`OrderBookImbalance`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/orderbook_imbalance)
+uses the same Rust implementation from Rust and Python. Its managed book subscription reads current best
+sizes, submits capped FOK or IOC limit orders, and supports dry-run signal reporting.
 
 ### Order management
 
@@ -411,16 +415,16 @@ Built-in strategy configs:
 | `ExecTesterConfig`           | `ExecTester`           |
 | `GridMarketMakerConfig`      | `GridMarketMaker`      |
 | `HurstVpinDirectionalConfig` | `HurstVpinDirectional` |
+| `OrderBookImbalanceConfig`   | `OrderBookImbalance`   |
 
 `add_builtin_actor` follows the same bundled-only rule for actors used by
 examples and tests.
 
 Built-in actor configs (through `add_builtin_actor`):
 
-| Config                     | Actor                |
-| -------------------------- | -------------------- |
-| `BookImbalanceActorConfig` | `BookImbalanceActor` |
-| `DataTesterConfig`         | `DataTester`         |
+| Config             | Actor        |
+| ------------------ | ------------ |
+| `DataTesterConfig` | `DataTester` |
 
 ## Backtesting
 

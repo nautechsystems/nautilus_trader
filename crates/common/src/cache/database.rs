@@ -143,11 +143,14 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if the database fails to close properly.
     fn close(&mut self) -> anyhow::Result<()>;
 
-    /// Flushes any pending changes to the database.
+    /// Clears persisted data according to the backing's scope.
+    ///
+    /// Redis clears the entire logical database, including other traders and user keys.
+    /// PostgreSQL removes only this trader's rows and saved component state.
     ///
     /// # Errors
     ///
-    /// Returns an error if flushing changes fails.
+    /// Returns an error if removing the persisted data fails.
     fn flush(&mut self) -> anyhow::Result<()>;
 
     /// Loads all cached data into memory.
@@ -219,18 +222,18 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading greeks data fails.
+    /// Returns an error if loading greeks data fails or the adapter does not support it.
     async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
-        Ok(AHashMap::new())
+        anyhow::bail!("Loading greeks for cache adapter not supported")
     }
 
     /// Loads all [`YieldCurve`] from the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading yield curve data fails.
+    /// Returns an error if loading yield curve data fails or the adapter does not support it.
     async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurve>> {
-        Ok(AHashMap::new())
+        anyhow::bail!("Loading yield curves for cache adapter not supported")
     }
 
     /// Loads mapping from order IDs to position IDs.
@@ -273,6 +276,30 @@ pub trait CacheDatabaseAdapter {
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>>;
+
+    /// Loads an instrument for a synchronous cache caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or synchronous reads are unsupported.
+    fn load_instrument_sync(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        anyhow::bail!("Synchronous instrument loading is not supported by this cache database")
+    }
+
+    /// Loads a synthetic instrument for a synchronous cache caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or synchronous reads are unsupported.
+    fn load_synthetic_sync(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        anyhow::bail!("Synchronous synthetic loading is not supported by this cache database")
+    }
 
     /// Loads a single account by ID.
     ///
@@ -396,6 +423,20 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if adding an instrument fails.
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
 
+    /// Persists a token instrument, checking legacy replacement before committing it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if integrity or migration checks fail, or the backend lacks DeFi support.
+    #[cfg(feature = "defi")]
+    fn add_defi_instrument(
+        &self,
+        _instrument: &InstrumentAny,
+        _migration: crate::defi::cache::InstrumentMigration,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("DeFi instrument persistence is unsupported by this backend")
+    }
+
     /// Adds an instrument close to the cache, replacing any existing value for the instrument.
     /// Implementations must queue persistence without waiting for the database operation to
     /// complete.
@@ -500,18 +541,18 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if adding greeks data fails.
+    /// Returns an error if adding greeks data fails or the adapter does not support it.
     fn add_greeks(&self, _greeks: &GreeksData) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Saving greeks for cache adapter not supported")
     }
 
     /// Adds yield curve data to the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if adding yield curve data fails.
+    /// Returns an error if adding yield curve data fails or the adapter does not support it.
     fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Saving yield curves for cache adapter not supported")
     }
 
     /// Deletes actor state from the cache.
@@ -542,7 +583,10 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if deleting a position fails.
     fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()>;
 
-    /// Deletes an account event from the cache.
+    /// Requests deletion of an account event from the database.
+    ///
+    /// Redis and PostgreSQL retain the full account history for balance and margin replay;
+    /// their implementations log the request and return success without deleting it.
     ///
     /// # Errors
     ///

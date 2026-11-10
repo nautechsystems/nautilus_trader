@@ -1,0 +1,902 @@
+[
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.31,
+    "size": 10.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-0"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.27,
+    "size": 11.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.42,
+    "size": 12.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-2"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.25,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.38,
+    "size": 14.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-4"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:00.0000001Z",
+    "price": 0.29,
+    "size": 15.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.31,
+    "size": 16.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-6"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.27,
+    "size": 17.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.42,
+    "size": 18.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-8"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.25,
+    "size": 19.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.38,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-10"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:01.0000001Z",
+    "price": 0.29,
+    "size": 21.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.31,
+    "size": 22.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-12"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.27,
+    "size": 23.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.42,
+    "size": 24.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-14"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.25,
+    "size": 25.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.38,
+    "size": 26.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-16"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:02.0000001Z",
+    "price": 0.29,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.31,
+    "size": 28.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-18"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.27,
+    "size": 29.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.42,
+    "size": 30.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-20"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.25,
+    "size": 31.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.38,
+    "size": 32.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-22"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:03.0000001Z",
+    "price": 0.29,
+    "size": 33.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.31,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-24"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.27,
+    "size": 35.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.42,
+    "size": 36.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-26"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.25,
+    "size": 37.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.38,
+    "size": 38.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-28"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:04.0000001Z",
+    "price": 0.29,
+    "size": 39.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.31,
+    "size": 40.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-30"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.27,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.42,
+    "size": 42.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-32"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.25,
+    "size": 43.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.38,
+    "size": 44.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-34"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:05.0000001Z",
+    "price": 0.29,
+    "size": 45.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.31,
+    "size": 46.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-36"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.27,
+    "size": 47.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.42,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-38"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.25,
+    "size": 49.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.38,
+    "size": 50.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-40"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:06.0000001Z",
+    "price": 0.29,
+    "size": 51.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.31,
+    "size": 52.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-42"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.27,
+    "size": 53.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.42,
+    "size": 54.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-44"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.25,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.38,
+    "size": 56.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-46"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:07.0000001Z",
+    "price": 0.29,
+    "size": 57.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.31,
+    "size": 58.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-48"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.27,
+    "size": 59.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.42,
+    "size": 60.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-50"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.25,
+    "size": 61.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.38,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-52"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:08.0000001Z",
+    "price": 0.29,
+    "size": 63.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.31,
+    "size": 64.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-54"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.27,
+    "size": 65.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.42,
+    "size": 66.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-56"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.25,
+    "size": 67.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.38,
+    "size": 68.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-58"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:09.0000001Z",
+    "price": 0.29,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.31,
+    "size": 70.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-60"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.27,
+    "size": 71.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.42,
+    "size": 72.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-62"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.25,
+    "size": 73.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.38,
+    "size": 74.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-64"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:10.0000001Z",
+    "price": 0.29,
+    "size": 75.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.31,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-66"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.27,
+    "size": 77.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.42,
+    "size": 78.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-68"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.25,
+    "size": 79.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.38,
+    "size": 80.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-70"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:11.0000001Z",
+    "price": 0.29,
+    "size": 81.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.31,
+    "size": 82.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-72"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.27,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.42,
+    "size": 84.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-74"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.25,
+    "size": 85.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.38,
+    "size": 86.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-76"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:12.0000001Z",
+    "price": 0.29,
+    "size": 87.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.31,
+    "size": 88.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-78"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.27,
+    "size": 89.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.42,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-80"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.25,
+    "size": 91.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.38,
+    "size": 92.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-82"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:13.0000001Z",
+    "price": 0.29,
+    "size": 93.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.31,
+    "size": 94.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-84"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.27,
+    "size": 95.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.42,
+    "size": 96.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-86"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.25,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.38,
+    "size": 98.125,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-88"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:14.0000001Z",
+    "price": 0.29,
+    "size": 99.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.31,
+    "size": 100.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-90"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.27,
+    "size": 101.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.42,
+    "size": 102.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-92"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.25,
+    "size": 103.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.38,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": "authored-event-94"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:15.0000001Z",
+    "price": 0.29,
+    "size": 105.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:16.0000001Z",
+    "price": 0.31,
+    "size": 106.125,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": "authored-event-96"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:16.0000001Z",
+    "price": 0.27,
+    "size": 107.125,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:16.0000001Z",
+    "price": 0.42,
+    "size": 108.125,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": "authored-event-98"
+  },
+  {
+    "symbol_id": "test-history_NO",
+    "time_exchange": "2026-10-17T00:00:16.0000001Z",
+    "price": 0.25,
+    "size": 109.125,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  }
+]

@@ -67,7 +67,7 @@ fn check_trade(trade: &Trade, tokens: &Tokens) {
     assert_exact(tokens.price.unwrap(), trade.price, "price");
     assert_exact(tokens.size.unwrap(), trade.size, "size");
 
-    let aggressor = match trade.taker_side.as_str() {
+    let aggressor = match trade.taker_side.as_ref() {
         "BUY" => AggressorSide::Buy,
         "SELL" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,

@@ -45,11 +45,14 @@ async def main() -> None:
     ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     trading_hours = ib.IbTradingHours.EXTENDED
+
     requested_ids = [
         os.getenv("IB_V2_HISTORICAL_INSTRUMENT_ID", default_aapl_instrument_id()),
     ]
+
     provider_config = instrument_provider_config(load_ids=requested_ids)
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
+
     client_config = ib.InteractiveBrokersDataClientConfig(
         host=host,
         port=port,

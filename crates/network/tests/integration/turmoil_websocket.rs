@@ -32,6 +32,7 @@ use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     Message as NetworkMessage, RECONNECTED,
     error::SendError,
+    mode::ConnectionMode,
     ratelimiter::RateLimiter,
     websocket::{
         AuthTracker, MessageHandler, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -40,7 +41,16 @@ use nautilus_network::{
 };
 use parking_lot::Mutex;
 use rstest::{fixture, rstest};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{
+    accept_async,
+    tungstenite::{
+        Message,
+        protocol::frame::{
+            Frame,
+            coding::{Data, OpCode},
+        },
+    },
+};
 use turmoil::net;
 
 use crate::common::turmoil::{
@@ -1307,6 +1317,160 @@ fn test_turmoil_websocket_sockudo_non_pong_frames_prevent_heartbeat_timeout() {
         HEARTBEAT_NON_PONG_TRAFFIC_SEED,
         "websocket/sockudo",
     );
+}
+
+#[rstest]
+#[case(TransportBackend::Tungstenite, false, false)]
+#[case(TransportBackend::Tungstenite, true, false)]
+#[case(TransportBackend::Tungstenite, false, true)]
+#[case(TransportBackend::Tungstenite, true, true)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case(TransportBackend::Sockudo, false, false)
+)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case(TransportBackend::Sockudo, true, false)
+)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case(TransportBackend::Sockudo, false, true)
+)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case(TransportBackend::Sockudo, true, true)
+)]
+fn test_turmoil_websocket_fragmented_message_refreshes_heartbeat(
+    #[case] backend: TransportBackend,
+    #[case] binary: bool,
+    #[case] reconnect: bool,
+) {
+    let mut sim =
+        seeded_builder_with_duration(HEARTBEAT_NON_PONG_TRAFFIC_SEED, Duration::from_secs(10))
+            .build();
+    sim.host("server", move || {
+        ws_fragmented_message_server(binary, reconnect)
+    });
+
+    sim.client("client", async move {
+        let mut config = websocket_config_for_backend(backend);
+        config.heartbeat_timeout_secs = Some(1);
+        config.reconnect_max_attempts = Some(u32::from(reconnect));
+        let (handler, mut rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .connect()
+            .await?;
+
+        if reconnect {
+            let control = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap();
+            assert_eq!(control, Some(Message::Text(RECONNECTED.into())));
+        }
+
+        let message = tokio::time::timeout(Duration::from_secs(4), rx.recv()).await;
+        let mode = client.connection_mode();
+        let epoch = client.connection_epoch();
+        client.disconnect().await;
+
+        let expected = if binary {
+            Message::Binary(b"abcdefgh".as_slice().into())
+        } else {
+            Message::Text("abcdefgh".into())
+        };
+
+        assert_eq!(message.unwrap(), Some(expected));
+        assert_eq!(mode, ConnectionMode::Active);
+        assert_eq!(epoch, u64::from(reconnect));
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+async fn ws_fragmented_message_server(
+    binary: bool,
+    reconnect: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    if reconnect {
+        let (stream, _) = listener.accept().await?;
+        let mut ws_stream = accept_async(stream).await?;
+        ws_stream.send(Message::Close(None)).await?;
+    }
+
+    let (stream, _) = listener.accept().await?;
+    let mut ws_stream = accept_async(stream).await?;
+
+    for index in 0..8 {
+        let opcode = if index != 0 {
+            Data::Continue
+        } else if binary {
+            Data::Binary
+        } else {
+            Data::Text
+        };
+
+        let frame = Frame::message(vec![b'a' + index], OpCode::Data(opcode), index == 7);
+        ws_stream.send(Message::Frame(frame)).await?;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    while let Some(message) = ws_stream.next().await {
+        if matches!(message?, Message::Close(_)) {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+#[rstest]
+#[case(TransportBackend::Tungstenite)]
+#[cfg_attr(feature = "transport-sockudo", case(TransportBackend::Sockudo))]
+fn test_turmoil_websocket_fragmented_message_silence_times_out(#[case] backend: TransportBackend) {
+    let mut sim =
+        seeded_builder_with_duration(HEARTBEAT_NON_PONG_TRAFFIC_SEED, Duration::from_secs(10))
+            .build();
+    sim.host("server", || async {
+        let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+        let (stream, _) = listener.accept().await?;
+        let mut ws_stream = accept_async(stream).await?;
+        let frame = Frame::message(b"unfinished".as_slice(), OpCode::Data(Data::Text), false);
+        ws_stream.send(Message::Frame(frame)).await?;
+        std::future::pending::<()>().await;
+        Ok(())
+    });
+
+    sim.client("client", async move {
+        let mut config = websocket_config_for_backend(backend);
+        config.heartbeat_timeout_secs = Some(1);
+        config.reconnect_max_attempts = Some(0);
+        let (handler, mut rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .connect()
+            .await?;
+        let start = tokio::time::Instant::now();
+        let closed = wait_for(|| client.is_closed()).await;
+        let elapsed = start.elapsed();
+        let message = rx.try_recv();
+        client.disconnect().await;
+
+        assert!(closed);
+        assert!(elapsed >= Duration::from_secs(1));
+        assert!(elapsed < Duration::from_secs(2));
+        assert_eq!(
+            message,
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+        );
+        Ok(())
+    });
+
+    sim.run().unwrap();
 }
 
 #[rstest]

@@ -1,0 +1,86 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 42,
+    "result": {
+      "order": {
+        "order_id": "CSR-ORDER-904",
+        "instrument_name": "BTC_USDC",
+        "direction": "buy",
+        "amount": 0.0042,
+        "filled_amount": 0,
+        "price": 45000.25,
+        "order_type": "limit",
+        "order_state": "open",
+        "label": "routed-904",
+        "creation_timestamp": 1787011200000,
+        "last_update_timestamp": 1787011200500,
+        "time_in_force": "good_til_cancelled",
+        "post_only": false,
+        "reduce_only": false,
+        "replaced": false,
+        "average_price": 45000.25,
+        "api": true
+      },
+      "trades": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "user.orders.any.any.raw",
+      "data": [
+        {
+          "order_id": "CSR-ORDER-904",
+          "instrument_name": "BTC_USDC",
+          "direction": "buy",
+          "amount": 0.0042,
+          "filled_amount": 0.0042,
+          "price": 45000.25,
+          "order_type": "limit",
+          "order_state": "filled",
+          "label": "routed-904",
+          "creation_timestamp": 1787011200000,
+          "last_update_timestamp": 1787011200500,
+          "time_in_force": "good_til_cancelled",
+          "post_only": false,
+          "reduce_only": false,
+          "replaced": false,
+          "average_price": 45000.25,
+          "api": true
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "user.trades.any.any.raw",
+      "data": [
+        {
+          "trade_id": "CSR-TRADE-904",
+          "order_id": "CSR-ORDER-904",
+          "instrument_name": "BTC_USDC",
+          "direction": "buy",
+          "price": 45000.25,
+          "amount": 0.0042,
+          "fee": 0.01911,
+          "fee_currency": "USDC",
+          "timestamp": 1787011200500,
+          "trade_seq": 904,
+          "liquidity": "T",
+          "order_type": "limit",
+          "state": "filled",
+          "label": "routed-904",
+          "reduce_only": false,
+          "post_only": false,
+          "index_price": 44999.75,
+          "mark_price": 45001.5,
+          "tick_direction": 3
+        }
+      ]
+    }
+  }
+]

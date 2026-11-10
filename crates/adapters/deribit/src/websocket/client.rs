@@ -32,10 +32,10 @@ use arc_swap::ArcSwap;
 use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
 use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
-    AtomicMap, AtomicSet, env::get_or_env_var_opt, string::secret::SecretString,
+    AtomicMap, AtomicSet, UUID4, env::get_or_env_var_opt, string::secret::SecretString,
     time::get_atomic_clock_realtime,
 };
-use nautilus_live::{SocketControl, task::TaskGroup};
+use nautilus_live::{SocketControl, book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS, task::TaskGroup};
 use nautilus_model::{
     data::BarType,
     enums::OrderSide,
@@ -66,6 +66,7 @@ use super::{
     },
 };
 use crate::common::{
+    capabilities,
     consts::{
         DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_HEARTBEAT_SECS,
         DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA, DERIBIT_WS_SUBSCRIPTION_KEY,
@@ -103,6 +104,8 @@ pub struct DeribitWebSocketClient {
     mark_price_subs: Arc<AtomicSet<InstrumentId>>,
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
     book_depth_subs: Arc<tokio::sync::Mutex<SubscriptionState>>,
+    book_snapshot_timeout_secs: u64,
+    book_stale_threshold_secs: u64,
     cancellation_token: CancellationToken,
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
@@ -216,6 +219,8 @@ impl DeribitWebSocketClient {
             mark_price_subs: Arc::new(AtomicSet::new()),
             index_price_subs: Arc::new(AtomicSet::new()),
             book_depth_subs: Arc::new(tokio::sync::Mutex::new(SubscriptionState::new('.'))),
+            book_snapshot_timeout_secs: DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS,
+            book_stale_threshold_secs: 120,
             cancellation_token: CancellationToken::new(),
             account_id: None,
             bars_timestamp_on_close: true,
@@ -235,6 +240,20 @@ impl DeribitWebSocketClient {
     #[must_use]
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
+        self
+    }
+
+    /// Configures the order book snapshot and stale-feed timers, in seconds.
+    ///
+    /// A zero value disables the corresponding timer.
+    #[must_use]
+    pub fn with_book_timeouts(
+        mut self,
+        snapshot_timeout_secs: u64,
+        stale_threshold_secs: u64,
+    ) -> Self {
+        self.book_snapshot_timeout_secs = snapshot_timeout_secs;
+        self.book_stale_threshold_secs = stale_threshold_secs;
         self
     }
 
@@ -444,12 +463,11 @@ impl DeribitWebSocketClient {
         });
         log::debug!("Cached {} instruments", self.instruments_cache.len());
 
-        // Send per-instrument updates to the live handler rather than
-        // a full snapshot, avoiding out-of-order snapshot races.
-        if self.is_active() {
-            for inst in instruments {
-                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
-            }
+        // Send per-instrument updates to the live handler rather than a full snapshot, avoiding
+        // out-of-order snapshot races, in every mode since the handler outlives a reconnect and
+        // connect() replays the cache via InitializeInstruments when no handler is running.
+        for inst in instruments {
+            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
         }
     }
 
@@ -459,13 +477,9 @@ impl DeribitWebSocketClient {
         let symbol = instrument.raw_symbol().inner();
         self.instruments_cache.insert(symbol, instrument);
 
-        // If connected, send update to handler
-        if self.is_active() {
-            let inst = self.instruments_cache.get_cloned(&symbol);
-
-            if let Some(inst) = inst {
-                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
-            }
+        // Send in every mode, see `cache_instruments`
+        if let Some(inst) = self.instruments_cache.get_cloned(&symbol) {
+            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
         }
     }
 
@@ -629,6 +643,11 @@ impl DeribitWebSocketClient {
         );
 
         handler.set_book_depth_subs(self.book_depth_subs.clone());
+        handler.set_book_sync(
+            cmd_tx.clone(),
+            Duration::from_secs(self.book_snapshot_timeout_secs),
+            Duration::from_secs(self.book_stale_threshold_secs),
+        );
 
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());
@@ -1117,6 +1136,7 @@ impl DeribitWebSocketClient {
         instrument_id: InstrumentId,
         interval: Option<DeribitUpdateInterval>,
     ) -> DeribitWsResult<()> {
+        self.validate_public_trades(instrument_id)?;
         let interval = interval.unwrap_or_default();
         self.check_auth_requirement(interval)?;
         let channel =
@@ -1417,9 +1437,22 @@ impl DeribitWebSocketClient {
         instrument_id: InstrumentId,
         resolution: &str,
     ) -> DeribitWsResult<()> {
+        self.validate_public_trades(instrument_id)?;
         // Chart channel format: chart.trades.{instrument}.{resolution}
         let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
         self.send_subscribe(vec![channel]).await
+    }
+
+    fn validate_public_trades(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
+        if let Some(instrument) = self
+            .instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+        {
+            capabilities::validate_public_trades(&instrument)
+                .map_err(|e| DeribitWsError::Subscribe(e.to_string()))?;
+        }
+
+        Ok(())
     }
 
     /// Unsubscribes from chart/OHLC bar updates.
@@ -1630,7 +1663,7 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(cmd)
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1653,6 +1686,26 @@ impl DeribitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> DeribitWsResult<()> {
+        self.modify_order_with_causation(
+            params,
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn modify_order_with_causation(
+        &self,
+        params: DeribitEditParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
+    ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
                 "Modify order requires authentication. Call authenticate_session() first."
@@ -1669,13 +1722,14 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(HandlerCommand::Edit {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,
                 strategy_id,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1698,6 +1752,26 @@ impl DeribitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> DeribitWsResult<()> {
+        self.cancel_order_with_causation(
+            order_id,
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn cancel_order_with_causation(
+        &self,
+        order_id: &str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
+    ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
                 "Cancel order requires authentication. Call authenticate_session() first."
@@ -1713,13 +1787,14 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(HandlerCommand::Cancel {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,
                 strategy_id,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1759,7 +1834,7 @@ impl DeribitWebSocketClient {
                 params,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1838,9 +1913,66 @@ fn grouped_book_channel(
 #[cfg(test)]
 mod tests {
     use futures_util::StreamExt;
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::{
+            parse::parse_deribit_instrument_any,
+            rpc::DeribitJsonRpcResponse,
+            testing::{load_test_json, routed_spot_instrument},
+        },
+        http::models::DeribitInstrument,
+    };
+
+    #[tokio::test]
+    async fn routed_spot_rejects_trades_and_charts_but_subscribes_books() {
+        let ws_client =
+            DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cmd_tx.write() = tx;
+        let instrument = routed_spot_instrument();
+        let instrument_id = instrument.id();
+        ws_client.cache_instruments(std::slice::from_ref(&instrument));
+
+        let HandlerCommand::UpdateInstrument(updated) = rx.try_recv().unwrap() else {
+            panic!("expected instrument update");
+        };
+
+        let trades_error = ws_client
+            .subscribe_trades(instrument_id, None)
+            .await
+            .unwrap_err();
+        let chart_error = ws_client
+            .subscribe_chart(instrument_id, "1")
+            .await
+            .unwrap_err();
+        let bars_error = ws_client
+            .subscribe_bars("BTC_USDC.DERIBIT-1-MINUTE-LAST-EXTERNAL".parse().unwrap())
+            .await
+            .unwrap_err();
+        ws_client.subscribe_book(instrument_id, None).await.unwrap();
+        let command = rx.try_recv().unwrap();
+
+        assert_eq!(updated.id(), instrument_id);
+        assert_eq!(updated.info(), instrument.info());
+
+        for error in [trades_error, chart_error, bars_error] {
+            assert_eq!(
+                error.to_string(),
+                "Subscribe error: Deribit routed spot does not support public trades or charts for BTC_USDC.DERIBIT"
+            );
+        }
+
+        assert!(
+            matches!(command, HandlerCommand::Subscribe { channels } if channels == vec!["book.BTC_USDC.100ms"])
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn active_state_waits_for_sender_publication() {
@@ -2166,5 +2298,100 @@ mod tests {
                 .pending_unsubscribe_topics()
                 .is_empty()
         );
+    }
+
+    #[rstest]
+    #[case::active(ConnectionMode::Active)]
+    #[case::reconnect(ConnectionMode::Reconnect)]
+    fn test_cache_instruments_updates_handler(#[case] mode: ConnectionMode) {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write() = tx;
+        client
+            .connection_mode
+            .store(Arc::new(AtomicU8::new(mode.as_u8())));
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&load_test_json("http_get_instruments.json")).unwrap();
+        let definition = response.result.unwrap().remove(0);
+        let ts_init = UnixNanos::default();
+        let instrument = parse_deribit_instrument_any(&definition, ts_init, ts_init)
+            .unwrap()
+            .unwrap();
+
+        client.cache_instruments(std::slice::from_ref(&instrument));
+        client.cache_instrument(instrument.clone());
+
+        for _ in 0..2 {
+            let HandlerCommand::UpdateInstrument(update) = rx.try_recv().unwrap() else {
+                panic!("expected instrument update");
+            };
+            assert_eq!(update.id(), instrument.id());
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    fn order_params(client_order_id: &str) -> DeribitOrderParams {
+        DeribitOrderParams {
+            instrument_name: "BTC-PERPETUAL".to_string(),
+            amount: rust_decimal::Decimal::new(1, 0),
+            order_type: "limit".to_string(),
+            label: Some(client_order_id.to_string()),
+            price: Some(rust_decimal::Decimal::new(50_000, 0)),
+            time_in_force: Some("good_til_cancelled".to_string()),
+            post_only: None,
+            reject_post_only: None,
+            reduce_only: None,
+            trigger_price: None,
+            trigger: None,
+            max_show: None,
+            valid_until: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_submit_sends_no_command() {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write() = tx;
+        let client_order_id = ClientOrderId::new("auth-closed-001");
+
+        let error = client
+            .submit_order(
+                OrderSide::Buy,
+                order_params(client_order_id.as_str()),
+                client_order_id,
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DeribitWsError::Authentication(_)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn closed_command_channel_sends_no_order_command() {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        client.auth_tracker.succeed();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        *client.cmd_tx.write() = tx;
+        let client_order_id = ClientOrderId::new("admission-closed-001");
+
+        let error = client
+            .submit_order(
+                OrderSide::Sell,
+                order_params(client_order_id.as_str()),
+                client_order_id,
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DeribitWsError::AdmissionClosed));
     }
 }

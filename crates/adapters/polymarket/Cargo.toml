@@ -21,6 +21,12 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+allowances = [
+  "alloy/contract",
+  "alloy/provider-http",
+  "alloy/reqwest",
+  "alloy/reqwest-rustls-tls",
+]
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -62,13 +68,7 @@ nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true, features = [
-  "contract",
-  "signer-local",
-  "provider-http",
-  "reqwest",
-  "reqwest-rustls-tls",
-] }
+alloy = { workspace = true, features = ["sol-types", "signer-local"] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -177,6 +177,7 @@ test = false
 [[bin]]
 name = "polymarket-set-allowances"
 path = "bin/set_allowances.rs"
+required-features = ["allowances"]
 doc = false
 test = false
 

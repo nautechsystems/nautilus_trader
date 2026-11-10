@@ -56,6 +56,7 @@ pub struct BetfairCredential {
     username: Box<str>,
     password: Box<str>,
     app_key: Box<str>,
+    certs_dir: Option<String>,
 }
 
 impl Debug for BetfairCredential {
@@ -64,6 +65,7 @@ impl Debug for BetfairCredential {
             .field("username", &REDACTED)
             .field("password", &REDACTED)
             .field("app_key", &REDACTED)
+            .field("certs_dir", &self.certs_dir)
             .finish()
     }
 }
@@ -76,7 +78,15 @@ impl BetfairCredential {
             username: username.into_boxed_str(),
             password: password.into_boxed_str(),
             app_key: app_key.into_boxed_str(),
+            certs_dir: None,
         }
+    }
+
+    /// Sets the certificate directory to enable certificate login.
+    #[must_use]
+    pub fn with_certs_dir(mut self, certs_dir: String) -> Self {
+        self.certs_dir = Some(certs_dir);
+        self
     }
 
     /// Load credentials from environment variables.
@@ -115,6 +125,12 @@ impl BetfairCredential {
         }
     }
 
+    /// Returns the certificate directory, if certificate login is enabled.
+    #[must_use]
+    pub fn certs_dir(&self) -> Option<&str> {
+        self.certs_dir.as_deref()
+    }
+
     /// Returns the account username.
     #[must_use]
     pub fn username(&self) -> &str {
@@ -151,6 +167,7 @@ mod tests {
         assert_eq!(cred.username(), "testuser");
         assert_eq!(cred.password(), "testpass");
         assert_eq!(cred.app_key(), "appkey123");
+        assert_eq!(cred.certs_dir(), None);
     }
 
     #[rstest]

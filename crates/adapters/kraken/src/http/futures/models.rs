@@ -17,8 +17,10 @@
 
 use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601_millis};
+use nautilus_model::{enums::TimeInForce, identifiers::VenueOrderId};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::value::RawValue;
 
 use crate::{
     common::{
@@ -351,6 +353,15 @@ pub struct FuturesOrderEventWrapper {
     pub event_type: KrakenFuturesOrderEventType,
     #[serde(default, with = "optional_decimal")]
     pub reduced_quantity: Option<Decimal>,
+    /// When the event happened, in milliseconds; see [`SkippedHistoryRow::event_ms`].
+    #[serde(skip)]
+    pub event_ms: i64,
+    /// How far the state this row describes is known to reach, in milliseconds, which an unread
+    /// row of the order must be older than for the state to stand. A cancel or reject closes the
+    /// order at its event. Any other row can describe the order as it stood before the event, as a
+    /// refused edit does, so it counts from the earlier of the event and the order's own stamp.
+    #[serde(skip)]
+    pub state_ms: i64,
 }
 
 /// The actual order data within an order event.
@@ -376,6 +387,8 @@ pub struct FuturesOrderEvent {
     pub last_update_timestamp: String,
     #[serde(default)]
     pub reduce_only: bool,
+    pub time_in_force: TimeInForce,
+    pub post_only: bool,
 }
 
 /// Order events in the shape the readers consume, built from [`FuturesOrderHistoryResponse`].
@@ -387,14 +400,53 @@ pub struct FuturesOrderEventsResponse {
     pub server_time: Option<String>,
     pub order_events: Vec<FuturesOrderEventWrapper>,
     pub continuation_token: Option<String>,
-    /// Rows the projection could not represent, which leave the set incomplete.
-    pub skipped_rows: usize,
-    /// The order of each skipped row that names one; a row of an undocumented kind names none.
-    pub skipped_order_ids: Vec<String>,
+    /// Rows the projection could not represent. Each reader decides what a row means for it.
+    pub skipped_rows: Vec<SkippedHistoryRow>,
     /// The earliest event time on the page in milliseconds, over every element including the
     /// skipped ones. The venue returns history newest first, so with a continuation token this is
     /// how far back the page reaches.
     pub oldest_event_ms: Option<i64>,
+}
+
+/// An order history row the projection could not represent, with what could be read of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedHistoryRow {
+    pub order_id: Option<String>,
+    pub tradeable: Option<String>,
+    /// When the event happened, in milliseconds. A stamp before the epoch places the row nowhere,
+    /// so it reads as newer than any state.
+    pub event_ms: i64,
+    /// The row is of a kind the documentation does not list, so the order and contract read from
+    /// it are a guess at its shape: they can withhold an order but rule nothing out.
+    pub undocumented: bool,
+}
+
+impl SkippedHistoryRow {
+    fn new(identity: HistoryRowIdentity, event_ms: i64, undocumented: bool) -> Self {
+        Self {
+            order_id: identity.order_id,
+            tradeable: identity.tradeable,
+            event_ms,
+            undocumented,
+        }
+    }
+
+    fn of_order(order: FuturesOrderHistoryOrder, event_ms: i64) -> Self {
+        Self {
+            order_id: Some(order.uid),
+            tradeable: Some(order.tradeable),
+            event_ms,
+            undocumented: false,
+        }
+    }
+
+    /// Whether this row may be a state of `order_id` that the state at `state_ms` does not
+    /// supersede. A row that names no order may be any order's, as may an undocumented kind.
+    #[must_use]
+    pub fn may_supersede(&self, order_id: &str, state_ms: i64) -> bool {
+        (self.undocumented || self.order_id.as_deref().is_none_or(|id| id == order_id))
+            && self.event_ms >= state_ms
+    }
 }
 
 // Futures Order History Models
@@ -431,8 +483,8 @@ pub struct FuturesOrderHistoryElement {
 
 /// An order history event, externally tagged by its kind.
 ///
-/// The documented kinds are modeled; one the documentation does not list is kept by name so the
-/// surrounding page still decodes.
+/// The documented kinds are modeled; one the documentation does not list is kept by name, and one
+/// whose payload does not decode is kept with the reason, so the surrounding page still decodes.
 #[derive(Debug, Clone)]
 pub enum FuturesOrderHistoryEvent {
     OrderPlaced(FuturesOrderHistoryOrderEvent),
@@ -443,7 +495,75 @@ pub enum FuturesOrderHistoryEvent {
     OrderEditRejected(FuturesOrderHistoryEditRejected),
     /// A request naming an order the venue does not hold; it carries no order state.
     OrderNotFound(FuturesOrderHistoryOrderNotFound),
-    Unknown(String),
+    Unreadable {
+        kind: String,
+        reason: String,
+        identity: HistoryRowIdentity,
+    },
+    Unknown {
+        kind: String,
+        identity: HistoryRowIdentity,
+    },
+}
+
+/// The order and contract a row names, read leniently from a payload that does not decode.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryRowIdentity {
+    pub order_id: Option<String>,
+    pub tradeable: Option<String>,
+}
+
+impl HistoryRowIdentity {
+    /// Reads each field from the first of `positions` holding a usable value. Every other value
+    /// stays raw, so one that `serde_json::Value` could not hold, such as `1e999`, cannot cost the
+    /// row its identity.
+    fn read(payload: &RawValue, positions: &[&str]) -> Self {
+        type RawFields = AHashMap<String, Box<RawValue>>;
+
+        let payload: RawFields = serde_json::from_str(payload.get()).unwrap_or_default();
+        let orders: Vec<RawFields> = positions
+            .iter()
+            .filter_map(|position| payload.get(*position))
+            .filter_map(|order| serde_json::from_str(order.get()).ok())
+            .collect();
+        let field = |name: &str, usable: fn(&str) -> bool| {
+            orders.iter().find_map(|order| {
+                order
+                    .get(name)
+                    .and_then(|value| serde_json::from_str::<String>(value.get()).ok())
+                    .filter(|value| usable(value))
+            })
+        };
+
+        Self {
+            order_id: field("uid", |uid| VenueOrderId::new_checked(uid).is_ok()),
+            tradeable: field("tradeable", |tradeable| !tradeable.is_empty()),
+        }
+    }
+}
+
+/// Decodes a documented kind's payload from its raw JSON text, which keeps a numeric quantity's
+/// digits. A payload that does not decode is an unreadable row rather than a failed page.
+fn read_documented_event<'de, A, T>(
+    map: &mut A,
+    kind: &str,
+    positions: &[&str],
+    wrap: fn(T) -> FuturesOrderHistoryEvent,
+) -> Result<FuturesOrderHistoryEvent, A::Error>
+where
+    A: serde::de::MapAccess<'de>,
+    T: DeserializeOwned,
+{
+    let payload: Box<RawValue> = map.next_value()?;
+
+    Ok(match serde_json::from_str(payload.get()) {
+        Ok(event) => wrap(event),
+        Err(e) => FuturesOrderHistoryEvent::Unreadable {
+            kind: kind.to_string(),
+            reason: e.to_string(),
+            identity: HistoryRowIdentity::read(&payload, positions),
+        },
+    })
 }
 
 impl<'de> Deserialize<'de> for FuturesOrderHistoryEvent {
@@ -464,48 +584,77 @@ impl<'de> Deserialize<'de> for FuturesOrderHistoryEvent {
             where
                 A: serde::de::MapAccess<'de>,
             {
-                // The kind is the one key naming a documented event, wherever it sits among any
+                // The kind is the first key naming a documented event, wherever it sits among any
                 // other keys; the first key is reported when no key does.
                 let mut event = None;
-                let mut first_key = None;
+                let mut undocumented: Option<(String, Box<RawValue>)> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
-                    let known = match key.as_str() {
-                        "OrderPlaced" => {
-                            Some(FuturesOrderHistoryEvent::OrderPlaced(map.next_value()?))
-                        }
-                        "OrderUpdated" => {
-                            Some(FuturesOrderHistoryEvent::OrderUpdated(map.next_value()?))
-                        }
-                        "OrderCancelled" => {
-                            Some(FuturesOrderHistoryEvent::OrderCancelled(map.next_value()?))
-                        }
-                        "OrderRejected" => {
-                            Some(FuturesOrderHistoryEvent::OrderRejected(map.next_value()?))
-                        }
-                        "OrderEditRejected" => Some(FuturesOrderHistoryEvent::OrderEditRejected(
-                            map.next_value()?,
-                        )),
-                        "OrderNotFound" => {
-                            Some(FuturesOrderHistoryEvent::OrderNotFound(map.next_value()?))
-                        }
+                    if event.is_some() {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                        continue;
+                    }
+
+                    event = Some(match key.as_str() {
+                        "OrderPlaced" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &["order"],
+                            FuturesOrderHistoryEvent::OrderPlaced,
+                        )?,
+                        "OrderUpdated" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &["newOrder", "oldOrder"],
+                            FuturesOrderHistoryEvent::OrderUpdated,
+                        )?,
+                        "OrderCancelled" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &["order"],
+                            FuturesOrderHistoryEvent::OrderCancelled,
+                        )?,
+                        "OrderRejected" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &["order"],
+                            FuturesOrderHistoryEvent::OrderRejected,
+                        )?,
+                        "OrderEditRejected" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &["oldOrder", "attemptedOrder"],
+                            FuturesOrderHistoryEvent::OrderEditRejected,
+                        )?,
+                        "OrderNotFound" => read_documented_event(
+                            &mut map,
+                            &key,
+                            &[],
+                            FuturesOrderHistoryEvent::OrderNotFound,
+                        )?,
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
-                            None
+                            let payload = map.next_value()?;
+
+                            if undocumented.is_none() {
+                                undocumented = Some((key, payload));
+                            }
+                            continue;
                         }
-                    };
-
-                    if event.is_none() && known.is_some() {
-                        event = known;
-                    }
-
-                    if first_key.is_none() {
-                        first_key = Some(key);
-                    }
+                    });
                 }
 
                 Ok(event.unwrap_or_else(|| {
-                    FuturesOrderHistoryEvent::Unknown(first_key.unwrap_or_default())
+                    let (kind, identity) = undocumented.map_or_else(
+                        || (String::new(), HistoryRowIdentity::default()),
+                        |(kind, payload)| {
+                            let identity = HistoryRowIdentity::read(
+                                &payload,
+                                &["order", "newOrder", "oldOrder"],
+                            );
+                            (kind, identity)
+                        },
+                    );
+                    FuturesOrderHistoryEvent::Unknown { kind, identity }
                 }))
             }
         }
@@ -543,10 +692,21 @@ pub struct FuturesOrderHistoryOrderNotFound {
     pub order_id: Option<String>,
 }
 
+fn deserialize_order_uid<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let uid = String::deserialize(deserializer)?;
+    VenueOrderId::new_checked(&uid).map_err(serde::de::Error::custom)?;
+    Ok(uid)
+}
+
 /// An order as the history endpoint reports it.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesOrderHistoryOrder {
+    /// An ID that cannot be a venue order ID does not decode, so its row is skipped.
+    #[serde(deserialize_with = "deserialize_order_uid")]
     pub uid: String,
     pub tradeable: String,
     pub direction: KrakenFuturesHistoryDirection,
@@ -579,10 +739,10 @@ impl FuturesOrderHistoryResponse {
     /// body without an `elements` array fails it as a parse error, so neither reads as an empty
     /// page. An update, and a refused edit, are represented by the order as it stands afterwards.
     /// A not-found event carries no order state and is skipped. A kind the documentation does not
-    /// list, an order whose direction the venue could not decode, an order whose type is missing
-    /// or reported as `Unknown`, and an order with a timestamp before the epoch may carry order
-    /// state the projection cannot read, so each is skipped with a warning and counted in
-    /// `skipped_rows`, which leaves the set incomplete. `Unknown` is how the venue reports a
+    /// list, a documented kind whose payload does not decode, an order whose direction the venue
+    /// could not decode, an order whose type is missing or reported as `Unknown`, and an order
+    /// with a timestamp before the epoch may carry order state the projection cannot read, so each
+    /// is skipped with a warning and listed in `skipped_rows`. `Unknown` is how the venue reports a
     /// source type it could not decode, so it establishes no order type, and in particular not a
     /// market order. The venue fills the required `limitPrice` of a market order with a zero or
     /// an empty string and a missing client id with an empty string, so a market-like order (a
@@ -591,7 +751,8 @@ impl FuturesOrderHistoryResponse {
     /// non-positive prices. The contract name is kept as the venue spells it;
     /// the readers resolve it case-insensitively. The history order carries no trigger price, and
     /// the engine cannot materialize a stop order without one, so a stop row is reported as the
-    /// limit or market order it executes as once triggered.
+    /// limit or market order it executes as once triggered. The order type is the only place the
+    /// history states a time in force or post-only, so it sets both.
     ///
     /// # Errors
     ///
@@ -613,12 +774,16 @@ impl FuturesOrderHistoryResponse {
             ));
         };
 
-        let mut skipped_rows = 0usize;
-        let mut skipped_order_ids = Vec::new();
+        let mut skipped_rows = Vec::new();
         let oldest_event_ms = elements.iter().map(|element| element.timestamp).min();
         let order_events = elements
             .into_iter()
             .filter_map(|element| {
+                let event_ms = if element.timestamp < 0 {
+                    i64::MAX
+                } else {
+                    element.timestamp
+                };
                 let (order, event_type) = match element.event {
                     FuturesOrderHistoryEvent::OrderPlaced(event) => {
                         (event.order, KrakenFuturesOrderEventType::Place)
@@ -643,14 +808,36 @@ impl FuturesOrderHistoryResponse {
                         );
                         return None;
                     }
-                    FuturesOrderHistoryEvent::Unknown(kind) => {
+                    FuturesOrderHistoryEvent::Unreadable {
+                        kind,
+                        reason,
+                        identity,
+                    } => {
                         log::warn!(
-                            "Skipping order history event {} of undocumented kind {kind:?}; the set is incomplete",
-                            element.uid
+                            "Skipping order history event {} of kind {kind} for order {:?} on {:?}: payload does not decode: {reason}",
+                            element.uid,
+                            identity.order_id,
+                            identity.tradeable,
                         );
-                        skipped_rows += 1;
+                        skipped_rows.push(SkippedHistoryRow::new(identity, event_ms, false));
                         return None;
                     }
+                    FuturesOrderHistoryEvent::Unknown { kind, identity } => {
+                        log::warn!(
+                            "Skipping order history event {} of undocumented kind {kind:?} for order {:?}",
+                            element.uid,
+                            identity.order_id,
+                        );
+                        skipped_rows.push(SkippedHistoryRow::new(identity, event_ms, true));
+                        return None;
+                    }
+                };
+
+                let state_ms = match event_type {
+                    KrakenFuturesOrderEventType::Cancel | KrakenFuturesOrderEventType::Reject => {
+                        element.timestamp
+                    }
+                    _ => order.last_update_timestamp.min(element.timestamp),
                 };
 
                 // The event time is when this state became known; a refused edit, for one,
@@ -660,13 +847,12 @@ impl FuturesOrderHistoryResponse {
                     millis_to_rfc3339(order.last_update_timestamp.max(element.timestamp)),
                 ) else {
                     log::warn!(
-                        "Skipping order history event {} for order {} on {}: timestamp before the epoch; the set is incomplete",
+                        "Skipping order history event {} for order {} on {}: timestamp before the epoch",
                         element.uid,
                         order.uid,
                         order.tradeable
                     );
-                    skipped_rows += 1;
-                    skipped_order_ids.push(order.uid);
+                    skipped_rows.push(SkippedHistoryRow::of_order(order, event_ms));
                     return None;
                 };
 
@@ -675,13 +861,12 @@ impl FuturesOrderHistoryResponse {
                     KrakenFuturesHistoryDirection::Sell => KrakenOrderSide::Sell,
                     KrakenFuturesHistoryDirection::Unknown => {
                         log::warn!(
-                            "Skipping order history event {} for order {} on {}: direction unknown; the set is incomplete",
+                            "Skipping order history event {} for order {} on {}: direction unknown",
                             element.uid,
                             order.uid,
                             order.tradeable
                         );
-                        skipped_rows += 1;
-                        skipped_order_ids.push(order.uid);
+                        skipped_rows.push(SkippedHistoryRow::of_order(order, event_ms));
                         return None;
                     }
                 };
@@ -696,14 +881,13 @@ impl FuturesOrderHistoryResponse {
                             "order type reported as Unknown"
                         };
                         log::warn!(
-                            "Skipping order history event {} for order {} (client id {:?}) on {}: {situation}; the set is incomplete",
+                            "Skipping order history event {} for order {} (client id {:?}) on {}: {situation}",
                             element.uid,
                             order.uid,
                             order.client_id.as_deref().filter(|id| !id.is_empty()),
                             order.tradeable
                         );
-                        skipped_rows += 1;
-                        skipped_order_ids.push(order.uid);
+                        skipped_rows.push(SkippedHistoryRow::of_order(order, event_ms));
                         return None;
                     }
                     Some(kind) => kind,
@@ -734,6 +918,15 @@ impl FuturesOrderHistoryResponse {
                     (KrakenFuturesHistoryOrderType::Stop, None) => KrakenFuturesOrderType::Market,
                     (kind, _) => kind.into(),
                 };
+                let (time_in_force, post_only) = match kind {
+                    KrakenFuturesHistoryOrderType::Ioc
+                    | KrakenFuturesHistoryOrderType::HedgeImmediateOrCancel => {
+                        (TimeInForce::Ioc, false)
+                    }
+                    KrakenFuturesHistoryOrderType::FillOrKill => (TimeInForce::Fok, false),
+                    KrakenFuturesHistoryOrderType::Post => (TimeInForce::Gtc, true),
+                    _ => (TimeInForce::Gtc, false),
+                };
 
                 Some(FuturesOrderEventWrapper {
                     order: FuturesOrderEvent {
@@ -749,9 +942,13 @@ impl FuturesOrderHistoryResponse {
                         timestamp,
                         last_update_timestamp,
                         reduce_only: order.reduce_only,
+                        time_in_force,
+                        post_only,
                     },
                     event_type,
                     reduced_quantity: None,
+                    event_ms,
+                    state_ms,
                 })
             })
             .collect();
@@ -761,7 +958,6 @@ impl FuturesOrderHistoryResponse {
             order_events,
             continuation_token: self.continuation_token,
             skipped_rows,
-            skipped_order_ids,
             oldest_event_ms,
         })
     }
@@ -997,8 +1193,13 @@ pub struct FuturesEditOrderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesEditStatus {
     pub status: String,
-    #[serde(rename = "order_id", default)]
+    /// The order ID under the key the edit API documents.
+    #[serde(rename = "orderId", default)]
     pub order_id: Option<String>,
+    /// The order ID under the snake-case key the send response uses, read as well since the key
+    /// the edit response carries is not verified against the live venue.
+    #[serde(rename = "order_id", default)]
+    pub order_id_snake_case: Option<String>,
     #[serde(rename = "cli_ord_id", default)]
     pub cli_ord_id: Option<String>,
 }
@@ -1272,6 +1473,25 @@ mod tests {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to load test data from {path}: {e}"))
+    }
+
+    #[rstest]
+    fn test_parse_futures_edit_order_response_reads_the_documented_order_id() {
+        let data = load_test_data("http_edit_order_futures.json");
+
+        let response: FuturesEditOrderResponse = serde_json::from_str(&data).unwrap();
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(
+            response.server_time.as_deref(),
+            Some("2019-09-05T16:47:47.521Z")
+        );
+        assert_eq!(response.edit_status.status, "edited");
+        assert_eq!(
+            response.edit_status.order_id.as_deref(),
+            Some("022774bc-2c4a-4f26-9317-436c8d85746d")
+        );
+        assert_eq!(response.edit_status.order_id_snake_case, None);
     }
 
     #[rstest]
@@ -1680,7 +1900,8 @@ mod tests {
         );
         assert_eq!(response.continuation_token, None);
         assert_eq!(
-            response.skipped_rows, 2,
+            response.skipped_rows.len(),
+            2,
             "the Unknown type and the undocumented kind count; the not-found event does not"
         );
     }
@@ -1711,13 +1932,20 @@ mod tests {
         let response = order_history_events_from(data);
 
         assert!(response.order_events.is_empty());
-        assert_eq!(response.skipped_rows, 1);
-        assert_eq!(response.skipped_order_ids, vec!["o-pre".to_string()]);
+        assert_eq!(
+            response.skipped_rows,
+            vec![SkippedHistoryRow {
+                order_id: Some("o-pre".to_string()),
+                tradeable: Some("PF_XBTUSD".to_string()),
+                event_ms: 1_680_876_930_250,
+                undocumented: false,
+            }]
+        );
     }
 
     /// A page reaches back to its oldest event whatever the projection keeps, so a skipped row
-    /// counts toward the oldest time. A skipped row names its order when it carries one; an
-    /// undocumented kind names none.
+    /// counts toward the oldest time. A skipped row names its order when it carries one, and an
+    /// undocumented kind is marked, since its shape is only a guess.
     #[rstest]
     fn test_parse_futures_order_events_reports_what_the_page_covers() {
         let response = order_history_events("http_futures_order_events_unknown.json");
@@ -1727,13 +1955,17 @@ mod tests {
             Some(1_779_062_400_000),
             "the oldest element is the skipped Unknown-type row"
         );
-        assert_eq!(response.skipped_order_ids, vec!["abc".to_string()]);
-        assert_eq!(response.skipped_rows, 2);
+        let rows: Vec<_> = response
+            .skipped_rows
+            .iter()
+            .map(|row| (row.order_id.as_deref(), row.undocumented))
+            .collect();
+        assert_eq!(rows, vec![(Some("abc"), false), (Some("abc"), true)]);
     }
 
     /// `Unknown` is how the venue reports a source type it could not decode, so neither it nor a
     /// missing type establishes what the order is: the row is skipped with its price rather than
-    /// reported as a market order, the sibling row is kept, and the set is incomplete.
+    /// reported as a market order, the sibling row is kept, and the row is listed as skipped.
     #[rstest]
     #[case::missing_type("")]
     #[case::undocumented_type(r#""orderType":"SomethingNew","#)]
@@ -1762,8 +1994,9 @@ mod tests {
         );
         assert!(!sibling.order.reduce_only);
         assert_eq!(
-            response.skipped_rows, 1,
-            "the skip leaves the set incomplete"
+            response.skipped_rows.len(),
+            1,
+            "the row is listed as skipped"
         );
     }
 
@@ -1777,8 +2010,9 @@ mod tests {
 
         assert!(response.order_events.is_empty());
         assert_eq!(
-            response.skipped_rows, 1,
-            "the skip leaves the set incomplete"
+            response.skipped_rows.len(),
+            1,
+            "the row is listed as skipped"
         );
     }
 
@@ -1815,8 +2049,203 @@ mod tests {
 
         assert!(matches!(
             response.elements.as_deref(),
-            Some([FuturesOrderHistoryElement { event: FuturesOrderHistoryEvent::Unknown(kind), .. }]) if kind.is_empty()
+            Some([FuturesOrderHistoryElement { event: FuturesOrderHistoryEvent::Unknown { kind, .. }, .. }]) if kind.is_empty()
         ));
+    }
+
+    /// A documented kind whose payload does not decode is a skipped row naming what can be read of
+    /// it, each field from the first documented position holding a usable value, and the page's
+    /// other rows are kept.
+    #[rstest]
+    #[case::bad_quantity(
+        r#"{"OrderCancelled":{"order":{"uid":"o-bad","tradeable":"PF_XBTUSD","quantity":"oops"}}}"#,
+        Some("o-bad"),
+        Some("PF_XBTUSD")
+    )]
+    #[case::number_out_of_range(
+        r#"{"OrderCancelled":{"order":{"uid":"o-bad","tradeable":"PF_XBTUSD","quantity":1e999}}}"#,
+        Some("o-bad"),
+        Some("PF_XBTUSD")
+    )]
+    #[case::missing_uid(
+        r#"{"OrderCancelled":{"order":{"tradeable":"PF_XBTUSD"}}}"#,
+        None,
+        Some("PF_XBTUSD")
+    )]
+    #[case::mistyped_uid(
+        r#"{"OrderCancelled":{"order":{"uid":5,"tradeable":"PF_XBTUSD"}}}"#,
+        None,
+        Some("PF_XBTUSD")
+    )]
+    #[case::invalid_uid(
+        r#"{"OrderCancelled":{"order":{"uid":"","tradeable":"PF_XBTUSD"}}}"#,
+        None,
+        Some("PF_XBTUSD")
+    )]
+    #[case::missing_tradeable(
+        r#"{"OrderCancelled":{"order":{"uid":"o-bad"}}}"#,
+        Some("o-bad"),
+        None
+    )]
+    #[case::payload_not_an_object(r#"{"OrderCancelled":"gone"}"#, None, None)]
+    #[case::no_order_position(r#"{"OrderCancelled":{}}"#, None, None)]
+    #[case::mistyped_not_found(r#"{"OrderNotFound":{"orderId":5}}"#, None, None)]
+    #[case::update_read_from_the_old_order(
+        r#"{"OrderUpdated":{"newOrder":{"uid":"","tradeable":""},"oldOrder":{"uid":"o-bad","tradeable":"PF_XBTUSD"}}}"#,
+        Some("o-bad"),
+        Some("PF_XBTUSD")
+    )]
+    #[case::refused_edit_read_from_the_attempted_order(
+        r#"{"OrderEditRejected":{"oldOrder":{"uid":7},"attemptedOrder":{"uid":"o-bad","tradeable":"PF_XBTUSD"}}}"#,
+        Some("o-bad"),
+        Some("PF_XBTUSD")
+    )]
+    fn test_parse_futures_order_events_skips_an_unreadable_row_and_keeps_siblings(
+        #[case] unreadable: &str,
+        #[case] expected_order: Option<&str>,
+        #[case] expected_contract: Option<&str>,
+    ) {
+        let sibling = r#"{"OrderPlaced":{"order":{"uid":"o-sibling","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}"#;
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e2","timestamp":1680876931000,"event":{unreadable}}},{{"uid":"e1","timestamp":1680876930000,"event":{sibling}}}]}}"#
+        );
+
+        let response = order_history_events_from(&data);
+
+        assert_eq!(response.order_events.len(), 1);
+        assert_eq!(response.order_events[0].order.order_id, "o-sibling");
+        assert_eq!(
+            response.skipped_rows,
+            vec![SkippedHistoryRow {
+                order_id: expected_order.map(str::to_string),
+                tradeable: expected_contract.map(str::to_string),
+                event_ms: 1_680_876_931_000,
+                undocumented: false,
+            }]
+        );
+    }
+
+    /// A row whose order ID cannot be an ID does not decode, so it names no order unless another
+    /// documented position of the row does.
+    #[rstest]
+    #[case::empty_on_a_limit_row("", "Limit")]
+    #[case::empty_on_an_unknown_type("", "Unknown")]
+    #[case::whitespace(" ", "Limit")]
+    #[case::non_ascii("\u{e9}", "Limit")]
+    fn test_parse_futures_order_events_reads_an_invalid_order_id_as_naming_no_order(
+        #[case] uid: &str,
+        #[case] order_type: &str,
+    ) {
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"{uid}","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"{order_type}","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}}]}}"#
+        );
+
+        let response = order_history_events_from(&data);
+
+        assert!(response.order_events.is_empty());
+        assert_eq!(
+            response.skipped_rows,
+            vec![SkippedHistoryRow {
+                order_id: None,
+                tradeable: Some("PF_XBTUSD".to_string()),
+                event_ms: 1_680_876_930_250,
+                undocumented: false,
+            }]
+        );
+    }
+
+    /// An update's invalid new order leaves its old order to name the row, whatever else decodes.
+    #[rstest]
+    fn test_parse_futures_order_events_reads_an_update_from_its_old_order_past_an_invalid_id() {
+        let order = |uid: &str| {
+            format!(
+                r#"{{"uid":"{uid}","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}"#
+            )
+        };
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderUpdated":{{"oldOrder":{},"newOrder":{}}}}}}}]}}"#,
+            order("o-old"),
+            order(""),
+        );
+
+        let response = order_history_events_from(&data);
+
+        assert_eq!(
+            response.skipped_rows,
+            vec![SkippedHistoryRow {
+                order_id: Some("o-old".to_string()),
+                tradeable: Some("PF_XBTUSD".to_string()),
+                event_ms: 1_680_876_930_250,
+                undocumented: false,
+            }]
+        );
+    }
+
+    /// A row keeps the first documented kind it names, so a malformed later key does not cost it.
+    #[rstest]
+    fn test_parse_futures_order_events_keeps_the_first_documented_kind() {
+        let data = r#"{"elements":[{"uid":"e1","timestamp":1680876930250,"event":{"OrderPlaced":{"order":{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}},"OrderCancelled":"not an event"}}]}"#;
+
+        let response = order_history_events_from(data);
+
+        assert!(response.skipped_rows.is_empty());
+        assert_eq!(
+            response.order_events[0].event_type,
+            KrakenFuturesOrderEventType::Place
+        );
+    }
+
+    /// A row's envelope is the page's structure, which the documentation requires of every
+    /// element, so an element without one fails the read rather than reading as a skipped row.
+    #[rstest]
+    #[case::not_an_object("1")]
+    #[case::no_event(r#"{"uid":"e1","timestamp":1}"#)]
+    #[case::event_not_an_object(r#"{"uid":"e1","timestamp":1,"event":"OrderPlaced"}"#)]
+    #[case::no_uid(r#"{"timestamp":1,"event":{}}"#)]
+    #[case::no_timestamp(r#"{"uid":"e1","event":{}}"#)]
+    #[case::mistyped_timestamp(r#"{"uid":"e1","timestamp":"now","event":{}}"#)]
+    fn test_parse_futures_order_events_fail_on_an_invalid_element(#[case] element: &str) {
+        let data = format!(r#"{{"elements":[{element}]}}"#);
+
+        assert!(serde_json::from_str::<FuturesOrderHistoryResponse>(&data).is_err());
+    }
+
+    /// A numeric quantity keeps all its digits through the row's raw JSON text.
+    #[rstest]
+    fn test_parse_futures_order_events_keeps_a_numeric_quantity_exact() {
+        let data = r#"{"elements":[{"uid":"e1","timestamp":1680876930250,"event":{"OrderPlaced":{"order":{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Buy","quantity":1.2345678901234567891,"filled":0,"limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}]}"#;
+
+        let response = order_history_events_from(data);
+
+        assert_eq!(
+            response.order_events[0].order.quantity,
+            rust_decimal_macros::dec!(1.2345678901234567891)
+        );
+    }
+
+    /// The order type is the only place the history states a time in force or post-only.
+    #[rstest]
+    #[case::limit("Limit", TimeInForce::Gtc, false)]
+    #[case::ioc("IoC", TimeInForce::Ioc, false)]
+    #[case::hedge_ioc("HedgeImmediateOrCancel", TimeInForce::Ioc, false)]
+    #[case::fill_or_kill("FillOrKill", TimeInForce::Fok, false)]
+    #[case::post("Post", TimeInForce::Gtc, true)]
+    #[case::market("Market", TimeInForce::Gtc, false)]
+    #[case::stop("Stop", TimeInForce::Gtc, false)]
+    fn test_parse_futures_order_events_read_the_time_in_force_from_the_type(
+        #[case] order_type: &str,
+        #[case] expected_time_in_force: TimeInForce,
+        #[case] expected_post_only: bool,
+    ) {
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"{order_type}","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}}]}}"#
+        );
+
+        let response = order_history_events_from(&data);
+
+        let event = &response.order_events[0].order;
+        assert_eq!(event.time_in_force, expected_time_in_force);
+        assert_eq!(event.post_only, expected_post_only);
     }
 
     /// An order whose direction the venue could not decode has no side to report, so it is skipped.
@@ -1828,8 +2257,9 @@ mod tests {
 
         assert!(response.order_events.is_empty());
         assert_eq!(
-            response.skipped_rows, 1,
-            "the skip leaves the set incomplete"
+            response.skipped_rows.len(),
+            1,
+            "the row is listed as skipped"
         );
     }
 

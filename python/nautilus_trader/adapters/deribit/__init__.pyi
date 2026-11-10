@@ -156,6 +156,12 @@ class DeribitDataClientConfig:
     def auto_load_missing_instruments(self) -> bool: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def load_ids(self) -> list[model.InstrumentId] | None: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
+    @property
+    def book_stale_threshold_secs(self) -> int: ...
     def __init__(
         self,
         product_types: typing.Sequence[DeribitProductType] | None = None,
@@ -174,6 +180,9 @@ class DeribitDataClientConfig:
         update_instruments_interval_mins: int | None = None,
         auto_load_missing_instruments: bool | None = None,
         transport_backend: network.TransportBackend | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
+        book_snapshot_timeout_secs: int | None = None,
+        book_stale_threshold_secs: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -207,6 +216,8 @@ class DeribitExecutionClientConfig:
     def auth_timeout_secs(self) -> int | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def load_ids(self) -> list[model.InstrumentId] | None: ...
     def __init__(
         self,
         account_id: model.AccountId,
@@ -223,6 +234,7 @@ class DeribitExecutionClientConfig:
         retry_delay_max_ms: int | None = None,
         auth_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

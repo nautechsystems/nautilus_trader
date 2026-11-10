@@ -243,6 +243,33 @@ impl PyPolymarketPositionClient {
         })
     }
 
+    /// Approves ExchangeV3 trading from the Deposit Wallet holding the assets.
+    ///
+    /// `collateral_limit` is an explicit pUSD limit covering BUY spend plus fees. The same batch
+    /// enables ExchangeV3 to transfer V2 positions for SELL orders. It does not redeem positions.
+    /// The Relayer requires unlimited ExchangeV3 approvals and rejects this bounded request.
+    /// V2 trading from a Deposit Wallet therefore requires existing approvals.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the limit is invalid, wallet verification fails, or Relayer submission
+    /// is rejected or ambiguous. A pending wallet submission must be reconciled before retrying.
+    #[pyo3(name = "approve_v2_trading")]
+    fn py_approve_v2_trading<'py>(
+        &self,
+        py: Python<'py>,
+        #[pyo3(from_py_with = extract_amount)] collateral_limit: Decimal,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let tx = inner
+                .approve_v2_trading(collateral_limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(PyPolymarketPositionTransaction::from(tx))
+        })
+    }
+
     /// Splits `amount` pUSD into a complete set of outcome tokens.
     fn split_position<'py>(
         &self,
@@ -277,7 +304,28 @@ impl PyPolymarketPositionClient {
         })
     }
 
-    /// Redeems both binary outcome balances for a resolved market.
+    /// Redeems an explicit six-decimal share amount of V2 outcome index `0` or `1`.
+    ///
+    /// The index is the position ID's final byte, independent of CLOB token-array order.
+    /// Reverted or unavailable payout reads fail before submission. Zero losing payouts are valid.
+    fn redeem_position<'py>(
+        &self,
+        py: Python<'py>,
+        condition_id: String,
+        outcome_index: u8,
+        #[pyo3(from_py_with = extract_amount)] amount: Decimal,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let tx = inner
+                .redeem_position(&condition_id, outcome_index, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(PyPolymarketPositionTransaction::from(tx))
+        })
+    }
+
+    /// Redeems both CTF binary outcome balances for a resolved market.
     fn redeem_positions<'py>(
         &self,
         py: Python<'py>,
@@ -314,6 +362,7 @@ mod tests {
     #[rstest]
     #[case("split_position")]
     #[case("merge_positions")]
+    #[case("redeem_position")]
     fn test_position_amount_rejects_rounding(#[case] method: &str) {
         Python::initialize();
         Python::attach(|py| {
@@ -347,15 +396,18 @@ mod tests {
                 .unwrap()
                 .call1(("1.00000000000000000000000000001",))
                 .unwrap();
-            let error = client
-                .call_method1(
-                    method,
-                    (
-                        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-                        amount,
-                    ),
-                )
-                .unwrap_err();
+            let args = PyDict::new(py);
+            args.set_item(
+                "condition_id",
+                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            )
+            .unwrap();
+            args.set_item("amount", amount).unwrap();
+            if method == "redeem_position" {
+                args.set_item("outcome_index", 1).unwrap();
+            }
+
+            let error = client.call_method(method, (), Some(&args)).unwrap_err();
             assert!(error.is_instance_of::<PyValueError>(py));
             assert!(
                 error

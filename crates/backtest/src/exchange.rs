@@ -17,6 +17,7 @@
 
 use std::{
     cell::{Cell, RefCell},
+    cmp::Reverse,
     collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
@@ -39,7 +40,7 @@ use nautilus_execution::{
     matching::RestingOrder,
     matching_engine::{
         OrderMatchingEngine,
-        config::OrderMatchingEngineConfig,
+        config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
         inflight::InflightOrders,
         orders::{MatchingOrders, OtoCommand},
     },
@@ -52,12 +53,12 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
-        Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        Bar, BarType, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
         OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType,
-        PriceType,
+        AccountType, AggregationSource, AggressorSide, BookType, OmsType, OrderStatus,
+        PositionAdjustmentType, PositionSide, PriceType,
     },
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
     identifiers::{AccountId, InstrumentId, Venue},
@@ -167,6 +168,7 @@ pub struct SimulatedExchange {
     margin_model: Option<MarginModelHandle>,
     latency_model: Option<LatencyModelHandle>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    initial_instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
     pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
@@ -196,6 +198,7 @@ pub struct SimulatedExchange {
     allow_cash_borrowing: bool,
     frozen_account: bool,
     queue_position: bool,
+    order_priority_reset_policy: OrderPriorityResetPolicy,
     oto_full_trigger: bool,
     defer_option_settlement: bool,
     price_protection_points: u32,
@@ -258,6 +261,7 @@ impl SimulatedExchange {
             margin_model: config.margin_model,
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
+            initial_instruments: AHashMap::new(),
             matching_engines: IndexMap::new(),
             last_raw_id: 0,
             pending_funding_rates: BTreeMap::new(),
@@ -287,6 +291,7 @@ impl SimulatedExchange {
             allow_cash_borrowing: config.allow_cash_borrowing,
             frozen_account: config.frozen_account,
             queue_position: config.queue_position,
+            order_priority_reset_policy: config.order_priority_reset_policy,
             oto_full_trigger: config.oto_full_trigger,
             defer_option_settlement: config.defer_option_settlement,
             price_protection_points: config.price_protection_points,
@@ -508,6 +513,7 @@ impl SimulatedExchange {
             .use_reduce_only(self.use_reduce_only)
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
+            .order_priority_reset_policy(self.order_priority_reset_policy)
             .oto_full_trigger(self.oto_full_trigger)
             .defer_option_settlement(self.defer_option_settlement)
             .maybe_price_protection_points(price_protection)
@@ -540,6 +546,38 @@ impl SimulatedExchange {
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
+        Ok(())
+    }
+
+    /// Applies replay definitions using the existing matching engine lifecycle.
+    pub(crate) fn update_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let instrument_id = instrument.id();
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            anyhow::ensure!(
+                instrument.expiration_ns() == engine.instrument.expiration_ns()
+                    || matches!(
+                        (&engine.instrument, instrument),
+                        (
+                            InstrumentAny::BinaryOption(_),
+                            InstrumentAny::BinaryOption(_)
+                        )
+                    ),
+                "Cannot change expiration for instrument {instrument_id} during replay"
+            );
+            self.cache.borrow_mut().add_instrument(instrument.clone())?;
+            self.initial_instruments
+                .entry(instrument_id)
+                .or_insert_with(|| engine.instrument.clone());
+            engine.update_instrument(instrument.clone())?;
+            self.instruments.insert(instrument_id, instrument.clone());
+            let ts_now = self.clock.borrow().timestamp_ns();
+
+            if instrument.expiration_ns().is_some_and(|ns| ns < ts_now) {
+                engine.process_instrument_expiration(ts_now);
+            }
+        }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1585,6 +1623,57 @@ impl SimulatedExchange {
                 return false;
             };
 
+            // A single-currency account holds only its base currency, so the cash
+            // adjustment is converted there; position PnL keeps the settlement currency
+            if let Some(base_currency) = account.base_currency() {
+                for adjustment in &mut account_adjustments {
+                    if adjustment.currency == base_currency {
+                        continue;
+                    }
+                    let xrate = match cache.try_get_xrate(
+                        account_venue,
+                        adjustment.currency,
+                        base_currency,
+                        PriceType::Mid,
+                    ) {
+                        Ok(Some(xrate)) => xrate,
+                        Ok(None) => {
+                            log::warn!(
+                                "Cannot settle funding for {}: no exchange rate from {} to {base_currency}",
+                                funding_rate.instrument_id,
+                                adjustment.currency
+                            );
+                            return false;
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Cannot settle funding for {}: exchange rate from {} to {base_currency}: {e}",
+                                funding_rate.instrument_id,
+                                adjustment.currency
+                            );
+                            return false;
+                        }
+                    };
+                    let Some(amount) = adjustment.as_decimal().checked_mul(xrate) else {
+                        log::error!(
+                            "Cannot settle funding for {}: currency conversion overflow",
+                            funding_rate.instrument_id
+                        );
+                        return false;
+                    };
+                    *adjustment = match Money::from_decimal(amount, base_currency) {
+                        Ok(money) => money,
+                        Err(e) => {
+                            log::error!(
+                                "Cannot settle funding for {}: invalid converted adjustment: {e}",
+                                funding_rate.instrument_id
+                            );
+                            return false;
+                        }
+                    };
+                }
+            }
+
             for adjustment in &account_adjustments {
                 let Some(balance) = account.balance(Some(adjustment.currency)) else {
                     log::error!(
@@ -1650,9 +1739,8 @@ impl SimulatedExchange {
                         original.id
                     );
 
-                    // Inclusive of `index`: the failed update applies the adjustment to the
-                    // cached position before attempting to persist it, so the position whose
-                    // update returned the error also needs reverting.
+                    // Include the failing position in case its adjustment was applied before
+                    // a backing integrity check rejected it.
                     revert_funding_adjustments(
                         &mut cache,
                         &adjusted_positions[..=index],
@@ -1854,8 +1942,18 @@ impl SimulatedExchange {
             }
         }
 
-        for matching_engine in self.matching_engines.values_mut() {
+        for (instrument_id, matching_engine) in &mut self.matching_engines {
             matching_engine.reset();
+
+            if let Some(instrument) = self.initial_instruments.get(instrument_id) {
+                if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
+                    callback_error.get_or_insert_with(|| e.to_string());
+                    continue;
+                }
+
+                matching_engine.update_instrument(instrument.clone())?;
+                self.instruments.insert(*instrument_id, instrument.clone());
+            }
         }
 
         self.pending_funding_rates.clear();
@@ -1947,10 +2045,11 @@ impl SimulatedExchange {
                 let cache = self.cache.borrow();
                 let mut upnl = 0.0_f64;
                 let mut all_priced = true;
+                let mut bar_types = None;
 
                 for &i in indices {
                     let p = &open_positions[i];
-                    if let Some(pnl) = cache.calculate_unrealized_pnl(p) {
+                    if let Some(pnl) = liquidation_unrealized_pnl(&cache, p, &mut bar_types) {
                         upnl += pnl.as_f64();
                     } else {
                         all_priced = false;
@@ -2277,6 +2376,102 @@ fn revert_funding_adjustments(
     }
 }
 
+// Values a position for the liquidation check with the portfolio's price fallback: mark price,
+// then the side-appropriate quote, then the last trade, then the most recent bar close.
+fn liquidation_unrealized_pnl(
+    cache: &Cache,
+    position: &Position,
+    bar_types: &mut Option<AHashMap<InstrumentId, Vec<BarType>>>,
+) -> Option<Money> {
+    let instrument_id = &position.instrument_id;
+    let price_type = match position.side {
+        PositionSide::Long => PriceType::Bid,
+        PositionSide::Short => PriceType::Ask,
+        PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
+    };
+
+    let allows_non_positive = || {
+        cache
+            .instrument(instrument_id)
+            .is_some_and(Instrument::allows_negative_price)
+    };
+    let is_valid = |price: &Price| {
+        !price.is_undefined()
+            && !price.is_error()
+            && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
+    };
+    let quote_price = || {
+        cache.quote(instrument_id).and_then(|quote| {
+            let (price, size) = match price_type {
+                PriceType::Bid => (quote.bid_price, quote.bid_size),
+                _ => (quote.ask_price, quote.ask_size),
+            };
+            (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                .then_some(price)
+        })
+    };
+
+    // Bars closing together rank in the fallback order above, then mid, then the opposite quote
+    // side, then by bar type, so the choice never depends on cache iteration order.
+    let bar_rank = |bar: &Bar| match bar.bar_type.spec().price_type {
+        PriceType::Mark => 0,
+        bar_price_type if bar_price_type == price_type => 1,
+        PriceType::Last => 2,
+        PriceType::Mid => 3,
+        PriceType::Bid | PriceType::Ask => 4,
+    };
+
+    // In a backtest `ts_init` is the bar close for open- and close-stamped bars alike
+    let bar_close = || {
+        // Index once per currency valuation, before any liquidation callbacks can change the cache
+        let bar_types = bar_types.get_or_insert_with(|| liquidation_bar_types(cache));
+        bar_types
+            .get(instrument_id)
+            .into_iter()
+            .flatten()
+            .filter_map(|bar_type| cache.bar(bar_type))
+            .filter(|bar| is_valid(&bar.close))
+            .min_by_key(|bar| (Reverse(bar.ts_init), bar_rank(bar), bar.bar_type))
+            .map(|bar| bar.close)
+    };
+
+    let Some(price) = cache
+        .price(instrument_id, PriceType::Mark)
+        .filter(is_valid)
+        .or_else(quote_price)
+        .or_else(|| cache.price(instrument_id, PriceType::Last).filter(is_valid))
+        .or_else(bar_close)
+    else {
+        log::warn!(
+            "Cannot value {} for liquidation, no mark, quote, trade or bar for {instrument_id}",
+            position.id,
+        );
+        return None;
+    };
+
+    position
+        .try_unrealized_pnl(price)
+        .inspect_err(|e| {
+            log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
+        })
+        .ok()
+}
+
+fn liquidation_bar_types(cache: &Cache) -> AHashMap<InstrumentId, Vec<BarType>> {
+    let mut by_instrument: AHashMap<InstrumentId, Vec<BarType>> = AHashMap::new();
+
+    for source in [AggregationSource::External, AggregationSource::Internal] {
+        for bar_type in cache.bar_types(None, None, source) {
+            by_instrument
+                .entry(bar_type.instrument_id())
+                .or_default()
+                .push(*bar_type);
+        }
+    }
+
+    by_instrument
+}
+
 // Compares two instruments' tradable definitions on their serialized form without event
 // timestamps, so every field (including free-form `info`) takes part, and a serialization
 // failure compares as changed so a different definition is never accepted.
@@ -2312,18 +2507,239 @@ mod tests {
     };
     use nautilus_model::{
         accounts::MarginAccount,
-        enums::{AccountType, BookType, OrderSide, OrderType},
+        data::BarSpecification,
+        enums::{AccountType, BarAggregation, BookType, OrderSide, OrderType},
         events::AccountState,
-        identifiers::{ClientOrderId, StrategyId, TraderId},
-        instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+        identifiers::{ClientOrderId, StrategyId, TradeId, TraderId},
+        instruments::{
+            CurrencyPair, InstrumentAny,
+            stubs::{audusd_sim, futures_contract_es, gbpusd_sim},
+        },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
-        types::AccountBalance,
+        types::{
+            AccountBalance,
+            price::{PRICE_ERROR, PRICE_UNDEF},
+        },
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[derive(Clone, Copy)]
+    enum LiquidationPriceSource {
+        Mark,
+        Quote,
+        Trade,
+        Bar,
+    }
+
+    #[rstest]
+    #[case::mark(LiquidationPriceSource::Mark)]
+    #[case::quote(LiquidationPriceSource::Quote)]
+    #[case::trade(LiquidationPriceSource::Trade)]
+    #[case::bar(LiquidationPriceSource::Bar)]
+    fn test_liquidation_rejects_sentinel_prices(
+        #[case] source: LiquidationPriceSource,
+        #[values(
+            InstrumentAny::CurrencyPair(audusd_sim()),
+            InstrumentAny::FuturesContract(futures_contract_es(None, None))
+        )]
+        instrument: InstrumentAny,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(Price::from_raw(PRICE_UNDEF, 0), Price::from_raw(PRICE_ERROR, 0))] sentinel: Price,
+        #[values(false, true)] has_fallback: bool,
+    ) {
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.clone()).unwrap();
+        let position = liquidation_position(&instrument, side);
+        let ts = UnixNanos::from(2);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
+
+        if has_fallback {
+            let value = match side {
+                OrderSide::Buy => dec!(90),
+                OrderSide::Sell => dec!(110),
+            };
+
+            let close = Price::from_decimal_dp(value, instrument.price_precision()).unwrap();
+
+            let bar = Bar::new(
+                bar_type,
+                close,
+                close,
+                close,
+                close,
+                Quantity::from("1"),
+                ts,
+                ts,
+            );
+            cache.add_bar(bar).unwrap();
+        }
+
+        match source {
+            LiquidationPriceSource::Mark => {
+                let mark = MarkPriceUpdate::new(instrument.id(), sentinel, ts, ts);
+                cache.add_mark_price(mark).unwrap();
+            }
+            LiquidationPriceSource::Quote => {
+                let valid = Price::from("100");
+                let (bid, ask) = match side {
+                    OrderSide::Buy => (sentinel, valid),
+                    OrderSide::Sell => (valid, sentinel),
+                };
+
+                let quote = QuoteTick::new(
+                    instrument.id(),
+                    bid,
+                    ask,
+                    Quantity::from("1"),
+                    Quantity::from("2"),
+                    ts,
+                    ts,
+                );
+                cache.add_quote(quote).unwrap();
+            }
+            LiquidationPriceSource::Trade => {
+                let trade = TradeTick::new(
+                    instrument.id(),
+                    sentinel,
+                    Quantity::from("1"),
+                    AggressorSide::Sell,
+                    TradeId::from("T-SENTINEL"),
+                    ts,
+                    ts,
+                );
+                cache.add_trade(trade).unwrap();
+            }
+            LiquidationPriceSource::Bar => {
+                let invalid_spec =
+                    BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+                let invalid_type =
+                    BarType::new(instrument.id(), invalid_spec, AggregationSource::Internal);
+                let later = UnixNanos::from(3);
+
+                let bar = Bar::new(
+                    invalid_type,
+                    sentinel,
+                    sentinel,
+                    sentinel,
+                    sentinel,
+                    Quantity::from("1"),
+                    later,
+                    later,
+                );
+                cache.add_bar(bar).unwrap();
+            }
+        }
+
+        let mut bar_types = None;
+        let actual = liquidation_unrealized_pnl(&cache, &position, &mut bar_types);
+
+        let expected = has_fallback.then(|| {
+            let amount = dec!(-10) * instrument.multiplier().as_decimal();
+            Money::from_decimal(amount, instrument.settlement_currency()).unwrap()
+        });
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_liquidation_bar_index_keeps_instruments_and_sides_separate(#[case] reverse: bool) {
+        let audusd = InstrumentAny::CurrencyPair(audusd_sim());
+        let gbpusd = InstrumentAny::CurrencyPair(gbpusd_sim());
+        let mut cache = Cache::default();
+        for instrument in [&audusd, &gbpusd] {
+            cache.add_instrument(instrument.clone()).unwrap();
+        }
+
+        let ts = UnixNanos::from(2);
+
+        for (instrument, price_type, value, source) in [
+            (
+                &audusd,
+                PriceType::Bid,
+                dec!(90),
+                AggregationSource::External,
+            ),
+            (
+                &audusd,
+                PriceType::Ask,
+                dec!(110),
+                AggregationSource::Internal,
+            ),
+            (
+                &gbpusd,
+                PriceType::Last,
+                dec!(100),
+                AggregationSource::External,
+            ),
+        ] {
+            let spec = BarSpecification::new(1, BarAggregation::Minute, price_type);
+            let bar_type = BarType::new(instrument.id(), spec, source);
+            let close = Price::from_decimal_dp(value, instrument.price_precision()).unwrap();
+
+            let bar = Bar::new(
+                bar_type,
+                close,
+                close,
+                close,
+                close,
+                Quantity::from("1"),
+                ts,
+                ts,
+            );
+            cache.add_bar(bar).unwrap();
+        }
+
+        let mut positions = [
+            (liquidation_position(&audusd, OrderSide::Buy), dec!(-10)),
+            (liquidation_position(&audusd, OrderSide::Sell), dec!(-10)),
+            (liquidation_position(&gbpusd, OrderSide::Buy), dec!(0)),
+        ];
+
+        if reverse {
+            positions.reverse();
+        }
+
+        let mut bar_types = None;
+        let actual: Vec<_> = positions
+            .iter()
+            .map(|(position, _)| liquidation_unrealized_pnl(&cache, position, &mut bar_types))
+            .collect();
+        let expected: Vec<_> = positions
+            .iter()
+            .map(|(_, amount)| Some(Money::from_decimal(*amount, Currency::USD()).unwrap()))
+            .collect();
+
+        assert_eq!(actual, expected);
+    }
+
+    fn liquidation_position(instrument: &InstrumentAny, side: OrderSide) -> Position {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(side)
+            .quantity(Quantity::from("1"))
+            .build();
+        let price = Price::from_decimal_dp(dec!(100), instrument.price_precision()).unwrap();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            instrument,
+            None,
+            None,
+            Some(price),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        Position::new(instrument, fill.into())
+    }
 
     /// The three `send` dispatch modes a query must be intercepted ahead of.
     #[derive(Clone, Copy)]
@@ -2363,6 +2779,123 @@ mod tests {
         }
 
         SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    #[rstest]
+    fn test_modify_order_priority_config_reaches_matching_engine(
+        #[values(
+            OrderPriorityResetPolicy::PriceChange,
+            OrderPriorityResetPolicy::PriceOrQuantityIncrease,
+            OrderPriorityResetPolicy::AnyModify
+        )]
+        policy: OrderPriorityResetPolicy,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L2_MBP)
+            .starting_balances(vec![Money::from("1_000 USD")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .order_priority_reset_policy(policy)
+            .build()
+            .unwrap();
+        let mut exchange = SimulatedExchange::new(config, cache.clone(), clock).unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        exchange.add_instrument(instrument.clone()).unwrap();
+        let engine = exchange.matching_engines.get_mut(&instrument.id()).unwrap();
+        engine.set_event_handler(Rc::new(move |event| {
+            cache.borrow_mut().update_order(&event).unwrap();
+        }));
+
+        let ids = [
+            ClientOrderId::from("MODIFY-FIRST"),
+            ClientOrderId::from("MODIFY-SECOND"),
+        ];
+
+        for id in ids {
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(id)
+                .side(OrderSide::Buy)
+                .price(Price::from("1.00000"))
+                .quantity(Quantity::from("5"))
+                .submit(true)
+                .build();
+            exchange
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+            engine.process_order(&mut order, AccountId::from("SIM-001"));
+        }
+
+        let order = exchange.cache.borrow().order(&ids[0]).unwrap().clone();
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                ids[0],
+                order.venue_order_id(),
+                Some(Quantity::from("3")),
+                None,
+                None,
+                UUID4::new(),
+                1.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+
+        let expected = if policy == OrderPriorityResetPolicy::AnyModify {
+            vec![ids[1], ids[0]]
+        } else {
+            ids.to_vec()
+        };
+
+        assert_eq!(
+            engine
+                .get_core()
+                .get_orders_bid()
+                .iter()
+                .map(|o| o.client_order_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            exchange.cache.borrow().order(&ids[0]).unwrap().quantity(),
+            Quantity::from("3")
+        );
+    }
+
+    #[rstest]
+    fn test_replay_instrument_expiration_change_is_rejected() {
+        let mut exchange = setup_exchange(Dispatch::Queued);
+        let mut option = nautilus_model::instruments::stubs::option_contract_appl();
+        option.id = InstrumentId::from("TEST.SIM");
+        let original = InstrumentAny::OptionContract(option.clone());
+        exchange.add_instrument(original.clone()).unwrap();
+        exchange.update_instrument(&original).unwrap();
+        option.expiration_ns = UnixNanos::from(10);
+
+        let error = exchange
+            .update_instrument(&InstrumentAny::OptionContract(option))
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Cannot change expiration"));
+        let cache = exchange.cache.borrow();
+        for instrument in [
+            &exchange.instruments[&original.id()],
+            &exchange.matching_engines[&original.id()].instrument,
+            cache.instrument(&original.id()).unwrap(),
+        ] {
+            assert_eq!(instrument.expiration_ns(), original.expiration_ns());
+        }
     }
 
     #[rstest]

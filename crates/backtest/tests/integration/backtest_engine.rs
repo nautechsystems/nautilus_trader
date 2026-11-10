@@ -4187,6 +4187,52 @@ fn test_streaming_mode_processes_data_in_batches(crypto_perpetual_ethusdt: Crypt
 }
 
 #[rstest]
+fn test_streaming_resumes_after_batch_before_start(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(EmptyStrategy::new()).unwrap();
+    engine
+        .add_data(
+            vec![quote(instrument_id, "1000.00", "1000.10", 1)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    let start = Some(UnixNanos::from(10));
+    let end = Some(UnixNanos::from(40));
+    engine.run(start, end, None, true).unwrap();
+    let run_id = engine.run_id().unwrap();
+    assert_eq!(engine.get_result().iterations, 0);
+    assert!(engine.kernel().trader.borrow().is_running());
+
+    engine.clear_data();
+    engine
+        .add_data(
+            vec![
+                quote(instrument_id, "1001.00", "1001.10", 20),
+                quote(instrument_id, "1002.00", "1002.10", 30),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(start, end, None, true).unwrap();
+
+    assert_eq!(engine.get_result().iterations, 2);
+    assert_eq!(engine.run_id(), Some(run_id));
+    assert!(engine.kernel().trader.borrow().is_running());
+
+    engine.end().unwrap();
+    assert_eq!(engine.run_id(), Some(run_id));
+    assert!(!engine.kernel().trader.borrow().is_running());
+}
+
+#[rstest]
 fn test_streaming_windows_retain_first_item_past_end() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let first = stub_custom_data(1, 1, None, None);
@@ -4377,9 +4423,12 @@ fn test_reset_run_produces_same_results(crypto_perpetual_ethusdt: CryptoPerpetua
     engine.run(None, None, None, false).unwrap();
     let result1_iterations = engine.get_result().iterations;
     let result1_orders = engine.get_result().total_orders;
+    let run_id = engine.run_id().unwrap();
 
     // Reset and run again with same data
     engine.reset().unwrap();
+    assert_eq!(engine.run_id(), None);
+
     engine.run(None, None, None, false).unwrap();
     let result2_iterations = engine.get_result().iterations;
     let result2_orders = engine.get_result().total_orders;
@@ -4387,6 +4436,7 @@ fn test_reset_run_produces_same_results(crypto_perpetual_ethusdt: CryptoPerpetua
     assert_eq!(result1_iterations, result2_iterations);
     assert_eq!(result1_orders, result2_orders);
     assert_eq!(result1_iterations, 3);
+    assert_ne!(engine.run_id().unwrap(), run_id);
 }
 
 #[rstest]
@@ -5291,6 +5341,198 @@ fn test_reset_between_emulated_runs_clears_order_emulator_state(
     assert_eq!(emulator.subscribed_strategy_count(), 1);
     assert_eq!(emulator.monitored_position_count(), 1);
     assert_eq!(emulator.get_submit_order_commands().len(), 1);
+}
+
+#[rstest]
+#[case::timer_only(&[], 1)]
+#[case::replay_gap(&[1, 40], 1)]
+#[case::tail_flush(&[1, 100], 1)]
+#[case::overdue(&[40], 40)]
+fn test_timer_cancellation_before_later_events(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] quote_times: &[u64],
+    #[case] start_ns: u64,
+    #[values(false, true)] cancel_all: bool,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let clock = Rc::clone(&engine.kernel().clock);
+    let callback_clock = Rc::clone(&clock);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let observed = Rc::clone(&events);
+    let timer_name = "self_cancel";
+
+    let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
+        let ts_now = callback_clock.borrow().timestamp_ns();
+        if cancel_all {
+            callback_clock.borrow_mut().cancel_timers();
+        } else {
+            callback_clock.borrow_mut().cancel_timer(timer_name);
+        }
+
+        observed
+            .borrow_mut()
+            .push((event.ts_event, event.ts_init, ts_now));
+    }));
+
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            timer_name,
+            DurationNanos::new(10),
+            Some(UnixNanos::from(1)),
+            None,
+            Some(callback),
+            None,
+            None,
+        )
+        .unwrap();
+
+    if !quote_times.is_empty() {
+        let data = quote_times
+            .iter()
+            .map(|&ts| quote(instrument_id, "1000.00", "1001.00", ts))
+            .collect();
+        engine.add_data(data, None, true, true).unwrap();
+    }
+
+    engine
+        .run(
+            Some(UnixNanos::from(start_ns)),
+            Some(UnixNanos::from(40)),
+            None,
+            false,
+        )
+        .unwrap();
+    engine.dispose();
+
+    assert_eq!(
+        *events.borrow(),
+        vec![(
+            UnixNanos::from(11),
+            UnixNanos::from(11),
+            UnixNanos::from(11)
+        )],
+    );
+}
+
+#[rstest]
+fn test_timer_cancellation_across_component_clocks(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(EmptyStrategy::new()).unwrap();
+
+    let target_clock = engine.kernel().trader.borrow().get_component_clocks()[0].clone();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let target_events = Rc::clone(&events);
+    let target = "target";
+    target_clock
+        .borrow_mut()
+        .set_time_alert_ns(
+            target,
+            UnixNanos::from(31),
+            Some(TimeEventCallback::RustLocal(Rc::new(move |event| {
+                target_events.borrow_mut().push(event.ts_event);
+            }))),
+            None,
+        )
+        .unwrap();
+
+    let observed = Rc::clone(&events);
+    engine
+        .kernel()
+        .clock
+        .borrow_mut()
+        .set_time_alert_ns(
+            "cancel_target",
+            UnixNanos::from(11),
+            Some(TimeEventCallback::RustLocal(Rc::new(move |event| {
+                target_clock.borrow_mut().cancel_timer(target);
+                observed.borrow_mut().push(event.ts_event);
+            }))),
+            None,
+        )
+        .unwrap();
+
+    let data = [1, 40]
+        .into_iter()
+        .map(|ts| quote(instrument_id, "1000.00", "1001.00", ts))
+        .collect();
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+    engine.dispose();
+
+    assert_eq!(*events.borrow(), vec![UnixNanos::from(11)]);
+}
+
+#[rstest]
+#[case::replay_gap(40, true, 40)]
+#[case::tail_flush(100, false, 11)]
+fn test_timer_expired_deadline_preserves_event_order(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] last_quote: u64,
+    #[case] later_alert: bool,
+    #[case] expected_end: u64,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let observed = Rc::clone(&events);
+    let cache = Rc::clone(&engine.kernel().cache);
+    let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+        let quote_ts = cache.borrow().quote(&instrument_id).unwrap().ts_init;
+        observed.borrow_mut().push((event.ts_event, quote_ts));
+    }));
+
+    let clock = Rc::clone(&engine.kernel().clock);
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            "stopped",
+            DurationNanos::new(10),
+            Some(UnixNanos::from(1)),
+            Some(UnixNanos::from(15)),
+            Some(callback.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+
+    if later_alert {
+        clock
+            .borrow_mut()
+            .set_time_alert_ns("later", UnixNanos::from(31), Some(callback), None)
+            .unwrap();
+    }
+
+    let data = [1, last_quote]
+        .into_iter()
+        .map(|ts| quote(instrument_id, "1000.00", "1001.00", ts))
+        .collect();
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine
+        .run(None, Some(UnixNanos::from(40)), None, false)
+        .unwrap();
+    let result = engine.get_result();
+    engine.dispose();
+
+    let mut expected = vec![(UnixNanos::from(11), UnixNanos::from(1))];
+    if later_alert {
+        expected.push((UnixNanos::from(31), UnixNanos::from(1)));
+    }
+
+    assert_eq!(*events.borrow(), expected);
+    assert_eq!(result.backtest_end, Some(UnixNanos::from(expected_end)));
 }
 
 // Strategy that sets two timers at the same timestamp, each submitting

@@ -391,6 +391,8 @@ pub(crate) struct Fault {
     pub(crate) hold: bool,
     /// Sets `hold` at the next snapshot frame.
     pub(crate) hold_snapshot: bool,
+    // Arms `hold_snapshot` only after the corrupted frame is forwarded
+    pub(crate) hold_snapshot_after_corrupt: bool,
     /// Drops every frame until the adapter unsubscribes the book or a frame arrives on a later
     /// connection of its route.
     pub(crate) silence: bool,
@@ -653,7 +655,8 @@ impl ProxyState {
         let mut faults = self.faults.lock();
         let fault = faults.entry(key.clone()).or_default();
 
-        if fault.corrupt > 0 && wire.corrupt(message, &key, kind) {
+        let corrupted = fault.corrupt > 0 && wire.corrupt(message, &key, kind);
+        if corrupted {
             fault.corrupt -= 1;
             fault.corrupted += 1;
         }
@@ -686,6 +689,11 @@ impl ProxyState {
         if fault.hold || held.iter().any(|(held_key, _)| *held_key == key) {
             fault.held += 1;
             return Action::Hold(key);
+        }
+
+        if corrupted && fault.hold_snapshot_after_corrupt {
+            fault.hold_snapshot_after_corrupt = false;
+            fault.hold_snapshot = true;
         }
 
         fault.forwarded += 1;
@@ -1130,6 +1138,170 @@ mod tests {
         assert!(fault.hold);
         assert!(!fault.hold_snapshot);
         assert_eq!(fault.held, 2);
+    }
+
+    #[rstest]
+    #[case::gap_first(false)]
+    #[case::snapshot_first(true)]
+    #[tokio::test]
+    async fn corrupted_update_precedes_snapshot_hold(#[case] snapshot_first: bool) {
+        let venue = start_venue().await;
+        let proxy = start_proxy(&venue.url).await;
+        let mut client = connect(&proxy).await;
+
+        {
+            let mut fault = proxy.fault("A");
+            fault.corrupt = 1;
+            fault.hold_snapshot_after_corrupt = true;
+        }
+
+        let mut frames = Vec::new();
+        let mut expected = Vec::new();
+
+        if snapshot_first {
+            frames.push(frame("A", "snapshot", 1));
+            frames.push(frame("A", "snapshot", 2));
+            expected.push(frame("A", "snapshot", 1));
+            expected.push(frame("A", "snapshot", 2));
+        }
+
+        frames.extend([
+            frame("A", "update", 3),
+            frame("A", "snapshot", 4),
+            frame("A", "update", 5),
+        ]);
+        let mut corrupted: Value = serde_json::from_str(&frame("A", "update", 3)).unwrap();
+        corrupted["corrupt"] = json!(true);
+        expected.push(corrupted.to_string());
+        send(&venue, &frames);
+        let received = receive_all(&mut client).await;
+        let fault = proxy.fault("A").clone();
+        proxy.fault("A").hold = false;
+        proxy.release();
+        let released = receive_all(&mut client).await;
+        proxy.fault("A").corrupt = 1;
+        send(
+            &venue,
+            &[frame("A", "update", 6), frame("A", "snapshot", 7)],
+        );
+        let later = receive_all(&mut client).await;
+        let mut later_corrupted: Value = serde_json::from_str(&frame("A", "update", 6)).unwrap();
+        later_corrupted["corrupt"] = json!(true);
+        let final_fault = proxy.fault("A").clone();
+
+        assert_eq!(received, expected);
+        assert_eq!(
+            released,
+            [frame("A", "snapshot", 4), frame("A", "update", 5)]
+        );
+        assert_eq!(
+            later,
+            [later_corrupted.to_string(), frame("A", "snapshot", 7)]
+        );
+        assert_eq!(fault.corrupt, 0);
+        assert_eq!(fault.corrupted, 1);
+        assert_eq!(fault.forwarded, 1 + 2 * usize::from(snapshot_first));
+        assert_eq!(fault.held, 2);
+        assert!(fault.hold);
+        assert!(!fault.hold_snapshot);
+        assert!(!fault.hold_snapshot_after_corrupt);
+        assert_eq!(final_fault.corrupted, 2);
+        assert_eq!(final_fault.forwarded, 3 + 2 * usize::from(snapshot_first));
+        assert_eq!(final_fault.held, 2);
+        assert!(!final_fault.hold);
+        assert!(!final_fault.hold_snapshot);
+        assert!(!final_fault.hold_snapshot_after_corrupt);
+    }
+
+    #[rstest]
+    #[case::dropped(1, false, false, false)]
+    #[case::silenced(0, true, false, false)]
+    #[case::held(0, false, true, false)]
+    #[case::queued(0, false, false, true)]
+    #[tokio::test]
+    async fn unforwarded_corruption_does_not_arm_snapshot_hold(
+        #[case] drop_updates: usize,
+        #[case] silence: bool,
+        #[case] hold: bool,
+        #[case] queued: bool,
+    ) {
+        let venue = start_venue().await;
+        let proxy = start_proxy(&venue.url).await;
+        let mut client = connect(&proxy).await;
+        if queued {
+            proxy.fault("A").hold = true;
+            send(&venue, &[frame("A", "update", 1)]);
+            wait_for(|| proxy.fault("A").held == 1).await;
+        }
+
+        {
+            let mut fault = proxy.fault("A");
+            fault.corrupt = 1;
+            fault.hold_snapshot_after_corrupt = true;
+            fault.drop_updates = drop_updates;
+            fault.silence = silence;
+            fault.hold = hold;
+        }
+
+        send(&venue, &[frame("A", "update", 2)]);
+        wait_for(|| proxy.fault("A").corrupted == 1).await;
+        let before = proxy.fault("A").clone();
+
+        {
+            let mut fault = proxy.fault("A");
+            fault.silence = false;
+            fault.hold = false;
+        }
+
+        proxy.release();
+        let released = receive_all(&mut client).await;
+        send(&venue, &[frame("A", "snapshot", 3)]);
+        let snapshot = receive_all(&mut client).await;
+        let after_snapshot = proxy.fault("A").clone();
+        proxy.fault("A").corrupt = 1;
+        send(
+            &venue,
+            &[
+                frame("A", "update", 4),
+                frame("A", "snapshot", 5),
+                frame("A", "update", 6),
+            ],
+        );
+        let received = receive_all(&mut client).await;
+        let after = proxy.fault("A").clone();
+        let mut expected_release = Vec::new();
+        if queued {
+            expected_release.push(frame("A", "update", 1));
+        }
+
+        if hold || queued {
+            let mut corrupted: Value = serde_json::from_str(&frame("A", "update", 2)).unwrap();
+            corrupted["corrupt"] = json!(true);
+            expected_release.push(corrupted.to_string());
+        }
+
+        let mut corrupted: Value = serde_json::from_str(&frame("A", "update", 4)).unwrap();
+        corrupted["corrupt"] = json!(true);
+
+        assert_eq!(released, expected_release);
+        assert_eq!(snapshot, [frame("A", "snapshot", 3)]);
+        assert_eq!(received, [corrupted.to_string()]);
+        assert_eq!(before.corrupt, 0);
+        assert_eq!(before.corrupted, 1);
+        assert_eq!(before.forwarded, 0);
+        assert_eq!(before.dropped, drop_updates);
+        assert_eq!(before.held, usize::from(hold) + 2 * usize::from(queued));
+        assert!(!before.hold_snapshot);
+        assert!(before.hold_snapshot_after_corrupt);
+        assert!(!after_snapshot.hold_snapshot);
+        assert!(after_snapshot.hold_snapshot_after_corrupt);
+        assert_eq!(after.corrupt, 0);
+        assert_eq!(after.corrupted, 2);
+        assert_eq!(after.forwarded, 2);
+        assert_eq!(after.held, before.held + 2);
+        assert!(after.hold);
+        assert!(!after.hold_snapshot);
+        assert!(!after.hold_snapshot_after_corrupt);
     }
 
     #[tokio::test]

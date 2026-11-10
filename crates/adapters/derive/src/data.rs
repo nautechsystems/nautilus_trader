@@ -396,6 +396,14 @@ impl DeriveDataClient {
     }
 
     fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        if let Some(future) = self.instrument_refresh() {
+            self.session_tasks.spawn(future)?;
+        }
+
+        Ok(())
+    }
+
+    fn instrument_refresh(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
         let minutes = self.config.update_instruments_interval_mins;
         let currencies: Vec<_> = self
             .config
@@ -405,7 +413,7 @@ impl DeriveDataClient {
             .collect();
 
         if minutes == 0 || currencies.is_empty() {
-            return Ok(());
+            return None;
         }
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
@@ -416,7 +424,7 @@ impl DeriveDataClient {
         let sender = self.data_sender.clone();
         let subscription_lock = Arc::clone(&self.subscription_lock);
 
-        self.session_tasks.spawn(async move {
+        Some(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -434,15 +442,21 @@ impl DeriveDataClient {
                     match result {
                         Ok(definitions) => {
                             let loaded = parse_instrument_definitions(definitions);
-                            cache_instruments(loaded, &instruments, &sender, &cancellation, &subscription_lock);
+                            cache_instruments(
+                                loaded,
+                                &instruments,
+                                &sender,
+                                &cancellation,
+                                &subscription_lock,
+                            );
                         }
-                        Err(e) => log::warn!("Failed to refresh Derive instruments for {currency}: {e}"),
+                        Err(e) => {
+                            log::warn!("Failed to refresh Derive instruments for {currency}: {e}");
+                        }
                     }
                 }
             }
-        })?;
-
-        Ok(())
+        })
     }
 
     fn handle_ws_message(message: DeriveWsMessage, ctx: &WsMessageContext) {
@@ -1523,8 +1537,14 @@ impl DataClient for DeriveDataClient {
                         size_precision,
                         ts_init,
                     ) {
-                        Ok(tick) if seen_trade_ids.insert(tick.trade_id) => trades.push(tick),
-                        Ok(_) => {}
+                        Ok(tick) => {
+                            let within_start =
+                                start_nanos.is_none_or(|nanos| tick.ts_event >= nanos);
+                            let within_end = end_nanos.is_none_or(|nanos| tick.ts_event <= nanos);
+                            if within_start && within_end && seen_trade_ids.insert(tick.trade_id) {
+                                trades.push(tick);
+                            }
+                        }
                         Err(e) => log::warn!(
                             "Failed to parse Derive trade {} for {instrument_id}: {e}",
                             trade.trade_id,
@@ -1616,7 +1636,13 @@ impl DataClient for DeriveDataClient {
 
             for record in &result.funding_rate_history {
                 match parse_funding_rate_history_record(record, instrument_id, None, ts_init) {
-                    Ok(update) => updates.push(update),
+                    Ok(update) => {
+                        let within_start = start_nanos.is_none_or(|nanos| update.ts_event >= nanos);
+                        let within_end = end_nanos.is_none_or(|nanos| update.ts_event <= nanos);
+                        if within_start && within_end {
+                            updates.push(update);
+                        }
+                    }
                     Err(e) => log::warn!(
                         "Failed to parse Derive funding rate record for {instrument_id} at {}: {e}",
                         record.timestamp,
@@ -2853,6 +2879,10 @@ fn truncated_payload_snippet(raw: &str) -> String {
 
     format!("{}...(truncated)", &raw[..end])
 }
+
+#[cfg(test)]
+#[path = "../tests/integration/data_client.rs"]
+mod data_client_tests;
 
 #[cfg(test)]
 mod tests {

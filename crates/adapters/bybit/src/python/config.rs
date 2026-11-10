@@ -153,6 +153,7 @@ impl BybitExecutionClientConfig {
         margin_mode = None,
         smp_type = None,
         transport_backend = None,
+        use_ws_execution_fast = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -177,6 +178,7 @@ impl BybitExecutionClientConfig {
         margin_mode: Option<BybitMarginMode>,
         smp_type: Option<String>,
         transport_backend: Option<TransportBackend>,
+        use_ws_execution_fast: Option<bool>,
     ) -> PyResult<Self> {
         let smp_type = smp_type
             .map(|value| parse_smp_type(&value))
@@ -208,6 +210,7 @@ impl BybitExecutionClientConfig {
                 .unwrap_or(defaults.use_spot_position_reports),
             auto_repay_spot_borrows: auto_repay_spot_borrows
                 .unwrap_or(defaults.auto_repay_spot_borrows),
+            use_ws_execution_fast: use_ws_execution_fast.unwrap_or(defaults.use_ws_execution_fast),
             futures_leverages: None,
             position_mode: None,
             margin_mode,
@@ -302,6 +305,65 @@ mod tests {
                     config.getattr("product_types").unwrap().extract().unwrap();
                 assert_eq!(actual, values);
             }
+        });
+    }
+
+    #[rstest]
+    #[case::default(None, false)]
+    #[case::enabled(Some(true), true)]
+    #[case::disabled(Some(false), false)]
+    fn test_python_execution_config_fast_selection(
+        #[case] configured: Option<bool>,
+        #[case] expected: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            if let Some(configured) = configured {
+                kwargs
+                    .set_item("use_ws_execution_fast", configured)
+                    .unwrap();
+            }
+
+            let config = py
+                .get_type::<BybitExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let actual = config
+                .getattr("use_ws_execution_fast")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap();
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[rstest]
+    fn test_python_execution_config_fast_parameter_is_last() {
+        Python::initialize();
+        Python::attach(|py| {
+            let inspect = py.import("inspect").unwrap();
+            let signature = inspect
+                .call_method1("signature", (py.get_type::<BybitExecutionClientConfig>(),))
+                .unwrap();
+            let parameters = signature.getattr("parameters").unwrap();
+            let keys = parameters.call_method0("keys").unwrap();
+            let names = py
+                .import("builtins")
+                .unwrap()
+                .call_method1("list", (keys,))
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+
+            assert_eq!(
+                names.last().map(String::as_str),
+                Some("use_ws_execution_fast")
+            );
+            assert_eq!(
+                names.get(names.len() - 2).map(String::as_str),
+                Some("transport_backend")
+            );
         });
     }
 }

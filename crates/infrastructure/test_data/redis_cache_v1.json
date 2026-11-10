@@ -1,0 +1,186 @@
+{
+  "currencies": {
+    "BTC": {
+      "precision": 8,
+      "iso4217": 0,
+      "name": "Bitcoin",
+      "currency_type": "CRYPTO"
+    },
+    "USDT": {
+      "precision": 8,
+      "iso4217": 0,
+      "name": "Tether",
+      "currency_type": "CRYPTO"
+    }
+  },
+  "instrument": {
+    "type": "CurrencyPair",
+    "id": "BTCUSDT.BINANCE",
+    "raw_symbol": "BTCUSDT",
+    "base_currency": "BTC",
+    "quote_currency": "USDT",
+    "price_precision": 2,
+    "price_increment": "0.01",
+    "size_precision": 6,
+    "size_increment": "0.000001",
+    "multiplier": "1",
+    "lot_size": null,
+    "max_quantity": "9000",
+    "min_quantity": "0.000001",
+    "max_notional": null,
+    "min_notional": null,
+    "max_price": "1000000",
+    "min_price": "0.01",
+    "margin_init": "0.001",
+    "margin_maint": "0.001",
+    "maker_fee": "0.0001",
+    "taker_fee": "0.0002",
+    "ts_event": "123",
+    "ts_init": "456",
+    "tick_scheme_name": null,
+    "info": null
+  },
+  "order_initialized": {
+    "type": "OrderInitialized",
+    "trader_id": "TRADER-001",
+    "strategy_id": "S-001",
+    "instrument_id": "BTCUSDT.BINANCE",
+    "client_order_id": "O-V1-001",
+    "order_side": "BUY",
+    "order_type": "LIMIT",
+    "quantity": "1.234567",
+    "time_in_force": "GTD",
+    "post_only": true,
+    "reduce_only": false,
+    "quote_quantity": false,
+    "options": {
+      "price": "12345.67",
+      "expire_time_ns": "1234567890123456789",
+      "display_qty": "0.123456"
+    },
+    "emulation_trigger": "NO_TRIGGER",
+    "trigger_instrument_id": null,
+    "contingency_type": "NO_CONTINGENCY",
+    "order_list_id": null,
+    "linked_order_ids": null,
+    "parent_order_id": null,
+    "exec_algorithm_id": null,
+    "exec_algorithm_params": null,
+    "exec_spawn_id": null,
+    "tags": null,
+    "event_id": "11111111-1111-4111-8111-111111111111",
+    "ts_event": "100",
+    "ts_init": "100",
+    "reconciliation": false
+  },
+  "account_state": {
+    "type": "AccountState",
+    "account_id": "BINANCE-001",
+    "account_type": "CASH",
+    "base_currency": null,
+    "balances": [
+      {
+        "type": "AccountBalance",
+        "total": "12345.67890123",
+        "locked": "123.45678901",
+        "free": "12222.22211222",
+        "currency": "USDT"
+      }
+    ],
+    "margins": [],
+    "reported": true,
+    "info": null,
+    "event_id": "22222222-2222-4222-8222-222222222222",
+    "ts_event": "200",
+    "ts_init": "201"
+  },
+  "actor_state": {
+    "opaque": "AH//",
+    "text": "c3RhdGU="
+  },
+  "strategy_state": {
+    "opaque": "AQID",
+    "text": "c3RyYXRlZ3k="
+  },
+  "order_submitted": {
+    "trader_id": "TRADER-001",
+    "strategy_id": "S-001",
+    "instrument_id": "BTCUSDT.BINANCE",
+    "client_order_id": "O-V1-001",
+    "account_id": "BINANCE-001",
+    "reconciliation": false,
+    "type": "OrderSubmitted",
+    "event_id": "55555555-5555-4555-8555-555555555555",
+    "ts_event": "110",
+    "ts_init": "111"
+  },
+  "order_accepted": {
+    "trader_id": "TRADER-001",
+    "strategy_id": "S-001",
+    "instrument_id": "BTCUSDT.BINANCE",
+    "client_order_id": "O-V1-001",
+    "account_id": "BINANCE-001",
+    "reconciliation": false,
+    "type": "OrderAccepted",
+    "venue_order_id": "VENUE-V1",
+    "event_id": "66666666-6666-4666-8666-666666666666",
+    "ts_event": "120",
+    "ts_init": "121"
+  },
+  "order_filled": {
+    "trader_id": "TRADER-001",
+    "strategy_id": "S-001",
+    "instrument_id": "BTCUSDT.BINANCE",
+    "client_order_id": "O-V1-001",
+    "account_id": "BINANCE-001",
+    "reconciliation": false,
+    "type": "OrderFilled",
+    "venue_order_id": "VENUE-V1",
+    "trade_id": "TRADE-V1",
+    "position_id": "P-V1",
+    "order_side": "BUY",
+    "order_type": "LIMIT",
+    "last_qty": "0.234567",
+    "last_px": "12345.67",
+    "currency": "USDT",
+    "commission": "0.12345678 USDT",
+    "liquidity_side": "MAKER",
+    "event_id": "44444444-4444-4444-8444-444444444444",
+    "ts_event": "300",
+    "ts_init": "301",
+    "info": null
+  },
+  "margin_account": {
+    "type": "AccountState",
+    "account_id": "BINANCE-MARGIN-001",
+    "account_type": "MARGIN",
+    "base_currency": "USDT",
+    "balances": [
+      {
+        "type": "AccountBalance",
+        "total": "999",
+        "locked": "100",
+        "free": "899",
+        "currency": "USDT"
+      }
+    ],
+    "margins": [
+      {
+        "type": "MarginBalance",
+        "initial": "12.34",
+        "maintenance": "5.67",
+        "currency": "USDT",
+        "instrument_id": "BTCUSDT.BINANCE"
+      }
+    ],
+    "reported": false,
+    "info": null,
+    "event_id": "77777777-7777-4777-8777-777777777777",
+    "ts_event": "700",
+    "ts_init": "701"
+  },
+  "native_info": {
+    "ts_source": "1970-01-01T00:00:00.000000456Z",
+    "label": "legacy-source"
+  }
+}

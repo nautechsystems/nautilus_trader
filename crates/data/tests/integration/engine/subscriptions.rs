@@ -1064,6 +1064,97 @@ fn test_execute_subscribe_instrument(
 }
 
 #[rstest]
+#[case::start(false)]
+#[case::reset(true)]
+fn test_stopped_engine_blocks_new_physical_subscriptions(
+    #[case] reset: bool,
+    #[values(false, true)] default_client: bool,
+    #[values(false, true)] register_after_stop: bool,
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let client_id = ClientId::test_default();
+    let venue = Venue::test_default();
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+
+    if register_after_stop {
+        data_engine.stop();
+    }
+
+    if default_client {
+        let client = MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(Rc::clone(&recorder)),
+        );
+        let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+        data_engine.register_default_client(adapter);
+    } else {
+        register_mock_client(
+            clock,
+            cache,
+            client_id,
+            venue,
+            None,
+            &recorder,
+            &mut data_engine,
+        );
+    }
+
+    if !register_after_stop {
+        data_engine.stop();
+    }
+
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(data_engine.connect())
+        .unwrap();
+
+    let subscribe = || {
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(12),
+            None,
+            None,
+        ))
+    };
+
+    let blocked = subscribe();
+    data_engine.execute(DataCommand::Subscribe(blocked.clone()));
+    assert!(recorder.borrow().is_empty());
+    assert!(data_engine.subscribed_quotes().is_empty());
+
+    data_engine.execute(DataCommand::Unsubscribe(blocked.into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::from(13),
+        None,
+    )));
+    assert!(recorder.borrow().is_empty());
+
+    if reset {
+        data_engine.reset();
+    } else {
+        data_engine.start();
+    }
+
+    assert!(recorder.borrow().is_empty());
+
+    let fresh = DataCommand::Subscribe(subscribe());
+    data_engine.execute(fresh.clone());
+    assert_eq!(data_engine.subscribed_quotes(), vec![audusd_sim.id]);
+    assert_eq!(recorder.borrow().as_slice(), &[fresh]);
+}
+
+#[rstest]
 fn test_execute_subscribe_quotes(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -1382,6 +1473,7 @@ batch_subscription_tests!(
 
 #[rstest]
 fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1420,6 +1512,9 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
     );
     let sub_cmd_a = DataCommand::Subscribe(SubscribeCommand::Quotes(sub_a));
     data_engine.execute(sub_cmd_a.clone());
+    if stopped {
+        data_engine.stop();
+    }
 
     let sub_b = SubscribeQuotes::new(
         audusd_sim.id,
@@ -1898,11 +1993,13 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
         data_engine.execute(DataCommand::Subscribe(cmd));
 
         assert_only_streaming_type(&stub_msgbus.borrow(), expected, name);
+        data_engine.reset();
     }
 }
 
 #[rstest]
 fn test_external_client_releases_after_final_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -1941,12 +2038,21 @@ fn test_external_client_releases_after_final_owner(
     let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
     msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
 
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(first_subscribe.clone()));
     data_engine.execute(DataCommand::Subscribe(second_subscribe));
 
     assert_eq!(
         serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
-        serde_json::to_value([first_subscribe]).unwrap(),
+        serde_json::to_value(if stopped {
+            vec![]
+        } else {
+            vec![first_subscribe]
+        })
+        .unwrap(),
     );
 
     let (unsubscribe_handler, unsubscribe_saver) =
@@ -3459,6 +3565,44 @@ fn test_synthetic_trades_release_after_final_owner(
 
 #[cfg(feature = "defi")]
 #[rstest]
+fn test_stopped_engine_blocks_new_defi_subscriptions(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let subscribe = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        chain: Blockchain::Ethereum,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(25),
+        params: None,
+    });
+
+    data_engine.stop();
+    data_engine.execute(DataCommand::DefiSubscribe(subscribe.clone()));
+    data_engine.execute(DataCommand::DefiUnsubscribe(
+        subscribe.into_unsubscribe(UUID4::new(), UnixNanos::from(26)),
+    ));
+    assert!(data_engine.subscribed_blocks().is_empty());
+    assert!(recorder.borrow().is_empty());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
 fn test_execute_subscribe_blocks(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -4702,16 +4846,19 @@ fn non_streamable_subscribe_cases(
         ),
         (
             "option chain",
-            SubscribeCommand::OptionChain(SubscribeOptionChain::new(
-                series_id,
-                StrikeRange::Fixed(vec![Price::from("50000")]),
-                Some(1_000),
-                UUID4::new(),
-                UnixNanos::default(),
-                Some(client_id),
-                Some(venue),
-                None,
-            )),
+            SubscribeCommand::OptionChain(
+                SubscribeOptionChain::new(
+                    series_id,
+                    StrikeRange::Fixed(vec![Price::from("50000")]),
+                    Some(1_000),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    Some(client_id),
+                    Some(venue),
+                    None,
+                )
+                .unwrap(),
+            ),
         ),
     ]
 }
@@ -5265,7 +5412,8 @@ fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
     let mut fields = serde_json::json!({"instrument_ids": [first, second], "client_id": client_id,
         "venue": venue, "command_id": UUID4::new(), "ts_init": 41, "correlation_id": UUID4::new(), "params": {"owner": 59}});
 
-    if family.starts_with("Book") {
+    let book = family.starts_with("Book");
+    if book {
         fields["book_type"] = serde_json::json!(BookType::L2_MBP);
         fields["depth"] = serde_json::json!(7);
         if family == "BookSnapshots" {
@@ -5282,8 +5430,24 @@ fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
     fields["params"] = serde_json::json!({"owner": 61});
     let overlapping: SubscribeCommand =
         serde_json::from_value(serde_json::json!({family: fields})).unwrap();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [false; 3]
+    );
     engine.execute_subscribe(original.clone()).unwrap();
     engine.execute_subscribe(overlapping.clone()).unwrap();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [book; 3]
+    );
     let first_release_id = UUID4::new();
     engine
         .execute_unsubscribe(&original.clone().into_unsubscribe(
@@ -5292,6 +5456,14 @@ fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
             None,
         ))
         .unwrap();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [false, book, book]
+    );
     let after_first_release = releases.get_messages();
     let final_release_id = UUID4::new();
     engine
@@ -5301,6 +5473,14 @@ fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
             None,
         ))
         .unwrap();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [false; 3]
+    );
     let expected_first = original
         .with_instrument_ids(first)
         .unwrap()
@@ -5327,6 +5507,24 @@ fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
     assert_eq!(
         serde_json::to_value(releases.get_messages()).unwrap(),
         serde_json::to_value(expected_final).unwrap()
+    );
+    engine.execute_subscribe(overlapping).unwrap();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [false, book, book]
+    );
+    engine.reset();
+    assert_eq!(
+        [
+            engine.has_book_subscription(&first),
+            engine.has_book_subscription(&second),
+            engine.has_book_subscription(&third)
+        ],
+        [false; 3]
     );
 }
 

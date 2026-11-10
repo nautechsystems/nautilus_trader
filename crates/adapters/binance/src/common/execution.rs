@@ -20,12 +20,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use indexmap::IndexMap;
 use nautilus_common::enums::LogLevel;
+use nautilus_core::UnixNanos;
 use nautilus_live::{ExecutionClientCore, task::TaskGroup};
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::AccountId,
+    identifiers::{AccountId, VenueOrderId},
     orders::{Order, OrderAny},
+    reports::OrderStatusReport,
 };
 
 pub(crate) fn active_orders(core: &ExecutionClientCore) -> Vec<OrderAny> {
@@ -57,6 +60,24 @@ pub(crate) fn log_report_receipt(count: usize, report_type: &str, level: LogLeve
     };
     let plural = if count == 1 { "" } else { "s" };
     log::log!(level, "Received {count} {report_type}{plural}");
+}
+
+pub(crate) fn merge_order_history(
+    reports: &mut IndexMap<VenueOrderId, OrderStatusReport>,
+    history: Vec<OrderStatusReport>,
+    start: Option<UnixNanos>,
+    end: UnixNanos,
+) {
+    for report in history {
+        if !report.order_status.is_closed()
+            || start.is_some_and(|start| report.ts_last < start)
+            || report.ts_last > end
+        {
+            continue;
+        }
+
+        reports.entry(report.venue_order_id).or_insert(report);
+    }
 }
 
 /// Spawns an async task and tracks its handle in `pending_tasks`.
@@ -141,7 +162,7 @@ mod tests {
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
-        enums::{AccountType, OmsType, OrderType},
+        enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
         events::AccountState,
         identifiers::{AccountId, TraderId},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -151,6 +172,90 @@ mod tests {
 
     use super::*;
     use crate::common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE};
+
+    #[rstest]
+    #[case::before_start(OrderStatus::Filled, 9, Some(10), false)]
+    #[case::at_start(OrderStatus::Filled, 10, Some(10), true)]
+    #[case::at_end(OrderStatus::Canceled, 20, Some(10), true)]
+    #[case::after_end(OrderStatus::Filled, 21, Some(10), false)]
+    #[case::unbounded_start(OrderStatus::Expired, 1, None, true)]
+    #[case::open(OrderStatus::Accepted, 15, Some(10), false)]
+    #[case::partial(OrderStatus::PartiallyFilled, 15, Some(10), false)]
+    fn test_merge_order_history_bounds(
+        #[case] status: OrderStatus,
+        #[case] timestamp: u64,
+        #[case] start: Option<u64>,
+        #[case] included: bool,
+    ) {
+        let report = OrderStatusReport::new(
+            AccountId::from("BINANCE-001"),
+            "BTCUSDT.BINANCE".into(),
+            Some("history-order".into()),
+            "12345".into(),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::from("0.123"),
+            Quantity::from("0.012"),
+            1.into(),
+            timestamp.into(),
+            30.into(),
+            None,
+        );
+
+        let expected = if included {
+            IndexMap::from([(report.venue_order_id, report.clone())])
+        } else {
+            IndexMap::new()
+        };
+
+        let mut reports = IndexMap::new();
+
+        merge_order_history(
+            &mut reports,
+            vec![report],
+            start.map(UnixNanos::from),
+            20.into(),
+        );
+
+        assert_eq!(reports, expected);
+    }
+
+    #[rstest]
+    fn test_merge_order_history_preserves_authoritative_open_report() {
+        let open = OrderStatusReport::new(
+            AccountId::from("BINANCE-001"),
+            "BTCUSDT.BINANCE".into(),
+            Some("current-order".into()),
+            "12345".into(),
+            Some(OrderSide::Sell),
+            OrderType::Limit,
+            TimeInForce::Ioc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("0.234"),
+            Quantity::from("0.023"),
+            1.into(),
+            20.into(),
+            30.into(),
+            None,
+        );
+        let mut stale = open.clone();
+        stale.client_order_id = Some("stale-order".into());
+        stale.order_status = OrderStatus::Canceled;
+        stale.ts_last = 15.into();
+        let expected = IndexMap::from([(open.venue_order_id, open)]);
+        let mut reports = expected.clone();
+
+        merge_order_history(
+            &mut reports,
+            vec![stale.clone(), stale],
+            Some(10.into()),
+            20.into(),
+        );
+
+        assert_eq!(reports, expected);
+    }
 
     #[rstest]
     #[case::accepted(

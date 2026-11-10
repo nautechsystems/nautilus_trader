@@ -479,7 +479,7 @@ fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
 #[rstest]
 #[tokio::test]
 #[expect(clippy::await_holding_refcell_ref)] // Single-threaded test
-async fn test_data_engine_connect_continues_with_failing_client(
+async fn test_data_engine_connect_reports_failing_client(
     #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
 ) {
     let mut data_engine = data_engine.borrow_mut();
@@ -492,8 +492,13 @@ async fn test_data_engine_connect_continues_with_failing_client(
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, None);
 
-    // Connect logs errors but does not fail
-    data_engine.connect().await;
+    let e = data_engine.connect().await.unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        "Failed to connect data clients: FAILING_CLIENT"
+    );
+    assert_eq!(e.chain().count(), 1);
 }
 
 #[rstest]
@@ -513,7 +518,7 @@ async fn test_data_engine_connect_succeeds_with_working_client(
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, None);
 
-    data_engine.connect().await;
+    data_engine.connect().await.unwrap();
 }
 
 #[rstest]
@@ -572,10 +577,16 @@ async fn test_data_engine_connect_omits_provider_errors(
 
     take_connection_logs();
 
-    tokio::time::timeout(std::time::Duration::from_secs(1), data_engine.connect())
+    let e = tokio::time::timeout(std::time::Duration::from_secs(1), data_engine.connect())
         .await
-        .expect("clients must connect concurrently");
+        .expect("clients must connect concurrently")
+        .unwrap_err();
 
+    assert_eq!(
+        e.to_string(),
+        "Failed to connect data clients: FAILING_CLIENT"
+    );
+    assert_eq!(e.chain().count(), 1);
     assert_eq!(
         take_connection_logs(),
         vec![(
@@ -596,6 +607,84 @@ async fn test_data_engine_connect_omits_provider_errors(
             .is_disconnected()
     );
     assert!(!data_engine.check_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_engine_connect_reports_all_failed_clients_without_provider_errors(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    capture_connection_logs();
+    let mut engine = DataEngine::new(clock, cache, None);
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let barrier = Rc::new(tokio::sync::Barrier::new(3));
+
+    for (client_id, error_message) in [
+        ("SECOND", Some("password=SYN-password")),
+        ("HEALTHY", None),
+        ("FIRST", Some("https://SYN-user:SYN-token@example.invalid")),
+    ] {
+        let client_id = ClientId::from(client_id);
+        engine.register_client(
+            DataClientAdapter::new(
+                client_id,
+                None,
+                true,
+                true,
+                Box::new(ConnectionDataClient {
+                    client_id,
+                    error_message,
+                    error_operation: Some("connect"),
+                    barrier: Rc::clone(&barrier),
+                    connected: false,
+                    calls: Rc::clone(&calls),
+                }),
+            ),
+            None,
+        );
+    }
+
+    take_connection_logs();
+    let e = tokio::time::timeout(std::time::Duration::from_secs(1), engine.connect())
+        .await
+        .expect("clients must connect concurrently")
+        .unwrap_err();
+    let mut calls = calls.borrow().clone();
+    calls.sort_by_key(|(client_id, _)| *client_id);
+
+    assert_eq!(
+        e.to_string(),
+        "Failed to connect data clients: SECOND, FIRST"
+    );
+    assert_eq!(e.chain().count(), 1);
+    assert_eq!(
+        calls,
+        vec![
+            (ClientId::from("FIRST"), "connect"),
+            (ClientId::from("HEALTHY"), "connect"),
+            (ClientId::from("SECOND"), "connect"),
+        ]
+    );
+    assert_eq!(
+        take_connection_logs(),
+        vec![
+            (
+                Level::Error,
+                "Failed to connect data client SECOND: connection failed".into()
+            ),
+            (
+                Level::Error,
+                "Failed to connect data client FIRST: connection failed".into()
+            ),
+        ]
+    );
+    assert!(
+        engine
+            .get_client(Some(&ClientId::from("HEALTHY")), None)
+            .unwrap()
+            .is_connected()
+    );
 }
 
 #[rstest]
@@ -685,6 +774,76 @@ fn test_partial_subscription_logs_only_failed_members(
             )
         )]
     );
+}
+
+#[rstest]
+fn test_external_client_book_batch_logs_each_failed_member(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let first = InstrumentId::from("FIRST.SIM");
+    let second = InstrumentId::from("SECOND.SIM");
+    let fresh = InstrumentId::from("FRESH.SIM");
+
+    let config = DataEngineConfig {
+        external_clients: Some(vec!["EXTERNAL".into(), "OTHER".into()]),
+        ..Default::default()
+    };
+
+    let mut engine = DataEngine::new(clock, cache, Some(config));
+
+    let occupied = SubscribeBookDeltas::new(
+        vec![first, second],
+        BookType::L2_MBP,
+        Some("OTHER".into()),
+        None,
+        UUID4::new(),
+        123.into(),
+        None,
+        true,
+        None,
+        None,
+    );
+    engine
+        .execute_subscribe(SubscribeCommand::BookDeltas(occupied))
+        .unwrap();
+    let command_id = UUID4::new();
+
+    let command = SubscribeBookDeltas::new(
+        vec![fresh, first, second],
+        BookType::L2_MBP,
+        Some("EXTERNAL".into()),
+        None,
+        command_id,
+        456.into(),
+        None,
+        true,
+        None,
+        None,
+    );
+    capture_connection_logs();
+
+    let error = engine
+        .execute_subscribe(SubscribeCommand::BookDeltas(command))
+        .unwrap_err();
+
+    let errors: Vec<_> = take_connection_logs()
+        .into_iter()
+        .filter(|(level, _)| *level == Level::Error)
+        .collect();
+    let expected: Vec<_> = [first, second].into_iter().map(|id| (
+        Level::Error,
+        format!("External subscribe preparation failed: command={command_id}, client=EXTERNAL, subscription=BookDeltas({id:?}): Conflicting book subscription for {id}: shared book sources must use the same client, book type, depth, and parameters"),
+    )).collect();
+    assert_eq!(errors, expected);
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Conflicting book subscription for {first}: shared book sources must use the same client, book type, depth, and parameters"
+        )
+    );
+    assert!(engine.has_book_subscription(&fresh));
 }
 
 fn capture_connection_logs() {

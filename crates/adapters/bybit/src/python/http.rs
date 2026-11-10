@@ -538,8 +538,8 @@ impl BybitHttpClient {
     /// Request instruments for a given product type.
     ///
     /// When `base_coin` is provided, the request is narrowed to that base coin.
-    /// This is required for `Option`: Bybit's API returns only `BTC` options when
-    /// `baseCoin` is omitted.
+    /// `Option` requests with neither `symbol` nor `base_coin` load all listed
+    /// base coins.
     ///
     /// # Errors
     ///
@@ -775,7 +775,8 @@ impl BybitHttpClient {
         client_order_id=None,
         venue_order_id=None,
         quantity=None,
-        price=None
+        price=None,
+        trigger_price=None
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -788,6 +789,7 @@ impl BybitHttpClient {
         venue_order_id: Option<VenueOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -801,6 +803,7 @@ impl BybitHttpClient {
                     venue_order_id,
                     quantity,
                     price,
+                    trigger_price,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -809,7 +812,9 @@ impl BybitHttpClient {
         })
     }
 
-    /// Cancel an order.
+    /// Cancels an order and returns its confirmed terminal status.
+    ///
+    /// Polls until the order closes, bounded by the configured HTTP timeout.
     ///
     /// # Errors
     ///
@@ -818,6 +823,7 @@ impl BybitHttpClient {
     /// - The request fails.
     /// - The order doesn't exist.
     /// - The API returns an error.
+    /// - Terminal status confirmation times out.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(

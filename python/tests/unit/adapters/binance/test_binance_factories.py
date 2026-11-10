@@ -57,6 +57,7 @@ def test_binance_config_proxy_readback_exposes_presence_only() -> None:
     proxy_url = "http://user:password@proxy.example.test"
     data_config = BinanceDataClientConfig(proxy_url=proxy_url)
     data_config_without_proxy = BinanceDataClientConfig()
+
     exec_config = BinanceExecutionClientConfig(
         account_id=AccountId("BINANCE-001"),
         proxy_url=proxy_url,

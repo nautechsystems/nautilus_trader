@@ -96,12 +96,13 @@ pub mod book;
 pub mod indicator;
 pub mod momentum;
 pub mod ratio;
-mod support;
 pub mod testing;
 pub mod volatility;
 
-#[cfg(test)]
-mod stubs;
+mod support;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(test)]
+mod stubs;

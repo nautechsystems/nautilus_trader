@@ -8,12 +8,14 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.13-3.14
+# - Python 3.13-3.15
 # - NautilusTrader 2.x installed (`pip install -U --pre nautilus_trader`). The `--pre`
 #   flag is required while 2.x ships as `2.0.0rcN`; without it pip installs the 1.x
 #   line, whose Python API differs and cannot run this page.
 # - NumPy and pandas (`pip install numpy pandas`). The wheel declares no runtime
 #   dependencies, so it does not pull them in.
+#
+# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %% [markdown]
 # ## Write a strategy
@@ -143,6 +145,7 @@ from nautilus_trader.model import Venue
 # Create a EUR/USD instrument on the SIM venue
 EUR = Currency.from_str("EUR")
 USD = Currency.from_str("USD")
+
 EURUSD = CurrencyPair(
     instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     raw_symbol=Symbol("EUR/USD"),
@@ -164,6 +167,7 @@ rng = np.random.default_rng(42)
 n = 10_000
 price = 1.10 + np.cumsum(rng.normal(0, 0.0002, n))
 spread = np.abs(rng.normal(0, 0.0003, n))
+
 bars_df = pd.DataFrame(
     {
         "open": price,
@@ -173,6 +177,7 @@ bars_df = pd.DataFrame(
     },
     index=pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC"),
 )
+
 bars_df["high"] = bars_df[["open", "high", "close"]].max(axis=1)
 bars_df["low"] = bars_df[["open", "low", "close"]].min(axis=1)
 
@@ -235,6 +240,7 @@ strategy = EMACross(
         trade_size=Decimal(100000),
     ),
 )
+
 engine.add_strategy(strategy)
 
 # Run the backtest

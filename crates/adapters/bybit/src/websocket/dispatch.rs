@@ -20,15 +20,19 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    hash::Hash,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -36,6 +40,7 @@ use nautilus_model::{
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderTriggered, OrderUpdated,
     },
+    fees::MakerTakerFeeRates,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
     },
@@ -59,11 +64,11 @@ use crate::{
     common::{
         enums::{BybitExecType, BybitOrderSide, BybitOrderStatus, BybitProductType},
         parse::{
-            bybit_rejection_due_post_only, get_currency, make_bybit_symbol, parse_millis_timestamp,
-            parse_price_with_precision, parse_quantity_with_precision,
+            bybit_rejection_due_post_only, extract_raw_symbol, get_currency, make_bybit_symbol,
+            parse_millis_timestamp, parse_price_with_precision, parse_quantity_with_precision,
         },
     },
-    http::error::is_bybit_ambiguous_order_error_code,
+    http::{error::is_bybit_ambiguous_order_error_code, models::BybitFeeRate},
     repay::RepayRequest,
 };
 
@@ -101,6 +106,7 @@ pub type PendingRequestData = (
     Vec<ClientOrderId>,
     Vec<Option<VenueOrderId>>,
     PendingOperation,
+    Vec<Option<UUID4>>,
 );
 
 /// Snapshot of an order's price, quantity, and trigger price at last dispatch.
@@ -120,13 +126,66 @@ struct SpotRepayFill {
 }
 
 #[derive(Debug)]
+struct RecentIds<T: Eq + Hash> {
+    ids: DashSet<T>,
+    order: Mutex<VecDeque<T>>,
+}
+
+impl<T: Eq + Hash> Default for RecentIds<T> {
+    fn default() -> Self {
+        Self {
+            ids: DashSet::default(),
+            order: Mutex::new(VecDeque::new()),
+        }
+    }
+}
+
+impl<T: Copy + Eq + Hash> RecentIds<T> {
+    fn insert(&self, id: T) -> bool {
+        let mut order = self.order.lock().unwrap_or_else(|e| e.into_inner());
+
+        if self.ids.contains(&id) {
+            return false;
+        }
+
+        if order.len() == DEDUP_CAPACITY
+            && let Some(oldest) = order.pop_front()
+        {
+            self.ids.remove(&oldest);
+        }
+
+        order.push_back(id);
+        self.ids.insert(id)
+    }
+
+    fn contains(&self, id: &T) -> bool {
+        self.ids.contains(id)
+    }
+
+    fn remove(&self, id: T) {
+        let mut order = self.order.lock().unwrap_or_else(|e| e.into_inner());
+        self.ids.remove(&id);
+        order.retain(|existing| *existing != id);
+    }
+}
+
+#[derive(Debug)]
 pub struct WsDispatchState {
+    pub fast_execution: bool,
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
+    pub order_venue_ids: DashMap<ClientOrderId, VenueOrderId>,
+    pub venue_order_ids: DashMap<VenueOrderId, ClientOrderId>,
+    pub fee_rates: DashMap<InstrumentId, MakerTakerFeeRates>,
     pub pending_requests: DashMap<String, PendingRequestData>,
     pub order_snapshots: DashMap<ClientOrderId, OrderStateSnapshot>,
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
+    fast_execution_ids: RecentIds<TradeId>,
+    fast_filled_quantities: DashMap<ClientOrderId, Quantity>,
+    pub terminal_order_quantities: DashMap<ClientOrderId, Quantity>,
+    untracked_order_ids: RecentIds<VenueOrderId>,
+    pending_fast_executions: DashMap<VenueOrderId, Vec<BybitWsAccountExecutionFast>>,
     spot_repay_fills: DashMap<ClientOrderId, SpotRepayFill>,
     repay_tx: ArcSwapOption<tokio::sync::mpsc::UnboundedSender<RepayRequest>>,
     clearing: AtomicBool,
@@ -135,12 +194,21 @@ pub struct WsDispatchState {
 impl Default for WsDispatchState {
     fn default() -> Self {
         Self {
+            fast_execution: false,
             order_identities: DashMap::new(),
+            order_venue_ids: DashMap::new(),
+            venue_order_ids: DashMap::new(),
+            fee_rates: DashMap::new(),
             pending_requests: DashMap::new(),
             order_snapshots: DashMap::new(),
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
+            fast_execution_ids: RecentIds::default(),
+            fast_filled_quantities: DashMap::new(),
+            terminal_order_quantities: DashMap::new(),
+            untracked_order_ids: RecentIds::default(),
+            pending_fast_executions: DashMap::new(),
             spot_repay_fills: DashMap::new(),
             repay_tx: ArcSwapOption::empty(),
             clearing: AtomicBool::new(false),
@@ -149,7 +217,14 @@ impl Default for WsDispatchState {
 }
 
 impl WsDispatchState {
-    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
+    pub(crate) fn new(fast_execution: bool) -> Self {
+        Self {
+            fast_execution,
+            ..Default::default()
+        }
+    }
+
+    fn evict_if_full<T: Eq + Hash>(&self, set: &DashSet<T>) {
         if set.len() >= DEDUP_CAPACITY
             && self
                 .clearing
@@ -169,6 +244,14 @@ impl WsDispatchState {
     fn insert_filled(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
+    }
+
+    fn insert_fast_execution(&self, trade_id: TradeId) -> bool {
+        self.fast_execution_ids.insert(trade_id)
+    }
+
+    fn remove_fast_execution(&self, trade_id: TradeId) {
+        self.fast_execution_ids.remove(trade_id);
     }
 
     fn insert_triggered(&self, cid: ClientOrderId) {
@@ -201,11 +284,11 @@ impl WsDispatchState {
 /// reports for downstream reconciliation.
 pub fn dispatch_ws_message(
     message: &BybitWsMessage,
-    emitter: &ExecutionEventEmitter,
-    state: &WsDispatchState,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     clock: &AtomicTime,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
 ) {
     match message {
         BybitWsMessage::AccountOrder(msg) => {
@@ -217,7 +300,8 @@ pub fn dispatch_ws_message(
                     log::warn!("No instrument for order update: {symbol}");
                     continue;
                 };
-                dispatch_order_update(order, instrument, emitter, state, account_id, ts_init);
+
+                dispatch_order_update(order, instrument, account_id, ts_init, state, emitter);
             }
         }
         BybitWsMessage::AccountExecution(msg) => {
@@ -241,7 +325,10 @@ pub fn dispatch_ws_message(
                     log::warn!("No instrument for fast-execution update: {symbol}");
                     continue;
                 };
-                dispatch_execution_fill_fast(exec, instrument, emitter, state, account_id, ts_init);
+
+                dispatch_execution_fill_fast(
+                    exec, instrument, account_id, ts_init, true, state, emitter,
+                );
             }
         }
         BybitWsMessage::AccountWallet(msg) => {
@@ -275,6 +362,9 @@ pub fn dispatch_ws_message(
                 }
             }
         }
+        BybitWsMessage::OrderNotSent { request_id, reason } => {
+            dispatch_order_not_sent(request_id, reason, emitter, state, clock.get_time_ns());
+        }
         BybitWsMessage::OrderResponse(resp) => {
             let ts_init = clock.get_time_ns();
             dispatch_order_response(resp, emitter, state, ts_init);
@@ -284,6 +374,13 @@ pub fn dispatch_ws_message(
         }
         BybitWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");
+            flush_pending_fast_executions(
+                instruments,
+                account_id,
+                clock.get_time_ns(),
+                state,
+                emitter,
+            );
         }
         BybitWsMessage::Auth(_)
         | BybitWsMessage::Orderbook(_)
@@ -295,6 +392,72 @@ pub fn dispatch_ws_message(
     }
 }
 
+pub(crate) fn cache_execution_fee_rates(
+    state: &WsDispatchState,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    product_type: BybitProductType,
+    fee_rates: Vec<BybitFeeRate>,
+) -> usize {
+    let mut parsed_rates = AHashMap::new();
+
+    for fee_rate in fee_rates {
+        let key = if product_type == BybitProductType::Option {
+            fee_rate.base_coin
+        } else {
+            Some(fee_rate.symbol)
+        };
+
+        let Some(key) = key.filter(|key| !key.is_empty()) else {
+            log::warn!(
+                "Skipping execution fee rate with no symbol or base coin for {product_type:?}"
+            );
+            continue;
+        };
+
+        match parse_execution_fee_rate(&fee_rate) {
+            Ok(rates) => {
+                parsed_rates.insert(key, rates);
+            }
+            Err(e) => log::warn!("Skipping invalid execution fee rate for {key}: {e}"),
+        }
+    }
+
+    let mut cached = 0;
+
+    for instrument in instruments.values().filter(|instrument| {
+        BybitProductType::from_suffix(instrument.id().symbol.as_str()) == Some(product_type)
+    }) {
+        let key = if product_type == BybitProductType::Option {
+            instrument.base_currency().map(|currency| currency.code)
+        } else {
+            Some(Ustr::from(extract_raw_symbol(
+                instrument.id().symbol.as_str(),
+            )))
+        };
+
+        let Some(rates) = key.and_then(|key| parsed_rates.get(&key)) else {
+            continue;
+        };
+
+        state.fee_rates.insert(instrument.id(), *rates);
+        cached += 1;
+    }
+
+    cached
+}
+
+fn parse_execution_fee_rate(fee_rate: &BybitFeeRate) -> anyhow::Result<MakerTakerFeeRates> {
+    let maker = fee_rate
+        .maker_fee_rate
+        .parse::<Decimal>()
+        .with_context(|| format!("invalid makerFeeRate '{}'", fee_rate.maker_fee_rate))?;
+    let taker = fee_rate
+        .taker_fee_rate
+        .parse::<Decimal>()
+        .with_context(|| format!("invalid takerFeeRate '{}'", fee_rate.taker_fee_rate))?;
+    Ok(MakerTakerFeeRates::new(maker, taker))
+}
+
 /// Dispatches a single order status update.
 ///
 /// Tracked orders produce lifecycle events (OrderAccepted, OrderTriggered,
@@ -303,10 +466,10 @@ pub fn dispatch_ws_message(
 fn dispatch_order_update(
     order: &BybitWsAccountOrder,
     instrument: &InstrumentAny,
-    emitter: &ExecutionEventEmitter,
-    state: &WsDispatchState,
     account_id: AccountId,
     ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
 ) {
     let client_order_id = if order.order_link_id.is_empty() {
         None
@@ -317,94 +480,30 @@ fn dispatch_order_update(
     let identity = client_order_id
         .as_ref()
         .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
-
+    let venue_order_id = VenueOrderId::new(order.order_id);
     if let (Some(client_order_id), Some(identity)) = (client_order_id, identity) {
-        let venue_order_id = VenueOrderId::new(order.order_id);
+        record_venue_order_id(client_order_id, venue_order_id, state);
+        drain_pending_fast_executions(
+            venue_order_id,
+            instrument,
+            account_id,
+            ts_init,
+            state,
+            emitter,
+        );
 
         match order.order_status {
             BybitOrderStatus::Created | BybitOrderStatus::New | BybitOrderStatus::Untriggered => {
-                let snapshot = parse_order_snapshot(order, instrument);
-
-                if state.emitted_accepted.contains(&client_order_id)
-                    || state.filled_orders.contains(&client_order_id)
-                    || state.triggered_orders.contains(&client_order_id)
-                {
-                    if let Some(snapshot) = snapshot
-                        && is_snapshot_updated(&snapshot, &client_order_id, state)
-                    {
-                        let updated = OrderUpdated::new(
-                            emitter.trader_id(),
-                            identity.strategy_id,
-                            identity.instrument_id,
-                            client_order_id,
-                            snapshot.quantity,
-                            UUID4::new(),
-                            ts_init,
-                            ts_init,
-                            false,
-                            Some(venue_order_id),
-                            Some(account_id),
-                            snapshot.price,
-                            snapshot.trigger_price,
-                            None,
-                            false,
-                        );
-                        state.order_snapshots.insert(client_order_id, snapshot);
-                        emitter.send_order_event(OrderEventAny::Updated(updated));
-                        return;
-                    }
-                    log::debug!("Skipping duplicate Accepted for {client_order_id}");
-                    return;
-                }
-
-                state.insert_accepted(client_order_id);
-
-                // BBO orders resolve their limit price venue-side: emit
-                // OrderUpdated after OrderAccepted when the seed diverges.
-                let venue_differs_from_submitted = snapshot
-                    .as_ref()
-                    .is_some_and(|s| is_snapshot_updated(s, &client_order_id, state));
-
-                if let Some(snapshot) = snapshot.as_ref() {
-                    state
-                        .order_snapshots
-                        .insert(client_order_id, snapshot.clone());
-                }
-
-                let accepted = OrderAccepted::new(
-                    emitter.trader_id(),
-                    identity.strategy_id,
-                    identity.instrument_id,
+                dispatch_order_created(
+                    order,
+                    instrument,
                     client_order_id,
-                    venue_order_id,
+                    &identity,
                     account_id,
-                    UUID4::new(),
                     ts_init,
-                    ts_init,
-                    false,
+                    state,
+                    emitter,
                 );
-                emitter.send_order_event(OrderEventAny::Accepted(accepted));
-
-                if venue_differs_from_submitted && let Some(snapshot) = snapshot {
-                    let updated = OrderUpdated::new(
-                        emitter.trader_id(),
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        snapshot.quantity,
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
-                        snapshot.price,
-                        snapshot.trigger_price,
-                        None,
-                        false,
-                    );
-                    emitter.send_order_event(OrderEventAny::Updated(updated));
-                }
             }
             BybitOrderStatus::Triggered => {
                 if state.filled_orders.contains(&client_order_id) {
@@ -425,9 +524,9 @@ fn dispatch_order_update(
                     account_id,
                     venue_order_id,
                     &identity,
-                    emitter,
-                    state,
                     ts_init,
+                    state,
+                    emitter,
                 );
                 state.insert_triggered(client_order_id);
                 let triggered = OrderTriggered::new(
@@ -445,56 +544,16 @@ fn dispatch_order_update(
                 emitter.send_order_event(OrderEventAny::Triggered(triggered));
             }
             BybitOrderStatus::Rejected => {
-                let filled_qty = parse_quantity_with_precision(
-                    &order.cum_exec_qty,
-                    instrument.size_precision(),
-                    "order.cumExecQty",
-                )
-                .unwrap_or_default();
-
-                if filled_qty.is_positive() {
-                    // Partially filled then rejected - treat as canceled
-                    ensure_accepted_emitted(
-                        client_order_id,
-                        account_id,
-                        venue_order_id,
-                        &identity,
-                        emitter,
-                        state,
-                        ts_init,
-                    );
-                    let canceled = OrderCanceled::new(
-                        emitter.trader_id(),
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
-                        None,
-                    );
-                    cleanup_terminal(client_order_id, state);
-                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
-                } else {
-                    let reason = if order.reject_reason.is_empty() {
-                        Ustr::from("Order rejected by venue")
-                    } else {
-                        order.reject_reason
-                    };
-                    state.order_identities.remove(&client_order_id);
-                    state.order_snapshots.remove(&client_order_id);
-                    emitter.emit_order_rejected_event(
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        reason.as_str(),
-                        ts_init,
-                        bybit_rejection_due_post_only(reason.as_str()),
-                    );
-                }
+                dispatch_order_rejected(
+                    order,
+                    instrument,
+                    client_order_id,
+                    &identity,
+                    account_id,
+                    ts_init,
+                    state,
+                    emitter,
+                );
             }
             BybitOrderStatus::PartiallyFilled => {
                 // Fills arrive on the execution channel; no event needed here.
@@ -504,139 +563,405 @@ fn dispatch_order_update(
                     account_id,
                     venue_order_id,
                     &identity,
-                    emitter,
-                    state,
                     ts_init,
+                    state,
+                    emitter,
                 );
 
                 // A successful amend on a partially filled order keeps the
                 // PartiallyFilled status. Detect price/qty/trigger changes and
                 // emit OrderUpdated so PendingUpdate resolves.
-                if let Some(snapshot) = parse_order_snapshot(order, instrument)
-                    && is_snapshot_updated(&snapshot, &client_order_id, state)
-                {
-                    let updated = OrderUpdated::new(
-                        emitter.trader_id(),
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        snapshot.quantity,
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
-                        snapshot.price,
-                        snapshot.trigger_price,
-                        None,
-                        false,
-                    );
-                    state.order_snapshots.insert(client_order_id, snapshot);
-                    emitter.send_order_event(OrderEventAny::Updated(updated));
-                }
+                emit_order_updated_if_changed(
+                    order,
+                    instrument,
+                    client_order_id,
+                    &identity,
+                    account_id,
+                    ts_init,
+                    false,
+                    state,
+                    emitter,
+                );
             }
             BybitOrderStatus::Filled => {
-                // Fills arrive on the execution channel; no event needed here.
-                // Ensure accepted was emitted so the fill has a valid prior state.
-                ensure_accepted_emitted(
+                dispatch_order_filled(
+                    order,
+                    instrument,
                     client_order_id,
-                    account_id,
-                    venue_order_id,
                     &identity,
-                    emitter,
-                    state,
+                    account_id,
                     ts_init,
+                    state,
+                    emitter,
                 );
-
-                // Reconcile seed against venue values before the fill (BBO
-                // orders may land directly on Filled).
-                if let Some(snapshot) = parse_order_snapshot(order, instrument)
-                    && is_snapshot_updated(&snapshot, &client_order_id, state)
-                {
-                    let updated = OrderUpdated::new(
-                        emitter.trader_id(),
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        snapshot.quantity,
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
-                        snapshot.price,
-                        snapshot.trigger_price,
-                        None,
-                        false,
-                    );
-                    state.order_snapshots.insert(client_order_id, snapshot);
-                    emitter.send_order_event(OrderEventAny::Updated(updated));
-                }
-                // Identity cleaned up in dispatch_execution_fill when leaves_qty
-                // reaches zero, since there is no guaranteed ordering between
-                // the order and execution topics.
             }
             BybitOrderStatus::Canceled
             | BybitOrderStatus::PartiallyFilledCanceled
             | BybitOrderStatus::Deactivated => {
-                let filled_qty = parse_quantity_with_precision(
-                    &order.cum_exec_qty,
-                    instrument.size_precision(),
-                    "order.cumExecQty",
-                )
-                .unwrap_or_default();
-
-                // Bybit reports a post-only order that would take liquidity as
-                // Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity,
-                // not Rejected. Surface it as OrderRejected carrying due_post_only.
-                if filled_qty.is_zero()
-                    && bybit_rejection_due_post_only(order.reject_reason.as_str())
-                {
-                    cleanup_terminal(client_order_id, state);
-                    emitter.emit_order_rejected_event(
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        order.reject_reason.as_str(),
-                        ts_init,
-                        true,
-                    );
-                } else {
-                    ensure_accepted_emitted(
-                        client_order_id,
-                        account_id,
-                        venue_order_id,
-                        &identity,
-                        emitter,
-                        state,
-                        ts_init,
-                    );
-                    let canceled = OrderCanceled::new(
-                        emitter.trader_id(),
-                        identity.strategy_id,
-                        identity.instrument_id,
-                        client_order_id,
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
-                        None,
-                    );
-                    cleanup_terminal(client_order_id, state);
-                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
-                }
+                dispatch_order_canceled(
+                    order,
+                    instrument,
+                    client_order_id,
+                    &identity,
+                    account_id,
+                    ts_init,
+                    state,
+                    emitter,
+                );
             }
         }
     } else {
+        state.untracked_order_ids.insert(venue_order_id);
+        drain_pending_fast_executions(
+            venue_order_id,
+            instrument,
+            account_id,
+            ts_init,
+            state,
+            emitter,
+        );
+
         // Untracked order: fall back to report for reconciliation
         match super::parse::parse_ws_order_status_report(order, instrument, account_id, ts_init) {
             Ok(report) => emitter.send_order_status_report(report),
             Err(e) => log::error!("Failed to parse order status report: {e}"),
         }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "status handling shares the dispatcher's order context"
+)]
+fn dispatch_order_created(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let snapshot = parse_order_snapshot(order, instrument);
+
+    if state.emitted_accepted.contains(&client_order_id)
+        || state.filled_orders.contains(&client_order_id)
+        || state.triggered_orders.contains(&client_order_id)
+    {
+        if emit_order_updated_if_changed(
+            order,
+            instrument,
+            client_order_id,
+            identity,
+            account_id,
+            ts_init,
+            false,
+            state,
+            emitter,
+        ) {
+            return;
+        }
+
+        log::debug!("Skipping duplicate Accepted for {client_order_id}");
+        return;
+    }
+
+    state.insert_accepted(client_order_id);
+
+    // BBO orders resolve their limit price venue-side: emit
+    // OrderUpdated after OrderAccepted when the seed diverges.
+    let venue_differs_from_submitted = snapshot
+        .as_ref()
+        .is_some_and(|s| is_snapshot_updated(s, &client_order_id, state));
+    if let Some(snapshot) = snapshot.as_ref() {
+        state
+            .order_snapshots
+            .insert(client_order_id, snapshot.clone());
+    }
+
+    let venue_order_id = VenueOrderId::new(order.order_id);
+
+    let accepted = OrderAccepted::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        UUID4::new(),
+        ts_init,
+        ts_init,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Accepted(accepted));
+
+    if venue_differs_from_submitted {
+        emit_order_updated_if_changed(
+            order,
+            instrument,
+            client_order_id,
+            identity,
+            account_id,
+            ts_init,
+            true,
+            state,
+            emitter,
+        );
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "status handling shares the dispatcher's order context"
+)]
+fn dispatch_order_rejected(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let filled_qty = parse_quantity_with_precision(
+        &order.cum_exec_qty,
+        instrument.size_precision(),
+        "order.cumExecQty",
+    )
+    .unwrap_or_default();
+    let venue_order_id = VenueOrderId::new(order.order_id);
+
+    if filled_qty.is_positive() {
+        // Partially filled then rejected - treat as canceled
+        ensure_accepted_emitted(
+            client_order_id,
+            account_id,
+            venue_order_id,
+            identity,
+            ts_init,
+            state,
+            emitter,
+        );
+
+        let canceled = OrderCanceled::new(
+            emitter.trader_id(),
+            identity.strategy_id,
+            identity.instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            false,
+            Some(venue_order_id),
+            Some(account_id),
+            None,
+        );
+        cleanup_terminal_when_ready(client_order_id, filled_qty, state);
+        emitter.send_order_event(OrderEventAny::Canceled(canceled));
+    } else {
+        let reason = if order.reject_reason.is_empty() {
+            Ustr::from("Order rejected by venue")
+        } else {
+            order.reject_reason
+        };
+
+        cleanup_terminal_when_ready(client_order_id, filled_qty, state);
+
+        emitter.emit_order_rejected_event(
+            identity.strategy_id,
+            identity.instrument_id,
+            client_order_id,
+            reason.as_str(),
+            ts_init,
+            bybit_rejection_due_post_only(reason.as_str()),
+        );
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "status handling shares the dispatcher's order context"
+)]
+fn dispatch_order_filled(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    // Fills arrive on the execution channel; no event needed here.
+    // Ensure accepted was emitted so the fill has a valid prior state.
+    let venue_order_id = VenueOrderId::new(order.order_id);
+    ensure_accepted_emitted(
+        client_order_id,
+        account_id,
+        venue_order_id,
+        identity,
+        ts_init,
+        state,
+        emitter,
+    );
+
+    // Reconcile seed against venue values before the fill (BBO
+    // orders may land directly on Filled).
+    emit_order_updated_if_changed(
+        order,
+        instrument,
+        client_order_id,
+        identity,
+        account_id,
+        ts_init,
+        false,
+        state,
+        emitter,
+    );
+
+    if let Ok(terminal_qty) = parse_quantity_with_precision(
+        &order.cum_exec_qty,
+        instrument.size_precision(),
+        "order.cumExecQty",
+    ) {
+        state
+            .terminal_order_quantities
+            .insert(client_order_id, terminal_qty);
+        if state.fast_execution && fast_fill_is_terminal(client_order_id, state) {
+            cleanup_terminal(client_order_id, state);
+        }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "status handling shares the dispatcher's order context"
+)]
+fn dispatch_order_canceled(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let filled_qty = parse_quantity_with_precision(
+        &order.cum_exec_qty,
+        instrument.size_precision(),
+        "order.cumExecQty",
+    )
+    .unwrap_or_default();
+
+    // Bybit reports a post-only order that would take liquidity as
+    // Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity,
+    // not Rejected. Surface it as OrderRejected carrying due_post_only.
+    if filled_qty.is_zero() && bybit_rejection_due_post_only(order.reject_reason.as_str()) {
+        cleanup_terminal_when_ready(client_order_id, filled_qty, state);
+        emitter.emit_order_rejected_event(
+            identity.strategy_id,
+            identity.instrument_id,
+            client_order_id,
+            order.reject_reason.as_str(),
+            ts_init,
+            true,
+        );
+    } else {
+        let venue_order_id = VenueOrderId::new(order.order_id);
+        ensure_accepted_emitted(
+            client_order_id,
+            account_id,
+            venue_order_id,
+            identity,
+            ts_init,
+            state,
+            emitter,
+        );
+
+        let canceled = OrderCanceled::new(
+            emitter.trader_id(),
+            identity.strategy_id,
+            identity.instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            false,
+            Some(venue_order_id),
+            Some(account_id),
+            None,
+        );
+        cleanup_terminal_when_ready(client_order_id, filled_qty, state);
+        emitter.send_order_event(OrderEventAny::Canceled(canceled));
+    }
+}
+
+pub(crate) fn has_pending_fast_execution(
+    venue_order_id: VenueOrderId,
+    state: &WsDispatchState,
+) -> bool {
+    state.pending_fast_executions.contains_key(&venue_order_id)
+}
+
+pub(crate) fn drain_pending_fast_executions(
+    venue_order_id: VenueOrderId,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let Some((_, executions)) = state.pending_fast_executions.remove(&venue_order_id) else {
+        return;
+    };
+
+    for exec in executions {
+        dispatch_execution_fill_fast(
+            &exec, instrument, account_id, ts_init, false, state, emitter,
+        );
+    }
+}
+
+pub(crate) fn flush_pending_fast_executions(
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let venue_order_ids = state
+        .pending_fast_executions
+        .iter()
+        .map(|entry| *entry.key())
+        .collect::<Vec<_>>();
+
+    for venue_order_id in venue_order_ids {
+        let Some(execution) = state
+            .pending_fast_executions
+            .get(&venue_order_id)
+            .and_then(|executions| executions.first().cloned())
+        else {
+            continue;
+        };
+
+        let symbol = make_bybit_symbol(execution.symbol, execution.category);
+
+        let Some(instrument) = instruments.get(&symbol) else {
+            log::warn!("Cannot flush fast execution without instrument: {symbol}");
+            continue;
+        };
+
+        drain_pending_fast_executions(
+            venue_order_id,
+            instrument,
+            account_id,
+            ts_init,
+            state,
+            emitter,
+        );
     }
 }
 
@@ -694,9 +1019,9 @@ fn dispatch_execution_fill(
                     account_id,
                     venue_order_id,
                     &identity,
-                    emitter,
-                    state,
                     ts_init,
+                    state,
+                    emitter,
                 );
 
                 let is_spot_buy =
@@ -714,6 +1039,7 @@ fn dispatch_execution_fill(
                     if is_spot_buy {
                         enqueue_spot_repay(client_order_id, instrument, state);
                     }
+
                     cleanup_terminal(client_order_id, state);
                 }
             }
@@ -731,44 +1057,104 @@ fn dispatch_execution_fill(
 /// Dispatches a single fast-execution (fill) message.
 ///
 /// The fast channel lacks fee and exec-type fields, so all fills route to
-/// [`FillReport`] with zero commission; liquidity side is derived from the
-/// payload's `isMaker` flag. Subscribe to the standard `execution` channel
-/// for full fill metadata (e.g. fees).
+/// [`FillReport`]. Commission is derived from cached account fee rates when available,
+/// with a zero fallback. Liquidity side is derived from the payload's `isMaker` flag.
+/// Subscribe to the standard `execution` channel for venue-authoritative fees.
 fn dispatch_execution_fill_fast(
     exec: &BybitWsAccountExecutionFast,
     instrument: &InstrumentAny,
-    emitter: &ExecutionEventEmitter,
-    state: &WsDispatchState,
     account_id: AccountId,
     ts_init: UnixNanos,
+    defer_untracked: bool,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
 ) {
+    let Ok(trade_id) = TradeId::new_checked(exec.exec_id.as_str()) else {
+        log::error!(
+            "Invalid execId in Bybit WebSocket fast-execution payload: {}",
+            exec.exec_id
+        );
+        return;
+    };
+
+    if defer_untracked && !state.insert_fast_execution(trade_id) {
+        log::debug!("Skipping duplicate fast execution: {trade_id}");
+        return;
+    }
+
+    let venue_order_id = VenueOrderId::new(exec.order_id);
     let client_order_id = if exec.order_link_id.is_empty() {
-        None
+        let venue_mapping = state.venue_order_ids.entry(venue_order_id);
+
+        let client_order_id = match &venue_mapping {
+            Entry::Occupied(entry) => Some(*entry.get()),
+            Entry::Vacant(_) => None,
+        };
+
+        // Hold the mapping guard through any pending enqueue so REST correlation cannot interleave
+        if client_order_id.is_none()
+            && defer_untracked
+            && !state.untracked_order_ids.contains(&venue_order_id)
+        {
+            state
+                .pending_fast_executions
+                .entry(venue_order_id)
+                .or_default()
+                .push(exec.clone());
+            return;
+        }
+
+        client_order_id
     } else {
         Some(ClientOrderId::new(exec.order_link_id))
     };
 
-    let mut venue_position_id = None;
+    let identity = client_order_id
+        .as_ref()
+        .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
 
-    if let Some(cid) = client_order_id.as_ref()
-        && let Some(identity) = state.order_identities.get(cid).map(|r| r.clone())
-    {
-        venue_position_id = identity.venue_position_id;
-        let venue_order_id = VenueOrderId::new(exec.order_id);
-        ensure_accepted_emitted(
-            *cid,
-            account_id,
-            venue_order_id,
-            &identity,
-            emitter,
-            state,
-            ts_init,
-        );
-    }
+    let venue_position_id =
+        if let (Some(client_order_id), Some(identity)) = (client_order_id, identity.as_ref()) {
+            ensure_accepted_emitted(
+                client_order_id,
+                account_id,
+                venue_order_id,
+                identity,
+                ts_init,
+                state,
+                emitter,
+            );
+            identity.venue_position_id
+        } else {
+            None
+        };
 
-    match parse_ws_fill_report_fast(exec, account_id, instrument, venue_position_id, ts_init) {
-        Ok(report) => emitter.send_fill_report(report),
-        Err(e) => log::error!("Failed to parse fast fill report: {e}"),
+    let fee_rates = state.fee_rates.get(&instrument.id()).map(|rates| *rates);
+
+    match parse_ws_fill_report_fast(
+        exec,
+        account_id,
+        instrument,
+        fee_rates,
+        client_order_id,
+        venue_position_id,
+        ts_init,
+    ) {
+        Ok(report) => {
+            let last_qty = report.last_qty;
+            emitter.send_fill_report(report);
+
+            if let Some(client_order_id) = client_order_id
+                && identity.is_some()
+            {
+                state.insert_filled(client_order_id);
+                record_fast_fill(client_order_id, last_qty, state);
+            }
+        }
+        Err(e) => {
+            state.remove_fast_execution(trade_id);
+            log::error!("Failed to parse fast fill report: {e}");
+        }
     }
 }
 
@@ -809,6 +1195,7 @@ fn parse_order_filled(
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
     let price_currency = instrument.quote_currency();
     let commission_currency = get_currency(&exec.fee_currency);
+
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "failed to create commission from execFee='{}'",
@@ -857,7 +1244,7 @@ fn dispatch_order_response(
             .and_then(|rid| state.pending_requests.remove(rid))
             .map(|(_, v)| v);
 
-        if let Some((cids, voids, pending_op)) = pending {
+        if let Some((cids, voids, pending_op, command_ids)) = pending {
             let batch_errors = resp.extract_batch_errors();
             let data_array = resp.data.as_array();
 
@@ -909,9 +1296,11 @@ fn dispatch_order_response(
                     emitter,
                     state,
                     ts_init,
+                    command_ids.get(idx).copied().flatten(),
                 );
             }
         }
+
         return;
     }
 
@@ -923,11 +1312,13 @@ fn dispatch_order_response(
         .map(|(_, v)| v);
 
     let is_batch_response = is_batch_order_op(resp.op.as_str())
-        || pending.as_ref().is_some_and(|(cids, _, _)| cids.len() > 1);
+        || pending
+            .as_ref()
+            .is_some_and(|(cids, _, _, _)| cids.len() > 1);
 
     if is_batch_response {
         if is_bybit_ambiguous_order_error_code(resp.ret_code) {
-            let order_count = pending.as_ref().map_or(0, |(cids, _, _)| cids.len());
+            let order_count = pending.as_ref().map_or(0, |(cids, _, _, _)| cids.len());
             log::warn!(
                 "Ambiguous batch order response failure for {order_count} orders: op={}, ret_code={}, ret_msg={}; awaiting reconciliation",
                 resp.op,
@@ -937,7 +1328,7 @@ fn dispatch_order_response(
             return;
         }
 
-        let Some((client_order_ids, venue_order_ids, pending_op)) = pending else {
+        let Some((client_order_ids, venue_order_ids, pending_op, command_ids)) = pending else {
             log::warn!(
                 "Batch order response error without correlation: op={}, ret_code={}, ret_msg={}, req_id={:?}",
                 resp.op,
@@ -961,6 +1352,7 @@ fn dispatch_order_response(
                 );
                 continue;
             };
+
             emit_rejection_for_op(
                 &pending_op,
                 client_order_id,
@@ -970,8 +1362,10 @@ fn dispatch_order_response(
                 emitter,
                 state,
                 ts_init,
+                command_ids.get(index).copied().flatten(),
             );
         }
+
         return;
     }
 
@@ -987,7 +1381,7 @@ fn dispatch_order_response(
 
     let effective_op = pending
         .as_ref()
-        .map(|(_, _, op)| *op)
+        .map(|(_, _, op, _)| *op)
         .or_else(|| pending_op_from_str(resp.op.as_str()))
         .unwrap_or_else(|| {
             log::warn!("Unknown order operation '{}', defaulting to Place", resp.op);
@@ -998,12 +1392,12 @@ fn dispatch_order_response(
     let client_order_id = extract_order_link_id_from_data(&resp.data).or_else(|| {
         pending
             .as_ref()
-            .and_then(|(cids, _, _)| cids.first().copied())
+            .and_then(|(cids, _, _, _)| cids.first().copied())
     });
 
     let stored_venue_order_id = pending
         .as_ref()
-        .and_then(|(_, voids, _)| voids.first().and_then(|v| *v));
+        .and_then(|(_, voids, _, _)| voids.first().and_then(|v| *v));
 
     let Some(client_order_id) = client_order_id else {
         log::warn!(
@@ -1015,6 +1409,7 @@ fn dispatch_order_response(
         );
         return;
     };
+
     let Some(identity) = state
         .order_identities
         .get(&client_order_id)
@@ -1039,7 +1434,72 @@ fn dispatch_order_response(
         emitter,
         state,
         ts_init,
+        pending.as_ref().and_then(|(cids, _, _, command_ids)| {
+            cids.iter()
+                .position(|id| *id == client_order_id)
+                .and_then(|index| command_ids.get(index).copied().flatten())
+        }),
     );
+}
+
+fn dispatch_order_not_sent(
+    request_id: &str,
+    reason: &str,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+) {
+    let Some((_, (client_order_ids, venue_order_ids, operation, command_ids))) =
+        state.pending_requests.remove(request_id)
+    else {
+        log::warn!("Unsent order command has no request correlation: {request_id}");
+        return;
+    };
+
+    for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+        let Some(identity) = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|entry| entry.clone())
+        else {
+            continue;
+        };
+
+        let venue_order_id = venue_order_ids.get(index).copied().flatten();
+        let causation_id = command_ids.get(index).copied().flatten();
+
+        match operation {
+            PendingOperation::Place => emit_rejection_for_op(
+                &operation,
+                client_order_id,
+                &identity,
+                venue_order_id,
+                reason,
+                emitter,
+                state,
+                ts_init,
+                causation_id,
+            ),
+            PendingOperation::Amend => emitter.emit_order_modify_denied_event(
+                identity.strategy_id,
+                identity.instrument_id,
+                client_order_id,
+                venue_order_id,
+                reason,
+                ts_init,
+                causation_id,
+            ),
+            PendingOperation::Cancel => emitter.emit_order_cancel_denied_event(
+                identity.strategy_id,
+                identity.instrument_id,
+                client_order_id,
+                venue_order_id,
+                reason,
+                ts_init,
+                causation_id,
+            ),
+        }
+    }
 }
 
 /// Emits the appropriate rejection event based on the pending operation type.
@@ -1053,6 +1513,7 @@ fn emit_rejection_for_op(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     ts_init: UnixNanos,
+    causation_id: Option<UUID4>,
 ) {
     match pending_op {
         PendingOperation::Place => {
@@ -1075,6 +1536,7 @@ fn emit_rejection_for_op(
                 venue_order_id,
                 reason,
                 ts_init,
+                causation_id,
             );
         }
         PendingOperation::Amend => {
@@ -1085,6 +1547,7 @@ fn emit_rejection_for_op(
                 venue_order_id,
                 reason,
                 ts_init,
+                causation_id,
             );
         }
     }
@@ -1114,7 +1577,6 @@ fn parse_order_snapshot(
 ) -> Option<OrderStateSnapshot> {
     let quantity =
         parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty").ok()?;
-
     let price = if !order.price.is_empty() && order.price != "0" {
         parse_price_with_precision(&order.price, instrument.price_precision(), "order.price").ok()
     } else {
@@ -1165,6 +1627,66 @@ fn is_snapshot_updated(
     previous.quantity != snapshot.quantity
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "updates share the dispatcher's order context"
+)]
+fn emit_order_updated_if_changed(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    force: bool,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) -> bool {
+    let Some(snapshot) = parse_order_snapshot(order, instrument) else {
+        return false;
+    };
+
+    if !force && !is_snapshot_updated(&snapshot, &client_order_id, state) {
+        return false;
+    }
+
+    let venue_order_id = VenueOrderId::new(order.order_id);
+
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        snapshot.quantity,
+        UUID4::new(),
+        ts_init,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        snapshot.price,
+        snapshot.trigger_price,
+        None,
+        false,
+    );
+    state.order_snapshots.insert(client_order_id, snapshot);
+    emitter.send_order_event(OrderEventAny::Updated(updated));
+    true
+}
+
+pub(crate) fn record_venue_order_id(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    state: &WsDispatchState,
+) {
+    state
+        .order_venue_ids
+        .insert(client_order_id, venue_order_id);
+    state
+        .venue_order_ids
+        .insert(venue_order_id, client_order_id);
+}
+
 /// Synthesizes and emits `OrderAccepted` if one has not yet been emitted for
 /// this order. Handles fast-filling orders that skip the `New` state on Bybit.
 fn ensure_accepted_emitted(
@@ -1172,14 +1694,17 @@ fn ensure_accepted_emitted(
     account_id: AccountId,
     venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
-    emitter: &ExecutionEventEmitter,
-    state: &WsDispatchState,
     ts_init: UnixNanos,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
 ) {
+    record_venue_order_id(client_order_id, venue_order_id, state);
     if state.emitted_accepted.contains(&client_order_id) {
         return;
     }
+
     state.insert_accepted(client_order_id);
+
     let accepted = OrderAccepted::new(
         emitter.trader_id(),
         identity.strategy_id,
@@ -1195,13 +1720,73 @@ fn ensure_accepted_emitted(
     emitter.send_order_event(OrderEventAny::Accepted(accepted));
 }
 
+pub(crate) fn cleanup_terminal_when_ready(
+    client_order_id: ClientOrderId,
+    terminal_qty: Quantity,
+    state: &WsDispatchState,
+) {
+    state
+        .terminal_order_quantities
+        .insert(client_order_id, terminal_qty);
+    if state.fast_execution && !fast_fill_is_terminal(client_order_id, state) {
+        return;
+    }
+
+    cleanup_terminal(client_order_id, state);
+}
+
+fn record_fast_fill(client_order_id: ClientOrderId, last_qty: Quantity, state: &WsDispatchState) {
+    let mut overflow = false;
+    state
+        .fast_filled_quantities
+        .entry(client_order_id)
+        .and_modify(|total| {
+            if let Some(new_total) = total.checked_add(last_qty) {
+                *total = new_total;
+            } else {
+                overflow = true;
+            }
+        })
+        .or_insert(last_qty);
+
+    if overflow {
+        log::warn!("Fast fill quantity overflow for {client_order_id}, retaining order state");
+        return;
+    }
+
+    if fast_fill_is_terminal(client_order_id, state) {
+        cleanup_terminal(client_order_id, state);
+    }
+}
+
+fn fast_fill_is_terminal(client_order_id: ClientOrderId, state: &WsDispatchState) -> bool {
+    let Some(terminal_qty) = state.terminal_order_quantities.get(&client_order_id) else {
+        return false;
+    };
+
+    if terminal_qty.is_zero() {
+        return true;
+    }
+
+    state
+        .fast_filled_quantities
+        .get(&client_order_id)
+        .is_some_and(|filled_qty| *filled_qty >= *terminal_qty)
+}
+
 /// Removes a terminal order from all tracking sets.
-fn cleanup_terminal(client_order_id: ClientOrderId, state: &WsDispatchState) {
+pub(crate) fn cleanup_terminal(client_order_id: ClientOrderId, state: &WsDispatchState) {
+    if let Some((_, venue_order_id)) = state.order_venue_ids.remove(&client_order_id) {
+        state.venue_order_ids.remove(&venue_order_id);
+    }
+
     state.order_identities.remove(&client_order_id);
     state.order_snapshots.remove(&client_order_id);
     state.emitted_accepted.remove(&client_order_id);
     state.triggered_orders.remove(&client_order_id);
     state.filled_orders.remove(&client_order_id);
+    state.fast_filled_quantities.remove(&client_order_id);
+    state.terminal_order_quantities.remove(&client_order_id);
     state.spot_repay_fills.remove(&client_order_id);
 }
 
@@ -1235,10 +1820,12 @@ fn record_spot_repay_fill(
         .commission
         .filter(|fee| fee.currency.code == base_currency.code)
         .map_or(Decimal::ZERO, |fee| fee.as_decimal().max(Decimal::ZERO));
+
     let fill = SpotRepayFill {
         quantity: filled.last_qty,
         base_fee,
     };
+
     state
         .spot_repay_fills
         .entry(client_order_id)
@@ -1258,6 +1845,7 @@ fn enqueue_spot_repay(
     let Some(base_currency) = instrument.base_currency() else {
         return;
     };
+
     let Some((_, fill)) = state.spot_repay_fills.remove(&client_order_id) else {
         return;
     };
@@ -1292,18 +1880,22 @@ mod tests {
         types::Currency,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
     use crate::{
         common::{
             enums::{BybitExecType, BybitOrderSide, BybitProductType},
-            parse::{parse_inverse_instrument, parse_linear_instrument, parse_spot_instrument},
+            parse::{
+                parse_inverse_instrument, parse_linear_instrument, parse_option_instrument,
+                parse_spot_instrument,
+            },
             testing::load_test_json,
         },
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
-            BybitInstrumentSpotResponse,
+            BybitInstrumentOptionResponse, BybitInstrumentSpotResponse,
         },
         websocket::messages::{
             BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
@@ -1334,11 +1926,20 @@ mod tests {
         parse_inverse_instrument(instrument, ts, ts).unwrap()
     }
 
+    fn option_instrument_with_distinct_settlement() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_option_symbol_id.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_option_instrument(instrument, ts, ts).unwrap()
+    }
+
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
         let mut map = AHashMap::new();
         for inst in instruments {
             map.insert(inst.id().symbol.inner(), inst.clone());
         }
+
         map
     }
 
@@ -1414,11 +2015,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(first),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
         assert!(repay_rx.try_recv().is_err());
 
@@ -1431,11 +2032,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(second),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let repay = repay_rx.try_recv().expect("expected a repay request");
@@ -1472,11 +2073,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountOrder(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         // First: synthesized Accepted
@@ -1519,17 +2120,19 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountOrder(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
+
         let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
             panic!("Expected Rejected, found {event:?}");
         };
+
         assert!(rejected.due_post_only);
         assert_eq!(rejected.reason, BYBIT_POST_ONLY_REJECT_REASON);
         assert_eq!(rejected.client_order_id, cid);
@@ -1552,11 +2155,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountOrder(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
@@ -1589,11 +2192,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountExecution(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         // First event should be synthesized Accepted
@@ -1670,11 +2273,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(msg),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             get_atomic_clock_realtime(),
+            &state,
+            &emitter,
         );
 
         assert!(rx.try_recv().is_err());
@@ -1761,11 +2364,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(msg.clone()),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             &clock,
+            &state,
+            &emitter,
         );
 
         assert!(rx.try_recv().is_err());
@@ -1777,11 +2380,11 @@ mod tests {
         let message = BybitWsMessage::AccountExecution(msg);
         dispatch_ws_message(
             &message,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             &clock,
+            &state,
+            &emitter,
         );
 
         let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = rx.try_recv().unwrap()
@@ -1864,11 +2467,11 @@ mod tests {
 
         dispatch_ws_message(
             &message,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             &clock,
+            &state,
+            &emitter,
         );
         let replay = rx.try_recv().unwrap();
         match replay {
@@ -1981,6 +2584,7 @@ mod tests {
             BybitProductType::Inverse => inverse_instrument(),
             _ => unreachable!("unsupported test product"),
         };
+
         let (emitter, _rx) = create_emitter();
         let json = load_test_json("ws_account_execution.json");
         let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
@@ -1991,6 +2595,7 @@ mod tests {
         exec.exec_qty = "1".to_string();
         exec.exec_fee = fee.to_string();
         exec.fee_currency = Ustr::from(fee_currency);
+
         let identity = OrderIdentity {
             instrument_id: instrument.id(),
             order_side: OrderSide::Sell,
@@ -2043,11 +2648,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountExecution(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let _accepted = rx.try_recv().unwrap();
@@ -2058,6 +2663,92 @@ mod tests {
             }
             other => panic!("Expected Filled event, found {other:?}"),
         }
+    }
+
+    fn fee_rate(symbol: &str, base_coin: Option<&str>, maker: &str, taker: &str) -> BybitFeeRate {
+        BybitFeeRate {
+            symbol: Ustr::from(symbol),
+            taker_fee_rate: taker.to_string(),
+            maker_fee_rate: maker.to_string(),
+            base_coin: base_coin.map(Ustr::from),
+        }
+    }
+
+    #[rstest]
+    fn test_cache_execution_fee_rates_scopes_products_and_fans_out_options() {
+        let linear = linear_instrument();
+        let spot = spot_instrument();
+        let option_1 = option_instrument_with_distinct_settlement();
+        let mut option_2 = option_instrument_with_distinct_settlement();
+
+        let InstrumentAny::CryptoOption(ref mut option) = option_2 else {
+            panic!("expected crypto option");
+        };
+
+        option.id = InstrumentId::from("BTC-30JUN25-110000-C-OPTION.BYBIT");
+        let instruments = build_instruments(&[
+            linear.clone(),
+            spot.clone(),
+            option_1.clone(),
+            option_2.clone(),
+        ]);
+        let state = WsDispatchState::default();
+
+        let linear_cached = cache_execution_fee_rates(
+            &state,
+            &instruments,
+            BybitProductType::Linear,
+            vec![fee_rate("BTCUSDT", None, "0.0001", "0.0006")],
+        );
+        assert_eq!(linear_cached, 1);
+        assert_eq!(
+            *state.fee_rates.get(&linear.id()).unwrap(),
+            MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006),)
+        );
+        assert!(!state.fee_rates.contains_key(&spot.id()));
+
+        let spot_cached = cache_execution_fee_rates(
+            &state,
+            &instruments,
+            BybitProductType::Spot,
+            vec![fee_rate("BTCUSDT", None, "0.001", "0.002")],
+        );
+        assert_eq!(spot_cached, 1);
+        assert_eq!(
+            *state.fee_rates.get(&spot.id()).unwrap(),
+            MakerTakerFeeRates::new(dec!(0.001), dec!(0.002),)
+        );
+        assert_eq!(
+            *state.fee_rates.get(&linear.id()).unwrap(),
+            MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006),)
+        );
+
+        let option_cached = cache_execution_fee_rates(
+            &state,
+            &instruments,
+            BybitProductType::Option,
+            vec![fee_rate("", Some("BTC"), "0.0002", "0.0003")],
+        );
+        assert_eq!(option_cached, 2);
+        assert!(state.fee_rates.contains_key(&option_1.id()));
+        assert!(state.fee_rates.contains_key(&option_2.id()));
+    }
+
+    #[rstest]
+    fn test_cache_execution_fee_rates_skips_malformed_rates() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let state = WsDispatchState::default();
+
+        let cached = cache_execution_fee_rates(
+            &state,
+            &instruments,
+            BybitProductType::Linear,
+            vec![fee_rate("BTCUSDT", None, "invalid", "0.0006")],
+        );
+
+        assert_eq!(cached, 0);
+        assert!(state.fee_rates.is_empty());
     }
 
     fn fast_execution_msg(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFastMsg {
@@ -2104,11 +2795,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountExecutionFast(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         // First event: synthesized OrderAccepted from the identity hit.
@@ -2129,37 +2820,572 @@ mod tests {
         }
     }
 
+    fn order_msg(
+        order_link_id: &str,
+        status: &str,
+        cum_exec_qty: &str,
+    ) -> crate::websocket::messages::BybitWsAccountOrderMsg {
+        let json = load_test_json("ws_account_order.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["orderId"] = serde_json::Value::String("ord-1".to_string());
+        value["data"][0]["orderLinkId"] = serde_json::Value::String(order_link_id.to_string());
+        value["data"][0]["orderStatus"] = serde_json::Value::String(status.to_string());
+        value["data"][0]["price"] = serde_json::Value::String("50000.0".to_string());
+        value["data"][0]["qty"] = serde_json::Value::String("0.5".to_string());
+        value["data"][0]["cumExecQty"] = serde_json::Value::String(cum_exec_qty.to_string());
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn assert_fast_state_cleared(state: &WsDispatchState, client_order_id: ClientOrderId) {
+        assert!(!state.order_identities.contains_key(&client_order_id));
+        assert!(!state.order_venue_ids.contains_key(&client_order_id));
+        assert!(
+            !state
+                .venue_order_ids
+                .contains_key(&VenueOrderId::from("ord-1"))
+        );
+        assert!(!state.filled_orders.contains(&client_order_id));
+        assert!(!state.fast_filled_quantities.contains_key(&client_order_id));
+        assert!(
+            !state
+                .terminal_order_quantities
+                .contains_key(&client_order_id)
+        );
+        assert!(state.pending_fast_executions.is_empty());
+    }
+
     #[rstest]
-    fn test_dispatch_untracked_fast_execution_emits_fill_report_without_position() {
+    #[case::fast_first(true)]
+    #[case::order_first(false)]
+    fn test_dispatch_untracked_fast_execution_emits_fill_report_without_position(
+        #[case] fast_first: bool,
+    ) {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::default();
 
-        // Maker fast fill: orderLinkId is empty per venue docs, so no identity lookup.
-        let msg = fast_execution_msg(true, "");
-        let ws_msg = BybitWsMessage::AccountExecutionFast(msg);
+        let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("", "Filled", "0.5"));
+
+        if fast_first {
+            dispatch_ws_message(
+                &fast_msg,
+                test_account_id(),
+                &instruments,
+                clock,
+                &state,
+                &emitter,
+            );
+            assert!(rx.try_recv().is_err());
+            assert_eq!(state.pending_fast_executions.len(), 1);
+        }
+
         dispatch_ws_message(
-            &ws_msg,
-            &emitter,
-            &state,
+            &order_msg,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
-        // No OrderAccepted is synthesized for untracked fills.
-        let event = rx.try_recv().unwrap();
-        match event {
+        if !fast_first {
+            dispatch_ws_message(
+                &fast_msg,
+                test_account_id(),
+                &instruments,
+                clock,
+                &state,
+                &emitter,
+            );
+        }
+
+        let first = rx.try_recv().unwrap();
+        let second = rx.try_recv().unwrap();
+
+        let report = if fast_first {
+            assert!(matches!(
+                second,
+                ExecutionEvent::Report(ExecutionReport::Order(_))
+            ));
+
+            match first {
+                ExecutionEvent::Report(ExecutionReport::Fill(report)) => report,
+                other => panic!("Expected FillReport first, found {other:?}"),
+            }
+        } else {
+            assert!(matches!(
+                first,
+                ExecutionEvent::Report(ExecutionReport::Order(_))
+            ));
+
+            match second {
+                ExecutionEvent::Report(ExecutionReport::Fill(report)) => report,
+                other => panic!("Expected FillReport second, found {other:?}"),
+            }
+        };
+
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert!(state.pending_fast_executions.is_empty());
+    }
+
+    #[rstest]
+    fn test_dispatch_reconnected_flushes_pending_fast_execution() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(true);
+        let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+        dispatch_ws_message(
+            &fast_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert!(rx.try_recv().is_err());
+        assert_eq!(state.pending_fast_executions.len(), 1);
+
+        dispatch_ws_message(
+            &BybitWsMessage::Reconnected,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        match rx.try_recv().unwrap() {
             ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
                 assert_eq!(report.client_order_id, None);
-                assert_eq!(report.venue_position_id, None);
-                assert_eq!(report.liquidity_side, LiquiditySide::Maker);
-                assert_eq!(report.commission.as_f64(), 0.0);
+                assert_eq!(report.last_qty, Quantity::from("0.5"));
             }
             other => panic!("Expected FillReport, found {other:?}"),
         }
+
+        assert!(state.pending_fast_executions.is_empty());
+    }
+
+    #[rstest]
+    #[case::rejected("Rejected")]
+    #[case::partially_filled_canceled("PartiallyFilledCanceled")]
+    fn test_dispatch_partially_filled_terminal_defers_cleanup_until_fast_fill(
+        #[case] status: &str,
+    ) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, _rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+
+        let state = WsDispatchState {
+            fast_execution: true,
+            ..Default::default()
+        };
+
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("link-1", status, "0.5"));
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert!(state.order_identities.contains_key(&client_order_id));
+        assert_eq!(
+            *state
+                .terminal_order_quantities
+                .get(&client_order_id)
+                .unwrap(),
+            Quantity::from("0.5")
+        );
+
+        let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+        dispatch_ws_message(
+            &fast_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert_fast_state_cleared(&state, client_order_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_terminal_emits_deferred_fill_before_cancel() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(true);
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+        dispatch_ws_message(
+            &fast_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert!(rx.try_recv().is_err());
+
+        let order_msg =
+            BybitWsMessage::AccountOrder(order_msg("link-1", "PartiallyFilledCanceled", "0.5"));
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+        ));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Canceled(_))
+        ));
+        assert_fast_state_cleared(&state, client_order_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_zero_terminal_cleans_immediately() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, _rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+
+        let state = WsDispatchState {
+            fast_execution: true,
+            ..Default::default()
+        };
+
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("link-1", "Cancelled", "0"));
+
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert_fast_state_cleared(&state, client_order_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_standard_rejected_cleans_venue_correlation() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, _rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("link-1", "Rejected", "0"));
+
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert_fast_state_cleared(&state, client_order_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_fast_execution_parse_failure_allows_valid_replay() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let mut invalid = fast_execution_msg(false, "link-1");
+        invalid.data[0].exec_qty = "invalid".to_string();
+        let invalid = BybitWsMessage::AccountExecutionFast(invalid);
+
+        dispatch_ws_message(
+            &invalid,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert!(rx.try_recv().is_err());
+
+        let valid = BybitWsMessage::AccountExecutionFast(fast_execution_msg(false, "link-1"));
+        dispatch_ws_message(
+            &valid,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.trade_id.to_string(), "fast-1");
+                assert_eq!(report.last_qty, Quantity::from("0.5"));
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_recent_ids_evicts_oldest_without_clearing_history() {
+        let state = WsDispatchState::default();
+        let first = TradeId::from("first");
+        assert!(state.insert_fast_execution(first));
+
+        for index in 0..DEDUP_CAPACITY {
+            assert!(state.insert_fast_execution(TradeId::from(format!("id-{index}"))));
+        }
+
+        assert!(!state.fast_execution_ids.contains(&first));
+        assert_eq!(state.fast_execution_ids.ids.len(), DEDUP_CAPACITY);
+        assert!(state.insert_fast_execution(first));
+        assert_eq!(state.fast_execution_ids.ids.len(), DEDUP_CAPACITY);
+        assert!(!state.insert_fast_execution(first));
+    }
+
+    #[rstest]
+    fn test_fast_execution_correlation_and_enqueue_are_atomic() {
+        for _ in 0..32 {
+            let instrument = linear_instrument();
+            let instruments = build_instruments(std::slice::from_ref(&instrument));
+            let (emitter, mut rx) = create_emitter();
+            let clock = get_atomic_clock_realtime();
+            let state = Arc::new(WsDispatchState::new(true));
+            let client_order_id = ClientOrderId::from("link-1");
+            state
+                .order_identities
+                .insert(client_order_id, default_identity());
+            let venue_order_id = VenueOrderId::from("ord-1");
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+
+            std::thread::scope(|scope| {
+                let state_ws = Arc::clone(&state);
+                let barrier_ws = Arc::clone(&barrier);
+                let emitter_ws = emitter.clone();
+                let instruments_ws = &instruments;
+
+                scope.spawn(move || {
+                    barrier_ws.wait();
+                    let msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+                    dispatch_ws_message(
+                        &msg,
+                        test_account_id(),
+                        instruments_ws,
+                        clock,
+                        &state_ws,
+                        &emitter_ws,
+                    );
+                });
+
+                let state_rest = Arc::clone(&state);
+                let barrier_rest = Arc::clone(&barrier);
+                let emitter_rest = emitter.clone();
+
+                scope.spawn(move || {
+                    barrier_rest.wait();
+                    record_venue_order_id(client_order_id, venue_order_id, &state_rest);
+                    drain_pending_fast_executions(
+                        venue_order_id,
+                        &instrument,
+                        test_account_id(),
+                        clock.get_time_ns(),
+                        &state_rest,
+                        &emitter_rest,
+                    );
+                });
+            });
+
+            assert!(state.pending_fast_executions.is_empty());
+            let mut fill_count = 0;
+
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))) {
+                    fill_count += 1;
+                }
+            }
+
+            assert_eq!(fill_count, 1);
+        }
+    }
+
+    #[rstest]
+    #[case::fast_first(true)]
+    #[case::order_first(false)]
+    fn test_dispatch_maker_fast_execution_correlates_and_cleans_terminal_state(
+        #[case] fast_first: bool,
+    ) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(true);
+        let client_order_id = ClientOrderId::from("link-1");
+        let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
+        state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                venue_position_id: Some(venue_position_id),
+                ..default_identity()
+            },
+        );
+
+        let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("link-1", "Filled", "0.5"));
+
+        if fast_first {
+            dispatch_ws_message(
+                &fast_msg,
+                test_account_id(),
+                &instruments,
+                clock,
+                &state,
+                &emitter,
+            );
+            assert!(rx.try_recv().is_err());
+        }
+
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        if !fast_first {
+            dispatch_ws_message(
+                &fast_msg,
+                test_account_id(),
+                &instruments,
+                clock,
+                &state,
+                &emitter,
+            );
+        }
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.client_order_id, Some(client_order_id));
+                assert_eq!(report.venue_position_id, Some(venue_position_id));
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+
+        assert_fast_state_cleared(&state, client_order_id);
+    }
+
+    #[rstest]
+    fn test_dispatch_fast_execution_waits_for_terminal_quantity_and_dedups() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, _rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let mut first = fast_execution_msg(false, "link-1");
+        first.data[0].exec_qty = "0.25".to_string();
+        let first = BybitWsMessage::AccountExecutionFast(first);
+
+        dispatch_ws_message(
+            &first,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        dispatch_ws_message(
+            &first,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert_eq!(
+            *state.fast_filled_quantities.get(&client_order_id).unwrap(),
+            Quantity::from("0.25")
+        );
+
+        let order_msg = BybitWsMessage::AccountOrder(order_msg("link-1", "Filled", "0.5"));
+        dispatch_ws_message(
+            &order_msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert!(state.order_identities.contains_key(&client_order_id));
+
+        let mut second = fast_execution_msg(false, "link-1");
+        second.data[0].exec_id = "fast-2".to_string();
+        second.data[0].exec_qty = "0.25".to_string();
+        let second = BybitWsMessage::AccountExecutionFast(second);
+        dispatch_ws_message(
+            &second,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert_fast_state_cleared(&state, client_order_id);
+        assert_eq!(state.fast_execution_ids.ids.len(), 2);
     }
 
     #[rstest]
@@ -2178,11 +3404,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountExecution(msg);
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
@@ -2220,11 +3446,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(msg),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         assert!(matches!(
@@ -2257,11 +3483,11 @@ mod tests {
 
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(msg),
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
@@ -2292,11 +3518,11 @@ mod tests {
 
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
@@ -2316,11 +3542,11 @@ mod tests {
 
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         rx.try_recv().unwrap_err();
@@ -2351,11 +3577,11 @@ mod tests {
         let ws_msg = BybitWsMessage::AccountOrder(msg.clone());
         dispatch_ws_message(
             &ws_msg,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         let event = rx.try_recv().unwrap();
@@ -2368,11 +3594,11 @@ mod tests {
         let ws_msg2 = BybitWsMessage::AccountOrder(msg);
         dispatch_ws_message(
             &ws_msg2,
-            &emitter,
-            &state,
             test_account_id(),
             &instruments,
             clock,
+            &state,
+            &emitter,
         );
 
         rx.try_recv().unwrap_err();
@@ -2439,11 +3665,11 @@ mod tests {
             let ws_msg = BybitWsMessage::AccountOrder(msg);
             dispatch_ws_message(
                 &ws_msg,
-                &self.emitter,
-                &self.state,
                 test_account_id(),
                 &self.instruments,
                 self.clock,
+                &self.state,
+                &self.emitter,
             );
         }
 
@@ -2592,6 +3818,7 @@ mod tests {
             &ctx.emitter,
             &ctx.state,
             UnixNanos::from(1u64),
+            None,
         );
 
         assert!(!ctx.state.order_identities.contains_key(&cid));
@@ -2625,18 +3852,15 @@ mod tests {
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
             "req-not-sent".to_string(),
-            (vec![cid], vec![None], PendingOperation::Place),
+            (vec![cid], vec![None], PendingOperation::Place, Vec::new()),
         );
-        let response = order_response(
-            BYBIT_OP_ORDER_CREATE,
-            -1,
-            "Order command was not written",
+        dispatch_order_not_sent(
             "req-not-sent",
-            serde_json::json!({}),
-            None,
+            "Order command was not written",
+            &ctx.emitter,
+            &ctx.state,
+            UnixNanos::from(1u64),
         );
-
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
         assert!(
@@ -2650,8 +3874,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::modify(PendingOperation::Amend)]
+    #[case::cancel(PendingOperation::Cancel)]
+    fn test_dispatch_local_refusal_preserves_each_command(#[case] operation: PendingOperation) {
+        let mut ctx = DispatchTestContext::new();
+        let first = ClientOrderId::from("O-LOCAL-FIRST");
+        let second = ClientOrderId::from("O-LOCAL-SECOND");
+        let first_cause = UUID4::new();
+        let second_cause = UUID4::new();
+        let venue_order_id = VenueOrderId::from("V-LOCAL-FIRST");
+        ctx.state.order_identities.insert(first, default_identity());
+        ctx.state
+            .order_identities
+            .insert(second, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-local".to_string(),
+            (
+                vec![first, second],
+                vec![Some(venue_order_id), None],
+                operation,
+                vec![Some(first_cause), Some(second_cause)],
+            ),
+        );
+        dispatch_order_not_sent(
+            "req-local",
+            "Command was not written",
+            &ctx.emitter,
+            &ctx.state,
+            UnixNanos::from(17),
+        );
+
+        for (client_order_id, cause, venue) in [
+            (first, first_cause, Some(venue_order_id)),
+            (second, second_cause, None),
+        ] {
+            let ExecutionEvent::Order(event) = ctx.rx.try_recv().unwrap() else {
+                panic!("expected order outcome")
+            };
+
+            let (actual_cause, reason) = match (operation, &event) {
+                (PendingOperation::Amend, OrderEventAny::ModifyDenied(event)) => {
+                    (event.causation_id, event.reason.as_str())
+                }
+                (PendingOperation::Cancel, OrderEventAny::CancelDenied(event)) => {
+                    (event.causation_id, event.reason.as_str())
+                }
+                _ => panic!("unexpected refusal {event:?}"),
+            };
+
+            assert_eq!(actual_cause, Some(cause));
+            assert_eq!(reason, "Command was not written");
+            assert_eq!(event.client_order_id(), client_order_id);
+            assert_eq!(event.venue_order_id(), venue);
+            assert_eq!(event.strategy_id(), default_identity().strategy_id);
+            assert_eq!(event.instrument_id(), default_identity().instrument_id);
+            assert_eq!(event.ts_event(), UnixNanos::from(17));
+        }
+
+        assert!(ctx.rx.try_recv().is_err());
+        assert!(!ctx.state.pending_requests.contains_key("req-local"));
+        assert!(ctx.state.order_identities.contains_key(&first));
+        assert!(ctx.state.order_identities.contains_key(&second));
+    }
+
+    #[rstest]
     fn test_dispatch_single_cancel_rejection_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
+        let cause = UUID4::new();
         let cid = ClientOrderId::from("cancel-reject-1");
         let venue_order_id = VenueOrderId::from("venue-cancel-1");
         ctx.state.order_identities.insert(cid, default_identity());
@@ -2661,6 +3950,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Cancel,
+                vec![Some(cause)],
             ),
         );
 
@@ -2680,7 +3970,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid && rejected.causation_id == Some(cause)),
             "Expected CancelRejected for {cid}, found {event:?}"
         );
         assert!(
@@ -2692,6 +3982,7 @@ mod tests {
     #[rstest]
     fn test_dispatch_single_modify_rejection_emits_modify_rejected() {
         let mut ctx = DispatchTestContext::new();
+        let cause = UUID4::new();
         let cid = ClientOrderId::from("modify-reject-1");
         let venue_order_id = VenueOrderId::from("venue-modify-1");
         ctx.state.order_identities.insert(cid, default_identity());
@@ -2701,6 +3992,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Amend,
+                vec![Some(cause)],
             ),
         );
 
@@ -2720,7 +4012,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected ModifyRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected)) if rejected.client_order_id == cid),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected)) if rejected.client_order_id == cid && rejected.causation_id == Some(cause)),
             "Expected ModifyRejected for {cid}, found {event:?}"
         );
         assert!(
@@ -2730,25 +4022,65 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_single_cancel_rate_limit_emits_cancel_rejected() {
+    fn test_dispatch_single_place_rejection_emits_order_rejected() {
         let mut ctx = DispatchTestContext::new();
-        let cid = ClientOrderId::from("cancel-rate-limit-1");
-        let venue_order_id = VenueOrderId::from("venue-cancel-rate-limit-1");
+        let cid = ClientOrderId::from("place-reject-1");
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
-            "req-cancel-rate-limit".to_string(),
-            (
-                vec![cid],
-                vec![Some(venue_order_id)],
-                PendingOperation::Cancel,
-            ),
+            "req-place".to_string(),
+            (vec![cid], vec![None], PendingOperation::Place, Vec::new()),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL,
-            10429,
-            "System level frequency protection.",
-            "req-cancel-rate-limit",
+            BYBIT_OP_ORDER_CREATE,
+            110017,
+            "orderQty will be truncated to zero",
+            "req-place",
+            serde_json::json!({
+                "orderLinkId": cid.to_string(),
+            }),
+            None,
+        );
+
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+
+        let event = ctx.rx.try_recv().expect("expected OrderRejected event");
+        assert!(
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(ref rejected))
+                if rejected.client_order_id == cid
+                    && rejected.reason == "orderQty will be truncated to zero"),
+            "Expected OrderRejected for {cid}, found {event:?}"
+        );
+        assert!(ctx.rx.try_recv().is_err());
+        assert!(!ctx.state.order_identities.contains_key(&cid));
+    }
+
+    #[rstest]
+    #[case::place_frequency(PendingOperation::Place, BYBIT_OP_ORDER_CREATE, 10429)]
+    #[case::amend_frequency(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND, 10429)]
+    #[case::cancel_frequency(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL, 10429)]
+    #[case::place_visits(PendingOperation::Place, BYBIT_OP_ORDER_CREATE, 10006)]
+    #[case::amend_visits(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND, 10006)]
+    #[case::cancel_visits(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL, 10006)]
+    fn test_dispatch_single_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] ret_code: i64,
+    ) {
+        let mut ctx = DispatchTestContext::new();
+        let cid = ClientOrderId::from("rate-limit-1");
+        let venue_order_id = VenueOrderId::from("venue-rate-limit-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-rate-limit".to_string(),
+            (vec![cid], vec![Some(venue_order_id)], operation, Vec::new()),
+        );
+
+        let response = order_response(
+            op,
+            ret_code,
+            "rate limit",
+            "req-rate-limit",
             serde_json::json!({
                 "orderId": venue_order_id.to_string(),
                 "orderLinkId": cid.to_string(),
@@ -2758,13 +4090,12 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
-            "Expected CancelRejected for {cid}, found {event:?}"
+            ctx.rx.try_recv().is_err(),
+            "Rate-limit response must not emit a terminal rejection"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
+        assert!(!ctx.state.pending_requests.contains_key("req-rate-limit"));
     }
 
     #[rstest]
@@ -2779,6 +4110,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Amend,
+                Vec::new(),
             ),
         );
 
@@ -2819,6 +4151,7 @@ mod tests {
                     Some(VenueOrderId::from("venue-batch-2")),
                 ],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2852,6 +4185,7 @@ mod tests {
                 vec![cid],
                 vec![Some(VenueOrderId::from("venue-batch-single"))],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2874,27 +4208,36 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_top_level_rate_limit_emits_cancel_rejected() {
+    #[case::place(PendingOperation::Place, BYBIT_OP_ORDER_CREATE_BATCH, 10429)]
+    #[case::amend(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND_BATCH, 10429)]
+    #[case::cancel(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL_BATCH, 10006)]
+    fn test_dispatch_batch_top_level_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] ret_code: i64,
+    ) {
         let mut ctx = DispatchTestContext::new();
         let cid_1 = ClientOrderId::from("batch-rate-1");
         let cid_2 = ClientOrderId::from("batch-rate-2");
-        let venue_1 = VenueOrderId::from("venue-rate-1");
-        let venue_2 = VenueOrderId::from("venue-rate-2");
         ctx.state.order_identities.insert(cid_1, default_identity());
         ctx.state.order_identities.insert(cid_2, default_identity());
         ctx.state.pending_requests.insert(
             "req-batch-rate".to_string(),
             (
                 vec![cid_1, cid_2],
-                vec![Some(venue_1), Some(venue_2)],
-                PendingOperation::Cancel,
+                vec![
+                    Some(VenueOrderId::from("venue-rate-1")),
+                    Some(VenueOrderId::from("venue-rate-2")),
+                ],
+                operation,
+                Vec::new(),
             ),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL_BATCH,
-            10006,
-            "Too many visits.",
+            op,
+            ret_code,
+            "rate limit",
             "req-batch-rate",
             serde_json::json!({}),
             None,
@@ -2902,23 +4245,28 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let first = ctx.rx.try_recv().expect("expected first CancelRejected");
-        let second = ctx.rx.try_recv().expect("expected second CancelRejected");
         assert!(
-            matches!(first, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid_1 && rejected.venue_order_id == Some(venue_1))
+            ctx.rx.try_recv().is_err(),
+            "Batch rate-limit response must not emit a terminal rejection"
         );
-        assert!(
-            matches!(second, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid_2 && rejected.venue_order_id == Some(venue_2))
-        );
+        assert!(ctx.state.order_identities.contains_key(&cid_1));
+        assert!(ctx.state.order_identities.contains_key(&cid_2));
+        assert!(!ctx.state.pending_requests.contains_key("req-batch-rate"));
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_per_item_error_emits_only_failed_item() {
+    fn test_dispatch_batch_cancel_per_item_error_emits_only_failed_item(
+        #[values(false, true)] repeated: bool,
+    ) {
         let mut ctx = DispatchTestContext::new();
         let cid_1 = ClientOrderId::from("batch-cancel-ok");
-        let cid_2 = ClientOrderId::from("batch-cancel-reject");
+        let cid_2 = if repeated {
+            cid_1
+        } else {
+            ClientOrderId::from("batch-cancel-reject")
+        };
+
+        let causes = [UUID4::new(), UUID4::new()];
         ctx.state.order_identities.insert(cid_1, default_identity());
         ctx.state.order_identities.insert(cid_2, default_identity());
         ctx.state.pending_requests.insert(
@@ -2930,6 +4278,7 @@ mod tests {
                     Some(VenueOrderId::from("venue-batch-reject")),
                 ],
                 PendingOperation::Cancel,
+                causes.into_iter().map(Some).collect(),
             ),
         );
 
@@ -2956,7 +4305,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid_2),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid_2 && rejected.causation_id == Some(causes[1])),
             "Expected CancelRejected for failed batch item {cid_2}, found {event:?}"
         );
         assert!(
@@ -2966,25 +4315,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_per_item_rate_limit_emits_cancel_rejected() {
+    #[case::place(PendingOperation::Place, BYBIT_OP_ORDER_CREATE_BATCH, 10006)]
+    #[case::amend(PendingOperation::Amend, BYBIT_OP_ORDER_AMEND_BATCH, 10429)]
+    #[case::cancel(PendingOperation::Cancel, BYBIT_OP_ORDER_CANCEL_BATCH, 10006)]
+    fn test_dispatch_batch_per_item_rate_limit_emits_no_terminal_rejection(
+        #[case] operation: PendingOperation,
+        #[case] op: &str,
+        #[case] code: i64,
+    ) {
         let mut ctx = DispatchTestContext::new();
-        let cid = ClientOrderId::from("batch-cancel-rate-limit");
+        let cid = ClientOrderId::from("batch-item-rate-limit");
         let venue_order_id = VenueOrderId::from("venue-batch-rate-limit");
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
-            "req-batch-rate-limit".to_string(),
-            (
-                vec![cid],
-                vec![Some(venue_order_id)],
-                PendingOperation::Cancel,
-            ),
+            "req-batch-item-rate-limit".to_string(),
+            (vec![cid], vec![Some(venue_order_id)], operation, Vec::new()),
         );
 
         let response = order_response(
-            BYBIT_OP_ORDER_CANCEL_BATCH,
+            op,
             0,
             "OK",
-            "req-batch-rate-limit",
+            "req-batch-item-rate-limit",
             serde_json::json!({
                 "list": [
                     {"orderId": venue_order_id.to_string(), "orderLinkId": cid.to_string()}
@@ -2992,20 +4344,23 @@ mod tests {
             }),
             Some(serde_json::json!({
                 "list": [
-                    {"code": 10006, "msg": "Too many visits."}
+                    {"code": code, "msg": "rate limit"}
                 ]
             })),
         );
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
-        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
-                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
-            "Expected CancelRejected for {cid}, found {event:?}"
+            ctx.rx.try_recv().is_err(),
+            "Per-item rate-limit response must not emit a terminal rejection"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
+        assert!(
+            !ctx.state
+                .pending_requests
+                .contains_key("req-batch-item-rate-limit")
+        );
     }
 
     #[rstest]

@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is officially supported for Python 3.13-3.14 on the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.13-3.15 on the following 64-bit platforms:
 
 | Operating System | Supported Versions | CPU Architecture |
 | ---------------- | ------------------ | ---------------- |
@@ -27,7 +27,8 @@ Continuous CI coverage comes from the GitHub Actions runners we build on:
 
 On Linux, confirm your glibc version with `ldd --version` and ensure it reports 2.35 or newer before proceeding.
 
-We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
+For PyPI binary wheels, use Python 3.14. Install [nautilus_trader](https://pypi.org/project/nautilus_trader/)
+in a virtual environment to isolate dependencies.
 
 **There are two supported ways to install**:
 
@@ -71,8 +72,9 @@ Run this command outside a NautilusTrader source checkout. The repository's
 filter out newly published wheels. Inside a source checkout, use
 [Build Python from source](#8-build-python-from-source) instead.
 
-Current wheels target Python 3.13-3.14. Build from source when you need local Rust changes,
-a debug build, or a platform wheel that is not available.
+PyPI wheels target Python 3.13-3.14.
+Python 3.15 requires a [source build](#from-source) or a development wheel until the next PyPI release.
+Build from source when you need local Rust changes, a debug build, or a platform wheel that is not available.
 
 ### Stable 1.x wheels
 
@@ -122,8 +124,8 @@ Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to 
 
 ### Development wheels
 
-The main package index publishes development wheels from both the `nightly` and `develop`
-branches, allowing users to test features and fixes ahead of stable releases.
+The main package index publishes development wheels for Python 3.13-3.15 from both the `nightly`
+and `develop` branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
@@ -268,6 +270,10 @@ cd nautilus_trader
 make sync
 ```
 
+For Python 3.15, follow the
+[environment setup](../developer_guide/environment_setup.md#1-install-dependencies) to exclude
+documentation dependencies from sync, build, and test targets. Documentation builds use Python 3.14.
+
 For development hosts and CI runner images, see the
 [single source of truth for versions](../developer_guide/environment_setup.md#single-source-of-truth-for-versions)
 before installing pinned tools.
@@ -394,8 +400,8 @@ development, which hides recently published wheels. Run install commands from an
 
 ### Wheel not found for your platform
 
-Check your Python version is 3.13-3.14 and your platform is listed at the top of this page. On
-Linux, `ldd --version` must report glibc 2.35 or newer. Otherwise
+Check your Python version is 3.13-3.14 for PyPI wheels or 3.13-3.15 for development wheels,
+and your platform is listed at the top of this page. On Linux, `ldd --version` must report glibc 2.35 or newer. Otherwise
 [build from source](#from-source).
 
 ## Versioning and releases

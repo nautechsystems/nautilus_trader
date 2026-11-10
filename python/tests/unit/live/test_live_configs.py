@@ -152,6 +152,7 @@ def test_data_client_config_explicit() -> None:
     """
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
+
     config = DataClientConfig(
         handle_revised_bars=True,
         instrument_provider=ip,
@@ -177,6 +178,7 @@ def test_live_data_engine_config_explicit() -> None:
     Test live data engine config explicit.
     """
     client_id = ClientId("DATA-001")
+
     config = LiveDataEngineConfig(
         time_bars_build_with_no_updates=False,
         time_bars_timestamp_on_close=False,
@@ -275,6 +277,28 @@ def test_live_exec_engine_config_defaults() -> None:
 
 
 @pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        pytest.param({}, 60, id="omitted"),
+        pytest.param({"open_check_lookback_mins": None}, None, id="unbounded"),
+        pytest.param({"open_check_lookback_mins": 120}, 120, id="explicit"),
+    ],
+)
+def test_live_exec_engine_config_open_check_lookback(
+    kwargs: dict[str, int | None],
+    expected: int | None,
+) -> None:
+    """
+    Test omitted and explicit lookbacks survive engine and node configuration.
+    """
+    config = LiveExecutionEngineConfig(**kwargs)
+    node_config = LiveNodeConfig(exec_engine=config)
+
+    assert config.open_check_lookback_mins == expected
+    assert node_config.exec_engine.open_check_lookback_mins == expected
+
+
+@pytest.mark.parametrize(
     ("policy", "expected"),
     [
         (None, SubmissionRecoveryPolicy.RESOLVE_LOCALLY),
@@ -334,6 +358,7 @@ def test_live_exec_engine_config_readback() -> None:
     Test live exec engine config readback.
     """
     client_id = ClientId("EXEC-001")
+
     config = LiveExecutionEngineConfig(
         load_cache=False,
         manage_own_order_books=True,
@@ -368,6 +393,7 @@ def test_live_exec_engine_config_readback() -> None:
         purge_closed_positions_buffer_mins=20,
         purge_account_events_interval_mins=21,
         purge_account_events_lookback_mins=22,
+        purge_from_database=True,
         own_books_audit_interval_secs=23.5,
         debug=True,
         snapshot_orders=True,
@@ -407,6 +433,7 @@ def test_live_exec_engine_config_readback() -> None:
     assert config.purge_closed_positions_buffer_mins == 20
     assert config.purge_account_events_interval_mins == 21
     assert config.purge_account_events_lookback_mins == 22
+    assert config.purge_from_database is True
     assert config.own_books_audit_interval_secs == 23.5
     assert config.debug is True
     assert config.snapshot_orders is True
@@ -417,9 +444,6 @@ def test_live_exec_engine_config_rejects_unsupported_args() -> None:
     """
     Test live exec engine config rejects unsupported args.
     """
-    with pytest.raises(TypeError, match="purge_from_database"):
-        LiveExecutionEngineConfig(purge_from_database=True)
-
     with pytest.raises(TypeError, match="qsize"):
         LiveExecutionEngineConfig(qsize=1)
 
@@ -497,6 +521,7 @@ def test_live_node_config_accepts_queue_monitor_config_argument() -> None:
         mean_dispatch_ns_trigger=250_000,
         mean_dispatch_ns_clear=150_000,
     )
+
     config = LiveNodeConfig(queue_monitor=queue_monitor)
 
     resolved = config.queue_monitor
@@ -533,6 +558,7 @@ def test_live_node_config_accepts_portfolio_config_argument() -> None:
     data_engine = LiveDataEngineConfig(debug=True)
     risk_engine = LiveRiskEngineConfig(bypass=True)
     exec_engine = LiveExecutionEngineConfig(load_cache=False)
+
     config = LiveNodeConfig(
         logging=logging,
         instance_id=instance_id,

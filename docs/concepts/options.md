@@ -28,6 +28,46 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
+## Simulated spread execution
+
+Build spread IDs with `new_generic_spread_id` from signed leg ratios; venue-native IDs without encoded
+legs cannot execute. Cache each leg instrument and its latest quote before submitting an order.
+
+Strategy callbacks receive leg fills before the parent fill. Leg fills use derived order IDs without
+cached orders, create leg positions, and book commissions. The parent fill reports the total commission
+without creating a position; the portfolio does not book it again.
+
+If leg preparation fails, the simulator skips that execution. Resting limit orders, including priced
+market-to-limit remainders, keep working; orders that cannot rest are canceled.
+
+Cost currency means quote currency for linear legs, base currency for inverse legs, and settlement
+currency for quanto legs.
+
+**Requirements**:
+
+- **Liquidity**: Keep `liquidity_consumption=false` (the default). With `true`, new spread orders are
+  rejected and restored spread orders are canceled before matching or reserving liquidity.
+- **FOK**: One fill candidate must cover the entire order. Orders requiring multiple candidates are
+  canceled before any leg or parent fill, even when candidates share a price.
+- **Numeric limits**: Quantity scaling uses checked `u128` arithmetic; price allocation uses checked
+  `i128` and `Decimal` arithmetic. Executions are skipped if the required calculations exceed these ranges,
+  even when the final values would fit after cancellation. Leg quantities must also be exactly representable
+  as `Decimal` in position accounting.
+- **Balances**: Calculated accounts without a base currency need balance entries for positive fees
+  outside a leg's cost currency. Margin accounts also need an entry for each leg's cost currency.
+- **Conversion rates**: Calculated accounts with a base currency need rates for each leg's cost and fee currencies.
+
+:::warning Cash-account limitations
+Spread legs bypass equity and binary-option short-sale inventory checks and can open short positions.
+Avoid cash spreads containing these legs.
+
+Insufficient cash stops a backtest with an error, possibly after fill callbacks. Discard results from
+errored runs.
+
+Sandbox execution continues after cash-accounting errors and can leave balances and positions
+inconsistent. Stop the session after such an error.
+:::
+
 ## Option identifiers
 
 ### Series references
@@ -179,6 +219,10 @@ def on_option_chain(self, chain) -> None:
 | `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
 | `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
+`StrikeRange::atm_percent` requires a finite, non-negative `pct`. `StrikeRange::delta` requires finite
+`target` and `tolerance` values in [0, 1]. These Rust constructors return `Result`; the corresponding
+Python factories raise `ValueError` for invalid values.
+
 For dynamic strike ranges, subscriptions are **deferred until the ATM price is determined**. ATM is derived
 from the venue reference price in `OptionGreeks.underlying_price`. It can also be seeded from a reference
 price fetched for the option series through HTTP. This permits immediate bootstrap before live WebSocket ticks
@@ -207,7 +251,7 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
   active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
 
-The engine rejects `snapshot_interval_ms=0`. Use `None` for raw mode.
+`subscribe_option_chain` raises `ValueError` for `snapshot_interval_ms=0`. Use `None` for raw mode.
 
 ## Backtesting option chains
 

@@ -313,14 +313,6 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
-      - id: check-formatting-py
-        name: check formatting (Python)
-        description: Enforces formatting conventions in Python code
-        entry: bash .pre-commit-hooks/check_formatting_py.sh
-        language: system
-        files: "\\.py$"
-        pass_filenames: false
-
       - id: check-docs-conventions
         name: check docs conventions
         description: Enforces documentation conventions
@@ -496,7 +488,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.2
+    rev: v0.17.3
     hooks:
       - id: ruff
         name: ruff
@@ -524,8 +516,17 @@ repos:
           - "--recursive"
           - "--in-place"
 
+  - repo: local
+    hooks:
+      - id: check-formatting-py
+        name: check formatting (Python)
+        description: Enforces statement spacing after Ruff formats Python code
+        entry: bash .pre-commit-hooks/check_formatting_py.sh --fix
+        language: system
+        files: "\\.py$"
+
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.5 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.6 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]

@@ -152,7 +152,12 @@ impl Currency {
     /// - If `overwrite` is `true`, any existing currency will be replaced.
     /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
     ///
-    /// This function does not return an error.
+    /// Registered DeFi tokens retain their first name and amount definition, including when
+    /// `overwrite` is `true`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the amount definition conflicts with a registered DeFi token.
     #[staticmethod]
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]

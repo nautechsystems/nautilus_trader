@@ -77,7 +77,8 @@ use crate::{
     },
     common::{
         consts::{
-            BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
+            BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_OPTION_BOOK_DEPTHS,
+            BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
         },
         enums::BybitProductType,
         instruments::diff_and_emit_instruments,
@@ -133,6 +134,11 @@ pub struct BybitDataClient {
 impl BybitDataClient {
     /// Creates a new [`BybitDataClient`] instance.
     ///
+    /// Omitted credentials resolve from the environment variables selected by
+    /// `config.environment`. An explicit value takes precedence over the matching
+    /// variable. A missing key or secret leaves the client without credentials.
+    /// Public market-data requests stay unsigned.
+    ///
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
@@ -147,12 +153,10 @@ impl BybitDataClient {
             .as_ref()
             .map(|value| value.expose_secret().to_owned());
 
-        let http_client = if let (Some(api_key), Some(api_secret)) =
-            (config.api_key.clone(), config.api_secret.clone())
-        {
+        let http_client = if let Some((api_key, api_secret)) = config.resolved_api_credentials() {
             BybitHttpClient::with_credentials(
-                api_key.into_inner(),
-                api_secret.into_inner(),
+                api_key,
+                api_secret,
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
@@ -448,9 +452,15 @@ fn send_data(sender: &EventSender<DataEvent>, data: Data) {
     }
 }
 
-fn validate_orderbook_depth(depth: u32) -> anyhow::Result<()> {
-    if !BYBIT_BOOK_DEPTHS.contains(&depth) {
-        anyhow::bail!("invalid depth {depth}; valid values are {BYBIT_BOOK_DEPTHS:?}");
+fn validate_orderbook_depth(depth: u32, product_type: BybitProductType) -> anyhow::Result<()> {
+    let valid_depths: &[u32] = if product_type == BybitProductType::Option {
+        &BYBIT_OPTION_BOOK_DEPTHS
+    } else {
+        &BYBIT_BOOK_DEPTHS
+    };
+
+    if !valid_depths.contains(&depth) {
+        anyhow::bail!("invalid depth {depth}; valid values are {valid_depths:?}");
     }
 
     Ok(())
@@ -818,6 +828,7 @@ fn handle_ws_message(
         }
         BybitWsMessage::Auth(_)
         | BybitWsMessage::OrderResponse(_)
+        | BybitWsMessage::OrderNotSent { .. }
         | BybitWsMessage::AccountOrder(_)
         | BybitWsMessage::AccountExecution(_)
         | BybitWsMessage::AccountExecutionFast(_)
@@ -1282,15 +1293,19 @@ impl DataClient for BybitDataClient {
                 anyhow::bail!("Bybit only supports L2_MBP order book deltas");
             }
 
-            let depth = cmd
-                .depth
-                .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
-
-            validate_orderbook_depth(depth)?;
-
             let product_type = self
                 .get_product_type_for_instrument(instrument_id)
                 .unwrap_or(BybitProductType::Linear);
+
+            let default_depth = if product_type == BybitProductType::Option {
+                BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH
+            } else {
+                BYBIT_DEFAULT_ORDERBOOK_DEPTH
+            };
+
+            let depth = cmd.depth.map_or(default_depth, |d| d.get() as u32);
+
+            validate_orderbook_depth(depth, product_type)?;
 
             let ws_client = self
                 .get_ws_client_for_product(product_type)
@@ -2420,7 +2435,7 @@ pub(crate) mod tests {
     #[path = "quotes/mod.rs"]
     pub(crate) mod benchmarks;
 
-    use std::{sync::Arc, time::Duration};
+    use std::{num::NonZeroUsize, process::Command, sync::Arc, time::Duration};
 
     use ahash::{AHashMap, AHashSet};
     use dashmap::DashMap;
@@ -2452,6 +2467,8 @@ pub(crate) mod tests {
         instruments::{Instrument, InstrumentAny},
         types::{Price, Quantity},
     };
+    #[cfg(feature = "python")]
+    use pyo3::types::{PyAnyMethods, PyDictMethods};
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -2463,7 +2480,8 @@ pub(crate) mod tests {
         book::{BookSequenceOutcome, sync::BookSyncTracker},
         common::{
             consts::BYBIT_CLIENT_ID,
-            enums::{BybitProductType, BybitSymbolType},
+            credential::Credential,
+            enums::{BybitEnvironment, BybitProductType, BybitSymbolType},
             parse::{parse_linear_instrument, parse_option_instrument},
             rate_limit::BYBIT_OPTION_SUBSCRIPTION_LIMIT,
             testing::load_test_json,
@@ -2668,7 +2686,7 @@ pub(crate) mod tests {
             BYBIT_OPTION_SUBSCRIPTION_LIMIT + 1,
         );
         assert_eq!(
-            ws.subscribe_orderbook(instrument_id, 50)
+            ws.subscribe_orderbook(instrument_id, 25)
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -2699,7 +2717,7 @@ pub(crate) mod tests {
             .await;
             assert!(!client.book_depths.contains_key(&instrument_id));
             assert_eq!(
-                ws.subscribe_orderbook(instrument_id, 50)
+                ws.subscribe_orderbook(instrument_id, 25)
                     .await
                     .unwrap_err()
                     .to_string(),
@@ -2899,18 +2917,85 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn test_validate_orderbook_depth_accepts_1000() {
-        assert!(validate_orderbook_depth(1000).is_ok());
+    #[case::linear_1(BybitProductType::Linear, 1)]
+    #[case::linear_50(BybitProductType::Linear, 50)]
+    #[case::linear_200(BybitProductType::Linear, 200)]
+    #[case::linear_1000(BybitProductType::Linear, 1000)]
+    #[case::inverse_1(BybitProductType::Inverse, 1)]
+    #[case::inverse_50(BybitProductType::Inverse, 50)]
+    #[case::inverse_200(BybitProductType::Inverse, 200)]
+    #[case::inverse_1000(BybitProductType::Inverse, 1000)]
+    #[case::spot_1(BybitProductType::Spot, 1)]
+    #[case::spot_50(BybitProductType::Spot, 50)]
+    #[case::spot_200(BybitProductType::Spot, 200)]
+    #[case::spot_1000(BybitProductType::Spot, 1000)]
+    #[case::option_25(BybitProductType::Option, 25)]
+    #[case::option_100(BybitProductType::Option, 100)]
+    fn test_validate_orderbook_depth_accepts_supported(
+        #[case] product_type: BybitProductType,
+        #[case] depth: u32,
+    ) {
+        assert!(validate_orderbook_depth(depth, product_type).is_ok());
     }
 
     #[rstest]
-    fn test_validate_orderbook_depth_rejects_500() {
-        let e = validate_orderbook_depth(500).unwrap_err();
+    #[case::linear_25(BybitProductType::Linear, 25, "[1, 50, 200, 1000]")]
+    #[case::inverse_100(BybitProductType::Inverse, 100, "[1, 50, 200, 1000]")]
+    #[case::spot_500(BybitProductType::Spot, 500, "[1, 50, 200, 1000]")]
+    #[case::option_1(BybitProductType::Option, 1, "[25, 100]")]
+    #[case::option_50(BybitProductType::Option, 50, "[25, 100]")]
+    #[case::option_200(BybitProductType::Option, 200, "[25, 100]")]
+    #[case::option_1000(BybitProductType::Option, 1000, "[25, 100]")]
+    #[case::option_500(BybitProductType::Option, 500, "[25, 100]")]
+    fn test_validate_orderbook_depth_rejects_unsupported(
+        #[case] product_type: BybitProductType,
+        #[case] depth: u32,
+        #[case] valid_depths: &str,
+    ) {
+        let e = validate_orderbook_depth(depth, product_type).unwrap_err();
 
         assert_eq!(
             e.to_string(),
-            "invalid depth 500; valid values are [1, 50, 200, 1000]"
+            format!("invalid depth {depth}; valid values are {valid_depths}")
         );
+    }
+
+    #[tokio::test]
+    async fn test_option_book_subscription_rejects_invalid_depth_before_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let config = BybitDataClientConfig {
+            product_types: vec![BybitProductType::Option],
+            ..Default::default()
+        };
+
+        let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+        let instrument_id = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+        client
+            .instruments
+            .insert(instrument_id, option_instrument());
+
+        let command = SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(50),
+            false,
+            None,
+            None,
+        );
+
+        let e = client.subscribe_book_deltas(command).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid depth 50; valid values are [25, 100]"
+        );
+        assert!(!client.book_depths.contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -4386,5 +4471,275 @@ pub(crate) mod tests {
         );
         let event = rx.try_recv().unwrap();
         assert!(matches!(event, DataEvent::Data(Data::Trade(_))));
+    }
+
+    const CREDENTIAL_CASE_VAR: &str = "BYBIT_DATA_CREDENTIAL_CASE";
+    const CREDENTIAL_CHILD: &str = "data::tests::test_data_client_credentials_child";
+    const CREDENTIAL_ENV_VARS: [&str; 6] = [
+        "BYBIT_API_KEY",
+        "BYBIT_API_SECRET",
+        "BYBIT_DEMO_API_KEY",
+        "BYBIT_DEMO_API_SECRET",
+        "BYBIT_TESTNET_API_KEY",
+        "BYBIT_TESTNET_API_SECRET",
+    ];
+    const MAINNET_KEY: &str = "mainnet-data-key";
+    const MAINNET_SECRET: &str = "mainnet-data-secret";
+    const DEMO_KEY: &str = "demo-data-key";
+    const DEMO_SECRET: &str = "demo-data-secret";
+    const TESTNET_KEY: &str = "testnet-data-key";
+    const TESTNET_SECRET: &str = "testnet-data-secret";
+    const CONFIG_KEY: &str = "config-data-key";
+    const CONFIG_SECRET: &str = "config-data-secret";
+
+    #[rstest]
+    fn test_data_client_resolves_credentials_from_selected_environment() {
+        // Credential variables are process-global, so each case runs alone
+        let all_env = [
+            ("BYBIT_API_KEY", MAINNET_KEY),
+            ("BYBIT_API_SECRET", MAINNET_SECRET),
+            ("BYBIT_DEMO_API_KEY", DEMO_KEY),
+            ("BYBIT_DEMO_API_SECRET", DEMO_SECRET),
+            ("BYBIT_TESTNET_API_KEY", TESTNET_KEY),
+            ("BYBIT_TESTNET_API_SECRET", TESTNET_SECRET),
+        ];
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            ("explicit_without_env", &[]),
+            ("explicit_precedes_env", &all_env),
+            ("mainnet_env", &all_env),
+            ("demo_env", &all_env),
+            ("testnet_env", &all_env),
+            ("absent", &[]),
+            ("partial_key_only", &[("BYBIT_API_KEY", MAINNET_KEY)]),
+            (
+                "partial_secret_only",
+                &[("BYBIT_API_SECRET", MAINNET_SECRET)],
+            ),
+            (
+                "demo_ignores_mainnet",
+                &[
+                    ("BYBIT_API_KEY", MAINNET_KEY),
+                    ("BYBIT_API_SECRET", MAINNET_SECRET),
+                ],
+            ),
+            (
+                "explicit_key_with_env_secret",
+                &[("BYBIT_API_SECRET", MAINNET_SECRET)],
+            ),
+        ];
+
+        for (case, env) in cases {
+            assert_credential_case(case, env);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "runs only in an isolated child process"]
+    fn test_data_client_credentials_child() {
+        let Ok(case) = std::env::var(CREDENTIAL_CASE_VAR) else {
+            return;
+        };
+
+        match case.as_str() {
+            "explicit_without_env" => assert_credential(
+                &client(
+                    BybitEnvironment::Mainnet,
+                    Some(CONFIG_KEY),
+                    Some(CONFIG_SECRET),
+                ),
+                CONFIG_KEY,
+                CONFIG_SECRET,
+            ),
+            "explicit_precedes_env" => assert_credential(
+                &client(
+                    BybitEnvironment::Mainnet,
+                    Some(CONFIG_KEY),
+                    Some(CONFIG_SECRET),
+                ),
+                CONFIG_KEY,
+                CONFIG_SECRET,
+            ),
+            "mainnet_env" => assert_credential(
+                &client(BybitEnvironment::Mainnet, None, None),
+                MAINNET_KEY,
+                MAINNET_SECRET,
+            ),
+            "demo_env" => assert_credential(
+                &client(BybitEnvironment::Demo, None, None),
+                DEMO_KEY,
+                DEMO_SECRET,
+            ),
+            "testnet_env" => assert_credential(
+                &client(BybitEnvironment::Testnet, None, None),
+                TESTNET_KEY,
+                TESTNET_SECRET,
+            ),
+            "absent" => assert_public(&client(BybitEnvironment::Mainnet, None, None)),
+            "partial_key_only" | "partial_secret_only" => {
+                assert_public(&client(BybitEnvironment::Mainnet, None, None));
+            }
+            "demo_ignores_mainnet" => assert_public(&client(BybitEnvironment::Demo, None, None)),
+            "explicit_key_with_env_secret" => assert_credential(
+                &client(BybitEnvironment::Mainnet, Some(CONFIG_KEY), None),
+                CONFIG_KEY,
+                MAINNET_SECRET,
+            ),
+            #[cfg(feature = "python")]
+            "python_explicit" => assert_credential(
+                &python_client(
+                    BybitEnvironment::Mainnet,
+                    Some(CONFIG_KEY),
+                    Some(CONFIG_SECRET),
+                ),
+                CONFIG_KEY,
+                CONFIG_SECRET,
+            ),
+            #[cfg(feature = "python")]
+            "python_testnet_env" => assert_credential(
+                &python_client(BybitEnvironment::Testnet, None, None),
+                TESTNET_KEY,
+                TESTNET_SECRET,
+            ),
+            #[cfg(feature = "python")]
+            "python_absent" => assert_public(&python_client(BybitEnvironment::Demo, None, None)),
+            #[cfg(feature = "python")]
+            "python_demo_ignores_mainnet" => {
+                assert_public(&python_client(BybitEnvironment::Demo, None, None));
+            }
+            other => panic!("unknown credential case {other}"),
+        }
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_python_data_config_resolves_credentials_from_selected_environment() {
+        let mainnet_env = [
+            ("BYBIT_API_KEY", MAINNET_KEY),
+            ("BYBIT_API_SECRET", MAINNET_SECRET),
+        ];
+        let testnet_env = [
+            ("BYBIT_TESTNET_API_KEY", TESTNET_KEY),
+            ("BYBIT_TESTNET_API_SECRET", TESTNET_SECRET),
+        ];
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            ("python_explicit", &mainnet_env),
+            ("python_testnet_env", &testnet_env),
+            ("python_absent", &[]),
+            ("python_demo_ignores_mainnet", &mainnet_env),
+        ];
+
+        for (case, env) in cases {
+            assert_credential_case(case, env);
+        }
+    }
+
+    fn assert_credential_case(case: &str, env: &[(&str, &str)]) {
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable must exist"));
+        command
+            .arg(CREDENTIAL_CHILD)
+            .arg("--exact")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env(CREDENTIAL_CASE_VAR, case);
+
+        for name in CREDENTIAL_ENV_VARS {
+            command.env_remove(name);
+        }
+
+        for (name, value) in env {
+            command.env(name, value);
+        }
+
+        let output = command.output().expect("isolated credential test must run");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "credential case {case} failed\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert!(
+            stdout.contains("1 passed"),
+            "credential case {case} did not run the child test\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+    }
+
+    #[cfg(feature = "python")]
+    fn python_client(
+        environment: BybitEnvironment,
+        api_key: Option<&str>,
+        api_secret: Option<&str>,
+    ) -> BybitDataClient {
+        pyo3::Python::initialize();
+
+        let config = pyo3::Python::attach(|py| {
+            let module = pyo3::types::PyModule::new(py, "bybit").expect("Bybit module");
+            crate::python::bybit(py, &module).expect("Bybit Python module should register");
+            let cls = module
+                .getattr("BybitDataClientConfig")
+                .expect("BybitDataClientConfig");
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs
+                .set_item("environment", environment)
+                .expect("environment");
+            kwargs
+                .set_item("product_types", vec![BybitProductType::Linear])
+                .expect("product types");
+
+            if let Some(key) = api_key {
+                kwargs.set_item("api_key", key).expect("api key");
+            }
+
+            if let Some(secret) = api_secret {
+                kwargs.set_item("api_secret", secret).expect("api secret");
+            }
+
+            let obj = cls
+                .call((), Some(&kwargs))
+                .expect("Python data config should build");
+            obj.extract().expect("Python data config should extract")
+        });
+
+        build_client(config)
+    }
+
+    fn client(
+        environment: BybitEnvironment,
+        api_key: Option<&str>,
+        api_secret: Option<&str>,
+    ) -> BybitDataClient {
+        build_client(BybitDataClientConfig {
+            environment,
+            api_key: api_key.map(Into::into),
+            api_secret: api_secret.map(Into::into),
+            product_types: vec![BybitProductType::Linear],
+            ..Default::default()
+        })
+    }
+
+    fn build_client(config: BybitDataClientConfig) -> BybitDataClient {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(sender);
+        BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap()
+    }
+
+    fn assert_credential(client: &BybitDataClient, key: &str, secret: &str) {
+        let credential = client
+            .http_client
+            .credential()
+            .expect("data client should store a complete credential pair");
+        let expected = Credential::new(key, secret);
+
+        assert_eq!(credential.api_key(), key);
+        assert_eq!(
+            credential.sign_with_payload("1700000000000", 5_000, Some("category=linear")),
+            expected.sign_with_payload("1700000000000", 5_000, Some("category=linear")),
+        );
+        assert!(client.ws_clients.iter().all(|ws| ws.credential().is_none()));
+    }
+
+    fn assert_public(client: &BybitDataClient) {
+        assert!(client.http_client.credential().is_none());
+        assert!(client.ws_clients.iter().all(|ws| ws.credential().is_none()));
     }
 }

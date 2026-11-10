@@ -17,6 +17,7 @@
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_execution::{
+    matching_engine::config::OrderPriorityResetPolicy,
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
     python::{
         fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
@@ -68,6 +69,7 @@ impl SandboxExecutionClientConfig {
         use_market_order_acks = false,
         oto_full_trigger = false,
         price_protection_points = None,
+        order_priority_reset_policy = OrderPriorityResetPolicy::PriceChange,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -98,6 +100,7 @@ impl SandboxExecutionClientConfig {
         use_market_order_acks: bool,
         oto_full_trigger: bool,
         price_protection_points: Option<u32>,
+        order_priority_reset_policy: OrderPriorityResetPolicy,
     ) -> PyResult<Self> {
         // Generate the default account ID from the venue
         let account_id =
@@ -147,6 +150,7 @@ impl SandboxExecutionClientConfig {
             use_market_order_acks,
             oto_full_trigger,
             price_protection_points: price_protection_points.unwrap_or(0),
+            order_priority_reset_policy,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -268,6 +272,11 @@ impl SandboxExecutionClientConfig {
     #[getter]
     fn use_reduce_only(&self) -> bool {
         self.use_reduce_only
+    }
+
+    #[getter]
+    fn order_priority_reset_policy(&self) -> OrderPriorityResetPolicy {
+        self.order_priority_reset_policy
     }
 
     #[getter]

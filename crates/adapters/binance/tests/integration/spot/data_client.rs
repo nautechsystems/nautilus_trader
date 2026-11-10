@@ -30,22 +30,24 @@ use axum::{
     Router,
     body::Body,
     extract::{
-        RawQuery, State,
+        Query, RawQuery, State,
         ws::{Message, WebSocket},
     },
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use nautilus_binance::{
     common::{
         bar::BinanceBar,
         consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::BinanceEnvironment,
     },
     config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
     data_types::BinanceSpotTicker,
     spot::{
         BinanceSpotDataClient,
+        http::client::BinanceRawSpotHttpClient,
         sbe::{
             generated::symbol_status::SymbolStatus,
             spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
@@ -61,10 +63,12 @@ use nautilus_common::{
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestTrades,
             subscribe::{
-                SubscribeBars, SubscribeBookDeltas, SubscribeCustomData, SubscribeQuotes,
-                SubscribeTrades,
+                SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
+                SubscribeQuotes, SubscribeTrades,
             },
-            unsubscribe::{UnsubscribeBookDeltas, UnsubscribeQuotes, UnsubscribeTrades},
+            unsubscribe::{
+                UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeQuotes, UnsubscribeTrades,
+            },
         },
         system::SocketState,
     },
@@ -109,6 +113,7 @@ struct DataTestServerConfig {
     depth_diff_delay: Duration,
     depth_snapshot_last_update_ids: Vec<i64>,
     depth_requests: Arc<AtomicUsize>,
+    depth_request_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
     json_ws_streams: bool,
     reconnect_signals_remaining: Arc<AtomicUsize>,
     subscriptions: Arc<Mutex<Vec<Vec<String>>>>,
@@ -129,6 +134,7 @@ impl Default for DataTestServerConfig {
             depth_diff_delay: Duration::from_millis(50),
             depth_snapshot_last_update_ids: vec![100],
             depth_requests: Arc::new(AtomicUsize::new(0)),
+            depth_request_times: Arc::default(),
             json_ws_streams: false,
             reconnect_signals_remaining: Arc::new(AtomicUsize::new(0)),
             subscriptions: Arc::new(Mutex::new(Vec::new())),
@@ -736,6 +742,10 @@ async fn send_depth_diffs(socket: &mut WebSocket, config: &DataTestServerConfig,
 }
 
 async fn handle_depth(State(config): State<DataTestServerConfig>) -> Response {
+    config
+        .depth_request_times
+        .lock()
+        .push(tokio::time::Instant::now());
     let request = config.depth_requests.fetch_add(1, Ordering::Relaxed);
     let last_update_id = config
         .depth_snapshot_last_update_ids
@@ -813,6 +823,20 @@ fn create_data_test_router(config: DataTestServerConfig) -> Router {
             }),
         )
         .route("/api/v3/depth", get(handle_depth))
+        .route(
+            "/api/v3/cooldown",
+            post(|Query(query): Query<HashMap<String, String>>| async move {
+                if let Some(hold) = query.get("hold") {
+                    tokio::time::sleep(Duration::from_secs(hold.parse().unwrap())).await;
+                }
+
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [("Retry-After", query["seconds"].clone())],
+                    json!({"code": -1003, "msg": "test cooldown"}).to_string(),
+                )
+            }),
+        )
         .route("/api/v3/aggTrades", get(handle_agg_trades))
         .route("/api/v3/klines", get(handle_klines))
         .route("/ws", get(handle_ws))
@@ -2065,9 +2089,9 @@ async fn test_request_book_snapshot_paces_requests_by_weight() {
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
 
-    // Each 5,000-level request weighs 250, so six spend the 1,500 burst and the seventh waits
-    // about 10s for weight to refill
-    for _ in 0..7 {
+    // The 600-weight burst admits two 250-weight snapshots; the next waits 15s for refill
+    let burst_requests = 2;
+    for _ in 0..=burst_requests {
         client
             .request_book_snapshot(RequestBookSnapshot::new(
                 instrument_id,
@@ -2082,7 +2106,95 @@ async fn test_request_book_snapshot_paces_requests_by_weight() {
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    assert_eq!(depth_requests.load(Ordering::Relaxed), 6);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), burst_requests);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_waits_for_extended_cooldown() {
+    let config = DataTestServerConfig::default();
+    let times = config.depth_request_times.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let url = format!("http://{addr}");
+    let (mut client, mut rx) = create_test_data_client(url.clone(), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let throttle = BinanceRawSpotHttpClient::new_with_json_responses(
+        BinanceEnvironment::Live,
+        Some("test-key".into()),
+        Some("test-secret".into()),
+        Some(url),
+        None,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+
+    let started = tokio::time::Instant::now();
+
+    // Exceed the initial burst; the pacing tests cover a full rolling minute with paused time
+    let request_count = 3;
+
+    let initial_and_queue = async {
+        let initial = throttle
+            .post_signed("cooldown", Some(&HashMap::from([("seconds", 11)])))
+            .await;
+
+        for _ in 0..request_count {
+            client
+                .request_book_snapshot(RequestBookSnapshot::new(
+                    InstrumentId::from("BTCUSDT.BINANCE"),
+                    Some(NonZeroUsize::new(5000).unwrap()),
+                    Some(*BINANCE_CLIENT_ID),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+
+        initial
+    };
+
+    let extension_params = HashMap::from([("seconds", 16), ("hold", 5)]);
+    let extension = throttle.post_signed("cooldown", Some(&extension_params));
+    let (initial, extension) = tokio::join!(initial_and_queue, extension);
+
+    let responses = tokio::time::timeout_at(started + Duration::from_secs(50), async {
+        let mut responses = 0;
+        while responses < request_count {
+            let event = rx.recv().await.expect("data channel closed");
+
+            if matches!(event, DataEvent::Response(DataResponse::Book(_))) {
+                responses += 1;
+            }
+        }
+
+        responses
+    })
+    .await
+    .expect("snapshots must complete after the extended cooldown");
+
+    let times = times.lock().clone();
+
+    assert!(initial.is_err());
+    assert!(extension.is_err());
+    assert_eq!(times.len(), request_count);
+    assert_eq!(responses, request_count);
+    assert!(
+        times
+            .iter()
+            .all(|time| *time >= started + Duration::from_secs(21))
+    );
+    assert_eq!(
+        times
+            .iter()
+            .filter(|time| **time < started + Duration::from_secs(30))
+            .count(),
+        2
+    );
 }
 
 #[rstest]
@@ -3321,4 +3433,162 @@ async fn test_json_depth_update_speed_changes_after_unsubscribe() {
         vec![vec!["btcusdt@depth20@100ms"], vec!["btcusdt@depth20"]]
     );
     assert_eq!(*unsubscriptions.lock(), vec![vec!["btcusdt@depth20@100ms"]]);
+}
+
+#[rstest]
+#[case::depth_first(true)]
+#[case::deltas_first(false)]
+#[tokio::test]
+async fn test_subscribe_book_depth_shares_stream_with_deltas(
+    #[case] depth_first: bool,
+    #[values(false, true)] json: bool,
+) {
+    let config = DataTestServerConfig {
+        json_ws_streams: json,
+        ..Default::default()
+    };
+
+    let subscriptions = config.subscriptions.clone();
+    let unsubscriptions = config.unsubscriptions.clone();
+    let addr = start_data_test_server_with_config(config).await;
+
+    let (mut client, mut rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: if json {
+            BinanceSpotMarketDataMode::Json
+        } else {
+            BinanceSpotMarketDataMode::Sbe
+        },
+        api_key: Some(TEST_API_KEY.into()),
+        api_secret: Some(TEST_API_SECRET.into()),
+        ..Default::default()
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let depth_cmd = SubscribeBookDepth::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(1),
+        false,
+        None,
+        None,
+    );
+    client.subscribe_book_depth(depth_cmd.clone()).unwrap();
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(20),
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    if json {
+        let mut conflicting = depth_cmd;
+        conflicting.params = Some(Params::new([("update_speed".into(), json!(1000))].into()));
+        let error = client.subscribe_book_depth(conflicting).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "unsubscribe before changing Binance Spot book depth or update_speed"
+        );
+    }
+
+    let Data::BookDepth(depth) = recv_data(&mut rx, Duration::from_secs(5)).await.unwrap() else {
+        panic!("Expected native depth snapshot");
+    };
+
+    let Data::BookDeltas(deltas) = recv_data(&mut rx, Duration::from_secs(5)).await.unwrap() else {
+        panic!("Expected companion snapshot deltas");
+    };
+
+    let unsub_depth = UnsubscribeBookDepth::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    let unsub_deltas = UnsubscribeBookDeltas::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    let stream = if json {
+        "btcusdt@depth20@100ms"
+    } else {
+        "btcusdt@depth20"
+    };
+
+    if depth_first {
+        client.unsubscribe_book_depth(&unsub_depth).unwrap();
+    } else {
+        client.unsubscribe_book_deltas(&unsub_deltas).unwrap();
+    }
+
+    assert!(unsubscriptions.lock().is_empty());
+
+    if depth_first {
+        client.unsubscribe_book_deltas(&unsub_deltas).unwrap();
+    } else {
+        client.unsubscribe_book_depth(&unsub_depth).unwrap();
+    }
+
+    wait_until_async(
+        || async { !unsubscriptions.lock().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), 1);
+    assert_eq!(depth.asks.len(), 1);
+    assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
+    assert_eq!(depth.bids[0].price.as_decimal(), dec!(42000));
+    assert_eq!(depth.bids[0].size.as_decimal(), dec!(1));
+    assert_eq!(depth.bids[0].order_id, 0);
+    assert_eq!(depth.asks[0].side, Some(OrderSide::Sell));
+    assert_eq!(depth.asks[0].price.as_decimal(), dec!(42001));
+    assert_eq!(depth.asks[0].size.as_decimal(), dec!(0.5));
+    assert_eq!(depth.asks[0].order_id, 0);
+    assert_eq!(&depth.bid_counts[..], &[0]);
+    assert_eq!(&depth.ask_counts[..], &[0]);
+    assert_eq!(
+        depth.flags,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+    );
+    assert_eq!(depth.sequence, if json { 0 } else { 99999 });
+
+    if json {
+        assert_eq!(depth.ts_event, depth.ts_init);
+    } else {
+        assert_eq!(depth.ts_event, UnixNanos::from(1_000_000_000));
+    }
+
+    assert_eq!(depth.ts_init, deltas.ts_init);
+    assert_eq!(*subscriptions.lock(), vec![vec![stream.to_string()]]);
+    assert_eq!(*unsubscriptions.lock(), vec![vec![stream.to_string()]]);
+    client.disconnect().await.unwrap();
 }

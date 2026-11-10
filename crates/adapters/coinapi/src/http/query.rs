@@ -21,14 +21,15 @@ use jiff::{RoundMode, Timestamp, TimestampRound, Unit};
 use serde::{Deserialize, Serialize, Serializer};
 
 use super::error::Error;
+use crate::common::enums::OhlcvPeriod;
 
 /// Largest documented historical page size.
 pub const HISTORY_LIMIT_MAX: u32 = 100_000;
 
 /// An explicit historical time window and record limit.
 ///
-/// This represents one page. CoinAPI does not specify the timestamp or boundary
-/// inclusivity needed to guarantee lossless automatic continuation.
+/// This represents one provider page without local filtering. OHLCV responses can include
+/// periods outside these bounds; range methods filter them locally.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryQuery {
     #[serde(serialize_with = "serialize_time")]
@@ -120,7 +121,7 @@ pub struct TradesQuery {
 /// Historical OHLCV for a provider period identifier.
 #[derive(Debug, Clone, Serialize)]
 pub struct OhlcvQuery {
-    pub period_id: String,
+    pub period_id: OhlcvPeriod,
     #[serde(flatten)]
     pub range: HistoryQuery,
 }

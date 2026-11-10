@@ -534,6 +534,149 @@ def test_order_factory_bracket_forwards_leg_parameters() -> None:
     _assert_trigger_fields(take_profit)
 
 
+def test_order_factory_bracket_accepts_legacy_positional_arguments() -> None:
+    """
+    Test order factory bracket keeps the legacy positional argument order.
+    """
+    factory = _factory()
+    entry_id = ClientOrderId("O-BRACKET-ENTRY")
+    tp_id = ClientOrderId("O-BRACKET-TP")
+    sl_id = ClientOrderId("O-BRACKET-SL")
+
+    orders = factory.bracket(
+        INSTRUMENT_ID,
+        OrderSide.BUY,
+        QUANTITY,
+        False,
+        TriggerType.LAST_PRICE,
+        TRIGGER_INSTRUMENT_ID,
+        ContingencyType.OCO,
+        OrderType.STOP_LIMIT,
+        Price.from_str("50100.00"),
+        Price.from_str("50000.00"),
+        EXPIRE_TIME,
+        TimeInForce.GTD,
+        True,
+        EXEC_ALGORITHM_ID,
+        EXEC_ALGORITHM_PARAMS,
+        ["entry", "factory"],
+        entry_id,
+        OrderType.LIMIT_IF_TOUCHED,
+        Price.from_str("55000.00"),
+        Price.from_str("55100.00"),
+        TriggerType.LAST_PRICE,
+        None,
+        None,
+        TrailingOffsetType.PRICE,
+        None,
+        TimeInForce.FOK,
+        False,
+        EXEC_ALGORITHM_ID,
+        EXEC_ALGORITHM_PARAMS,
+        ["tp", "factory"],
+        tp_id,
+        OrderType.TRAILING_STOP_MARKET,
+        Price.from_str("45000.00"),
+        TriggerType.BID_ASK,
+        Price.from_str("45500.00"),
+        Decimal("0.75"),
+        TrailingOffsetType.BASIS_POINTS,
+        TimeInForce.IOC,
+        EXEC_ALGORITHM_ID,
+        EXEC_ALGORITHM_PARAMS,
+        ["sl", "factory"],
+        sl_id,
+    )
+
+    entry, stop_loss, take_profit = orders
+
+    assert len(orders) == 3
+    _assert_order_base(
+        entry,
+        OrderType.STOP_LIMIT,
+        OrderSide.BUY,
+        entry_id,
+        ["entry", "factory"],
+        TimeInForce.GTD,
+        False,
+        False,
+    )
+    _assert_order_base(
+        stop_loss,
+        OrderType.TRAILING_STOP_MARKET,
+        OrderSide.SELL,
+        sl_id,
+        ["sl", "factory"],
+        TimeInForce.IOC,
+        True,
+        False,
+    )
+    assert stop_loss.trailing_offset == Decimal("0.75")
+    _assert_order_base(
+        take_profit,
+        OrderType.LIMIT_IF_TOUCHED,
+        OrderSide.SELL,
+        tp_id,
+        ["tp", "factory"],
+        TimeInForce.FOK,
+        True,
+        False,
+    )
+    assert take_profit.is_post_only is False
+
+
+def test_order_factory_bracket_exits_are_reduce_only_by_default() -> None:
+    """
+    Test order factory bracket exits are reduce only by default.
+    """
+    factory = _factory()
+
+    entry, stop_loss, take_profit = factory.bracket(
+        INSTRUMENT_ID,
+        OrderSide.BUY,
+        QUANTITY,
+        tp_price=Price.from_str("55000.00"),
+        sl_trigger_price=Price.from_str("45000.00"),
+    )
+
+    assert entry.is_reduce_only is False
+    assert stop_loss.is_reduce_only is True
+    assert take_profit.is_reduce_only is True
+
+
+@pytest.mark.parametrize(
+    ("tp_reduce_only", "sl_reduce_only"),
+    [
+        (False, True),
+        (True, False),
+        (False, False),
+        (True, True),
+    ],
+)
+def test_order_factory_bracket_overrides_exit_reduce_only(
+    tp_reduce_only: bool,
+    sl_reduce_only: bool,
+) -> None:
+    """
+    Test order factory bracket overrides exit reduce only per leg.
+    """
+    factory = _factory()
+
+    entry, stop_loss, take_profit = factory.bracket(
+        INSTRUMENT_ID,
+        OrderSide.BUY,
+        QUANTITY,
+        tp_price=Price.from_str("55000.00"),
+        tp_reduce_only=tp_reduce_only,
+        sl_trigger_price=Price.from_str("45000.00"),
+        sl_reduce_only=sl_reduce_only,
+    )
+
+    assert entry.is_reduce_only is False
+    assert stop_loss.is_reduce_only is sl_reduce_only
+    assert take_profit.is_reduce_only is tp_reduce_only
+
+
 def test_order_factory_trailing_stop_market_activates_at_market() -> None:
     """
     Test order factory trailing stop market activates at market.

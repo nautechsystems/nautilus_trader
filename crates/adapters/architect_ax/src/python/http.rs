@@ -539,6 +539,7 @@ impl AxHttpClient {
     /// - The HTTP request fails.
     /// - A fill's instrument cannot be fetched or parsed.
     /// - Fill parsing fails.
+    /// - A `start` or `end` timestamp exceeds `i64::MAX` nanoseconds.
     #[pyo3(name = "request_fill_reports")]
     fn py_request_fill_reports<'py>(
         &self,

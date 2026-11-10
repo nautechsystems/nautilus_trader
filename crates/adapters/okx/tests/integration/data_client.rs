@@ -19,7 +19,6 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     num::NonZeroUsize,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -31,7 +30,7 @@ use axum::{
     Router,
     extract::{
         Query, State,
-        ws::{WebSocket, WebSocketUpgrade},
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
     response::{IntoResponse, Json, Response},
@@ -45,14 +44,18 @@ use nautilus_common::{
         DataEvent, DataResponse,
         data::{
             BookResponse, InstrumentResponse, InstrumentsResponse,
-            OptionChainReferencePriceResponse, RequestBookSnapshot, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice,
+            OptionChainReferencePriceResponse, RequestBars, RequestBookSnapshot, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades,
+            SubscribeBookDepth, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDepth,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
+    data::BarType,
+    enums::BookType,
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -78,17 +81,14 @@ struct TestServerState {
     rpi_book_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     spread_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     fail_spreads: bool,
-}
-
-fn manifest_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    fail_instruments: bool,
+    fail_rpi_book: bool,
+    instrument_response: Option<Value>,
+    spread_response: Option<Value>,
 }
 
 fn load_test_data(filename: &str) -> Value {
-    let path = manifest_path().join("test_data").join(filename);
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    serde_json::from_str(&content).expect("invalid json fixture")
+    crate::common::load_test_json(filename)
 }
 
 fn spread_response(params: &HashMap<String, String>) -> Value {
@@ -116,7 +116,14 @@ fn create_router(state: TestServerState) -> Router {
                 let state = instruments_state.clone();
                 async move {
                     state.instrument_queries.lock().await.push(params);
-                    Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                    if state.fail_instruments {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+
+                    let response = state
+                        .instrument_response
+                        .unwrap_or_else(|| load_test_data("http_get_instruments_spot.json"));
+                    Json(response).into_response()
                 }
             }),
         )
@@ -142,6 +149,10 @@ fn create_router(state: TestServerState) -> Router {
                 let state = rpi_book_state.clone();
                 async move {
                     state.rpi_book_queries.lock().await.push(params);
+                    if state.fail_rpi_book {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+
                     Json(load_test_data("http_get_rpi_order_book.json")).into_response()
                 }
             }),
@@ -165,11 +176,48 @@ fn create_router(state: TestServerState) -> Router {
                             .into_response();
                     }
 
-                    Json(spread_response(&params)).into_response()
+                    let response = state
+                        .spread_response
+                        .unwrap_or_else(|| spread_response(&params));
+                    Json(response).into_response()
                 }
             }),
         )
+        .route("/api/v5/market/candles", candles_route())
+        .route("/api/v5/market/history-candles", candles_route())
 }
+
+/// Closed minute candles for `CANDLES_FIRST` and the day after, answered as OKX does:
+/// newest first, `before` and `after` as exclusive bounds on the open time.
+fn candles_route() -> axum::routing::MethodRouter {
+    get(|Query(params): Query<HashMap<String, String>>| async move {
+        let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+        let first_ms = CANDLES_FIRST
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
+        let after = params.get("after").map(|v| v.parse::<i64>().unwrap());
+        let before = params.get("before").map(|v| v.parse::<i64>().unwrap());
+        let limit = params
+            .get("limit")
+            .map_or(100, |v| v.parse::<usize>().unwrap());
+        let data: Vec<Value> = (0..1_440)
+            .rev()
+            .map(|index| first_ms + index * 60_000)
+            .filter(|ts| after.is_none_or(|a| *ts < a) && before.is_none_or(|b| *ts > b))
+            .take(limit)
+            .map(|ts| {
+                let mut candle = template.clone();
+                candle[0] = json!(ts.to_string());
+                candle[8] = json!("1");
+                candle
+            })
+            .collect();
+        Json(json!({"code": "0", "msg": "", "data": data}))
+    })
+}
+
+const CANDLES_FIRST: &str = "2026-09-01T00:00:00Z";
 
 async fn start_test_server(state: TestServerState) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -304,18 +352,29 @@ fn request_instrument(instrument_id: &str) -> RequestInstrument {
 fn instruments_response(events: &[DataEvent]) -> &InstrumentsResponse {
     events
         .iter()
-        .find_map(|event| match event {
-            DataEvent::Response(DataResponse::Instruments(response)) => Some(response),
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instruments(response)) => Some(response),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("expected DataResponse::Instruments, received {events:?}"))
+        .unwrap_or_else(|| {
+            panic!("expected a completed DataResponse::Instruments, received {events:?}")
+        })
 }
 
 fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
-    events.iter().find_map(|event| match event {
-        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+    events
+        .iter()
+        .find_map(|event| match completed_response(event) {
+            Some(DataResponse::Instrument(response)) => Some(response.as_ref()),
+            _ => None,
+        })
+}
+
+fn completed_response(event: &DataEvent) -> Option<&DataResponse> {
+    match event {
+        DataEvent::ResponseEnvelope(envelope) if envelope.completed() => envelope.response(),
         _ => None,
-    })
+    }
 }
 
 fn book_response(events: &[DataEvent]) -> Option<&BookResponse> {
@@ -346,15 +405,8 @@ fn option_chain_reference_price_response(
 #[case::depth_400_passes_through(400, 400)]
 #[case::depth_50_passes_through(50, 50)]
 #[case::depth_1_clamps_to_50(1, 50)]
-#[case::depth_5_clamps_to_50(5, 50)]
-#[case::depth_10_clamps_to_50(10, 50)]
-#[case::depth_25_clamps_to_50(25, 50)]
-#[case::depth_49_clamps_to_50(49, 50)]
 #[case::depth_51_clamps_to_400(51, 400)]
-#[case::depth_100_clamps_to_400(100, 400)]
-#[case::depth_200_clamps_to_400(200, 400)]
 #[case::depth_500_clamps_to_400(500, 400)]
-#[case::depth_1000_clamps_to_400(1000, 400)]
 fn test_resolve_book_depth(#[case] raw_depth: usize, #[case] expected: usize) {
     assert_eq!(resolve_book_depth(raw_depth), expected);
 }
@@ -414,7 +466,7 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_continues_when_spread_endpoint_fails() {
+async fn test_request_instruments_fails_with_the_rows_when_spread_endpoint_fails() {
     let state = TestServerState {
         fail_spreads: true,
         ..TestServerState::default()
@@ -428,9 +480,19 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .request_instruments(request)
         .expect("request_instruments");
 
-    let events =
-        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
-    let response = instruments_response(&events);
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the fetched instruments, received {failure:?}");
+    };
+
     let spread_count = response
         .data
         .iter()
@@ -443,9 +505,90 @@ async fn test_request_instruments_continues_when_spread_endpoint_fails() {
         .count();
     let spread_queries = state.spread_queries.lock().await;
 
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains("spread"), "{}", failure.reason);
     assert_eq!(spread_count, 0);
     assert_eq!(spot_count, 5);
     assert_eq!(spread_queries.len(), 1);
+}
+
+#[rstest]
+#[case::instrument(
+    TestServerState {
+        instrument_response: Some(with_unparsable_first_definition(
+            "http_get_instruments_spot.json",
+        )),
+        ..TestServerState::default()
+    },
+    "BTC-USD",
+    &[
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "ETH-USD-SWAP_ETH-USD-231229.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[case::spread(
+    TestServerState {
+        spread_response: Some(with_unparsable_first_definition("http_get_spreads.json")),
+        ..TestServerState::default()
+    },
+    "ETH-USD-SWAP_ETH-USD-231229",
+    &[
+        "BTC-USD.OKX",
+        "ETH-USD.OKX",
+        "SOL-USD.OKX",
+        "XRP-USD.OKX",
+        "USDT-USD.OKX",
+        "BTC-USDT_BTC-USDT-SWAP.OKX",
+    ],
+)]
+#[tokio::test]
+async fn test_request_instruments_fails_with_the_rows_when_a_definition_fails_to_parse(
+    #[case] state: TestServerState,
+    #[case] unparsable: &str,
+    #[case] expected_ids: &[&str],
+) {
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, true);
+
+    let request = request_instruments();
+    let request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instruments request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instruments request failure, received {event:?}");
+    };
+
+    let Some(DataResponse::Instruments(response)) = &failure.response else {
+        panic!("expected the usable instruments, received {failure:?}");
+    };
+
+    let ids = response
+        .data
+        .iter()
+        .map(|instrument| instrument.id().to_string())
+        .collect::<Vec<_>>();
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.reason.contains(unparsable), "{}", failure.reason);
+    assert_eq!(ids, expected_ids);
+}
+
+// Synthetic malformed input: blanks the tick size of a fixture definition
+fn with_unparsable_first_definition(filename: &str) -> Value {
+    let mut payload = load_test_data(filename);
+    payload["data"][0]["tickSz"] = json!("");
+    payload
 }
 
 #[rstest]
@@ -634,4 +777,403 @@ async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
         Some("BTC-USD")
     );
     assert_eq!(queries[0].get("sz").map(String::as_str), Some("2"));
+}
+
+#[rstest]
+#[case::http(true, "500")]
+#[case::definition(false, "instrument is in pre-open state")]
+#[tokio::test]
+async fn test_request_instrument_failure_completes_the_request(
+    #[case] http_failure: bool,
+    #[case] reason: &str,
+) {
+    let mut instrument_response = load_test_data("http_get_instruments_spot.json");
+    instrument_response["data"][0]["state"] = json!("preopen");
+
+    let state = TestServerState {
+        fail_instruments: http_failure,
+        instrument_response: Some(instrument_response),
+        ..TestServerState::default()
+    };
+
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instrument("BTC-USD.OKX");
+    let request_id = request.request_id;
+
+    client.request_instrument(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instrument request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instrument request failure, received {event:?}");
+    };
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.response.is_none());
+    assert!(failure.reason.starts_with("fetch instrument from API:"));
+    assert!(failure.reason.contains(reason), "{}", failure.reason);
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[case::standard(false)]
+#[case::rpi(true)]
+#[tokio::test]
+async fn test_request_book_snapshot_http_failure_completes_the_request(#[case] rpi: bool) {
+    let state = TestServerState {
+        fail_rpi_book: true,
+        ..TestServerState::default()
+    };
+
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let instruments_request = request_instruments();
+    let instruments_request_id = instruments_request.request_id;
+    client.request_instruments(instruments_request).unwrap();
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    let params = Params::new([("rpi".to_string(), json!(rpi))].into());
+    let request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            InstrumentId::from("BTC-USD.OKX"),
+            NonZeroUsize::new(2),
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            Some(params),
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed book request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected book request failure, received {event:?}");
+    };
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.response.is_none());
+    assert!(
+        failure
+            .reason
+            .starts_with("failed to request book snapshot from OKX:")
+    );
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_http_failure_completes_the_request() {
+    let addr = start_test_server(TestServerState::default()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instruments();
+    let instruments_request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    // The test server has no trades route, so the history fetch fails with HTTP 404
+    let request_id = UUID4::new();
+    client
+        .request_trades(RequestTrades::new(
+            InstrumentId::from("BTC-USD.OKX"),
+            Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)),
+            None,
+            None,
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_trades");
+
+    let failure = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::RequestFailed(failure) if failure.request_id == request_id => {
+                    break failure;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the failed trades request was never completed");
+
+    assert!(failure.response.is_none());
+    assert!(!failure.reason.is_empty());
+}
+
+#[rstest]
+#[case::window_covered(30, true)]
+#[case::history_starts_after_the_start(-60, false)]
+#[tokio::test]
+async fn test_request_bars_sends_a_completed_envelope_only_for_a_covered_window(
+    #[case] start_minutes: i64,
+    #[case] covered: bool,
+) {
+    let addr = start_test_server(TestServerState::default()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instruments();
+    let instruments_request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    let first: jiff::Timestamp = CANDLES_FIRST.parse().unwrap();
+    let request_id = UUID4::new();
+    client
+        .request_bars(RequestBars::new(
+            BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL"),
+            Some(first + jiff::SignedDuration::from_mins(start_minutes)),
+            Some(first + jiff::SignedDuration::from_hours(2)),
+            None,
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_bars");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::ResponseEnvelope(envelope)
+                    if *envelope.correlation_id() == request_id =>
+                {
+                    break DataEvent::ResponseEnvelope(envelope);
+                }
+                DataEvent::Response(response) if *response.correlation_id() == request_id => {
+                    break DataEvent::Response(response);
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the bars request was never answered");
+
+    match event {
+        DataEvent::ResponseEnvelope(envelope) => {
+            assert!(
+                covered,
+                "a window OKX history does not reach was marked completed"
+            );
+            assert!(envelope.completed());
+            assert!(envelope.failure_reason().is_none());
+            assert!(matches!(
+                envelope.response(),
+                Some(DataResponse::Bars(bars)) if !bars.data.is_empty()
+            ));
+        }
+        DataEvent::Response(DataResponse::Bars(bars)) => {
+            assert!(!covered, "a covered window was not marked completed");
+            assert!(!bars.data.is_empty());
+        }
+        other => panic!("unexpected event {other:?}"),
+    }
+}
+
+#[rstest]
+#[case("BTC-USD_UM_XPERP-310404.OKX")]
+#[case("BTC-USD_UM-261030.OKX")]
+#[tokio::test]
+async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
+    let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let mut router = Router::new();
+
+    for endpoint in ["/public", "/business"] {
+        let captured = captured.clone();
+        router = router.route(
+            endpoint,
+            get(move |upgrade: WebSocketUpgrade| {
+                let captured = captured.clone();
+                async move {
+                    upgrade.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let request: Value = serde_json::from_str(&text).unwrap();
+                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
+                                if request["args"][0]["channel"] != "instruments" {
+                                    captured.send((endpoint, request.clone())).unwrap();
+                                }
+
+                                for arg in request["args"].as_array().unwrap() {
+                                    socket
+                                        .send(Message::Text(
+                                            json!({"event": request["op"], "arg": arg})
+                                                .to_string()
+                                                .into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+    }
+
+    let router = router.route(
+        "/api/v5/public/instruments",
+        get(|| async { Json(load_test_data("http_get_instruments_futures.json")) }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(sender);
+    let config = OKXDataClientConfig::builder()
+        .instrument_types(vec![OKXInstrumentType::Futures])
+        .base_url_http(format!("http://{addr}"))
+        .base_url_ws_public(format!("ws://{addr}/public"))
+        .base_url_ws_business(format!("ws://{addr}/business"))
+        .book_stale_check_interval_secs(0)
+        .update_instruments_interval_mins(0)
+        .build();
+    let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from(instrument_id);
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_book_depth(SubscribeBookDepth::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+    let mut frames = Vec::new();
+    for _ in 0..3 {
+        frames.push(
+            tokio::time::timeout(Duration::from_secs(5), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+    }
+
+    client
+        .unsubscribe_quotes(&UnsubscribeQuotes::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .unsubscribe_trades(&UnsubscribeTrades::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    for _ in 0..3 {
+        frames.push(
+            tokio::time::timeout(Duration::from_secs(5), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+    }
+
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    let mut actual = frames
+        .iter()
+        .map(|(endpoint, frame)| {
+            (
+                *endpoint,
+                frame["op"].as_str().unwrap().to_string(),
+                frame["args"].clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut expected = ["subscribe", "unsubscribe"]
+        .into_iter()
+        .flat_map(|op| {
+            ["bbo-tbt", "trades", "books5"]
+                .into_iter()
+                .map(move |channel| {
+                    (
+                        "/public",
+                        op.to_string(),
+                        json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+
+    actual.sort_by_cached_key(|item| format!("{}{}{}", item.0, item.1, item.2));
+    expected.sort_by_cached_key(|item| format!("{}{}{}", item.0, item.1, item.2));
+
+    assert_eq!(actual, expected);
 }

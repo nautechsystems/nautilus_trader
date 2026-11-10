@@ -30,6 +30,7 @@ use crate::common::{
         BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType,
         BybitRepayStatus, BybitSmpType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce,
         BybitTpSlMode, BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
+        BybitWithdrawStatus, BybitWithdrawType,
     },
     models::{
         BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -1445,6 +1446,82 @@ pub struct BybitRepayResult {
 ///
 /// - <https://bybit-exchange.github.io/docs/v5/account/repay>
 pub type BybitRepayResponse = BybitResponse<BybitRepayResult>;
+
+/// Result from a withdrawal request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitWithdrawResult {
+    pub id: String,
+}
+
+/// Response alias for withdrawal requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw>
+pub type BybitWithdrawResponse = BybitResponse<BybitWithdrawResult>;
+
+/// A single withdrawal record.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw/withdraw-record>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWithdrawalRecord {
+    pub withdraw_id: String,
+    #[serde(rename = "txID")]
+    pub tx_id: String,
+    pub coin: Ustr,
+    pub chain: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub amount: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub withdraw_fee: Decimal,
+    pub status: BybitWithdrawStatus,
+    pub to_address: String,
+    #[serde(default)]
+    pub tag: String,
+    pub withdraw_type: BybitWithdrawType,
+    pub create_time: String,
+    pub update_time: String,
+    #[serde(default)]
+    pub tax: String,
+    #[serde(default)]
+    pub tax_rate: String,
+    #[serde(default)]
+    pub tax_type: String,
+}
+
+/// Result payload for `GET /v5/asset/withdraw/query-record`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWithdrawalRecordsResult {
+    #[serde(default)]
+    pub rows: Vec<BybitWithdrawalRecord>,
+    #[serde(default)]
+    pub next_page_cursor: Option<String>,
+}
+
+impl BybitWithdrawalRecordsResult {
+    /// Returns the cursor to use for the next page, or `None` when the final
+    /// page has been fetched.
+    ///
+    /// Treats both an empty and a missing cursor as end-of-pages.
+    #[must_use]
+    pub fn continuation_cursor(&self) -> Option<&str> {
+        match self.next_page_cursor.as_deref() {
+            None | Some("") => None,
+            Some(cursor) => Some(cursor),
+        }
+    }
+}
+
+/// Response alias for withdrawal records queries.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw/withdraw-record>
+pub type BybitWithdrawalRecordsResponse = BybitResponse<BybitWithdrawalRecordsResult>;
 
 /// API key permissions.
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -17,6 +17,11 @@
 
 use std::{fs, path::PathBuf};
 
+use nautilus_core::UnixNanos;
+use nautilus_model::instruments::InstrumentAny;
+
+use crate::{common::parse::parse_deribit_instrument_any, http::models::DeribitInstrument};
+
 #[cfg(test)]
 #[must_use]
 /// Loads a JSON fixture from the adapter test data directory.
@@ -30,4 +35,12 @@ pub fn load_test_json(file_name: &str) -> String {
         .join(file_name);
 
     fs::read_to_string(path).expect("Failed to read test JSON file")
+}
+
+pub(crate) fn routed_spot_instrument() -> InstrumentAny {
+    let json = load_test_json("http_get_instrument_routed_spot.json");
+    let definition: DeribitInstrument = serde_json::from_str(&json).unwrap();
+    parse_deribit_instrument_any(&definition, UnixNanos::default(), UnixNanos::default())
+        .unwrap()
+        .unwrap()
 }

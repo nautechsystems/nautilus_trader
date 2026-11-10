@@ -16,10 +16,10 @@
 pub mod load;
 pub mod stream;
 
+mod record;
+
 #[cfg(feature = "arrow")]
 pub mod convert;
-
-mod record;
 
 use std::{
     ffi::OsStr,

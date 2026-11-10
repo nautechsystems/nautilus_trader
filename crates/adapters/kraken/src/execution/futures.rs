@@ -365,6 +365,7 @@ impl KrakenFuturesExecutionClient {
 
     fn cancel_single_order(&self, cmd: &CancelOrder) {
         let account_id = self.core.account_id;
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -396,6 +397,7 @@ impl KrakenFuturesExecutionClient {
                     client_order_id,
                     venue_order_id,
                     failure,
+                    command_id,
                 );
             }
             Ok(())
@@ -553,6 +555,7 @@ impl KrakenFuturesExecutionClient {
     }
 
     fn modify_single_order(&self, cmd: &ModifyOrder) {
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -587,7 +590,19 @@ impl KrakenFuturesExecutionClient {
                             "modify_order outcome is ambiguous for client_order_id={client_order_id}: {reason}"
                         );
                     }
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                    CommandFailure::NotSent(reason) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("modify-order error: {reason}"),
+                            ts_event,
+                            Some(command_id),
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_modify_rejected_event(
                             strategy_id,
@@ -596,6 +611,7 @@ impl KrakenFuturesExecutionClient {
                             venue_order_id,
                             &format!("modify-order error: {reason}"),
                             ts_event,
+                            Some(command_id),
                         );
                     }
                 },
@@ -785,9 +801,20 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_order_status_reports_checked(account_id, cmd.instrument_id, None, None, false)
             .await?;
+
+        // A withheld report answers for nothing, but it still shows which venue order echoes the
+        // queried client order ID.
+        reports.extend_from_slice(coverage.withheld());
         name_reports_by_cached_order(&self.core.cache(), &mut reports);
 
-        let matched = queried.find_report(&self.core.cache(), &reports)?;
+        let matched = queried
+            .find_report(&self.core.cache(), &reports)?
+            .filter(|report| {
+                !coverage
+                    .withheld()
+                    .iter()
+                    .any(|withheld| withheld.venue_order_id == report.venue_order_id)
+            });
         let mut stray_rows = queried.has_stray_report(&self.core.cache(), &reports);
 
         if let Some(mut report) = matched {
@@ -1060,12 +1087,16 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // venue can refuse the history page, since every `/history` endpoint draws on one token
         // pool; a refusal degrades startup to the open-only read and marks the set incomplete.
         // Any other failure fails the mass status, as a failed open-order read does.
-        let (mut order_reports, orders_complete) = match self
+        let (mut order_reports, orders_complete, skipped_orders) = match self
             .http
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await
         {
-            Ok((reports, coverage)) => (reports, coverage.is_complete()),
+            Ok((reports, coverage)) => {
+                let complete = coverage.is_complete();
+                let skipped: Vec<VenueOrderId> = coverage.skipped().iter().copied().collect();
+                (reports, complete, skipped)
+            }
             Err(e) if is_refused_history_read(&e) => {
                 log::warn!(
                     "Order history read refused for mass status, reading open orders only and \
@@ -1075,7 +1106,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                     .http
                     .request_order_status_reports_checked(account_id, None, start, None, true)
                     .await?;
-                (reports, false)
+                (reports, false, Vec::new())
             }
             Err(e) => return Err(e),
         };
@@ -1147,7 +1178,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // its report. With no order, and no venue position ID on a Kraken fill, the engine drops
         // them, but on an instrument with a position report its partial-window adjustment first
         // counts every fill there when sizing a synthetic opening, so they would skew that
-        // opening without ever being applied.
+        // opening without ever being applied. The same goes for an order the read itself left
+        // without a report because a skipped row names it, unless a fill echoes a cached order
+        // the venue order ID does not index yet, which the engine applies it to.
         let mut withheld = false;
         let mut withheld_fills: HashSet<VenueOrderId> = HashSet::new();
         {
@@ -1186,6 +1219,32 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             });
         }
         fill_reports.retain(|fill| !withheld_fills.contains(&fill.venue_order_id));
+        {
+            let cache = self.core.cache();
+            let mut dropped: HashMap<VenueOrderId, usize> = HashMap::new();
+            fill_reports.retain(|fill| {
+                let drop = skipped_orders.contains(&fill.venue_order_id)
+                    && cache.client_order_id(&fill.venue_order_id).is_none()
+                    && !fill
+                        .client_order_id
+                        .is_some_and(|id| cache.order_exists(&id))
+                    && !order_reports
+                        .iter()
+                        .any(|report| report.venue_order_id == fill.venue_order_id);
+
+                if drop {
+                    *dropped.entry(fill.venue_order_id).or_default() += 1;
+                }
+                !drop
+            });
+
+            for (venue_order_id, count) in &dropped {
+                log::warn!(
+                    "Withholding {count} page fill(s) of uncached order {venue_order_id} from mass \
+                     status: a skipped history row left the order without a report"
+                );
+            }
+        }
         let orders_complete = orders_complete && !withheld;
 
         let position_reports = self
@@ -1610,6 +1669,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
 #[derive(Debug, Clone)]
 struct CancelRequestContext {
+    command_id: UUID4,
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
@@ -1674,9 +1734,14 @@ async fn batch_cancel_orders_for_futures(
                 items.push(item);
             }
             Err(CommandFailure::NotSent(reason)) => {
-                log::warn!(
-                    "Batch cancel command failed local validation for {}: {reason}",
-                    cancel.client_order_id
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
                 );
             }
             Err(CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason)) => {
@@ -1688,10 +1753,13 @@ async fn batch_cancel_orders_for_futures(
         }
     }
 
-    for (item_chunk, context_chunk) in items
-        .chunks(FUTURES_BATCH_CANCEL_LIMIT)
-        .zip(contexts.chunks(FUTURES_BATCH_CANCEL_LIMIT))
-    {
+    let mut offset = 0;
+    while offset < items.len() {
+        let end = offset + batch_cancel_len(&contexts[offset..]);
+        let item_chunk = &items[offset..end];
+        let context_chunk = &contexts[offset..end];
+        offset = end;
+
         let response = match http
             .inner
             .cancel_order_items_batch(item_chunk.to_vec())
@@ -1699,16 +1767,12 @@ async fn batch_cancel_orders_for_futures(
         {
             Ok(response) => response,
             Err(e) => {
-                match command_failure_from_cancel_error(e) {
-                    CommandFailure::NotSent(reason) => {
-                        log::warn!("Batch cancel failed local validation: {reason}");
-                    }
-                    CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
-                        log::warn!(
-                            "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
-                        );
-                    }
-                }
+                handle_batch_cancel_failure(
+                    command_failure_from_cancel_error(e),
+                    context_chunk,
+                    emitter,
+                    clock,
+                );
                 continue;
             }
         };
@@ -1755,6 +1819,48 @@ async fn batch_cancel_orders_for_futures(
                 context.venue_order_id,
                 &format!("batch-cancel rejected: status={cancel_status}"),
                 clock.get_time_ns(),
+                Some(context.command_id),
+            );
+        }
+    }
+}
+
+fn batch_cancel_len(contexts: &[CancelRequestContext]) -> usize {
+    let mut venue_ids = HashSet::new();
+    let mut client_ids = HashSet::new();
+    contexts
+        .iter()
+        .take(FUTURES_BATCH_CANCEL_LIMIT)
+        .take_while(|context| {
+            context.venue_order_id.is_none_or(|id| venue_ids.insert(id))
+                && client_ids.insert(context.client_order_id)
+        })
+        .count()
+}
+
+fn handle_batch_cancel_failure(
+    failure: CommandFailure,
+    context_chunk: &[CancelRequestContext],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            for cancel in context_chunk {
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
+                );
+            }
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            log::warn!(
+                "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
             );
         }
     }
@@ -1780,6 +1886,7 @@ fn batch_cancel_item_for_futures(
 
     Ok((
         CancelRequestContext {
+            command_id: cancel.command_id,
             strategy_id: cancel.strategy_id,
             instrument_id: cancel.instrument_id,
             client_order_id: cancel.client_order_id,
@@ -1828,6 +1935,10 @@ fn batch_cancel_context<'a>(
     None
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn handle_cancel_failure(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
@@ -1836,6 +1947,7 @@ fn handle_cancel_failure(
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
     failure: CommandFailure,
+    causation_id: UUID4,
 ) {
     match failure {
         CommandFailure::VenueRejected(reason) => {
@@ -1846,10 +1958,19 @@ fn handle_cancel_failure(
                 venue_order_id,
                 &reason,
                 clock.get_time_ns(),
+                Some(causation_id),
             );
         }
         CommandFailure::NotSent(reason) => {
-            log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
+            emitter.emit_order_cancel_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+                Some(causation_id),
+            );
         }
         CommandFailure::Ambiguous(reason) => {
             log::warn!(
@@ -2631,6 +2752,39 @@ mod tests {
     use super::*;
 
     const TEST_INSTRUMENT_ID: &str = "PF_XBTUSD.KRAKEN";
+
+    #[rstest]
+    #[case::limit(51, false, false, false, 50)]
+    #[case::venue(3, true, false, false, 1)]
+    #[case::client_alias(3, false, true, false, 1)]
+    #[case::client_only(3, false, true, true, 1)]
+    fn test_batch_cancel_len(
+        #[case] count: usize,
+        #[case] repeated_venue: bool,
+        #[case] repeated_client: bool,
+        #[case] client_only: bool,
+        #[case] expected: usize,
+    ) {
+        let contexts: Vec<_> = (0..count)
+            .map(|index| {
+                let client_order_id =
+                    ClientOrderId::from(format!("C-{}", if repeated_client { 0 } else { index }));
+
+                CancelRequestContext {
+                    command_id: UUID4::new(),
+                    strategy_id: StrategyId::from("S-BATCH"),
+                    instrument_id: InstrumentId::from(TEST_INSTRUMENT_ID),
+                    client_order_id,
+                    cli_ord_id: client_order_id.to_string(),
+                    venue_order_id: (!client_only).then(|| {
+                        VenueOrderId::from(format!("V-{}", if repeated_venue { 0 } else { index }))
+                    }),
+                }
+            })
+            .collect();
+
+        assert_eq!(batch_cancel_len(&contexts), expected);
+    }
 
     #[tokio::test]
     async fn test_cancel_order_for_futures_missing_cached_instrument_returns_canonical_error() {

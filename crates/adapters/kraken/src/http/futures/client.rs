@@ -74,7 +74,7 @@ use crate::{
             parse_futures_fill_report, parse_futures_instrument,
             parse_futures_order_event_status_report, parse_futures_order_status_details_report,
             parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution,
+            parse_futures_public_execution, parse_venue_order_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -99,6 +99,10 @@ const BATCH_CANCEL_LIMIT: usize = 50;
 
 /// Maximum operations per batch order request for Kraken Futures API.
 const BATCH_ORDER_LIMIT: usize = 10;
+
+/// The largest order history page: the venue caps a larger `count` here silently and documents no
+/// default for this endpoint. A page costs one token whatever its size.
+const ORDER_HISTORY_PAGE_SIZE: usize = 1000;
 
 /// The response header Kraken documents for the order history continuation token; the body's
 /// `continuationToken` is read first and this header stands in when the body carries none.
@@ -831,6 +835,7 @@ impl KrakenFuturesRawHttpClient {
         // single-order lookup relies on to tell how far back the page reaches, so the order is
         // pinned rather than left to the venue default
         query_params.push("sort=desc".to_string());
+        query_params.push(format!("count={ORDER_HISTORY_PAGE_SIZE}"));
 
         // Build URL with query params
         let query_string = query_params.join("&");
@@ -992,9 +997,7 @@ impl KrakenFuturesRawHttpClient {
         cli_ord_id: Option<String>,
     ) -> anyhow::Result<FuturesCancelOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let mut params = HashMap::new();
@@ -1059,9 +1062,7 @@ impl KrakenFuturesRawHttpClient {
         batch_items: Vec<KrakenFuturesBatchCancelItem>,
     ) -> anyhow::Result<FuturesBatchCancelResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for batch orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let params = KrakenFuturesBatchOrderParams::new(batch_items);
@@ -1117,9 +1118,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: Option<String>,
     ) -> anyhow::Result<FuturesCancelAllOrdersResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let mut params = HashMap::new();
@@ -1364,14 +1363,16 @@ impl KrakenFuturesHttpClient {
 
     /// Resolves the contract a history row names, which the venue may spell in another case than
     /// the listing (the documented example is `pi_xbtusd`), so the exact spelling is tried first
-    /// and a case-insensitive match second.
+    /// and a case-insensitive match second. A spelling matching two contracts resolves to neither.
     fn get_instrument_by_history_tradeable(&self, tradeable: &str) -> Option<InstrumentAny> {
         self.get_instrument_by_raw_symbol(tradeable).or_else(|| {
-            self.instruments_cache
-                .load()
+            let instruments = self.instruments_cache.load();
+            let mut matches = instruments
                 .values()
-                .find(|inst| inst.raw_symbol().as_str().eq_ignore_ascii_case(tradeable))
-                .cloned()
+                .filter(|inst| inst.raw_symbol().as_str().eq_ignore_ascii_case(tradeable));
+            let instrument = matches.next()?;
+
+            matches.next().is_none().then(|| instrument.clone())
         })
     }
 
@@ -1785,13 +1786,20 @@ impl KrakenFuturesHttpClient {
     /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
     /// open position sizes, which is skipped, and an order a read scoped to one instrument cannot
     /// resolve, which may be on another instrument and is skipped. The coverage records each such
-    /// skip, each history row that cannot be parsed, resolved or represented, and a continuation
-    /// token, which cuts the read short at the page's oldest event: the read takes one page, since
-    /// every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every
-    /// 10 minutes, at a token per page. A read scoped to an unheld futures instrument reads nothing
-    /// and rules out no order. `ExecutionMassStatus::set_report_window` records whether it is
-    /// complete for bounded history, and the single-order lookup whether it rules out an order it
-    /// did not return.
+    /// skip, each history row in scope that cannot be parsed, resolved or represented, and a
+    /// continuation token, which cuts the read short at the page's oldest event: the read takes one
+    /// page, since every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at
+    /// 100 every 10 minutes, at a token per page. A read scoped to an unheld futures instrument
+    /// reads nothing and rules out no order. `ExecutionMassStatus::set_report_window` records
+    /// whether it is complete for bounded history, and the single-order lookup whether it rules out
+    /// an order it did not return.
+    ///
+    /// A skipped history row is out of scope only when the open-order snapshot reports its order,
+    /// or when a scoped read finds it names both an order and another contract; a row that
+    /// establishes neither stays in scope. An undocumented kind is always in scope. A row in scope
+    /// at least as new as the state an order would be reported from withholds that order, so an
+    /// unreadable newest row cannot fall back to an older state, whether that state is open or
+    /// closed. A row that names no order can withhold nothing, and leaves the read incomplete.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1911,7 +1919,12 @@ impl KrakenFuturesHttpClient {
                         order.symbol
                     );
                     coverage.skip(&order.order_id);
-                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
+
+                    // No history row can carry an invalid ID, and `skip` has marked the set
+                    // unidentified, so an invalid ID needs no entry here.
+                    if let Ok(venue_order_id) = VenueOrderId::new_checked(order.order_id.as_str()) {
+                        skipped_open_order_ids.insert(venue_order_id);
+                    }
                     continue;
                 }
 
@@ -1983,25 +1996,54 @@ impl KrakenFuturesHttpClient {
                 .map(|r| r.venue_order_id)
                 .chain(skipped_open_order_ids.iter().copied())
                 .collect();
-            let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
+            let mut latest: IndexMap<VenueOrderId, (OrderStatusReport, i64)> = IndexMap::new();
+            let mut unread_ms: AHashMap<VenueOrderId, i64> = AHashMap::new();
+            let mut skipped_in_scope = 0usize;
 
-            if response.skipped_rows > 0 {
-                log::warn!(
-                    "Order history page had {} row(s) the adapter could not represent; marking the set incomplete",
-                    response.skipped_rows
-                );
+            for row in &response.skipped_rows {
+                let snapshot_covers = row
+                    .order_id
+                    .as_deref()
+                    .is_some_and(|order_id| open_order_ids.contains(&VenueOrderId::new(order_id)));
+                let on_another_contract = row.order_id.is_some()
+                    && instrument_id.as_ref().is_some_and(|target_id| {
+                        row.tradeable
+                            .as_deref()
+                            .and_then(|tradeable| {
+                                self.get_instrument_by_history_tradeable(tradeable)
+                            })
+                            .is_some_and(|instrument| instrument.id() != *target_id)
+                    });
 
-                for order_id in &response.skipped_order_ids {
-                    coverage.skip(order_id);
+                if !row.undocumented && (snapshot_covers || on_another_contract) {
+                    continue;
                 }
+                skipped_in_scope += 1;
 
-                if response.skipped_rows > response.skipped_order_ids.len() {
+                if row.undocumented {
                     coverage.skip_unidentified();
                 }
+
+                match row.order_id.as_deref() {
+                    Some(order_id) => {
+                        record_unread_row(&mut coverage, &mut unread_ms, order_id, row.event_ms);
+                    }
+                    None => coverage.skip_unidentified(),
+                }
+            }
+
+            if skipped_in_scope > 0 {
+                log::warn!(
+                    "Order history page had {skipped_in_scope} row(s) in scope the adapter could not represent; marking the set incomplete",
+                );
             }
 
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
+
+                if open_order_ids.contains(&VenueOrderId::new(&event.order_id)) {
+                    continue;
+                }
 
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
@@ -2011,7 +2053,12 @@ impl KrakenFuturesHttpClient {
                         Some(inst) if inst.id() != *target_id => continue,
                         // Unresolved, the row may be the scoped instrument's own
                         None => {
-                            coverage.skip(&event.order_id);
+                            record_unread_row(
+                                &mut coverage,
+                                &mut unread_ms,
+                                &event.order_id,
+                                event_wrapper.event_ms,
+                            );
                             continue;
                         }
                         Some(_) => {}
@@ -2026,22 +2073,24 @@ impl KrakenFuturesHttpClient {
                         account_id,
                         ts_init,
                     ) {
-                        Ok(report) => {
-                            if open_order_ids.contains(&report.venue_order_id) {
-                                continue;
+                        Ok(report) => match latest.get(&report.venue_order_id) {
+                            Some((existing, _)) if !supersedes(&report, existing) => {}
+                            _ => {
+                                latest.insert(
+                                    report.venue_order_id,
+                                    (report, event_wrapper.state_ms),
+                                );
                             }
-
-                            match latest.get(&report.venue_order_id) {
-                                Some(existing) if !supersedes(&report, existing) => {}
-                                _ => {
-                                    latest.insert(report.venue_order_id, report);
-                                }
-                            }
-                        }
+                        },
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
-                            coverage.skip(order_id);
+                            record_unread_row(
+                                &mut coverage,
+                                &mut unread_ms,
+                                order_id,
+                                event_wrapper.event_ms,
+                            );
                         }
                     }
                 } else {
@@ -2049,11 +2098,29 @@ impl KrakenFuturesHttpClient {
                         "Instrument not in cache for futures symbol {}, skipping order event",
                         event.symbol
                     );
-                    coverage.skip(&event.order_id);
+                    record_unread_row(
+                        &mut coverage,
+                        &mut unread_ms,
+                        &event.order_id,
+                        event_wrapper.event_ms,
+                    );
                 }
             }
 
-            all_reports.extend(latest.into_values());
+            for (report, state_ms) in latest.into_values() {
+                if unread_ms
+                    .get(&report.venue_order_id)
+                    .is_some_and(|newest_unread_ms| *newest_unread_ms >= state_ms)
+                {
+                    log::warn!(
+                        "Withholding futures order {} from the order read: a history row that could not be read is not older than its latest readable state",
+                        report.venue_order_id
+                    );
+                    coverage.withhold(report);
+                } else {
+                    all_reports.push(report);
+                }
+            }
         }
 
         Ok((all_reports, coverage))
@@ -2520,6 +2587,8 @@ impl KrakenFuturesHttpClient {
                         timestamp: order_data.timestamp.clone(),
                         last_update_timestamp: order_data.last_update_timestamp.clone(),
                         reduce_only: order_data.reduce_only,
+                        time_in_force: TimeInForce::Gtc,
+                        post_only: false,
                     }
                 } else if let Some(trigger_data) = &send_event.order_trigger {
                     FuturesOrderEvent {
@@ -2535,6 +2604,8 @@ impl KrakenFuturesHttpClient {
                         timestamp: trigger_data.timestamp.clone(),
                         last_update_timestamp: trigger_data.last_update_timestamp.clone(),
                         reduce_only: trigger_data.reduce_only,
+                        time_in_force: TimeInForce::Gtc,
+                        post_only: false,
                     }
                 } else if let Some(prior_exec) = &send_event.order_prior_execution {
                     // EXECUTION event - use orderPriorExecution data
@@ -2551,6 +2622,8 @@ impl KrakenFuturesHttpClient {
                         timestamp: prior_exec.timestamp.clone(),
                         last_update_timestamp: prior_exec.last_update_timestamp.clone(),
                         reduce_only: prior_exec.reduce_only,
+                        time_in_force: TimeInForce::Gtc,
+                        post_only: false,
                     }
                 } else {
                     anyhow::bail!("No order, orderTrigger, or orderPriorExecution data in event");
@@ -2573,6 +2646,16 @@ impl KrakenFuturesHttpClient {
                 .ok_or_else(|| {
                     anyhow::anyhow!("Order not found in open orders or events: {venue_order_id}")
                 })?;
+
+            if events_response
+                .skipped_rows
+                .iter()
+                .any(|row| row.may_supersede(&venue_order_id, event_wrapper.state_ms))
+            {
+                anyhow::bail!(
+                    "Order {venue_order_id}: a history row that could not be read may hold a newer state than the one found"
+                );
+            }
 
             parse_futures_order_event_status_report(
                 &event_wrapper.order,
@@ -2598,6 +2681,7 @@ impl KrakenFuturesHttpClient {
     /// - The instrument is not found in cache.
     /// - The request fails.
     /// - The edit fails on the exchange.
+    /// - The response carries an invalid order ID.
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
@@ -2647,10 +2731,16 @@ impl KrakenFuturesHttpClient {
         let new_venue_order_id = response
             .edit_status
             .order_id
+            .or(response.edit_status.order_id_snake_case)
             .or(original_order_id)
             .ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
-        Ok(VenueOrderId::new(&new_venue_order_id))
+        parse_venue_order_id(&new_venue_order_id, "futures edit response").map_err(|e| {
+            KrakenModifyOrderError::InvalidOrderId {
+                detail: format!("{e:#}"),
+            }
+            .into()
+        })
     }
 
     /// Cancels an order on the Kraken Futures exchange.
@@ -3382,6 +3472,22 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
 
         accumulate_balance(balances, &code, amount, Decimal::ZERO);
     }
+}
+
+/// Records a history row in scope that the read could not use, keeping the newest such row per
+/// order so the fold can withhold an order it would otherwise report from an older state.
+fn record_unread_row(
+    coverage: &mut ReportCoverage,
+    unread_ms: &mut AHashMap<VenueOrderId, i64>,
+    order_id: &str,
+    event_ms: i64,
+) {
+    coverage.skip(order_id);
+
+    let newest = unread_ms
+        .entry(VenueOrderId::new(order_id))
+        .or_insert(event_ms);
+    *newest = (*newest).max(event_ms);
 }
 
 /// Whether `candidate` describes a later state of the same order than `existing`.
@@ -4357,6 +4463,20 @@ mod tests {
         history: Arc<RwLock<String>>,
         header_token: Option<&'static str>,
     ) -> KrakenFuturesHttpClient {
+        history_test_client_with_open_orders(
+            r#"{"result":"success","openOrders":[]}"#.to_string(),
+            history,
+            header_token,
+        )
+        .await
+    }
+
+    /// As [`history_test_client`], for a venue serving `open_orders` as its open-orders response.
+    async fn history_test_client_with_open_orders(
+        open_orders: String,
+        history: Arc<RwLock<String>>,
+        header_token: Option<&'static str>,
+    ) -> KrakenFuturesHttpClient {
         use axum::{
             Router, body::Body, extract::State, http::header, response::Response, routing::any,
         };
@@ -4364,11 +4484,9 @@ mod tests {
         let app = Router::new()
             .route(
                 "/derivatives/api/v3/openorders",
-                any(|| async {
-                    (
-                        [(header::CONTENT_TYPE, "application/json")],
-                        r#"{"result":"success","openOrders":[]}"#,
-                    )
+                any(move || {
+                    let open_orders = open_orders.clone();
+                    async move { ([(header::CONTENT_TYPE, "application/json")], open_orders) }
                 }),
             )
             .route(
@@ -4575,10 +4693,10 @@ mod tests {
 
     /// The order history request asks for the newest events first rather than relying on the
     /// venue default, since a page with a continuation token is read as reaching back to its
-    /// oldest event.
+    /// oldest event, and for the largest page, since a read takes only one.
     #[rstest]
     #[tokio::test]
-    async fn test_get_order_events_asks_for_the_newest_events_first() {
+    async fn test_get_order_events_asks_for_a_full_page_of_the_newest_events() {
         use axum::{Router, extract::RawQuery, routing::any};
 
         let query: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
@@ -4623,6 +4741,871 @@ mod tests {
             query.split('&').any(|param| param == "sort=desc"),
             "{query}"
         );
+        assert!(
+            query.split('&').any(|param| param == "count=1000"),
+            "{query}"
+        );
+    }
+
+    const HISTORY_T0: i64 = 1_680_877_000_000;
+    const HISTORY_T1: i64 = HISTORY_T0 + 1_000;
+    const HISTORY_T2: i64 = HISTORY_T0 + 2_000;
+    const HISTORY_T3: i64 = HISTORY_T0 + 3_000;
+
+    /// A history order of `uid` on `tradeable` with its own stamp at `own_ms`, with `fields`
+    /// standing in for the quantity and order type.
+    fn history_order(uid: &str, tradeable: &str, own_ms: i64, fields: &str) -> String {
+        format!(
+            r#"{{"uid":"{uid}","tradeable":"{tradeable}","direction":"Buy","filled":"0","limitPrice":"70000","clientId":"","reduceOnly":false,"timestamp":{HISTORY_T0},"lastUpdateTimestamp":{own_ms},{fields}}}"#
+        )
+    }
+
+    /// An element of `kind` at `event_ms` carrying `order` where the kind documents it.
+    fn history_element(kind: &str, event_ms: i64, order: &str) -> String {
+        let position = match kind {
+            "OrderUpdated" => "newOrder",
+            "OrderEditRejected" => "oldOrder",
+            _ => "order",
+        };
+        format!(
+            r#"{{"uid":"e-{event_ms}","timestamp":{event_ms},"event":{{"{kind}":{{"{position}":{order}}}}}}}"#
+        )
+    }
+
+    /// A readable row of `uid` on the test instrument.
+    fn readable_row(kind: &str, uid: &str, event_ms: i64, own_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_XBTUSD",
+            own_ms,
+            r#""quantity":"3","orderType":"Limit""#,
+        );
+        history_element(kind, event_ms, &order)
+    }
+
+    /// A row whose quantity does not decode, so the projection never sees its state.
+    fn unreadable_row(uid: &str, event_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_XBTUSD",
+            event_ms,
+            r#""quantity":"oops","orderType":"Limit""#,
+        );
+        history_element("OrderCancelled", event_ms, &order)
+    }
+
+    /// A row that decodes but fails to parse into a report, its quantity negative.
+    fn unparsable_row(uid: &str, event_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_XBTUSD",
+            event_ms,
+            r#""quantity":"-1","orderType":"Limit""#,
+        );
+        history_element("OrderCancelled", event_ms, &order)
+    }
+
+    /// A row the projection cannot represent, its type reported as `Unknown`.
+    fn unrepresentable_row(uid: &str, event_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_XBTUSD",
+            event_ms,
+            r#""quantity":"3","orderType":"Unknown""#,
+        );
+        history_element("OrderCancelled", event_ms, &order)
+    }
+
+    /// A row that decodes, on a contract the client cannot resolve.
+    fn unresolved_row(uid: &str, event_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_NOPE",
+            event_ms,
+            r#""quantity":"3","orderType":"Limit""#,
+        );
+        history_element("OrderCancelled", event_ms, &order)
+    }
+
+    /// A row of a kind the documentation does not list.
+    fn undocumented_row(uid: &str, event_ms: i64) -> String {
+        let order = history_order(
+            uid,
+            "PF_XBTUSD",
+            event_ms,
+            r#""quantity":"3","orderType":"Limit""#,
+        );
+        history_element("OrderSomethingNew", event_ms, &order)
+    }
+
+    /// An undecodable row naming only what it is given.
+    fn partial_row(uid: Option<&str>, tradeable: Option<&str>, event_ms: i64) -> String {
+        let uid = uid
+            .map(|uid| format!(r#""uid":"{uid}","#))
+            .unwrap_or_default();
+        let tradeable = tradeable
+            .map(|tradeable| format!(r#""tradeable":"{tradeable}","#))
+            .unwrap_or_default();
+        history_element(
+            "OrderCancelled",
+            event_ms,
+            &format!(r#"{{{uid}{tradeable}"quantity":"oops"}}"#),
+        )
+    }
+
+    fn history_json(rows: &[String]) -> String {
+        format!(r#"{{"elements":[{}]}}"#, rows.join(","))
+    }
+
+    fn cache_futures_contract(client: &KrakenFuturesHttpClient, raw_symbol: &str) {
+        client.cache_instrument(InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from(format!("{raw_symbol}.KRAKEN").as_str()))
+                .raw_symbol(Symbol::new(raw_symbol))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(0)
+                .size_precision(4)
+                .price_increment(Price::from("1"))
+                .size_increment(Quantity::from("0.0001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
+    }
+
+    /// An open-orders response with one resting buy per `(order_id, symbol)`.
+    fn open_orders_json(rows: &[(&str, &str)]) -> String {
+        let orders: Vec<String> = rows
+            .iter()
+            .map(|(order_id, symbol)| {
+                format!(
+                    r#"{{"order_id":"{order_id}","symbol":"{symbol}","side":"buy","orderType":"lmt","limitPrice":70000,"unfilledSize":3,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}"#
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"result":"success","openOrders":[{}]}}"#,
+            orders.join(",")
+        )
+    }
+
+    /// An order read of `rows` against a venue listing `open_orders`, with `PF_XBTUSD` and
+    /// `PF_ETHUSD` in the cache.
+    async fn read_history(
+        open_orders: &[(&str, &str)],
+        rows: &[String],
+        scope: Option<&str>,
+    ) -> (Vec<OrderStatusReport>, ReportCoverage) {
+        let client = history_test_client_with_open_orders(
+            open_orders_json(open_orders),
+            Arc::new(RwLock::new(history_json(rows))),
+            None,
+        )
+        .await;
+        cache_futures_contract(&client, "PF_XBTUSD");
+        cache_futures_contract(&client, "PF_ETHUSD");
+
+        client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                scope.map(|symbol| InstrumentId::from(format!("{symbol}.KRAKEN").as_str())),
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap()
+    }
+
+    fn report_status(reports: &[OrderStatusReport], uid: &str) -> Option<OrderStatus> {
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == uid)
+            .map(|report| report.order_status)
+    }
+
+    fn rules_out(coverage: &ReportCoverage, uid: &str) -> bool {
+        coverage.rules_out(Some(VenueOrderId::from(uid)), None)
+    }
+
+    /// An order is reported only from a state no unread row of the order is as new as, measured
+    /// against the state the fold chose, and a state other than a cancel or reject stamped before
+    /// its event counts from that earlier stamp. Withheld or not, the read is incomplete, the order
+    /// is not ruled out, and a sibling on the page is still reported and another order still ruled
+    /// out.
+    #[rstest]
+    #[case::newer(
+        vec![unreadable_row("H-O", HISTORY_T2), readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1)],
+        None
+    )]
+    #[case::tied(
+        vec![unreadable_row("H-O", HISTORY_T1), readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1)],
+        None
+    )]
+    #[case::no_usable_stamp(
+        vec![readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1), unreadable_row("H-O", -1)],
+        None
+    )]
+    #[case::only_row(vec![unreadable_row("H-O", HISTORY_T1)], None)]
+    #[case::unparsable_newer(
+        vec![unparsable_row("H-O", HISTORY_T2), readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1)],
+        None
+    )]
+    #[case::unrepresentable_newer(
+        vec![unrepresentable_row("H-O", HISTORY_T2), readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1)],
+        None
+    )]
+    #[case::unresolved_newer(
+        vec![unresolved_row("H-O", HISTORY_T2), readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1)],
+        None
+    )]
+    #[case::closed_older(
+        vec![unreadable_row("H-O", HISTORY_T2), readable_row("OrderCancelled", "H-O", HISTORY_T1, HISTORY_T0)],
+        None
+    )]
+    #[case::between_closed_and_later_open(
+        vec![
+            readable_row("OrderEditRejected", "H-O", HISTORY_T3, HISTORY_T0),
+            unreadable_row("H-O", HISTORY_T2),
+            readable_row("OrderCancelled", "H-O", HISTORY_T1, HISTORY_T1),
+        ],
+        None
+    )]
+    #[case::unreadable_cancel_before_refused_edit(
+        vec![readable_row("OrderEditRejected", "H-O", HISTORY_T3, HISTORY_T1), unreadable_row("H-O", HISTORY_T2)],
+        None
+    )]
+    #[case::update_stamped_before_the_unread_row(
+        vec![readable_row("OrderUpdated", "H-O", HISTORY_T3, HISTORY_T1), unreadable_row("H-O", HISTORY_T2)],
+        None
+    )]
+    #[case::older(
+        vec![readable_row("OrderUpdated", "H-O", HISTORY_T2, HISTORY_T2), unreadable_row("H-O", HISTORY_T1)],
+        Some(OrderStatus::Accepted)
+    )]
+    #[case::older_than_closed(
+        vec![readable_row("OrderCancelled", "H-O", HISTORY_T2, HISTORY_T0), unreadable_row("H-O", HISTORY_T1)],
+        Some(OrderStatus::Canceled)
+    )]
+    #[case::older_than_rejected(
+        vec![readable_row("OrderRejected", "H-O", HISTORY_T2, HISTORY_T0), unreadable_row("H-O", HISTORY_T1)],
+        Some(OrderStatus::Rejected)
+    )]
+    #[case::before_closed(
+        vec![
+            readable_row("OrderEditRejected", "H-O", HISTORY_T3, HISTORY_T0),
+            readable_row("OrderCancelled", "H-O", HISTORY_T1, HISTORY_T1),
+            unreadable_row("H-O", HISTORY_T0),
+        ],
+        Some(OrderStatus::Canceled)
+    )]
+    #[case::before_refused_edit_state(
+        vec![readable_row("OrderEditRejected", "H-O", HISTORY_T3, HISTORY_T1), unreadable_row("H-O", HISTORY_T0)],
+        Some(OrderStatus::Accepted)
+    )]
+    #[tokio::test]
+    async fn test_request_order_status_reports_withhold_an_order_from_an_older_state(
+        #[case] mut rows: Vec<String>,
+        #[case] expected: Option<OrderStatus>,
+    ) {
+        rows.push(readable_row(
+            "OrderPlaced",
+            "H-SIBLING",
+            HISTORY_T1,
+            HISTORY_T1,
+        ));
+
+        let (reports, coverage) = read_history(&[], &rows, None).await;
+
+        assert_eq!(report_status(&reports, "H-O"), expected, "{reports:?}");
+        assert_eq!(
+            report_status(&reports, "H-SIBLING"),
+            Some(OrderStatus::Accepted)
+        );
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-O"));
+        assert!(rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// A scoped read cannot place a row whose contract does not resolve, so it may be the order's
+    /// own and withholds the order.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_withhold_on_a_scoped_read_for_an_unresolved_row() {
+        let rows = [
+            unresolved_row("H-O", HISTORY_T2),
+            readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(&[], &rows, Some("PF_XBTUSD")).await;
+
+        assert_eq!(report_status(&reports, "H-O"), None, "{reports:?}");
+        assert!(report_status(&reports, "H-SIBLING").is_some());
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-O"));
+    }
+
+    /// An undocumented kind's shape is only a guess, so the order it appears to name is withheld
+    /// but no other order is ruled out, and a sibling is still reported.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_withhold_an_order_an_undocumented_row_names() {
+        let rows = [
+            undocumented_row("H-O", HISTORY_T2),
+            readable_row("OrderPlaced", "H-O", HISTORY_T1, HISTORY_T1),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(&[], &rows, None).await;
+
+        assert_eq!(report_status(&reports, "H-O"), None, "{reports:?}");
+        assert!(report_status(&reports, "H-SIBLING").is_some());
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// A row that names no order may be any order's, so the read rules out none, but it can
+    /// withhold none either: the page's orders are still reported.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_keep_siblings_beside_an_unidentified_row() {
+        let rows = [
+            partial_row(None, Some("PF_XBTUSD"), HISTORY_T2),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(&[], &rows, None).await;
+
+        assert!(report_status(&reports, "H-SIBLING").is_some());
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// A decoded row whose order ID cannot be an ID names no order: the read survives it, rules
+    /// out none and keeps the page's other rows, even with the row on another contract than a
+    /// scoped read's target.
+    #[rstest]
+    #[case::empty("", "PF_XBTUSD", None)]
+    #[case::whitespace(" ", "PF_XBTUSD", None)]
+    #[case::non_ascii("\u{e9}", "PF_XBTUSD", None)]
+    #[case::scoped_other_contract("", "PF_ETHUSD", Some("PF_XBTUSD"))]
+    #[tokio::test]
+    async fn test_request_order_status_reports_treat_an_invalid_order_id_as_unidentified(
+        #[case] uid: &str,
+        #[case] tradeable: &str,
+        #[case] scope: Option<&str>,
+    ) {
+        let order = history_order(
+            uid,
+            tradeable,
+            HISTORY_T2,
+            r#""quantity":"3","orderType":"Limit""#,
+        );
+        let rows = [
+            history_element("OrderPlaced", HISTORY_T2, &order),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(&[], &rows, scope).await;
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert!(report_status(&reports, "H-SIBLING").is_some());
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// With no open-order snapshot covering it, a skipped row stays out of the coverage only when
+    /// it is provably outside the read: it names an order and a contract the cache resolves to
+    /// another instrument than the read's target. A row that establishes less, or a read with no
+    /// target, counts it.
+    #[rstest]
+    #[case::scoped_target(Some("PF_XBTUSD"), Some("H-O"), Some("PF_XBTUSD"), false, false, true)]
+    #[case::scoped_target_other_case(
+        Some("PF_XBTUSD"),
+        Some("H-O"),
+        Some("pf_xbtusd"),
+        false,
+        false,
+        true
+    )]
+    #[case::scoped_unresolved(Some("PF_XBTUSD"), Some("H-O"), Some("PF_NOPE"), false, false, true)]
+    #[case::scoped_no_contract(Some("PF_XBTUSD"), Some("H-O"), None, false, false, true)]
+    #[case::scoped_other_contract(
+        Some("PF_XBTUSD"),
+        Some("H-O"),
+        Some("PF_ETHUSD"),
+        true,
+        true,
+        true
+    )]
+    #[case::scoped_other_contract_other_case(
+        Some("PF_XBTUSD"),
+        Some("H-O"),
+        Some("pf_ethusd"),
+        true,
+        true,
+        true
+    )]
+    #[case::scoped_other_contract_no_order(
+        Some("PF_XBTUSD"),
+        None,
+        Some("PF_ETHUSD"),
+        false,
+        false,
+        false
+    )]
+    #[case::scoped_neither(Some("PF_XBTUSD"), None, None, false, false, false)]
+    #[case::unscoped_named(None, Some("H-O"), Some("PF_ETHUSD"), false, false, true)]
+    #[case::unscoped_no_order(None, None, Some("PF_ETHUSD"), false, false, false)]
+    #[tokio::test]
+    async fn test_request_order_status_reports_count_a_skipped_row_unless_provably_out_of_scope(
+        #[case] scope: Option<&str>,
+        #[case] uid: Option<&str>,
+        #[case] tradeable: Option<&str>,
+        #[case] expected_complete: bool,
+        #[case] expected_rules_out_order: bool,
+        #[case] expected_rules_out_other: bool,
+    ) {
+        let rows = [
+            partial_row(uid, tradeable, HISTORY_T2),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        ];
+
+        let (reports, coverage) = read_history(&[], &rows, scope).await;
+
+        assert!(report_status(&reports, "H-SIBLING").is_some());
+        assert_eq!(coverage.is_complete(), expected_complete);
+        assert_eq!(rules_out(&coverage, "H-O"), expected_rules_out_order);
+        assert_eq!(rules_out(&coverage, "H-OTHER"), expected_rules_out_other);
+    }
+
+    /// A row of an order the open-order snapshot reports does not count, however it failed, since
+    /// the snapshot is the evidence for that order.
+    #[rstest]
+    #[case::unreadable(unreadable_row("H-OPEN", HISTORY_T2))]
+    #[case::unreadable_no_contract(partial_row(Some("H-OPEN"), None, HISTORY_T2))]
+    #[case::unparsable(unparsable_row("H-OPEN", HISTORY_T2))]
+    #[case::unrepresentable(unrepresentable_row("H-OPEN", HISTORY_T2))]
+    #[case::unresolved(unresolved_row("H-OPEN", HISTORY_T2))]
+    #[tokio::test]
+    async fn test_request_order_status_reports_ignore_a_skipped_row_the_snapshot_covers(
+        #[case] row: String,
+    ) {
+        let (reports, coverage) = read_history(&[("H-OPEN", "PF_XBTUSD")], &[row], None).await;
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-OPEN"));
+        assert!(coverage.is_complete());
+    }
+
+    /// A snapshot row a scoped read passes over reports nothing, so it covers nothing: a row of
+    /// that order that does not name its contract still counts.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_count_a_row_of_an_order_listed_out_of_scope() {
+        let rows = [partial_row(Some("H-OPEN"), None, HISTORY_T2)];
+
+        let (reports, coverage) =
+            read_history(&[("H-OPEN", "PF_ETHUSD")], &rows, Some("PF_XBTUSD")).await;
+
+        assert!(reports.is_empty(), "{reports:?}");
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OPEN"));
+    }
+
+    /// An undocumented kind proves nothing about its order, so the snapshot does not excuse it.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_count_an_undocumented_row_the_snapshot_lists() {
+        let rows = [undocumented_row("H-OPEN", HISTORY_T2)];
+
+        let (reports, coverage) = read_history(&[("H-OPEN", "PF_XBTUSD")], &rows, None).await;
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// An undocumented kind proves nothing about its contract either, so a scoped read counts it
+    /// even when the order it appears to name is on another contract.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_count_an_undocumented_row_of_another_contract() {
+        let order = history_order(
+            "H-O",
+            "PF_ETHUSD",
+            HISTORY_T2,
+            r#""quantity":"3","orderType":"Limit""#,
+        );
+        let rows = [history_element("OrderSomethingNew", HISTORY_T2, &order)];
+
+        let (_, coverage) = read_history(&[], &rows, Some("PF_XBTUSD")).await;
+
+        assert!(!coverage.is_complete());
+        assert!(!rules_out(&coverage, "H-OTHER"));
+    }
+
+    /// A continuation token still cuts the read short at the oldest event beside a skipped row.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_keep_the_cut_beside_a_skipped_row() {
+        let page = format!(
+            r#"{{"elements":[{},{}],"continuationToken":"c2ltYjE3OA=="}}"#,
+            unreadable_row("H-O", HISTORY_T2),
+            readable_row("OrderPlaced", "H-SIBLING", HISTORY_T1, HISTORY_T1),
+        );
+        let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
+        cache_test_futures_instrument(&client);
+
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert!(!coverage.is_complete());
+        let after_the_cut = UnixNanos::from((HISTORY_T1 as u64 + 120_000) * 1_000_000);
+        let before_the_cut = UnixNanos::from((HISTORY_T1 as u64 - 120_000) * 1_000_000);
+        assert!(coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(after_the_cut)));
+        assert!(!coverage.rules_out(Some(VenueOrderId::from("H-OTHER")), Some(before_the_cut)));
+    }
+
+    const DOCUMENTED_EDIT_RESPONSE: &str =
+        include_str!("../../../test_data/http_edit_order_futures.json");
+    const DOCUMENTED_EDIT_ORDER_ID: &str = "022774bc-2c4a-4f26-9317-436c8d85746d";
+
+    /// Kraken's documented edit response with its `orderId` replaced or removed, and the send
+    /// response's `order_id` key added.
+    fn edit_response(
+        order_id: Option<serde_json::Value>,
+        order_id_snake_case: Option<serde_json::Value>,
+    ) -> String {
+        let mut response: serde_json::Value =
+            serde_json::from_str(DOCUMENTED_EDIT_RESPONSE).unwrap();
+        let edit_status = response["editStatus"].as_object_mut().unwrap();
+        match order_id {
+            Some(order_id) => edit_status.insert("orderId".to_string(), order_id),
+            None => edit_status.remove("orderId"),
+        };
+
+        if let Some(order_id) = order_id_snake_case {
+            edit_status.insert("order_id".to_string(), order_id);
+        }
+        response.to_string()
+    }
+
+    /// Sends an edit naming the order by `venue_order_id`, or by client order ID alone, to a venue
+    /// that answers with `body`.
+    async fn modify_order_answered_with(
+        body: String,
+        venue_order_id: Option<&str>,
+    ) -> anyhow::Result<VenueOrderId> {
+        use axum::{Router, http::header, routing::any};
+
+        let app = Router::new().route(
+            "/derivatives/api/v3/editorder",
+            any(move || {
+                let body = body.clone();
+                async move { ([(header::CONTENT_TYPE, "application/json")], body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_futures_instrument(&client);
+        let client_order_id = venue_order_id
+            .is_none()
+            .then(|| ClientOrderId::from("O-EDIT"));
+
+        client
+            .modify_order(
+                instrument_id,
+                client_order_id,
+                venue_order_id.map(VenueOrderId::from),
+                Some(Quantity::from("1")),
+                None,
+                None,
+            )
+            .await
+    }
+
+    /// Kraken's documented response names the order whichever identifier the request used.
+    #[rstest]
+    #[case::by_venue_id(Some(DOCUMENTED_EDIT_ORDER_ID))]
+    #[case::by_client_id(None)]
+    #[tokio::test]
+    async fn test_modify_order_returns_the_documented_order_id(
+        #[case] request_venue_order_id: Option<&str>,
+    ) {
+        let venue_order_id = modify_order_answered_with(
+            DOCUMENTED_EDIT_RESPONSE.to_string(),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from(DOCUMENTED_EDIT_ORDER_ID));
+    }
+
+    /// The send response's key is read after the documented one, and a response naming no order
+    /// falls back to the request's venue order ID.
+    #[rstest]
+    #[case::snake_case_key(None, Some(serde_json::json!("V-SNAKE")), None, "V-SNAKE")]
+    #[case::both_keys(
+        Some(serde_json::json!("V-DOC")),
+        Some(serde_json::json!("V-SNAKE")),
+        None,
+        "V-DOC"
+    )]
+    #[case::absent(None, None, Some("V-EDIT"), "V-EDIT")]
+    #[case::null(Some(serde_json::Value::Null), None, Some("V-EDIT"), "V-EDIT")]
+    #[case::response_over_request(Some(serde_json::json!("V-DOC")), None, Some("V-EDIT"), "V-DOC")]
+    #[tokio::test]
+    async fn test_modify_order_resolves_the_order_id_by_key_then_request(
+        #[case] order_id: Option<serde_json::Value>,
+        #[case] order_id_snake_case: Option<serde_json::Value>,
+        #[case] request_venue_order_id: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let venue_order_id = modify_order_answered_with(
+            edit_response(order_id, order_id_snake_case),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from(expected));
+    }
+
+    /// An edit the venue applied, answered with an order ID the model cannot hold, returns the typed
+    /// error: an untyped one would read as a command never sent. An invalid ID differs from an
+    /// absent one, which falls back to the request's venue order ID.
+    #[rstest]
+    #[case::by_venue_id(Some(serde_json::json!("")), None, Some("V-EDIT"))]
+    #[case::by_client_id(Some(serde_json::json!("")), None, None)]
+    #[case::snake_case_key(None, Some(serde_json::json!("")), Some("V-EDIT"))]
+    #[tokio::test]
+    async fn test_modify_order_returns_a_typed_error_for_an_invalid_order_id(
+        #[case] order_id: Option<serde_json::Value>,
+        #[case] order_id_snake_case: Option<serde_json::Value>,
+        #[case] request_venue_order_id: Option<&str>,
+    ) {
+        let error = modify_order_answered_with(
+            edit_response(order_id, order_id_snake_case),
+            request_venue_order_id,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::InvalidOrderId { detail })
+                    if detail.starts_with("Invalid order_id '' in Kraken futures edit response")
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A response naming no order leaves nothing to name it on a request by client order ID alone.
+    #[rstest]
+    #[case::absent(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    #[tokio::test]
+    async fn test_modify_order_by_client_id_fails_without_an_order_id(
+        #[case] order_id: Option<serde_json::Value>,
+    ) {
+        let error = modify_order_answered_with(edit_response(order_id, None), None)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<KrakenModifyOrderError>(),
+                Some(KrakenModifyOrderError::MissingOrderId)
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// A contract the listing spells two ways in different cases cannot be told apart by a
+    /// case-insensitive match, so such a spelling resolves to neither, while an exact spelling
+    /// and a unique case-insensitive one still resolve.
+    #[rstest]
+    #[tokio::test]
+    async fn test_history_tradeable_leaves_an_ambiguous_spelling_unresolved() {
+        let client = history_test_client(Arc::new(RwLock::new(String::new())), None).await;
+        cache_futures_contract(&client, "PF_AAPLxUSD");
+        cache_futures_contract(&client, "PF_AAPLXUSD");
+        cache_futures_contract(&client, "PF_XBTUSD");
+
+        let resolve = |tradeable: &str| {
+            client
+                .get_instrument_by_history_tradeable(tradeable)
+                .map(|instrument| instrument.raw_symbol().to_string())
+        };
+
+        assert_eq!(resolve("pf_aaplxusd"), None);
+        assert_eq!(resolve("PF_AAPLxUSD"), Some("PF_AAPLxUSD".to_string()));
+        assert_eq!(resolve("pf_xbtusd"), Some("PF_XBTUSD".to_string()));
+    }
+
+    /// The post-submit lookup answers from history only when no unread row may hold a newer state
+    /// of the order: a row of the order, a row naming none or an undocumented row that is as new
+    /// fails the lookup, while an older row or one naming another order leaves the answer standing.
+    /// A refused edit's state, stamped before its event, counts from that stamp.
+    #[rstest]
+    #[case::order_newer(partial_row(Some("H-O"), None, HISTORY_T2), HISTORY_T1, false)]
+    #[case::order_tied(partial_row(Some("H-O"), None, HISTORY_T1), HISTORY_T1, false)]
+    #[case::order_older(partial_row(Some("H-O"), None, HISTORY_T0), HISTORY_T1, true)]
+    #[case::unnamed_newer(partial_row(None, None, HISTORY_T2), HISTORY_T1, false)]
+    #[case::unnamed_older(partial_row(None, None, HISTORY_T0), HISTORY_T1, true)]
+    #[case::sibling_newer(partial_row(Some("H-SIBLING"), None, HISTORY_T2), HISTORY_T1, true)]
+    #[case::undocumented_sibling_newer(
+        undocumented_row("H-SIBLING", HISTORY_T2),
+        HISTORY_T1,
+        false
+    )]
+    #[case::invalid_id_newer(unrepresentable_row("", HISTORY_T2), HISTORY_T1, false)]
+    #[case::invalid_id_on_a_readable_row_newer(
+        readable_row("OrderPlaced", "", HISTORY_T2, HISTORY_T2),
+        HISTORY_T1,
+        false
+    )]
+    #[case::before_the_event_after_the_state(
+        partial_row(Some("H-O"), None, HISTORY_T2),
+        HISTORY_T3,
+        false
+    )]
+    #[tokio::test]
+    async fn test_submit_order_history_fallback_defers_to_an_unread_newer_row(
+        #[case] row: String,
+        #[case] found_event_ms: i64,
+        #[case] expected_ok: bool,
+    ) {
+        use axum::{Router, http::header, routing::any};
+
+        let page = history_json(&[
+            row,
+            readable_row("OrderEditRejected", "H-O", found_event_ms, HISTORY_T1),
+        ]);
+        let app = Router::new()
+            .route(
+                "/derivatives/api/v3/sendorder",
+                any(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"result":"success","sendStatus":{"status":"placed","order_id":"H-O"}}"#,
+                    )
+                }),
+            )
+            .route(
+                "/derivatives/api/v3/openorders",
+                any(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"result":"success","openOrders":[]}"#,
+                    )
+                }),
+            )
+            .route(
+                "/api/history/v3/orders",
+                any(move || {
+                    let page = page.clone();
+                    async move { ([(header::CONTENT_TYPE, "application/json")], page) }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        cache_test_futures_instrument(&client);
+
+        let result = client
+            .submit_order(
+                AccountId::from("KRAKEN-001"),
+                InstrumentId::from("PF_XBTUSD.KRAKEN"),
+                ClientOrderId::from("cl-fallback"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("3"),
+                TimeInForce::Gtc,
+                Some(Price::from("70000")),
+                None,
+                None,
+                false,
+                false,
+            )
+            .await;
+
+        assert_eq!(result.is_ok(), expected_ok, "{result:?}");
+    }
+
+    /// A history row's report carries the time in force and post-only its order type states.
+    #[rstest]
+    #[case::ioc("IoC", TimeInForce::Ioc, false)]
+    #[case::fill_or_kill("FillOrKill", TimeInForce::Fok, false)]
+    #[case::post("Post", TimeInForce::Gtc, true)]
+    #[case::limit("Limit", TimeInForce::Gtc, false)]
+    #[tokio::test]
+    async fn test_request_order_status_reports_carry_the_time_in_force_of_a_history_row(
+        #[case] order_type: &str,
+        #[case] expected_time_in_force: TimeInForce,
+        #[case] expected_post_only: bool,
+    ) {
+        let order = history_order(
+            "H-O",
+            "PF_XBTUSD",
+            HISTORY_T1,
+            &format!(r#""quantity":"3","orderType":"{order_type}""#),
+        );
+        let rows = [history_element("OrderPlaced", HISTORY_T1, &order)];
+
+        let (reports, _) = read_history(&[], &rows, None).await;
+
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].time_in_force, expected_time_in_force);
+        assert_eq!(reports[0].post_only, expected_post_only);
     }
 
     /// The venue refuses a client order ID it already holds, or one too long or otherwise invalid,

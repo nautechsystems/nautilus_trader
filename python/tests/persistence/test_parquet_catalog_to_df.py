@@ -762,6 +762,7 @@ def test_query_catalog_dataframe_custom_data(
     register_custom_data_class(RustTestCustomData)
     instrument_id = InstrumentId.from_str("RUST.TEST")
     data_type = DataType("RustTestCustomData", {"venue": "TEST"}, str(instrument_id))
+
     wrapped = [
         CustomData(data_type, RustTestCustomData(instrument_id, 1.23, True, 1, 2)),
     ]
@@ -784,6 +785,7 @@ def test_query_catalog_dataframe_custom_data(
         "data_type",
         "identifier",
     ]
+
     assert _columns(df) == expected_columns
     assert _height(df) == 1
     assert _value(df, "instrument_id") == str(instrument_id)
@@ -810,10 +812,12 @@ def test_query_catalog_dataframe_custom_data_with_price_map(
 
     register_custom_data_class(RustTestPriceMapCustomData)
     data_type = DataType("RustTestPriceMapCustomData", {"source": "unit-test"}, None)
+
     prices = {
         InstrumentId.from_str("AUD/USD.SIM"): Price.from_str("1.23456"),
         InstrumentId.from_str("BTCUSDT.BINANCE"): Price.from_str("65432.10"),
     }
+
     wrapped = [
         CustomData(data_type, RustTestPriceMapCustomData("first", prices, 10, 20)),
     ]
@@ -834,6 +838,7 @@ def test_query_catalog_dataframe_custom_data_with_price_map(
         "data_type",
         "identifier",
     ]
+
     assert _columns(df) == expected_columns
     assert _height(df) == 1
     assert _value(df, "name") == "first"

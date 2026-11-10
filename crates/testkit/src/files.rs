@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cmp,
     collections::BTreeMap,
     ffi::OsString,
     fmt::Display,
@@ -23,7 +22,7 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
     thread::sleep,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -31,7 +30,7 @@ use aws_lc_rs::digest;
 use nautilus_core::hex;
 use nautilus_network::{
     http::{HttpClient, HttpResponseStream},
-    retry::RetryConfig,
+    retry::{RetryConfig, RetryManager},
 };
 use parking_lot::Mutex;
 use rand::{RngExt, rng};
@@ -59,54 +58,6 @@ impl Display for DownloadError {
 }
 
 impl std::error::Error for DownloadError {}
-
-fn execute_with_retry_blocking<T, E, F>(
-    config: &RetryConfig,
-    mut op: F,
-    should_retry: impl Fn(&E) -> bool,
-) -> Result<T, E>
-where
-    E: std::error::Error,
-    F: FnMut() -> Result<T, E>,
-{
-    let start = Instant::now();
-    let mut delay = Duration::from_millis(config.initial_delay_ms);
-
-    for attempt in 0..=config.max_retries {
-        if attempt > 0 && !config.immediate_first {
-            let jitter = rng().random_range(0..=config.jitter_ms);
-            let sleep_for = delay + Duration::from_millis(jitter);
-            sleep(sleep_for);
-            delay = cmp::min(
-                next_retry_delay(delay, config.backoff_factor),
-                Duration::from_millis(config.max_delay_ms),
-            );
-        }
-
-        if let Some(max_total) = config.max_elapsed_ms
-            && start.elapsed() >= Duration::from_millis(max_total)
-        {
-            break;
-        }
-
-        match op() {
-            Ok(v) => return Ok(v),
-            Err(e) if attempt < config.max_retries && should_retry(&e) => {}
-            Err(e) => return Err(e),
-        }
-    }
-
-    op()
-}
-
-fn next_retry_delay(delay: Duration, backoff_factor: f64) -> Duration {
-    let next = delay.as_secs_f64() * backoff_factor;
-    if next.is_nan() || next.is_sign_negative() {
-        return Duration::ZERO;
-    }
-
-    Duration::try_from_secs_f64(next).unwrap_or(Duration::MAX)
-}
 
 /// Downloads missing large test fixtures and verifies every file against the checksum manifest.
 ///
@@ -214,7 +165,7 @@ pub fn ensure_file_exists_or_download_http_with_timeout(
 /// - `url`: The URL to download from if the file doesn't exist.
 /// - `checksums`: Optional path to checksums file for verification.
 /// - `timeout_secs`: Timeout in seconds for response headers and each body read.
-/// - `retry_config`: Optional custom retry configuration (uses sensible defaults if None).
+/// - `retry_config`: Optional retry configuration. Defaults retry up to five times without a total deadline.
 /// - `initial_jitter_ms`: Optional initial jitter delay in milliseconds before download (defaults to 100-600ms if None).
 ///
 /// # Errors
@@ -223,6 +174,7 @@ pub fn ensure_file_exists_or_download_http_with_timeout(
 /// - The HTTP request cannot be sent or returns a non-success status code after retries.
 /// - Any I/O operation fails during file creation, reading, or writing.
 /// - Checksum verification or JSON parsing fails.
+/// - A download is required and the retry configuration is invalid.
 pub fn ensure_file_exists_or_download_http_with_config(
     filepath: &Path,
     url: &str,
@@ -323,43 +275,35 @@ fn download_file(
     let client = HttpClient::builder().build()?;
     let timeout = Duration::from_secs(timeout_secs);
 
-    let cfg = if let Some(config) = retry_config {
-        config
-    } else {
-        // Default production config
-        let max_retries = 5u32;
-        let op_timeout_ms = timeout_secs.saturating_mul(1000);
-        // Make the provided timeout a hard ceiling for total elapsed time.
-        // Split it across attempts (at least 1000 ms per attempt) and cap total at op_timeout_ms.
-        let per_attempt_ms = std::cmp::max(1000u64, op_timeout_ms / (u64::from(max_retries) + 1));
-        RetryConfig {
-            max_retries,
-            initial_delay_ms: 1_000,
-            max_delay_ms: 10_000,
-            backoff_factor: 2.0,
-            jitter_ms: 1_000,
-            operation_timeout_ms: Some(per_attempt_ms),
-            immediate_first: false,
-            max_elapsed_ms: Some(op_timeout_ms),
-        }
-    };
+    let cfg = retry_config.unwrap_or(RetryConfig {
+        max_retries: 5,
+        initial_delay_ms: 1_000,
+        max_delay_ms: 10_000,
+        backoff_factor: 2.0,
+        jitter_ms: 1_000,
+        operation_timeout_ms: None,
+        immediate_first: false,
+        max_elapsed_ms: None,
+    });
 
     remove_stale_partials(filepath);
     let partial_path = partial_path_for(filepath);
 
-    let op = || -> Result<(), DownloadError> {
+    let op = || async {
         // Discard any leftover partial from a prior attempt before writing
         let _ = remove_file(&partial_path);
 
-        match runtime.block_on(async {
+        match async {
             Ok::<_, anyhow::Error>(
                 tokio::time::timeout(timeout, client.get_stream(url.to_owned())).await??,
             )
-        }) {
+        }
+        .await
+        {
             Ok(mut response) => {
                 let status = response.status();
                 if status.is_success() {
-                    store_response_body(&runtime, &mut response, timeout, &partial_path, filepath)
+                    store_response_body(&mut response, timeout, &partial_path, filepath).await
                 } else if status.is_server_error()
                     || status.as_u16() == 429
                     || status.as_u16() == 408
@@ -382,12 +326,25 @@ fn download_file(
 
     let should_retry = |e: &DownloadError| matches!(e, DownloadError::Retryable(_));
 
-    execute_with_retry_blocking(&cfg, op, should_retry).map_err(|e| anyhow::anyhow!(e.to_string()))
+    let manager = RetryManager::new(cfg);
+
+    let result = runtime.block_on(
+        manager
+            .invocation("download_file", op, should_retry, |e| {
+                DownloadError::Retryable(e.to_string())
+            })
+            .execute(),
+    );
+
+    if result.is_err() {
+        let _ = remove_file(&partial_path);
+    }
+
+    result.map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 // Stream errors are transient (Retryable), local write errors like disk full are not
-fn store_response_body(
-    runtime: &tokio::runtime::Runtime,
+async fn store_response_body(
     response: &mut HttpResponseStream,
     timeout: Duration,
     partial_path: &Path,
@@ -396,7 +353,7 @@ fn store_response_body(
     let mut out =
         File::create(partial_path).map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
 
-    let copied = runtime.block_on(async {
+    let copied = async {
         while let Some(chunk) = tokio::time::timeout(timeout, response.chunk())
             .await
             .map_err(|e| DownloadError::Retryable(format!("body stream error: {e}")))?
@@ -411,7 +368,8 @@ fn store_response_body(
         out.sync_all().map_err(|e| {
             DownloadError::NonRetryable(format!("sync {} failed: {e}", partial_path.display()))
         })
-    });
+    }
+    .await;
 
     drop(out);
 
@@ -620,6 +578,7 @@ mod tests {
     use serde_json::{json, to_writer};
     use tempfile::TempDir;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task,
         time::{Duration, sleep},
@@ -640,20 +599,6 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: Some(2000),
         }
-    }
-
-    #[rstest]
-    #[case::nan(f64::NAN, Duration::ZERO)]
-    #[case::negative(-1.0, Duration::ZERO)]
-    #[case::infinite(f64::INFINITY, Duration::MAX)]
-    #[case::normal(2.0, Duration::from_millis(20))]
-    fn next_retry_delay_handles_edge_factors(
-        #[case] backoff_factor: f64,
-        #[case] expected: Duration,
-    ) {
-        let delay = Duration::from_millis(10);
-
-        assert_eq!(next_retry_delay(delay, backoff_factor), expected);
     }
 
     async fn setup_test_server(
@@ -1180,18 +1125,193 @@ mod tests {
     }
 
     #[rstest]
-    #[case::progressing(0, 400, Ok(()))]
-    #[case::stalled_headers(1200, 0, Err("Retryable error: deadline has elapsed"))]
+    #[case::operation(false, "Retryable error: Timed out after 40ms")]
+    #[case::elapsed(true, "Retryable error: Retry budget exceeded (1/1)")]
+    #[tokio::test]
+    async fn test_download_retry_deadline_cleans_partial(
+        #[case] elapsed_budget: bool,
+        #[case] expected_error: &str,
+        #[values(false, true)] body_started: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("deadline.txt");
+        let destination = filepath.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+
+            if body_started {
+                socket
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\na",
+                    )
+                    .await
+                    .unwrap();
+            }
+
+            std::future::pending::<()>().await;
+        });
+
+        let result = tokio::task::spawn_blocking(move || {
+            let config = RetryConfig {
+                max_retries: 0,
+                operation_timeout_ms: if elapsed_budget { None } else { Some(40) },
+                max_elapsed_ms: if elapsed_budget { Some(40) } else { None },
+                ..test_retry_config()
+            };
+
+            download_file(
+                &destination,
+                &format!("http://{addr}/deadline"),
+                1,
+                Some(config),
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap();
+
+        peer.abort();
+        let _ = peer.await;
+
+        assert_eq!(result, Err(expected_error.to_string()));
+        assert!(!filepath.exists());
+        assert_eq!(count_partial_siblings(&filepath), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_retry_budget_prevents_another_request() {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("budget.txt");
+        let destination = filepath.clone();
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = Router::new().route(
+            "/budget",
+            get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async { StatusCode::INTERNAL_SERVER_ERROR }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { serve(listener, app).await.unwrap() });
+
+        let result = tokio::task::spawn_blocking(move || {
+            let config = RetryConfig {
+                max_retries: 2,
+                initial_delay_ms: 100,
+                max_delay_ms: 100,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                max_elapsed_ms: Some(40),
+                ..test_retry_config()
+            };
+
+            download_file(
+                &destination,
+                &format!("http://{addr}/budget"),
+                1,
+                Some(config),
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap();
+
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            result,
+            Err("Retryable error: Retry budget exceeded (2/3)".to_string())
+        );
+        assert!(!filepath.exists());
+        assert_eq!(count_partial_siblings(&filepath), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_immediate_first_retains_later_delay() {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("immediate.txt");
+        let destination = filepath.clone();
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = Router::new().route(
+            "/immediate",
+            get(move || {
+                let attempt = counter.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if attempt < 2 {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "retry")
+                    } else {
+                        (StatusCode::OK, "complete")
+                    }
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { serve(listener, app).await.unwrap() });
+
+        let (result, elapsed) = tokio::task::spawn_blocking(move || {
+            let config = RetryConfig {
+                max_retries: 2,
+                initial_delay_ms: 100,
+                max_delay_ms: 100,
+                jitter_ms: 0,
+                immediate_first: true,
+                operation_timeout_ms: None,
+                max_elapsed_ms: None,
+                ..test_retry_config()
+            };
+
+            let start = std::time::Instant::now();
+            let result = download_file(
+                &destination,
+                &format!("http://{addr}/immediate"),
+                1,
+                Some(config),
+            );
+            (result, start.elapsed())
+        })
+        .await
+        .unwrap();
+
+        server.abort();
+        let _ = server.await;
+
+        result.unwrap();
+        assert_eq!(requests.load(Ordering::SeqCst), 3);
+        assert!(elapsed >= Duration::from_millis(100));
+        assert_eq!(fs::read_to_string(&filepath).unwrap(), "complete");
+        assert_eq!(count_partial_siblings(&filepath), 0);
+    }
+
+    #[rstest]
+    #[case::progressing(0, 400, Ok(()), false)]
+    #[case::progressing_default(0, 400, Ok(()), true)]
+    #[case::stalled_headers(1200, 0, Err("Retryable error: deadline has elapsed"), false)]
     #[case::stalled_body(
         0,
         1200,
-        Err("Retryable error: body stream error: deadline has elapsed")
+        Err("Retryable error: body stream error: deadline has elapsed"),
+        false
     )]
     #[tokio::test]
     async fn download_timeout_applies_to_each_read(
         #[case] header_delay_ms: u64,
         #[case] chunk_delay_ms: u64,
         #[case] expected: Result<(), &str>,
+        #[case] default_retry: bool,
     ) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -1227,16 +1347,14 @@ mod tests {
         let result = task::spawn_blocking(move || {
             let cfg = RetryConfig {
                 max_retries: 0,
+                operation_timeout_ms: None,
                 max_elapsed_ms: None,
                 ..test_retry_config()
             };
-            download_file(
-                &destination,
-                &format!("http://{addr}/streamed"),
-                1,
-                Some(cfg),
-            )
-            .map_err(|e| e.to_string())
+
+            let config = if default_retry { None } else { Some(cfg) };
+            download_file(&destination, &format!("http://{addr}/streamed"), 1, config)
+                .map_err(|e| e.to_string())
         })
         .await
         .unwrap();

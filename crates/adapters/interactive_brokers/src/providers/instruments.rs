@@ -161,7 +161,8 @@ impl InteractiveBrokersInstrumentProvider {
     pub fn new(config: InteractiveBrokersInstrumentProviderConfig) -> ConfigResult<Self> {
         config.validate()?;
 
-        let symbology = Symbology::new(config.symbology_method);
+        let symbology = Symbology::new(config.symbology_method)
+            .with_futures_year_digits(config.futures_year_digits);
 
         Ok(Self {
             config,

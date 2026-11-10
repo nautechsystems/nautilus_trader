@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Native Arrow records for calculated Greeks and yield curves.
+//! Arrow schemas and codecs for calculated Greeks and yield curve custom data.
 
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
@@ -36,7 +36,7 @@ use nautilus_model::{
 
 use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, StringColumnRef, extract_column_by_name,
+    EncodeToRecordBatch, EncodingError, StringColumnRef, extract_column_by_name,
     extract_column_string, identifier_array_from_display, metadata_with_type_name,
     record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
@@ -136,12 +136,7 @@ impl EncodeToRecordBatch for GreeksData {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        let mut metadata = metadata_with_type_name("GreeksData", None);
-        metadata.insert(
-            KEY_INSTRUMENT_ID.to_string(),
-            self.instrument_id.to_string(),
-        );
-        metadata
+        metadata_with_type_name(Self::type_name_static(), None)
     }
 }
 
@@ -349,17 +344,24 @@ impl DecodeTypedFromRecordBatch for YieldCurve {
     }
 }
 
-impl DecodeDataFromRecordBatch for YieldCurve {
-    fn decode_data_batch(
-        metadata: &HashMap<String, String>,
-        record_batch: RecordBatch,
-    ) -> Result<Vec<Data>, EncodingError> {
-        Ok(Self::decode_typed_batch(metadata, record_batch)?
-            .into_iter()
-            .map(|curve| Data::Custom(CustomData::from_arc(Arc::new(curve))))
-            .collect())
-    }
+macro_rules! impl_greeks_custom_data_decode {
+    ($($type:ident),+ $(,)?) => {
+        $(
+            impl DecodeDataFromRecordBatch for $type {
+                fn decode_data_batch(
+                    metadata: &HashMap<String, String>,
+                    record_batch: RecordBatch,
+                ) -> Result<Vec<Data>, EncodingError> {
+                    Ok(Self::decode_typed_batch(metadata, record_batch)?
+                        .into_iter()
+                        .map(|data| Data::Custom(CustomData::from_arc(Arc::new(data))))
+                        .collect())
+                }
+            }
+        )+
+    };
 }
+impl_greeks_custom_data_decode!(GreeksData, PortfolioGreeks, YieldCurve);
 
 fn greek_fields() -> Vec<Field> {
     ["delta", "gamma", "vega", "theta", "rho"]
@@ -483,6 +485,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::arrow::KEY_TYPE_NAME;
 
     fn sensitivities() -> OptionGreekValues {
         OptionGreekValues {
@@ -598,22 +601,34 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_registered_custom_data_round_trip() {
-        let curve = YieldCurve::new(
-            "USD-SOFR".to_string(),
-            vec![0.25, 1.0, 5.0],
-            vec![0.043, 0.041, 0.038],
-            23.into(),
-            29.into(),
-        );
-        let item: Arc<dyn CustomDataTrait> = Arc::new(curve.clone());
-
+    #[case::instrument(Arc::new(GreeksData::from_delta(
+        "ES.GLBX".parse().unwrap(), 1.25, 8.0, 11.into(),
+    )))]
+    #[case::portfolio(Arc::new(PortfolioGreeks {
+        pnl: -125.5,
+        price: 4310.25,
+        greeks: sensitivities(),
+        ts_event: 19.into(),
+        ts_init: 17.into(),
+    }))]
+    #[case::yield_curve(Arc::new(YieldCurve::new(
+        "USD-SOFR".to_string(),
+        vec![0.25, 1.0, 5.0],
+        vec![0.043, 0.041, 0.038],
+        23.into(),
+        29.into(),
+    )))]
+    fn test_greeks_registered_custom_data_round_trip(#[case] item: Arc<dyn CustomDataTrait>) {
+        crate::ensure_custom_data_registered::<GreeksData>();
+        crate::ensure_custom_data_registered::<PortfolioGreeks>();
         crate::ensure_custom_data_registered::<YieldCurve>();
-        let batch = encode_custom_to_arrow("YieldCurve", &[item])
+        let type_name = item.type_name();
+
+        let batch = encode_custom_to_arrow(type_name, std::slice::from_ref(&item))
             .unwrap()
             .unwrap();
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_custom_from_arrow("YieldCurve", &metadata, batch)
+        let decoded = decode_custom_from_arrow(type_name, &metadata, batch)
             .unwrap()
             .unwrap();
 
@@ -621,11 +636,12 @@ mod tests {
             panic!("expected one custom data row, was {decoded:?}");
         };
 
-        assert_eq!(custom.data_type.type_name(), "YieldCurve");
+        assert_eq!(custom.data_type.type_name(), type_name);
         assert_eq!(
-            custom.data.as_any().downcast_ref::<YieldCurve>(),
-            Some(&curve)
+            metadata,
+            HashMap::from([(KEY_TYPE_NAME.to_string(), type_name.to_string())]),
         );
+        assert!(custom.data.eq_arc(item.as_ref()));
     }
 
     #[rstest]

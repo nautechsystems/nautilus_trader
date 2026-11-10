@@ -181,6 +181,14 @@ while IFS= read -r line; do
   fi
 
   if ((CURRENT_EPOCH - RELEASE_EPOCH < COOLDOWN_SECONDS)); then
+    # Reviewed fix for allowed-domain blocks from GitHub's DNS/proxy experiment
+    # https://github.com/step-security/harden-runner/issues/708
+    case "$REPO@$EXPECTED_SHA" in
+      step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43)
+        echo "OK (reviewed DNS/proxy fix; exact-pin cooldown exception)"
+        continue
+        ;;
+    esac
     echo "FAILED (release is less than 14 complete days old)"
     FAILED=1
     continue
