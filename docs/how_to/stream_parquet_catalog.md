@@ -73,6 +73,9 @@ boundary opens the next file. Size rotation is deferred: a file that reaches its
 until a row with a later `ts_init` arrives, and that row opens the next file. A row whose `ts_init` is
 not later than the open file's latest row stays in that file whatever rotation is due, and rows
 written in one batch share one decision, so rotation never splits rows with the same `ts_init`.
+This holds only while each staged type's `ts_init` does not decrease, across all of its identifiers.
+Rotation compares a row with the open file alone, so a late row at or before a sealed file's last
+`ts_init` lands in a later file, which can then overlap the sealed file's interval and fail promotion.
 
 Interval-based promotion and explicit seals, such as the Rust `FeatherWriter::seal`, do not follow
 `ts_init`: they seal every open file when they run, so a row written afterward with the same

@@ -487,6 +487,11 @@ impl<W: Write> Write for CountingWriter<W> {
 /// Time rotations are decided by the rows' `ts_init`, not the wall clock, and no rotation splits
 /// rows of one `ts_init` over two files (`FeatherWriter::rotated_for`): the catalog requires the
 /// promoted files' `ts_init` ranges to be disjoint.
+///
+/// That guarantee holds only while a staged type's `ts_init` does not decrease across its
+/// identifiers. A rotation compares a row with the open file alone, so a late row at or before a
+/// sealed file's last `ts_init` lands in a later file, which can then overlap the sealed file's
+/// range and fail promotion.
 #[derive(Debug, Clone)]
 pub enum RotationConfig {
     /// Rotate based on file size, before the next row with a later `ts_init`.
