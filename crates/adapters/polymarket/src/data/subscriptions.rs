@@ -60,6 +60,8 @@ pub(crate) struct DataSubscriptions {
     pub(super) active_trade_subs: Arc<DashSet<InstrumentId>>,
     pub(super) active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
     pub(super) active_instrument_close_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) instrument_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) exposure_instruments: Arc<DashSet<InstrumentId>>,
     pub(super) book_sync: BookSyncTracker,
     pub(super) book_integrity: Arc<Mutex<AHashMap<InstrumentId, BookIntegrity>>>,
     pub(super) ws_open_tokens: Arc<DashSet<Ustr>>,
@@ -92,6 +94,8 @@ impl DataSubscriptions {
             active_trade_subs: Arc::new(DashSet::new()),
             active_instrument_status_subs: Arc::new(DashSet::new()),
             active_instrument_close_subs: Arc::new(DashSet::new()),
+            instrument_subs: Arc::new(DashSet::new()),
+            exposure_instruments: Arc::new(DashSet::new()),
             book_sync: BookSyncTracker::default(),
             book_integrity: Arc::default(),
             ws_open_tokens: Arc::new(DashSet::new()),
@@ -184,6 +188,33 @@ impl DataSubscriptions {
         self.intents()
             .iter()
             .any(|set| set.contains(&instrument_id))
+    }
+
+    pub(super) fn retained_instrument_ids(&self) -> AHashSet<InstrumentId> {
+        let instruments = self.instruments.load();
+        let mut ids = self
+            .instrument_subs
+            .iter()
+            .map(|id| *id)
+            .collect::<AHashSet<_>>();
+
+        for subscriptions in self.intents() {
+            ids.extend(subscriptions.iter().map(|id| *id));
+        }
+        ids.extend(self.exposure_instruments.iter().map(|id| *id));
+        for entry in self.watchlist.read().values() {
+            ids.extend(entry.tracked.values().filter_map(|tracked| {
+                (tracked.has_data_subscription || !tracked.open_position_ids.is_empty())
+                    .then_some(tracked.instrument_id)
+            }));
+        }
+        let closed = self.closed_condition_ids.lock();
+        ids.retain(|id| {
+            (instruments.contains_key(id) || self.exposure_instruments.contains(id))
+                && !crate::providers::extract_condition_id(id)
+                    .is_ok_and(|condition_id| closed.contains(&condition_id))
+        });
+        ids
     }
 
     pub(crate) fn status_subscriptions(&self) -> &Arc<DashSet<InstrumentId>> {

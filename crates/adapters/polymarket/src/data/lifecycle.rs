@@ -16,14 +16,20 @@
 use std::time::Duration;
 
 use ahash::AHashSet;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use nautilus_common::{
+    cache::CacheView,
     live::dst::time::Instant,
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::AtomicMap;
 use nautilus_live::task::TaskGroupGuard;
-use nautilus_model::events::PositionEvent;
+use nautilus_model::{
+    events::{OrderEventAny, PositionEvent},
+    identifiers::InstrumentId,
+    instruments::Instrument,
+    orders::Order,
+};
 use parking_lot::Mutex;
 
 use super::{
@@ -32,6 +38,10 @@ use super::{
     instruments::{InstrumentUpdateState, refresh_expired_market_closure},
 };
 use crate::{
+    common::{
+        consts::{MARKET_VERSION_KEY, POLYMARKET_VENUE},
+        parse::validate_data_market_version,
+    },
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -44,6 +54,55 @@ use crate::{
 const TASK_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl PolymarketDataClient {
+    fn ensure_order_event_subscription(&mut self) {
+        if self.order_event_handler.is_some() {
+            return;
+        }
+        let Some(cache) = self.cache.clone() else {
+            return;
+        };
+        let instruments = self.subscriptions.exposure_instruments.clone();
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            sync_exposure_instrument(&cache, &instruments, event.instrument_id());
+        });
+        msgbus::subscribe_order_events("events.order.*".into(), handler.clone(), Some(10));
+        self.order_event_handler = Some(handler);
+    }
+
+    fn clear_order_event_subscription(&mut self) {
+        if let Some(handler) = self.order_event_handler.take() {
+            msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
+        }
+    }
+
+    fn seed_exposure_instruments(&self) {
+        let Some(cache) = &self.cache else {
+            return;
+        };
+        let loaded = cache.borrow();
+        let ids = loaded
+            .orders_open_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
+            .iter()
+            .map(|order| order.instrument_id())
+            .chain(
+                loaded
+                    .orders_inflight_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
+                    .iter()
+                    .map(|order| order.instrument_id()),
+            )
+            .chain(
+                loaded
+                    .positions_open_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
+                    .iter()
+                    .map(|position| position.instrument_id),
+            )
+            .collect::<AHashSet<_>>();
+        self.subscriptions.exposure_instruments.clear();
+        for id in ids {
+            sync_exposure_instrument(cache, &self.subscriptions.exposure_instruments, id);
+        }
+    }
+
     fn ensure_position_event_subscription(&mut self) {
         if self.position_event_handler.is_some() {
             return;
@@ -53,8 +112,13 @@ impl PolymarketDataClient {
         let instruments = self.instruments.clone();
         let owner_lock = self.resolve_watch_apply_mutex.clone();
         let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
+        let cache = self.cache.clone();
+        let exposure_instruments = self.subscriptions.exposure_instruments.clone();
 
         let handler = TypedHandler::from(move |event: &PositionEvent| {
+            if let Some(cache) = &cache {
+                sync_exposure_instrument(cache, &exposure_instruments, event.instrument_id());
+            }
             update_resolve_watchlist_from_position_event_serialized(
                 &owner_lock,
                 &closed_condition_ids,
@@ -363,6 +427,7 @@ impl PolymarketDataClient {
     pub(super) fn start_client(&mut self) {
         log::info!("Starting Polymarket data client: {}", self.client_id);
         self.ensure_position_event_subscription();
+        self.ensure_order_event_subscription();
     }
 
     pub(super) fn stop_client(&mut self) {
@@ -373,6 +438,7 @@ impl PolymarketDataClient {
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.clear_position_event_subscription();
+        self.clear_order_event_subscription();
     }
 
     pub(super) fn reset_client(&mut self) {
@@ -388,6 +454,7 @@ impl PolymarketDataClient {
         // the previous generation. Callers must rebuild instrument/data
         // subscriptions after connect().
         self.clear_position_event_subscription();
+        self.clear_order_event_subscription();
 
         let old_instrument_update_state = self.instrument_update_state.clone();
         let mut update_guard = old_instrument_update_state.lock();
@@ -450,6 +517,8 @@ impl PolymarketDataClient {
             polybolt_feed.begin_shutdown();
         });
         self.ensure_position_event_subscription();
+        self.ensure_order_event_subscription();
+        self.seed_exposure_instruments();
         register_polymarket_custom_data();
 
         log::info!("Connecting Polymarket data client");
@@ -541,6 +610,7 @@ impl PolymarketDataClient {
             self.shutdown_errors.push(e.to_string());
         }
         self.clear_position_event_subscription();
+        self.clear_order_event_subscription();
 
         let drained = self.tasks.is_empty()
             && self.ws_client.connection_count() == 0
@@ -579,6 +649,47 @@ impl PolymarketDataClient {
     }
 }
 
+fn sync_exposure_instrument(
+    cache: &CacheView,
+    instruments: &DashSet<InstrumentId>,
+    instrument_id: InstrumentId,
+) {
+    if instrument_id.venue != *POLYMARKET_VENUE {
+        return;
+    }
+    let cache = cache.borrow();
+    if (cache.has_orders_open(
+        Some(&POLYMARKET_VENUE),
+        Some(&instrument_id),
+        None,
+        None,
+        None,
+    ) || cache.has_orders_inflight(
+        Some(&POLYMARKET_VENUE),
+        Some(&instrument_id),
+        None,
+        None,
+        None,
+    ) || cache.has_positions_open(
+        Some(&POLYMARKET_VENUE),
+        Some(&instrument_id),
+        None,
+        None,
+        None,
+    )) && let Some(instrument) = cache.instrument(&instrument_id)
+        && validate_data_market_version(
+            instrument
+                .info()
+                .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        )
+        .is_ok()
+    {
+        instruments.insert(instrument_id);
+    } else {
+        instruments.remove(&instrument_id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -614,10 +725,15 @@ mod tests {
     };
     use nautilus_model::{
         data::{DataType, QuoteTick},
-        enums::BookType,
-        identifiers::{ClientId, InstrumentId, PositionId, Symbol, TraderId},
+        enums::{BookType, OmsType, OrderSide, OrderType},
+        events::{PositionClosed, PositionOpened},
+        identifiers::{
+            AccountId, ClientId, InstrumentId, PositionId, Symbol, TradeId, TraderId, VenueOrderId,
+        },
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orderbook::OrderBook,
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::{
@@ -828,6 +944,95 @@ mod tests {
 
     fn make_client_for_reset_test() -> PolymarketDataClient {
         make_client_for_reset_test_with_proxy(None)
+    }
+
+    #[rstest]
+    fn metadata_retention_follows_cached_orders_and_positions() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut client = make_client_for_reset_test().with_cache(cache.clone().into());
+        let condition_id = format!("0x{:064x}", 1);
+        let instrument = seed_instrument(
+            &client,
+            &format!("{condition_id}-1"),
+            &condition_id,
+            UnixNanos::from(u64::MAX),
+        );
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .price(Price::from("0.50"))
+            .build();
+        let account_id = AccountId::from("POLYMARKET-001");
+        let venue_order_id = VenueOrderId::from("V-001");
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        order = cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        client.start_client();
+        client.seed_exposure_instruments();
+        let retained = &client.subscriptions.exposure_instruments;
+        assert!(retained.contains(&instrument.id()));
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        order = cache.borrow_mut().update_order(&accepted).unwrap();
+        msgbus::publish_order_event("events.order.TEST".into(), &accepted);
+        let filled = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            None,
+            Some(Price::from("0.50")),
+            None,
+            None,
+            None,
+            None,
+            Some(account_id),
+        );
+        cache.borrow_mut().update_order(&filled).unwrap();
+        msgbus::publish_order_event("events.order.TEST".into(), &filled);
+        assert!(retained.is_empty());
+        let OrderEventAny::Filled(fill) = filled else {
+            panic!("expected fill")
+        };
+        let mut position = Position::new(&instrument, fill.clone());
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        msgbus::publish_position_event(
+            "events.position.TEST".into(),
+            &PositionEvent::PositionOpened(PositionOpened::create(
+                &position,
+                &fill,
+                UUID4::new(),
+                UnixNanos::default(),
+            )),
+        );
+        assert!(retained.contains(&instrument.id()));
+        let mut closing = fill;
+        closing.order_side = OrderSide::Sell;
+        closing.trade_id = TradeId::from("CLOSE");
+        position.apply(&closing);
+        cache.borrow_mut().update_position(&position).unwrap();
+        msgbus::publish_position_event(
+            "events.position.TEST".into(),
+            &PositionEvent::PositionClosed(PositionClosed::create(
+                &position,
+                &closing,
+                UUID4::new(),
+                UnixNanos::default(),
+            )),
+        );
+        assert!(client.subscriptions.retained_instrument_ids().is_empty());
+        client.stop_client();
     }
 
     fn make_client_for_reset_test_with_proxy(proxy_url: Option<ProxyUrl>) -> PolymarketDataClient {
