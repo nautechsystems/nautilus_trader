@@ -968,9 +968,10 @@ take these values as follows:
 - A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
   history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
 - The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
-  send-order response's first order event, or from the order history when the response carries no event. Whichever
-  source reports, the order type in that event's `order`, `orderTrigger` or `orderPriorExecution` sets the time in
-  force and post-only flag, where `ioc` is `IOC` and `post` is post-only `GTC`.
+  send-order response's first order event, or from history when the response carries no event. If that first event
+  carries an `order`, `orderTrigger`, or `orderPriorExecution`, its type sets the time in force and post-only flag:
+  `ioc` is `IOC`, and `post` is post-only `GTC`. A snapshot report without such a payload keeps the snapshot's values.
+  A history report uses the mapping in [Order history and pricing](#order-history-and-pricing).
 - An open-only read, an open order with no readable row on the page, and an order feed delta for an order the adapter
   does not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not
   post-only.
