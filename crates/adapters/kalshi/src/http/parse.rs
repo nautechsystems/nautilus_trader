@@ -252,7 +252,8 @@ pub(crate) fn supported_market(market: &Market, event: &Event) -> bool {
     market.market_type == MarketType::Binary
         && market.notional_value_dollars.0 == Decimal::ONE
         && market.settlement_bounds_type == SettlementBoundsType::Default
-        && event.collateral_return_type == CollateralReturnType::None
+        && (event.collateral_return_type == CollateralReturnType::None
+            || event.collateral_return_type == CollateralReturnType::Mecnet)
         && !matches!(&market.settlement_floor_dollars, Field::Value(v) if v.0 != Decimal::ZERO)
         && !matches!(&market.mve_collection_ticker, Field::Value(v) if !v.is_empty())
         && !matches!(&market.mve_selected_legs, Field::Value(v) if !v.is_empty())
