@@ -2760,6 +2760,19 @@ The same composition applies to periodic refreshes driven by `update_instruments
 Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
 universes match.
 
+Periodic refresh also keeps metadata current for previously loaded instruments required by individual
+definition or market-data subscriptions, resolution watches, or open orders and positions. The factory
+provides cache ownership; directly constructed Rust clients can attach it with `with_cache`.
+Retained instruments outside discovery are queried in condition-ID batches, without discovery filters
+or additional market-data subscriptions. Releasing the last owner stops these extra lookups; a cached
+instrument alone does not retain refresh ownership.
+
+Discovery publishes without waiting for retained lookups. The last successful discovery takes
+precedence when the two paths overlap. Live tick updates and confirmed closure remain authoritative.
+Retained lookup failures are logged without stopping discovery. Explicitly configured sources remain
+required, so use runtime ownership instead of adding retained slugs to a discovery filter. Disabling
+periodic instrument refresh also disables retained metadata refresh.
+
 #### Markets awaiting CLOB metadata
 
 Gamma can report a newly listed market before usable outcome IDs are available, or omit it from a

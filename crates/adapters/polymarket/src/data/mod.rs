@@ -38,7 +38,7 @@ use std::{
 
 use dashmap::DashMap;
 use nautilus_common::{
-    cache::InstrumentLookupError,
+    cache::{CacheView, InstrumentLookupError},
     clients::{DataClient, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
@@ -64,7 +64,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::BookType,
-    events::PositionEvent,
+    events::{OrderEventAny, PositionEvent},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -137,6 +137,8 @@ pub struct PolymarketDataClient {
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     auto_load_scheduled: Arc<AtomicBool>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
+    order_event_handler: Option<TypedHandler<OrderEventAny>>,
+    cache: Option<CacheView>,
     polybolt_feed: PolymarketPolyBoltFeed,
     polybolt_socket_control: Option<SocketControl>,
     polybolt_credential: Option<Credential>,
@@ -258,6 +260,8 @@ impl PolymarketDataClient {
             )),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
             position_event_handler: None,
+            order_event_handler: None,
+            cache: None,
             polybolt_feed: PolymarketPolyBoltFeed::new_with_proxy_and_socket_control(
                 polybolt_url,
                 polybolt_transport_backend,
@@ -341,6 +345,13 @@ impl PolymarketDataClient {
             deferred_resolutions: self.deferred_resolutions.clone(),
             cancellation_token: self.cancellation_token.clone(),
         }
+    }
+
+    /// Provides the cache used to retain metadata for open orders and positions.
+    #[must_use]
+    pub fn with_cache(mut self, cache: CacheView) -> Self {
+        self.cache = Some(cache);
+        self
     }
 
     fn ensure_live_subscription_allowed(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
@@ -583,6 +594,7 @@ impl DataClient for PolymarketDataClient {
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscriptions.instrument_subs.insert(instrument_id);
             log::debug!(
                 "Subscribed to instrument definition updates for {instrument_id}; shared instrument sources remain active"
             );
@@ -593,6 +605,7 @@ impl DataClient for PolymarketDataClient {
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscriptions.instrument_subs.remove(&instrument_id);
             log::debug!(
                 "Unsubscribed from instrument {instrument_id}; shared instrument sources remain active"
             );
