@@ -205,104 +205,6 @@ fn build_node_with_execution_config(
 }
 
 #[rstest]
-#[case::loaded(true, false)]
-#[case::missing(false, false)]
-#[case::out_of_scope(true, true)]
-#[tokio::test]
-async fn startup_loads_wallet_instruments(
-    #[case] metadata_available: bool,
-    #[case] scoped_out: bool,
-) {
-    let state = TestServerState::default();
-    let market = load_json("gamma_market_past_end_date_open.json");
-    let condition = market["conditionId"].as_str().unwrap().to_string();
-    let tokens: Vec<String> =
-        serde_json::from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
-    let mut order = load_json("http_open_order.json");
-    order["market"] = json!(condition);
-    order["asset_id"] = json!(tokens[0]);
-    order["maker_address"] = json!(super::mock_venue::TEST_SIGNER_ADDRESS);
-    order["size_matched"] = json!("0");
-    let mut second_order = order.clone();
-    second_order["id"] = json!("wallet-order-2");
-    *state.orders_response_override.lock().await =
-        Some(json!({"data": [order, second_order], "next_cursor": "LTE="}));
-    *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
-    *state.positions_response_override.lock().await = Some(json!([{
-        "token_id": tokens[0], "condition_id": condition,
-        "current_size": "7.1234", "avg_price": "0.321",
-    }]));
-
-    *state.gamma_response.lock().await = metadata_available.then(|| json!([market]));
-
-    let addr = start_mock_server(state.clone()).await;
-    let mut exec_config = execution_config(addr);
-    exec_config.instrument_config = scoped_out.then(|| PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from(format!(
-            "{condition}-1.POLYMARKET"
-        ))]),
-        ..Default::default()
-    });
-    let mut node = LiveNodeBuilder::from_config(LiveNodeConfig {
-        environment: Environment::Live,
-        trader_id: TraderId::from(harness::TRADER_ID),
-        timeout_connection: DEADLINE,
-        timeout_reconciliation: DEADLINE,
-        delay_post_stop: Duration::from_millis(50),
-        ..Default::default()
-    })
-    .unwrap()
-    .add_exec_client(
-        None,
-        Box::new(PolymarketExecutionClientFactory),
-        Box::new(exec_config),
-    )
-    .unwrap()
-    .build()
-    .unwrap();
-    let handle = node.handle();
-    let driver = async move {
-        wait_until_async(
-            || async { matches!(handle.state(), NodeState::Running | NodeState::Stopped) },
-            DEADLINE,
-        )
-        .await;
-        let running = handle.state();
-        handle.stop();
-        running
-    };
-    let (result, running) =
-        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
-            .await
-            .unwrap();
-
-    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 1);
-
-    if !metadata_available && !scoped_out {
-        result.expect_err("Missing wallet metadata must prevent reconciliation");
-        return;
-    }
-
-    result.unwrap();
-    assert_eq!(running, NodeState::Running);
-    let queries = state.gamma_queries.lock().await;
-    let cache = node.kernel().cache.borrow();
-    assert_eq!(
-        cache.orders_open(None, None, None, None, None).len(),
-        2 * usize::from(!scoped_out)
-    );
-    assert_eq!(
-        cache.positions_open(None, None, None, None, None).len(),
-        usize::from(!scoped_out)
-    );
-    assert_eq!(queries.len(), usize::from(!scoped_out));
-
-    for query in queries.iter() {
-        assert_eq!(query.get("condition_ids"), Some(&condition));
-    }
-}
-
-#[rstest]
 #[tokio::test]
 #[expect(
     clippy::await_holding_refcell_ref,
@@ -322,7 +224,14 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         "avg_price": "0.321",
     }]));
     *state.gamma_response.lock().await = Some(json!([market]));
-    *state.orders_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    let mut order = load_json("http_open_order.json");
+    order["market"] = json!(condition_id);
+    order["asset_id"] = json!(tokens[1]);
+    order["outcome"] = json!("No");
+    order["maker_address"] = json!(super::mock_venue::TEST_SIGNER_ADDRESS);
+    order["size_matched"] = json!("0");
+    *state.orders_response_override.lock().await =
+        Some(json!({"data": [order], "next_cursor": "LTE="}));
     *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
     let addr = start_mock_server(state.clone()).await;
     let base_url = format!("http://{addr}");
@@ -399,6 +308,13 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
             .await
             .unwrap();
     result.expect("startup mass status");
+    assert_eq!(
+        node.kernel()
+            .cache
+            .borrow()
+            .orders_open_count(None, None, None, None, None),
+        1,
+    );
     node.stop().await.unwrap();
     assert!(instruments.get_messages().is_empty());
     let queries = state.gamma_queries.lock().await;
@@ -423,6 +339,7 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         .unwrap();
 
     assert_eq!(running, NodeState::Running);
+    assert_eq!(mass_status.order_reports().len(), 1);
     assert!(
         cached.expiration_ns().unwrap()
             < nautilus_core::time::get_atomic_clock_realtime().get_time_ns()

@@ -1367,7 +1367,7 @@ economic application rules.
 
 ### Instrument resolution during reconciliation
 
-Report construction resolves each record's instrument to parse venue payloads at the correct price and size
+Report generation resolves each record's instrument to parse venue payloads at the correct price and size
 precision. Reuse definitions loaded during connect. If a bulk wallet snapshot identifies additional required
 instruments, collect their definitions in bounded identity-based batches before constructing reports. Use the
 same wallet records for acquisition and report construction, and classify a miss by whether the record was
@@ -1377,7 +1377,7 @@ Do not request individual instrument definitions while constructing reports:
 
 - Per-record requests multiply the bulk queries that startup reconciliation already issues against
   the venue's rate limits.
-- Hidden per-record requests make reconciliation timing and results irreproducible.
+- Hidden requests make reconciliation timing and results irreproducible.
 - A failed request cannot be distinguished from an instrument the venue does not have.
 
 Expose collected definitions through `ExecutionClient::reconciliation_instruments`. The execution engine
