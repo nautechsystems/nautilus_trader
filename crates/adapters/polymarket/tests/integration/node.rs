@@ -219,7 +219,6 @@ async fn startup_loads_wallet_instruments_outside_discovery(
     let mut order = load_json("http_open_order.json");
     order["market"] = json!(condition);
     order["asset_id"] = json!(tokens[0]);
-    order["outcome"] = json!("Yes");
     order["maker_address"] = json!(super::mock_venue::TEST_SIGNER_ADDRESS);
     order["size_matched"] = json!("0");
     let orders = if open_order { vec![order] } else { vec![] };
@@ -240,11 +239,7 @@ async fn startup_loads_wallet_instruments_outside_discovery(
             "end_date_min".to_string(),
             "2100-01-01T00:00:00Z".to_string(),
         )])),
-        load_ids: scoped_out.then(|| {
-            vec![InstrumentId::from(
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1.POLYMARKET",
-            )]
-        }),
+        load_ids: scoped_out.then(|| vec![InstrumentId::from(format!("{condition}-1.POLYMARKET"))]),
         ..Default::default()
     });
     let mut node = LiveNodeBuilder::from_config(LiveNodeConfig {

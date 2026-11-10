@@ -218,12 +218,8 @@ impl Default for TestServerState {
     fn default() -> Self {
         let (user_frames, _) = tokio::sync::broadcast::channel(32);
         let orders = load_json("http_open_orders_page.json");
-        let tokens: Vec<_> = orders["data"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|order| order["asset_id"].clone())
-            .collect();
+        let orders = orders["data"].as_array().unwrap();
+        let tokens: Vec<_> = orders.iter().map(|order| &order["asset_id"]).collect();
         let mut market = load_json("gamma_market_past_end_date_open.json");
         market["conditionId"] = json!(TEST_CONDITION_ID);
         market["clobTokenIds"] = json!(serde_json::to_string(&tokens).unwrap());
