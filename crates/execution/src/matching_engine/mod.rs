@@ -5796,9 +5796,18 @@ impl OrderMatchingEngine {
                 }
             }
 
+            // A slip never moves a fill past the order's limit or protection price
             if self.book_type == BookType::L1_MBP
                 && self.fill_model.is_slipped()?
                 && let Some(slipped_px) = self.slipped_price(fill_px, order.order_side())
+                && !order
+                    .price()
+                    .into_iter()
+                    .chain(protection_price)
+                    .any(|bound| match order.order_side() {
+                        OrderSide::Buy => slipped_px > bound,
+                        OrderSide::Sell => slipped_px < bound,
+                    })
             {
                 fill_px = slipped_px;
             }
