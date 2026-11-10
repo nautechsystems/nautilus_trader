@@ -255,6 +255,10 @@ impl PrivateStream {
             .lock()
             .expect("private state lock is not poisoned");
         state.ledger.check_refresh(refresh_ticket)?;
+        for source in &snapshot.orders {
+            state.source_order(source)?;
+        }
+
         state.check_notices(&snapshot, &plans)?;
         let openings = state.openings(&plans, &snapshot.positions, &settlements)?;
         let amendments = state.check_amendments(&plans);

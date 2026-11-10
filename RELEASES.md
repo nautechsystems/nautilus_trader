@@ -293,6 +293,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers account summaries stopping after reconnects (#5525), thanks @TylerGriffin99
 - Fixed Interactive Brokers historical tick `ts_init` differing from `ts_event` (#5558), thanks @y1lan
 - Fixed Interactive Brokers gateway startup returning before login (#5565), thanks @madebymlai
+- Fixed Kalshi local denials blocking account recovery (#5630), thanks for reporting @wangschien
 - Fixed Kraken Futures history skipping unreadable rows and using stale states (#5559), thanks @zhaow-de
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed Kraken Spot startup recovery for emptied wallet balances (#5527), thanks @zhaow-de

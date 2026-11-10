@@ -103,6 +103,9 @@ struct Peer {
     notification: Arc<Mutex<Option<Value>>>,
     notification_ready: Arc<tokio::sync::Notify>,
     balance_reads: Arc<AtomicUsize>,
+    balance_gate: Arc<tokio::sync::Semaphore>,
+    series_gate: Arc<tokio::sync::Semaphore>,
+    series_read: Arc<tokio::sync::Notify>,
     history_position_reads: Arc<AtomicUsize>,
     balance_read: Arc<tokio::sync::Notify>,
     position_read: Arc<tokio::sync::Notify>,
@@ -155,6 +158,16 @@ impl Peer {
         let history_positions = Arc::clone(&history_position_reads);
         let balance_reads = Arc::new(AtomicUsize::new(0));
         let reads = Arc::clone(&balance_reads);
+
+        let balance_gate = Arc::new(tokio::sync::Semaphore::new(
+            tokio::sync::Semaphore::MAX_PERMITS,
+        ));
+
+        let gate_balance = Arc::clone(&balance_gate);
+        let series_gate = Arc::new(tokio::sync::Semaphore::new(1));
+        let gate_series = Arc::clone(&series_gate);
+        let series_read = Arc::new(tokio::sync::Notify::new());
+        let read_series = Arc::clone(&series_read);
         let balance_read = Arc::new(tokio::sync::Notify::new());
         let read = Arc::clone(&balance_read);
         let position_read = Arc::new(tokio::sync::Notify::new());
@@ -349,9 +362,24 @@ impl Peer {
                     body.len()
                 );
 
-                if path.starts_with("/markets/") || path == "/account/limits" {
+                if path == "/portfolio/balance" {
+                    let gate = Arc::clone(&gate_balance);
+                    tokio::spawn(async move {
+                        gate.acquire_owned().await.unwrap().forget();
+                        let _ = stream.write_all(response.as_bytes()).await;
+                    });
+
+                    continue;
+                }
+
+                if path.starts_with("/markets/")
+                    || path.starts_with("/series/")
+                    || path == "/account/limits"
+                {
                     let (gate, read) = if path == "/account/limits" {
                         (Arc::clone(&gate_limits), Arc::clone(&read_limits))
+                    } else if path.starts_with("/series/") {
+                        (Arc::clone(&gate_series), Arc::clone(&read_series))
                     } else {
                         (Arc::clone(&gate_http), Arc::clone(&read_market))
                     };
@@ -399,6 +427,9 @@ impl Peer {
             notification,
             notification_ready,
             balance_reads,
+            balance_gate,
+            series_gate,
+            series_read,
             history_position_reads,
             balance_read,
             position_read,
@@ -9287,6 +9318,283 @@ async fn native_batch_cancel_all_retains_unacknowledged_submission(#[case] stop:
             );
             native_disconnect(&harness).await;
         }
+    })
+    .await
+    .unwrap();
+}
+
+#[rstest]
+#[case::validation(false)]
+#[case::readiness(true)]
+#[tokio::test]
+async fn native_batch_denials_preserve_inflight_recovery(#[case] recovering: bool) {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let peer = Peer::with_timeout(None, 10).await;
+        let (harness, mut output, _data) = native_consumer(&peer).await;
+        let query = if recovering {
+            let seed = native_order_builder(&harness, "denied-seed", OrderSide::Buy)
+                .kind(OrderType::Market)
+                .build();
+            native_submit(&harness, &seed, None);
+            native_wait(&mut output, || {
+                native_status(&harness, seed.client_order_id()) == OrderStatus::Denied
+            })
+            .await;
+
+            let query = QueryOrder::new(
+                harness.trader_id(),
+                Some(harness.client_id()),
+                seed.strategy_id(),
+                seed.instrument_id(),
+                seed.client_order_id(),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            );
+
+            Some(query)
+        } else {
+            None
+        };
+
+        peer.balance_gate
+            .forget_permits(peer.balance_gate.available_permits());
+        let reads = peer.balance_reads.load(Ordering::SeqCst);
+        wait_until_async(
+            || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
+            Duration::from_secs(4),
+        )
+        .await;
+        let mut reads = peer.balance_reads.load(Ordering::SeqCst);
+        native_dispatch(std::iter::from_fn(|| output.try_recv().ok()));
+
+        if let Some(query) = query {
+            harness
+                .exec_engine()
+                .borrow()
+                .get_client(&harness.client_id())
+                .unwrap()
+                .query_order(query)
+                .unwrap();
+            peer.balance_gate.add_permits(2);
+            wait_until_async(
+                || async { peer.balance_reads.load(Ordering::SeqCst) >= reads + 2 },
+                Duration::from_secs(4),
+            )
+            .await;
+            reads = peer.balance_reads.load(Ordering::SeqCst);
+            assert!(output.try_recv().is_err());
+        }
+
+        let balance = native_balance(&harness);
+
+        for attempt in 0..3 {
+            let first =
+                native_order_builder(&harness, &format!("denied-{attempt}-buy"), OrderSide::Buy)
+                    .quantity(Quantity::from("0.01"))
+                    .build();
+            let mut second =
+                native_order_builder(&harness, &format!("denied-{attempt}-sell"), OrderSide::Sell);
+            second.quantity(Quantity::from("0.01"));
+            if !recovering {
+                second.kind(OrderType::Market);
+            }
+
+            let orders = [first, second.build()];
+            native_list(&harness, &orders);
+            let events = native_wait(&mut output, || {
+                orders.iter().all(|order| {
+                    native_status(&harness, order.client_order_id()) == OrderStatus::Denied
+                })
+            })
+            .await;
+
+            assert_eq!(events.len(), 2);
+
+            for order in &orders {
+                let event = events
+                    .iter()
+                    .find(|event| event.client_order_id() == order.client_order_id())
+                    .unwrap();
+
+                let OrderEventAny::Denied(event) = event else {
+                    panic!("expected denial");
+                };
+
+                assert_eq!(
+                    event.reason.as_str(),
+                    if recovering {
+                        "VALIDATION_FAILED: Kalshi submission requires current-session readiness"
+                    } else if event.client_order_id == orders[0].client_order_id() {
+                        "VALIDATION_FAILED: Kalshi order-list child failed validation"
+                    } else {
+                        "UNSUPPORTED_ORDER_TYPE: MARKET"
+                    }
+                );
+            }
+        }
+
+        peer.balance_gate.add_permits(2);
+        wait_until_async(
+            || async { peer.balance_reads.load(Ordering::SeqCst) >= reads + 2 },
+            Duration::from_secs(4),
+        )
+        .await;
+        let events: Vec<_> = std::iter::from_fn(|| output.try_recv().ok()).collect();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, ExecutionEvent::Account(_)))
+                .count(),
+            1
+        );
+        assert!(native_dispatch(events).is_empty());
+        assert!(
+            harness
+                .exec_engine()
+                .borrow()
+                .get_client(&harness.client_id())
+                .unwrap()
+                .is_connected()
+        );
+        assert_eq!(native_balance(&harness), balance);
+        assert_eq!(peer.batches.writes.lock().unwrap().len(), 0);
+        assert_eq!(peer.submissions.writes.lock().unwrap().len(), 0);
+        peer.balance_gate
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+        peer.batches.ack_gate.add_permits(1);
+
+        let orders = [
+            native_order_builder(&harness, "recovered-buy", OrderSide::Buy)
+                .quantity(Quantity::from("0.01"))
+                .build(),
+            native_order_builder(&harness, "recovered-sell", OrderSide::Sell)
+                .quantity(Quantity::from("0.01"))
+                .build(),
+        ];
+
+        native_list(&harness, &orders);
+        native_wait(&mut output, || {
+            orders.iter().all(|order| {
+                native_status(&harness, order.client_order_id()) == OrderStatus::Accepted
+            }) && harness
+                .exec_engine()
+                .borrow()
+                .get_client(&harness.client_id())
+                .unwrap()
+                .is_connected()
+        })
+        .await;
+
+        let balance = native_balance(&harness);
+        assert_eq!(balance.total.as_decimal(), dec("1.000100"));
+        assert_eq!(balance.locked.as_decimal(), dec("0.010552"));
+        assert_eq!(balance.free.as_decimal(), dec("0.989548"));
+        let writes = peer.batches.writes.lock().unwrap().clone();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].1["orders"][0]["client_order_id"], "recovered-buy");
+        assert_eq!(
+            writes[0].1["orders"][1]["client_order_id"],
+            "recovered-sell"
+        );
+        native_disconnect(&harness).await;
+    })
+    .await
+    .unwrap();
+}
+
+#[rstest]
+#[case::wire(true, false)]
+#[case::fallback(false, false)]
+#[case::unplanned(true, true)]
+#[tokio::test]
+async fn native_recovery_rechecks_locally_denied_identities(
+    #[case] wire_id: bool,
+    #[case] unplanned: bool,
+) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let peer = Peer::with_timeout(None, 10).await;
+        peer.balance.lock().unwrap()["balance_dollars"] = "5.000100".into();
+        resting_bootstrap(&peer, &bootstrap_instrument());
+        {
+            let mut rows = peer.orders.lock().unwrap();
+            rows["orders"][0]["order_id"] = "preload-order".into();
+            rows["orders"][0]["remaining_count_fp"] = "0.01".into();
+            rows["orders"][0]["initial_count_fp"] = "0.01".into();
+        }
+
+        let (harness, mut output, _data) = native_consumer(&peer).await;
+        peer.balance_gate
+            .forget_permits(peer.balance_gate.available_permits());
+        let reads = peer.balance_reads.load(Ordering::SeqCst);
+        wait_until_async(
+            || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
+            Duration::from_secs(4),
+        )
+        .await;
+        let held = peer.series_gate.acquire().await.unwrap();
+        let _ = peer.series_read.notified().now_or_never();
+        native_dispatch(std::iter::from_fn(|| output.try_recv().ok()));
+        {
+            let mut rows = peer.orders.lock().unwrap();
+            let mut source = rows["orders"][0].clone();
+            source["order_id"] = "collision".into();
+            source["client_order_id"] = if wire_id { "collision" } else { "" }.into();
+            if unplanned {
+                source["status"] = "canceled".into();
+                source["remaining_count_fp"] = "0.00".into();
+                source["last_update_time"] = jiff::Timestamp::now().to_string().into();
+                let mut resting = source.clone();
+                resting["order_id"] = "later-order".into();
+                resting["client_order_id"] = "later-client".into();
+                resting["status"] = "resting".into();
+                resting["remaining_count_fp"] = "0.01".into();
+                rows["orders"].as_array_mut().unwrap().push(resting);
+            }
+
+            rows["orders"].as_array_mut().unwrap().push(source);
+        }
+
+        peer.balance_gate.add_permits(2);
+        peer.series_read.notified().await;
+        let collision = native_order_builder(&harness, "collision", OrderSide::Buy)
+            .kind(OrderType::Market)
+            .build();
+        native_submit(&harness, &collision, None);
+        native_wait(&mut output, || {
+            native_status(&harness, collision.client_order_id()) == OrderStatus::Denied
+        })
+        .await;
+
+        let reads = peer.balance_reads.load(Ordering::SeqCst);
+        drop(held);
+        wait_until_async(
+            || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
+            Duration::from_secs(4),
+        )
+        .await;
+        assert!(output.try_recv().is_err());
+        assert_eq!(
+            native_status(&harness, collision.client_order_id()),
+            OrderStatus::Denied
+        );
+        assert!(
+            !harness
+                .exec_engine()
+                .borrow()
+                .get_client(&harness.client_id())
+                .unwrap()
+                .is_connected()
+        );
+        let balance = native_balance(&harness);
+        assert_eq!(balance.total.as_decimal(), dec("5.000100"));
+        assert_eq!(balance.locked.as_decimal(), dec("0.006277"));
+        assert_eq!(balance.free.as_decimal(), dec("4.993823"));
+        assert_eq!(peer.batches.writes.lock().unwrap().len(), 0);
+        assert_eq!(peer.submissions.writes.lock().unwrap().len(), 0);
+        native_disconnect(&harness).await;
     })
     .await
     .unwrap();

@@ -414,7 +414,8 @@ impl PrivateState {
             now,
         ));
         order.apply(event.clone())?;
-        self.orders.insert(
+
+        let prior = self.orders.insert(
             id,
             PrivateOrder {
                 source_ts: order.ts_last(),
@@ -423,7 +424,11 @@ impl PrivateState {
             },
         );
 
-        self.ledger.invalidate();
+        // A restored initialized order can own a hold in the in-flight recovery
+        if prior.is_some() {
+            self.ledger.invalidate();
+        }
+
         emitter.try_send_order_event(event)
     }
 
@@ -1013,6 +1018,14 @@ impl PrivateState {
             "private order identities disagree"
         );
         let order = by_client.or(by_venue);
+        if order.is_none() && wire_id.is_none() {
+            let id = ClientOrderId::new_checked(&value.order_id)?;
+            anyhow::ensure!(
+                !self.orders.contains_key(&id),
+                "recovered order identity conflicts with an existing order"
+            );
+        }
+
         if let Some(order) = order {
             let rejected = order.order.status() == OrderStatus::Rejected;
 
@@ -1389,10 +1402,6 @@ impl PrivateState {
             report.ts_accepted
         };
 
-        anyhow::ensure!(
-            !self.orders.contains_key(&client_order_id),
-            "recovered order identity conflicts with an existing order"
-        );
         let order = LimitOrder::new_checked(
             emitter.trader_id(),
             StrategyId::external(),
@@ -2334,7 +2343,11 @@ mod tests {
     }
 
     #[rstest]
-    fn unsent_denial_fences_refresh_and_rejects_conflicting_venue_identity() {
+    #[case::new(false)]
+    #[case::restored(true)]
+    fn unsent_denial_fences_only_tracked_orders_and_rejects_conflicting_venue_identity(
+        #[case] restored: bool,
+    ) {
         let instrument = instrument();
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument.id)
@@ -2344,6 +2357,10 @@ mod tests {
             .time_in_force(TimeInForce::Gtc)
             .build();
         let mut state = PrivateState::new();
+        if restored {
+            state.restore(order.clone());
+        }
+
         let ticket = state.ledger.begin_refresh();
         state
             .ledger
@@ -2354,16 +2371,22 @@ mod tests {
             )
             .unwrap();
         let balance = state.ledger.balance().unwrap();
-        let stale = state.ledger.begin_refresh();
+        let ticket = state.ledger.begin_refresh();
         let (emitter, mut output) = emitter();
         state
             .deny_submission(&mut order, "local validation", &emitter)
             .unwrap();
         assert_eq!(order.status(), OrderStatus::Denied);
-        assert_eq!(
-            state.ledger.check_refresh(stale).unwrap_err().to_string(),
-            "stale Kalshi account refresh"
-        );
+
+        if restored {
+            assert_eq!(
+                state.ledger.check_refresh(ticket).unwrap_err().to_string(),
+                "stale Kalshi account refresh"
+            );
+        } else {
+            state.ledger.check_refresh(ticket).unwrap();
+        }
+
         assert_eq!(
             state
                 .source_order(&source(&instrument, OrderSide::Buy))
