@@ -5357,6 +5357,7 @@ async fn test_generate_mass_status_applies_load_ids_to_all_report_types() {
     assert!(mass_status.order_reports().is_empty());
     assert!(mass_status.fill_reports().is_empty());
     assert!(mass_status.position_reports().is_empty());
+    assert!(state.gamma_queries.lock().await.is_empty());
     assert!(state.market_queries.lock().await.is_empty());
 }
 
@@ -5511,6 +5512,52 @@ async fn test_generate_position_status_reports_omit_unloaded_resolved_position(
 
     assert!(reports.is_empty());
     assert!(state.market_queries.lock().await.is_empty());
+}
+
+#[rstest]
+#[case::loaded(true)]
+#[case::missing(false)]
+#[tokio::test]
+async fn test_generate_mass_status_loads_wallet_instruments(#[case] metadata_available: bool) {
+    let state = TestServerState::default();
+    let market = load_json("gamma_market_past_end_date_open.json");
+    let condition = market["conditionId"].as_str().unwrap().to_string();
+    let tokens: Vec<String> =
+        serde_json::from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
+    let mut order = load_json("http_open_order.json");
+    order["market"] = json!(condition);
+    order["asset_id"] = json!(tokens[0]);
+    order["maker_address"] = json!(TEST_SIGNER_ADDRESS);
+    order["size_matched"] = json!("0");
+    let mut second_order = order.clone();
+    second_order["id"] = json!("wallet-order-2");
+    *state.orders_response_override.lock().await =
+        Some(json!({"data": [order, second_order], "next_cursor": "LTE="}));
+    *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    *state.positions_response_override.lock().await = Some(json!([{
+        "token_id": tokens[0], "condition_id": condition,
+        "current_size": "7.1234", "avg_price": "0.321",
+    }]));
+
+    *state.gamma_response.lock().await = metadata_available.then(|| json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+    assert!(nautilus_common::live::runner::try_get_data_event_sender().is_none());
+    let result = client.generate_mass_status(None).await;
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 1);
+    let queries = state.gamma_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0]["condition_ids"], condition);
+
+    if !metadata_available {
+        result.expect_err("Missing wallet metadata must prevent reconciliation");
+        return;
+    }
+
+    let mass_status = result.unwrap().unwrap();
+    assert_eq!(mass_status.order_reports().len(), 2);
+    assert_eq!(mass_status.position_reports().len(), 1);
 }
 
 #[rstest]
