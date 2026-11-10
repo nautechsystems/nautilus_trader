@@ -70,7 +70,9 @@ The execution testers bypass shared pre-trade risk on a dedicated demo node; see
 
 The execution tester uses these settings and actions:
 
-- **Market**: Requires shard `0` and a single-step price grid.
+- **Market**: Requires a single-step price grid.
+- **Shard**: The Rust tester reads the market's `exchange_index` at startup. In the Python tester,
+  set `EXCHANGE_INDEX` to that value.
 - **Prices**: Places BUY five ticks below the best bid and SELL five ticks above the best ask. Both
   resulting prices must remain in `(0, 1)` and on the grid; price-range clamping is disabled.
 - **Orders**: Submits a post-only GTC BUY/SELL pair as an independent order list for `0.01`

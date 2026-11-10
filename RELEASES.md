@@ -378,6 +378,7 @@ Released on TBD (UTC).
 - Clarified WebSocket and raw TCP socket retry attempts, reconnect disabling, and send-wait timeouts
 - Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
 - Added Python tutorial for backtesting Lighter ANTHROPIC pre-IPO order books from CoinAPI Flat Files
+- Fixed Kalshi Rust execution tester example hardcoding shard 0 (#5631), thanks for reporting @wangschien
 - Clarified Kraken margin recovery limits and manual reconciliation (#5470), thanks @zhaow-de
 - Updated Kraken Futures Maker Protection rollout and split-amendment guidance
 - Added OKX history coverage and catalog write-back guidance (#5533), thanks @akarazhev

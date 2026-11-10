@@ -23,13 +23,14 @@
 //! post-only GTC limits 5 ticks from the touch for `0.01` contracts as a BUY/SELL order list, then
 //! cancels those orders on stop. It does not close a position: the built-in close submits
 //! a market order, which the Kalshi execution client denies. Startup reconciliation uses a
-//! 180-minute lookback. It still keeps, on shard 0, resting orders, orders with a fill in
-//! that window, and other orders last updated in that window. A kept order with a fill and
-//! no cached order context fails startup. The strategy has no alpha advantage whatsoever and is
+//! 180-minute lookback. On the execution client's shard, it still keeps resting orders, orders with
+//! a fill in that window, and other orders last updated in that window. A kept order with a fill
+//! and no cached order context fails startup. The strategy has no alpha advantage whatsoever and is
 //! not intended for production trading.
 //!
-//! Edit the instrument constant to target an open demo market on shard 0 with a
-//! single-step price grid. Keep the bid more than 5 ticks above zero.
+//! Edit the instrument constant to target an open demo market with a single-step price grid.
+//! Keep the bid more than 5 ticks above zero. Startup reads the market's shard over REST and
+//! configures the execution client for it.
 //!
 //! Run with:
 //! `cargo run --locked -p nautilus-kalshi --example kalshi-exec-tester`
@@ -38,12 +39,14 @@
 //! - `KALSHI_DEMO_API_KEY_ID`
 //! - `KALSHI_DEMO_PRIVATE_KEY`
 
+use anyhow::Context;
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_kalshi::{
-    common::{consts::KALSHI_CLIENT_ID, enums::KalshiEnvironment},
+    common::{consts::KALSHI_CLIENT_ID, enums::KalshiEnvironment, parse::parse_ticker},
     config::{KalshiDataClientConfig, KalshiExecutionClientConfig},
     factories::{KalshiDataClientFactory, KalshiExecutionClientFactory},
+    http::{client::KalshiHttpClient, models::Field},
 };
 use nautilus_live::{
     config::{LiveExecutionEngineConfig, LiveRiskEngineConfig},
@@ -66,7 +69,6 @@ const STRATEGY_ID: &str = "EXEC_TESTER-001";
 const INSTRUMENT_ID: &str = "KXNBA1HTOTAL-26NOV01LACGSW-125.KALSHI";
 const ORDER_QTY: &str = "0.01";
 const TOB_OFFSET_TICKS: u64 = 5;
-const EXCHANGE_INDEX: u32 = 0;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -80,11 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = KalshiExecutionClientConfig {
-        environment: KalshiEnvironment::Demo,
-        exchange_index: EXCHANGE_INDEX,
-        ..Default::default()
-    };
+    let exec_config = execution_config(&data_config, instrument_id).await?;
 
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,
@@ -155,4 +153,111 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     node.add_strategy(ExecTester::new(tester_config))?;
     node.run().await?;
     Ok(())
+}
+
+async fn execution_config(
+    data_config: &KalshiDataClientConfig,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<KalshiExecutionClientConfig> {
+    let http = KalshiHttpClient::new(data_config)?;
+    let ticker = parse_ticker(instrument_id)?;
+    let market = http.get_market(&ticker).await?.market;
+    anyhow::ensure!(market.ticker == ticker, "Kalshi market ticker mismatch");
+
+    let Field::Value(exchange_index) = market.exchange_index else {
+        anyhow::bail!("Kalshi market exchange shard is missing");
+    };
+
+    let exchange_index =
+        u32::try_from(exchange_index).context("invalid Kalshi market exchange shard")?;
+
+    Ok(KalshiExecutionClientConfig {
+        environment: data_config.environment,
+        exchange_index,
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{Json, Router, http::StatusCode, routing::get};
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::*;
+
+    #[rstest]
+    #[case(Field::Value(0), false, StatusCode::OK, Ok(0))]
+    #[case(Field::Value(2), false, StatusCode::OK, Ok(2))]
+    #[case(
+        Field::Missing,
+        false,
+        StatusCode::OK,
+        Err("Kalshi market exchange shard is missing")
+    )]
+    #[case(
+        Field::Null,
+        false,
+        StatusCode::OK,
+        Err("Kalshi market exchange shard is missing")
+    )]
+    #[case(Field::Value(-1), false, StatusCode::OK, Err("invalid Kalshi market exchange shard"))]
+    #[case(
+        Field::Value(2),
+        true,
+        StatusCode::OK,
+        Err("Kalshi market ticker mismatch")
+    )]
+    #[case(Field::Value(2), false, StatusCode::NOT_FOUND, Err("HTTP 404"))]
+    #[tokio::test]
+    async fn resolves_market_shard(
+        #[case] shard: Field<i32>,
+        #[case] wrong_ticker: bool,
+        #[case] status: StatusCode,
+        #[case] expected: Result<u32, &str>,
+    ) {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let mut body = fixture["definitions"]["live"].clone();
+        let ticker = body["market"]["ticker"].as_str().unwrap().to_owned();
+        let instrument_id = InstrumentId::from(format!("{ticker}.KALSHI").as_str());
+
+        if shard.is_missing() {
+            body["market"]
+                .as_object_mut()
+                .unwrap()
+                .remove("exchange_index");
+        } else {
+            body["market"]["exchange_index"] = serde_json::to_value(shard).unwrap();
+        }
+
+        if wrong_ticker {
+            body["market"]["ticker"] = "OTHER-MARKET".into();
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let route = format!("/trade-api/v2/markets/{ticker}");
+        let router = Router::new().route(&route, get(move || async move { (status, Json(body)) }));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let data_config = KalshiDataClientConfig {
+            environment: KalshiEnvironment::Demo,
+            base_url_http: Some(format!("http://{address}/trade-api/v2").into()),
+            http_timeout_secs: 2,
+            ..Default::default()
+        };
+
+        let result = execution_config(&data_config, instrument_id).await;
+        server.abort();
+
+        match expected {
+            Ok(shard) => {
+                let config = result.unwrap();
+                assert_eq!(config.environment, KalshiEnvironment::Demo);
+                assert_eq!(config.exchange_index, shard);
+            }
+            Err(message) => assert_eq!(result.unwrap_err().to_string(), message),
+        }
+    }
 }
