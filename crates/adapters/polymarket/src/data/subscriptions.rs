@@ -536,13 +536,6 @@ mod tests {
         Ustr::from("0xCOND-0xTOKEN")
     }
 
-    #[rstest]
-    fn reconciliation_future_stays_small() {
-        let subscriptions = make_subscriptions(make_handle().0);
-        let size = std::mem::size_of_val(&subscriptions.reconcile(instrument_id(), String::new()));
-        assert!(size < 2048, "Reconciliation future is {size} bytes");
-    }
-
     fn resolution_watch(instrument_id: InstrumentId) -> Arc<ResolveWatchlist> {
         let watchlist = Arc::new(ResolveWatchlist::default());
         watchlist.write().insert(
@@ -582,6 +575,7 @@ mod tests {
             .reconcile(inst, inst.symbol.as_str().to_string())
             .await;
 
+        assert!(std::mem::size_of_val(&subscriptions.reconcile(inst, String::new())) < 2048);
         assert!(subscriptions.ws_open_tokens.contains(&token_ustr()));
 
         match rx.try_recv().expect("expected SubscribeMarket command") {
