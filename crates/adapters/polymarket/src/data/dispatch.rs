@@ -12823,6 +12823,19 @@ mod tests {
                     .iter()
                     .all(|delta| delta.flags & RecordFlag::F_SNAPSHOT as u8 != 0)
             );
+
+            let second = ctx
+                .subscriptions
+                .book_sync
+                .claim_recovery(instrument_id)
+                .unwrap();
+            let mut rejected = snapshot.clone();
+            rejected.timestamp = "1794388079085".to_string();
+            handle_market_message(MarketWsMessage::Book(rejected), &ctx);
+            assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+            handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+            assert!(second.is_accepted());
+            assert_eq!(collect_delta_batches(&mut data_rx).len(), 1);
         }
 
         snapshot.timestamp = "1794388079086".to_string();

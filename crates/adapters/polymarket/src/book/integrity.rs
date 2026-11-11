@@ -63,7 +63,6 @@ impl BookIntegrity {
     pub(crate) fn accept_snapshot(&mut self, timestamp: UnixNanos, verified: bool) {
         self.record_publication(timestamp);
         self.snapshot_verified = verified;
-        self.withheld_hash = None;
     }
 
     pub(crate) fn snapshot_verified(&self) -> bool {
