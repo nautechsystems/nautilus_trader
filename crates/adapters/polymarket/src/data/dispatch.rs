@@ -1404,10 +1404,6 @@ fn handle_book_changes(
     }
 
     let state = integrity.entry(instrument_id).or_default();
-    if let Some(book) = ctx.subscriptions.order_books.get(&instrument_id) {
-        state.record_publication(book.ts_last);
-    }
-
     if !state.observe(ts_event) {
         return;
     }
