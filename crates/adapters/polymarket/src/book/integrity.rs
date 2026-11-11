@@ -46,10 +46,7 @@ impl BookIntegrity {
     pub(crate) fn is_stale_snapshot(&self, timestamp: UnixNanos, hash: Option<&str>) -> bool {
         timestamp < self.published_timestamp
             || self.is_stale(timestamp)
-                && !self
-                    .withheld_hash
-                    .as_deref()
-                    .is_some_and(|withheld| Some(withheld) == hash)
+                && hash.is_none_or(|hash| self.withheld_hash.as_deref() != Some(hash))
     }
 
     pub(crate) fn withhold(&mut self, hash: &str) {
@@ -61,8 +58,7 @@ impl BookIntegrity {
         self.latest_timestamp = self.latest_timestamp.max(timestamp);
     }
 
-    pub(crate) fn accept_snapshot(&mut self, timestamp: UnixNanos, verified: bool) {
-        self.record_publication(timestamp);
+    pub(crate) fn accept_snapshot(&mut self, verified: bool) {
         self.snapshot_verified = verified;
     }
 

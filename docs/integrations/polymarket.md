@@ -2437,9 +2437,9 @@ The adapter ignores events older than the cached quote or, with effective deltas
 book. It also rejects locked, crossed, out-of-range, and off-grid events.
 
 With a book delta subscription, both modes also discard snapshots older than the book's retained
-timestamp mark before quote processing. During recovery, a snapshot matching the newest withheld update's
-non-empty hash can cover that update despite an older timestamp, but cannot predate the published book.
-A snapshot rejected by book hash validation emits no quote.
+timestamp mark before quote processing. A snapshot rejected by book hash validation emits no quote.
+During recovery, a snapshot matching the newest withheld update's non-empty hash can cover that update
+despite an older timestamp, but cannot predate the published book.
 
 An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
 `drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
