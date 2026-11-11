@@ -1,0 +1,18 @@
+{
+  "exchange_id": "KALSHI",
+  "market_id": "TEST-KALSHI-30_YES",
+  "time_exchange": "2026-10-01T01:02:03.0000001Z",
+  "time_coinapi": "2026-10-01T01:02:03.0000002Z",
+  "bids": [
+    {
+      "price": "0.21",
+      "size": "13.25"
+    }
+  ],
+  "asks": [
+    {
+      "price": "0.38",
+      "size": "29.75"
+    }
+  ]
+}

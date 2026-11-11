@@ -228,8 +228,10 @@ settlement timestamp.
   complete grid still rejects off-grid prices.
 - **Registration**: Fresh definition parsing registers and verifies a tick scheme. A grid change
   publishes an updated instrument.
-- **Restart**: Restore the retained grid and scheme after deserializing an instrument for correct
-  price navigation. Without the scheme, navigation falls back to the base increment.
+- **Restart**: Parquet catalogs retain and restore the instrument's exact tick scheme for price
+  navigation. Older files that contain only a custom scheme name require that scheme to be registered
+  before loading. Other serialization formats require the retained grid and scheme to be restored.
+  Catalog writes require any named scheme to be registered in the writing process.
 - **Live orders**: Submission independently fetches fresh metadata and validates the complete grid,
   rejecting an off-grid price rather than rounding it.
 

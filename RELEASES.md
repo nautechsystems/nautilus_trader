@@ -2,10 +2,22 @@
 
 Released on TBD (UTC).
 
+### Enhancements
+
+- Added Kalshi market data support to the FinFeed adapter
+
+### Breaking Changes
+
+- Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
+- Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
+- Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
+
 ### Fixes
 
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
+- Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
 
 ### Internal Improvements
 

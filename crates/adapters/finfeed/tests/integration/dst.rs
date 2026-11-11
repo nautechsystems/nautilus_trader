@@ -49,6 +49,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const EXCHANGES: &str = include_str!("../../test_data/exchanges.json");
 
+#[cfg(all(feature = "simulation", madsim))]
+static PEER_PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(18896);
+
 pub(super) fn new_client(config: FinFeedHttpConfig) -> FinFeedHttpClient {
     FinFeedHttpClient::new(Some(SecretString::from("test-api-key")), config).unwrap()
 }
@@ -1404,11 +1407,14 @@ pub(super) async fn bind_peer() -> (TcpListener, String) {
     #[cfg(not(all(feature = "simulation", madsim)))]
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     #[cfg(all(feature = "simulation", madsim))]
-    let listener = TcpListener::bind("127.0.0.1:18896").await.unwrap();
+    let address = format!(
+        "127.0.0.1:{}",
+        PEER_PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    #[cfg(all(feature = "simulation", madsim))]
+    let listener = TcpListener::bind(&address).await.unwrap();
     #[cfg(not(all(feature = "simulation", madsim)))]
     let address = listener.local_addr().unwrap().to_string();
-    #[cfg(all(feature = "simulation", madsim))]
-    let address = "127.0.0.1:18896".to_owned();
     (listener, address)
 }
 
