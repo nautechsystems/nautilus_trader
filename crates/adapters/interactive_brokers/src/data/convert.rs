@@ -24,7 +24,7 @@ use ibapi::market_data::{
     },
     realtime::WhatToShow as RealtimeWhatToShow,
 };
-use jiff::Timestamp;
+use jiff::{RoundMode, Timestamp, TimestampRound, Unit};
 use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType},
@@ -622,6 +622,13 @@ impl BarRequestRange {
 /// is one bar before `start` to keep the bar opening before `start`, and `to` is just past `end`
 /// to keep a bar stamped at `end`. [`BarRequestRange::contains`] then keeps the bars closing in
 /// the range.
+///
+/// ibapi rounds the span between the bounds up to the second, so a fraction of a second adds a
+/// second to the duration: `2001 S` for the 2000 one-second bars of a 1999-second range, over
+/// IB's `2000 S`. As IB stamps bars and reads the end time to the second, `from` is rounded up
+/// and, for intraday bars, which close on a whole second, `to` is `end` rounded down, which drops
+/// only bars closing after `end`. `to` then stays a second past `from` so that ibapi accepts a
+/// range holding no bar.
 #[must_use]
 fn between_bounds(
     start: Timestamp,
@@ -629,10 +636,23 @@ fn between_bounds(
     spec: &BarSpecification,
 ) -> (Timestamp, Timestamp) {
     let end = end.unwrap_or_else(Timestamp::now);
-    (
-        start - spec.timedelta(),
-        end + jiff::SignedDuration::from_nanos(1),
-    )
+    let from = round_to_second(start - spec.timedelta(), RoundMode::Ceil);
+
+    let to = match spec.aggregation {
+        BarAggregation::Second | BarAggregation::Minute | BarAggregation::Hour => {
+            round_to_second(end, RoundMode::Floor).max(from + jiff::SignedDuration::from_secs(1))
+        }
+        _ => end + jiff::SignedDuration::from_nanos(1),
+    };
+
+    (from, to)
+}
+
+/// Returns `timestamp` rounded to a whole second by `mode`.
+fn round_to_second(timestamp: Timestamp, mode: RoundMode) -> Timestamp {
+    timestamp
+        .round(TimestampRound::new().smallest(Unit::Second).mode(mode))
+        .expect("a request bound rounds to a second within range")
 }
 
 /// Returns the time range of an IB historical bars request ending at `end`, or at the current
@@ -1318,12 +1338,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case::minute(BarAggregation::Minute, "2026-10-05T09:59:00Z")]
-    #[case::day(BarAggregation::Day, "2026-10-04T10:00:00Z")]
-    #[case::week(BarAggregation::Week, "2026-09-28T10:00:00Z")]
-    fn test_between_bounds_start_one_bar_early_and_end_past_end(
+    #[case::minute(BarAggregation::Minute, "2026-10-05T09:59:00Z", "2026-10-07T18:00:00Z")]
+    #[case::day(
+        BarAggregation::Day,
+        "2026-10-04T10:00:00Z",
+        "2026-10-07T18:00:00.000000001Z"
+    )]
+    #[case::week(
+        BarAggregation::Week,
+        "2026-09-28T10:00:00Z",
+        "2026-10-07T18:00:00.000000001Z"
+    )]
+    fn test_between_bounds_by_aggregation(
         #[case] aggregation: BarAggregation,
         #[case] from: &str,
+        #[case] to: &str,
     ) {
         let spec = BarSpecification::new(1, aggregation, PriceType::Last);
         let start = timestamp("2026-10-05T10:00:00Z");
@@ -1331,10 +1360,87 @@ mod tests {
 
         let bounds = between_bounds(start, Some(end), &spec);
 
-        assert_eq!(
-            bounds,
-            (timestamp(from), timestamp("2026-10-07T18:00:00.000000001Z"))
-        );
+        assert_eq!(bounds, (timestamp(from), timestamp(to)));
+    }
+
+    /// IB takes at most `2000 S` for one-second bars: the bounds of 2000 such bars are 2000
+    /// seconds apart, and those of a range holding no bar one second apart.
+    #[rstest]
+    #[case::whole_seconds(
+        "2026-10-07T10:00:00Z",
+        "2026-10-07T10:33:19Z",
+        "2026-10-07T09:59:59Z",
+        "2026-10-07T10:33:19Z"
+    )]
+    #[case::end_within_a_second(
+        "2026-10-07T10:00:00Z",
+        "2026-10-07T10:33:19.5Z",
+        "2026-10-07T09:59:59Z",
+        "2026-10-07T10:33:19Z"
+    )]
+    #[case::end_just_before_a_second(
+        "2026-10-07T10:00:00Z",
+        "2026-10-07T10:33:19.999999999Z",
+        "2026-10-07T09:59:59Z",
+        "2026-10-07T10:33:19Z"
+    )]
+    #[case::start_and_end_within_a_second(
+        "2026-10-07T10:00:00.3Z",
+        "2026-10-07T10:33:20.3Z",
+        "2026-10-07T10:00:00Z",
+        "2026-10-07T10:33:20Z"
+    )]
+    #[case::no_bar(
+        "2026-10-07T10:00:00.2Z",
+        "2026-10-07T10:00:00.7Z",
+        "2026-10-07T10:00:00Z",
+        "2026-10-07T10:00:01Z"
+    )]
+    fn test_between_bounds_one_second_bars(
+        #[case] start: &str,
+        #[case] end: &str,
+        #[case] from: &str,
+        #[case] to: &str,
+    ) {
+        let spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+
+        let bounds = between_bounds(timestamp(start), Some(timestamp(end)), &spec);
+
+        assert_eq!(bounds, (timestamp(from), timestamp(to)));
+    }
+
+    /// Sweeps one-second ranges around 2000 bars, each bound on, just past, halfway past and just
+    /// before a whole second: `from` is the open of the first bar closing in the range and `to` its
+    /// last close, so the request spans one second for each bar.
+    #[rstest]
+    fn test_between_bounds_one_second_bars_span_one_second_for_each_bar() {
+        const SECOND: i128 = 1_000_000_000;
+        let spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let base = timestamp("2026-10-07T10:00:00Z").as_nanosecond();
+        let offsets = [0, 1, SECOND / 2, SECOND - 1];
+
+        for start_offset in offsets {
+            for seconds in [1998, 1999, 2000] {
+                for end_offset in offsets {
+                    let start = base + start_offset;
+                    let end = base + seconds * SECOND + end_offset;
+                    let first_close = (start + SECOND - 1).div_euclid(SECOND) * SECOND;
+                    let last_close = end.div_euclid(SECOND) * SECOND;
+
+                    let (from, to) = between_bounds(
+                        Timestamp::from_nanosecond(start).unwrap(),
+                        Some(Timestamp::from_nanosecond(end).unwrap()),
+                        &spec,
+                    );
+
+                    assert_eq!(
+                        (from.as_nanosecond(), to.as_nanosecond()),
+                        (first_close - SECOND, last_close),
+                        "range {start}..={end}"
+                    );
+                }
+            }
+        }
     }
 
     #[rstest]
