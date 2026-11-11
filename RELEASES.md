@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
+- Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
 
 ### Internal Improvements
 
