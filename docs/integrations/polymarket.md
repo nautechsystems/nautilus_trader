@@ -2760,26 +2760,17 @@ The same composition applies to periodic refreshes driven by `update_instruments
 Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
 universes match.
 
-Periodic refresh also keeps metadata current for instruments required by individual definition or
-market-data subscriptions, resolution watches, active local or venue orders, and open positions. The
-factory provides cache ownership; directly constructed Rust clients can attach it with `with_cache`.
-A venue-wide instrument subscription receives discoveries but does not retain individual instruments.
-Retained instruments outside discovery are queried in condition-ID batches, without discovery filters
-or additional market-data subscriptions. Releasing the last owner stops these extra lookups; a cached
-instrument alone does not retain refresh ownership.
+Periodic refresh also covers instruments needed by individual subscriptions, resolution watches,
+active orders, or open positions outside discovery filters. Factories attach the cache automatically;
+direct Rust clients use `with_cache`. Cached definitions and venue-wide subscriptions are not owners.
 
-Discovery and retained polling run independently. Retained requests share Gamma's total quota and
-consume at most half its sustained capacity, with a one-request burst. Each discovery attempt replaces
-the previous attempt's coverage, so a failed or stalled query does not suppress retained polling.
-Rolling-query definitions take precedence over retained results before acceptance. Condition-ID responses
-also yield to intervening metadata writes and older Gamma `updatedAt` revisions are ignored. Live tick
-updates, confirmed closure, and manually paused resolution watches remain authoritative. Closure alone
-does not imply a settlement outcome.
+Retained lookups use condition-ID batches independently of discovery, with Gamma capacity reserved
+for discovery. They add no market-data subscriptions and stop when the last owner is released.
+Discovery definitions take precedence over retained results.
 
-A registered filter supplying both query parameters and market slugs treats its slugs as optional
-retention lookups. They are batched separately and failures are logged without delaying discovery.
-Explicitly configured sources and slug-only filters remain required. Disabling periodic instrument
-refresh also disables retained metadata refresh.
+For registered filters supplying both query parameters and market slugs, slug lookups are optional;
+failures do not delay discovery. Explicitly configured sources and slug-only filters remain required.
+Disabling periodic refresh also disables retained lookups.
 
 #### Markets awaiting CLOB metadata
 
