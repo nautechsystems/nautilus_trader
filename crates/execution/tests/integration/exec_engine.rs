@@ -87,7 +87,7 @@ use nautilus_model::{
         stubs::{audusd_sim, binary_option, gbpusd_sim},
     },
     orders::{
-        Order, OrderAny, OrderList,
+        FILL_REPORT_ORDER_TAG, Order, OrderAny, OrderList,
         builder::OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
     },
@@ -18308,6 +18308,536 @@ fn test_reconcile_fill_report_bootstraps_external_order(mut execution_engine: Ex
     assert_eq!(order.time_in_force(), TimeInForce::Ioc);
     assert!(order.is_reduce_only());
     assert_eq!(order.strategy_id(), StrategyId::from("EXTERNAL"));
+}
+
+#[rstest]
+#[case::venue_order_id(None)]
+#[case::client_order_id(Some(ClientOrderId::from("O-MULTI-FILL")))]
+fn test_reconcile_fill_report_bootstraps_multiple_fills_once(
+    #[case] client_order_id: Option<ClientOrderId>,
+    #[values(false, true)] allow_overfills: bool,
+) {
+    let mut execution_engine = ExecutionEngine::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::new(RefCell::new(Cache::default())),
+        Some(ExecutionEngineConfig {
+            allow_overfills,
+            ..Default::default()
+        }),
+    );
+
+    let instrument = audusd_sim();
+    let venue_order_id = VenueOrderId::from("V-MULTI-FILL");
+    let resolved_id = client_order_id.unwrap_or_else(|| ClientOrderId::from("V-MULTI-FILL"));
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let first = create_fill_report(
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        TradeId::from("T-FIRST"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+    let mut second = create_fill_report(
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        TradeId::from("T-SECOND"),
+        Quantity::from(25_000),
+        Price::from("1.10000"),
+    );
+    second.commission = Money::from("0.23 USD");
+
+    execution_engine.reconcile_fill_report(&first);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&resolved_id)
+            .unwrap()
+            .status(),
+        OrderStatus::Filled,
+    );
+    execution_engine.reconcile_fill_report(&second);
+
+    let event_count = execution_engine
+        .cache()
+        .borrow()
+        .order(&resolved_id)
+        .unwrap()
+        .events()
+        .len();
+
+    for replay in [&first, &second] {
+        execution_engine.reconcile_fill_report(replay);
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&resolved_id).unwrap();
+        assert_eq!(order.quantity(), Quantity::from(75_000));
+        assert_eq!(order.filled_qty(), Quantity::from(75_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.overfill_qty(), Quantity::from(0));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.events().len(), event_count);
+        assert_eq!(order.trade_ids(), vec![&first.trade_id, &second.trade_id]);
+        assert_eq!(
+            order.commissions().get(&Currency::USD()),
+            Some(&Money::from("0.33 USD")),
+        );
+    }
+}
+
+#[rstest]
+#[case::external(false, None)]
+#[case::claimed(true, None)]
+#[case::canceled(false, Some(OrderStatus::Canceled))]
+#[case::expired(false, Some(OrderStatus::Expired))]
+fn test_reconcile_fill_report_liquidation_in_parts(
+    mut execution_engine: ExecutionEngine,
+    #[case] claimed: bool,
+    #[case] status_before_second: Option<OrderStatus>,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let account_id = AccountId::test_default();
+    let client_id = ClientId::from("STUB");
+
+    let client = StubExecutionClient::new(
+        client_id,
+        account_id,
+        instrument.id().venue,
+        OmsType::Netting,
+        None,
+    );
+
+    execution_engine.register_client(Box::new(client)).unwrap();
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_account(CashAccount::default().into()).unwrap();
+    }
+
+    if claimed {
+        execution_engine
+            .register_external_order_claims(
+                StrategyId::from("CLAIMED-001"),
+                &HashSet::from([instrument.id()]),
+            )
+            .unwrap();
+    }
+
+    let opening = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-OPEN"))
+        .strategy_id(StrategyId::external())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(opening.clone(), None, Some(client_id), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(&opening, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &opening,
+        account_id,
+        VenueOrderId::from("V-OPEN"),
+    ));
+    let opening_fill = TestOrderEventStubs::filled(
+        &opening,
+        &instrument,
+        Some(TradeId::from("T-OPEN")),
+        None,
+        Some(Price::from("1.00000")),
+        Some(Quantity::from(100_000)),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0.17 USD")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    execution_engine.process(&opening_fill);
+
+    let venue_order_id = VenueOrderId::from("V-LIQUIDATION");
+    let client_order_id = ClientOrderId::from("V-LIQUIDATION");
+    let mut first = create_fill_report(
+        instrument.id(),
+        None,
+        venue_order_id,
+        TradeId::from("T-LIQUIDATION-1"),
+        Quantity::from(40_000),
+        Price::from("1.10000"),
+    );
+    first.order_side = OrderSide::Sell;
+    first.commission = Money::from("0.11 USD");
+    let mut second = create_fill_report(
+        instrument.id(),
+        None,
+        venue_order_id,
+        TradeId::from("T-LIQUIDATION-2"),
+        Quantity::from(60_000),
+        Price::from("1.20000"),
+    );
+    second.order_side = OrderSide::Sell;
+    second.commission = Money::from("0.23 USD");
+    second.ts_event = UnixNanos::from(2_000_000);
+
+    execution_engine.reconcile_fill_report(&first);
+    {
+        let cache = execution_engine.cache().borrow();
+        assert_eq!(
+            cache.order(&client_order_id).unwrap().status(),
+            OrderStatus::Filled
+        );
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from(60_000));
+    }
+
+    if let Some(status) = status_before_second {
+        let mut report = create_order_status_report(
+            Some(client_order_id),
+            venue_order_id,
+            instrument.id(),
+            status,
+            Quantity::from(100_000),
+            Quantity::from(100_000),
+        )
+        .with_avg_px(dec!(1.16));
+        report.order_side = OrderSide::Sell.into();
+        report.order_type = OrderType::Market;
+        report.time_in_force = TimeInForce::Ioc;
+        report.price = None;
+
+        execution_engine.reconcile_order_status_report(&report);
+
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(order.filled_qty(), first.last_qty);
+        assert_eq!(order.trade_ids(), vec![&first.trade_id]);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from(60_000));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.28 USD")]);
+    }
+
+    execution_engine.reconcile_fill_report(&second);
+
+    let (order_before, position_before) = {
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        let position = &positions[0];
+        assert_eq!(order.quantity(), Quantity::from(100_000));
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
+        assert_eq!(order.avg_px(), Some(dec!(1.16)));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(position.realized_pnl, Some(Money::from("15999.49 USD")));
+        assert_eq!(position.commissions(), vec![Money::from("0.51 USD")]);
+        let fills: Vec<_> = position
+            .events
+            .iter()
+            .map(|fill| (fill.trade_id, fill.last_qty, fill.last_px, fill.commission))
+            .collect();
+        assert_eq!(
+            fills,
+            vec![
+                (
+                    TradeId::from("T-OPEN"),
+                    Quantity::from(100_000),
+                    Price::from("1.00000"),
+                    Some(Money::from("0.17 USD"))
+                ),
+                (
+                    first.trade_id,
+                    first.last_qty,
+                    first.last_px,
+                    Some(first.commission)
+                ),
+                (
+                    second.trade_id,
+                    second.last_qty,
+                    second.last_px,
+                    Some(second.commission)
+                ),
+            ]
+        );
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&replayed).unwrap(),
+            serde_json::to_value(&*order).unwrap()
+        );
+
+        (
+            serde_json::to_value(&*order).unwrap(),
+            serde_json::to_value(&**position).unwrap(),
+        )
+    };
+
+    for replay in [&first, &second] {
+        execution_engine.reconcile_fill_report(replay);
+        let cache = execution_engine.cache().borrow();
+        assert_eq!(
+            serde_json::to_value(&*cache.order(&client_order_id).unwrap()).unwrap(),
+            order_before
+        );
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&*positions[0]).unwrap(),
+            position_before
+        );
+    }
+}
+
+#[rstest]
+#[case::partially_filled(OrderStatus::PartiallyFilled)]
+#[case::filled(OrderStatus::Filled)]
+fn test_reconcile_fill_report_waits_for_trades_after_quantity_update(
+    mut execution_engine: ExecutionEngine,
+    #[case] status: OrderStatus,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-FILL-QUANTITY");
+    let venue_order_id = VenueOrderId::from("V-FILL-QUANTITY");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let first = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-FIRST"),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&first);
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        first.last_qty,
+    )
+    .with_avg_px(dec!(1.00));
+    report.order_type = OrderType::Market;
+    report.time_in_force = TimeInForce::Ioc;
+    report.price = None;
+    execution_engine.reconcile_order_status_report(&report);
+
+    let second = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-SECOND"),
+        Quantity::from(20_000),
+        Price::from("1.10000"),
+    );
+    execution_engine.reconcile_fill_report(&second);
+
+    let before = {
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(60_000));
+        serde_json::to_value(&*order).unwrap()
+    };
+
+    report.order_status = status;
+    report.filled_qty = Quantity::from(if status == OrderStatus::Filled {
+        100_000
+    } else {
+        80_000
+    });
+
+    report.avg_px = Some(dec!(1.05));
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        serde_json::to_value(
+            &*execution_engine
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+        )
+        .unwrap(),
+        before
+    );
+
+    let third = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-THIRD"),
+        Quantity::from(40_000),
+        Price::from("1.20000"),
+    );
+    execution_engine.reconcile_fill_report(&third);
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), Quantity::from(100_000));
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(order.avg_px(), Some(dec!(1.10)));
+    assert_eq!(
+        order.trade_ids(),
+        vec![&first.trade_id, &second.trade_id, &third.trade_id]
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USD()),
+        Some(&Money::from("0.30 USD"))
+    );
+}
+
+#[rstest]
+#[case::partially_filled(50_000)]
+#[case::filled(100_000)]
+fn test_reconcile_fill_report_preserves_owned_order_overfill_guard(
+    mut execution_engine: ExecutionEngine,
+    #[case] first_qty: i64,
+    #[values(false, true)] forged_tag: bool,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-OWNED");
+    let venue_order_id = VenueOrderId::from("V-OWNED");
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .tags(if forged_tag {
+            vec![Ustr::from(FILL_REPORT_ORDER_TAG)]
+        } else {
+            vec![]
+        })
+        .build();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument.clone().into()).unwrap();
+        cache.add_order(order.clone(), None, None, true).unwrap();
+    }
+
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        venue_order_id,
+    ));
+    let first = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-OWNED-1"),
+        Quantity::from(first_qty),
+        Price::from("1.00000"),
+    );
+    let second = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-OWNED-2"),
+        Quantity::from(100_000),
+        Price::from("1.10000"),
+    );
+    execution_engine.reconcile_fill_report(&first);
+    let before = serde_json::to_value(
+        &*execution_engine
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap(),
+    )
+    .unwrap();
+
+    execution_engine.reconcile_fill_report(&second);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert!(!order.is_fill_report_order());
+    assert_eq!(order.quantity(), Quantity::from(100_000));
+    assert_eq!(order.filled_qty(), Quantity::from(first_qty));
+    assert_eq!(serde_json::to_value(&*order).unwrap(), before);
+}
+
+#[rstest]
+#[case::instrument("instrument")]
+#[case::side("side")]
+#[case::account("account")]
+#[case::venue_order("venue")]
+#[case::client_order("client")]
+fn test_reconcile_fill_report_rejects_mismatched_synthetic_identity(
+    mut execution_engine: ExecutionEngine,
+    #[case] field: &str,
+) {
+    let instrument = audusd_sim();
+    let other_instrument = gbpusd_sim();
+    let client_order_id = ClientOrderId::from("O-IDENTITY");
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument.clone().into()).unwrap();
+        cache
+            .add_instrument(other_instrument.clone().into())
+            .unwrap();
+    }
+
+    let first = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        VenueOrderId::from("V-IDENTITY"),
+        TradeId::from("T-IDENTITY-1"),
+        Quantity::from(1),
+        Price::from("1.00000"),
+    );
+    execution_engine.reconcile_fill_report(&first);
+    let before = serde_json::to_value(
+        &*execution_engine
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap(),
+    )
+    .unwrap();
+    let mut invalid = first;
+    invalid.report_id = UUID4::new();
+    invalid.trade_id = TradeId::from("T-IDENTITY-2");
+    match field {
+        "instrument" => invalid.instrument_id = other_instrument.id(),
+        "side" => invalid.order_side = OrderSide::Sell,
+        "account" => invalid.account_id = AccountId::from("OTHER-001"),
+        "venue" => invalid.venue_order_id = VenueOrderId::from("V-OTHER"),
+        "client" => invalid.client_order_id = Some(ClientOrderId::from("O-OTHER")),
+        _ => unreachable!(),
+    }
+
+    execution_engine.reconcile_fill_report(&invalid);
+
+    assert_eq!(
+        serde_json::to_value(
+            &*execution_engine
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+        )
+        .unwrap(),
+        before
+    );
 }
 
 #[rstest]

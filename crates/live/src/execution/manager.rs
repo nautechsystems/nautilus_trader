@@ -5302,6 +5302,14 @@ impl ExecutionManager {
         instrument: &InstrumentAny,
         pending_fill_keys: &IndexSet<FillKey>,
     ) -> Option<(OrderFilled, FillKey)> {
+        if order.is_fill_report_order() && fill.instrument_id != order.instrument_id() {
+            log::warn!(
+                "Skipping fill report with mismatched instrument for {}",
+                order.client_order_id()
+            );
+            return None;
+        }
+
         if fill.last_qty.is_zero() {
             log::warn!("Skipping zero-quantity fill report: {fill}");
             return None;
@@ -5513,15 +5521,15 @@ mod tests {
         accounts::AccountAny,
         enums::{LiquiditySide, OmsType, OrderType, PositionSide, TimeInForce},
         events::order::spec::{
-            OrderCancelDeniedSpec, OrderModifyDeniedSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelDeniedSpec, OrderInitializedSpec, OrderModifyDeniedSpec,
+            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
         },
         identifiers::{Symbol, Venue},
         instruments::{
             CurrencyPair, Instrument,
             stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
-        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{FILL_REPORT_ORDER_TAG, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{AccountBalance, Currency, MarginBalance, Money, Price, fixed::FIXED_PRECISION},
     };
     use rstest::rstest;
@@ -5531,6 +5539,41 @@ mod tests {
         super::reconciliation::tests::{CommissionOutcome, CommissionStubClient},
         *,
     };
+
+    #[rstest]
+    fn test_create_fill_report_order_fill_rejects_source_instrument_mismatch() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let (_, mut fill) = external_report_with_partial_fill(&instrument);
+        let init = OrderInitializedSpec::builder()
+            .instrument_id(instrument.id())
+            .quantity(fill.last_qty)
+            .reconciliation(true)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .account_id(fill.account_id)
+                    .venue_order_id(fill.venue_order_id)
+                    .build(),
+            ))
+            .unwrap();
+        let manager = ExecutionManager::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+            ExecutionManagerConfig::default(),
+        )
+        .unwrap();
+        manager
+            .create_order_fill(&order, &fill, &instrument, &IndexSet::new())
+            .expect("matching source instrument produces a fill");
+        fill.instrument_id = btcusd_bybit().id();
+
+        let result = manager.create_order_fill(&order, &fill, &instrument, &IndexSet::new());
+
+        assert_eq!(result, None);
+    }
 
     #[rstest]
     fn test_new_validates_open_check_lookback_mins_boundaries() {

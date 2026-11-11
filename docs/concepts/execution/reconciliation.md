@@ -180,6 +180,13 @@ history can instead use [order-only fill projection](#order-only-fill-projection
 | `OrderWithFills`       | Order state plus fills.  | Creates an order, applies fills, and infers residue. |
 | `PositionStatusReport` | Venue position snapshot. | Logs the report. Positions stay fill-derived.        |
 
+When a `FillReport` has no cached order, the execution engine creates a market order tagged `FILL_REPORT`.
+Each distinct trade can increase its quantity, including after an earlier fill closes the order.
+Status reports do not generate inferred fills for these orders or cap their quantity against later distinct trades.
+Replaying an unchanged fill leaves order and position totals unchanged.
+Orders without this marker retain their existing overfill checks.
+Older versions that reject additional fills on filled orders cannot replay these order histories.
+
 Clients that require authoritative fills, such as OKX, do not infer executions from order status.
 Missing fills and dependent status transitions wait for venue fill reports or private fill events.
 An uncached runtime order status creates and accepts the order while its executions remain pending.

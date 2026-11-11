@@ -791,8 +791,24 @@ pub fn reconcile_fill_report(
         return None;
     }
 
+    if order.is_fill_report_order()
+        && (report.instrument_id != order.instrument_id()
+            || report.order_side != order.order_side()
+            || Some(report.account_id) != order.account_id()
+            || Some(report.venue_order_id) != order.venue_order_id()
+            || report
+                .client_order_id
+                .is_some_and(|id| id != order.client_order_id()))
+    {
+        log::warn!(
+            "Skipping fill report with mismatched identity for {}",
+            order.client_order_id()
+        );
+        return None;
+    }
+
     let potential_filled_qty = order.filled_qty() + report.last_qty;
-    if potential_filled_qty > order.quantity() {
+    if potential_filled_qty > order.quantity() && !order.is_fill_report_order() {
         if !allow_overfills {
             log::warn!(
                 "Rejecting fill that would cause overfill for {}: order.quantity={}, order.filled_qty={}, fill.last_qty={}, would result in filled_qty={}",
@@ -1141,6 +1157,8 @@ pub(super) fn create_inferred_fill(
 }
 
 /// Creates an inferred fill for the quantity difference between order and report.
+///
+/// Orders reconstructed from fill reports wait for explicit trades instead.
 pub fn create_incremental_inferred_fill(
     order: &OrderAny,
     report: &OrderStatusReport,
@@ -1149,6 +1167,10 @@ pub fn create_incremental_inferred_fill(
     ts_now: UnixNanos,
     commission: Option<Money>,
 ) -> Option<OrderEventAny> {
+    if order.is_fill_report_order() {
+        return None;
+    }
+
     let order_side = order.order_side();
 
     let order_filled_qty = order.filled_qty();

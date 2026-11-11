@@ -84,7 +84,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
-    orders::{Order, OrderAny, OrderError},
+    orders::{FILL_REPORT_ORDER_TAG, Order, OrderAny, OrderError},
     position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
@@ -92,6 +92,7 @@ use nautilus_model::{
 use position::CorrectedPosition;
 pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     client::ExecutionClientAdapter,
@@ -1406,6 +1407,8 @@ impl ExecutionEngine {
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
 
+        let tags = Some(vec![Ustr::from(FILL_REPORT_ORDER_TAG)]);
+
         let initialized = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -1440,7 +1443,7 @@ impl ExecutionEngine {
             None, // exec_algorithm_id
             None, // exec_algorithm_params
             None, // exec_spawn_id
-            None, // tags
+            tags, // tags
         );
 
         self.materialize_external_order(
@@ -1548,10 +1551,11 @@ impl ExecutionEngine {
     /// if the fill is not a duplicate and won't cause an overfill. When `allow_overfills` is
     /// disabled and the execution client allows a reconciliation overfill, the engine raises
     /// the order quantity to the filled quantity plus this fill before applying it. An already
-    /// filled order is not raised again. When the order is not in cache, an external order is
+    /// filled order is not raised by this policy. When the order is not in cache, an external order is
     /// bootstrapped from the fill so that venue-initiated closures (e.g. Hyperliquid
     /// liquidations) that arrive without a companion order status report still update the
-    /// local position.
+    /// local position. The bootstrapped order's quantity can grow with each distinct fill,
+    /// even after it is filled.
     ///
     /// Replayed fills update their orders only when a cached synthetic correction already covers
     /// them. Standalone reports check all strategies for the instrument and account.
@@ -1642,7 +1646,8 @@ impl ExecutionEngine {
         report: &FillReport,
         ts_now: UnixNanos,
     ) -> Option<OrderAny> {
-        if self.config.allow_overfills
+        if order.is_fill_report_order()
+            || self.config.allow_overfills
             || order.status() == OrderStatus::Filled
             || order.trade_ids().iter().any(|id| **id == report.trade_id)
         {
@@ -4244,6 +4249,10 @@ impl ExecutionEngine {
     }
 
     fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+        if order.is_fill_report_order() {
+            return Ok(());
+        }
+
         let potential_overfill = order.calculate_overfill(fill.last_qty);
 
         if potential_overfill.is_positive() {

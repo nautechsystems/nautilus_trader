@@ -16459,6 +16459,149 @@ async fn test_working_order_with_new_fills_updates_correctly() {
     );
 }
 
+#[rstest]
+#[case::orphan(false)]
+#[case::with_order_status(true)]
+#[tokio::test]
+async fn test_mass_status_recovers_later_fill_for_fill_report_order(
+    #[case] with_order_status: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+    let venue_order_id = VenueOrderId::from("V-FILL-REPORT");
+    let client_order_id = ClientOrderId::from("V-FILL-REPORT");
+    let position_id = PositionId::from("P-FILL-REPORT");
+    let position = create_test_position(
+        &test_instrument(),
+        position_id,
+        OrderSide::Sell,
+        "3.0",
+        "3200.00",
+    );
+    ctx.add_position(&position);
+
+    let first = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-FILL-1"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.10 USDT"),
+        LiquiditySide::Taker,
+        None,
+        Some(position_id),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+        None,
+    );
+
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&first);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Filled
+    );
+    let mut second = first.clone();
+    second.report_id = UUID4::new();
+    second.trade_id = TradeId::from("T-FILL-2");
+    second.last_qty = Quantity::from("2.0");
+    second.last_px = Price::from("3100.00");
+    second.commission = Money::from("0.25 USDT");
+    second.ts_event = UnixNanos::from(2_000);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(3_000),
+        None,
+    );
+
+    mass_status.add_fill_reports(vec![first.clone(), second.clone()]);
+
+    if with_order_status {
+        let status = OrderStatusReport::new(
+            test_account_id(),
+            instrument_id,
+            None,
+            venue_order_id,
+            OrderSide::Buy.into(),
+            OrderType::Market,
+            TimeInForce::Ioc,
+            OrderStatus::Filled,
+            Quantity::from("3.0"),
+            Quantity::from("3.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(2_000),
+            UnixNanos::from(3_000),
+            None,
+        )
+        .with_avg_px(dec!(9200) / dec!(3));
+        mass_status.add_order_reports(vec![status]);
+    }
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let position = ctx.cache.borrow().position_owned(&position_id).unwrap();
+
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.trade_id, fill.last_qty, fill.last_px, fill.commission))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut expected_fills = vec![];
+    if !with_order_status {
+        expected_fills.push((
+            first.trade_id,
+            first.last_qty,
+            first.last_px,
+            Some(first.commission),
+        ));
+    }
+
+    expected_fills.push((
+        second.trade_id,
+        second.last_qty,
+        second.last_px,
+        Some(second.commission),
+    ));
+    assert_eq!(fills, expected_fills);
+    assert_eq!(order.quantity(), Quantity::from("3.0"));
+    assert_eq!(order.filled_qty(), Quantity::from("3.0"));
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.trade_ids(), vec![&first.trade_id, &second.trade_id]);
+    assert_eq!(position.quantity, Quantity::from("0.0"));
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.avg_px_open, dec!(3200));
+    assert_eq!(
+        position.commissions(),
+        vec![Money::from("2 USD"), Money::from("0.35 USDT")]
+    );
+
+    let replay = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    assert_eq!(replay.events, Vec::<OrderEventAny>::new());
+    assert_eq!(
+        serde_json::to_value(ctx.get_order(&client_order_id).unwrap()).unwrap(),
+        serde_json::to_value(order).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(ctx.cache.borrow().position_owned(&position_id).unwrap()).unwrap(),
+        serde_json::to_value(position).unwrap()
+    );
+}
+
 #[tokio::test]
 async fn test_orphan_fills_without_order_reports_processed() {
     let mut ctx = TestContext::new();

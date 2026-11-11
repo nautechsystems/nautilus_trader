@@ -97,6 +97,11 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Tags market orders the engine creates from standalone fill reports.
+///
+/// See [`OrderAny::is_fill_report_order`] for the classification requirements.
+pub const FILL_REPORT_ORDER_TAG: &str = "FILL_REPORT";
+
 /// Order types that have stop/trigger prices.
 pub const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
@@ -852,27 +857,7 @@ impl OrderCore {
     /// A fill that overflows the filled quantity or cumulative commission is rejected
     /// without changing the order.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if self.client_order_id != event.client_order_id() {
-            return Err(CorrectnessError::PredicateViolation {
-                message: format!(
-                    "Event client_order_id {} does not match order client_order_id {}",
-                    event.client_order_id(),
-                    self.client_order_id
-                ),
-            }
-            .into());
-        }
-
-        if self.strategy_id != event.strategy_id() {
-            return Err(CorrectnessError::PredicateViolation {
-                message: format!(
-                    "Event strategy_id {} does not match order strategy_id {}",
-                    event.strategy_id(),
-                    self.strategy_id
-                ),
-            }
-            .into());
-        }
+        self.validate_event_identity(&event)?;
 
         if let OrderEventAny::FillVoided(event) = &event {
             self.validate_fill_void(event)?;
@@ -918,44 +903,10 @@ impl OrderCore {
             _ => {}
         }
 
-        let is_reclose_after_fill = self.status == OrderStatus::Canceled
-            && matches!(event, OrderEventAny::Canceled(_))
-            && self
-                .events
-                .iter()
-                .rev()
-                .take_while(|event| !matches!(event, OrderEventAny::Canceled(_)))
-                .any(|event| matches!(event, OrderEventAny::Filled(_)));
+        let new_status = self.transition_for_event(&event)?;
 
-        let new_status = if is_reclose_after_fill {
-            OrderStatus::Canceled
-        } else {
-            self.status.transition(&event)?
-        };
-
-        if let OrderEventAny::Filled(fill) = &event
-            && self.filled_qty.checked_add(fill.last_qty).is_none()
-        {
-            return Err(CorrectnessError::PredicateViolation {
-                message: format!(
-                    "filled quantity overflowed Quantity raw bounds: {} + {}",
-                    self.filled_qty, fill.last_qty
-                ),
-            }
-            .into());
-        }
-
-        if let OrderEventAny::Filled(fill) = &event
-            && let Some(commission) = fill.commission
-            && let Some(total) = self.commissions.get(&commission.currency)
-            && total.checked_add(commission).is_none()
-        {
-            return Err(CorrectnessError::PredicateViolation {
-                message: format!(
-                    "cumulative commission overflowed Money bounds: {total} + {commission}"
-                ),
-            }
-            .into());
+        if let OrderEventAny::Filled(fill) = &event {
+            self.validate_fill_totals(fill)?;
         }
 
         let rejection_status = if matches!(
@@ -968,24 +919,8 @@ impl OrderCore {
             self.status
         };
 
-        // Reject an update carrying fields the order type cannot hold before any
-        // mutation. Runs after the identity and transition checks so an identity
-        // mismatch or invalid transition is reported ahead of a field violation.
         if let OrderEventAny::Updated(update) = &event {
-            let invalid_fields = match self.order_type {
-                OrderType::Market => update.price.is_some() || update.trigger_price.is_some(),
-                OrderType::StopMarket
-                | OrderType::MarketIfTouched
-                | OrderType::TrailingStopMarket => update.price.is_some(),
-                OrderType::Limit | OrderType::MarketToLimit => update.trigger_price.is_some(),
-                OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
-                    false
-                }
-            };
-
-            if invalid_fields {
-                return Err(OrderError::InvalidOrderEvent);
-            }
+            self.validate_update_fields(update)?;
         }
 
         let source_status = self.status;
@@ -1039,6 +974,114 @@ impl OrderCore {
         }
 
         self.record_event(event, has_prior_fill_void);
+        Ok(())
+    }
+
+    fn validate_event_identity(&self, event: &OrderEventAny) -> Result<(), OrderError> {
+        if self.client_order_id != event.client_order_id() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Event client_order_id {} does not match order client_order_id {}",
+                    event.client_order_id(),
+                    self.client_order_id
+                ),
+            }
+            .into());
+        }
+
+        if self.strategy_id != event.strategy_id() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Event strategy_id {} does not match order strategy_id {}",
+                    event.strategy_id(),
+                    self.strategy_id
+                ),
+            }
+            .into());
+        }
+
+        if let OrderEventAny::Filled(fill) = event
+            && self.is_fill_report_order()
+            && (fill.instrument_id != self.instrument_id
+                || fill.order_side != self.side
+                || self.account_id != Some(fill.account_id)
+                || self.venue_order_id != Some(fill.venue_order_id))
+        {
+            return Err(OrderError::InvalidOrderEvent);
+        }
+
+        Ok(())
+    }
+
+    fn transition_for_event(&mut self, event: &OrderEventAny) -> Result<OrderStatus, OrderError> {
+        let is_reclose_after_fill = self.status == OrderStatus::Canceled
+            && matches!(event, OrderEventAny::Canceled(_))
+            && self
+                .events
+                .iter()
+                .rev()
+                .take_while(|event| !matches!(event, OrderEventAny::Canceled(_)))
+                .any(|event| matches!(event, OrderEventAny::Filled(_)));
+
+        let new_status = if is_reclose_after_fill {
+            OrderStatus::Canceled
+        } else if self.status == OrderStatus::Filled
+            && matches!(event, OrderEventAny::Filled(_))
+            && self.is_fill_report_order()
+        {
+            OrderStatus::Filled
+        } else {
+            self.status.transition(event)?
+        };
+
+        Ok(new_status)
+    }
+
+    fn validate_fill_totals(&self, fill: &OrderFilled) -> Result<(), OrderError> {
+        if self.filled_qty.checked_add(fill.last_qty).is_none() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "filled quantity overflowed Quantity raw bounds: {} + {}",
+                    self.filled_qty, fill.last_qty
+                ),
+            }
+            .into());
+        }
+
+        if let Some(commission) = fill.commission
+            && let Some(total) = self.commissions.get(&commission.currency)
+            && total.checked_add(commission).is_none()
+        {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "cumulative commission overflowed Money bounds: {total} + {commission}"
+                ),
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
+    // Reject an update carrying fields the order type cannot hold before any
+    // mutation. Runs after the identity and transition checks so an identity
+    // mismatch or invalid transition is reported ahead of a field violation.
+    fn validate_update_fields(&self, update: &OrderUpdated) -> Result<(), OrderError> {
+        let invalid_fields = match self.order_type {
+            OrderType::Market => update.price.is_some() || update.trigger_price.is_some(),
+            OrderType::StopMarket | OrderType::MarketIfTouched | OrderType::TrailingStopMarket => {
+                update.price.is_some()
+            }
+            OrderType::Limit | OrderType::MarketToLimit => update.trigger_price.is_some(),
+            OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
+                false
+            }
+        };
+
+        if invalid_fields {
+            return Err(OrderError::InvalidOrderEvent);
+        }
+
         Ok(())
     }
 
@@ -1522,6 +1565,11 @@ impl OrderCore {
             .checked_add(event.last_qty)
             .expect("fill quantity bounds pre-checked");
 
+        if self.is_fill_report_order() && new_filled_qty > self.quantity {
+            self.quantity = new_filled_qty;
+            self.leaves_qty = event.last_qty;
+        }
+
         // Calculate overfill if any
         if new_filled_qty > self.quantity {
             let overfill = new_filled_qty - self.quantity;
@@ -1530,26 +1578,7 @@ impl OrderCore {
 
         let new_leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
 
-        if new_filled_qty >= self.quantity {
-            self.status = OrderStatus::Filled;
-            self.ts_closed = Some(event.ts_event);
-        } else if new_leaves_qty.is_zero() && !self.voided_qty.is_zero() {
-            self.status = OrderStatus::Voided;
-            self.ts_closed = Some(event.ts_event);
-        } else if matches!(source_status, OrderStatus::Canceled | OrderStatus::Expired) {
-            self.status = source_status;
-        } else {
-            self.status = OrderStatus::PartiallyFilled;
-
-            if matches!(
-                source_status,
-                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
-            ) {
-                self.previous_status = Some(self.status);
-                self.status = source_status;
-            }
-        }
-
+        self.update_fill_status(event, source_status, new_filled_qty, new_leaves_qty);
         let is_historical_venue_order_id = self.venue_order_id.is_some_and(|current| {
             current != event.venue_order_id && self.venue_order_ids.contains(&event.venue_order_id)
         });
@@ -1628,6 +1657,46 @@ impl OrderCore {
                 OrderEventAny::FillVoided(existing) if existing.trade_id == trade_id
             )
         })
+    }
+
+    fn update_fill_status(
+        &mut self,
+        event: &OrderFilled,
+        source_status: OrderStatus,
+        new_filled_qty: Quantity,
+        new_leaves_qty: Quantity,
+    ) {
+        if new_filled_qty >= self.quantity {
+            self.status = OrderStatus::Filled;
+            self.ts_closed = Some(event.ts_event);
+        } else if new_leaves_qty.is_zero() && !self.voided_qty.is_zero() {
+            self.status = OrderStatus::Voided;
+            self.ts_closed = Some(event.ts_event);
+        } else if matches!(source_status, OrderStatus::Canceled | OrderStatus::Expired) {
+            self.status = source_status;
+        } else {
+            self.status = OrderStatus::PartiallyFilled;
+
+            if self.is_fill_report_order() {
+                self.ts_closed = None;
+            }
+
+            if matches!(
+                source_status,
+                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
+            ) {
+                self.previous_status = Some(self.status);
+                self.status = source_status;
+            }
+        }
+    }
+
+    fn is_fill_report_order(&self) -> bool {
+        self.order_type == OrderType::Market
+            && self.ts_submitted.is_none()
+            && matches!(self.events.first(), Some(OrderEventAny::Initialized(init))
+                if init.reconciliation && init.tags.as_ref().is_some_and(|tags|
+                    tags.contains(&Ustr::from(FILL_REPORT_ORDER_TAG))))
     }
 
     fn is_price_restatement_fill(&self, fill: &OrderFilled) -> Result<bool, OrderError> {
@@ -4474,6 +4543,7 @@ mod tests {
     fn test_fill_commission_overflow_rejected_without_mutation(
         #[case] increment: MoneyRaw,
         #[values(false, true)] negative: bool,
+        #[values(false, true)] fill_report_order: bool,
     ) {
         let usd = Currency::USD();
 
@@ -4487,7 +4557,9 @@ mod tests {
         let additional =
             Money::from_raw_checked(if negative { -increment } else { increment }, usd).unwrap();
         let init = OrderInitializedSpec::builder()
-            .quantity(Quantity::from(2))
+            .quantity(Quantity::from(if fill_report_order { 1 } else { 2 }))
+            .reconciliation(fill_report_order)
+            .maybe_tags(fill_report_order.then(|| vec![Ustr::from(FILL_REPORT_ORDER_TAG)]))
             .build();
         let mut order: MarketOrder = init.try_into().unwrap();
         order
@@ -6060,6 +6132,203 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert_eq!(order.quantity(), Quantity::from(80_000));
         assert_eq!(order.leaves_qty(), Quantity::from(40_000)); // 80k - 40k filled
+    }
+
+    #[rstest]
+    #[case::ordinary(false, false, OrderType::Market)]
+    #[case::submitted(true, true, OrderType::Market)]
+    #[case::limit(true, false, OrderType::Limit)]
+    fn test_fill_report_tag_does_not_extend_ordinary_accepted_order(
+        #[case] reconciliation: bool,
+        #[case] submitted: bool,
+        #[case] order_type: OrderType,
+    ) {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(1))
+            .order_type(order_type)
+            .maybe_price((order_type == OrderType::Limit).then(|| Price::from("1.10")))
+            .reconciliation(reconciliation)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        if submitted {
+            order
+                .apply(OrderEventAny::Submitted(
+                    OrderSubmittedSpec::builder().build(),
+                ))
+                .unwrap();
+        }
+
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        let first = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("T-OWNED-1"))
+            .order_type(order_type)
+            .last_qty(Quantity::from(1))
+            .build();
+        let second = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("T-OWNED-2"))
+            .order_type(order_type)
+            .last_qty(Quantity::from(1))
+            .build();
+        order.apply(OrderEventAny::Filled(first)).unwrap();
+        let before = serde_json::to_value(&order).unwrap();
+
+        let result = order.apply(OrderEventAny::Filled(second));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert!(!order.is_fill_report_order());
+        assert_eq!(serde_json::to_value(&order).unwrap(), before);
+    }
+
+    #[rstest]
+    #[case::instrument("instrument")]
+    #[case::side("side")]
+    #[case::account("account")]
+    #[case::venue_order("venue")]
+    fn test_fill_report_order_rejects_mismatched_fill_identity(#[case] field: &str) {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(1))
+            .reconciliation(true)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        let first = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("T-IDENTITY-1"))
+            .last_qty(Quantity::from(1))
+            .build();
+        order.apply(OrderEventAny::Filled(first.clone())).unwrap();
+        let before = serde_json::to_value(&order).unwrap();
+        let mut invalid = first;
+        invalid.event_id = UUID4::new();
+        invalid.trade_id = TradeId::from("T-IDENTITY-2");
+        match field {
+            "instrument" => invalid.instrument_id = InstrumentId::from("GBP/USD.SIM"),
+            "side" => invalid.order_side = OrderSide::Sell,
+            "account" => invalid.account_id = AccountId::from("OTHER-001"),
+            "venue" => invalid.venue_order_id = VenueOrderId::from("V-OTHER"),
+            _ => unreachable!(),
+        }
+
+        let result = order.apply(OrderEventAny::Filled(invalid));
+
+        assert!(matches!(result, Err(OrderError::InvalidOrderEvent)));
+        assert_eq!(serde_json::to_value(&order).unwrap(), before);
+    }
+
+    #[rstest]
+    fn test_fill_report_order_expands_and_replays() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(1))
+            .reconciliation(true)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        for (trade_id, qty, price) in [("T-1", 1, "1.10"), ("T-2", 2, "1.20"), ("T-3", 3, "1.30")] {
+            let fill = OrderFilledSpec::builder()
+                .trade_id(TradeId::from(trade_id))
+                .last_qty(Quantity::from(qty))
+                .last_px(Price::from(price))
+                .commission(Money::from("0.10 USD"))
+                .build();
+            order.apply(OrderEventAny::Filled(fill)).unwrap();
+        }
+
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert!(order.is_fill_report_order());
+        assert_eq!(order.quantity(), Quantity::from(6));
+        assert_eq!(order.filled_qty(), Quantity::from(6));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.overfill_qty(), Quantity::from(0));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(
+            order.trade_ids(),
+            vec![
+                &TradeId::from("T-1"),
+                &TradeId::from("T-2"),
+                &TradeId::from("T-3")
+            ]
+        );
+        assert_eq!(
+            order.commissions().get(&Currency::USD()),
+            Some(&Money::from("0.30 USD"))
+        );
+        assert_eq!(
+            serde_json::to_value(&replayed).unwrap(),
+            serde_json::to_value(&order).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_fill_report_order_partial_fill_clears_closed_timestamp() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(1))
+            .reconciliation(true)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("T-1"))
+                    .last_qty(Quantity::from(1))
+                    .ts_event(UnixNanos::from(10))
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(10)));
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .quantity(Quantity::from(4))
+                    .reconciliation(true)
+                    .build(),
+            ))
+            .unwrap();
+
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("T-2"))
+                    .last_qty(Quantity::from(1))
+                    .ts_event(UnixNanos::from(20))
+                    .build(),
+            ))
+            .unwrap();
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(order.quantity(), Quantity::from(4));
+        assert_eq!(order.filled_qty(), Quantity::from(2));
+        assert_eq!(order.leaves_qty(), Quantity::from(2));
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.ts_closed(), None);
+        assert_eq!(
+            serde_json::to_value(&replayed).unwrap(),
+            serde_json::to_value(&order).unwrap()
+        );
     }
 
     #[rstest]
