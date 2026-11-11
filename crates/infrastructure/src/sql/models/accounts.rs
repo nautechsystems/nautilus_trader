@@ -15,11 +15,11 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::AccountType, events::AccountState, identifiers::AccountId, types::Currency,
 };
-use sqlx::{FromRow, Row, postgres::PgRow};
+use sqlx::{FromRow, Row, postgres::PgRow, types::Json};
 
 #[derive(Debug)]
 pub struct AccountEventRow(pub AccountState);
@@ -37,6 +37,7 @@ impl<'r> FromRow<'r, PgRow> for AccountEventRow {
             .map(|res| res.map(Currency::from))?;
         let balances: serde_json::Value = row.try_get("balances")?;
         let margins: serde_json::Value = row.try_get("margins")?;
+        let info: Option<Json<Params>> = row.try_get("info")?;
         let balances =
             serde_json::from_value(balances).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let margins =
@@ -51,7 +52,8 @@ impl<'r> FromRow<'r, PgRow> for AccountEventRow {
             ts_event,
             ts_init,
             base_currency,
-        );
+        )
+        .with_info(info.map(|info| info.0));
         Ok(Self(account_event))
     }
 }

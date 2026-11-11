@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
+- Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
 
 ### Fixes
 

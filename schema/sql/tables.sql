@@ -336,6 +336,7 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     base_currency TEXT REFERENCES currency(id),
     balances JSONB,
     margins JSONB,
+    info JSON,
     is_reported BOOLEAN DEFAULT FALSE,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
@@ -346,6 +347,8 @@ CREATE TABLE IF NOT EXISTS "account_event"(
 -- trader, so the cache stamps the writing node's trader on each event. Earlier events stay without
 -- a trader until assigned with `nautilus database assign-account`.
 ALTER TABLE "account_event" ADD COLUMN IF NOT EXISTS trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE;
+-- Preserve venue-specific account metadata alongside the typed balances and margins.
+ALTER TABLE "account_event" ADD COLUMN IF NOT EXISTS info JSON;
 
 -- Qualify the order and position snapshot keys and the order position index key with the trader.
 -- Client order and position IDs are only unique per trader: NETTING position IDs are
