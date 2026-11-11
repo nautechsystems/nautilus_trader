@@ -318,6 +318,14 @@ pub struct OKXExecutionClientConfig {
     /// live algo orders, and positions are unaffected. Skipped or truncated
     /// history marks reports incomplete and reduces recovery coverage.
     pub max_reconciliation_history_pages: Option<u32>,
+    /// Optional TTL (milliseconds) for WebSocket place and amend requests, sent to OKX as
+    /// `expTime`.
+    ///
+    /// Each request carries `expTime = now + ttl`, computed from the local clock when the
+    /// request is built, so time spent waiting for rate limits or a reconnect counts against
+    /// it. OKX does not process a request once its server time is past `expTime`. Allow for
+    /// clock skew between the local host and OKX. `None` omits `expTime`. Must be positive.
+    pub order_request_ttl_ms: Option<u64>,
 }
 
 #[cfg(feature = "python")]
@@ -343,6 +351,7 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     transport_backend: TransportBackend,
     spot_trade_quote_ccy: Option<String>,
     max_reconciliation_history_pages: Option<u32>,
+    order_request_ttl_ms: Option<u64>,
 });
 
 impl Default for OKXExecutionClientConfig {
@@ -363,7 +372,8 @@ impl OKXExecutionClientConfig {
     /// # Errors
     ///
     /// Returns an error if selections are duplicated, blank, or conflicting, required settings
-    /// are missing, retry delays are invalid, or MMP cancellation is enabled.
+    /// are missing, retry delays or the order request TTL are invalid, or MMP cancellation
+    /// is enabled.
     pub fn validate(&self) -> ConfigResult<()> {
         validate_instrument_selections(
             &self.instrument_types,
@@ -371,6 +381,15 @@ impl OKXExecutionClientConfig {
             self.instrument_families.as_deref(),
         )?;
         validate_retry_delays(self.retry_delay_initial_ms, self.retry_delay_max_ms)?;
+
+        if let Some(ttl_ms) = self.order_request_ttl_ms {
+            check_range("order_request_ttl_ms", ttl_ms > 0, "must be positive")?;
+            check_range(
+                "order_request_ttl_ms",
+                ttl_ms <= MAX_ORDER_REQUEST_TTL_MS,
+                format!("must be at most {MAX_ORDER_REQUEST_TTL_MS}"),
+            )?;
+        }
 
         if self.use_mm_mass_cancel {
             return Err(ConfigError::unsupported_value(
@@ -480,6 +499,9 @@ fn validate_instrument_selections(
 
     Ok(())
 }
+
+/// Upper bound for `order_request_ttl_ms`.
+const MAX_ORDER_REQUEST_TTL_MS: u64 = 9_999_999_999_999;
 
 pub(crate) fn validate_retry_delays(initial_ms: u64, max_ms: u64) -> ConfigResult<()> {
     check_range("retry_delay_initial_ms", initial_ms > 0, "must be positive")?;

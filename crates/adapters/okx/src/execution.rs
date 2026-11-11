@@ -194,7 +194,8 @@ impl OKXExecutionClient {
             core.client_id,
             Some(*OKX_VENUE),
             "okx-private-user-streams",
-        ));
+        ))
+        .with_order_request_ttl_ms(config.order_request_ttl_ms);
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),

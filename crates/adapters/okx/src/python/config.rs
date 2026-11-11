@@ -162,6 +162,7 @@ impl OKXExecutionClientConfig {
         instrument_families = None,
         contract_types = None,
         use_spot_margin = false,
+        order_request_ttl_ms = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -190,6 +191,7 @@ impl OKXExecutionClientConfig {
         instrument_families: Option<Vec<String>>,
         contract_types: Option<Vec<OKXContractType>>,
         use_spot_margin: bool,
+        order_request_ttl_ms: Option<u64>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -221,6 +223,7 @@ impl OKXExecutionClientConfig {
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_trade_quote_ccy,
             max_reconciliation_history_pages,
+            order_request_ttl_ms,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -517,6 +520,7 @@ mod tests {
             None,
             None,
             false,
+            Some(5_000),
         )
         .unwrap();
 
@@ -525,5 +529,29 @@ mod tests {
         assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
         assert_eq!(config.oms_type, Some(OmsType::Hedging));
         assert_eq!(config.max_reconciliation_history_pages, Some(7));
+        assert_eq!(config.order_request_ttl_ms, Some(5_000));
+    }
+
+    #[rstest]
+    fn test_exec_config_python_rejects_zero_order_request_ttl() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item(
+                    "account_id",
+                    Py::new(py, AccountId::from("OKX-001")).unwrap(),
+                )
+                .unwrap();
+            kwargs.set_item("order_request_ttl_ms", 0u64).unwrap();
+
+            let err = py
+                .get_type::<OKXExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py), "{err}");
+            assert!(err.to_string().contains("order_request_ttl_ms"), "{err}");
+        });
     }
 }
