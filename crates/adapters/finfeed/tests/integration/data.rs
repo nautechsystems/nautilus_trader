@@ -1072,6 +1072,7 @@ async fn failed_requests_emit_no_partial_response(#[case] scenario: &str) {
         FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
     client.connect().await.unwrap();
     receiver.try_recv().unwrap();
+    let senders = receiver.sender_strong_count();
 
     let date = if scenario.starts_with("bar") {
         "2020-10-11"
@@ -1151,12 +1152,11 @@ async fn failed_requests_emit_no_partial_response(#[case] scenario: &str) {
             .unwrap();
     }
 
-    peer.await.unwrap();
-    assert!(
-        time::timeout(Duration::from_millis(200), receiver.recv())
-            .await
-            .is_err()
-    );
+    time::timeout(Duration::from_secs(5), peer)
+        .await
+        .expect("test peer did not receive the expected requests")
+        .unwrap();
+    assert_request_silent(&mut receiver, senders).await;
     client.disconnect().await.unwrap();
     assert!(receiver.try_recv().is_err());
 }
@@ -2132,6 +2132,7 @@ async fn hourly_book_replay_preserves_handoff_and_rejects_changed_overlap(#[case
         FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
     client.connect().await.unwrap();
     receiver.try_recv().unwrap();
+    let senders = receiver.sender_strong_count();
     client
         .request_book_deltas(RequestBookDeltas::new(
             instrument_id(),
@@ -2144,14 +2145,13 @@ async fn hourly_book_replay_preserves_handoff_and_rejects_changed_overlap(#[case
             None,
         ))
         .unwrap();
-    let requests = peer.await.unwrap();
+    let requests = time::timeout(Duration::from_secs(5), peer)
+        .await
+        .expect("test peer did not receive the expected requests")
+        .unwrap();
 
     if changed {
-        assert!(
-            time::timeout(Duration::from_millis(200), receiver.recv())
-                .await
-                .is_err()
-        );
+        assert_request_silent(&mut receiver, senders).await;
     } else {
         let DataResponse::BookDeltas(value) = response(&mut receiver).await else {
             panic!("expected book deltas")
@@ -2428,6 +2428,7 @@ async fn oversized_history_preserves_allowance_for_a_smaller_request() {
         FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
     client.connect().await.unwrap();
     receiver.try_recv().unwrap();
+    let senders = receiver.sender_strong_count();
     client
         .request_quotes(RequestQuotes::new(
             instrument_id(),
@@ -2460,12 +2461,11 @@ async fn oversized_history_preserves_allowance_for_a_smaller_request() {
 
     assert_eq!(result.correlation_id, request_id);
     assert_eq!(result.data.len(), 1);
-    let requests = peer.await.unwrap();
-    assert!(
-        time::timeout(Duration::from_millis(200), receiver.recv())
-            .await
-            .is_err()
-    );
+    let requests = time::timeout(Duration::from_secs(5), peer)
+        .await
+        .expect("test peer did not receive the expected requests")
+        .unwrap();
+    assert_request_silent(&mut receiver, senders).await;
     client.disconnect().await.unwrap();
 
     assert_eq!(requests.len(), 3);
@@ -2505,6 +2505,7 @@ async fn capped_activity_pages_preserve_multiplicity_or_fail_atomically(
         FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
     client.connect().await.unwrap();
     receiver.try_recv().unwrap();
+    let senders = receiver.sender_strong_count();
     let start = Some("2026-10-11T00:00:00Z".parse().unwrap());
     let end = Some("2026-10-11T00:00:06Z".parse().unwrap());
     let id = UUID4::new();
@@ -2538,11 +2539,7 @@ async fn capped_activity_pages_preserve_multiplicity_or_fail_atomically(
     }
 
     if changed {
-        assert!(
-            time::timeout(Duration::from_millis(200), receiver.recv())
-                .await
-                .is_err()
-        );
+        assert_request_silent(&mut receiver, senders).await;
     } else {
         let result = response(&mut receiver).await;
         let stamp = 1_791_676_800_000_000_000_u64;
@@ -2603,7 +2600,10 @@ async fn capped_activity_pages_preserve_multiplicity_or_fail_atomically(
     }
 
     client.disconnect().await.unwrap();
-    let requests = peer.await.unwrap();
+    let requests = time::timeout(Duration::from_secs(5), peer)
+        .await
+        .expect("test peer did not receive the expected requests")
+        .unwrap();
 
     let family = if trades { "trades" } else { "quotes" };
     assert_eq!(requests.len(), 4);
@@ -2752,4 +2752,20 @@ async fn bar_subtick_bounds_expand_wire_selectors_without_emitting_partial_perio
         ),
         &http,
     );
+}
+
+async fn assert_request_silent(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    senders: usize,
+) {
+    // The request releases its sender only after parsing and publication finish
+    time::timeout(Duration::from_secs(5), async {
+        while receiver.sender_strong_count() != senders {
+            time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("request did not finish");
+
+    assert!(receiver.try_recv().is_err());
 }

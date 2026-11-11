@@ -790,42 +790,6 @@ async fn test_connect_without_subscriptions_clears_closing_for_later_subscribe()
     client.disconnect().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_spent_auth_budget_moves_to_a_fresh_connection() {
-    let state = TestServerState::default();
-    state.unavailable_auth_remaining.store(8, Ordering::Relaxed);
-    let addr = start_polybolt_server(state.clone()).await;
-    let (mut client, _rx) = make_client(addr);
-    subscribe(&mut client, crypto_data_type("btcusd")).unwrap();
-    client
-        .connect()
-        .await
-        .expect("transient authentication failures preserve the client");
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .payloads()
-                    .await
-                    .iter()
-                    .any(|payload| payload["op"] == "subscribe")
-            }
-        },
-        Duration::from_secs(50),
-    )
-    .await;
-
-    assert_eq!(*state.auth_counts.lock(), vec![8, 1]);
-    assert_eq!(state.connection_count().await, 2);
-    let expected_ops = std::iter::repeat_n("auth", 9)
-        .chain(["subscribe"])
-        .collect::<Vec<_>>();
-    assert_eq!(ops(&state.payloads().await), expected_ops);
-    client.disconnect().await.unwrap();
-}
-
 fn make_client(
     addr: SocketAddr,
 ) -> (

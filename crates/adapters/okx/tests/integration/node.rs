@@ -326,7 +326,11 @@ fn build_node(
     let mut exec_engine = LiveExecutionEngineConfig {
         reconciliation: false,
         inflight_check_interval_ms: 10,
-        inflight_check_threshold_ms: 100,
+        inflight_check_threshold_ms: if query_on.is_some_and(|query| query != QueryOn::Inflight) {
+            DEADLINE.as_millis().try_into().unwrap()
+        } else {
+            100
+        },
         inflight_check_retries: 2,
         ..Default::default()
     };
@@ -819,6 +823,25 @@ async fn query_preserves_authoritative_fills(
         wait_until_async(|| async { !reports.get_messages().is_empty() }, DEADLINE).await;
 
         if matches!(query_on, QueryOn::Submitted | QueryOn::Inflight) {
+            wait_until_async(
+                || async {
+                    cache
+                        .borrow()
+                        .order(&ClientOrderId::from(CLIENT_ORDER_ID))
+                        .is_some_and(|order| order.status() == OrderStatus::Accepted)
+                },
+                DEADLINE,
+            )
+            .await;
+
+            if query_on == QueryOn::Submitted {
+                // Cross the inflight deadline without delaying socket tasks
+                tokio::time::pause();
+                tokio::time::advance(DEADLINE).await;
+                tokio::time::resume();
+            }
+
+            // Observe late recovery events before allowing authoritative fill evidence
             tokio::time::sleep(Duration::from_millis(400)).await;
             let cache = cache.borrow();
             let order = cache.order(&ClientOrderId::from(CLIENT_ORDER_ID)).unwrap();

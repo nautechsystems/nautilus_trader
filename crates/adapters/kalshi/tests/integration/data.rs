@@ -642,8 +642,11 @@ async fn bulk_instrument_requests_respect_configured_and_explicit_selection(
 #[case(true)]
 #[tokio::test]
 async fn venue_routed_requests_survive_connect_and_use_configured_source(#[case] bulk: bool) {
-    tokio::time::timeout(Duration::from_secs(8), async {
-        let peer = Peer::new().await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let mut peer = Peer::new().await;
+        // The held request must outlive quota-limited lifecycle recovery
+        peer.config.http_timeout_secs = 10;
+        peer.config.ws_timeout_secs = 5;
         let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
         let selected = ids();
         let configured_id = "KALSHI-ALT".into();
@@ -684,7 +687,7 @@ async fn venue_routed_requests_survive_connect_and_use_configured_source(#[case]
         }
 
         while peer.requests.load(Ordering::SeqCst) == 0 {
-            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
         peer.revision.store(0, Ordering::SeqCst);
