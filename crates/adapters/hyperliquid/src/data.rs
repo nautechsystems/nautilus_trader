@@ -75,7 +75,7 @@ use crate::{
         parse::{bar_type_to_interval, millis_to_nanos},
         status::InstrumentStatusState,
     },
-    config::HyperliquidDataClientConfig,
+    config::{HyperliquidBookFeed, HyperliquidDataClientConfig},
     data_types::register_hyperliquid_custom_data,
     http::{
         client::HyperliquidHttpClient,
@@ -83,7 +83,10 @@ use crate::{
         parse::parse_recent_trade,
     },
     websocket::{
-        DATA_STREAMS_ENDPOINT, client::HyperliquidWebSocketClient, messages::NautilusWsMessage,
+        DATA_STREAMS_ENDPOINT,
+        book::{BookStreamOptions, BookStreamUse},
+        client::HyperliquidWebSocketClient,
+        messages::NautilusWsMessage,
     },
 };
 
@@ -107,6 +110,8 @@ pub struct HyperliquidDataClient {
     instrument_status: Arc<Mutex<InstrumentStatusState>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
     book_sync: BookSyncTracker,
+    compact_book_publications: AHashMap<(InstrumentId, BookStreamUse), CancellationToken>,
+    compact_book_command_tail: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl HyperliquidDataClient {
@@ -155,12 +160,13 @@ impl HyperliquidDataClient {
         }
 
         let ws_url = config.base_url_ws.clone();
-        let ws_client = HyperliquidWebSocketClient::new(
+        let ws_client = HyperliquidWebSocketClient::new_with_book_feed(
             ws_url,
             config.environment,
             None,
             config.transport_backend,
             proxy_url,
+            config.book_feed,
         );
         let ws_client = ws_client.with_socket_control(SocketControl::new(
             client_id,
@@ -171,6 +177,8 @@ impl HyperliquidDataClient {
             Duration::from_secs(config.stale_stream_receive_timeout_secs),
             Duration::from_secs(config.stale_stream_warning_cooldown_secs),
         );
+
+        stream_health_monitor.compact_books = config.book_feed == HyperliquidBookFeed::L2;
 
         if config.stale_stream_recovery_enabled {
             if config.stale_stream_recovery_cooldown_secs > 0 {
@@ -209,6 +217,8 @@ impl HyperliquidDataClient {
             instrument_status: Arc::new(Mutex::new(InstrumentStatusState::default())),
             stream_health,
             book_sync: BookSyncTracker::default(),
+            compact_book_publications: AHashMap::new(),
+            compact_book_command_tail: None,
         })
     }
 
@@ -225,6 +235,100 @@ impl HyperliquidDataClient {
         if let Err(e) = self.pending_tasks.spawn(future) {
             log::warn!("Skipping Hyperliquid {description} after shutdown began: {e}");
         }
+    }
+
+    // Preserve the data client's command order without holding up the next command for a snapshot
+    fn chain_compact_book_command<F>(
+        &mut self,
+        command: F,
+    ) -> impl std::future::Future<Output = F::Output> + Send + 'static
+    where
+        F: std::future::Future + Send + 'static,
+    {
+        let (done, next) = tokio::sync::oneshot::channel();
+        let previous = self.compact_book_command_tail.replace(next);
+        async move {
+            if let Some(previous) = previous {
+                let _ = previous.await;
+            }
+
+            let result = command.await;
+            let _ = done.send(());
+            result
+        }
+    }
+
+    fn subscribe_compact_book(
+        &mut self,
+        instrument_id: InstrumentId,
+        stream_use: BookStreamUse,
+        options: BookStreamOptions,
+    ) {
+        let Ok(tasks) = self.pending_tasks.spawner() else {
+            return;
+        };
+        let publication = self
+            .compact_book_publications
+            .entry((instrument_id, stream_use))
+            .or_default()
+            .clone();
+        let ws = self.ws_client.clone();
+        let book_sync = self.book_sync.clone();
+        let snapshot_timeout = self.book_snapshot_timeout();
+        let command = self.chain_compact_book_command({
+            let ws = ws.clone();
+            let book_sync = book_sync.clone();
+            async move {
+                ws.subscribe_compact_book(
+                    instrument_id,
+                    stream_use,
+                    options,
+                    publication,
+                    &book_sync,
+                )
+                .await
+            }
+        });
+        self.spawn_task("subscribe_compact_book", async move {
+            if let Some(write) = command.await? {
+                book::recovery::watch_compact_subscription(
+                    instrument_id,
+                    write,
+                    &book_sync,
+                    ws,
+                    snapshot_timeout,
+                    &tasks,
+                )
+                .await;
+            }
+
+            Ok(())
+        });
+    }
+
+    fn unsubscribe_compact_book(&mut self, instrument_id: InstrumentId, stream_use: BookStreamUse) {
+        if let Some(publication) = self
+            .compact_book_publications
+            .remove(&(instrument_id, stream_use))
+        {
+            self.book_sync.retire_compact_publication(&publication);
+        }
+
+        let ws = self.ws_client.clone();
+        let book_sync = self.book_sync.clone();
+        let command = self.chain_compact_book_command(async move {
+            ws.unsubscribe_compact_book(instrument_id, stream_use, &book_sync)
+                .await
+        });
+        self.spawn_task("unsubscribe_compact_book", command);
+    }
+
+    fn clear_book_sync(&mut self) {
+        for (_, publication) in self.compact_book_publications.drain() {
+            publication.cancel();
+        }
+
+        self.book_sync.clear();
     }
 
     fn abort_pending_tasks(&self) {
@@ -254,7 +358,7 @@ impl HyperliquidDataClient {
             self.shutdown_errors.push(e.to_string());
         }
         self.clear_stream_health();
-        self.book_sync.clear();
+        self.clear_book_sync();
         self.is_connected.store(false, Ordering::Release);
 
         if !self.shutdown_errors.is_empty() {
@@ -565,6 +669,52 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send order book deltas: {e}");
                                     }
                                 }
+                                NautilusWsMessage::CompactBook {
+                                    deltas, depth, is_snapshot, output_gate,
+                                } => {
+                                    // Keep retirement serialized with synchronization and publication
+                                    let output = output_gate.lock();
+
+                                    if output.is_closed() {
+                                        continue;
+                                    }
+
+                                    record_stream_receive(
+                                        &stream_health,
+                                        MarketDataChannel::Deltas,
+                                        deltas.instrument_id,
+                                        deltas.ts_event,
+                                    );
+                                    book_sync.record_compact(
+                                        deltas.instrument_id,
+                                        is_snapshot,
+                                        Instant::now(),
+                                        |publish_deltas, publish_depth| {
+                                            if publish_deltas
+                                                && let Err(e) = data_sender.send(DataEvent::Data(
+                                                    Data::BookDeltas(Box::new(deltas)),
+                                                ))
+                                            {
+                                                log::error!("Failed to send compact book snapshot: {e}");
+                                            }
+
+                                            if publish_depth && let Some(depth) = depth {
+                                                record_stream_receive(
+                                                    &stream_health,
+                                                    MarketDataChannel::Depth,
+                                                    depth.instrument_id,
+                                                    depth.ts_event,
+                                                );
+
+                                                if let Err(e) = data_sender.send(
+                                                    DataEvent::Data(Data::BookDepth(depth)),
+                                                ) {
+                                                    log::error!("Failed to send compact book depth: {e}");
+                                                }
+                                            }
+                                        },
+                                    );
+                                }
                                 NautilusWsMessage::Depth(depth) => {
                                     if let Err(e) =
                                         data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
@@ -572,7 +722,13 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send order book depth: {e}");
                                     }
                                 }
-                                NautilusWsMessage::BookInvalid(instrument_id) => {
+                                NautilusWsMessage::BookInvalid { instrument_id, output_gate } => {
+                                    let output = output_gate.as_ref().map(|gate| gate.lock());
+
+                                    if output.as_ref().is_some_and(|gate| gate.is_closed()) {
+                                        continue;
+                                    }
+
                                     book::recovery::reject_snapshot(
                                         instrument_id,
                                         &book_sync,
@@ -729,7 +885,7 @@ impl DataClient for HyperliquidDataClient {
                 .await
                 .context("failed to tear down Hyperliquid WebSocket before reconnect")?;
             self.ws_client.reset_runtime_state();
-            self.book_sync.clear();
+            self.clear_book_sync();
             self.abort_session_tasks();
             self.abort_pending_tasks();
             let (session_result, pending_result) =
@@ -1004,6 +1160,18 @@ impl DataClient for HyperliquidDataClient {
             let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
             self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
+            if self.config.book_feed == HyperliquidBookFeed::L2 {
+                self.subscribe_compact_book(
+                    instrument_id,
+                    BookStreamUse::Deltas,
+                    BookStreamOptions {
+                        n_sig_figs,
+                        mantissa,
+                    },
+                );
+                return Ok(());
+            }
+
             match self.pending_tasks.spawner() {
                 Ok(tasks) => book::recovery::spawn_subscription_task(
                     instrument_id,
@@ -1037,6 +1205,19 @@ impl DataClient for HyperliquidDataClient {
             let ws = self.ws_client.clone();
             let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
             self.register_stream_health(MarketDataChannel::Depth, instrument_id);
+
+            if self.config.book_feed == HyperliquidBookFeed::L2 {
+                self.subscribe_compact_book(
+                    instrument_id,
+                    BookStreamUse::Depth,
+                    BookStreamOptions {
+                        n_sig_figs,
+                        mantissa,
+                    },
+                );
+                return Ok(());
+            }
+
             self.spawn_task("subscribe_book_depth", async move {
                 ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
                     .await
@@ -1167,6 +1348,12 @@ impl DataClient for HyperliquidDataClient {
 
             let ws = self.ws_client.clone();
             self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
+
+            if self.config.book_feed == HyperliquidBookFeed::L2 {
+                self.unsubscribe_compact_book(instrument_id, BookStreamUse::Deltas);
+                return Ok(());
+            }
+
             self.book_sync.remove(instrument_id);
             self.spawn_task("unsubscribe_book_deltas", async move {
                 ws.unsubscribe_book(instrument_id).await
@@ -1185,6 +1372,12 @@ impl DataClient for HyperliquidDataClient {
 
             let ws = self.ws_client.clone();
             self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
+
+            if self.config.book_feed == HyperliquidBookFeed::L2 {
+                self.unsubscribe_compact_book(instrument_id, BookStreamUse::Depth);
+                return Ok(());
+            }
+
             self.spawn_task("unsubscribe_book_depth", async move {
                 ws.unsubscribe_book_depth(instrument_id).await
             });
@@ -1991,6 +2184,7 @@ struct StreamRecoveryConfig {
 #[derive(Debug)]
 struct MarketDataStreamHealthMonitor {
     stale_receive_threshold: Duration,
+    compact_books: bool,
     warning_cooldown: Duration,
     recovery: Option<StreamRecoveryConfig>,
     streams: AHashMap<MarketDataStreamKey, MarketDataStreamHealth>,
@@ -2000,6 +2194,7 @@ impl MarketDataStreamHealthMonitor {
     fn new(stale_receive_threshold: Duration, warning_cooldown: Duration) -> Self {
         Self {
             stale_receive_threshold,
+            compact_books: false,
             warning_cooldown,
             recovery: None,
             streams: AHashMap::new(),
@@ -2102,7 +2297,8 @@ impl MarketDataStreamHealthMonitor {
                     let book_recovery = matches!(
                         channel,
                         MarketDataChannel::Deltas | MarketDataChannel::Depth
-                    ) && delta_book_instruments.contains(instrument_id);
+                    ) && (self.compact_books
+                        || delta_book_instruments.contains(instrument_id));
                     let action = stream.record_recovery(
                         now,
                         book_recovery,
