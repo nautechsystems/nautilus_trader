@@ -10,6 +10,7 @@ Released on TBD (UTC).
 
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 
@@ -18,6 +19,7 @@ Released on TBD (UTC).
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
+- Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 
 ### Internal Improvements
 

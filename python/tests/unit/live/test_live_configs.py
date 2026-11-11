@@ -487,7 +487,7 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value: object) ->
 )
 @pytest.mark.parametrize(
     "value",
-    [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
+    [0.0, 0.4e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
 )
 def test_live_exec_engine_config_rejects_invalid_intervals(field: object, value: object) -> None:
     """

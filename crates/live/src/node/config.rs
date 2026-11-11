@@ -1865,7 +1865,7 @@ mean_dispatch_ns_clear = 700
 
     #[rstest]
     #[case(0.0)]
-    #[case(0.5e-9)]
+    #[case(0.4e-9)]
     #[case(-1.0)]
     #[case(f64::NAN)]
     #[case(f64::INFINITY)]
