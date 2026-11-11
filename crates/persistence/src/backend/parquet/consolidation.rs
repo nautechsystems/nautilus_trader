@@ -1443,9 +1443,92 @@ fn is_schema_incompatibility(error: &anyhow::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
+        types::{Price, Quantity},
+    };
+    use nautilus_serialization::arrow::DecodeFromRecordBatch;
     use rstest::rstest;
 
     use super::*;
+    use crate::backend::parquet::io::{
+        read_parquet_from_object_store, write_batches_to_object_store,
+    };
+
+    #[rstest]
+    fn repeated_consolidation_preserves_windows_encoded_target() {
+        let root = tempfile::tempdir().unwrap();
+        let catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
+        let id = "io:ANTH-USD-PERP.HYPERLIQUID";
+
+        let trades = [10_000u64, 20_000].map(|ts| {
+            TradeTick::new(
+                InstrumentId::from(id),
+                Price::from("12.34"),
+                Quantity::from("5.67"),
+                AggressorSide::Buy,
+                TradeId::new(ts.to_string()),
+                (ts - 1).into(),
+                ts.into(),
+            )
+        });
+
+        let batches = catalog.data_to_record_batches(&trades).unwrap();
+        let filename = timestamps_to_filename(10_000.into(), 20_000.into());
+        let stored = ObjectPath::parse(format!(
+            "data/trades/io%3AANTH-USD-PERP.HYPERLIQUID/{filename}"
+        ))
+        .unwrap();
+        let directory = catalog.make_path("trades", Some(id)).unwrap();
+        let raw_target = ObjectPath::from(format!("{directory}/{filename}"));
+        let target = ParquetDataCatalog::encode_windows_colon_path(&raw_target);
+        catalog
+            .execute_async(|| async {
+                write_batches_to_object_store(
+                    &batches,
+                    catalog.object_store.clone(),
+                    &stored,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+            })
+            .unwrap();
+
+        let query = ConsolidationQuery {
+            query_start: 10_000,
+            query_end: 20_000,
+            use_period_boundaries: false,
+        };
+
+        for _ in 0..2 {
+            let existing = catalog.list_parquet_files("data/trades").unwrap();
+            let mut files = ConsolidationFiles::new(&existing, None, None);
+            let write_target = files
+                .prepare_target(&catalog, target.as_ref(), &batches)
+                .unwrap();
+            files.complete(&catalog, &query, true).unwrap();
+            let remaining = catalog.list_parquet_files("data/trades").unwrap();
+
+            let (stored_batches, schema) = catalog
+                .execute_async(|| async {
+                    read_parquet_from_object_store(catalog.object_store.clone(), &stored).await
+                })
+                .unwrap();
+
+            let actual = stored_batches
+                .into_iter()
+                .flat_map(|batch| TradeTick::decode_batch(schema.metadata(), batch).unwrap())
+                .collect::<Vec<_>>();
+
+            assert_eq!(target, stored);
+            assert!(!write_target);
+            assert_eq!(remaining, vec![stored.to_string()]);
+            assert_eq!(actual, trades);
+        }
+    }
 
     #[rstest]
     #[case("quotes", true)]

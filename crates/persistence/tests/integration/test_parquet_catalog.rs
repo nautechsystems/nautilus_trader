@@ -11254,17 +11254,22 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     let mut catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
     let id = "io:ANTH-USD-PERP.HYPERLIQUID";
 
-    for ts in [10_000u64, 20_000] {
-        let t = TradeTick::new(
+    let trades = [10_000u64, 20_000].map(|ts| {
+        TradeTick::new(
             InstrumentId::from(id),
-            Price::from("1.00"),
-            Quantity::from("1.00"),
+            Price::from("12.34"),
+            Quantity::from("5.67"),
             AggressorSide::Buy,
             TradeId::new(ts.to_string()),
+            (ts - 1).into(),
             ts.into(),
-            ts.into(),
-        );
-        catalog.write_to_parquet(&[t], None, None, None).unwrap();
+        )
+    });
+
+    for trade in &trades {
+        catalog
+            .write_to_parquet(&[*trade], None, None, None)
+            .unwrap();
     }
 
     let dt: CatalogDataType = NautilusDataType::TradeTick.into();
@@ -11293,7 +11298,7 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     let trades_after_first = catalog
         .trade_ticks(Some(vec![id.into()]), None, None)
         .unwrap();
-    assert_eq!(trades_after_first.len(), 2);
+    assert_eq!(trades_after_first, trades);
 
     // Repeating consolidation must preserve the merged file and both rows
     catalog
@@ -11308,5 +11313,5 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     let trades_after_second = catalog
         .trade_ticks(Some(vec![id.into()]), None, None)
         .unwrap();
-    assert_eq!(trades_after_second.len(), 2);
+    assert_eq!(trades_after_second, trades);
 }

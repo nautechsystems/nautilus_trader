@@ -399,23 +399,8 @@ impl ParquetDataCatalog {
         Ok(all_files)
     }
 
-    pub(crate) fn is_windows_local(&self) -> bool {
-        #[cfg(test)]
-        if let Some(is_windows) = self.is_windows_local_override {
-            return is_windows;
-        }
-
-        #[cfg(target_os = "windows")]
-        let is_windows = true;
-        #[cfg(not(target_os = "windows"))]
-        let is_windows = false;
-
-        is_windows && !self.is_remote_uri()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_is_windows_local(&mut self, is_windows_local: bool) {
-        self.is_windows_local_override = Some(is_windows_local);
+    fn is_windows_local(&self) -> bool {
+        cfg!(target_os = "windows") && !self.is_remote_uri()
     }
 
     /// Encodes colons as `%3A` in an [`ObjectPath`] for Windows local filesystem compatibility.
@@ -1127,7 +1112,6 @@ mod tests {
             batch_size: 5_000,
             compression: parquet::basic::Compression::SNAPPY,
             max_row_group_size: 5_000,
-            is_windows_local_override: None,
         }
     }
 
@@ -1237,31 +1221,26 @@ mod tests {
     }
 
     #[rstest]
-    fn test_directory_listing_prefix_encodes_colons_for_windows_local() {
+    #[case::local(false)]
+    #[case::remote(true)]
+    fn test_directory_listing_prefix_matches_object_path(#[case] remote: bool) {
         let mut catalog = memory_catalog("");
+        if remote {
+            catalog.original_uri = "s3://test-bucket".to_string();
+        }
 
-        catalog.set_is_windows_local(true);
-        let windows_prefix =
-            catalog.directory_listing_prefix("data/trades/io:ANTH-USD-PERP.HYPERLIQUID");
-        assert_eq!(
-            windows_prefix.as_ref(),
+        let directory = "data/trades/io:ANTH-USD-PERP.HYPERLIQUID";
+        let prefix = catalog.directory_listing_prefix(directory);
+        let target = catalog.to_object_path(directory).unwrap();
+
+        let expected = if cfg!(target_os = "windows") && !remote {
             "data/trades/io%3AANTH-USD-PERP.HYPERLIQUID"
-        );
+        } else {
+            directory
+        };
 
-        catalog.set_is_windows_local(false);
-        let non_windows_prefix =
-            catalog.directory_listing_prefix("data/trades/io:ANTH-USD-PERP.HYPERLIQUID");
-        assert_eq!(
-            non_windows_prefix.as_ref(),
-            "data/trades/io:ANTH-USD-PERP.HYPERLIQUID"
-        );
-
-        catalog.set_is_windows_local(true);
-        let btc_prefix = catalog.directory_listing_prefix("data/quotes/BTC€.SIM");
-        assert_eq!(btc_prefix.as_ref(), "data/quotes/BTC%E2%82%AC.SIM");
-
-        let standard_prefix = catalog.directory_listing_prefix("data/quotes/EURUSD");
-        assert_eq!(standard_prefix.as_ref(), "data/quotes/EURUSD");
+        assert_eq!(prefix.as_ref(), expected);
+        assert_eq!(target, prefix);
     }
 
     #[rstest]
@@ -1275,76 +1254,5 @@ mod tests {
         let path = ObjectPath::from(input);
         let encoded = ParquetDataCatalog::encode_windows_colon_path(&path);
         assert_eq!(encoded.as_ref(), expected);
-    }
-
-    #[rstest]
-    fn test_colon_identifier_listing_and_repeated_consolidation_windows_local() {
-        use nautilus_model::{
-            data::TradeTick,
-            enums::AggressorSide,
-            identifiers::{InstrumentId, TradeId},
-            types::{Price, Quantity},
-        };
-
-        let root = tempfile::tempdir().unwrap();
-        let mut catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
-        catalog.set_is_windows_local(true);
-        let id = "io:ANTH-USD-PERP.HYPERLIQUID";
-
-        for ts in [10_000u64, 20_000] {
-            let t = TradeTick::new(
-                InstrumentId::from(id),
-                Price::from("1.00"),
-                Quantity::from("1.00"),
-                AggressorSide::Buy,
-                TradeId::new(ts.to_string()),
-                ts.into(),
-                ts.into(),
-            );
-            catalog.write_to_parquet(&[t], None, None, None).unwrap();
-        }
-
-        let dt: CatalogDataType = NautilusDataType::TradeTick.into();
-        let dir = catalog.make_path("trades", Some(id)).unwrap();
-
-        let query_files = catalog
-            .query_files(&dt, Some(vec![id.into()]), None, None)
-            .unwrap();
-        assert_eq!(query_files.len(), 2);
-
-        let intervals = catalog.get_intervals(&dt, Some(id)).unwrap();
-        assert_eq!(intervals, vec![(10_000, 10_000), (20_000, 20_000)]);
-
-        let files = catalog.list_parquet_files(&dir).unwrap();
-        assert_eq!(files.len(), 2);
-
-        catalog
-            .consolidate_data_by_period(&dt, Some(id), None, None, None, Some(false))
-            .unwrap();
-
-        let after_files = catalog
-            .query_files(&dt, Some(vec![id.into()]), None, None)
-            .unwrap();
-        assert_eq!(after_files.len(), 1);
-
-        let trades_after_first = catalog
-            .trade_ticks(Some(vec![id.into()]), None, None)
-            .unwrap();
-        assert_eq!(trades_after_first.len(), 2);
-
-        // Repeating consolidation must preserve the merged file and both rows
-        catalog
-            .consolidate_data_by_period(&dt, Some(id), None, None, None, Some(false))
-            .unwrap();
-
-        let after_second_files = catalog
-            .query_files(&dt, Some(vec![id.into()]), None, None)
-            .unwrap();
-        assert_eq!(after_second_files.len(), 1);
-
-        let trades_after_second = catalog
-            .trade_ticks(Some(vec![id.into()]), None, None)
-            .unwrap();
-        assert_eq!(trades_after_second.len(), 2);
     }
 }

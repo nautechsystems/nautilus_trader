@@ -253,8 +253,6 @@ pub struct ParquetDataCatalog {
     pub compression: parquet::basic::Compression,
     /// The maximum number of rows in each Parquet row group.
     pub max_row_group_size: usize,
-    #[cfg(test)]
-    pub(crate) is_windows_local_override: Option<bool>,
 }
 
 impl Debug for ParquetDataCatalog {
@@ -419,8 +417,6 @@ impl ParquetDataCatalog {
             batch_size,
             compression,
             max_row_group_size,
-            #[cfg(test)]
-            is_windows_local_override: None,
         })
     }
 
@@ -448,8 +444,6 @@ impl CatalogReader for ParquetDataCatalog {
             batch_size: self.batch_size,
             compression: self.compression,
             max_row_group_size: self.max_row_group_size,
-            #[cfg(test)]
-            is_windows_local_override: self.is_windows_local_override,
         })))
     }
 
