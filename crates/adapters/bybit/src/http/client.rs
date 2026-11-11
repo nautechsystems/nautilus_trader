@@ -4329,7 +4329,8 @@ impl BybitHttpClient {
 
     /// Request multiple order status reports.
     ///
-    /// Orders for instruments not currently loaded in cache will be skipped.
+    /// When `instrument_id` is `None`, orders without a cached instrument are skipped, and orders
+    /// that fail to parse are logged and skipped.
     ///
     /// When `open_only` is true the realtime endpoint is queried for currently
     /// open orders and again for recently closed orders, so terminal reports
@@ -4342,6 +4343,8 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    /// - The requested instrument is not cached for a returned order.
+    /// - An order for the requested instrument cannot be parsed.
     #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
@@ -4662,11 +4665,8 @@ impl BybitHttpClient {
             if let Some(ref instrument_id) = instrument_id {
                 let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
 
-                if let Ok(report) =
-                    parse_order_status_report(&order, &instrument, account_id, ts_init)
-                {
-                    reports.push(report);
-                }
+                let report = parse_order_status_report(&order, &instrument, account_id, ts_init)?;
+                reports.push(report);
             } else {
                 // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
                 // Note: instruments are stored in cache by symbol only (without venue)

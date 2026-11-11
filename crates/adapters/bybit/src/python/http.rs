@@ -1174,7 +1174,8 @@ impl BybitHttpClient {
 
     /// Request multiple order status reports.
     ///
-    /// Orders for instruments not currently loaded in cache will be skipped.
+    /// When `instrument_id` is `None`, orders without a cached instrument are skipped, and orders
+    /// that fail to parse are logged and skipped.
     ///
     /// When `open_only` is true the realtime endpoint is queried for currently
     /// open orders and again for recently closed orders, so terminal reports
@@ -1187,6 +1188,8 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    /// - The requested instrument is not cached for a returned order.
+    /// - An order for the requested instrument cannot be parsed.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
     #[expect(clippy::too_many_arguments)]

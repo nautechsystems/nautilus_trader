@@ -1440,8 +1440,7 @@ impl ExecutionClient for BybitExecutionClient {
         Some(ExecutionReportTask::new(
             async move {
                 let Some((instrument_id, product_type)) = instrument else {
-                    log::warn!("generate_order_status_report requires instrument_id: {command}");
-                    return Ok(None);
+                    anyhow::bail!("generate_order_status_report requires instrument_id: {command}");
                 };
 
                 let reports = http_client
@@ -4816,7 +4815,6 @@ mod tests {
     )]
     #[case::client_only(Some("ETHUSDT-LINEAR.BYBIT"), Some("client-open-2"), None, Some(("client-open-2", "open-order-2")))]
     #[case::venue_only(Some("ETHUSDT-LINEAR.BYBIT"), None, Some("open-order-2"), Some(("client-open-2", "open-order-2")))]
-    #[case::missing_instrument(None, Some("client-open-1"), Some("open-order-1"), None)]
     #[tokio::test]
     async fn test_single_report_task_preserves_lookup_filters(
         #[case] instrument: Option<&str>,
@@ -4851,6 +4849,180 @@ mod tests {
                 VenueOrderId::from(venue)
             )),
         );
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_single_report_missing_instrument_returns_error() {
+        let orders = serde_json::from_str(&crate::common::testing::load_test_json(
+            "http_get_orders_realtime.json",
+        ))
+        .unwrap();
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(ClientOrderId::from("client-open-1")),
+            Some(VenueOrderId::from("open-order-1")),
+            None,
+            None,
+        );
+
+        for fused in [false, true] {
+            let error = if fused {
+                client
+                    .generate_order_status_report(&command)
+                    .await
+                    .unwrap_err()
+            } else {
+                let task = client.generate_order_status_report_task(&command).unwrap();
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap_err()
+            };
+
+            assert_eq!(
+                error.to_string(),
+                format!("generate_order_status_report requires instrument_id: {command}"),
+            );
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_single_report_parse_failure_returns_error() {
+        let mut orders: serde_json::Value = serde_json::from_str(
+            &crate::common::testing::load_test_json("http_get_orders_realtime.json"),
+        )
+        .unwrap();
+        orders["result"]["list"].as_array_mut().unwrap().truncate(1);
+        orders["result"]["list"][0]["qty"] = serde_json::json!("not-a-number");
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+            Some(ClientOrderId::from("client-open-1")),
+            Some(VenueOrderId::from("open-order-1")),
+            None,
+            None,
+        );
+
+        for fused in [false, true] {
+            let error = if fused {
+                client
+                    .generate_order_status_report(&command)
+                    .await
+                    .unwrap_err()
+            } else {
+                let task = client.generate_order_status_report_task(&command).unwrap();
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap_err()
+            };
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("Failed to parse order.qty='not-a-number' as Decimal"),
+                "error was: {error}",
+            );
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_single_report_nonmatching_parse_failure_returns_error() {
+        let mut orders: serde_json::Value = serde_json::from_str(
+            &crate::common::testing::load_test_json("http_get_orders_realtime.json"),
+        )
+        .unwrap();
+        orders["result"]["list"][1]["qty"] = serde_json::json!("not-a-number");
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+            Some(ClientOrderId::from("client-open-1")),
+            Some(VenueOrderId::from("open-order-1")),
+            None,
+            None,
+        );
+
+        for fused in [false, true] {
+            let error = if fused {
+                client
+                    .generate_order_status_report(&command)
+                    .await
+                    .unwrap_err()
+            } else {
+                let task = client.generate_order_status_report_task(&command).unwrap();
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap_err()
+            };
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("Failed to parse order.qty='not-a-number' as Decimal"),
+                "error was: {error}",
+            );
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_bulk_report_parse_failure_logs_and_continues() {
+        let mut orders: serde_json::Value = serde_json::from_str(
+            &crate::common::testing::load_test_json("http_get_orders_realtime.json"),
+        )
+        .unwrap();
+        orders["result"]["list"][0]["qty"] = serde_json::json!("not-a-number");
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        for fused in [false, true] {
+            let reports = if fused {
+                client
+                    .generate_order_status_reports(&command)
+                    .await
+                    .unwrap()
+            } else {
+                let task = client.generate_order_status_reports_task(&command).unwrap();
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap()
+            };
+
+            assert_eq!(reports.len(), 2);
+
+            for report in reports {
+                assert_eq!(
+                    report.client_order_id,
+                    Some(ClientOrderId::from("client-open-2")),
+                );
+                assert_eq!(report.venue_order_id, VenueOrderId::from("open-order-2"));
+            }
+        }
+
         server.abort();
     }
 

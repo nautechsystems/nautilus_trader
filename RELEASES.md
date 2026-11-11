@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
+- Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
 
