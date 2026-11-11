@@ -1287,7 +1287,7 @@ print("restored")
         timeout=30,
         env={
             name: os.environ[name]
-            for name in ("HOME", "LANG", "LC_ALL", "PATH", "SYSTEMROOT")
+            for name in ("HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "PATH", "SYSTEMROOT")
             if name in os.environ
         },
         check=False,
