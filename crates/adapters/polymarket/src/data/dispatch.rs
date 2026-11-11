@@ -405,6 +405,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 .then(|| integrity.entry(instrument_id).or_default());
 
             if let Some(state) = state.as_mut()
+                && let Some(book) = ctx.subscriptions.order_books.get(&instrument_id)
+            {
+                state.record_publication(book.ts_last);
+            }
+
+            if let Some(state) = state.as_mut()
                 && state.is_stale_snapshot(ts_event, snap.hash.as_deref())
             {
                 return;
@@ -1398,6 +1404,10 @@ fn handle_book_changes(
     }
 
     let state = integrity.entry(instrument_id).or_default();
+    if let Some(book) = ctx.subscriptions.order_books.get(&instrument_id) {
+        state.record_publication(book.ts_last);
+    }
+
     if !state.observe(ts_event) {
         return;
     }
@@ -13671,12 +13681,18 @@ mod tests {
     fn integrity_snapshot_rejection_retains_incremental_high_water(
         #[values(false, true)] effective: bool,
         #[values(0, 10)] timeout_secs: u64,
+        #[values(false, true)] reset_integrity: bool,
     ) {
         let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
         collect_delta_batches(&mut rx);
         ctx.book_snapshot_timeout = Duration::from_secs(timeout_secs);
         handle_market_message(integrity_change(&snapshot, "0.4", "17", "opaque"), &ctx);
         assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+
+        if reset_integrity {
+            ctx.subscriptions.book_integrity.lock().clear();
+        }
+
         ctx.subscriptions.book_sync.seed_pending_snapshots(
             &ctx.subscriptions.active_delta_subs,
             &[instrument_id],

@@ -57,7 +57,8 @@ impl BookIntegrity {
     }
 
     pub(crate) fn record_publication(&mut self, timestamp: UnixNanos) {
-        self.published_timestamp = timestamp;
+        self.published_timestamp = self.published_timestamp.max(timestamp);
+        self.latest_timestamp = self.latest_timestamp.max(timestamp);
     }
 
     pub(crate) fn accept_snapshot(&mut self, timestamp: UnixNanos, verified: bool) {
