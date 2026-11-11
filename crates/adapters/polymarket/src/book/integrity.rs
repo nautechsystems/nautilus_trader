@@ -23,6 +23,8 @@ use nautilus_core::UnixNanos;
 #[derive(Debug, Default)]
 pub(crate) struct BookIntegrity {
     latest_timestamp: UnixNanos,
+    published_timestamp: UnixNanos,
+    withheld_hash: Option<String>,
     snapshot_verified: bool,
 }
 
@@ -33,6 +35,7 @@ impl BookIntegrity {
         }
 
         self.latest_timestamp = timestamp;
+        self.withheld_hash = None;
         true
     }
 
@@ -40,8 +43,27 @@ impl BookIntegrity {
         timestamp < self.latest_timestamp
     }
 
-    pub(crate) fn accept_snapshot(&mut self, verified: bool) {
+    pub(crate) fn is_stale_snapshot(&self, timestamp: UnixNanos, hash: Option<&str>) -> bool {
+        timestamp < self.published_timestamp
+            || self.is_stale(timestamp)
+                && !self
+                    .withheld_hash
+                    .as_deref()
+                    .is_some_and(|withheld| Some(withheld) == hash)
+    }
+
+    pub(crate) fn withhold(&mut self, hash: &str) {
+        self.withheld_hash = (!hash.is_empty()).then(|| hash.to_string());
+    }
+
+    pub(crate) fn record_publication(&mut self, timestamp: UnixNanos) {
+        self.published_timestamp = timestamp;
+    }
+
+    pub(crate) fn accept_snapshot(&mut self, timestamp: UnixNanos, verified: bool) {
+        self.record_publication(timestamp);
         self.snapshot_verified = verified;
+        self.withheld_hash = None;
     }
 
     pub(crate) fn snapshot_verified(&self) -> bool {

@@ -24,6 +24,7 @@
 //! delete nothing. Other `price_change` batches remain wire-faithful.
 //!
 //! For book-delta output, both modes ignore snapshots and price changes older than the retained mark.
+//! A recovery snapshot can cover the newest withheld update by matching its non-empty hash.
 //! A book-delta unsubscribe, shard reconnect, or tick-size change resets it; recovery cycles retain it.
 //! Only snapshots with complete hash inputs can be verified. With `compute_effective_deltas`
 //! enabled, snapshots emit only the net diff against published state; an empty diff emits nothing.
@@ -404,7 +405,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 .then(|| integrity.entry(instrument_id).or_default());
 
             if let Some(state) = state.as_mut()
-                && state.is_stale(ts_event)
+                && state.is_stale_snapshot(ts_event, snap.hash.as_deref())
             {
                 return;
             }
@@ -502,7 +503,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
                             if let Some(state) = state.as_mut() {
                                 state.observe(ts_event);
-                                state.accept_snapshot(verified);
+                                state.accept_snapshot(ts_event, verified);
                             }
 
                             if let Some(deltas) = emit {
@@ -1410,6 +1411,12 @@ fn handle_book_changes(
             Instant::now(),
         );
 
+    if outcome != BookSequenceOutcome::Accept
+        && let Some(change) = changes.last()
+    {
+        state.withhold(&change.hash);
+    }
+
     match outcome {
         BookSequenceOutcome::Suppress => return,
         BookSequenceOutcome::Recover => {
@@ -1424,6 +1431,7 @@ fn handle_book_changes(
 
     match result {
         Ok(Some(deltas)) => {
+            state.record_publication(ts_event);
             drop(integrity);
 
             if let Err(e) = ctx.data_sender.send(DataEvent::Data(deltas.into())) {
@@ -12716,11 +12724,18 @@ mod tests {
     }
 
     #[rstest]
-    fn pending_drops_price_change_until_snapshot() {
+    #[case::missing_hash("")]
+    #[case::different_hash("different")]
+    #[case::matching_hash("matching")]
+    fn pending_drops_price_change_until_snapshot(
+        #[case] hash: &str,
+        #[values(false, true)] effective: bool,
+    ) {
         let asset_id_str = "0xTOKEN2";
         let market = "0xMARKET";
 
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
@@ -12735,16 +12750,6 @@ mod tests {
             .claim_recovery(instrument_id)
             .unwrap();
 
-        let pc = make_price_change(market, asset_id_str, "0.50", "20");
-        handle_market_message(pc, &ctx);
-
-        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
-        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
-        assert!(
-            events.is_empty(),
-            "price_change while pending must not emit any events: {events:?}",
-        );
-
         let MarketWsMessage::Book(mut snapshot) = make_snapshot(
             market,
             asset_id_str,
@@ -12753,13 +12758,75 @@ mod tests {
             unreachable!("make_snapshot must return a book message");
         };
 
-        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
-        assert!(!recovery.is_accepted());
-        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
-        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
-        assert!(data_rx.try_recv().is_err());
+        snapshot.timestamp = "1794388079083".to_string();
+        snapshot.min_order_size = Some("5".to_string());
+        snapshot.tick_size = Some("0.01".to_string());
+        snapshot.neg_risk = Some(false);
+        snapshot.last_trade_price = Some(String::new());
+        hash_snapshot(&mut snapshot);
+        let matching = hash == "matching";
+        let MarketWsMessage::PriceChange(mut pc) = integrity_change(
+            &snapshot,
+            "0.49",
+            "10",
+            if matching {
+                snapshot.hash.as_deref().unwrap()
+            } else {
+                hash
+            },
+        ) else {
+            unreachable!()
+        };
 
-        snapshot.timestamp = "1700000002000".to_string();
+        pc.timestamp = "1794388079085".to_string();
+        handle_market_message(MarketWsMessage::PriceChange(pc.clone()), &ctx);
+
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.is_empty(),
+            "price_change while pending must not emit any events: {events:?}",
+        );
+
+        for _ in 0..3 {
+            assert!(recovery.begin_replacement());
+            handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+            assert!(!recovery.is_accepted());
+            assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+            assert!(data_rx.try_recv().is_err());
+            recovery.gate.open();
+            handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+
+            if matching {
+                break;
+            }
+
+            assert!(!recovery.is_accepted());
+            assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+            assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+            assert!(data_rx.try_recv().is_err());
+        }
+
+        assert_eq!(recovery.is_accepted(), matching);
+        let batches = collect_delta_batches(&mut data_rx);
+        assert_eq!(batches.len(), usize::from(matching));
+
+        if let Some(batch) = batches.first() {
+            assert_eq!(batch.deltas[0].action, BookAction::Clear);
+            assert_eq!(
+                batch.ts_event,
+                UnixNanos::from(1_794_388_079_083_000_000_u64)
+            );
+            assert!(
+                batch
+                    .deltas
+                    .iter()
+                    .all(|delta| delta.flags & RecordFlag::F_SNAPSHOT as u8 != 0)
+            );
+        }
+
+        snapshot.timestamp = "1794388079086".to_string();
+        hash_snapshot(&mut snapshot);
         handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
 
         assert!(recovery.is_accepted());
@@ -12782,6 +12849,12 @@ mod tests {
                 ),
             ]
         );
+        drop(book);
+        collect_delta_batches(&mut data_rx);
+        pc.timestamp = "1794388079087".to_string();
+        pc.price_changes[0].size = "11".to_string();
+        handle_market_message(MarketWsMessage::PriceChange(pc), &ctx);
+        assert_eq!(collect_delta_batches(&mut data_rx).len(), 1);
     }
 
     #[rstest]
@@ -13601,6 +13674,10 @@ mod tests {
         rejected.timestamp = "1700000003000".to_string();
         handle_market_message(MarketWsMessage::Book(rejected), &ctx);
         assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        handle_market_message(
+            integrity_change(&snapshot, "0.4", "11", snapshot.hash.as_deref().unwrap()),
+            &ctx,
+        );
         handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
         assert!(collect_delta_batches(&mut rx).is_empty());
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
