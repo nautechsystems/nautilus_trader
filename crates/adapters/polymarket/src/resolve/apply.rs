@@ -276,21 +276,14 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
         }
 
         for condition_id in unresolved_in_chunk {
-            if !allow_ctf_fallback(ctx, &condition_id) {
-                record_resolution_failure(
-                    &mut stats,
-                    &condition_id,
-                    gamma_failures.get(&condition_id),
-                );
-                continue;
-            }
-
             let retry = ctx
                 .watchlist
                 .read()
                 .get(&condition_id)
                 .and_then(|entry| entry.clob_retry);
-            if backoff_clob && retry.is_some_and(|(_, retry_at)| ctx.clock.get_time_ns() < retry_at)
+            if !allow_ctf_fallback(ctx, &condition_id)
+                || (backoff_clob
+                    && retry.is_some_and(|(_, retry_at)| ctx.clock.get_time_ns() < retry_at))
             {
                 record_resolution_failure(
                     &mut stats,
