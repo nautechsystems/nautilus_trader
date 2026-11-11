@@ -40,7 +40,7 @@ use crate::{
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
-        infer_symbology_type, raw_symbol,
+        infer_symbology_type, nautilus_symbol, raw_symbol,
     },
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
@@ -52,6 +52,7 @@ use crate::{
 #[derive(Clone)]
 pub struct DatabentoHistoricalClient {
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     credential: Credential,
     clock: &'static AtomicTime,
     inner: Arc<databento::HistoricalClient>,
@@ -129,6 +130,13 @@ impl DatabentoHistoricalClient {
         self
     }
 
+    /// Spells a share class with a space in instrument IDs (`BRK.B` -> `BRK B`).
+    #[must_use]
+    pub fn with_share_class_space(mut self, share_class_space: bool) -> Self {
+        self.share_class_space = share_class_space;
+        self
+    }
+
     /// Creates a new [`DatabentoHistoricalClient`] instance with a custom API base URL.
     ///
     /// This is intended for tests, benchmarks, and controlled deployments that route
@@ -181,6 +189,7 @@ impl DatabentoHistoricalClient {
         Ok(Self {
             clock,
             futures_year_digits: FuturesYearDigits::default(),
+            share_class_space: true,
             inner: Arc::new(client),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
@@ -326,6 +335,7 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
                 self.futures_year_digits,
+                self.share_class_space,
                 &self.futures_symbols.load(),
                 Some(&requested_symbols),
             )?;
@@ -341,7 +351,9 @@ impl DatabentoHistoricalClient {
 
             match decode_instrument_def_msg(msg, instrument_id, None, None) {
                 Ok(Some(instrument)) => {
-                    if instrument.raw_symbol() != instrument.id().symbol {
+                    if nautilus_symbol(instrument.raw_symbol().as_str(), self.share_class_space)
+                        != instrument.id().symbol
+                    {
                         let date = time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(
                             msg.ts_recv,
                         ))?
@@ -1052,6 +1064,7 @@ impl DatabentoHistoricalClient {
             &self.publisher_venue_map,
             &self.symbol_venue_map.load(),
             self.futures_year_digits,
+            self.share_class_space,
             &self.futures_symbols.load(),
             Some(requested_symbols),
         )
@@ -1064,7 +1077,13 @@ impl DatabentoHistoricalClient {
             .symbols
             .iter()
             .map(|symbol| {
-                let raw = raw_symbol(symbol, &params.dataset, self.futures_year_digits);
+                let raw = raw_symbol(
+                    symbol,
+                    &params.dataset,
+                    self.futures_year_digits,
+                    self.share_class_space,
+                );
+
                 if raw != *symbol {
                     requested_symbols.insert(Symbol::from(symbol.as_str()));
                 }

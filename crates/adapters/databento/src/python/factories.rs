@@ -35,7 +35,7 @@ use crate::{
 impl DatabentoDataClientConfig {
     /// Configuration for the Databento data client.
     #[new]
-    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None, historical_base_url=None, live_gateway_addr=None, futures_year_digits=None))]
+    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None, historical_base_url=None, live_gateway_addr=None, futures_year_digits=None, share_class_space=true))]
     #[expect(
         clippy::too_many_arguments,
         reason = "the Python constructor preserves existing positional parameters"
@@ -49,6 +49,7 @@ impl DatabentoDataClientConfig {
         historical_base_url: Option<String>,
         live_gateway_addr: Option<String>,
         futures_year_digits: Option<u8>,
+        share_class_space: bool,
     ) -> PyResult<Self> {
         let futures_year_digits = futures_year_digits
             .map(FuturesYearDigits::try_from)
@@ -70,6 +71,7 @@ impl DatabentoDataClientConfig {
         config.historical_base_url = historical_base_url;
         config.live_gateway_addr = live_gateway_addr;
         config.futures_year_digits = futures_year_digits;
+        config.share_class_space = share_class_space;
 
         Ok(config)
     }

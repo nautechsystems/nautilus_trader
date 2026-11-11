@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::borrow::Cow;
+
 use ahash::{AHashMap, AHashSet};
 use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
@@ -78,12 +80,14 @@ pub fn instrument_id_to_symbol_string(
 /// - The publisher cannot be extracted from the record.
 /// - The publisher ID is not found in the venue map.
 /// - The underlying instrument ID mapping fails.
+#[expect(clippy::too_many_arguments)]
 pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     futures_symbols: &AHashMap<(PublisherId, u32, time::Date), Symbol>,
     requested_symbols: Option<&AHashSet<Symbol>>,
 ) -> anyhow::Result<InstrumentId> {
@@ -99,6 +103,7 @@ pub fn decode_nautilus_instrument_id(
         metadata,
         *venue,
         futures_year_digits,
+        share_class_space,
         futures_symbols,
         symbol_venue_map,
         requested_symbols,
@@ -128,11 +133,13 @@ pub fn decode_nautilus_instrument_id(
 /// - Timestamp overflow occurs when calculating the date.
 /// - Symbol metadata lookup fails.
 /// - No raw symbol is found for the instrument ID.
+#[expect(clippy::too_many_arguments)]
 pub fn get_nautilus_instrument_id_for_record(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
     venue: Venue,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     futures_symbols: &AHashMap<(PublisherId, u32, time::Date), Symbol>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     requested_symbols: Option<&AHashSet<Symbol>>,
@@ -174,7 +181,7 @@ pub fn get_nautilus_instrument_id_for_record(
         return Ok(InstrumentId::new(*symbol, venue));
     }
 
-    let symbol = Symbol::from_str_unchecked(raw_symbol);
+    let symbol = nautilus_symbol(raw_symbol, share_class_space);
     let instrument_id = InstrumentId::new(symbol, venue);
     resolve_futures_instrument_id(
         record,
@@ -191,8 +198,10 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
         return SType::Parent;
     }
 
-    let parts: Vec<&str> = symbol.split('.').collect();
-    if parts.len() == 3 && parts[2].chars().all(|c| c.is_ascii_digit()) {
+    // Three dot-separated parts with an all-digit rank (`ES.c.0`), without a part vector
+    if let Some(rank) = continuous_rank(symbol)
+        && rank.chars().all(|c| c.is_ascii_digit())
+    {
         return SType::Continuous;
     }
 
@@ -201,6 +210,17 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
     }
 
     SType::RawSymbol
+}
+
+/// Returns the third `.`-separated part when `symbol` has exactly three parts.
+fn continuous_rank(symbol: &str) -> Option<&str> {
+    let mut parts = symbol.split('.');
+    if parts.next().is_none() || parts.next().is_none() {
+        return None;
+    }
+
+    let rank = parts.next()?;
+    parts.next().is_none().then_some(rank)
 }
 
 /// # Errors
@@ -240,12 +260,55 @@ pub(crate) fn dataset_uses_futures_symbology(dataset: &str) -> bool {
     )
 }
 
+/// Converts a Databento symbol to a Nautilus symbol.
+///
+/// With `share_class_space`, a share class's dot becomes a space (`BRK.B` -> `BRK B`), since a
+/// dot separates symbol and venue in instrument IDs and Interactive Brokers spells the class with
+/// a space. Parent (`ES.FUT`) and continuous (`ES.c.0`) symbols keep their dots.
+#[must_use]
+pub fn nautilus_symbol(raw_symbol: &str, share_class_space: bool) -> Symbol {
+    Symbol::from_str_unchecked(nautilus_symbol_str(raw_symbol, share_class_space))
+}
+
+/// Borrows `raw_symbol` when its spelling does not change.
+///
+/// A dotted letter-only share class is recognized before symbology inference, so ordinary
+/// symbols such as `AAPL` return without allocating on the historical and DBN record path.
+fn nautilus_symbol_str<'a>(raw_symbol: &'a str, share_class_space: bool) -> Cow<'a, str> {
+    if !share_class_space || !is_share_class_symbol(raw_symbol, '.') {
+        return Cow::Borrowed(raw_symbol);
+    }
+
+    // Parent symbols (`ES.FUT`, `SPX.OPT`) are dotted and letter-only, but keep their dots
+    if infer_symbology_type(raw_symbol) != SType::RawSymbol {
+        return Cow::Borrowed(raw_symbol);
+    }
+
+    Cow::Owned(raw_symbol.replace('.', " "))
+}
+
+/// Returns whether `symbol` is a share class: uppercase-letter parts joined by single
+/// `separator`s, such as `BRK.B` or `BRK B`.
+///
+/// Option and futures symbols such as `BRKB  261120C00525000` or `ESZ6 P5000` don't qualify.
+fn is_share_class_symbol(symbol: &str, separator: char) -> bool {
+    symbol.contains(separator)
+        && symbol
+            .split(separator)
+            .all(|part| !part.is_empty() && part.bytes().all(|c| c.is_ascii_uppercase()))
+}
+
 pub(crate) fn raw_symbol(
     symbol: &str,
     dataset: &str,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
 ) -> String {
-    if futures_year_digits == FuturesYearDigits::Two && dataset_uses_futures_symbology(dataset) {
+    if share_class_space && is_share_class_symbol(symbol, ' ') {
+        symbol.replace(' ', ".")
+    } else if futures_year_digits == FuturesYearDigits::Two
+        && dataset_uses_futures_symbology(dataset)
+    {
         rewrite_futures_symbol(symbol, 0, 1, false).unwrap_or_else(|| symbol.to_string())
     } else {
         symbol.to_string()
@@ -383,6 +446,8 @@ fn select_requested_futures_symbol(
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use rstest::*;
 
     use super::*;
@@ -390,17 +455,22 @@ mod tests {
     #[rstest]
     #[case("1", "instrument_id")]
     #[case("123456789", "instrument_id")]
+    #[case("", "instrument_id")]
     #[case("AAPL", "raw_symbol")]
     #[case("ESM4", "raw_symbol")]
     #[case("BRN FMM0024!", "raw_symbol")]
     #[case("BRN  99   5617289", "raw_symbol")]
     #[case("SPY   240319P00511000", "raw_symbol")]
+    #[case("ES.c.0.1", "raw_symbol")]
     #[case("ES.FUT", "parent")]
     #[case("ES.OPT", "parent")]
     #[case("BRN.FUT", "parent")]
     #[case("SPX.OPT", "parent")]
     #[case("ES.c.0", "continuous")]
     #[case("SPX.n.0", "continuous")]
+    #[case("ES.c.", "continuous")]
+    #[case("..", "continuous")]
+    #[case("12.34.56", "continuous")]
     fn test_infer_symbology_type(#[case] symbol: String, #[case] expected: SType) {
         let result = infer_symbology_type(&symbol);
         assert_eq!(result, expected);
@@ -455,6 +525,79 @@ mod tests {
     }
 
     #[rstest]
+    #[case("BRK.B", true, "BRK B")]
+    #[case("BF.B", true, "BF B")]
+    #[case("BRK.B", false, "BRK.B")]
+    #[case("AAPL", true, "AAPL")]
+    #[case("SPY   240319P00511000", true, "SPY   240319P00511000")]
+    #[case("ES.FUT", true, "ES.FUT")]
+    #[case("SPX.OPT", true, "SPX.OPT")]
+    #[case("ES.c.0", true, "ES.c.0")]
+    #[case("ES.n.0", true, "ES.n.0")]
+    fn test_nautilus_symbol_spells_share_class_with_space(
+        #[case] raw: &str,
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            nautilus_symbol(raw, share_class_space),
+            Symbol::from(expected)
+        );
+    }
+
+    #[rstest]
+    #[case("AAPL", true)]
+    #[case("AAPL", false)]
+    #[case("ESM4", true)]
+    #[case("123456", true)]
+    #[case("SPY   240319P00511000", true)]
+    #[case("ES.FUT", true)]
+    #[case("SPX.OPT", true)]
+    #[case("ES.c.0", true)]
+    #[case("ES.n.0", true)]
+    #[case("BRK.B", false)]
+    fn test_nautilus_symbol_borrows_when_unchanged(
+        #[case] raw: &str,
+        #[case] share_class_space: bool,
+    ) {
+        assert!(matches!(
+            nautilus_symbol_str(raw, share_class_space),
+            Cow::Borrowed(value) if value == raw
+        ));
+    }
+
+    #[rstest]
+    #[case("BRK.B", "BRK B")]
+    #[case("BF.B", "BF B")]
+    fn test_nautilus_symbol_owns_spelled_share_class(#[case] raw: &str, #[case] expected: &str) {
+        assert!(matches!(
+            nautilus_symbol_str(raw, true),
+            Cow::Owned(value) if value == expected
+        ));
+    }
+
+    #[rstest]
+    #[case("BRK B", "EQUS.MINI", true, "BRK.B")]
+    #[case("BRK B", "XNYS.PILLAR", true, "BRK.B")]
+    #[case("BRK B", "EQUS.MINI", false, "BRK B")]
+    #[case("AAPL", "EQUS.MINI", true, "AAPL")]
+    #[case("BRKB  261120C00525000", "OPRA.PILLAR", true, "BRKB  261120C00525000")]
+    #[case("ESZ6 P5000", "GLBX.MDP3", true, "ESZ6 P5000")]
+    #[case("BRN FMM0024!", "IFEU.IMPACT", true, "BRN FMM0024!")]
+    #[case("BRN  99   5617289", "IFEU.IMPACT", true, "BRN  99   5617289")]
+    fn test_raw_symbol_spells_share_class_with_dot(
+        #[case] symbol: &str,
+        #[case] dataset: &str,
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            raw_symbol(symbol, dataset, FuturesYearDigits::One, share_class_space),
+            expected
+        );
+    }
+
+    #[rstest]
     #[case("ESZ26", "GLBX.MDP3", 2, "ESZ6")]
     #[case("ESZ95", "GLBX.MDP3", 2, "ESZ5")]
     #[case("ESZ26 P5000", "GLBX.MDP3", 2, "ESZ6 P5000")]
@@ -472,7 +615,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(
-            raw_symbol(symbol, dataset, digits.try_into().unwrap()),
+            raw_symbol(symbol, dataset, digits.try_into().unwrap(), false),
             expected
         );
     }
