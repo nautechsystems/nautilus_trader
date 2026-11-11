@@ -293,6 +293,7 @@ impl PolymarketDataClient {
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
                             false,
+                            true,
                         )
                         .await;
                     }

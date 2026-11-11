@@ -1654,7 +1654,7 @@ mod tests {
         },
         testing::wait_until_async,
     };
-    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::book::{conformance::BookStreamChecker, recovery::BookRecoveryOutcome};
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
@@ -3697,6 +3697,7 @@ mod tests {
     struct TestServerState {
         gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
         clob_market_by_condition: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+        clob_market_requests: Arc<Mutex<Vec<String>>>,
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
         market_cache_probe: Arc<Mutex<Option<CacheProbe>>>,
         market_cache_at_connect: Arc<Mutex<Vec<bool>>>,
@@ -3722,6 +3723,7 @@ mod tests {
         State(state): State<TestServerState>,
         Path(condition_id): Path<String>,
     ) -> (StatusCode, Json<Value>) {
+        state.clob_market_requests.lock().push(condition_id.clone());
         let body = state.clob_market_by_condition.lock().await;
         if let Some(value) = body.get(&condition_id) {
             (StatusCode::OK, Json(value.clone()))
@@ -5289,6 +5291,7 @@ mod tests {
             &[TEST_CONDITION_ID.into()],
             ResolveBatchErrorMode::Continue,
             true,
+            true,
         )
         .await;
         assert_eq!(stats.fetched_markets, 1);
@@ -5302,6 +5305,122 @@ mod tests {
                 .contains(TEST_CONDITION_ID)
         );
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolution_fallback_backs_off_missing_markets(
+        #[values("gamma", "clob", "manual")] recovery: &str,
+    ) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xHEALTHY",
+                "[\"303\",\"404\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state.clone()).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+        let mut ctx = client.resolution_context();
+        ctx.clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::default())));
+
+        for (condition_id, token_id) in [("0xMISSING", "101"), ("0xHEALTHY", "303")] {
+            let instrument = seed_instrument_with_context(
+                &ws_ctx,
+                token_id,
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some(condition_id),
+                    expiration_ns: Some(UnixNanos::default()),
+                    ..Default::default()
+                },
+            );
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                &instrument,
+                PositionId::new(token_id),
+            );
+        }
+        let poll = async |backoff_clob| {
+            let condition_ids = client
+                .resolve_poll_watchlist
+                .read()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            fetch_and_apply_resolutions_by_condition_ids(
+                client.provider.http_client(),
+                &client.clob_public_client,
+                &ctx,
+                &condition_ids,
+                ResolveBatchErrorMode::Continue,
+                false,
+                backoff_clob,
+            )
+            .await
+        };
+
+        let stats = poll(true).await;
+        assert_eq!(stats.emitted_condition_ids, vec!["0xHEALTHY"]);
+        assert_eq!(stats.failed_condition_ids, vec!["0xMISSING"]);
+        *state.gamma_response.lock().await = None;
+
+        for (attempt, delay) in [60, 120, 240, 480, 900, 900].into_iter().enumerate() {
+            ctx.clock
+                .increment_time(DurationNanos::from_secs(delay - 1))
+                .unwrap();
+            poll(true).await;
+            assert_eq!(state.clob_market_requests.lock().len(), attempt + 1);
+            ctx.clock
+                .increment_time(DurationNanos::from_secs(1))
+                .unwrap();
+            assert_eq!(poll(true).await.failed_condition_ids, vec!["0xMISSING"]);
+            assert_eq!(state.clob_market_requests.lock().len(), attempt + 2);
+        }
+
+        if recovery == "gamma" {
+            *state.gamma_response.lock().await = Some(serde_json::json!([
+                make_gamma_market_value_with_outcome_prices(
+                    "0xMISSING",
+                    "[\"101\",\"202\"]",
+                    Some("[\"1\",\"0\"]"),
+                    Some(true),
+                    Some(false),
+                )
+            ]));
+        } else {
+            state.clob_market_by_condition.lock().await.insert(
+                "0xMISSING".into(),
+                make_clob_market_value("0xMISSING", "101", "202", false),
+            );
+
+            if recovery == "clob" {
+                ctx.clock
+                    .increment_time(DurationNanos::from_secs(900))
+                    .unwrap();
+                assert!(poll(true).await.emitted_condition_ids.is_empty());
+            }
+            state
+                .clob_market_by_condition
+                .lock()
+                .await
+                .get_mut("0xMISSING")
+                .unwrap()["closed"] = true.into();
+        }
+        assert_eq!(
+            poll(recovery != "manual").await.emitted_condition_ids,
+            vec!["0xMISSING"]
+        );
+        assert!(client.resolve_poll_watchlist.read().is_empty());
+        assert_eq!(
+            count_instrument_close_events(&from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>()),
+            2
+        );
     }
 
     #[rstest]
@@ -5499,6 +5618,7 @@ mod tests {
             &ws_ctx.resolve_context(),
             &["0xCOND-REQ".to_string()],
             ResolveBatchErrorMode::StopOnFirstError,
+            true,
             true,
         )
         .await;
@@ -8388,6 +8508,7 @@ mod tests {
             &[TEST_CONDITION_ID.into()],
             ResolveBatchErrorMode::Continue,
             true,
+            true,
         )
         .await;
 
@@ -8624,6 +8745,7 @@ mod tests {
             &[TEST_CONDITION_ID.into(), "0xMISSING".into()],
             error_mode,
             true,
+            true,
         )
         .await;
         let events = from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
@@ -8808,6 +8930,7 @@ mod tests {
                 &[TEST_CONDITION_ID.into()],
                 ResolveBatchErrorMode::Continue,
                 false,
+                true,
             )
             .await;
         }
