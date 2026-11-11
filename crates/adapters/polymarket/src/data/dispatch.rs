@@ -3697,7 +3697,7 @@ mod tests {
     struct TestServerState {
         gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
         clob_market_by_condition: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
-        clob_market_requests: Arc<Mutex<Vec<String>>>,
+        clob_requests: Arc<AtomicUsize>,
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
         market_cache_probe: Arc<Mutex<Option<CacheProbe>>>,
         market_cache_at_connect: Arc<Mutex<Vec<bool>>>,
@@ -3723,7 +3723,7 @@ mod tests {
         State(state): State<TestServerState>,
         Path(condition_id): Path<String>,
     ) -> (StatusCode, Json<Value>) {
-        state.clob_market_requests.lock().push(condition_id.clone());
+        state.clob_requests.fetch_add(1, Ordering::Relaxed);
         let body = state.clob_market_by_condition.lock().await;
         if let Some(value) = body.get(&condition_id) {
             (StatusCode::OK, Json(value.clone()))
@@ -5313,46 +5313,40 @@ mod tests {
         #[values("gamma", "clob", "manual")] recovery: &str,
     ) {
         let state = TestServerState::default();
-        *state.gamma_response.lock().await = Some(serde_json::json!([
-            make_gamma_market_value_with_outcome_prices(
-                "0xHEALTHY",
-                "[\"303\",\"404\"]",
-                Some("[\"1\",\"0\"]"),
-                Some(true),
-                Some(false),
-            )
-        ]));
+        let mut missing = make_gamma_market_value_with_outcome_prices(
+            "0xMISSING",
+            "[\"101\",\"202\"]",
+            None,
+            Some(false),
+            Some(false),
+        );
+        let mut healthy = missing.clone();
+        healthy["conditionId"] = "0xHEALTHY".into();
+        healthy["clobTokenIds"] = "[\"303\",\"404\"]".into();
+        healthy["closed"] = true.into();
+        healthy["outcomePrices"] = "[\"1\",\"0\"]".into();
+        *state.gamma_response.lock().await = Some(serde_json::json!([healthy.clone()]));
         let addr = start_mock_server(state.clone()).await;
         let (client, mut data_rx) = create_test_client(addr);
-        let ws_ctx = make_client_ws_ctx(&client);
+        let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::default())));
         let mut ctx = client.resolution_context();
-        ctx.clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::default())));
+        ctx.clock = clock;
 
-        for (condition_id, token_id) in [("0xMISSING", "101"), ("0xHEALTHY", "303")] {
-            let instrument = seed_instrument_with_context(
-                &ws_ctx,
-                token_id,
-                Price::from("0.001"),
-                Quantity::from("0.01"),
-                SeedInstrumentContext {
-                    condition_id: Some(condition_id),
-                    expiration_ns: Some(UnixNanos::default()),
-                    ..Default::default()
-                },
+        for market in [missing.clone(), healthy] {
+            let instrument = instrument_from_gamma_fixture(market);
+            cache_instrument_unchecked(
+                &ctx.instruments,
+                &ctx.subscriptions.token_meta,
+                &instrument,
             );
             upsert_resolve_watch_entry_from_instrument(
-                &client.resolve_poll_watchlist,
+                &ctx.watchlist,
                 &instrument,
-                PositionId::new(token_id),
+                PositionId::new(instrument.raw_symbol().as_str()),
             );
         }
         let poll = async |backoff_clob| {
-            let condition_ids = client
-                .resolve_poll_watchlist
-                .read()
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>();
+            let condition_ids = ctx.watchlist.read().keys().cloned().collect::<Vec<_>>();
             fetch_and_apply_resolutions_by_condition_ids(
                 client.provider.http_client(),
                 &client.clob_public_client,
@@ -5369,30 +5363,21 @@ mod tests {
         assert_eq!(stats.emitted_condition_ids, vec!["0xHEALTHY"]);
         assert_eq!(stats.failed_condition_ids, vec!["0xMISSING"]);
         *state.gamma_response.lock().await = None;
+        let second = DurationNanos::from_secs(1);
 
         for (attempt, delay) in [60, 120, 240, 480, 900, 900].into_iter().enumerate() {
-            ctx.clock
-                .increment_time(DurationNanos::from_secs(delay - 1))
-                .unwrap();
+            clock.increment_time(second * (delay - 1)).unwrap();
             poll(true).await;
-            assert_eq!(state.clob_market_requests.lock().len(), attempt + 1);
-            ctx.clock
-                .increment_time(DurationNanos::from_secs(1))
-                .unwrap();
+            assert_eq!(state.clob_requests.load(Ordering::Relaxed), attempt + 1);
+            clock.increment_time(second).unwrap();
             assert_eq!(poll(true).await.failed_condition_ids, vec!["0xMISSING"]);
-            assert_eq!(state.clob_market_requests.lock().len(), attempt + 2);
+            assert_eq!(state.clob_requests.load(Ordering::Relaxed), attempt + 2);
         }
 
         if recovery == "gamma" {
-            *state.gamma_response.lock().await = Some(serde_json::json!([
-                make_gamma_market_value_with_outcome_prices(
-                    "0xMISSING",
-                    "[\"101\",\"202\"]",
-                    Some("[\"1\",\"0\"]"),
-                    Some(true),
-                    Some(false),
-                )
-            ]));
+            missing["closed"] = true.into();
+            missing["outcomePrices"] = "[\"1\",\"0\"]".into();
+            *state.gamma_response.lock().await = Some(serde_json::json!([missing]));
         } else {
             state.clob_market_by_condition.lock().await.insert(
                 "0xMISSING".into(),
@@ -5400,23 +5385,19 @@ mod tests {
             );
 
             if recovery == "clob" {
-                ctx.clock
-                    .increment_time(DurationNanos::from_secs(900))
-                    .unwrap();
+                clock.increment_time(second * 900).unwrap();
                 assert!(poll(true).await.emitted_condition_ids.is_empty());
             }
-            state
-                .clob_market_by_condition
-                .lock()
-                .await
-                .get_mut("0xMISSING")
-                .unwrap()["closed"] = true.into();
+            state.clob_market_by_condition.lock().await.insert(
+                "0xMISSING".into(),
+                make_clob_market_value("0xMISSING", "101", "202", true),
+            );
         }
         assert_eq!(
             poll(recovery != "manual").await.emitted_condition_ids,
             vec!["0xMISSING"]
         );
-        assert!(client.resolve_poll_watchlist.read().is_empty());
+        assert!(ctx.watchlist.read().is_empty());
         assert_eq!(
             count_instrument_close_events(&from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>()),
             2
