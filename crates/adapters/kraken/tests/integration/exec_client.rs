@@ -10013,6 +10013,14 @@ async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
     r#"{"result":"success","editStatus":{"status":"editAlreadyHeld","orderId":"F-MODIFY","orderEvents":[]}}"#,
     "editAlreadyHeld"
 )]
+#[case::market_is_cancel_only(
+    r#"{"result":"success","editStatus":{"status":"marketIsCancelOnly","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "marketIsCancelOnly"
+)]
+#[case::cancel_only(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"cancelOnly"}"#,
+    "cancelOnly"
+)]
 #[case::invalid_argument(
     r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"invalidArgument"}"#,
     "invalidArgument"

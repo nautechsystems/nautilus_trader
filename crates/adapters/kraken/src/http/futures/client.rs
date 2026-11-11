@@ -3245,11 +3245,11 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
 /// `postWouldExecute`, which remove the order: the Maker Protection guide documents that a
 /// self-matching edit that is not held removes the order being amended, and the edit documentation
 /// says a `postWouldExecute` order would be filled upon placement and is canceled instead. It adds
-/// `tooManyOrders`, which the Maker Protection guide returns for a request past the hold cap that
-/// held edits count toward, and the `KrakenSendStatus` statuses the edit
-/// documentation does not list. The guide documents `orderForEditNotFound` for an edit whose
-/// target is not resting: it had left the book by the time a held edit released, or its placement
-/// is still held. Such an edit is rejected as the cancel path rejects `notFound`.
+/// `tooManyOrders`, Kraken's open-order limit refusal and, until 12 November 2026, its Maker
+/// Protection hold-cap refusal, held edits included, and the `KrakenSendStatus` refusals the edit
+/// documentation does not list. The guide documents `orderForEditNotFound` for an edit whose target
+/// is not resting: it had left the book by the time a held edit released, or its placement is still
+/// held. Such an edit is rejected as the cancel path rejects `notFound`.
 ///
 /// `iocWouldNotExecute` is left out, since Kraken's edit documentation and 22 October 2026
 /// changelog conflict on whether an edit can still end as immediate-or-cancel. The list therefore
@@ -3258,12 +3258,14 @@ fn is_futures_modify_rejection(status: &str) -> bool {
     matches!(
         status,
         "invalidPrice"
+            | "makerProtectionOrderLimitExceeded"
             | "tooManySmallOrders"
             | "outsidePriceCollar"
             | "wouldNotReducePosition"
             | "orderForEditNotFound"
             | "orderForEditNotAStop"
             | "editAlreadyHeld"
+            | "marketIsCancelOnly"
             | "tooManyOrders"
     ) || matches!(
         status.parse::<KrakenSendStatus>(),
@@ -3297,6 +3299,7 @@ fn is_futures_modify_error_rejection(code: &str) -> bool {
             | "notFound"
             | "accountInactive"
             | "marketUnavailable"
+            | "cancelOnly"
             | "authenticationError"
             | "nonceBelowThreshold"
             | "nonceDuplicate"
@@ -5666,6 +5669,8 @@ mod tests {
     #[case::order_for_edit_not_found("orderForEditNotFound")]
     #[case::order_for_edit_not_a_stop("orderForEditNotAStop")]
     #[case::edit_already_held("editAlreadyHeld")]
+    #[case::maker_protection_order_limit_exceeded("makerProtectionOrderLimitExceeded")]
+    #[case::market_is_cancel_only("marketIsCancelOnly")]
     #[case::too_many_orders("tooManyOrders")]
     #[case::not_found("notFound")]
     #[case::invalid_order_type("invalidOrderType")]
@@ -5726,6 +5731,7 @@ mod tests {
     #[case::invalid_price("invalidPrice", None)]
     #[case::with_a_refusal_code("invalidPrice", Some("invalidArgument"))]
     #[case::with_an_unsettled_code("invalidPrice", Some("apiLimitExceeded"))]
+    #[case::cancel_only_both_forms("marketIsCancelOnly", Some("cancelOnly"))]
     #[tokio::test]
     async fn test_modify_order_error_response_rejects_a_refusal_status(
         #[case] status: &str,
@@ -5783,6 +5789,7 @@ mod tests {
     #[case::not_found("notFound")]
     #[case::account_inactive("accountInactive")]
     #[case::market_unavailable("marketUnavailable")]
+    #[case::cancel_only("cancelOnly")]
     #[case::authentication_error("authenticationError")]
     #[case::nonce_below_threshold("nonceBelowThreshold")]
     #[case::nonce_duplicate("nonceDuplicate")]
