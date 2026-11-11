@@ -149,6 +149,9 @@ pub struct Position {
     pub cost_close: Decimal,
     pub qty_closed: Decimal,
     pub realized_pnl_remainder: Decimal,
+    /// The instrument's negative-price allowance, absent in older serialized positions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allows_negative_price: Option<bool>,
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -241,6 +244,7 @@ impl Position {
             cost_close: Decimal::ZERO,
             qty_closed: Decimal::ZERO,
             realized_pnl_remainder: Decimal::ZERO,
+            allows_negative_price: Some(instrument.allows_negative_price()),
         };
 
         item.check_accounting()?;
@@ -299,6 +303,7 @@ impl Position {
             cost_close: self.cost_close,
             qty_closed: self.qty_closed,
             realized_pnl_remainder: self.realized_pnl_remainder,
+            allows_negative_price: self.allows_negative_price,
         }
     }
 
@@ -3848,6 +3853,37 @@ mod tests {
     fn test_position_short_display(stub_position_short: Position) {
         let display = format!("{stub_position_short}");
         assert_eq!(display, "Position(SHORT 1 AUD/USD.SIM, id=1)");
+    }
+
+    #[rstest]
+    #[case::commodity(InstrumentAny::Commodity(commodity_gold()), true)]
+    #[case::equity(InstrumentAny::Equity(equity_aapl()), false)]
+    fn test_negative_price_allowance_survives_snapshot_and_serialization(
+        #[case] instrument: InstrumentAny,
+        #[case] expected: bool,
+    ) {
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::new("P-PRICE-POLICY"))
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("10.00"))
+            .currency(Currency::USD())
+            .build();
+        let position = Position::new(&instrument, fill);
+        let snapshot = position.clone_without_events();
+        let mut serialized = serde_json::to_value(&position).unwrap();
+        let restored: Position = serde_json::from_value(serialized.clone()).unwrap();
+        let serialized_allowance = serialized
+            .as_object_mut()
+            .unwrap()
+            .remove("allows_negative_price");
+        let legacy: Position = serde_json::from_value(serialized).unwrap();
+
+        assert_eq!(position.allows_negative_price, Some(expected));
+        assert_eq!(snapshot.allows_negative_price, Some(expected));
+        assert_eq!(restored.allows_negative_price, Some(expected));
+        assert_eq!(serialized_allowance, Some(serde_json::json!(expected)));
+        assert_eq!(legacy.allows_negative_price, None);
     }
 
     #[rstest]

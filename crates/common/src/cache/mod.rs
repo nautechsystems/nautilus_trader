@@ -1205,20 +1205,29 @@ impl Cache {
             PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
         };
 
-        let allows_non_positive = || {
+        let allows_negative_price = self
+            .instrument(instrument_id)
+            .map(Instrument::allows_negative_price)
+            .or(position.allows_negative_price);
+        let allows_non_positive = |default| {
             !position
                 .instrument_class
                 .divides_notional_by_price(position.is_inverse)
-                && self.instrument(instrument_id).map_or_else(
-                    || position.instrument_class.allows_negative_price(),
-                    Instrument::allows_negative_price,
-                )
+                && allows_negative_price.unwrap_or(default)
         };
-        let is_valid = |price: &Price| {
+
+        let is_valid = |price: &Price, non_positive_allowed| {
             !price.is_undefined()
                 && !price.is_error()
                 && price.precision != ERROR_PRICE.precision
-                && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
+                && (price.as_decimal() > Decimal::ZERO || non_positive_allowed)
+        };
+
+        let fallback_is_valid = |price: &Price| {
+            is_valid(
+                price,
+                allows_non_positive(position.instrument_class.allows_negative_price()),
+            )
         };
         let quote_price = || {
             self.quote(instrument_id).and_then(|quote| {
@@ -1226,8 +1235,11 @@ impl Cache {
                     PriceType::Bid => (quote.bid_price, quote.bid_size),
                     _ => (quote.ask_price, quote.ask_size),
                 };
-                (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
-                    .then_some(price)
+
+                // Older positions lack the instrument policy, so retain their quote valuation
+                (is_valid(&price, allows_non_positive(true))
+                    && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                .then_some(price)
             })
         };
 
@@ -1253,7 +1265,7 @@ impl Cache {
                 .iter()
                 .filter(|(bar_type, _)| bar_type.instrument_id() == *instrument_id)
                 .filter_map(|(_, bars)| bars.front())
-                .filter(|bar| is_valid(&bar.close))
+                .filter(|bar| fallback_is_valid(&bar.close))
                 .min_by_key(|bar| (Reverse(bar.ts_init), bar_rank(bar), bar.bar_type))
                 .map(|bar| bar.close)
         };
@@ -1261,8 +1273,14 @@ impl Cache {
         // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask.
         // When quotes are unavailable, fall back across mark prices, trade ticks, and bars.
         let Some(last) = quote_price()
-            .or_else(|| self.price(instrument_id, PriceType::Mark).filter(is_valid))
-            .or_else(|| self.price(instrument_id, PriceType::Last).filter(is_valid))
+            .or_else(|| {
+                self.price(instrument_id, PriceType::Mark)
+                    .filter(fallback_is_valid)
+            })
+            .or_else(|| {
+                self.price(instrument_id, PriceType::Last)
+                    .filter(fallback_is_valid)
+            })
             .or_else(bar_close)
         else {
             log::warn!(

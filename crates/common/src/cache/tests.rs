@@ -1768,6 +1768,143 @@ fn test_calculate_unrealized_pnl_skips_non_positive_quote_without_cached_instrum
 }
 
 #[rstest]
+#[case::commodity_zero(InstrumentAny::Commodity(commodity_gold()), "0.00", "-10.00 USD")]
+#[case::commodity_negative(InstrumentAny::Commodity(commodity_gold()), "-5.00", "-15.00 USD")]
+#[case::equity_zero(InstrumentAny::Equity(equity_aapl()), "0.00", "2.00 USD")]
+#[case::equity_negative(InstrumentAny::Equity(equity_aapl()), "-5.00", "2.00 USD")]
+fn test_calculate_unrealized_pnl_non_positive_spot_quotes(
+    mut cache: Cache,
+    #[case] instrument: InstrumentAny,
+    #[case] bid: &str,
+    #[case] expected_pnl: &str,
+    #[values(false, true)] cache_instrument: bool,
+) {
+    if cache_instrument {
+        cache.add_instrument(instrument.clone()).unwrap();
+    }
+
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-SPOT"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid),
+        Price::from("1.00"),
+        Quantity::from(10),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("12.00"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+#[case::empty(0, "2.00 USD")]
+#[case::populated(10, "-10.00 USD")]
+fn test_calculate_unrealized_pnl_zero_futures_quote_requires_size(
+    mut cache: Cache,
+    #[case] size: i64,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-ZERO-SIZE"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("1.00"),
+        Quantity::from(size),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("12.00"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+#[case("0.00", "-10.00 USD")]
+#[case("-5.00", "-15.00 USD")]
+fn test_calculate_unrealized_pnl_legacy_commodity_quote(
+    mut cache: Cache,
+    #[case] bid: &str,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::Commodity(commodity_gold());
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-LEGACY-COMMODITY"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+    let mut serialized = serde_json::to_value(position).unwrap();
+    serialized
+        .as_object_mut()
+        .unwrap()
+        .remove("allows_negative_price");
+    let position: Position = serde_json::from_value(serialized).unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid),
+        Price::from("1.00"),
+        Quantity::from(10),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    cache.add_quote(quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
 fn test_build_index_when_empty(mut cache: Cache) {
     cache.build_index();
 }
