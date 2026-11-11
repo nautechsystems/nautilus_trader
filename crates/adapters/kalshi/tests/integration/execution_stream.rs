@@ -1366,7 +1366,12 @@ async fn persisted_close_and_received_fill_evidence_fence_account_recovery(
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut peer = Peer::new(None).await;
         let delayed = delay != 0;
-        if delayed { peer.config.ws_timeout_secs = 8; }
+        if delayed {
+            peer.config.ws_timeout_secs = 8;
+            peer.balance_gate.forget_permits(peer.balance_gate.available_permits());
+            peer.balance_gate.add_permits(2);
+        }
+
         let definitions: Value =
             serde_json::from_str(include_str!("../../test_data/instruments.json")).unwrap();
         let mut market: Market =
@@ -1485,19 +1490,28 @@ async fn persisted_close_and_received_fill_evidence_fence_account_recovery(
         if !closed {
             let mut fills = Vec::new();
             let mut account_seen = false;
+            let mut history_reads_before = 0;
             {
                 let connect = client.connect();
                 tokio::pin!(connect);
 
                 if let Some((orders, source_fills, positions)) = eventual {
-                    loop {
-                        let observed = peer.balance_read.notified();
-                        if peer.balance_reads.load(Ordering::SeqCst) >= 4 { break; }
-                        tokio::select! {
-                            biased;
-                            result = &mut connect => panic!("connect covered an unavailable notified fill: {result:?}"),
-                            event = output.recv() => panic!("execution escaped before notified fill became available: {event:?}"),
-                            () = observed => {},
+                    for reads in [3, 4] {
+                        loop {
+                            let observed = peer.balance_read.notified();
+                            if peer.balance_reads.load(Ordering::SeqCst) == reads { break; }
+                            tokio::select! {
+                                biased;
+                                result = &mut connect => panic!("connect covered an unavailable notified fill: {result:?}"),
+                                event = output.recv() => panic!("execution escaped before notified fill became available: {event:?}"),
+                                () = observed => {},
+                            }
+                        }
+
+                        if reads == 3 {
+                            // The notice can reach recovery before or during the first collection
+                            history_reads_before = peer.history_position_reads.load(Ordering::SeqCst);
+                            peer.balance_gate.add_permits(1);
                         }
                     }
 
@@ -1505,6 +1519,7 @@ async fn persisted_close_and_received_fill_evidence_fence_account_recovery(
                     *peer.orders.lock().unwrap() = orders;
                     *peer.fills.lock().unwrap() = source_fills;
                     *peer.positions.lock().unwrap() = positions;
+                    peer.balance_gate.add_permits(tokio::sync::Semaphore::MAX_PERMITS);
                 }
 
                 loop {
@@ -1529,7 +1544,7 @@ async fn persisted_close_and_received_fill_evidence_fence_account_recovery(
             }
 
             assert!(account_seen);
-            assert_eq!(peer.history_position_reads.load(Ordering::SeqCst), usize::from(delay == 2), "only an uncovered position notice needs settled-history coverage for a flat cached scope");
+            assert_eq!(peer.history_position_reads.load(Ordering::SeqCst) - history_reads_before, usize::from(delay == 2), "only an uncovered position notice needs settled-history coverage for a flat cached scope after the first collection");
             assert_eq!(fills.len(), 1);
             assert_eq!(fills[0].trade_id.as_str(), fixtures["fills"]["fills"][0]["fill_id"].as_str().unwrap());
             assert_eq!(fills[0].last_qty, Quantity::from("0.75"));
