@@ -16,7 +16,7 @@
 use std::time::Duration;
 
 use ahash::AHashSet;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use nautilus_common::{
     cache::CacheView,
     live::dst::time::Instant,
@@ -26,8 +26,7 @@ use nautilus_core::AtomicMap;
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
-    identifiers::InstrumentId,
-    instruments::Instrument,
+    identifiers::{InstrumentId, PositionId},
     orders::Order,
 };
 use parking_lot::Mutex;
@@ -38,10 +37,7 @@ use super::{
     instruments::{InstrumentUpdateState, refresh_expired_market_closure},
 };
 use crate::{
-    common::{
-        consts::{MARKET_VERSION_KEY, POLYMARKET_VENUE},
-        parse::validate_data_market_version,
-    },
+    common::consts::POLYMARKET_VENUE,
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -84,6 +80,12 @@ impl PolymarketDataClient {
             .orders_open_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
             .iter()
             .map(|order| order.instrument_id())
+            .chain(
+                loaded
+                    .orders_active_local_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
+                    .iter()
+                    .map(|order| order.instrument_id()),
+            )
             .chain(
                 loaded
                     .orders_inflight_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
@@ -651,14 +653,26 @@ impl PolymarketDataClient {
 
 fn sync_exposure_instrument(
     cache: &CacheView,
-    instruments: &DashSet<InstrumentId>,
+    instruments: &DashMap<InstrumentId, Vec<PositionId>>,
     instrument_id: InstrumentId,
 ) {
     if instrument_id.venue != *POLYMARKET_VENUE {
         return;
     }
     let cache = cache.borrow();
-    if (cache.has_orders_open(
+    let positions = cache
+        .positions_open_refs(
+            Some(&POLYMARKET_VENUE),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        )
+        .iter()
+        .map(|position| position.id)
+        .collect::<Vec<_>>();
+
+    if cache.has_orders_open(
         Some(&POLYMARKET_VENUE),
         Some(&instrument_id),
         None,
@@ -670,21 +684,15 @@ fn sync_exposure_instrument(
         None,
         None,
         None,
-    ) || cache.has_positions_open(
+    ) || cache.has_orders_active_local(
         Some(&POLYMARKET_VENUE),
         Some(&instrument_id),
         None,
         None,
         None,
-    )) && let Some(instrument) = cache.instrument(&instrument_id)
-        && validate_data_market_version(
-            instrument
-                .info()
-                .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        )
-        .is_ok()
+    ) || !positions.is_empty()
     {
-        instruments.insert(instrument_id);
+        instruments.insert(instrument_id, positions);
     } else {
         instruments.remove(&instrument_id);
     }
@@ -957,10 +965,7 @@ mod tests {
             &condition_id,
             UnixNanos::from(u64::MAX),
         );
-        cache
-            .borrow_mut()
-            .add_instrument(instrument.clone())
-            .unwrap();
+        client.instruments.remove(&instrument.id());
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
@@ -973,6 +978,13 @@ mod tests {
             .borrow_mut()
             .add_order(order.clone(), None, None, false)
             .unwrap();
+        client.seed_exposure_instruments();
+        assert!(
+            client
+                .subscriptions
+                .exposure_instruments
+                .contains_key(&instrument.id())
+        );
         order = cache
             .borrow_mut()
             .update_order(&TestOrderEventStubs::submitted(&order, account_id))
@@ -980,7 +992,7 @@ mod tests {
         client.start_client();
         client.seed_exposure_instruments();
         let retained = &client.subscriptions.exposure_instruments;
-        assert!(retained.contains(&instrument.id()));
+        assert!(retained.contains_key(&instrument.id()));
         let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
         order = cache.borrow_mut().update_order(&accepted).unwrap();
         msgbus::publish_order_event("events.order.TEST".into(), &accepted);
@@ -1016,7 +1028,7 @@ mod tests {
                 UnixNanos::default(),
             )),
         );
-        assert!(retained.contains(&instrument.id()));
+        assert!(retained.contains_key(&instrument.id()));
         let mut closing = fill;
         closing.order_side = OrderSide::Sell;
         closing.trade_id = TradeId::from("CLOSE");

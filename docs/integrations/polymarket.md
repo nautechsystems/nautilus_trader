@@ -2760,18 +2760,26 @@ The same composition applies to periodic refreshes driven by `update_instruments
 Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
 universes match.
 
-Periodic refresh also keeps metadata current for previously loaded instruments required by individual
-definition or market-data subscriptions, resolution watches, or open orders and positions. The factory
-provides cache ownership; directly constructed Rust clients can attach it with `with_cache`.
+Periodic refresh also keeps metadata current for instruments required by individual definition or
+market-data subscriptions, resolution watches, active local or venue orders, and open positions. The
+factory provides cache ownership; directly constructed Rust clients can attach it with `with_cache`.
+A venue-wide instrument subscription receives discoveries but does not retain individual instruments.
 Retained instruments outside discovery are queried in condition-ID batches, without discovery filters
 or additional market-data subscriptions. Releasing the last owner stops these extra lookups; a cached
 instrument alone does not retain refresh ownership.
 
-Discovery publishes without waiting for retained lookups. The last successful discovery takes
-precedence when the two paths overlap. Live tick updates and confirmed closure remain authoritative.
-Retained lookup failures are logged without stopping discovery. Explicitly configured sources remain
-required, so use runtime ownership instead of adding retained slugs to a discovery filter. Disabling
-periodic instrument refresh also disables retained metadata refresh.
+Discovery and retained polling run independently. Retained requests share Gamma's total quota and
+consume at most half its sustained capacity, with a one-request burst. Each discovery attempt replaces
+the previous attempt's coverage, so a failed or stalled query does not suppress retained polling.
+Rolling-query definitions take precedence over retained results before acceptance. Condition-ID responses
+also yield to intervening metadata writes and older Gamma `updatedAt` revisions are ignored. Live tick
+updates, confirmed closure, and manually paused resolution watches remain authoritative. Closure alone
+does not imply a settlement outcome.
+
+A registered filter supplying both query parameters and market slugs treats its slugs as optional
+retention lookups. They are batched separately and failures are logged without delaying discovery.
+Explicitly configured sources and slug-only filters remain required. Disabling periodic instrument
+refresh also disables retained metadata refresh.
 
 #### Markets awaiting CLOB metadata
 

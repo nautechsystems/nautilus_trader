@@ -27,7 +27,9 @@
 //!   lookups stop at one market per distinct ID, since a redundant cursor request
 //!   can exceed Gamma's URI limit (HTTP 414).
 
-use std::{collections::HashMap, future::Future, result::Result as StdResult, sync::Arc};
+use std::{
+    collections::HashMap, future::Future, num::NonZeroU32, result::Result as StdResult, sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use jiff::Timestamp;
@@ -42,6 +44,7 @@ use nautilus_network::{
         HttpClient, HttpClientError, HttpResponse, Method, create_standard_nautilus_headers,
         parse_retry_after,
     },
+    ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
     websocket::proxy::ProxyUrl,
 };
@@ -51,7 +54,11 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::{consts::MARKET_VERSION_V2, parse::validate_data_market_version, urls::gamma_api_url},
+    common::{
+        consts::{HTTP_RATE_LIMIT, MARKET_VERSION_V2},
+        parse::validate_data_market_version,
+        urls::gamma_api_url,
+    },
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -68,6 +75,10 @@ use crate::{
 
 const GAMMA_MARKETS_KEYSET_PAGE_LIMIT: u32 = 100;
 const GAMMA_EVENTS_KEYSET_PAGE_LIMIT: u32 = 500;
+const GAMMA_RATE_LIMIT_KEY: &str = "gamma";
+const RETAINED_RATE_LIMIT_KEY: &str = "retained";
+const RETAINED_REST_QUOTA: Quota =
+    Quota::per_minute(NonZeroU32::new(HTTP_RATE_LIMIT / 2).unwrap()).allow_burst(NonZeroU32::MIN);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GammaStop {
@@ -85,6 +96,7 @@ pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
     base_url: String,
     retry_manager: Arc<RetryManager<Error>>,
+    rate_limit_keys: Vec<String>,
 }
 
 impl PolymarketGammaRawHttpClient {
@@ -112,6 +124,10 @@ impl PolymarketGammaRawHttpClient {
                 .headers(Self::default_headers())
                 .header_keys(vec![HEADER_RETRY_AFTER.to_string()])
                 .default_quota(*POLYMARKET_GAMMA_REST_QUOTA)
+                .keyed_quotas(vec![(
+                    RETAINED_RATE_LIMIT_KEY.to_string(),
+                    RETAINED_REST_QUOTA,
+                )])
                 .timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
                 .build()?,
@@ -125,6 +141,7 @@ impl PolymarketGammaRawHttpClient {
                 max_elapsed_ms: Some(180_000),
                 ..RetryConfig::default()
             })),
+            rate_limit_keys: vec![GAMMA_RATE_LIMIT_KEY.to_string()],
         })
     }
 
@@ -146,8 +163,15 @@ impl PolymarketGammaRawHttpClient {
     ) -> Result<T> {
         self.send_request(path, || {
             let url = self.url(path);
-            self.client
-                .request_with_params(Method::GET, url, params, None, None, None, None)
+            self.client.request_with_params(
+                Method::GET,
+                url,
+                params,
+                None,
+                None,
+                None,
+                Some(self.rate_limit_keys.clone()),
+            )
         })
         .await
     }
@@ -159,8 +183,15 @@ impl PolymarketGammaRawHttpClient {
     ) -> Result<T> {
         self.send_request(path, || {
             let url = self.url(path);
-            self.client
-                .request(Method::GET, url, params, None, None, None, None)
+            self.client.request(
+                Method::GET,
+                url,
+                params,
+                None,
+                None,
+                None,
+                Some(self.rate_limit_keys.clone()),
+            )
         })
         .await
     }
@@ -563,6 +594,17 @@ impl PolymarketGammaHttpClient {
 
     pub(crate) fn retry_manager(&self) -> &RetryManager<Error> {
         &self.retry_manager
+    }
+
+    pub(crate) fn for_retained_refresh(&self) -> Self {
+        let mut client = self.clone();
+        let mut inner = (*self.inner).clone();
+        inner.rate_limit_keys = vec![
+            GAMMA_RATE_LIMIT_KEY.to_string(),
+            RETAINED_RATE_LIMIT_KEY.to_string(),
+        ];
+        client.inner = Arc::new(inner);
+        client
     }
 
     /// Fetches markets from the Gamma API with the given base params, paginating automatically.

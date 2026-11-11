@@ -214,7 +214,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        let update_state = instrument_update_state.lock();
+        let mut update_state = instrument_update_state.lock();
         let mut effective_instruments = Vec::with_capacity(instruments.len());
         let now_ns = clock.get_time_ns();
 
@@ -238,18 +238,25 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         } else {
             let terminal_conditions = closed_condition_ids.lock();
 
-            let live: Vec<_> = effective_instruments
-                .iter()
-                .filter(|instrument| {
-                    !crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                        instrument, now_ns,
-                    ) && !extract_condition_id(&instrument.id())
-                        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
-                })
-                .cloned()
-                .collect();
+            let live: Vec<_> =
+                effective_instruments
+                    .iter()
+                    .filter(|instrument| {
+                        !crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                            instrument, now_ns,
+                        ) && !extract_condition_id(&instrument.id())
+                            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+                            && !instruments_cache.get_cloned(&instrument.id()).is_some_and(
+                                |cached| super::instruments::stale_metadata(instrument, &cached),
+                            )
+                    })
+                    .cloned()
+                    .collect();
 
             cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
+            for instrument in &live {
+                update_state.record_metadata(instrument.id());
+            }
             live.len()
         };
 
@@ -321,7 +328,7 @@ pub(super) fn request_instrument(
         };
 
         if let Some(inst) = instrument {
-            let update_state = instrument_update_state.lock();
+            let mut update_state = instrument_update_state.lock();
             let inst = match update_state.compose_instrument(&inst) {
                 Ok(instrument) => instrument,
                 Err(e) => {
@@ -337,21 +344,21 @@ pub(super) fn request_instrument(
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
-            } else {
-                apply_live_instrument_locked(
-                    &closed_condition_ids,
-                    &update_state,
-                    &instruments_cache,
-                    &token_meta,
-                    &inst,
-                    |instrument| {
-                        // Publish onto the data bus so other clients (e.g. the exec
-                        // client's token map) can update from the same fetch.
-                        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
-                            log::warn!("Failed to publish instrument {instrument_id}: {e}");
-                        }
-                    },
-                );
+            } else if apply_live_instrument_locked(
+                &closed_condition_ids,
+                &update_state,
+                &instruments_cache,
+                &token_meta,
+                &inst,
+                |instrument| {
+                    // Publish onto the data bus so other clients (e.g. the exec
+                    // client's token map) can update from the same fetch.
+                    if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+                        log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                    }
+                },
+            ) {
+                update_state.record_metadata(instrument_id);
             }
 
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(

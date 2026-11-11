@@ -26,7 +26,7 @@ use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -61,7 +61,7 @@ pub(crate) struct DataSubscriptions {
     pub(super) active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
     pub(super) active_instrument_close_subs: Arc<DashSet<InstrumentId>>,
     pub(super) instrument_subs: Arc<DashSet<InstrumentId>>,
-    pub(super) exposure_instruments: Arc<DashSet<InstrumentId>>,
+    pub(super) exposure_instruments: Arc<DashMap<InstrumentId, Vec<PositionId>>>,
     pub(super) book_sync: BookSyncTracker,
     pub(super) book_integrity: Arc<Mutex<AHashMap<InstrumentId, BookIntegrity>>>,
     pub(super) ws_open_tokens: Arc<DashSet<Ustr>>,
@@ -95,7 +95,7 @@ impl DataSubscriptions {
             active_instrument_status_subs: Arc::new(DashSet::new()),
             active_instrument_close_subs: Arc::new(DashSet::new()),
             instrument_subs: Arc::new(DashSet::new()),
-            exposure_instruments: Arc::new(DashSet::new()),
+            exposure_instruments: Arc::new(DashMap::new()),
             book_sync: BookSyncTracker::default(),
             book_integrity: Arc::default(),
             ws_open_tokens: Arc::new(DashSet::new()),
@@ -191,7 +191,6 @@ impl DataSubscriptions {
     }
 
     pub(super) fn retained_instrument_ids(&self) -> AHashSet<InstrumentId> {
-        let instruments = self.instruments.load();
         let mut ids = self
             .instrument_subs
             .iter()
@@ -201,20 +200,40 @@ impl DataSubscriptions {
         for subscriptions in self.intents() {
             ids.extend(subscriptions.iter().map(|id| *id));
         }
-        ids.extend(self.exposure_instruments.iter().map(|id| *id));
+        ids.extend(self.exposure_instruments.iter().map(|entry| *entry.key()));
         for entry in self.watchlist.read().values() {
             ids.extend(entry.tracked.values().filter_map(|tracked| {
                 (tracked.has_data_subscription || !tracked.open_position_ids.is_empty())
                     .then_some(tracked.instrument_id)
             }));
         }
-        let closed = self.closed_condition_ids.lock();
-        ids.retain(|id| {
-            (instruments.contains_key(id) || self.exposure_instruments.contains(id))
-                && !crate::providers::extract_condition_id(id)
-                    .is_ok_and(|condition_id| closed.contains(&condition_id))
-        });
+        ids.retain(|id| self.is_retained(*id));
         ids
+    }
+
+    pub(super) fn is_retained(&self, id: InstrumentId) -> bool {
+        let condition = crate::providers::extract_condition_id(&id).ok();
+        if condition
+            .as_ref()
+            .is_some_and(|id| self.closed_condition_ids.lock().contains(id))
+        {
+            return false;
+        }
+
+        if self.instrument_subs.contains(&id) || self.exposure_instruments.contains_key(&id) {
+            return true;
+        }
+        self.instruments.contains_key(&id)
+            && (self.has_intent(id)
+                || condition.is_some_and(|condition| {
+                    self.watchlist.read().get(&condition).is_some_and(|entry| {
+                        entry.tracked.values().any(|tracked| {
+                            tracked.instrument_id == id
+                                && (tracked.has_data_subscription
+                                    || !tracked.open_position_ids.is_empty())
+                        })
+                    })
+                }))
     }
 
     pub(crate) fn status_subscriptions(&self) -> &Arc<DashSet<InstrumentId>> {
