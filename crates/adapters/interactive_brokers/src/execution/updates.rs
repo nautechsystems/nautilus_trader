@@ -154,12 +154,11 @@ impl InteractiveBrokersExecutionClient {
 
         match correlation {
             OrderCorrelation::Tracked { order_id, context } => {
-                if exec_data.execution.perm_id > 0 {
-                    if let Some(order) = orders.lock()?.order_mut(order_id) {
-                        if order.perm_id == 0 {
-                            order.perm_id = exec_data.execution.perm_id;
-                        }
-                    }
+                if exec_data.execution.perm_id > 0
+                    && let Some(order) = orders.lock()?.order_mut(order_id)
+                    && order.perm_id == 0
+                {
+                    order.perm_id = exec_data.execution.perm_id;
                 }
 
                 let client_order_id = context.client_order_id;

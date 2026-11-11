@@ -710,11 +710,10 @@ impl HistoricalBarCompletion {
         }
 
         let mut completed = Vec::new();
-
-        if let Some(pending) = self.pending.take() {
-            if pending.ts_event < bar.ts_event {
-                completed.push(pending);
-            }
+        if let Some(pending) = self.pending.take()
+            && pending.ts_event < bar.ts_event
+        {
+            completed.push(pending);
         }
 
         if bar.ts_event <= now {
@@ -4187,7 +4186,7 @@ mod tests {
         let instrument_id = instrument_id();
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         assert!(matches!(
-            send_quote_tick(None, &sender.clone().into(), instrument_id),
+            send_quote_tick(None, &sender.into(), instrument_id),
             StreamAction::Continue
         ));
     }
