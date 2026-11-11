@@ -128,7 +128,7 @@ fuzz_target!(|data: &[u8]| {
         );
     }
 
-    let mut zero = fill.clone();
+    let mut zero = fill;
     zero.count_fp = FixedPoint(Decimal::ZERO);
     assert!(
         fill_report(&zero, &instrument, account, &source, ts).is_err(),

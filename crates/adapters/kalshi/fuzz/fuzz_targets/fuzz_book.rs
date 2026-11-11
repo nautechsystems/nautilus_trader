@@ -457,7 +457,7 @@ fn level_probe(op: u8, index: usize, book: &PublishedBook) -> LevelProbe {
 }
 
 fn bid_probe(book: &PublishedBook, cross: bool) -> (Decimal, bool, OrderSide, Option<Decimal>) {
-    let Some((ask, _)) = book.asks.first_key_value().map(|(price, _)| (*price, ())) else {
+    let Some((ask, ())) = book.asks.first_key_value().map(|(price, _)| (*price, ())) else {
         let price = Decimal::new(1, 2);
         return (price, false, OrderSide::Buy, book.bids.get(&price).copied());
     };
@@ -488,7 +488,7 @@ fn bid_probe(book: &PublishedBook, cross: bool) -> (Decimal, bool, OrderSide, Op
 }
 
 fn ask_probe(book: &PublishedBook, cross: bool) -> (Decimal, bool, OrderSide, Option<Decimal>) {
-    let Some((bid, _)) = book.bids.last_key_value().map(|(price, _)| (*price, ())) else {
+    let Some((bid, ())) = book.bids.last_key_value().map(|(price, _)| (*price, ())) else {
         let price = Decimal::new(99, 2);
 
         return (
