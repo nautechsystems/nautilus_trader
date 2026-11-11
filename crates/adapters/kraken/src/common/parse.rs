@@ -1001,15 +1001,22 @@ pub fn parse_fill_report(
     })
 }
 
-/// Returns the time in force and post-only flag for a Kraken futures order type: `ioc` is `IOC`,
-/// `post` is post-only `GTC`, and any other type defaults to `GTC` and not post-only.
+/// Returns the time in force and post-only flag the adapter reports for a Kraken futures order
+/// type: `ioc` is `IOC`, `post` is post-only `GTC`, and every other type is reported as `GTC` and
+/// not post-only.
 pub(crate) fn parse_futures_order_type_time_in_force(
     order_type: KrakenFuturesOrderType,
 ) -> (TimeInForce, bool) {
     match order_type {
         KrakenFuturesOrderType::Ioc => (TimeInForce::Ioc, false),
         KrakenFuturesOrderType::Post => (TimeInForce::Gtc, true),
-        _ => (TimeInForce::Gtc, false),
+        KrakenFuturesOrderType::Limit
+        | KrakenFuturesOrderType::Market
+        | KrakenFuturesOrderType::Stop
+        | KrakenFuturesOrderType::StopLower
+        | KrakenFuturesOrderType::TakeProfit
+        | KrakenFuturesOrderType::StopLoss
+        | KrakenFuturesOrderType::Unknown => (TimeInForce::Gtc, false),
     }
 }
 
@@ -2527,6 +2534,10 @@ mod tests {
     #[case::post(KrakenFuturesOrderType::Post, TimeInForce::Gtc, true)]
     #[case::stop(KrakenFuturesOrderType::StopLower, TimeInForce::Gtc, false)]
     #[case::take_profit(KrakenFuturesOrderType::TakeProfit, TimeInForce::Gtc, false)]
+    #[case::market(KrakenFuturesOrderType::Market, TimeInForce::Gtc, false)]
+    #[case::stp(KrakenFuturesOrderType::Stop, TimeInForce::Gtc, false)]
+    #[case::stop_loss(KrakenFuturesOrderType::StopLoss, TimeInForce::Gtc, false)]
+    #[case::unknown(KrakenFuturesOrderType::Unknown, TimeInForce::Gtc, false)]
     fn test_parse_futures_order_status_report_time_in_force(
         #[case] order_type: KrakenFuturesOrderType,
         #[case] time_in_force: TimeInForce,

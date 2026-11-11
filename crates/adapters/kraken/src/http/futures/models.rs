@@ -925,7 +925,18 @@ impl FuturesOrderHistoryResponse {
                     }
                     KrakenFuturesHistoryOrderType::FillOrKill => (TimeInForce::Fok, false),
                     KrakenFuturesHistoryOrderType::Post => (TimeInForce::Gtc, true),
-                    _ => (TimeInForce::Gtc, false),
+                    KrakenFuturesHistoryOrderType::Limit
+                    | KrakenFuturesHistoryOrderType::Market
+                    | KrakenFuturesHistoryOrderType::Stop
+                    | KrakenFuturesHistoryOrderType::Liquidation
+                    | KrakenFuturesHistoryOrderType::PartialLiquidation
+                    | KrakenFuturesHistoryOrderType::CoveredLiquidation
+                    | KrakenFuturesHistoryOrderType::Assignment
+                    | KrakenFuturesHistoryOrderType::HedgeAssignment
+                    | KrakenFuturesHistoryOrderType::Unwind
+                    | KrakenFuturesHistoryOrderType::Block
+                    | KrakenFuturesHistoryOrderType::Rfq
+                    | KrakenFuturesHistoryOrderType::Unknown => (TimeInForce::Gtc, false),
                 };
 
                 Some(FuturesOrderEventWrapper {
