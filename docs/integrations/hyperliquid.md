@@ -2025,6 +2025,11 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `update_instruments_interval_mins`       | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                               |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                         |
 
+For `request_instrument` and `request_instruments`, `http_timeout_secs` also bounds the entire
+request, including time waiting for another instrument refresh. Failed refreshes, missing requested
+instruments, timeouts, and client shutdown produce a failed completion with the original request ID.
+Partial metadata loads retain their existing best-effort behavior.
+
 ### Execution client configuration options
 
 | Option                          | Default   | Description                                                                                                                                |
