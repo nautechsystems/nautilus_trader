@@ -9906,6 +9906,47 @@ async fn test_spot_ambiguous_modify_failure_does_not_emit_modify_rejected() {
 
 #[rstest]
 #[tokio::test]
+async fn test_spot_modify_order_by_client_id_alone_succeeds() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::Success,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-modify-no-venue-id-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    let cmd = ModifyOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        None, // Amending by client_order_id alone (no venue_order_id)
+        Some(Quantity::from("0.2")),
+        Some(Price::from("49000")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_futures_structured_modify_rejection_emits_modify_rejected() {
     let (client, mut rx, cache, state) =
         connected_client_with_command_responses(CommandResponses {
