@@ -26,6 +26,7 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid import hyperliquid_resolve_execution_account_address
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -163,3 +164,50 @@ def test_hyperliquid_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatc
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True
     assert captured["run_called"] is True
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_execution_product_scope_defaults(explicit_none: bool) -> None:
+    """
+    Omitted and None scopes preserve all execution products.
+    """
+    config = (
+        HyperliquidExecutionClientConfig(product_types=None)
+        if explicit_none
+        else HyperliquidExecutionClientConfig()
+    )
+    assert config.product_types == [
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.SPOT,
+        HyperliquidProductType.OUTCOME,
+    ]
+
+
+@pytest.mark.parametrize(
+    "product",
+    [HyperliquidProductType.PERP, HyperliquidProductType.SPOT, HyperliquidProductType.OUTCOME],
+)
+def test_execution_product_scope(product: HyperliquidProductType) -> None:
+    """
+    Preserve an explicit product scope at the Python boundary.
+    """
+    config = HyperliquidExecutionClientConfig(product_types=[product])
+    assert config.product_types == [product]
+
+
+def test_live_node_builder_rejects_empty_execution_product_scope() -> None:
+    """
+    Reject an empty scope through the Python execution factory.
+    """
+    builder = LiveNode.builder(
+        "HYPERLIQUID-EMPTY-SCOPE-PYTEST-001",
+        TraderId.from_str("TESTER-001"),
+        Environment.LIVE,
+    ).add_exec_client(
+        None,
+        HyperliquidExecutionClientFactory(),
+        HyperliquidExecutionClientConfig(private_key=SMOKE_PRIVATE_KEY, product_types=[]),
+    )
+
+    with pytest.raises(RuntimeError, match="Execution product_types must not be empty"):
+        builder.build()

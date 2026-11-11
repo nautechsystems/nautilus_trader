@@ -124,6 +124,8 @@ class HyperliquidDataClientFactory:
 @typing.final
 class HyperliquidExecutionClientConfig:
     @property
+    def product_types(self) -> list[HyperliquidProductType]: ...
+    @property
     def account_id(self) -> model.AccountId: ...
     @property
     def vault_address(self) -> str | None: ...
@@ -178,6 +180,7 @@ class HyperliquidExecutionClientConfig:
         ws_post_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         scheduled_cancel_timeout_secs: int | None = None,
+        product_types: typing.Sequence[HyperliquidProductType] | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

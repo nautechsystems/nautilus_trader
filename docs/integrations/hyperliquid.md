@@ -186,6 +186,54 @@ HIP-4 remains experimental; keep [synthetic settlement polling disabled](#settle
 All four product types load automatically at connect when their metadata is available.
 No per-product opt-in is required.
 
+### Execution product scope
+
+`HyperliquidExecutionClientConfig.product_types` limits order submissions, modifications,
+instrument-specific cancellations, queries, private execution reports, and reconciliation coverage
+independently of instrument loading and market-data subscriptions. Omit `product_types` or pass
+`None` in Python to keep execution enabled for all supported products (`PERP`, `SPOT`, and `OUTCOME`).
+HIP-3 builder-deployed perpetuals are included in `PERP`. Set a non-empty list to restrict execution
+to specific products, as in the Spot-only example below. Client construction rejects an empty list.
+
+```python
+from nautilus_trader.adapters.hyperliquid import (
+    HyperliquidExecutionClientConfig,
+    HyperliquidProductType,
+)
+
+config = HyperliquidExecutionClientConfig(
+    product_types=[HyperliquidProductType.SPOT],
+)
+```
+
+Spot and Outcome holdings share a venue endpoint but are filtered separately. Instruments outside
+the configured scope are excluded from bulk position coverage; their absence from a scoped snapshot
+is not evidence that their positions are flat. Startup and reconnect recovery use the same scope.
+The scope is fixed when the client is created.
+
+Order queries, private reports, startup recovery, and reconnect recovery use the configured scope,
+including for previously tracked orders. A Spot-only client does not recover or reconcile Perp
+orders or positions. Configure both `SPOT` and `PERP` to recover and reconcile both product families.
+Account balances and scheduled cancellation remain account-wide: product scope does not isolate
+collateral or change the venue's account-wide scheduled-cancel behavior.
+
+Before narrowing `product_types`, resolve all outstanding orders that would fall outside the new
+scope, or keep an execution client whose scope covers those orders and that remains responsible for
+managing them. For example, before switching to Spot only, cancel any open Perp orders and confirm
+their terminal status, or retain a client that covers Perp. Excluded orders can remain live at the
+venue while the narrowed client rejects their cancellation requests and ignores their execution reports.
+
+When reusing a cache with a narrower scope, set `reconciliation_instrument_ids` to match the
+instruments this node manages. This setting only limits reconciliation checks. Excluded orders retain
+their cached status when absent from scoped reports. With `open_check_open_only=False` or the fallback
+single-order query path, the execution manager can repeatedly query out-of-scope orders and consume the
+per-cycle query budget. A generic order-report coverage contract is tracked separately in
+[issue #5569](https://github.com/nautechsystems/nautilus_trader/issues/5569).
+
+Use a single execution client configured with all required products for an account. Complementary
+Spot-only and Perp-only clients for the same account do not establish independent reconciliation
+ownership; the manager can conservatively skip position reconciliation when their coverage differs.
+
 :::note
 Perpetuals are quoted and settled in their dex's collateral token: USDC for standard
 perps, and for HIP-3 dexes possibly another token such as USDH, USDE, or USDT0.

@@ -22,10 +22,11 @@ use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 
 use crate::common::{
     consts::{info_url, ws_url},
-    enums::HyperliquidEnvironment,
+    enums::{HyperliquidEnvironment, HyperliquidProductType},
 };
 
 /// Configuration for the Hyperliquid data client.
@@ -176,6 +177,10 @@ impl HyperliquidDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidExecutionClientConfig {
+    /// Products covered by order commands, private reports, and reconciliation.
+    /// Defaults to all products. Account balances remain account-wide.
+    #[builder(default = HyperliquidProductType::iter().collect())]
+    pub product_types: Vec<HyperliquidProductType>,
     /// Account identifier for the execution client.
     #[builder(default = AccountId::from("HYPERLIQUID-001"))]
     pub account_id: AccountId,
@@ -257,6 +262,7 @@ pub struct HyperliquidExecutionClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
+    product_types: Vec<HyperliquidProductType>,
     account_id: AccountId,
     vault_address: Option<String>,
     account_address: Option<String>,
@@ -284,6 +290,11 @@ impl Default for HyperliquidExecutionClientConfig {
 
 impl HyperliquidExecutionClientConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.product_types.is_empty(),
+            "Execution product_types must not be empty"
+        );
+
         if let Some(timeout_secs) = self.scheduled_cancel_timeout_secs
             && (timeout_secs < 15 || timeout_secs.checked_mul(1_000).is_none())
         {
@@ -326,6 +337,40 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_execution_product_scope_default_and_toml() {
+        let defaults = HyperliquidExecutionClientConfig::default();
+        assert_eq!(
+            defaults.product_types,
+            vec![
+                HyperliquidProductType::Perp,
+                HyperliquidProductType::Spot,
+                HyperliquidProductType::Outcome,
+            ]
+        );
+        let config: HyperliquidExecutionClientConfig =
+            toml::from_str("product_types = ['SPOT']").unwrap();
+        assert_eq!(config.product_types, vec![HyperliquidProductType::Spot]);
+        config.validate().unwrap();
+        let restored: HyperliquidExecutionClientConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored.product_types, config.product_types);
+    }
+
+    #[rstest]
+    fn test_execution_product_scope_rejects_empty() {
+        let config = HyperliquidExecutionClientConfig::builder()
+            .product_types(vec![])
+            .build();
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("must not be empty")
+        );
+    }
 
     #[rstest]
     #[case::disabled(None, true)]
