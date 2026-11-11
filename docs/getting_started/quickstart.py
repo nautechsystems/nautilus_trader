@@ -14,8 +14,6 @@
 #   line, whose Python API differs and cannot run this page.
 # - NumPy and pandas (`pip install numpy pandas`). The wheel declares no runtime
 #   dependencies, so it does not pull them in.
-#
-# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %% [markdown]
 # ## Write a strategy

@@ -2,13 +2,11 @@
 
 ## 1. Install
 
-Set up a Python 3.13 or 3.14 environment and install the package:
+Set up a Python 3.13-3.15 environment and install the package:
 
 ```bash
 pip install -U --pre nautilus_trader
 ```
-
-Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 PyPI publishes NautilusTrader 2.x as `2.0.0rcN` pre-releases. Include `--pre` until `2.0.0` is
 released. Confirm the install with:

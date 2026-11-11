@@ -21,9 +21,6 @@
 | `macOS (ARM64)`    | 1.99.1 | 3.13-3.15 |
 | `Windows (x86_64)` | 1.99.1 | 3.13-3.15 |
 
-Python 3.15 requires a [source build](docs/getting_started/installation.md#from-source)
-or a development wheel until the next PyPI release.
-
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
 - **Support**: [support@nautilustrader.io](mailto:support@nautilustrader.io)
@@ -256,7 +253,7 @@ nautilus-model = { version = "*", features = ["high-precision"] }
 
 ## Installation
 
-For PyPI binary wheels, use Python 3.14. Install [nautilus_trader](https://pypi.org/project/nautilus_trader/)
+For PyPI binary wheels, use Python 3.13-3.15. Install [nautilus_trader](https://pypi.org/project/nautilus_trader/)
 in a virtual environment to isolate dependencies.
 
 **There are two supported ways to install**:

@@ -27,7 +27,7 @@ Continuous CI coverage comes from the GitHub Actions runners we build on:
 
 On Linux, confirm your glibc version with `ldd --version` and ensure it reports 2.35 or newer before proceeding.
 
-For PyPI binary wheels, use Python 3.14. Install [nautilus_trader](https://pypi.org/project/nautilus_trader/)
+For PyPI binary wheels, use Python 3.13-3.15. Install [nautilus_trader](https://pypi.org/project/nautilus_trader/)
 in a virtual environment to isolate dependencies.
 
 **There are two supported ways to install**:
@@ -72,8 +72,7 @@ Run this command outside a NautilusTrader source checkout. The repository's
 filter out newly published wheels. Inside a source checkout, use
 [Build Python from source](#8-build-python-from-source) instead.
 
-PyPI wheels target Python 3.13-3.14.
-Python 3.15 requires a [source build](#from-source) or a development wheel until the next PyPI release.
+PyPI wheels target Python 3.13-3.15.
 Build from source when you need local Rust changes, a debug build, or a platform wheel that is not available.
 
 ### Stable 1.x wheels
@@ -400,7 +399,7 @@ development, which hides recently published wheels. Run install commands from an
 
 ### Wheel not found for your platform
 
-Check your Python version is 3.13-3.14 for PyPI wheels or 3.13-3.15 for development wheels,
+Check your Python version is 3.13-3.15 for PyPI or development wheels,
 and your platform is listed at the top of this page. On Linux, `ldd --version` must report glibc 2.35 or newer. Otherwise
 [build from source](#from-source).
 
