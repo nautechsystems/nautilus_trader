@@ -316,10 +316,11 @@ impl DataSubscriptions {
                     || self.active_delta_subs.contains(&instrument_id)
                     || self.active_trade_subs.contains(&instrument_id)));
         let is_open = self.ws_open_tokens.contains(&token_id);
+        // Box wire operations after locking so queued reconciliation futures stay small.
         if wants_subscribe && !is_open {
             self.ws_open_tokens.insert(token_id);
 
-            if let Err(e) = self.ws_client.subscribe_market(vec![token_id_str]).await {
+            if let Err(e) = Box::pin(self.ws_client.subscribe_market(vec![token_id_str])).await {
                 log::error!("Failed to subscribe to market data: {e:?}");
                 // Roll back tracked WS state so a retry can take effect.
                 self.ws_open_tokens.remove(&token_id);
@@ -327,7 +328,7 @@ impl DataSubscriptions {
         } else if !wants_subscribe && is_open {
             self.ws_open_tokens.remove(&token_id);
 
-            if let Err(e) = self.ws_client.unsubscribe_market(vec![token_id_str]).await {
+            if let Err(e) = Box::pin(self.ws_client.unsubscribe_market(vec![token_id_str])).await {
                 log::error!("Failed to unsubscribe from market data: {e:?}");
             }
         }
@@ -533,6 +534,13 @@ mod tests {
 
     fn token_ustr() -> Ustr {
         Ustr::from("0xCOND-0xTOKEN")
+    }
+
+    #[rstest]
+    fn reconciliation_future_stays_small() {
+        let subscriptions = make_subscriptions(make_handle().0);
+        let size = std::mem::size_of_val(&subscriptions.reconcile(instrument_id(), String::new()));
+        assert!(size < 2048, "Reconciliation future is {size} bytes");
     }
 
     fn resolution_watch(instrument_id: InstrumentId) -> Arc<ResolveWatchlist> {
