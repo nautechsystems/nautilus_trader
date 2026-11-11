@@ -2,6 +2,11 @@
 
 Released on TBD (UTC).
 
+### Fixes
+
+- Fixed trailing stops updating while markets are not open or from stale reopen prices
+- Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
+
 ### Internal Improvements
 
 - Upgraded `cargo-hack` tool to v0.6.46

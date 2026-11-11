@@ -19,6 +19,7 @@ mod fill_models;
 mod order_submission;
 mod position_sync;
 mod spread;
+mod trailing;
 
 use std::{
     cell::RefCell,
@@ -6004,12 +6005,16 @@ enum TrailingStopActivation {
 // modify validates its new trigger like a stop (SELL in market when bid <= trigger). While its
 // activation price is pending it cannot trigger, so the trigger is not checked, as on submit
 #[rstest]
+#[case((OrderType::TrailingStopMarket, OrderSide::Sell))]
+#[case((OrderType::TrailingStopMarket, OrderSide::Buy))]
+#[case((OrderType::TrailingStopLimit, OrderSide::Sell))]
+#[case((OrderType::TrailingStopLimit, OrderSide::Buy))]
 fn test_modify_trailing_stop_validates_trigger_with_stop_semantics(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
-    #[values(OrderType::TrailingStopMarket, OrderType::TrailingStopLimit)] order_type: OrderType,
-    #[values(OrderSide::Sell, OrderSide::Buy)] side: OrderSide,
+    #[case] order: (OrderType, OrderSide),
+    #[values(false, true)] reopened: bool,
     #[values(
         TrailingStopActivation::Activated,
         TrailingStopActivation::ActivatesAtMarket,
@@ -6023,6 +6028,7 @@ fn test_modify_trailing_stop_validates_trigger_with_stop_semantics(
     )]
     modify: TrailingStopModify,
 ) {
+    let (order_type, side) = order;
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
@@ -6076,6 +6082,12 @@ fn test_modify_trailing_stop_validates_trigger_with_stop_semantics(
         trailing_stop_is_activated(&resting),
         matches!(activation, TrailingStopActivation::Activated)
     );
+
+    if reopened {
+        engine_l2.process_status(MarketStatusAction::Close);
+        engine_l2.process_status(MarketStatusAction::Trading);
+    }
+
     clear_order_event_handler_messages(&order_event_handler);
 
     let (quantity, trigger_price) = match modify {
@@ -6257,16 +6269,16 @@ enum TrailingStopSubmitScenario {
 }
 
 #[rstest]
-#[case(OrderType::TrailingStopMarket, OrderSide::Sell)]
-#[case(OrderType::TrailingStopMarket, OrderSide::Buy)]
-#[case(OrderType::TrailingStopLimit, OrderSide::Sell)]
-#[case(OrderType::TrailingStopLimit, OrderSide::Buy)]
+#[case((OrderType::TrailingStopMarket, OrderSide::Sell))]
+#[case((OrderType::TrailingStopMarket, OrderSide::Buy))]
+#[case((OrderType::TrailingStopLimit, OrderSide::Sell))]
+#[case((OrderType::TrailingStopLimit, OrderSide::Buy))]
 fn test_trailing_stop_in_market_submission_policy(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
-    #[case] order_type: OrderType,
-    #[case] side: OrderSide,
+    #[case] order: (OrderType, OrderSide),
+    #[values(false, true)] reopened: bool,
     #[values(true, false)] reject_stop_orders: bool,
     #[values(
         TrailingStopSubmitScenario::ActivationMatched,
@@ -6277,6 +6289,8 @@ fn test_trailing_stop_in_market_submission_policy(
     )]
     scenario: TrailingStopSubmitScenario,
 ) {
+    let (order_type, side) = order;
+
     let config = OrderMatchingEngineConfig {
         reject_stop_orders,
         ..Default::default()
@@ -6289,6 +6303,11 @@ fn test_trailing_stop_in_market_submission_policy(
         Price::from("1499.00"),
         Price::from("1500.00"),
     );
+
+    if reopened {
+        engine_l2.process_status(MarketStatusAction::Close);
+        engine_l2.process_status(MarketStatusAction::Trading);
+    }
 
     let (activation_in, activation_out, trigger_in, trigger_out) = match side {
         OrderSide::Sell => (
@@ -6323,8 +6342,9 @@ fn test_trailing_stop_in_market_submission_policy(
         _ => None,
     };
 
-    let expect_activated =
-        matches!(scenario, TrailingStopSubmitScenario::ActivationMatched) && !reject_stop_orders;
+    let expect_activated = matches!(scenario, TrailingStopSubmitScenario::ActivationMatched)
+        && !reject_stop_orders
+        && !reopened;
 
     for (idx, client_order_id) in [
         ClientOrderId::from("O-19700101-000000-001-001-1"),
@@ -16781,9 +16801,14 @@ fn test_gtd_expiry_and_trailing_recompute_in_same_iterate(
 // nothing eligible for the inline restore; the end-of-iterate fallback must
 // pull `core.last` back so the fill override doesn't leak.
 #[rstest]
+#[case::single(Quantity::from("1.000"), vec!["1480.00"])]
+#[case::multiple(Quantity::from("2.000"), vec!["1480.00", "1485.00"])]
 fn test_fallback_target_restore_preserves_core_last_after_maker_fill(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    #[case] quantity: Quantity,
+    #[case] ask_prices: Vec<&str>,
 ) {
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -16811,25 +16836,59 @@ fn test_fallback_target_restore_preserves_core_last_after_maker_fill(
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .price(Price::from("1490.00"))
-        .quantity(Quantity::from("1.000"))
+        .quantity(quantity)
         .client_order_id(limit_id)
         .submit(true)
         .build();
     engine_l2.process_order(&mut limit, account_id);
 
-    // Crossing SELL at 1480 fires a Maker fill on the BUY at 1490, which
-    // closes the only order. Inline restore is skipped (closed); only the
-    // fallback can pull `core.last` back.
-    let crossing = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
-        .book_action(BookAction::Add)
-        .book_order(BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1480.00"),
-            Quantity::from("1.000"),
-            2,
-        ))
-        .build();
-    engine_l2.process_order_book_delta(&crossing).unwrap();
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let deltas = ask_prices
+        .iter()
+        .enumerate()
+        .map(|(index, price)| {
+            OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+                .book_action(BookAction::Add)
+                .book_order(BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(*price),
+                    Quantity::from("1.000"),
+                    index as u64 + 2,
+                ))
+                .build()
+        })
+        .collect();
+
+    engine_l2
+        .process_order_book_deltas(&OrderBookDeltas::new(instrument_eth_usdt.id(), deltas))
+        .unwrap();
+
+    let fills: Vec<_> = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(event) => Some((
+                event.client_order_id,
+                event.last_px,
+                event.last_qty,
+                event.liquidity_side,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![
+            (
+                limit_id,
+                Price::from("1490.00"),
+                Quantity::from("1.000"),
+                LiquiditySide::Maker,
+            );
+            ask_prices.len()
+        ]
+    );
 
     assert_eq!(
         engine_l2.get_core().last,
