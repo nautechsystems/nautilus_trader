@@ -318,6 +318,10 @@ mod tests {
     #[case("SimpleHTTPServer", "simple_http_server")]
     #[case("version2Release", "version2_release")]
     #[case("ALLCAPS", "allcaps")]
+    #[case("__Bar__", "bar")]
+    #[case("éXMLParser", "é_xml_parser")]
+    #[case("é123DEf", "é123_d_ef")]
+    #[case("\u{4E2D}XMLParser", "\u{4E2D}xml_parser")]
     #[case("é--x", "é_x")]
     #[case("nautilus_model::data::bar::Bar", "nautilus_model_data_bar_bar")] // nautilus-import-ok
     fn test_to_snake_case(#[case] input: &str, #[case] expected: &str) {
