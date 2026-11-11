@@ -1209,9 +1209,10 @@ impl Cache {
             !position
                 .instrument_class
                 .divides_notional_by_price(position.is_inverse)
-                && self
-                    .instrument(instrument_id)
-                    .is_none_or(Instrument::allows_negative_price)
+                && self.instrument(instrument_id).map_or_else(
+                    || position.instrument_class.allows_negative_price(),
+                    Instrument::allows_negative_price,
+                )
         };
         let is_valid = |price: &Price| {
             !price.is_undefined()

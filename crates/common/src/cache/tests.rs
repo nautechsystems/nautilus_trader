@@ -1658,6 +1658,116 @@ fn test_calculate_unrealized_pnl_valid_zero_quote_for_inverse_option_with_cached
 }
 
 #[rstest]
+fn test_calculate_unrealized_pnl_skips_non_positive_mark_for_currency_pair(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[values(false, true)] cache_instrument: bool,
+    #[values("0.00000", "-1.00000")] mark_str: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    if cache_instrument {
+        cache.add_instrument(instrument.clone()).unwrap();
+    }
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-MARK")),
+        Some(PositionId::new("P-AUDUSD-MARK")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let invalid_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from(mark_str),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_mark_price(invalid_mark).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-AUDUSD-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_non_positive_quote_without_cached_instrument(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[values("0.00000", "-1.00000")] bid_str: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-QUOTE")),
+        Some(PositionId::new("P-AUDUSD-QUOTE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let invalid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid_str),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_quote(invalid_quote).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-AUDUSD-Q-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+}
+
+#[rstest]
 fn test_build_index_when_empty(mut cache: Cache) {
     cache.build_index();
 }
