@@ -35,8 +35,8 @@ use rstest::rstest;
 use serde_json::Value;
 
 use super::{
-    dst::start_peer,
-    polling::{connected_selection, timed_peer, wait_for_retry_backoff},
+    dst::{next_request, start_peer, start_peer_gated, wait_for_condition, wait_for_http_idle},
+    polling::{capture_diagnostics, connected_selection, timed_peer, wait_for_retry_backoff},
 };
 
 const EXCHANGES: &str = include_str!("../../test_data/exchanges.json");
@@ -349,18 +349,17 @@ async fn reconnect_fetches_a_new_snapshot_even_if_unchanged_or_older(
 async fn unsubscribe_or_disconnect_cancels_inflight_book_without_late_publication(
     #[case] disconnect: bool,
 ) {
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, BOOK, Duration::from_secs(2)),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![(200, "", EXCHANGES), (200, "", MARKET), (200, "", BOOK)],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
     subscribe(&mut client, false, BookType::L2_MBP, None).unwrap();
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(next_request(&mut observed).await, expected);
     }
 
     if disconnect {
@@ -370,12 +369,8 @@ async fn unsubscribe_or_disconnect_cancels_inflight_book_without_late_publicatio
         unsubscribe(&mut client, false);
     }
 
-    assert!(
-        time::timeout(Duration::from_millis(350), receiver.recv())
-            .await
-            .is_err()
-    );
-    client.disconnect().await.unwrap();
+    wait_for_http_idle(&client).await;
+    release.send(()).unwrap();
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
             .await
@@ -385,32 +380,37 @@ async fn unsubscribe_or_disconnect_cancels_inflight_book_without_late_publicatio
         3
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn partial_unsubscribe_drops_old_request_before_starting_fresh_remaining_feed() {
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, BOOK, Duration::from_secs(2)),
-        (200, REPLACEMENT, Duration::ZERO),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", BOOK),
+            (200, "", REPLACEMENT),
+        ],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
     subscribe(&mut client, false, BookType::L2_MBP, Some(1)).unwrap();
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(next_request(&mut observed).await, expected);
     }
 
     unsubscribe(&mut client, false);
-    let (index, _) = time::timeout(Duration::from_secs(1), observed.recv())
+    let index = time::timeout(Duration::from_secs(5), observed.recv())
         .await
         .expect("fresh request must precede stale response")
         .unwrap();
     let data = event(&mut receiver).await;
+    release.send(()).unwrap();
     client.disconnect().await.unwrap();
     assert_eq!(index, 3);
     assert_deltas(id(), data, &[("0.2500", "6.000006")], &[], (3, 4));
@@ -437,11 +437,10 @@ async fn endpoint_churn_does_not_cancel_the_other_inflight_endpoint(#[case] book
         include_str!("../../test_data/poll-activity.json")
     };
 
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, source, Duration::from_millis(200)),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![(200, "", EXCHANGES), (200, "", MARKET), (200, "", source)],
+        2,
+    )
     .await;
     let (mut client, mut receiver) =
         connected_selection(http, vec![MARKET_ID.into()], 86_400_000).await;
@@ -453,7 +452,7 @@ async fn endpoint_churn_does_not_cancel_the_other_inflight_endpoint(#[case] book
     }
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(next_request(&mut observed).await, expected);
     }
 
     for _ in 0..8 {
@@ -464,10 +463,9 @@ async fn endpoint_churn_does_not_cancel_the_other_inflight_endpoint(#[case] book
             subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
             unsubscribe(&mut client, true);
         }
-
-        time::sleep(Duration::from_millis(10)).await;
     }
 
+    release.send(()).unwrap();
     let first = event(&mut receiver).await;
     if book_inflight {
         assert_deltas(id(), first, BIDS, ASKS, (1, 2));
@@ -562,6 +560,8 @@ async fn activity_and_book_endpoints_poll_serially_by_independent_due_times() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn book_attempt_budget_stops_wire_work_and_reconnect_restores_intent() {
+    let logs = capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
     let (peer, mut http, mut observed) = timed_peer(vec![
         (200, EXCHANGES, Duration::ZERO),
         (200, MARKET, Duration::ZERO),
@@ -575,7 +575,16 @@ async fn book_attempt_budget_stops_wire_work_and_reconnect_restores_intent() {
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
     let first = event(&mut receiver).await;
-    time::sleep(Duration::from_millis(350)).await;
+    let expected_error = format!(
+        "FinFeed Book poll failed for {}: FinFeed local attempt budget exhausted",
+        id()
+    );
+    wait_for_condition(|| {
+        logs.lock().unwrap()[first_message..]
+            .iter()
+            .any(|(_, message)| message == &expected_error)
+    })
+    .await;
 
     for expected in 0..3 {
         assert_eq!(observed.try_recv().unwrap().0, expected);
@@ -709,6 +718,8 @@ async fn transient_errors_and_invalid_wire_book_recover_on_later_poll() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn permanent_book_error_stays_suspended_through_partial_unsubscribe(#[case] status: u16) {
+    let logs = capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
     let (peer, http, mut observed) = timed_peer(vec![
         (200, EXCHANGES, Duration::ZERO),
         (200, MARKET, Duration::ZERO),
@@ -726,9 +737,23 @@ async fn permanent_book_error_stays_suspended_through_partial_unsubscribe(#[case
         assert_eq!(observed.recv().await.unwrap().0, expected);
     }
 
-    time::sleep(Duration::from_millis(350)).await;
+    let expected_error = format!(
+        "FinFeed Book poll failed for {}: FinFeed HTTP status {status}",
+        id()
+    );
+    wait_for_condition(|| {
+        logs.lock().unwrap()[first_message..]
+            .iter()
+            .any(|(_, message)| message == &expected_error)
+    })
+    .await;
+
     unsubscribe(&mut client, false);
-    time::sleep(Duration::from_millis(350)).await;
+    assert!(
+        time::timeout(Duration::from_millis(350), observed.recv())
+            .await
+            .is_err()
+    );
     assert!(observed.try_recv().is_err());
     assert!(receiver.try_recv().is_err());
     client.disconnect().await.unwrap();
@@ -908,12 +933,7 @@ async fn reset_clears_book_intent_before_reconnect() {
         receiver.try_recv().unwrap(),
         DataEvent::Data(Data::Instrument(_))
     ));
-    assert!(
-        time::timeout(Duration::from_millis(350), receiver.recv())
-            .await
-            .is_err()
-    );
-    client.disconnect().await.unwrap();
+
     assert_deltas(id(), data, BIDS, ASKS, (1, 2));
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
@@ -924,6 +944,7 @@ async fn reset_clears_book_intent_before_reconnect() {
         5
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -944,8 +965,7 @@ async fn unsubscribe_cancels_book_retry_backoff_without_a_second_attempt() {
 
     wait_for_retry_backoff(&client).await;
     unsubscribe(&mut client, true);
-    time::sleep(Duration::from_millis(1_050)).await;
-    client.disconnect().await.unwrap();
+
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
             .await
@@ -955,6 +975,7 @@ async fn unsubscribe_cancels_book_retry_backoff_without_a_second_attempt() {
         3
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 fn subscribe(

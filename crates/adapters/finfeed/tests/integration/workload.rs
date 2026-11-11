@@ -16,6 +16,11 @@
 //! Attempt budgets, bootstrap deadlines, and polling costs across collection sizes.
 
 use std::{collections::BTreeMap, time::Duration};
+#[cfg(all(feature = "simulation", madsim))]
+use std::{
+    future::{Future, poll_fn},
+    task::Poll,
+};
 
 #[cfg(all(feature = "simulation", madsim))]
 use nautilus_common::messages::DataEvent;
@@ -89,15 +94,16 @@ async fn day_long_allowance_exhaustion_and_cancellation(#[case] cancel: bool) {
     }
 
     if cancel {
-        let pending = task::spawn({
-            let client = std::sync::Arc::clone(&client);
-            async move { client.get_exchanges().await }
-        });
+        let mut pending = Box::pin(client.get_exchanges());
+        poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
 
-        time::sleep(Duration::from_secs(1)).await;
         client.cancel();
         assert!(matches!(
-            pending.await.unwrap(),
+            pending.await,
             Err(Error::Retry(RetryError::Canceled))
         ));
         assert_eq!(client.attempts_remaining(), 1);

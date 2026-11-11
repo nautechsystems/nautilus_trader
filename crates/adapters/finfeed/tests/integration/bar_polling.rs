@@ -39,7 +39,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
 use super::{
-    dst::{bind_peer, read_request, start_peer},
+    dst::{bind_peer, read_request, start_peer, wait_for_condition, wait_for_http_idle},
     polling::{connected_selection, timed_peer},
 };
 
@@ -55,6 +55,8 @@ async fn public_bars_start_at_subscribe_and_restore_without_duplicates() {
     #[cfg(all(feature = "simulation", madsim))]
     reset_clock();
 
+    let logs = super::polling::capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
@@ -127,7 +129,15 @@ async fn public_bars_start_at_subscribe_and_restore_without_duplicates() {
             .unwrap();
     }
 
-    time::sleep(Duration::from_millis(50)).await;
+    wait_for_condition(|| {
+        logs.lock().unwrap()[first_message..]
+            .iter()
+            .filter(|(_, message)| message.starts_with("FinFeed OHLCV received for "))
+            .count()
+            == 3
+    })
+    .await;
+
     client.unsubscribe_bars(&unsubscribe(bar_type)).unwrap();
     client.disconnect().await.unwrap();
     let requests = time::timeout(Duration::from_secs(5), peer)
@@ -182,6 +192,7 @@ async fn bar_unsubscribe_and_disconnect_cancel_delayed_latest(#[case] action: &s
     };
 
     let (ready, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let (release, released) = tokio::sync::oneshot::channel();
 
     let peer = task::spawn(async move {
         let mut end = 0;
@@ -210,7 +221,7 @@ async fn bar_unsubscribe_and_disconnect_cancel_delayed_latest(#[case] action: &s
         let (mut stream, _) = listener.accept().await.unwrap();
         let request = read_request(&mut stream).await;
         ready.send(()).unwrap();
-        time::sleep(Duration::from_millis(200)).await;
+        released.await.unwrap();
         let body = rows_at(end);
         let _ = stream
             .write_all(
@@ -239,11 +250,22 @@ async fn bar_unsubscribe_and_disconnect_cancel_delayed_latest(#[case] action: &s
         _ => unreachable!(),
     }
 
+    if action != "publish" {
+        wait_for_http_idle(&client).await;
+    }
+
+    release.send(()).unwrap();
+
+    let actual = if action == "publish" {
+        Some(bar(&mut receiver).await)
+    } else {
+        None
+    };
+
     let (request, end) = time::timeout(Duration::from_secs(5), peer)
         .await
         .unwrap()
         .unwrap();
-    time::sleep(Duration::from_millis(250)).await;
     client.disconnect().await.unwrap();
     assert_eq!(
         request.lines().next().unwrap(),
@@ -263,11 +285,7 @@ async fn bar_unsubscribe_and_disconnect_cancel_delayed_latest(#[case] action: &s
         )
         .unwrap();
 
-        let DataEvent::Data(Data::Bar(actual)) = receiver.try_recv().unwrap() else {
-            panic!("expected bar")
-        };
-
-        assert_eq!(actual, expected);
+        assert_eq!(actual.unwrap(), expected);
     }
 
     assert!(receiver.try_recv().is_err());
@@ -424,6 +442,7 @@ async fn canceling_catalog_resolution_keeps_the_quote_scope_active() {
     };
 
     let (ready, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let (release, released) = tokio::sync::oneshot::channel();
 
     let peer = task::spawn(async move {
         let mut requests = Vec::new();
@@ -447,7 +466,7 @@ async fn canceling_catalog_resolution_keeps_the_quote_scope_active() {
         let (mut stream, _) = listener.accept().await.unwrap();
         requests.push(read_request(&mut stream).await);
         ready.send(()).unwrap();
-        time::sleep(Duration::from_millis(200)).await;
+        released.await.unwrap();
         let _ = stream
             .write_all(
                 format!(
@@ -493,6 +512,7 @@ async fn canceling_catalog_resolution_keeps_the_quote_scope_active() {
         ))
         .unwrap();
     client.unsubscribe_bars(&unsubscribe(bar_type())).unwrap();
+    release.send(()).unwrap();
     let event = time::timeout(Duration::from_secs(5), receiver.recv())
         .await
         .unwrap()
@@ -665,7 +685,6 @@ async fn bar_poll_limit_leaves_a_slot_for_the_closed_period(#[case] limit: u32) 
         }
 
         let (mut stream, _) = listener.accept().await.unwrap();
-        time::sleep(Duration::from_millis(200)).await;
         requests.push(read_request(&mut stream).await);
         let now = get_atomic_clock_realtime().get_time_ns().as_u64() / 100 * 100;
         let running: Value = serde_json::from_str(&rows_at(now + 1_000_000_000)).unwrap();

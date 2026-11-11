@@ -15,7 +15,13 @@
 
 //! REST transport, discovery, and instrument definitions under deterministic simulation.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    fmt::Debug,
+    future::{Future, poll_fn},
+    sync::Arc,
+    task::Poll,
+    time::Duration,
+};
 
 use jiff::Timestamp;
 use nautilus_core::{UnixNanos, string::secret::SecretString};
@@ -48,6 +54,7 @@ use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const EXCHANGES: &str = include_str!("../../test_data/exchanges.json");
+pub(super) const POLL_SILENCE: Duration = Duration::from_millis(1_200);
 
 #[cfg(all(feature = "simulation", madsim))]
 static PEER_PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(18896);
@@ -66,38 +73,8 @@ pub(super) async fn start_peer_delayed(
     responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
     delay: Duration,
 ) -> (task::JoinHandle<Vec<String>>, FinFeedHttpConfig) {
-    let (listener, address) = bind_peer().await;
-
-    let config = FinFeedHttpConfig::builder()
-        .base_url(format!("http://{address}/v1/"))
-        .min_request_interval_ms(1)
-        .retry(RetryConfig {
-            initial_delay_ms: 10,
-            max_delay_ms: 100,
-            jitter_ms: 0,
-            max_retries: 2,
-            operation_timeout_ms: Some(2_000),
-            max_elapsed_ms: Some(5_000),
-            ..Default::default()
-        })
-        .build();
-
-    let task = task::spawn(async move {
-        let mut requests = Vec::new();
-
-        for (status, headers, body) in responses {
-            let body = body.into();
-            let (mut stream, _) = listener.accept().await.unwrap();
-            requests.push(read_request(&mut stream).await);
-            time::sleep(delay).await;
-            stream.write_all(format!("HTTP/1.1 {status} Response\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}", body.len()).as_bytes()).await.unwrap();
-            stream.flush().await.unwrap();
-        }
-
-        requests
-    });
-
-    (task, config)
+    let (peer, config, _) = start_peer_waiting(responses, move |_| time::sleep(delay), false).await;
+    (peer, config)
 }
 
 pub(super) fn assert_request(request: &str, target: &str, config: &FinFeedHttpConfig) {
@@ -794,7 +771,7 @@ async fn permanent_status_redirect_and_decode_errors_never_retry() {
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn budget_cancellation_and_elapsed_deadline_bound_admission() {
+async fn budget_and_cancellation_bound_admission() {
     let (peer, mut config) = start_peer(vec![(200, "", EXCHANGES)]).await;
     config.attempt_budget = 1;
     let client = new_client(config);
@@ -810,13 +787,31 @@ async fn budget_cancellation_and_elapsed_deadline_bound_admission() {
     ));
     assert_eq!(client.attempts_remaining(), 0);
     assert_eq!(peer.await.unwrap().len(), 1);
+}
 
-    let (peer, mut config) = start_peer(vec![(200, "", EXCHANGES)]).await;
-    config.min_request_interval_ms = 200;
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+async fn elapsed_deadline_and_cancellation_bound_local_admission() {
+    let mut config = FinFeedHttpConfig {
+        base_url: "http://127.0.0.1:1/v1/".into(),
+        min_request_interval_ms: 200,
+        ..Default::default()
+    };
+
     config.retry.max_elapsed_ms = Some(40);
     config.retry.operation_timeout_ms = Some(1_000);
     let client = Arc::new(new_client(config));
-    client.get_exchanges().await.unwrap();
+    let mut first = Box::pin(client.get_exchanges());
+    poll_fn(|cx| {
+        assert!(first.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+
+    drop(first);
     let start = time::Instant::now();
     assert!(matches!(
         client.get_exchanges().await,
@@ -824,17 +819,16 @@ async fn budget_cancellation_and_elapsed_deadline_bound_admission() {
     ));
     assert!(start.elapsed() >= Duration::from_millis(40));
     assert_eq!(client.attempts_remaining(), 99);
-    assert_eq!(peer.await.unwrap().len(), 1);
+    let mut pending = Box::pin(client.get_exchanges());
+    poll_fn(|cx| {
+        assert!(pending.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
 
-    let pending = task::spawn({
-        let client = Arc::clone(&client);
-        async move { client.get_exchanges().await }
-    });
-
-    time::sleep(Duration::from_millis(5)).await;
     client.cancel();
     assert!(matches!(
-        pending.await.unwrap(),
+        pending.await,
         Err(Error::Retry(RetryError::Canceled))
     ));
 }
@@ -1474,13 +1468,15 @@ async fn configured_timeouts_and_retry_count_bound_inflight_requests() {
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn cancellation_interrupts_inflight_and_retry_waits() {
     for retry_wait in [false, true] {
-        let (peer, mut config) = if retry_wait {
-            start_peer(vec![(503, "Retry-After: 3\r\n", EMPTY)]).await
+        let response = if retry_wait {
+            (503, "Retry-After: 10\r\n", EMPTY)
         } else {
-            start_peer_delayed(vec![(200, "", EXCHANGES)], Duration::from_secs(1)).await
+            (200, "", EXCHANGES)
         };
 
-        config.retry.max_elapsed_ms = Some(5_000);
+        let (peer, mut config, mut observed, release) = start_peer_gated(vec![response], 0).await;
+        config.retry.operation_timeout_ms = Some(10_000);
+        config.retry.max_elapsed_ms = Some(30_000);
         let client = Arc::new(new_client(config));
 
         let pending = task::spawn({
@@ -1488,14 +1484,31 @@ async fn cancellation_interrupts_inflight_and_retry_waits() {
             async move { client.get_exchanges().await }
         });
 
-        time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(next_request(&mut observed).await, 0);
+
+        let release = if retry_wait {
+            release.send(()).unwrap();
+            wait_for_http_idle(client.as_ref()).await;
+            None
+        } else {
+            Some(release)
+        };
+
         client.cancel();
         assert!(matches!(
-            pending.await.unwrap(),
+            time::timeout(Duration::from_secs(5), pending)
+                .await
+                .unwrap()
+                .unwrap(),
             Err(Error::Retry(RetryError::Canceled))
         ));
         assert_eq!(client.attempts_remaining(), 99);
-        peer.abort();
+
+        if let Some(release) = release {
+            release.send(()).unwrap();
+        }
+
+        peer.await.unwrap();
     }
 }
 
@@ -1504,6 +1517,8 @@ async fn cancellation_interrupts_inflight_and_retry_waits() {
 async fn configured_concurrency_limits_actual_inflight_transport() {
     for concurrency in [1, 2] {
         let (listener, address) = bind_peer().await;
+        let (started, first_started) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
 
         let config = FinFeedHttpConfig {
             base_url: format!("http://{address}/v1/").into(),
@@ -1515,8 +1530,20 @@ async fn configured_concurrency_limits_actual_inflight_transport() {
         let server = task::spawn(async move {
             let (mut first, _) = listener.accept().await.unwrap();
             read_request(&mut first).await;
-            let early = time::timeout(Duration::from_millis(50), listener.accept()).await;
-            let overlapped = early.is_ok();
+            started.send(()).unwrap();
+            released.await.unwrap();
+
+            let early = if concurrency == 2 {
+                Some(
+                    time::timeout(Duration::from_secs(5), listener.accept())
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{EXCHANGES}",
                 EXCHANGES.len()
@@ -1525,14 +1552,13 @@ async fn configured_concurrency_limits_actual_inflight_transport() {
             first.flush().await.unwrap();
 
             let (mut second, _) = match early {
-                Ok(result) => result.unwrap(),
-                Err(_) => listener.accept().await.unwrap(),
+                Some(stream) => stream,
+                None => listener.accept().await.unwrap(),
             };
 
             read_request(&mut second).await;
             second.write_all(response.as_bytes()).await.unwrap();
             second.flush().await.unwrap();
-            overlapped
         });
 
         let client = Arc::new(new_client(config));
@@ -1542,14 +1568,45 @@ async fn configured_concurrency_limits_actual_inflight_transport() {
             async move { client.get_exchanges().await }
         });
 
-        let second = task::spawn({
+        time::timeout(Duration::from_secs(5), first_started)
+            .await
+            .unwrap()
+            .unwrap();
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        tokio::time::pause();
+
+        let mut second = Box::pin({
             let client = Arc::clone(&client);
             async move { client.get_exchanges().await }
         });
 
+        poll_fn(|cx| {
+            assert!(second.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        // Advance past the one-millisecond pacer and Tokio's timer granularity
+        tokio::time::advance(Duration::from_millis(10)).await;
+        #[cfg(all(feature = "simulation", madsim))]
+        time::sleep(Duration::from_millis(10)).await;
+        poll_fn(|cx| {
+            assert!(second.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        assert_eq!(client.attempts_remaining(), 100 - concurrency as u64);
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        tokio::time::resume();
+
+        let second = task::spawn(second);
+        release.send(()).unwrap();
+
         assert_eq!(first.await.unwrap().unwrap().len(), 9);
         assert_eq!(second.await.unwrap().unwrap().len(), 9);
-        assert_eq!(server.await.unwrap(), concurrency == 2);
+        server.await.unwrap();
         assert_eq!(client.attempts_remaining(), 98);
     }
 }
@@ -2438,4 +2495,145 @@ async fn loader_failed_batch_refresh_preserves_registry() {
         format!("No loaded instrument {missing}")
     );
     assert_eq!(requests.len(), 2);
+}
+
+pub(super) async fn start_peer_gated(
+    responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
+    blocked: usize,
+) -> (
+    task::JoinHandle<Vec<String>>,
+    FinFeedHttpConfig,
+    tokio::sync::mpsc::UnboundedReceiver<usize>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let (release, released) = tokio::sync::oneshot::channel();
+    let mut released = Some(released);
+    let (peer, config, observed) = start_peer_waiting(
+        responses,
+        move |index| {
+            let released = (index == blocked).then(|| released.take().unwrap());
+            async move {
+                if let Some(released) = released {
+                    released.await.unwrap();
+                }
+            }
+        },
+        true,
+    )
+    .await;
+
+    (peer, config, observed, release)
+}
+
+pub(super) async fn start_peer_waiting<F, W>(
+    responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
+    mut wait: F,
+    check_silence: bool,
+) -> (
+    task::JoinHandle<Vec<String>>,
+    FinFeedHttpConfig,
+    tokio::sync::mpsc::UnboundedReceiver<usize>,
+)
+where
+    F: FnMut(usize) -> W + Send + 'static,
+    W: Future<Output = ()> + Send + 'static,
+{
+    let (listener, address) = bind_peer().await;
+    let (observed, receiver) = tokio::sync::mpsc::unbounded_channel();
+
+    let config = FinFeedHttpConfig::builder()
+        .base_url(format!("http://{address}/v1/"))
+        .min_request_interval_ms(1)
+        .retry(RetryConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 100,
+            jitter_ms: 0,
+            max_retries: 2,
+            operation_timeout_ms: Some(5_000),
+            max_elapsed_ms: Some(10_000),
+            ..Default::default()
+        })
+        .build();
+
+    let task = task::spawn(async move {
+        let mut requests = Vec::new();
+        let mut pending = Vec::new();
+
+        for (index, (status, headers, body)) in responses.into_iter().enumerate() {
+            let body = body.into();
+            let (mut stream, _) = listener.accept().await.unwrap();
+            requests.push(read_request(&mut stream).await);
+            let _ = observed.send(index);
+            let wait = wait(index);
+            let response = format!(
+                "HTTP/1.1 {status} Response\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
+                body.len()
+            );
+
+            let response = async move {
+                wait.await;
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.flush().await;
+            };
+
+            if check_silence {
+                pending.push(task::spawn(response));
+            } else {
+                response.await;
+            }
+        }
+
+        if check_silence {
+            assert!(
+                time::timeout(POLL_SILENCE, listener.accept())
+                    .await
+                    .is_err(),
+                "unexpected overlapping or queued poll"
+            );
+        }
+
+        for response in pending {
+            response.await.unwrap();
+        }
+
+        requests
+    });
+
+    (task, config, receiver)
+}
+
+pub(super) async fn wait_for_http_idle(client: &impl Debug) {
+    wait_for_condition(|| {
+        format!("{client:?}")
+            .contains("concurrency: Semaphore { ll_sem: Semaphore { permits: 1 } }")
+    })
+    .await;
+}
+
+pub(super) async fn wait_for_condition(mut condition: impl FnMut() -> bool) {
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    nautilus_common::testing::wait_until_async(
+        || std::future::ready(condition()),
+        Duration::from_secs(5),
+    )
+    .await;
+
+    #[cfg(all(feature = "simulation", madsim))]
+    time::timeout(Duration::from_secs(5), async {
+        let mut poll = nautilus_common::live::dst::time::interval(Duration::from_millis(10));
+        while !condition() {
+            poll.tick().await;
+        }
+    })
+    .await
+    .expect("condition did not become true");
+}
+
+pub(super) async fn next_request(
+    observed: &mut tokio::sync::mpsc::UnboundedReceiver<usize>,
+) -> usize {
+    time::timeout(Duration::from_secs(5), observed.recv())
+        .await
+        .expect("HTTP peer did not receive request")
+        .expect("HTTP peer closed before request")
 }

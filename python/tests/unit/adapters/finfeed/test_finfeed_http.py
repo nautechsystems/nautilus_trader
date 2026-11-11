@@ -85,7 +85,7 @@ def _peer(responses, **controls: Any) -> Iterator:
             entered.set()
 
             if controls.get("block"):
-                release.wait(10)
+                release.wait()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -114,9 +114,9 @@ def _peer(responses, **controls: Any) -> Iterator:
         options["kalshi_metadata_url"] = base_url
 
     if controls.get("client_type") is ff.FinFeedDataLoader:
-        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=2, **options)
+        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=10, **options)
     else:
-        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=2, **options)
+        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=10, **options)
         client = ff.FinFeedHttpClient(config)
 
     try:

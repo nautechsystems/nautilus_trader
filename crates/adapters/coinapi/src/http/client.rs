@@ -805,6 +805,7 @@ mod tests {
         routing::get,
         serve,
     };
+    use nautilus_common::testing::wait_until_async;
     use nautilus_network::retry::RetryError;
     use parking_lot::Mutex;
     use rstest::rstest;
@@ -1091,7 +1092,7 @@ mod tests {
 
         let mut config = config();
         config.retry.max_retries = 0;
-        config.retry.operation_timeout_ms = Some(if cancel { 2000 } else { 100 });
+        let timeout_ms = config.retry.operation_timeout_ms.unwrap();
         let client = Arc::new(CoinApiHttpClient::new("test-api-key".into(), config).unwrap());
         let transfer_client = Arc::clone(&client);
         let transfer = tokio::spawn(async move {
@@ -1103,14 +1104,34 @@ mod tests {
                 .await
         });
 
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        wait_until_async(
+            || {
+                std::future::ready(
+                    std::fs::read_dir(directory.path())
+                        .unwrap()
+                        .any(|entry| entry.unwrap().metadata().unwrap().len() == 1),
+                )
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
         if cancel {
-            tokio::time::timeout(Duration::from_secs(2), started.notified())
-                .await
-                .unwrap();
             client.cancel();
+        } else {
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_millis(timeout_ms)).await;
         }
 
         let error = transfer.await.unwrap().unwrap_err();
+
+        if !cancel {
+            tokio::time::resume();
+        }
+
         peer.abort();
         let _ = peer.await;
 
@@ -1121,7 +1142,7 @@ mod tests {
         let expected = if cancel {
             RetryError::Canceled
         } else {
-            RetryError::OperationTimeout { timeout_ms: 100 }
+            RetryError::OperationTimeout { timeout_ms }
         };
 
         assert_eq!(actual, expected);
@@ -1138,8 +1159,8 @@ mod tests {
                 initial_delay_ms: 1,
                 max_delay_ms: 1,
                 jitter_ms: 0,
-                operation_timeout_ms: Some(500),
-                max_elapsed_ms: Some(2000),
+                operation_timeout_ms: Some(5000),
+                max_elapsed_ms: Some(10_000),
                 ..RetryConfig::default()
             },
             ..CoinApiHttpConfig::default()
