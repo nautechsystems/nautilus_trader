@@ -23,8 +23,11 @@ distinguish venue evidence from local policy resolution. In the Rust live execut
 
 - **Submitted orders**: The manager generates a rejection with reason `INFLIGHT_TIMEOUT` when
   submission retention does not apply.
-- **Pending updates and cancellations**: The manager generates `OrderCanceled` unless the order was
-  never accepted and requires retention.
+- **Pending updates and cancellations**: Under `SubmissionRecoveryPolicy::ResolveLocally`, the manager
+  generates `OrderCanceled` with reason `INFLIGHT_TIMEOUT` unless the order was never accepted and
+  requires retention. Under `SubmissionRecoveryPolicy::RetainUnresolved`, the manager generates
+  `OrderCancelRejected` or `OrderModifyRejected` with reason `INFLIGHT_TIMEOUT` for an accepted order,
+  which restores its status from before the command.
 
 These events carry `reconciliation=true`. The manager retains unacknowledged orders under
 `SubmissionRecoveryPolicy::RetainUnresolved` or when the order's client returns `true` from
@@ -37,11 +40,12 @@ These events carry `reconciliation=true`. The manager retains unacknowledged ord
   `test_inflight_order_generates_rejection_after_max_retries`,
   `test_retained_submission_survives_recovery_and_accepts_late_evidence`,
   `test_check_open_orders_submitted_missing_at_venue_obeys_recovery_policy`,
-  `test_inflight_pending_update_generates_canceled`, and
-  `test_inflight_pending_cancel_generates_canceled`.
+  `test_inflight_pending_update_generates_canceled`,
+  `test_inflight_pending_cancel_generates_canceled`, and
+  `test_inflight_pending_command_restores_status_under_retention`.
 - **Limit**: Retry exhaustion does not establish a venue outcome. The reconciliation flag alone
-  does not distinguish a venue report from a local policy resolution, and `OrderCanceled` has no
-  reason field. Consumers need the associated inputs and logs to retain that distinction.
+  does not distinguish a venue report from a local policy resolution, and `OrderCanceled.reason` can
+  be unset. Consumers need the associated inputs and logs to retain that distinction.
 
 ## Callback ordering and ownership
 

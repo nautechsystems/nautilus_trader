@@ -104,10 +104,9 @@ boundary:
 
 Evidence drained after this boundary cannot change the recorded shutdown result.
 
-This applies to `RetainUnresolved` and to clients which require submission retention, including submissions
-whose recovery budget has not yet exhausted. Polymarket requires retention automatically, so its callers can
-receive this error without selecting an opt-in policy. The default `ResolveLocally` policy stays unchanged for
-clients which do not require retention.
+This applies to the default `RetainUnresolved` policy and to clients which require submission retention when
+`ResolveLocally` is selected, including submissions whose recovery budget has not yet exhausted. Polymarket
+requires retention automatically, so its callers can receive this error even when local resolution is selected.
 
 Submission acknowledgement ends submission recovery. It does not prove that an accepted order's cancel or
 update completed, or that positions are flat. Managed exit keeps its existing attempt budget, and this result

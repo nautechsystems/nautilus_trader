@@ -724,8 +724,12 @@ mass status at the next startup corrects it.
 A successful submit or edit response naming the order only by such an ID leaves the outcome ambiguous: the command is
 not rejected, and the streams or reconciliation resolve the order. The in-flight check's `query_order` needs a venue
 order ID, so if a submitted order's stream frames are lost too and no open check (`open_check_interval_secs`) reads it
-before the in-flight retries run out, the default `submission_recovery_policy` closes it locally, even while the venue
-holds it.
+before the in-flight retries run out, `SubmissionRecoveryPolicy::ResolveLocally` closes it locally, even while the venue
+holds it. The default `SubmissionRecoveryPolicy::RetainUnresolved` instead leaves it unresolved for later venue evidence.
+
+`query_order` reads open orders only, so it emits no report for an order the venue has closed. Under
+`RetainUnresolved`, an order restored after a cancel or modify timeout therefore stays open locally if its stream
+cancel was lost. Set `open_check_open_only=False` so the open check resolves such orders from order history.
 
 #### Single-order lookups
 

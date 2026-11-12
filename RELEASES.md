@@ -11,6 +11,8 @@ Released on TBD (UTC).
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
+- Changed `submission_recovery_policy` default to `RetainUnresolved`; select `ResolveLocally` for prior behavior
+- Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup

@@ -399,15 +399,18 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 
 ### Submission recovery
 
-`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` enables:
+`submission_recovery_policy` defaults to `RetainUnresolved`, which enables:
 
 - Submission identity tracking.
 - Exhaustion diagnostics.
 - Preservation of the submission's recovery budget until acknowledgement.
 
 Exhausted unacknowledged submissions stay unresolved, with further automatic per-order recovery queries
-stopped. Clients can also require this protection independently of the configured policy. Polymarket enables
-this protection automatically.
+stopped. Select `ResolveLocally` to close them through the local resolution rules instead. Clients can also
+require retention when `ResolveLocally` is selected. Polymarket enables this protection automatically.
+
+The policy also selects how [in-flight checks](#in-flight-checks) resolve a pending cancel or update on an
+accepted order.
 
 Retained submissions also affect the [node shutdown result](../live.md#submission-recovery-at-shutdown).
 Rust `LiveNode::stop` and `run`, and hosted runs, report unresolved client order IDs after teardown
@@ -855,12 +858,23 @@ After exhausting the configured retries, the in-flight checker resolves timed-ou
 unless the order has never been accepted and submission retention applies:
 
 - `SUBMITTED`: rejects the order with reason `INFLIGHT_TIMEOUT`.
-- `PENDING_CANCEL` or `PENDING_UPDATE`: resolves the order to `CANCELED`.
+- `PENDING_CANCEL` or `PENDING_UPDATE` under `ResolveLocally`: resolves the order to `CANCELED` with reason
+  `INFLIGHT_TIMEOUT`.
+- `PENDING_CANCEL` or `PENDING_UPDATE` under `RetainUnresolved`: rejects the pending command with reason
+  `INFLIGHT_TIMEOUT` and restores the order's status from before the command. The order stays open
+  for later venue evidence.
 
 For orders that have never been accepted, `SubmissionRecoveryPolicy::RetainUnresolved` requires
 retention, as does Polymarket regardless of the configured policy. Retention stops automatic
 per-order recovery queries while allowing later venue evidence to resolve the order. See
 [Submission recovery](#submission-recovery) for the retention rules.
+
+:::warning[Restored orders rely on later venue evidence]
+Under `RetainUnresolved`, no order closes on a timeout alone. If the venue canceled an order and its cancel
+event was lost, the restored order stays open locally until a venue event or report closes it. Missing-order
+resolution runs only in full-history mode (`open_check_open_only=False`), so enable it for venues whose
+single-order query returns open orders only.
+:::
 
 [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance) distinguishes
 local policy resolutions from venue-reported outcomes.
@@ -1021,17 +1035,19 @@ checks, open-order polls, own-books audits), fill adjustment, and bounded histor
 
 ### Runtime scenarios
 
-| Scenario                            | Description                                               | System behavior                                 |
-| ----------------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
-| **In-flight submit timeout**        | `SUBMITTED` stays unconfirmed beyond retry exhaustion.    | Resolves to `REJECTED` with `INFLIGHT_TIMEOUT`. |
-| **In-flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | Resolves to `CANCELED` through reconciliation.  |
-| **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.        |
-| **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible.  |
-| **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.      |
-| **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                |
+| Scenario                            | Description                                               | System behavior                                   |
+| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------- |
+| **In-flight submit timeout**        | `SUBMITTED` stays unconfirmed beyond retry exhaustion.    | `ResolveLocally` rejects with `INFLIGHT_TIMEOUT`. |
+| **In-flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | `ResolveLocally` cancels with `INFLIGHT_TIMEOUT`. |
+| **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.          |
+| **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible.    |
+| **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.        |
+| **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                  |
 
 The in-flight timeout rows do not apply to an unacknowledged order when the policy or its client requires
-submission retention. That order stays unresolved. See [In-flight checks](#in-flight-checks).
+submission retention. That order stays unresolved. Under `RetainUnresolved`, a cancel or update timeout on
+an accepted order rejects the pending command and keeps the order open. See
+[In-flight checks](#in-flight-checks).
 
 ### Fill adjustment scenarios
 

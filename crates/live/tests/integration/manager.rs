@@ -8646,6 +8646,7 @@ async fn test_submission_retention_is_scoped_to_client(
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     });
 
@@ -8737,6 +8738,7 @@ async fn test_inflight_timeout_uses_monotonic_gate_and_domain_event_timestamp() 
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -8810,7 +8812,7 @@ fn test_config_default_values() {
     assert_eq!(config.inflight_max_retries, 5);
     assert_eq!(
         config.submission_recovery_policy,
-        SubmissionRecoveryPolicy::ResolveLocally,
+        SubmissionRecoveryPolicy::RetainUnresolved,
     );
 }
 
@@ -9071,6 +9073,7 @@ async fn test_inflight_increments_retry_count_before_max() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 3,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -9107,19 +9110,16 @@ async fn test_inflight_increments_retry_count_before_max() {
     assert!(result3.queries.is_empty());
 }
 
-#[rstest]
-#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally)]
-#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved)]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_inflight_pending_update_generates_canceled(#[case] policy: SubmissionRecoveryPolicy) {
+async fn test_inflight_pending_update_generates_canceled() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
-        submission_recovery_policy: policy,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -9160,22 +9160,20 @@ async fn test_inflight_pending_update_generates_canceled(#[case] policy: Submiss
 
     if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
+        assert_eq!(canceled.reason.as_deref(), Some("INFLIGHT_TIMEOUT"));
     }
 }
 
-#[rstest]
-#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally)]
-#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved)]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_inflight_pending_cancel_generates_canceled(#[case] policy: SubmissionRecoveryPolicy) {
+async fn test_inflight_pending_cancel_generates_canceled() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
-        submission_recovery_policy: policy,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -9216,7 +9214,147 @@ async fn test_inflight_pending_cancel_generates_canceled(#[case] policy: Submiss
 
     if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
+        assert_eq!(canceled.reason.as_deref(), Some("INFLIGHT_TIMEOUT"));
     }
+}
+
+#[rstest]
+#[case::pending_update(true, false)]
+#[case::pending_cancel(false, true)]
+#[case::pending_cancel_after_update(true, true)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_pending_command_restores_status_under_retention(
+    #[case] pending_update: bool,
+    #[case] pending_cancel: bool,
+) {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING");
+    let venue_order_id = VenueOrderId::from("V-003");
+    ctx.add_instrument(test_instrument());
+
+    let mut order = if pending_update {
+        create_pending_update_order(
+            "O-PENDING",
+            instrument_id,
+            OrderSide::Buy,
+            "1.0",
+            "3000.00",
+            venue_order_id,
+        )
+    } else {
+        create_pending_cancel_order(
+            "O-PENDING",
+            instrument_id,
+            OrderSide::Buy,
+            "1.0",
+            "3000.00",
+            venue_order_id,
+        )
+    };
+
+    if pending_update && pending_cancel {
+        let pending = OrderEventAny::PendingCancel(
+            OrderPendingCancelSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(test_account_id())
+                .venue_order_id(venue_order_id)
+                .build(),
+        );
+        order.apply(pending).unwrap();
+    }
+
+    ctx.add_order(order);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
+
+    let result = ctx.manager.check_inflight_orders();
+    for event in &result.events {
+        ctx.manager.observe_order_event(event);
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let mut expected = Vec::new();
+    if pending_cancel {
+        expected.push("CancelRejected");
+    }
+
+    if pending_update {
+        expected.push("ModifyRejected");
+    }
+
+    let rejections: Vec<_> = result
+        .events
+        .iter()
+        .map(|event| match event {
+            OrderEventAny::CancelRejected(event) => (
+                "CancelRejected",
+                event.client_order_id,
+                event.reason.as_str(),
+                event.reconciliation,
+                event.venue_order_id,
+                event.account_id,
+            ),
+            OrderEventAny::ModifyRejected(event) => (
+                "ModifyRejected",
+                event.client_order_id,
+                event.reason.as_str(),
+                event.reconciliation,
+                event.venue_order_id,
+                event.account_id,
+            ),
+            other => panic!("Expected a command rejection, was {other:?}"),
+        })
+        .collect();
+
+    let expected: Vec<_> = expected
+        .into_iter()
+        .map(|kind| {
+            (
+                kind,
+                client_order_id,
+                "INFLIGHT_TIMEOUT",
+                true,
+                Some(venue_order_id),
+                Some(test_account_id()),
+            )
+        })
+        .collect();
+
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(rejections, expected);
+    assert!(
+        ctx.manager
+            .take_submission_recovery_exhaustions()
+            .is_empty()
+    );
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.ts_closed(), None);
+    assert!(!order.has_pending_update_command());
+    assert!(!order.has_pending_cancel_command());
+    assert!(
+        ctx.cache
+            .borrow()
+            .orders_open(None, None, None, None, None)
+            .into_iter()
+            .any(|order| order.client_order_id() == client_order_id)
+    );
+    assert!(ctx.manager.check_inflight_orders().events.is_empty());
 }
 
 #[cfg_attr(
@@ -9268,6 +9406,7 @@ async fn test_inflight_no_query_at_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 2,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 
@@ -9477,6 +9616,7 @@ async fn test_inflight_terminal_event_clears_tracking() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
+        submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
         ..Default::default()
     };
 

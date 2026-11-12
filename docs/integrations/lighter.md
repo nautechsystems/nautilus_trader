@@ -670,9 +670,9 @@ Use `post_only` on limit-style orders. The adapter does not synthesize maker-onl
 The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
 otherwise to `OrderRejected` with `due_post_only=true`.
 
-Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only
-opens can be dropped without a venue order report and reconcile as `INFLIGHT_TIMEOUT`, without
-a venue rejection reason.
+Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only opens can
+be dropped without a venue order report. `ResolveLocally` reconciles them as `INFLIGHT_TIMEOUT` without a venue
+rejection reason; the default `RetainUnresolved` leaves them `SUBMITTED`.
 
 ### Advanced order features
 

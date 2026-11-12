@@ -20,7 +20,7 @@
 //! Targeted requests collect order status and missing fills for the manager and live node.
 //! The manager owns cache-dependent decisions; the live node owns recurring task lifecycles.
 
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 #[cfg(feature = "node")]
 use std::{cell::RefCell, rc::Rc};
 
@@ -44,7 +44,7 @@ use nautilus_execution::reconciliation::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderCanceled, OrderEventAny, OrderFilled},
+    events::{OrderCancelRejected, OrderCanceled, OrderEventAny, OrderFilled, OrderModifyRejected},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
         VenueOrderId,
@@ -56,6 +56,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 #[cfg(feature = "node")]
 use super::client::{CollectedReport, LiveExecutionClient, ReportCollector};
@@ -101,10 +102,11 @@ pub struct ReconciliationResult {
     pub unresolved_positions: Vec<String>,
 }
 
-/// Result of inflight order checks containing terminal events and intermediate queries.
+/// Result of inflight order checks containing resolution events and intermediate queries.
 #[derive(Debug, Default)]
 pub struct InflightCheckResult {
-    /// Terminal events (rejection/cancellation) for orders that exceeded max retries.
+    /// Resolution events (rejection, cancellation, or command rejection) for orders that
+    /// exceeded max retries.
     pub events: Vec<OrderEventAny>,
     /// Intermediate venue queries for orders still within retry budget.
     pub queries: Vec<TradingCommand>,
@@ -635,29 +637,6 @@ pub(super) fn order_report_has_missing_fills(
             ))
 }
 
-/// Preserves later confirmed amendments for clients requiring authoritative fills.
-pub(super) fn preserve_order_amendment<'a>(
-    order: &OrderAny,
-    report: &'a OrderStatusReport,
-    requires_authoritative_fills: bool,
-) -> Cow<'a, OrderStatusReport> {
-    if !requires_authoritative_fills || !should_reconciliation_update(order, report) {
-        return Cow::Borrowed(report);
-    }
-
-    if !order.events().iter().any(|event| {
-        matches!(event, OrderEventAny::Updated(updated) if updated.ts_event > report.ts_last)
-    }) {
-        return Cow::Borrowed(report);
-    }
-
-    let mut current = report.clone();
-    current.quantity = order.quantity();
-    current.price = order.price();
-    current.trigger_price = order.trigger_price();
-    Cow::Owned(current)
-}
-
 /// Builds an order report from fills sharing the same order and venue position.
 ///
 /// # Errors
@@ -1046,7 +1025,11 @@ pub(super) fn create_position_reconciliation_report(
 }
 
 /// Builds a reconciliation cancel for an order resolved without a venue status report.
-pub(super) fn create_reconciliation_canceled(order: &OrderAny, ts_now: UnixNanos) -> OrderEventAny {
+pub(super) fn create_reconciliation_canceled(
+    order: &OrderAny,
+    reason: Option<&str>,
+    ts_now: UnixNanos,
+) -> OrderEventAny {
     OrderEventAny::Canceled(OrderCanceled::new(
         order.trader_id(),
         order.strategy_id(),
@@ -1058,8 +1041,56 @@ pub(super) fn create_reconciliation_canceled(order: &OrderAny, ts_now: UnixNanos
         true, // reconciliation
         order.venue_order_id(),
         order.account_id(),
-        None,
+        reason.map(Ustr::from),
     ))
+}
+
+/// Builds the reconciliation rejections which restore an order's status from before its
+/// pending cancel and modify commands.
+pub(super) fn create_reconciliation_command_rejections(
+    order: &OrderAny,
+    reason: &str,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let mut events = Vec::new();
+
+    if order.has_pending_cancel_command() {
+        let rejected = OrderCancelRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            true, // reconciliation
+            order.venue_order_id(),
+            order.account_id(),
+        );
+
+        events.push(OrderEventAny::CancelRejected(rejected));
+    }
+
+    if order.has_pending_update_command() {
+        let rejected = OrderModifyRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            true, // reconciliation
+            order.venue_order_id(),
+            order.account_id(),
+        );
+
+        events.push(OrderEventAny::ModifyRejected(rejected));
+    }
+
+    events
 }
 
 #[cfg(test)]
