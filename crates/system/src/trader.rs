@@ -272,6 +272,17 @@ impl Trader {
             .clone()
     }
 
+    /// Returns component IDs and shared clocks in registration order.
+    ///
+    /// Each clock shares its current state with the registered component.
+    pub fn get_component_clocks_with_ids(
+        &self,
+    ) -> impl Iterator<Item = (ComponentId, Rc<RefCell<dyn Clock>>)> + '_ {
+        self.clocks
+            .iter()
+            .map(|(id, clock)| (*id, Rc::clone(clock)))
+    }
+
     /// Returns the total number of registered components.
     #[must_use]
     pub const fn component_count(&self) -> usize {
@@ -4418,6 +4429,46 @@ mod tests {
         for (actual, expected) in returned.iter().zip(&registered) {
             assert!(Rc::ptr_eq(actual, expected));
         }
+    }
+
+    #[rstest]
+    fn test_get_component_clocks_with_ids_tracks_owners_and_membership() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let empty_count = trader.get_component_clocks_with_ids().count();
+        let ids = [ComponentId::new("STRATEGY-Z"), ComponentId::new("ACTOR-A")];
+        let clocks = ids.map(|id| trader.create_component_clock(id));
+        let original: Vec<_> = trader.get_component_clocks_with_ids().collect();
+
+        let replacement = trader.create_component_clock(ids[0]);
+        let replaced: Vec<_> = trader.get_component_clocks_with_ids().collect();
+
+        trader.release_component_clock(ids[1]);
+        let remaining: Vec<_> = trader.get_component_clocks_with_ids().collect();
+
+        assert_eq!(empty_count, 0);
+        assert_eq!(original.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ids);
+
+        for ((_, actual), expected) in original.iter().zip(&clocks) {
+            assert!(Rc::ptr_eq(actual, expected));
+        }
+
+        assert_eq!(replaced.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ids);
+        assert!(Rc::ptr_eq(&replaced[0].1, &replacement));
+        assert!(Rc::ptr_eq(&replaced[1].1, &clocks[1]));
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, ids[0]);
+        assert!(Rc::ptr_eq(&remaining[0].1, &replacement));
     }
 
     #[rstest]
