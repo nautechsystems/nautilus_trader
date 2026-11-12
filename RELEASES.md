@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX fills for untracked orders arriving without their order terms
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
+- Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 
 ### Internal Improvements
 

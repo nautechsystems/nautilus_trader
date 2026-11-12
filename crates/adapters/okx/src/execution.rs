@@ -62,7 +62,7 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         TrailingOffsetType,
     },
-    events::OrderDeniedReason,
+    events::{OrderDeniedReason, OrderPriceField},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue,
         VenueOrderId,
@@ -2931,6 +2931,8 @@ impl OKXExecutionClient {
                 .http_client
                 .get_instrument(&order.instrument_id().symbol.inner());
 
+            validate_limit_price(order, instrument.as_ref(), submission, params)?;
+
             let instrument_type = instrument
                 .as_ref()
                 .map(okx_instrument_type)
@@ -3869,6 +3871,42 @@ fn retain_external_regular_order_fallbacks(
             !cached_by_client && !cached_by_venue
         })
     });
+}
+
+fn validate_limit_price(
+    order: &impl Order,
+    instrument: Option<&InstrumentAny>,
+    submission: OrderSubmission,
+    params: Option<&Params>,
+) -> Result<(), OrderDeniedReason> {
+    if order.order_type() != OrderType::Limit
+        || (matches!(submission, OrderSubmission::Single)
+            && (get_param_as_string(params, "px_usd").is_some()
+                || get_param_as_string(params, "px_vol").is_some()))
+    {
+        return Ok(());
+    }
+
+    let Some(price) = order.price() else {
+        return Ok(());
+    };
+
+    if !price.is_positive() {
+        return Err(OrderDeniedReason::PriceNotPositive {
+            field: OrderPriceField::Price,
+            price,
+        });
+    }
+
+    if let Some(instrument) = instrument {
+        instrument
+            .try_normalize_price(price)
+            .map_err(|e| OrderDeniedReason::ValidationFailed {
+                detail: e.to_string(),
+            })?;
+    }
+
+    Ok(())
 }
 
 fn validate_submit_position_id(
@@ -8012,7 +8050,7 @@ mod tests {
             .client_order_id(ClientOrderId::from("OHEDGEWIRE"))
             .side(side)
             .quantity(Quantity::from("2"))
-            .price(Price::from("123.45"))
+            .price(Price::from("123.4"))
             .trigger_price(Price::from("120.00"))
             .reduce_only(reduce_only)
             .build();

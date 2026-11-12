@@ -2942,6 +2942,7 @@ struct WsTeardownState {
     opened: Arc<AtomicUsize>,
     closed: Arc<AtomicUsize>,
     messages: Option<tokio::sync::broadcast::Sender<serde_json::Value>>,
+    order_requests: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
 }
 
 async fn handle_exec_ws_upgrade(
@@ -2987,6 +2988,15 @@ async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState
                 continue;
             }
         };
+
+        if let Message::Text(text) = &message
+            && let Some(tx) = &state.order_requests
+        {
+            let request: Value = serde_json::from_str(text).unwrap();
+            if matches!(request["op"].as_str(), Some("order" | "batch-orders")) {
+                tx.send(request).unwrap();
+            }
+        }
 
         if let Message::Text(text) = message
             && text.contains("\"op\":\"login\"")
@@ -4957,6 +4967,290 @@ async fn test_submit_order_list_denies_invalid_params_before_submitted(#[case] e
         assert_eq!(denied.client_order_id, ids[index]);
         assert_eq!(denied.reason, reason);
         assert_eq!(denied.causation_id, None);
+    }
+}
+
+#[rstest]
+#[case::zero(Some(false), "0.0", "PRICE_NOT_POSITIVE: field=PRICE, price=0.0")]
+#[case::negative(Some(false), "-0.2", "PRICE_NOT_POSITIVE: field=PRICE, price=-0.2")]
+#[case::option_zero(Some(true), "0.0", "PRICE_NOT_POSITIVE: field=PRICE, price=0.0")]
+#[case::option_negative(Some(true), "-0.2", "PRICE_NOT_POSITIVE: field=PRICE, price=-0.2")]
+#[case::uncached_zero(None, "0.0", "PRICE_NOT_POSITIVE: field=PRICE, price=0.0")]
+#[case::precision(
+    Some(false),
+    "1.23",
+    "VALIDATION_FAILED: `price` requires rounding to instrument price precision 1, was 1.23"
+)]
+#[case::increment(
+    Some(false),
+    "1.1",
+    "VALIDATION_FAILED: `price` is not aligned to price increment 0.2, was 1.1"
+)]
+#[tokio::test]
+async fn test_submit_order_denies_invalid_limit_price_before_submitted(
+    #[case] option: Option<bool>,
+    #[case] price: &str,
+    #[case] reason: &str,
+    #[values(false, true)] batch: bool,
+) {
+    let (mut client, mut rx, cache) = create_test_execution_client("http://127.0.0.1:1");
+    client.start().unwrap();
+
+    let instrument_id = if option == Some(true) {
+        let mut instrument =
+            crypto_option_btc_deribit(4, 0, Price::from("0.0001"), Quantity::from("1"));
+        instrument.id = InstrumentId::from("BTC-USD-241217-92000-C.OKX");
+        instrument.raw_symbol = instrument.id.symbol;
+        let instrument_id = instrument.id;
+        client.on_instrument(InstrumentAny::CryptoOption(instrument));
+        instrument_id
+    } else {
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        instrument.raw_symbol = instrument.id.symbol;
+        instrument.price_precision = 1;
+        instrument.price_increment = Price::from("0.2");
+        let instrument_id = instrument.id;
+        if option.is_some() {
+            client.on_instrument(InstrumentAny::CryptoPerpetual(instrument));
+        }
+
+        instrument_id
+    };
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let ids = [
+        ClientOrderId::from("OPRICEINVALID"),
+        ClientOrderId::from("OPRICEVALID"),
+    ];
+
+    let orders: Vec<_> = ids[..if batch { 2 } else { 1 }]
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(trader_id)
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(*id)
+                .side(OrderSide::Buy)
+                .price(Price::from(if index == 0 { price } else { "2.0" }))
+                .quantity(Quantity::from("1"))
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+    }
+
+    if batch {
+        let order_list = OrderList::new(
+            OrderListId::from("OLPRICE"),
+            instrument_id,
+            strategy_id,
+            ids.to_vec(),
+            UnixNanos::default(),
+        );
+        let params = Params::new([("px_usd".to_string(), json!(100.5))].into());
+        client
+            .submit_order_list(SubmitOrderList::new(
+                trader_id,
+                Some(*OKX_CLIENT_ID),
+                strategy_id,
+                order_list,
+                orders.iter().map(OrderInitialized::from).collect(),
+                None,
+                None,
+                Some(params),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    } else {
+        let mut command = SubmitOrder::from_order(
+            &orders[0],
+            trader_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        command.params = Some(Params::new([("px_usd".to_string(), Value::Null)].into()));
+        client.submit_order(command).unwrap();
+    }
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), orders.len());
+
+    for (index, event) in events.iter().enumerate() {
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected only OrderDenied, was {events:?}");
+        };
+
+        assert_eq!(denied.trader_id, trader_id);
+        assert_eq!(denied.strategy_id, strategy_id);
+        assert_eq!(denied.instrument_id, instrument_id);
+        assert_eq!(denied.client_order_id, ids[index]);
+        assert_eq!(
+            denied.reason,
+            if index == 0 {
+                reason
+            } else {
+                "ORDER_LIST_DENIED: OLPRICE"
+            }
+        );
+        assert_eq!(denied.causation_id, None);
+    }
+}
+
+#[rstest]
+#[case::swap("http_get_instruments_swap.json", None, "0.1")]
+#[case::option("http_get_instruments_option.json", None, "0.0001")]
+#[case::usd("http_get_instruments_option.json", Some(("px_usd", json!(100.5))), "0")]
+#[case::iv("http_get_instruments_option.json", Some(("px_vol", json!("0.55"))), "0")]
+#[tokio::test]
+async fn test_submit_order_preserves_valid_limit_price_on_wire(
+    #[case] fixture: &str,
+    #[case] pricing: Option<(&str, Value)>,
+    #[case] price: &str,
+) {
+    let (tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let state = Arc::new(WsTeardownState {
+        order_requests: Some(tx),
+        ..Default::default()
+    });
+
+    let mut instruments = load_test_data(fixture);
+    let definition = &mut instruments["data"][0];
+    definition["instIdCode"] = json!(10458);
+    let raw: OKXInstrument = serde_json::from_value(definition.clone()).unwrap();
+    let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    instruments["data"] = json!([definition.clone()]);
+    let instrument_id = instrument.id();
+
+    let router = create_exec_test_router()
+        .route(
+            "/api/v5/public/instruments",
+            get(move || {
+                let response = instruments.clone();
+                async move { Json(response) }
+            }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code":"0", "msg":"", "data":[]})) }),
+        )
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async { Json(json!({"code":"0", "msg":"", "data":[]})) }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { Json(json!({"code":"0", "msg":"", "data":[]})) }),
+        )
+        .route(
+            "/ws/v5/private",
+            get(handle_exec_ws_upgrade).with_state(Arc::clone(&state)),
+        )
+        .route(
+            "/ws/v5/business",
+            get(handle_exec_ws_upgrade).with_state(state),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(data_tx);
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![raw.inst_type];
+            if raw.inst_type == OKXInstrumentType::Option {
+                config.instrument_families = Some(vec!["BTC-USD".to_string()]);
+            }
+
+            config.base_url_ws_private = Some(format!("ws://{addr}/ws/v5/private"));
+            config.base_url_ws_business = Some(format!("ws://{addr}/ws/v5/business"));
+            config.max_retries = 0;
+        });
+
+    client.start().unwrap();
+    finish_bootstrap_connect(client.connect(), &mut rx, &cache)
+        .await
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("OPRICEWIRE"))
+        .side(OrderSide::Buy)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1"))
+        .post_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let mut command = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    if let Some((key, value)) = &pricing {
+        command.params = Some(Params::new([(key.to_string(), value.clone())].into()));
+    }
+
+    client.submit_order(command).unwrap();
+    let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let event = recv_order_event_matching(&mut rx, |_| true).await;
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    let OrderEventAny::Submitted(submitted) = event else {
+        panic!("Expected OrderSubmitted, was {event:?}");
+    };
+
+    assert_eq!(submitted.trader_id, order.trader_id());
+    assert_eq!(submitted.strategy_id, order.strategy_id());
+    assert_eq!(submitted.instrument_id, instrument_id);
+    assert_eq!(submitted.client_order_id, order.client_order_id());
+    assert_eq!(submitted.account_id, AccountId::from("OKX-001"));
+    assert_eq!(request["op"], "order");
+    let args = &request["args"][0];
+    assert_eq!(args["clOrdId"], "OPRICEWIRE");
+    assert_eq!(args["instIdCode"], 10458);
+    assert_eq!(args["ordType"], "post_only");
+    assert_eq!(args["sz"], "1");
+
+    match pricing {
+        Some(("px_usd", _)) => {
+            assert_eq!(args["pxUsd"], "100.5");
+            assert_eq!(args.get("px"), None);
+        }
+        Some(("px_vol", _)) => {
+            assert_eq!(args["pxVol"], "0.55");
+            assert_eq!(args.get("px"), None);
+        }
+        None => assert_eq!(args["px"], price),
+        _ => panic!("unexpected pricing mode"),
     }
 }
 

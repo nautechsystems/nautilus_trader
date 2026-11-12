@@ -799,6 +799,11 @@ reports only its code, such as `OKX error 51008`, because OKX sends only a `fail
 Local modify and cancel refusals proven not sent produce `OrderModifyDenied` or `OrderCancelDenied`.
 They carry the adapter's own message and no OKX error code.
 
+`LIMIT` orders with non-positive prices produce `OrderDenied` with reason code `PRICE_NOT_POSITIVE`
+before submission. With loaded instrument metadata, prices that require rounding to its price precision
+or do not align with its price increment produce `VALIDATION_FAILED`.
+Spread orders and single-order `px_usd` or `px_vol` placeholders skip these checks (see [pricing modes](#pricing-modes)).
+
 ### Position management
 
 | Feature          | Linear perpetual swap | Notes                                |
