@@ -71,7 +71,7 @@ use rust_decimal::Decimal;
 
 use super::{modules::pyobject_to_simulation_module_handle, node::create_importable_component};
 use crate::{
-    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    config::{BacktestEngineConfig, BacktestVenueConfig, BehavioralModels},
     engine::BacktestEngine,
     result::BacktestResult,
 };
@@ -252,20 +252,21 @@ impl PyBacktestEngine {
             .transpose()?
             .unwrap_or_default();
 
-        let sim_config = SimulatedVenueConfig::builder()
-            .venue(venue)
+        let models = BehavioralModels {
+            fill: fill_model,
+            fee: fee_model,
+            margin: margin_model,
+            latency: latency_model,
+        };
+
+        let sim_config = BacktestVenueConfig::builder()
+            .name(venue.as_str())
             .oms_type(oms_type)
             .account_type(account_type)
             .book_type(book_type)
-            .starting_balances(starting_balances)
             .maybe_base_currency(base_currency)
             .maybe_default_leverage(default_leverage)
             .leverages(leverages)
-            .fill_model(fill_model)
-            .fee_model(fee_model)
-            .maybe_margin_model(margin_model)
-            .maybe_latency_model(latency_model)
-            .modules(modules)
             .routing(routing)
             .reject_stop_orders(reject_stop_orders)
             .support_gtd_orders(support_gtd_orders)
@@ -273,7 +274,6 @@ impl PyBacktestEngine {
             .use_position_ids(use_position_ids)
             .use_random_ids(use_random_ids)
             .use_reduce_only(use_reduce_only)
-            .use_message_queue(use_message_queue)
             .use_market_order_acks(use_market_order_acks)
             .bar_execution(bar_execution)
             .bar_adaptive_high_low_ordering(bar_adaptive_high_low_ordering)
@@ -283,12 +283,12 @@ impl PyBacktestEngine {
             .frozen_account(frozen_account)
             .queue_position(queue_position)
             .order_priority_reset_policy(order_priority_reset_policy)
-            .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
-            .maybe_price_protection_points(price_protection_points)
+            .oto_trigger_mode(oto_trigger_mode)
+            .price_protection_points(price_protection_points.unwrap_or_default())
             .liquidation_enabled(liquidation_enabled)
             .liquidation_trigger_ratio(liquidation_trigger_ratio.unwrap_or(1.0))
             .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
-            .build()
+            .build_simulated(starting_balances, models, modules, use_message_queue)
             .map_err(config_error_to_pyvalue_err)?;
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
@@ -975,37 +975,8 @@ impl PyBacktestEngine {
                 .map_err(Into::<PyErr>::into)
                 .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
 
-            if let Some(config_obj) = config_instance.as_ref() {
-                let id_attr = config_obj
-                    .getattr("exec_algorithm_id")
-                    .ok()
-                    .filter(|v| !v.is_none())
-                    .or_else(|| config_obj.getattr("actor_id").ok().filter(|v| !v.is_none()));
-
-                if let Some(id_value) = id_attr {
-                    let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                        ActorId::new(eaid.inner())
-                    } else if let Ok(aid) = id_value.extract::<ActorId>() {
-                        aid
-                    } else if let Ok(aid_str) = id_value.extract::<String>() {
-                        ActorId::new_checked(&aid_str)?
-                    } else {
-                        anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
-                    };
-                    py_data_actor_ref.set_actor_id(actor_id_val);
-                }
-
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_events(log_events_val);
-                }
-
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_commands(log_commands_val);
-                }
+            if let Some(config) = config_instance.as_ref() {
+                Self::configure_python_exec_algorithm(&mut py_data_actor_ref, config)?;
             }
 
             py_data_actor_ref.set_python_instance(bound)?;
@@ -1024,6 +995,48 @@ impl PyBacktestEngine {
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
+    }
+
+    fn configure_python_exec_algorithm(
+        actor: &mut PyDataActor,
+        config: &Bound<'_, PyAny>,
+    ) -> anyhow::Result<()> {
+        let id_attr = config
+            .getattr("exec_algorithm_id")
+            .ok()
+            .filter(|v| !v.is_none())
+            .or_else(|| config.getattr("actor_id").ok().filter(|v| !v.is_none()));
+
+        if let Some(id_value) = id_attr {
+            let actor_id = Self::exec_algorithm_actor_id(&id_value)?;
+            actor.set_actor_id(actor_id);
+        }
+
+        if let Ok(log_events) = config.getattr("log_events")
+            && let Ok(log_events_val) = log_events.extract::<bool>()
+        {
+            actor.set_log_events(log_events_val);
+        }
+
+        if let Ok(log_commands) = config.getattr("log_commands")
+            && let Ok(log_commands_val) = log_commands.extract::<bool>()
+        {
+            actor.set_log_commands(log_commands_val);
+        }
+
+        Ok(())
+    }
+
+    fn exec_algorithm_actor_id(id_value: &Bound<'_, PyAny>) -> anyhow::Result<ActorId> {
+        Ok(if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
+            ActorId::new(eaid.inner())
+        } else if let Ok(aid) = id_value.extract::<ActorId>() {
+            aid
+        } else if let Ok(aid_str) = id_value.extract::<String>() {
+            ActorId::new_checked(&aid_str)?
+        } else {
+            anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
+        })
     }
 
     fn try_add_py_execution_algorithm(
@@ -1203,7 +1216,12 @@ pub(super) fn register_orderbook_imbalance(
 
 #[cfg(all(test, feature = "examples"))]
 mod tests {
-    use pyo3::{Python, types::PyDict};
+    use nautilus_common::python::actor::PyDataActor;
+    use nautilus_model::identifiers::{ActorId, ExecAlgorithmId};
+    use pyo3::{
+        IntoPyObjectExt, PyRef, PyRefMut, Python,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
     use rstest::rstest;
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
@@ -1323,41 +1341,79 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_exec_algorithm_registers_python_instance() {
-        use nautilus_common::python::actor::PyDataActor;
-        use nautilus_model::identifiers::ExecAlgorithmId;
-        use pyo3::{ffi::c_str, types::PyAnyMethods};
-
+    #[case::string("string", Some("EXEC-CONFIG"))]
+    #[case::exec_id("exec_id", Some("EXEC-CONFIG"))]
+    #[case::actor_id("actor_id", Some("EXEC-CONFIG"))]
+    #[case::fallback("fallback", Some("ACTOR-FALLBACK"))]
+    #[case::invalid("invalid", None)]
+    fn test_add_exec_algorithm_registers_python_instance(
+        #[case] id_type: &str,
+        #[case] expected_id: Option<&str>,
+    ) {
         Python::initialize();
-
         let mut engine =
             super::PyBacktestEngine(BacktestEngine::new(BacktestEngineConfig::default()).unwrap());
 
         Python::attach(|py| {
+            let attributes = PyDict::new(py);
+            attributes.set_item("actor_id", "ACTOR-FALLBACK").unwrap();
+            attributes.set_item("log_events", false).unwrap();
+            attributes.set_item("log_commands", true).unwrap();
+
+            let id = match id_type {
+                "string" => Some("EXEC-CONFIG".into_py_any(py).unwrap()),
+                "exec_id" => Some(
+                    ExecAlgorithmId::from("EXEC-CONFIG")
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "actor_id" => Some(ActorId::from("EXEC-CONFIG").into_py_any(py).unwrap()),
+                "invalid" => Some(42.into_py_any(py).unwrap()),
+                "fallback" => None,
+                _ => unreachable!(),
+            };
+
+            if let Some(id) = id {
+                attributes.set_item("exec_algorithm_id", id).unwrap();
+            }
+
             let config = py
-                .eval(
-                    c_str!("type('_Cfg', (), {'exec_algorithm_id': 'EXEC-INSTANCE-001'})()"),
-                    None,
-                    None,
-                )
+                .import("types")
+                .unwrap()
+                .getattr("SimpleNamespace")
+                .unwrap()
+                .call((), Some(&attributes))
                 .unwrap();
-            let instance = py
-                .get_type::<PyDataActor>()
-                .as_any()
-                .call1((config,))
-                .unwrap();
+            let instance = py.get_type::<PyDataActor>().call0().unwrap();
+            {
+                let mut actor = instance.extract::<PyRefMut<'_, PyDataActor>>().unwrap();
+                actor.set_config(Some(config.unbind()));
+                actor.set_log_events(true);
+                actor.set_log_commands(false);
+            }
 
-            engine.py_add_exec_algorithm(&instance).unwrap();
-
-            assert!(
-                engine
-                    .0
-                    .kernel()
-                    .trader
-                    .borrow()
-                    .exec_algorithm_ids()
-                    .contains(&ExecAlgorithmId::from("EXEC-INSTANCE-001"))
-            );
+            let result = engine.py_add_exec_algorithm(&instance);
+            if let Some(expected_id) = expected_id {
+                result.unwrap();
+                let actor = instance.extract::<PyRef<'_, PyDataActor>>().unwrap();
+                assert_eq!(
+                    engine.0.kernel().trader.borrow().exec_algorithm_ids(),
+                    vec![ExecAlgorithmId::from(expected_id)]
+                );
+                assert_eq!(
+                    (actor.config.log_events, actor.config.log_commands),
+                    (false, true)
+                );
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "RuntimeError: Invalid `exec_algorithm_id`/`actor_id` type"
+                );
+                assert_eq!(
+                    engine.0.kernel().trader.borrow().exec_algorithm_ids(),
+                    Vec::new()
+                );
+            }
         });
     }
 

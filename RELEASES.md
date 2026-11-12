@@ -48,6 +48,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Refined backtest replay, result collection, and venue setup
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Refined `DataEngine` catalog request planning and response conversion
 - Refined DeFi pool swap simulation and snapshot comparison

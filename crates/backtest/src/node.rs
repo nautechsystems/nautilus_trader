@@ -17,14 +17,13 @@
 
 use std::{fmt::Debug, iter::Peekable, mem};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_data::replay::{DataIterator, ReplayBatch, ReplayPoll, ReplaySource};
 use nautilus_model::{
     data::{Data, DataBatch, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
-    enums::{BookType, OtoTriggerMode, RecordFlag},
-    identifiers::{InstrumentId, Venue},
-    types::Money,
+    enums::{BookType, RecordFlag},
+    identifiers::InstrumentId,
 };
 use nautilus_persistence::{
     backend::default_catalog_factories,
@@ -35,7 +34,7 @@ use nautilus_persistence::{
 };
 
 use crate::{
-    config::{BacktestDataConfig, BacktestRunConfig, SimulatedVenueConfig},
+    config::{BacktestDataConfig, BacktestRunConfig},
     engine::BacktestEngine,
     result::BacktestResult,
 };
@@ -320,83 +319,20 @@ fn build_engine(
     let mut engine = BacktestEngine::new(engine_config)?;
 
     for venue_config in config.venues() {
-        let starting_balances: Vec<Money> = venue_config
-            .starting_balances()
-            .iter()
-            .map(|s| s.parse::<Money>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("Invalid starting balance: {e}"))?;
-
-        let default_leverage = venue_config.default_leverage();
-        let leverages = venue_config.leverages().cloned().unwrap_or_default();
-        let fill_model = venue_config
-            .fill_model()
-            .cloned()
-            .unwrap_or_default()
-            .into();
-
-        let fee_model = venue_config
-            .fee_model()
-            .cloned()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "BacktestVenueConfig for '{}' requires an explicit fee_model, including an explicit zero-fee model",
-                    venue_config.name()
-                )
-            })?
-            .into();
-
-        let margin_model = venue_config.margin_model().cloned().map(Into::into);
-
-        let latency_model = venue_config.latency_model().cloned().map(Into::into);
-
-        let modules = venue_config
-            .modules()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect();
-
-        let sim_config = SimulatedVenueConfig::builder()
-            .venue(Venue::from(venue_config.name().as_str()))
-            .oms_type(venue_config.oms_type())
-            .account_type(venue_config.account_type())
-            .book_type(venue_config.book_type())
-            .starting_balances(starting_balances)
-            .maybe_base_currency(venue_config.base_currency())
-            .maybe_default_leverage(default_leverage)
-            .leverages(leverages)
-            .fill_model(fill_model)
-            .fee_model(fee_model)
-            .maybe_margin_model(margin_model)
-            .maybe_latency_model(latency_model)
-            .modules(modules)
-            .routing(venue_config.routing())
-            .reject_stop_orders(venue_config.reject_stop_orders())
-            .support_gtd_orders(venue_config.support_gtd_orders())
-            .support_contingent_orders(venue_config.support_contingent_orders())
-            .use_position_ids(venue_config.use_position_ids())
-            .use_random_ids(venue_config.use_random_ids())
-            .use_reduce_only(venue_config.use_reduce_only())
-            .use_market_order_acks(venue_config.use_market_order_acks())
-            .bar_execution(venue_config.bar_execution())
-            .bar_adaptive_high_low_ordering(venue_config.bar_adaptive_high_low_ordering())
-            .trade_execution(venue_config.trade_execution())
-            .liquidity_consumption(venue_config.liquidity_consumption())
-            .allow_cash_borrowing(venue_config.allow_cash_borrowing())
-            .frozen_account(venue_config.frozen_account())
-            .queue_position(venue_config.queue_position())
-            .order_priority_reset_policy(venue_config.order_priority_reset_policy())
-            .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
-            .price_protection_points(venue_config.price_protection_points())
-            .liquidation_enabled(venue_config.liquidation_enabled())
-            .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
-            .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
-            .build()?;
+        let sim_config = venue_config.to_simulated()?;
         engine.add_venue(sim_config)?;
     }
 
-    for data_config in config.data() {
+    add_catalog_instruments(&mut engine, config.data(), catalog_factories)?;
+    Ok(engine)
+}
+
+fn add_catalog_instruments(
+    engine: &mut BacktestEngine,
+    configs: &[BacktestDataConfig],
+    catalog_factories: &CatalogFactoryRegistry,
+) -> anyhow::Result<()> {
+    for data_config in configs {
         let mut catalog = create_catalog(data_config, catalog_factories)?;
         let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
         let filter: Option<Vec<String>> = if instr_ids.is_empty() {
@@ -421,7 +357,7 @@ fn build_engine(
         }
     }
 
-    Ok(engine)
+    Ok(())
 }
 
 fn validate_configs(configs: &[BacktestRunConfig]) -> anyhow::Result<()> {
@@ -433,67 +369,74 @@ fn validate_configs(configs: &[BacktestRunConfig]) -> anyhow::Result<()> {
          (kernel MessageBus is a thread-local singleton)"
     );
 
-    let mut seen_ids = AHashSet::new();
-
     for config in configs {
-        anyhow::ensure!(
-            seen_ids.insert(config.id()),
-            "Duplicate run config ID '{}'",
-            config.id()
+        validate_data_configs(config)?;
+        validate_venue_data(config)?;
+    }
+
+    Ok(())
+}
+
+fn validate_data_configs(config: &BacktestRunConfig) -> anyhow::Result<()> {
+    let venue_names: Vec<String> = config
+        .venues()
+        .iter()
+        .map(|v| v.name().to_string())
+        .collect();
+
+    for data_config in config.data() {
+        if let (Some(start), Some(end)) = (data_config.start_time(), data_config.end_time()) {
+            anyhow::ensure!(
+                start <= end,
+                "Data config start_time ({start}) must be <= end_time ({end})"
+            );
+        }
+
+        for instrument_id in data_config.get_instrument_ids()? {
+            let venue = instrument_id.venue.to_string();
+            anyhow::ensure!(
+                venue_names.contains(&venue),
+                "No venue config found for venue '{venue}' (required by instrument {instrument_id})"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_venue_data(config: &BacktestRunConfig) -> anyhow::Result<()> {
+    for venue_config in config.venues() {
+        let needs_book_data = matches!(
+            venue_config.book_type(),
+            BookType::L2_MBP | BookType::L3_MBO
         );
 
-        let venue_names: Vec<String> = config
-            .venues()
-            .iter()
-            .map(|v| v.name().to_string())
-            .collect();
-
-        for data_config in config.data() {
-            if let (Some(start), Some(end)) = (data_config.start_time(), data_config.end_time()) {
-                anyhow::ensure!(
-                    start <= end,
-                    "Data config start_time ({start}) must be <= end_time ({end})"
-                );
-            }
-
-            for instrument_id in data_config.get_instrument_ids()? {
-                let venue = instrument_id.venue.to_string();
-                anyhow::ensure!(
-                    venue_names.contains(&venue),
-                    "No venue config found for venue '{venue}' (required by instrument {instrument_id})"
-                );
-            }
+        if !needs_book_data {
+            continue;
         }
 
-        for venue_config in config.venues() {
-            let needs_book_data = matches!(
-                venue_config.book_type(),
-                BookType::L2_MBP | BookType::L3_MBO
+        let venue_name = venue_config.name().to_string();
+
+        let has_book_data = config.data().iter().any(|dc| {
+            let is_book_type = matches!(
+                dc.data_type(),
+                NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth
             );
 
-            if needs_book_data {
-                let venue_name = venue_config.name().to_string();
-                let has_book_data = config.data().iter().any(|dc| {
-                    let is_book_type = matches!(
-                        dc.data_type(),
-                        NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth
-                    );
-
-                    if !is_book_type {
-                        return false;
-                    }
-
-                    // Unfiltered config (no instrument filter) covers all venues
-                    let ids = dc.get_instrument_ids().unwrap_or_default();
-                    ids.is_empty() || ids.iter().any(|id| id.venue.to_string() == venue_name)
-                });
-                anyhow::ensure!(
-                    has_book_data,
-                    "Venue '{venue_name}' has book_type {:?} but no order book data configured",
-                    venue_config.book_type()
-                );
+            if !is_book_type {
+                return false;
             }
-        }
+
+            // Unfiltered config (no instrument filter) covers all venues
+            let ids = dc.get_instrument_ids().unwrap_or_default();
+            ids.is_empty() || ids.iter().any(|id| id.venue.to_string() == venue_name)
+        });
+
+        anyhow::ensure!(
+            has_book_data,
+            "Venue '{venue_name}' has book_type {:?} but no order book data configured",
+            venue_config.book_type()
+        );
     }
     Ok(())
 }
@@ -916,8 +859,8 @@ mod tests {
     use nautilus_model::{
         data::{BookOrder, QuoteTick, TradeTick},
         enums::{AccountType, AggressorSide, BookAction, OmsType, OrderSide},
-        identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        identifiers::{InstrumentId, TradeId, Venue},
+        types::{Money, Price, Quantity},
     };
     #[cfg(feature = "python")]
     use pyo3::{ffi::c_str, prelude::*, types::PyDict};
