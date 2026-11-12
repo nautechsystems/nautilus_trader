@@ -2376,8 +2376,10 @@ groups book updates by instrument, then splits consecutive updates by hash. Quot
 in venue payload order.
 Each hash group emits its own [normalized book delta batch](#price-change-bursts).
 
-Both book output modes reject input older than a retained timestamp mark. Incremental input advances
-it even while gated; snapshots advance it only after validation and acceptance.
+Both book output modes reject input older than a retained timestamp mark, except during recovery
+when a snapshot matches the newest withheld update's non-empty hash. The snapshot cannot predate
+the published book. Incremental input advances the mark even while gated; snapshots advance it only
+after validation and acceptance.
 
 - Book-delta unsubscribe, shard reconnect, and tick-size changes reset the mark.
 - Recovery subscription cycles retain it.
@@ -2436,10 +2438,8 @@ messages, so a size update with a slightly earlier venue timestamp is still acce
 The adapter ignores events older than the cached quote or, with effective deltas, the local
 book. It also rejects locked, crossed, out-of-range, and off-grid events.
 
-With a book delta subscription, both modes also discard snapshots older than the book's retained
-timestamp mark before quote processing. A snapshot rejected by book hash validation emits no quote.
-During recovery, a snapshot matching the newest withheld update's non-empty hash can cover that update
-despite an older timestamp, but cannot predate the published book.
+With a book delta subscription, both modes apply the book timestamp rules above before quote
+processing. A snapshot rejected by book hash validation emits no quote.
 
 An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
 `drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
