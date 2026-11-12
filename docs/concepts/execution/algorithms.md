@@ -41,9 +41,12 @@ slice down to the instrument size increment:
   TWAP submits the whole order at once.
 
 TWAP denies the primary order before submission when the order type, instrument, or schedule is
-unsupported or invalid. When TWAP slices the order, it also denies an order quantity off the
-instrument size grid, a slice above the instrument maximum quantity, and an interval count too
-large to schedule.
+unsupported or invalid. When TWAP slices the order, it also denies the order in these cases:
+
+- **Quantity**: The order quantity has more decimal places than the instrument size precision or
+  is off the size grid.
+- **Slice size**: A slice exceeds the instrument maximum quantity.
+- **Schedule capacity**: The interval count is too large to schedule.
 
 For quote-quantity orders, TWAP rounds each slice to the decimal places of the size increment
 instead of down to the increment. It skips the remainder merge and the size grid and maximum

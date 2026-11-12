@@ -150,7 +150,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             Err(reason) => return self.deny_order(&order, reason),
         };
 
-        let num_intervals = (horizon_secs / interval_secs).floor() as u64;
+        let num_intervals = interval_count(horizon_secs, interval_secs);
         if num_intervals == 0 {
             return self.deny_order(&order, validation_failed("num_intervals is 0"));
         }
@@ -449,6 +449,19 @@ fn parse_schedule_secs(order: &OrderAny) -> Result<(f64, f64), Ustr> {
     Ok((horizon_secs, interval_secs))
 }
 
+// Whole nanoseconds keep float error from dropping a slice for inputs such as 0.3 / 0.1
+fn interval_count(horizon_secs: f64, interval_secs: f64) -> u64 {
+    let horizon = Duration::try_from_secs_f64(horizon_secs);
+    let interval = Duration::try_from_secs_f64(interval_secs);
+
+    match (horizon, interval) {
+        (Ok(horizon), Ok(interval)) if !interval.is_zero() => {
+            u64::try_from(horizon.as_nanos() / interval.as_nanos()).unwrap_or(u64::MAX)
+        }
+        _ => (horizon_secs / interval_secs).floor() as u64,
+    }
+}
+
 fn interval_duration(interval_secs: f64, timestamp_ns: u64) -> Result<Duration, Ustr> {
     let interval = Duration::try_from_secs_f64(interval_secs).map_err(|e| {
         validation_failed(format!(
@@ -487,6 +500,19 @@ fn size_schedule(
     let total_qty = order.quantity();
     let is_quote_quantity = order.is_quote_quantity();
 
+    // The risk engine would deny an over-precise final primary only after earlier slices execute
+    let max_precision = instrument.size_precision();
+    if total_qty.precision > max_precision {
+        let reason = OrderDeniedReason::QuantityPrecisionExceedsMaximum {
+            quantity: total_qty,
+            quantity_precision: total_qty.precision,
+            max_precision,
+        }
+        .to_string();
+
+        return Err(Ustr::from(&reason));
+    }
+
     if !is_quote_quantity && let Err(e) = instrument.try_normalize_qty(total_qty) {
         return Err(validation_failed(format!(
             "invalid order quantity={total_qty}: {e}"
@@ -494,7 +520,7 @@ fn size_schedule(
     }
 
     // Quote remainders come from the slice before decimal rounding, so the total check denies
-    // a quote schedule that the rounding changed
+    // a quote schedule that the rounding changed.
     let (slice, min_qty, max_qty) = if is_quote_quantity {
         (floored, None, None)
     } else {
@@ -784,6 +810,17 @@ mod tests {
         ));
         assert!(algo.scheduled_orders.is_empty());
         assert!(algo.clock().timer_names().is_empty());
+    }
+
+    fn scheduled_sizes(algo: &TwapAlgorithm, primary_id: ClientOrderId) -> Vec<Quantity> {
+        let first = algo
+            .cache()
+            .order(&ClientOrderId::from("O-001-E1"))
+            .unwrap()
+            .quantity();
+        let mut scheduled = vec![first];
+        scheduled.extend(&algo.scheduled_orders[&primary_id].remaining_sizes);
+        scheduled
     }
 
     #[rstest]
@@ -1574,13 +1611,7 @@ mod tests {
 
         algo.on_order(order).unwrap();
 
-        let first = algo
-            .cache()
-            .order(&ClientOrderId::from("O-001-E1"))
-            .unwrap()
-            .quantity();
-        let mut scheduled = vec![first];
-        scheduled.extend(&algo.scheduled_orders[&primary_id].remaining_sizes);
+        let scheduled = scheduled_sizes(&algo, primary_id);
         let expected: Vec<Quantity> = expected.iter().copied().map(Quantity::from).collect();
         let scheduled_total = scheduled
             .iter()
@@ -1638,13 +1669,7 @@ mod tests {
 
         algo.on_order(order).unwrap();
 
-        let first = algo
-            .cache()
-            .order(&ClientOrderId::from("O-001-E1"))
-            .unwrap()
-            .quantity();
-        let mut scheduled = vec![first];
-        scheduled.extend(&algo.scheduled_orders[&primary_id].remaining_sizes);
+        let scheduled = scheduled_sizes(&algo, primary_id);
         let expected: Vec<Quantity> = expected.iter().copied().map(Quantity::from).collect();
 
         assert_eq!(scheduled, expected);
@@ -1687,6 +1712,36 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_rejects_quantity_above_size_precision(
+        #[values(false, true)] is_quote_quantity: bool,
+    ) {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        let submissions = capture_risk_submissions();
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let quantity = Quantity::from("1.5010");
+        let order = if is_quote_quantity {
+            create_quote_market_order_with_params_and_qty(params, quantity)
+        } else {
+            create_market_order_with_params_and_qty(params, quantity)
+        };
+
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity=1.5010, precision=4, max_precision=3",
+        );
+
+        assert!(submissions.borrow().is_empty());
+    }
+
+    #[rstest]
     fn test_twap_children_use_instrument_size_precision() {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
@@ -1698,7 +1753,7 @@ mod tests {
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
         params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
 
-        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.000000000"));
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("3"));
         let primary_id = order.client_order_id();
 
         algo.on_order(order).unwrap();
@@ -2293,6 +2348,57 @@ mod tests {
             .unwrap()
             .remaining_sizes;
         assert!(remaining.len() >= 5);
+    }
+
+    #[rstest]
+    fn test_twap_counts_decimal_intervals_exactly() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        // Float division gives 0.3 / 0.1 = 2.9999999999999996, which would floor to two slices
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("0.3"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("0.1"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("2.100"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        assert_eq!(
+            scheduled_sizes(&algo, primary_id),
+            vec![Quantity::from("0.700"); 3]
+        );
+    }
+
+    #[rstest]
+    fn test_twap_submits_entire_size_when_interval_count_saturates() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        let submissions = capture_risk_submissions();
+
+        // 10^11 seconds at one-nanosecond intervals exceeds u64::MAX intervals
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("100000000000"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("0.000000001"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.0"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        let submitted: Vec<(ClientOrderId, Quantity)> = submissions
+            .borrow()
+            .iter()
+            .map(|command| (command.client_order_id, command.order_init.quantity))
+            .collect();
+
+        assert_eq!(submitted, vec![(primary_id, Quantity::from("1.0"))]);
+        assert!(algo.scheduled_orders.is_empty());
     }
 
     #[rstest]
