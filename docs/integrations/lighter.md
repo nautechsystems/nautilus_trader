@@ -1064,6 +1064,13 @@ Execution clients authenticate and subscribe to six private streams:
 
 The adapter emits merged `account_all_assets` and `user_stats` state only after both first frames arrive.
 
+`LighterWsFrame` preserves optional `transaction_time` integers on `account_all_positions` and
+`account_all_assets` frames, including zero. The field uses
+[venue microseconds](https://docs.lighter.xyz/developers/reference/timestamps).
+It is available through `NautilusWsMessage::Raw` only without an execution context; trading nodes do
+not expose it in typed account or position reports. Frames are processed in receive order without
+timestamp filtering or deduplication, and report timestamps remain unchanged.
+
 Construction allows missing credentials, but `connect()` requires `private_key`, `account_index`, and
 `api_key_index`. Private streams and nonce refresh are mandatory.
 

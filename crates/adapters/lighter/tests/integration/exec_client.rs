@@ -9139,7 +9139,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     client.connect().await.expect("connect");
     await_subscribe_count(&state, 4).await;
 
-    state.push_frame(&load_json("ws_account_all_positions_update.json"));
+    state.push_frame(&load_json("ws_account_all_positions_transaction_time.json"));
 
     wait_until_async(
         || {
@@ -9200,6 +9200,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     state.push_frame(&json!({
         "type": "subscribed/account_all_positions",
         "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
+        "transaction_time": 1,
         "positions": {},
         "shares": [],
         "last_funding_round": null,

@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
+- Added optional Lighter account transaction timestamps to WebSocket wire models
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 
 ### Breaking Changes
@@ -37,6 +38,7 @@ Released on TBD (UTC).
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
 - Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
+- Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Security
