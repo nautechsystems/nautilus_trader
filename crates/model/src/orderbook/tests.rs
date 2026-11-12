@@ -11096,3 +11096,32 @@ fn test_book_integrity_locked_market_is_valid() {
 
     assert_eq!(book_check_integrity(&book), Ok(()));
 }
+
+#[rstest]
+fn test_book_advance_progress_changes_only_metadata_and_keeps_high_water_marks() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    book.add(
+        BookOrder::new(
+            Some(OrderSide::Buy),
+            Price::from("99.00"),
+            Quantity::from(10),
+            1,
+        ),
+        0,
+        1,
+        10.into(),
+    );
+    let bids = book.bids_as_map(None);
+    let asks = book.asks_as_map(None);
+    let update_count = book.update_count;
+
+    book.advance_progress(7, 70.into());
+    book.advance_progress(3, 30.into());
+
+    assert_eq!(book.sequence, 7);
+    assert_eq!(book.ts_last, 70.into());
+    assert_eq!(book.update_count, update_count);
+    assert_eq!(book.bids_as_map(None), bids);
+    assert_eq!(book.asks_as_map(None), asks);
+}

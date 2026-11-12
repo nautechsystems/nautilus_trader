@@ -19,11 +19,13 @@
 //! parts of the NautilusTrader system, including data requests, execution commands,
 //! and system control messages.
 
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{CustomData, Data},
     events::{
         AccountState, OrderAcceptedBatch, OrderCanceledBatch, OrderEventAny, OrderSubmittedBatch,
     },
+    identifiers::InstrumentId,
 };
 use strum::Display;
 
@@ -38,6 +40,17 @@ pub mod defi;
 pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
 pub use execution::ExecutionReport;
 
+/// Sequence and event-time progress for a book whose levels were not changed.
+///
+/// This process-local event travels through the same FIFO runner channel as book data, allowing
+/// consumers to advance cached book metadata after a sequence-only feed update.
+#[derive(Clone, Debug)]
+pub struct BookProgress {
+    pub instrument_id: InstrumentId,
+    pub sequence: u64,
+    pub ts_event: UnixNanos,
+}
+
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(
     clippy::large_enum_variant,
@@ -46,6 +59,7 @@ pub use execution::ExecutionReport;
 #[derive(Debug, Display)]
 pub enum DataEvent {
     Data(Data),
+    BookProgress(BookProgress),
     Response(DataResponse),
     RequestFailed(data::DataRequestFailed),
     ResponseEnvelope(data::DataResponseEnvelope),

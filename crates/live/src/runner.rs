@@ -547,6 +547,9 @@ impl AsyncRunner {
             DataEvent::Data(data) => {
                 msgbus::send_data(MessagingSwitchboard::data_engine_process_data(), data);
             }
+            DataEvent::BookProgress(progress) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &progress);
+            }
             DataEvent::ResponseEnvelope(response) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &response);
             }
@@ -2626,5 +2629,30 @@ mod tests {
         )));
 
         assert_eq!(*received.borrow(), vec![correlation_id]);
+    }
+
+    #[rstest]
+    fn test_handle_data_event_routes_book_progress_to_data_engine_in_order() {
+        use nautilus_common::{messages::BookProgress, msgbus::ShareableMessageHandler};
+
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let sink = received.clone();
+        msgbus::register_any(
+            MessagingSwitchboard::data_engine_process(),
+            ShareableMessageHandler::from_typed(move |progress: &BookProgress| {
+                sink.borrow_mut()
+                    .push((progress.sequence, progress.ts_event));
+            }),
+        );
+
+        for (sequence, ts_event) in [(7, 70.into()), (3, 30.into())] {
+            AsyncRunner::handle_data_event(DataEvent::BookProgress(BookProgress {
+                instrument_id: InstrumentId::from("AAPL.XNAS"),
+                sequence,
+                ts_event,
+            }));
+        }
+
+        assert_eq!(*received.borrow(), vec![(7, 70.into()), (3, 30.into())]);
     }
 }

@@ -139,6 +139,14 @@ impl OrderBook {
         self.update_count = 0;
     }
 
+    /// Advances sequence and event-time metadata without changing book levels or update count.
+    ///
+    /// Values are treated as high-water marks so stale progress cannot regress the cached book.
+    pub fn advance_progress(&mut self, sequence: u64, ts_event: UnixNanos) {
+        self.sequence = self.sequence.max(sequence);
+        self.ts_last = self.ts_last.max(ts_event);
+    }
+
     /// Adds an order to the book after preprocessing based on book type.
     ///
     /// # Panics

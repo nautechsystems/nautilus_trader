@@ -1716,8 +1716,8 @@ impl DataEngine {
 
     /// Processes a dynamically-typed data message.
     ///
-    /// Supports instruments, response envelopes, request failures, funding rates, option greeks,
-    /// instrument status, and custom data; unrecognized types are logged as errors.
+    /// Supports book progress, instruments, response envelopes, request failures, funding rates,
+    /// option greeks, instrument status, and custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         if let Some(response) = data.downcast_ref::<DataResponseEnvelope>() {
             self.response_envelope(response.clone());
@@ -1731,7 +1731,15 @@ impl DataEngine {
 
         self.data_count += 1;
 
-        if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
+        if let Some(progress) = data.downcast_ref::<nautilus_common::messages::BookProgress>() {
+            if let Some(book) = self
+                .cache
+                .borrow_mut()
+                .order_book_mut(&progress.instrument_id)
+            {
+                book.advance_progress(progress.sequence, progress.ts_event);
+            }
+        } else if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
@@ -2374,4 +2382,69 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
 #[cfg(not(feature = "defi"))]
 fn log_defi_data_dropped(data: DataRef<'_>) {
     log::error!("Cannot process data {data:?}, nautilus-data built without its `defi` feature");
+}
+
+#[cfg(test)]
+mod book_progress_tests {
+    use nautilus_common::{clock::TestClock, messages::BookProgress};
+    use nautilus_model::{
+        data::BookOrder,
+        enums::{BookType, OrderSide},
+        orderbook::OrderBook,
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn process_book_progress_advances_cached_book_without_changing_levels() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        book.add(
+            BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(10), 1),
+            0,
+            1,
+            10.into(),
+        );
+        cache.borrow_mut().add_order_book(book).unwrap();
+
+        let bids = cache
+            .borrow()
+            .order_book(&instrument_id)
+            .unwrap()
+            .bids_as_map(None);
+        let asks = cache
+            .borrow()
+            .order_book(&instrument_id)
+            .unwrap()
+            .asks_as_map(None);
+        let update_count = cache
+            .borrow()
+            .order_book(&instrument_id)
+            .unwrap()
+            .update_count;
+        let mut engine =
+            DataEngine::new(Rc::new(RefCell::new(TestClock::new())), cache.clone(), None);
+
+        engine.process(&BookProgress {
+            instrument_id,
+            sequence: 7,
+            ts_event: 70.into(),
+        });
+        engine.process(&BookProgress {
+            instrument_id,
+            sequence: 3,
+            ts_event: 30.into(),
+        });
+
+        let cache_ref = cache.borrow();
+        let cached = cache_ref.order_book(&instrument_id).unwrap();
+        assert_eq!(cached.sequence, 7);
+        assert_eq!(cached.ts_last, 70.into());
+        assert_eq!(cached.update_count, update_count);
+        assert_eq!(cached.bids_as_map(None), bids);
+        assert_eq!(cached.asks_as_map(None), asks);
+    }
 }
