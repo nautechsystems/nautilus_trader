@@ -18866,22 +18866,27 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
 }
 
 #[rstest]
-#[case::bulk_canceled(false, OrderStatus::Canceled, "4.5", OrderStatus::Canceled, 2)]
-#[case::bulk_expired(false, OrderStatus::Expired, "4.5", OrderStatus::Expired, 2)]
-#[case::targeted_canceled(true, OrderStatus::Canceled, "4.5", OrderStatus::Canceled, 2)]
-#[case::targeted_expired(true, OrderStatus::Expired, "4.5", OrderStatus::Expired, 2)]
-#[case::bulk_canceled_full(false, OrderStatus::Canceled, "10.0", OrderStatus::Filled, 1)]
-#[case::bulk_expired_full(false, OrderStatus::Expired, "10.0", OrderStatus::Filled, 1)]
+#[case::bulk_canceled(false, false, OrderStatus::Canceled, "4.5", OrderStatus::Canceled, 2)]
+#[case::bulk_expired(false, false, OrderStatus::Expired, "4.5", OrderStatus::Expired, 2)]
+#[case::targeted_canceled(true, false, OrderStatus::Canceled, "4.5", OrderStatus::Canceled, 2)]
+#[case::targeted_expired(true, false, OrderStatus::Expired, "4.5", OrderStatus::Expired, 2)]
+#[case::targeted_filled(true, false, OrderStatus::Filled, "10.0", OrderStatus::Filled, 1)]
+#[case::bulk_canceled_full(false, false, OrderStatus::Canceled, "10.0", OrderStatus::Filled, 1)]
+#[case::bulk_expired_full(false, false, OrderStatus::Expired, "10.0", OrderStatus::Filled, 1)]
+#[case::open_only_canceled(true, true, OrderStatus::Canceled, "4.5", OrderStatus::Canceled, 2)]
+#[case::open_only_filled(true, true, OrderStatus::Filled, "10.0", OrderStatus::Filled, 1)]
 #[tokio::test]
 async fn test_check_open_orders_terminal_report_applies_fills(
     #[case] targeted: bool,
+    #[case] open_only: bool,
     #[case] report_status: OrderStatus,
     #[case] filled_qty: Quantity,
     #[case] expected_status: OrderStatus,
     #[case] event_count: usize,
 ) {
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
-        open_check_open_only: false,
+        open_check_open_only: open_only,
+        single_order_query_delay_ms: 0,
         open_check_missing_retries: 1,
         ..Default::default()
     });
@@ -18912,13 +18917,14 @@ async fn test_check_open_orders_terminal_report_applies_fills(
     reported_fill.last_px = Price::from("101.25");
     reported_fill.commission = commission;
 
-    let client = if targeted {
+    let mut client = if targeted {
         MockExecutionClient::new(Vec::new()).with_order_report(report.clone())
     } else {
         MockExecutionClient::new(vec![report.clone()])
     }
     .with_fill_reports(vec![reported_fill]);
 
+    client.requires_authoritative_fills = report_status == OrderStatus::Filled;
     client.fail_fill_reports.set(true);
 
     let failed = ctx.manager.check_open_orders(&[&client]).await;
@@ -19400,11 +19406,13 @@ async fn test_check_open_orders_mismatched_targeted_report_defers_resolution() {
 
 #[rstest]
 #[tokio::test]
-async fn test_check_open_orders_caps_targeted_queries_per_cycle() {
+async fn test_check_open_orders_caps_targeted_queries_per_cycle(
+    #[values(false, true)] open_only: bool,
+) {
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
-        open_check_open_only: false,
+        open_check_open_only: open_only,
         max_single_order_queries_per_cycle: 1,
         single_order_query_delay_ms: 0,
         ..Default::default()
@@ -19434,7 +19442,7 @@ async fn test_check_open_orders_caps_targeted_queries_per_cycle() {
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.len(), usize::from(!open_only));
     assert_eq!(mock_a.order_report_query_count.get(), 1);
     assert_eq!(mock_b.order_report_query_count.get(), 0);
 }
@@ -19602,16 +19610,20 @@ async fn test_check_open_orders_partially_filled_missing_at_venue_generates_canc
     assert_eq!(order.filled_qty(), Quantity::from("4.0"));
 }
 
+#[rstest]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_check_open_orders_failed_client_does_not_advance_missing_retries() {
+async fn test_check_open_orders_failed_client_does_not_advance_missing_retries(
+    #[values(false, true)] open_only: bool,
+) {
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
-        open_check_open_only: false,
+        open_check_open_only: open_only,
+        single_order_query_delay_ms: 0,
         ..Default::default()
     };
 
@@ -19653,11 +19665,19 @@ async fn test_check_open_orders_failed_client_does_not_advance_missing_retries()
     let clients: Vec<&dyn ExecutionClient> = vec![&healthy_client, &recovered_client];
     let second_events = ctx.manager.check_open_orders(&clients).await;
 
-    assert_eq!(second_events.len(), 1);
-    assert!(
-        matches!(&second_events[0], OrderEventAny::Rejected(rejected) if rejected.client_order_id == healthy_order_id),
-        "only the healthy venue order should exhaust its retry budget",
-    );
+    assert_eq!(healthy_client.order_report_query_count.get(), 1);
+    assert_eq!(recovered_client.order_report_query_count.get(), 0);
+
+    if open_only {
+        assert!(second_events.is_empty());
+    } else {
+        assert_eq!(second_events.len(), 1);
+        assert!(
+            matches!(&second_events[0], OrderEventAny::Rejected(rejected)
+            if rejected.client_order_id == healthy_order_id)
+        );
+    }
+
     assert_eq!(
         ctx.get_order(&failed_order_id).unwrap().status(),
         OrderStatus::Accepted,
@@ -19803,16 +19823,20 @@ async fn test_check_open_orders_failed_routing_client_fallback_coverage_does_not
     );
 }
 
+#[rstest]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_check_open_orders_positive_report_resets_missing_retry_ladder() {
+async fn test_check_open_orders_positive_report_resets_missing_retry_ladder(
+    #[values(false, true)] open_only: bool,
+) {
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
-        open_check_open_only: false,
+        open_check_open_only: open_only,
+        single_order_query_delay_ms: 0,
         ..Default::default()
     };
 
@@ -19867,6 +19891,10 @@ async fn test_check_open_orders_positive_report_resets_missing_retry_ladder() {
         ctx.get_order(&client_order_id).unwrap().status(),
         OrderStatus::Accepted,
     );
+    assert_eq!(empty_again.order_report_query_count.get(), 0);
+    let fourth_events = ctx.manager.check_open_orders(&clients).await;
+    assert_eq!(empty_again.order_report_query_count.get(), 1);
+    assert_eq!(fourth_events.len(), usize::from(!open_only));
 }
 
 #[cfg_attr(
@@ -19938,16 +19966,20 @@ async fn test_check_open_orders_venue_id_only_report_resets_missing_retry_ladder
     );
 }
 
+#[rstest]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state() {
+async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state(
+    #[values(false, true)] open_only: bool,
+) {
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
-        open_check_open_only: false,
+        open_check_open_only: open_only,
+        single_order_query_delay_ms: 0,
         ..Default::default()
     };
 
@@ -19974,6 +20006,7 @@ async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state(
     let events = ctx.manager.check_open_orders(&clients).await;
 
     assert!(events.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 0);
     assert_eq!(
         ctx.manager.recon_check_retry_count(&client_order_id),
         0,
@@ -20058,6 +20091,349 @@ async fn test_check_open_orders_deferred_pending_order_keeps_inflight_registrati
 
 #[rstest]
 #[tokio::test]
+async fn test_check_open_orders_open_only_negative_query_keeps_order_open(
+    #[values(false, true)] failed: bool,
+    #[values(false, true)] partially_filled: bool,
+) {
+    let _guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 2,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let client_order_id = ClientOrderId::from("O-OPEN-NEGATIVE");
+    let venue_order_id = VenueOrderId::from("V-OPEN-NEGATIVE");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    if partially_filled {
+        let order = ctx.get_order(&client_order_id).unwrap();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .last_qty(Quantity::from("4.0"))
+            .without_position_id()
+            .build();
+        ctx.cache.borrow_mut().update_order(&fill).unwrap();
+    }
+
+    let before = ctx.get_order(&client_order_id).unwrap();
+    let mut client = MockExecutionClient::new(Vec::new());
+    client.fail_order_report = failed;
+    for expected_queries in [0, 1, 1, 2] {
+        let events = ctx.manager.check_open_orders(&[&client]).await;
+        assert!(events.is_empty());
+        assert_eq!(client.order_report_query_count.get(), expected_queries);
+        assert_eq!(ctx.get_order(&client_order_id).unwrap(), before);
+    }
+
+    let warnings = MANAGER_LOG_CAPTURE.messages.lock();
+    let warnings: Vec<_> = warnings
+        .iter()
+        .filter(|message| message.contains(client_order_id.as_str()))
+        .collect();
+    assert_eq!(warnings.len(), 2, "found {warnings:?}");
+
+    let expected = if failed {
+        "Failed targeted order status query"
+    } else {
+        "Keeping O-OPEN-NEGATIVE open: targeted order status query found no report"
+    };
+
+    assert!(warnings.iter().all(|message| message.starts_with(expected)));
+    assert!(
+        ctx.manager
+            .take_submission_recovery_exhaustions()
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_bulk_failure_warning_rearms_after_recovery(
+    #[values(false, true)] open_only: bool,
+) {
+    let _guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_open_only: open_only,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 2,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-BULK-FAILURE-WARN");
+    insert_accepted_limit_order(
+        &ctx,
+        client_order_id,
+        VenueOrderId::from("V-BULK-FAILURE-WARN"),
+        test_client_id(),
+    );
+    let before = ctx.get_order(&client_order_id).unwrap();
+    let mut client = MockExecutionClient::failing(test_client_id(), test_venue());
+
+    let attempts = 3;
+    for _ in 0..attempts {
+        assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    }
+
+    let warnings = MANAGER_LOG_CAPTURE
+        .messages
+        .lock()
+        .iter()
+        .filter(|message| message.contains(client_order_id.as_str()))
+        .count();
+    assert_eq!(warnings, if open_only { 1 } else { attempts });
+
+    client.fail_order_reports = false;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    client.fail_order_reports = true;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+
+    let warnings = MANAGER_LOG_CAPTURE
+        .messages
+        .lock()
+        .iter()
+        .filter(|message| message.contains(client_order_id.as_str()))
+        .count();
+    assert_eq!(warnings, if open_only { 2 } else { attempts + 1 });
+    assert_eq!(ctx.get_order(&client_order_id).unwrap(), before);
+    assert_eq!(client.order_report_query_count.get(), 0);
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+}
+
+#[tokio::test]
+async fn test_check_open_orders_open_only_does_not_reopen_order_closed_during_targeted_query() {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 1,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-CLOSED-DURING-TARGET");
+    let venue_order_id = VenueOrderId::from("V-CLOSED-DURING-TARGET");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::Accepted,
+        Quantity::from("10.0"),
+        Quantity::zero(1),
+    );
+    let mut expected = ctx.get_order(&client_order_id).unwrap();
+    let canceled =
+        TestOrderEventStubs::canceled(&expected, test_account_id(), Some(venue_order_id));
+    expected.apply(canceled.clone()).unwrap();
+    let cache = ctx.cache.clone();
+    let client = MockExecutionClient::new(Vec::new())
+        .with_order_report(report)
+        .with_on_order_report_query(Box::new(move || {
+            cache.borrow_mut().update_order(&canceled).unwrap();
+        }));
+
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+
+    assert!(events.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 1);
+    assert_eq!(ctx.get_order(&client_order_id).unwrap(), expected);
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_missing_lookback_skips_query(
+    #[values(false, true)] open_only: bool,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 1,
+        open_check_open_only: open_only,
+        open_check_lookback_mins: Some(1),
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-LOOKBACK-MISSING");
+    insert_accepted_limit_order(
+        &ctx,
+        client_order_id,
+        VenueOrderId::from("V-LOOKBACK-MISSING"),
+        test_client_id(),
+    );
+    let before = ctx.get_order(&client_order_id).unwrap();
+    ctx.advance_time(DurationNanos::from_mins(2).as_u64());
+    let client = MockExecutionClient::new(Vec::new());
+
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+
+    assert!(events.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 0);
+    assert_eq!(ctx.get_order(&client_order_id).unwrap(), before);
+}
+
+#[rstest]
+#[case::cancel(false)]
+#[case::modify(true)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_open_only_queries_after_inflight_timeout(#[case] modify: bool) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 2,
+        inflight_threshold_ms: 10,
+        inflight_max_retries: 2,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-OPEN-RESTORED");
+    let venue_order_id = VenueOrderId::from("V-OPEN-RESTORED");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let order = ctx.get_order(&client_order_id).unwrap();
+
+    let pending = if modify {
+        OrderEventAny::PendingUpdate(
+            OrderPendingUpdateSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(test_account_id())
+                .build(),
+        )
+    } else {
+        OrderEventAny::PendingCancel(
+            OrderPendingCancelSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(test_account_id())
+                .build(),
+        )
+    };
+
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
+    let report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::Canceled,
+        Quantity::from("10.0"),
+        Quantity::zero(1),
+    );
+    let client = MockExecutionClient::new(Vec::new()).with_order_report(report);
+
+    for _ in 0..2 {
+        assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    }
+
+    assert_eq!(client.order_report_query_count.get(), 0);
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 0);
+    ctx.cache.borrow_mut().update_order(&pending).unwrap();
+
+    ctx.advance_both(dst::time::Duration::from_millis(20)).await;
+    let inflight = ctx.manager.check_inflight_orders();
+    assert_eq!(inflight.queries.len(), 1);
+    assert!(inflight.events.is_empty());
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 0);
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+
+    ctx.advance_both(dst::time::Duration::from_millis(20)).await;
+    let exhausted = ctx.manager.check_inflight_orders();
+    assert!(exhausted.queries.is_empty());
+    assert_eq!(exhausted.events.len(), 1);
+
+    match &exhausted.events[0] {
+        OrderEventAny::ModifyRejected(event) if modify => {
+            assert_eq!(event.reason, "INFLIGHT_TIMEOUT");
+            assert_eq!(event.client_order_id, client_order_id);
+        }
+        OrderEventAny::CancelRejected(event) if !modify => {
+            assert_eq!(event.reason, "INFLIGHT_TIMEOUT");
+            assert_eq!(event.client_order_id, client_order_id);
+        }
+        event => panic!("Expected command rejection, was {event:?}"),
+    }
+
+    ctx.exec_engine.borrow_mut().process(&exhausted.events[0]);
+    ctx.manager.observe_order_event(&exhausted.events[0]);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 0);
+
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 0);
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+    assert_eq!(client.order_report_query_count.get(), 1);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(&events[0], OrderEventAny::Canceled(event)
+        if event.client_order_id == client_order_id && event.venue_order_id == Some(venue_order_id)));
+    ctx.exec_engine.borrow_mut().process(&events[0]);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_open_only_defers_recent_queries_and_activity() {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::from_millis(100),
+        open_check_missing_retries: 1,
+        single_order_query_delay_ms: 200,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-OPEN-RECENT");
+    insert_accepted_limit_order(
+        &ctx,
+        client_order_id,
+        VenueOrderId::from("V-OPEN-RECENT"),
+        test_client_id(),
+    );
+    ctx.manager.record_local_activity(client_order_id);
+    let client = MockExecutionClient::new(Vec::new());
+
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 0);
+    ctx.advance_both(dst::time::Duration::from_millis(101))
+        .await;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 1);
+    ctx.advance_both(dst::time::Duration::from_millis(199))
+        .await;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 1);
+    ctx.advance_both(dst::time::Duration::from_millis(1)).await;
+    assert!(ctx.manager.check_open_orders(&[&client]).await.is_empty());
+    assert_eq!(client.order_report_query_count.get(), 2);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_check_open_orders_open_only_missing_venue_order_does_not_reject() {
     let config = ExecutionManagerConfig {
         open_check_threshold_ns: DurationNanos::ZERO,
@@ -20086,6 +20462,7 @@ async fn test_check_open_orders_open_only_missing_venue_order_does_not_reject() 
     let events = ctx.manager.check_open_orders(&clients).await;
 
     assert!(events.is_empty());
+    assert_eq!(mock_client.order_report_query_count.get(), 0);
     let cached_order = ctx.get_order(&ClientOrderId::from("O-OPEN-ONLY")).unwrap();
     assert_eq!(cached_order.status(), OrderStatus::Submitted);
 }

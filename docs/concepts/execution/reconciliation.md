@@ -474,7 +474,7 @@ The existing limits and coverage checks still apply:
 
 - **In-flight checks**: `inflight_check_retries` counts checks. A limit of `N` permits `N - 1`
   intermediate order queries before exhaustion.
-- **Missing-order checks**: use `open_check_missing_retries` and require completed, matching client
+- **Full-history missing-order checks**: use `open_check_missing_retries` and require completed, matching client
   coverage plus a successful targeted query with no order found before reporting exhaustion. Failed
   or deferred targeted queries do not produce that diagnostic.
 
@@ -870,10 +870,11 @@ per-order recovery queries while allowing later venue evidence to resolve the or
 [Submission recovery](#submission-recovery) for the retention rules.
 
 :::warning[Restored orders rely on later venue evidence]
-Under `RetainUnresolved`, no order closes on a timeout alone. If the venue canceled an order and its cancel
-event was lost, the restored order stays open locally until a venue event or report closes it. Missing-order
-resolution runs only in full-history mode (`open_check_open_only=False`), so enable it for venues whose
-single-order query returns open orders only.
+Under `RetainUnresolved`, no order closes on a timeout alone. If a venue cancel event is lost, the restored
+order needs a later event or report to close it. When periodic open-order checks are enabled, either mode
+can obtain that report; open-only checks use a targeted query, subject to the adapter's report semantics and
+the configured lookback. Use full-history checks when an adapter supplies closed orders only through bulk
+history. See [Open-only mode](#open-only-mode).
 :::
 
 [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance) distinguishes
@@ -913,9 +914,10 @@ itself prove a pending modify or cancel outcome. Thus, these checks leave those 
 another check can determine the venue state.
 
 :::info[Full-history checks]
-The *Not found* rows apply only in full-history mode (`open_check_open_only=False`). Open-only mode is the
-default. Submission retention also applies here: an unacknowledged `SUBMITTED` order stays unresolved when the
-policy or its client requires retention.
+The *Not found* resolutions apply only in full-history mode (`open_check_open_only=False`), after a targeted
+query confirms absence. The default [open-only mode](#open-only-mode) also queries missing orders outside
+in-flight recovery, but leaves a "not found" result unresolved. In full-history mode, an unacknowledged
+`SUBMITTED` order stays unresolved when the policy or its client requires retention.
 :::
 
 | Cache status       | Venue status | Resolution   | Rationale                                                                |
@@ -932,9 +934,31 @@ policy or its client requires retention.
 
 #### Open-only mode
 
-Venue "open orders" endpoints exclude closed orders by design, making it impossible to distinguish missing
-orders from recently closed ones. Pending cancel/update orders stay unresolved when a missing-order check
-cannot prove the final venue state.
+Venue "open orders" endpoints exclude recently filled or canceled orders, so bulk absence alone cannot
+distinguish missing orders from recently closed ones. After `open_check_missing_retries` eligible missing
+checks with complete client coverage, the engine issues a targeted `GenerateOrderStatusReport` query.
+In-flight statuses and orders registered for in-flight recovery are excluded from missing-order queries.
+The in-flight checker handles registered commands. After a timeout restores an order's prior status, it
+becomes eligible for missing-order queries. Persisted in-flight orders without a registered command are also
+excluded; they still need a returned report, venue event, or full-history reconciliation.
+
+Recent local activity and query recency defer the query. Orders whose last update predates
+`open_check_lookback_mins` are skipped. With the default 60-minute window, an order with no update for an
+hour remains unqueried through this path.
+
+A returned report reconciles status and fills normally. If the targeted query returns no report or fails,
+the engine keeps the order open; it generates no `NOT_FOUND_AT_VENUE` rejection or synthetic cancel from
+that result. Adapter report semantics still apply, including any adapter-local status inference.
+
+Sending a missing-order query resets the retry counter, including when collection later times out.
+Persistent absence can therefore trigger another query after `open_check_missing_retries` eligible checks.
+The existing `max_single_order_queries_per_cycle` cap and query spacing apply to logical status requests;
+an adapter can make several HTTP requests to produce one report.
+
+Some adapters time-filter bulk open-order reports. For example, Bybit filters by the venue's last-update
+time. After a local timeout restore, a still-open order can remain absent from bulk reports while targeted
+queries repeatedly find it open. Each positive report clears the missing-order counter, but this can repeat
+until the cached last update falls outside the lookback window.
 
 #### Recent order protection
 
@@ -978,15 +1002,15 @@ instead of treating missing reports as flat.
 
 ### Retry coordination
 
-The in-flight loop increments its own per-order retry count against `inflight_check_retries` and mirrors that
-value into missing-order tracking. The open-order loop increments the missing-order count against
-`open_check_missing_retries`. Each loop applies its own limit. Neither setting automatically overrides the
-other.
+The in-flight loop counts per-order retries against `inflight_check_retries` and mirrors that count into
+missing-order tracking. The open-order loop uses `open_check_missing_retries`. In open-only mode, missing-order
+queries skip in-flight orders and registered in-flight checks, so they neither consume nor reset the in-flight
+budget. Timeout exhaustion clears the tracking before later checks query a restored order.
 
-When the open-order loop exhausts retries, the engine issues one targeted `GenerateOrderStatusReport` probe.
-It does this before applying a terminal state or leaving an ambiguous pending cancel/update unresolved. If the
-venue returns the order, reconciliation proceeds and missing-order tracking clears. If a pending state stays
-unresolved, the engine also resets the in-flight count before checking again after the configured threshold.
+Full-history checks can query missing in-flight orders. Each loop applies its own limit; neither setting
+automatically overrides the other. A returned targeted report reconciles normally and clears missing-order
+tracking. If missing-order resolution leaves a pending cancel or update unresolved, it resets the in-flight
+count before checking again after the configured threshold.
 
 When `RetainUnresolved` or the registered client requires retention, a tracked submission that has not been
 acknowledged keeps its original in-flight budget instead of resetting it. Repeated missing-order checks cannot

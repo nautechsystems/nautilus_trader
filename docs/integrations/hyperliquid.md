@@ -225,7 +225,7 @@ venue while the narrowed client rejects their cancellation requests and ignores 
 
 When reusing a cache with a narrower scope, set `reconciliation_instrument_ids` to match the
 instruments this node manages. This setting only limits reconciliation checks. Excluded orders retain
-their cached status when absent from scoped reports. With `open_check_open_only=False` or the fallback
+their cached status when absent from scoped reports. In either open-order check mode or the fallback
 single-order query path, the execution manager can repeatedly query out-of-scope orders and consume the
 per-cycle query budget. A generic order-report coverage contract is tracked separately in
 [issue #5569](https://github.com/nautechsystems/nautilus_trader/issues/5569).
