@@ -586,61 +586,20 @@ pub trait Order: 'static + Send {
         .with_post_only(self.is_post_only())
         .with_reduce_only(self.is_reduce_only());
 
-        if let Some(price) = self.price() {
-            report = report.with_price(price);
-        }
-
-        if let Some(activation_price) = self.activation_price() {
-            report = report.with_activation_price(activation_price);
-        }
-
-        if let Some(trigger_price) = self.trigger_price() {
-            report = report.with_trigger_price(trigger_price);
-        }
-
-        if let Some(trigger_type) = self.trigger_type() {
-            report = report.with_trigger_type(trigger_type);
-        }
-
-        if let Some(limit_offset) = self.limit_offset() {
-            report = report.with_limit_offset(limit_offset);
-        }
-
-        if let Some(trailing_offset) = self.trailing_offset() {
-            report = report.with_trailing_offset(trailing_offset);
-        }
-
-        if let Some(trailing_offset_type) = self.trailing_offset_type() {
-            report = report.with_trailing_offset_type(trailing_offset_type);
-        }
-
-        if let Some(display_qty) = self.display_qty() {
-            report = report.with_display_qty(display_qty);
-        }
-
-        if let Some(expire_time) = self.expire_time() {
-            report = report.with_expire_time(expire_time);
-        }
-
-        if let Some(contingency_type) = self.contingency_type() {
-            report = report.with_contingency_type(contingency_type);
-        }
-
-        if let Some(order_list_id) = self.order_list_id() {
-            report = report.with_order_list_id(order_list_id);
-        }
-
-        if let Some(linked_order_ids) = self.linked_order_ids() {
-            report = report.with_linked_order_ids(linked_order_ids.iter().copied());
-        }
-
-        if let Some(parent_order_id) = self.parent_order_id() {
-            report = report.with_parent_order_id(parent_order_id);
-        }
-
-        if let Some(position_id) = self.position_id() {
-            report = report.with_venue_position_id(position_id);
-        }
+        report.price = self.price();
+        report.activation_price = self.activation_price();
+        report.trigger_price = self.trigger_price();
+        report.trigger_type = self.trigger_type();
+        report.limit_offset = self.limit_offset();
+        report.trailing_offset = self.trailing_offset();
+        report.trailing_offset_type = self.trailing_offset_type();
+        report.display_qty = self.display_qty();
+        report.expire_time = self.expire_time();
+        report.contingency_type = self.contingency_type();
+        report.order_list_id = self.order_list_id();
+        report.linked_order_ids = self.linked_order_ids().map(<[ClientOrderId]>::to_vec);
+        report.parent_order_id = self.parent_order_id();
+        report.venue_position_id = self.position_id();
 
         // The trait exposes no trigger or rejection metadata accessors,
         // recover the last occurrences from the event history.
@@ -655,19 +614,12 @@ pub trait Order: 'static + Send {
             }
         }
 
-        if let Some(ts_triggered) = ts_triggered {
-            report = report.with_ts_triggered(ts_triggered);
-        }
+        report.ts_triggered = ts_triggered;
 
         // `cancel_reason` is the report's only reason channel,
         // reconciliation reads it for rejected orders.
-        if let Some(reason) = rejected_reason {
-            report = report.with_cancel_reason(reason.to_string());
-        }
-
-        if let Some(avg_px) = self.avg_px() {
-            report = report.with_avg_px(avg_px);
-        }
+        report.cancel_reason = rejected_reason.map(|reason| reason.to_string());
+        report.avg_px = self.avg_px();
 
         Some(report)
     }
@@ -1307,22 +1259,7 @@ impl OrderCore {
         }
 
         let Some(fill) = fill else {
-            if event.is_reopened {
-                return Err(OrderError::InvalidOrderEvent);
-            }
-
-            if !self.matches_fill_void_identity(event) {
-                return Err(OrderError::InvalidOrderEvent);
-            }
-
-            if event.voided_qty > self.quantity
-                || event
-                    .commission_voided
-                    .is_some_and(|commission| !commission.is_zero())
-            {
-                return Err(OrderError::OverVoid(event.trade_id));
-            }
-            return Ok(());
+            return self.validate_unrecorded_fill_void(event);
         };
 
         if fill.venue_order_id != event.venue_order_id
@@ -1342,6 +1279,22 @@ impl OrderCore {
         }
 
         self.validate_fill_void_commission(fill, event, previous)
+    }
+
+    fn validate_unrecorded_fill_void(&self, event: &OrderFillVoided) -> Result<(), OrderError> {
+        if event.is_reopened || !self.matches_fill_void_identity(event) {
+            return Err(OrderError::InvalidOrderEvent);
+        }
+
+        if event.voided_qty > self.quantity
+            || event
+                .commission_voided
+                .is_some_and(|commission| !commission.is_zero())
+        {
+            return Err(OrderError::OverVoid(event.trade_id));
+        }
+
+        Ok(())
     }
 
     fn matches_fill_void_identity(&self, event: &OrderFillVoided) -> bool {

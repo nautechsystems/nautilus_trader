@@ -1622,35 +1622,12 @@ impl Position {
                             (None, Some(_)) => None,
                         };
 
-                    if effective_qty.is_zero() {
-                        if let Some(commission) =
-                            effective_commission.filter(|commission| !commission.is_zero())
-                            && let Some(realized_pnl) =
-                                self.apply_surviving_fill_commission(fill, commission)?
-                        {
-                            closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
-                                closed_cycles_pnl,
-                                realized_pnl,
-                            )?);
-                        }
-                        continue;
-                    }
-
-                    // `apply_fill` clears realized PnL when it reopens from flat, so bank the
-                    // closing cycle's total before it goes
-                    if self.side == PositionSide::Flat
-                        && let Some(realized_pnl) = self.realized_pnl
-                    {
-                        closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
-                            closed_cycles_pnl,
-                            realized_pnl,
-                        )?);
-                    }
-
-                    let mut effective = fill.clone();
-                    effective.last_qty = effective_qty;
-                    effective.commission = effective_commission;
-                    self.apply_fill(&effective, false)?;
+                    self.replay_fill(
+                        fill,
+                        effective_qty,
+                        effective_commission,
+                        &mut closed_cycles_pnl,
+                    )?;
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
                     self.apply_adjustment_state(*adjustment, false)?;
@@ -1663,6 +1640,45 @@ impl Position {
         }
 
         Ok(closed_cycles_pnl)
+    }
+
+    fn replay_fill(
+        &mut self,
+        fill: &OrderFilled,
+        effective_qty: Quantity,
+        effective_commission: Option<Money>,
+        closed_cycles_pnl: &mut Option<Money>,
+    ) -> CorrectnessResult<()> {
+        if effective_qty.is_zero() {
+            if let Some(commission) =
+                effective_commission.filter(|commission| !commission.is_zero())
+                && let Some(realized_pnl) =
+                    self.apply_surviving_fill_commission(fill, commission)?
+            {
+                *closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
+                    *closed_cycles_pnl,
+                    realized_pnl,
+                )?);
+            }
+
+            return Ok(());
+        }
+
+        // `apply_fill` clears realized PnL when it reopens from flat, so bank the
+        // closing cycle's total before it goes
+        if self.side == PositionSide::Flat
+            && let Some(realized_pnl) = self.realized_pnl
+        {
+            *closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
+                *closed_cycles_pnl,
+                realized_pnl,
+            )?);
+        }
+
+        let mut effective = fill.clone();
+        effective.last_qty = effective_qty;
+        effective.commission = effective_commission;
+        self.apply_fill(&effective, false)
     }
 
     fn allocate_fill_void(
