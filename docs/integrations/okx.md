@@ -783,9 +783,16 @@ Side-filtered cancellation excludes orders absent from the cache and orders stil
 Without a side filter, ordinary non-spread cancellation also uses cached open orders. Spread instruments
 use the venue bulk endpoint.
 
-The Rust config rejects `use_mm_mass_cancel=true` because OKX's
-[WebSocket mass cancel](https://www.okx.com/docs-v5/en/) only covers option market maker protection (MMP)
-orders in Portfolio margin mode. The adapter submits ordinary orders, which that endpoint does not cancel.
+OKX still documents its
+[WebSocket mass cancel API](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order).
+It cancels only pending market maker protection (MMP) orders within an option instrument family in
+Portfolio Margin mode and requires explicit MMP permission. OKX's
+[MMP access instructions](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-mmp) direct users to
+apply through `institutional@okx.com` or their account manager; they do not specify a minimum VIP tier.
+
+Keep the Rust config option `use_mm_mass_cancel` set to `false`. Setting it to `true` fails validation,
+even for accounts with MMP permission, because the adapter submits ordinary orders that the MMP endpoint
+does not cancel.
 
 ### Rejection reasons
 
