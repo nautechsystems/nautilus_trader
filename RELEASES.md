@@ -45,6 +45,7 @@ Released on TBD (UTC).
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Refined DeFi pool swap simulation and snapshot comparison
 - Refined core URL decoding with wider Unicode and separator test coverage
+- Refined value-imbalance trade splitting and time-bar timer setup
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
