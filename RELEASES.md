@@ -44,6 +44,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
+- Refined `DataEngine` catalog request planning and response conversion
 - Refined DeFi pool swap simulation and snapshot comparison
 - Refined core URL decoding with wider Unicode and separator test coverage
 - Refined value-imbalance trade splitting and time-bar timer setup

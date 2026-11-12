@@ -462,46 +462,19 @@ impl DataEngine {
             );
         }
 
-        // Floor the catalog window to the UTC day boundary so the day-start F_SNAPSHOT frame is
-        // selected and read for the snapshot replay; client gaps keep the original window.
-        // The parent request keeps its original start, so the merged response trims back to it.
-        let (catalog_start_dt, catalog_start_ns) = if matches!(req, RequestCommand::BookDeltas(_))
-            && request_params(&req)
-                .and_then(|p| p.get_bool(PARAM_FROM_DAY_START))
-                .unwrap_or(true)
-        {
-            let floored = floor_to_utc_day(start_dt);
-            (floored, datetime_to_unix_nanos_or_zero(floored))
-        } else {
-            (start_dt, start_ns)
-        };
-
+        let catalog_start_dt = catalog_request_start(&req, start_dt);
+        let catalog_start_ns = datetime_to_unix_nanos_or_zero(catalog_start_dt);
         let query_interval = vec![(start_ns.as_u64(), end_ns.as_u64())];
-        let mut missing_intervals = query_interval.clone();
-        let coverage = self.catalog_coverage(&key, catalog_start_ns.as_u64(), end_ns.as_u64())?;
+        let coverage = self.catalog_coverage_for_request(
+            &key,
+            start_ns.as_u64(),
+            end_ns.as_u64(),
+            catalog_start_ns.as_u64(),
+        )?;
 
-        let winning_catalog = if let Some(CatalogCoverage {
-            catalog: name,
-            missing: intervals,
-        }) = coverage
-        {
-            // Client legs fill only the requested window, not the pre-start range
-            missing_intervals = if catalog_start_ns == start_ns {
-                intervals
-            } else {
-                catalog_missing_intervals(
-                    self.catalogs
-                        .get_mut(&name)
-                        .expect("selected catalog is registered"),
-                    start_ns.as_u64(),
-                    end_ns.as_u64(),
-                    &key,
-                )?
-            };
-
-            Some(name)
-        } else {
-            None
+        let (winning_catalog, mut missing_intervals) = match coverage {
+            Some(coverage) => (Some(coverage.catalog), coverage.missing),
+            None => (None, query_interval.clone()),
         };
 
         let skip_catalog_data = request_params(&req)
@@ -614,6 +587,29 @@ impl DataEngine {
         self.dispatch_request_plan(parent, plan)
     }
 
+    fn catalog_coverage_for_request(
+        &mut self,
+        key: &RequestCatalogKey,
+        start: u64,
+        end: u64,
+        catalog_start: u64,
+    ) -> anyhow::Result<Option<CatalogCoverage>> {
+        let Some(mut coverage) = self.catalog_coverage(key, catalog_start, end)? else {
+            return Ok(None);
+        };
+
+        // Client gaps exclude the pre-start window used to replay day-start snapshots
+        if catalog_start != start {
+            let catalog = self
+                .catalogs
+                .get_mut(&coverage.catalog)
+                .expect("selected catalog is registered");
+            coverage.missing = catalog_missing_intervals(catalog, start, end, key)?;
+        }
+
+        Ok(Some(coverage))
+    }
+
     fn catalog_coverage(
         &mut self,
         key: &RequestCatalogKey,
@@ -668,22 +664,9 @@ impl DataEngine {
             let request_id = leg.request_id();
 
             let result = match leg {
-                RequestLeg::Catalog { request, catalog } => {
-                    let start = request_start(&request)
-                        .map(datetime_to_unix_nanos_or_zero)
-                        .expect("catalog leg has bounded start");
-                    let end = request_end(&request)
-                        .map(datetime_to_unix_nanos_or_zero)
-                        .expect("catalog leg has bounded end");
-                    let now = self.clock.borrow().timestamp_ns();
-                    let client_id = request.client_id().copied();
-                    let venue = request.venue().copied();
-                    let client = self
-                        .get_client(client_id.as_ref(), venue.as_ref())
-                        .map(|value| value.client_id());
-                    self.query_catalog_leg(&request, catalog, start, end, client, now)
-                        .map(|response| self.response(response))
-                }
+                RequestLeg::Catalog { request, catalog } => self
+                    .query_catalog_leg(&request, catalog)
+                    .map(|response| self.response(response)),
                 RequestLeg::Client(request) => self.dispatch_request_to_client(request).map(|_| ()),
                 RequestLeg::Response(response) => {
                     self.response(response);
@@ -707,11 +690,20 @@ impl DataEngine {
         &mut self,
         leg: &RequestCommand,
         catalog_name: Ustr,
-        start_ns: UnixNanos,
-        end_ns: UnixNanos,
-        used_client_id: Option<ClientId>,
-        ts_init: UnixNanos,
     ) -> anyhow::Result<DataResponse> {
+        let start_ns = request_start(leg)
+            .map(datetime_to_unix_nanos_or_zero)
+            .expect("catalog leg has bounded start");
+        let end_ns = request_end(leg)
+            .map(datetime_to_unix_nanos_or_zero)
+            .expect("catalog leg has bounded end");
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let client_id = leg.client_id().copied();
+        let venue = leg.venue().copied();
+        let used_client_id = self
+            .get_client(client_id.as_ref(), venue.as_ref())
+            .map(|value| value.client_id());
+
         let catalog = self.catalogs.get_mut(&catalog_name).ok_or_else(|| {
             anyhow::anyhow!("Catalog {catalog_name} disappeared between intervals query and read")
         })?;
@@ -1061,52 +1053,18 @@ fn response_write_bounds(
 
 fn response_batches(response: &DataResponse) -> anyhow::Result<Vec<(Option<String>, DataBatch)>> {
     let batches = match response {
-        DataResponse::Quotes(r) => {
-            let ids = response_instrument_ids(
-                &r.instrument_ids,
-                r.data.iter().map(|row| row.instrument_id),
-            );
-            let single = ids.len() == 1;
-            ids.into_iter()
-                .map(|id| {
-                    let data = if single {
-                        r.data.clone()
-                    } else {
-                        r.data
-                            .iter()
-                            .filter(|row| row.instrument_id == id)
-                            .copied()
-                            .collect::<Vec<_>>()
-                            .into()
-                    };
-
-                    (Some(id.to_string()), DataBatch::Quote(data))
-                })
-                .collect()
-        }
-        DataResponse::Trades(r) => {
-            let ids = response_instrument_ids(
-                &r.instrument_ids,
-                r.data.iter().map(|row| row.instrument_id),
-            );
-            let single = ids.len() == 1;
-            ids.into_iter()
-                .map(|id| {
-                    let data = if single {
-                        r.data.clone()
-                    } else {
-                        r.data
-                            .iter()
-                            .filter(|row| row.instrument_id == id)
-                            .copied()
-                            .collect::<Vec<_>>()
-                            .into()
-                    };
-
-                    (Some(id.to_string()), DataBatch::Trade(data))
-                })
-                .collect()
-        }
+        DataResponse::Quotes(r) => response_instrument_batches(
+            &r.instrument_ids,
+            &r.data,
+            |row| row.instrument_id,
+            DataBatch::Quote,
+        ),
+        DataResponse::Trades(r) => response_instrument_batches(
+            &r.instrument_ids,
+            &r.data,
+            |row| row.instrument_id,
+            DataBatch::Trade,
+        ),
         DataResponse::BookDeltas(r) => vec![(
             Some(r.instrument_id.to_string()),
             DataBatch::BookDelta(r.data.clone()),
@@ -1140,6 +1098,31 @@ fn response_batches(response: &DataResponse) -> anyhow::Result<Vec<(Option<Strin
     };
 
     Ok(batches)
+}
+
+fn response_instrument_batches<T: Copy>(
+    requested: &[InstrumentId],
+    data: &BatchView<T>,
+    instrument_id: impl Fn(&T) -> InstrumentId,
+    into_batch: impl Fn(BatchView<T>) -> DataBatch,
+) -> Vec<(Option<String>, DataBatch)> {
+    let ids = response_instrument_ids(requested, data.iter().map(&instrument_id));
+    let single = ids.len() == 1;
+    ids.into_iter()
+        .map(|id| {
+            let data = if single {
+                data.clone()
+            } else {
+                data.iter()
+                    .filter(|row| instrument_id(row) == id)
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+
+            (Some(id.to_string()), into_batch(data))
+        })
+        .collect()
 }
 
 struct CatalogCoverage {
@@ -1443,6 +1426,19 @@ fn bound_request_dates(
 
 fn datetime_to_unix_nanos_or_zero(dt: Timestamp) -> UnixNanos {
     UnixNanos::from(u64::try_from(dt.as_nanosecond().max(0)).unwrap_or(0))
+}
+
+fn catalog_request_start(request: &RequestCommand, start: Timestamp) -> Timestamp {
+    // The parent keeps its requested start so fan-in trims the replayed snapshot window
+    if matches!(request, RequestCommand::BookDeltas(_))
+        && request_params(request)
+            .and_then(|p| p.get_bool(PARAM_FROM_DAY_START))
+            .unwrap_or(true)
+    {
+        floor_to_utc_day(start)
+    } else {
+        start
+    }
 }
 
 fn floor_to_utc_day(dt: Timestamp) -> Timestamp {
