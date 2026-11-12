@@ -67,7 +67,6 @@ async fn snapshot_retains_exact_records_and_original_timestamp(#[case] subaccoun
         let peer = tokio::spawn(async move {
             rest::quota_discovery(&listener).await;
             let collection_observed_at = get_atomic_clock_realtime().get_time_ns();
-            tokio::time::sleep(Duration::from_millis(25)).await;
             let mut requests = Vec::new();
             for body in replies {
                 requests.push(rest::reply(&listener, 200, body).await);
@@ -615,7 +614,6 @@ async fn mass_report_keeps_one_window_and_rejects_missing_context(#[case] known:
         let peer = tokio::spawn(async move {
             rest::quota_discovery(&listener).await;
             let observed = get_atomic_clock_realtime().get_time_ns();
-            tokio::time::sleep(Duration::from_millis(25)).await;
 
             for body in replies {
                 rest::reply(&listener, 200, body).await;
@@ -1711,6 +1709,8 @@ async fn current_positions_accept_event_only_pages_without_reading_history() {
         first["market_positions"] = Vec::<Value>::new().into();
         first["cursor"] = "next-position-page".into();
         let (listener, address) = http::bind_peer(0).await;
+        let (completed, completion) = tokio::sync::oneshot::channel();
+
         let peer = tokio::spawn(async move {
             rest::quota_discovery(&listener).await;
             let a = rest::reply(&listener, 200, first).await;
@@ -1718,11 +1718,10 @@ async fn current_positions_accept_event_only_pages_without_reading_history() {
             assert!(a.starts_with("GET /custom/v3/portfolio/positions?"));
             assert!(!a.contains("settlement_status"));
             assert!(b.contains("cursor=next-position-page"));
-            assert!(
-                tokio::time::timeout(Duration::from_millis(30), listener.accept())
-                    .await
-                    .is_err()
-            );
+            http::assert_no_connection(&listener, address, async {
+                completion.await.unwrap();
+            })
+            .await;
         });
 
         let (client, instrument, _) = report_client(address, false, true);
@@ -1746,6 +1745,7 @@ async fn current_positions_accept_event_only_pages_without_reading_history() {
             reports[0].signed_decimal_qty,
             "-2.75".parse::<rust_decimal::Decimal>().unwrap()
         );
+        completed.send(()).unwrap();
         peer.await.unwrap();
     })
     .await

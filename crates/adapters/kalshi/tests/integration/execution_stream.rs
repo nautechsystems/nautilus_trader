@@ -11042,7 +11042,13 @@ async fn conformance_schedule_preserves_order_totals_reports_and_teardown() {
                 .clone();
         frame["msg"]["market_ticker"] = serde_json::json!(id.symbol.as_str());
         data_peer.actions.send(("raw".into(), frame)).unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        data_peer.emit("ticker", id, false);
+
+        let DataEvent::Data(Data::Quote(tick)) = data_events.recv().await.unwrap() else {
+            panic!("expected quote after the ignored stale frame");
+        };
+
+        assert_eq!(tick.instrument_id, id);
         assert!(data_events.try_recv().is_err());
 
         let peer = Peer::with_timeout(None, 10).await;
@@ -11192,7 +11198,11 @@ async fn conformance_schedule_preserves_order_totals_reports_and_teardown() {
         let data_requests = data_peer.requests.load(Ordering::SeqCst);
         let writes = peer.submissions.writes.lock().unwrap().len();
         let balance_reads = peer.balance_reads.load(Ordering::SeqCst);
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_until_async(
+            || async { peer.sessions.load(Ordering::SeqCst) == 0 },
+            Duration::from_secs(2),
+        )
+        .await;
         assert_eq!(data_peer.requests.load(Ordering::SeqCst), data_requests);
         assert!(data_events.try_recv().is_err());
 

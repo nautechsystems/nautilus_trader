@@ -17,9 +17,8 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
 };
 
 use futures_util::{SinkExt, StreamExt};
@@ -41,7 +40,8 @@ pub(super) struct Peer {
     pub(super) actions: tokio::sync::mpsc::UnboundedSender<(String, Value)>,
     pub(super) commands: tokio::sync::mpsc::UnboundedReceiver<Value>,
     pub(super) release: Arc<tokio::sync::Notify>,
-    pub(super) delay_millis: Arc<AtomicU64>,
+    requested: Arc<tokio::sync::Notify>,
+    pub(super) response_gate: Arc<tokio::sync::Semaphore>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -74,8 +74,14 @@ impl Peer {
         let count = Arc::clone(&requests);
         let release = Arc::new(tokio::sync::Notify::new());
         let response_release = Arc::clone(&release);
-        let delay_millis = Arc::new(AtomicU64::new(0));
-        let response_delay = Arc::clone(&delay_millis);
+        let requested = Arc::new(tokio::sync::Notify::new());
+        let request_observed = Arc::clone(&requested);
+
+        let response_gate = Arc::new(tokio::sync::Semaphore::new(
+            tokio::sync::Semaphore::MAX_PERMITS,
+        ));
+
+        let responses = Arc::clone(&response_gate);
 
         let http_task = tokio::spawn(async move {
             let mut pending = tokio::task::JoinSet::new();
@@ -89,7 +95,8 @@ impl Peer {
                         let version = Arc::clone(&version);
                         let count = Arc::clone(&count);
                         let response_release = Arc::clone(&response_release);
-                        let response_delay = Arc::clone(&response_delay);
+                        let request_observed = Arc::clone(&request_observed);
+                        let responses = Arc::clone(&responses);
 
                         pending.spawn(async move {
                             let request = read_headers(&mut stream).await;
@@ -98,11 +105,12 @@ impl Peer {
                             held.as_mut().enable();
                             let block = version.load(Ordering::SeqCst) == 100;
                             count.fetch_add(1, Ordering::SeqCst);
+                            request_observed.notify_one();
 
                             if block {
                                 held.await;
                             }
-                            tokio::time::sleep(Duration::from_millis(response_delay.load(Ordering::SeqCst))).await;
+                            responses.acquire().await.unwrap().forget();
 
                             let path = request
                                 .lines()
@@ -335,7 +343,8 @@ impl Peer {
             actions,
             commands,
             release,
-            delay_millis,
+            requested,
+            response_gate,
             tasks: vec![http_task, ws_task],
         }
     }
@@ -350,6 +359,20 @@ impl Peer {
         }
 
         self.actions.send((channel.into(), value)).unwrap();
+    }
+
+    pub(super) async fn wait_requests(&self, count: usize) {
+        loop {
+            let requested = self.requested.notified();
+            tokio::pin!(requested);
+            requested.as_mut().enable();
+
+            if self.requests.load(Ordering::SeqCst) >= count {
+                return;
+            }
+
+            requested.await;
+        }
     }
 
     pub(super) async fn command(&mut self) -> Value {

@@ -701,6 +701,8 @@ async fn mutations_are_single_send_on_transient_status_and_transport_failure(
     Box::pin(time::timeout(Duration::from_secs(5), async {
         for disconnect in [false,true] {
             let (listener,address) = peer::bind_peer(18201).await;
+            let (completed, completion) = tokio::sync::oneshot::channel();
+
             let server = task::spawn(async move {
             quota_discovery(&listener).await;
                 let (mut stream,_) = listener.accept().await.unwrap();
@@ -717,10 +719,11 @@ async fn mutations_are_single_send_on_transient_status_and_transport_failure(
                 }
 
                 drop(stream);
-                assert!(time::timeout(Duration::from_millis(500),listener.accept()).await.is_err());
+                peer::assert_no_connection(&listener, address, async { completion.await.unwrap(); }).await;
             });
 
             let error = call(&test_client(address),operation, 0).await.unwrap_err();
+            completed.send(()).unwrap();
             server.await.unwrap();
 
             if disconnect { assert!(matches!(error,KalshiHttpError::Transport(_))); }
@@ -896,11 +899,7 @@ async fn cancellation_distinguishes_before_dispatch_from_pending_request(#[case]
             client.create_order(&create_request()).await,
             Err(KalshiHttpError::Canceled { dispatched: false })
         ));
-        assert!(
-            time::timeout(Duration::from_millis(50), listener.accept())
-                .await
-                .is_err()
-        );
+        peer::assert_no_connection(&listener, address, std::future::ready(())).await;
         let client = test_client(address);
         let clone = client.clone();
         let (ready, received) = tokio::sync::oneshot::channel();
@@ -971,11 +970,7 @@ async fn invalid_orders_and_scope_do_not_reach_transport() {
         client.get_market("..").await,
         Err(KalshiHttpError::Validation(_))
     ));
-    assert!(
-        time::timeout(Duration::from_millis(50), listener.accept())
-            .await
-            .is_err()
-    );
+    peer::assert_no_connection(&listener, address, std::future::ready(())).await;
 }
 
 #[rstest]
@@ -1214,11 +1209,7 @@ async fn invalid_batch_identities_never_dispatch() {
         client.batch_cancel_orders(&cancel).await,
         Err(KalshiHttpError::Validation(_))
     ));
-    assert!(
-        time::timeout(Duration::from_millis(50), listener.accept())
-            .await
-            .is_err()
-    );
+    peer::assert_no_connection(&listener, address, std::future::ready(())).await;
 }
 
 #[rstest]
@@ -1369,6 +1360,7 @@ async fn reads_count_retries_without_rate_limit_headers(
 ) {
     Box::pin(time::timeout(Duration::from_secs(8), async {
         let (listener, address) = peer::bind_peer(18210).await;
+        let (completed, completion) = tokio::sync::oneshot::channel();
         let body = quota_fixture(response_name);
 
         let server = task::spawn(async move {
@@ -1378,11 +1370,11 @@ async fn reads_count_retries_without_rate_limit_headers(
                 assert!(request.starts_with("GET /custom/v3/markets/trades"));
             }
 
-            assert!(
-                time::timeout(Duration::from_millis(300), listener.accept())
-                    .await
-                    .is_err()
-            );
+            peer::assert_no_connection(&listener, address, async {
+                completion.await.unwrap();
+            })
+            .await;
+
             attempts
         });
 
@@ -1390,6 +1382,7 @@ async fn reads_count_retries_without_rate_limit_headers(
             .get_trades(&TradesQuery::default())
             .await
             .unwrap_err();
+        completed.send(()).unwrap();
         let count = server.await.unwrap();
         assert_eq!(count, attempts);
         assert_eq!(error.is_retryable(), attempts == 3);
@@ -1436,18 +1429,20 @@ async fn unsafe_writes_send_once_and_preserve_uncertain_outcomes(#[case] operati
             (200, "malformed_success"),
         ] {
             let (listener, address) = peer::bind_peer(18211).await;
+            let (completed, completion) = tokio::sync::oneshot::channel();
+
             let server = task::spawn(async move {
                 quota_discovery(&listener).await;
                 let headers = reply(&listener, status, quota_fixture(name)).await;
                 assert!(headers.starts_with("POST ") || headers.starts_with("DELETE "));
-                assert!(
-                    time::timeout(Duration::from_millis(300), listener.accept())
-                        .await
-                        .is_err()
-                );
+                peer::assert_no_connection(&listener, address, async {
+                    completion.await.unwrap();
+                })
+                .await;
             });
 
             let error = call(&test_client(address), operation, 0).await.unwrap_err();
+            completed.send(()).unwrap();
             server.await.unwrap();
             assert!(
                 !error.is_definitely_not_sent(),
@@ -1469,6 +1464,7 @@ async fn unsafe_writes_send_once_and_preserve_uncertain_outcomes(#[case] operati
 async fn failed_limit_discovery_keeps_reads_and_prevents_writes(#[case] failed_costs: bool) {
     Box::pin(time::timeout(Duration::from_secs(5), async {
         let (listener, address) = peer::bind_peer(18212).await;
+        let (completed, completion) = tokio::sync::oneshot::channel();
 
         let server = task::spawn(async move {
             assert!(
@@ -1502,11 +1498,10 @@ async fn failed_limit_discovery_keeps_reads_and_prevents_writes(#[case] failed_c
                     .await
                     .contains("/exchange/status ")
             );
-            assert!(
-                time::timeout(Duration::from_millis(300), listener.accept())
-                    .await
-                    .is_err()
-            );
+            peer::assert_no_connection(&listener, address, async {
+                completion.await.unwrap();
+            })
+            .await;
         });
 
         let client = test_client(address);
@@ -1515,6 +1510,7 @@ async fn failed_limit_discovery_keeps_reads_and_prevents_writes(#[case] failed_c
         assert!(discovery.is_definitely_not_sent());
         client.get_status().await.unwrap();
         let error = client.create_order(&create_request()).await.unwrap_err();
+        completed.send(()).unwrap();
         server.await.unwrap();
         assert!(matches!(error, KalshiHttpError::Quota(_)));
         assert!(error.is_definitely_not_sent());
@@ -1583,6 +1579,7 @@ async fn restricted_key_discovers_costs_and_submits_with_basic_limits(#[case] in
 async fn cancellation_during_backoff_retains_attempt_evidence() {
     Box::pin(time::timeout(Duration::from_secs(5), async {
         let (listener, address) = peer::bind_peer(18213).await;
+        let (completed, completion) = tokio::sync::oneshot::channel();
         let client = test_client(address);
         let cancel = client.clone();
 
@@ -1590,17 +1587,17 @@ async fn cancellation_during_backoff_retains_attempt_evidence() {
             quota_discovery(&listener).await;
             reply(&listener, 429, quota_fixture("rate_limit")).await;
             cancel.cancel();
-            assert!(
-                time::timeout(Duration::from_millis(300), listener.accept())
-                    .await
-                    .is_err()
-            );
+            peer::assert_no_connection(&listener, address, async {
+                completion.await.unwrap();
+            })
+            .await;
         });
 
         let error = client
             .get_trades(&TradesQuery::default())
             .await
             .unwrap_err();
+        completed.send(()).unwrap();
         server.await.unwrap();
         assert!(matches!(
             error,

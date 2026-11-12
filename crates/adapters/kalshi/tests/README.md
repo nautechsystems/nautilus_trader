@@ -112,15 +112,15 @@ native-only.
 
 ## Named behaviors
 
-| Behavior          | Evidence                                                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Shared quota      | `rest::account_callers_share_quota_across_keys_and_transport_lifetimes`                                                           |
-| History cutoff    | `history::trades_collect_live_then_full_archive_with_one_fixed_cutoff`                                                            |
-| Settlement        | `data::missed_lifecycle_settlement_recovers_from_rest`; `data::settlement_notification_rechecks_rest_until_final_or_bounded_stop` |
-| Readiness         | `websocket::handler` `running_snapshot_cancellation_restores_readiness_without_a_frame`                                           |
-| Restart           | `execution_stream::startup_reconciliation_preserves_exact_execution`                                                              |
-| Rejected recovery | `book::sync` `snapshot_rejection_reaches_only_its_correlated_recovery`; `rejected_replay_keeps_a_recovery_owner`                  |
-| Late snapshot     | `book::sync` `canceled_confirmation_cannot_open_new_attempt_or_accept_late_snapshot`                                              |
+| Behavior          | Evidence                                                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared quota      | `rest::account_callers_share_quota_across_keys_and_transport_lifetimes`                                                                  |
+| History cutoff    | `history::trades_collect_live_then_full_archive_with_one_fixed_cutoff`                                                                   |
+| Settlement        | `data::missed_lifecycle_settlement_recovers_from_rest`; `data::tests::settlement_notification_rechecks_rest_until_final_or_bounded_stop` |
+| Readiness         | `websocket::handler` `running_snapshot_cancellation_restores_readiness_without_a_frame`                                                  |
+| Restart           | `execution_stream::startup_reconciliation_preserves_exact_execution`                                                                     |
+| Rejected recovery | `book::sync` `snapshot_rejection_reaches_only_its_correlated_recovery`; `rejected_replay_keeps_a_recovery_owner`                         |
+| Late snapshot     | `book::sync` `canceled_confirmation_cannot_open_new_attempt_or_accept_late_snapshot`                                                     |
 
 ## Book recovery validation
 
