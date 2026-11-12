@@ -575,6 +575,20 @@ impl BinanceFuturesDataClient {
         format!("{}@forceOrder", format_binance_stream_symbol(instrument_id))
     }
 
+    fn trade_stream(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> (BinanceFuturesWebSocketClient, String) {
+        let symbol = format_binance_stream_symbol(instrument_id);
+
+        if self.config.use_usdm_raw_trades {
+            // Binance serves the raw trade stream on the public route
+            (self.ws_public_client.clone(), format!("{symbol}@trade"))
+        } else {
+            (self.ws_client.clone(), format!("{symbol}@aggTrade"))
+        }
+    }
+
     fn spawn_liquidation_stream_reconcile(&self, context: &'static str) {
         let ws = self.ws_client.clone();
         let refs = self.force_order_refs.clone();
@@ -695,7 +709,8 @@ impl BinanceFuturesDataClient {
             BinanceFuturesWsStreamsMessage::Trade(ref trade_msg) => {
                 if let Some(instrument) = cache.get(&trade_msg.symbol) {
                     match parse_trade(trade_msg, instrument, ts_init) {
-                        Ok(trade) => Self::send_data(data_sender, Data::Trade(trade)),
+                        Ok(Some(trade)) => Self::send_data(data_sender, Data::Trade(trade)),
+                        Ok(None) => {} // Not an order book trade
                         Err(e) => log::warn!("Failed to parse trade: {e}"),
                     }
                 }
@@ -1714,10 +1729,7 @@ impl DataClient for BinanceFuturesDataClient {
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            let ws = self.ws_client.clone();
-
-            // Binance Futures uses aggTrade for aggregate trades
-            let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
+            let (ws, stream) = self.trade_stream(&instrument_id);
 
             self.spawn_ws(
                 async move {
@@ -1926,9 +1938,7 @@ impl DataClient for BinanceFuturesDataClient {
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            let ws = self.ws_client.clone();
-
-            let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
+            let (ws, stream) = self.trade_stream(&instrument_id);
 
             self.spawn_ws(
                 async move {
