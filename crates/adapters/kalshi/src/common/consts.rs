@@ -25,6 +25,7 @@ pub const KALSHI: &str = "KALSHI";
 
 pub(crate) const PRICE_PRECISION: u8 = 6;
 pub(crate) const SIZE_PRECISION: u8 = 2;
+pub(crate) const MAX_SUBACCOUNT: u32 = 63;
 
 /// Kalshi client identifier.
 pub static KALSHI_CLIENT_ID: LazyLock<ClientId> =

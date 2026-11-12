@@ -274,6 +274,7 @@ mod tests {
             http_timeout_secs: 41,
             ws_timeout_secs: 43,
             exchange_index: 3,
+            subaccount: 7,
             transport_backend: TransportBackend::Sockudo,
         }
     }

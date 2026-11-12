@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
+- Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 
 ### Breaking Changes
@@ -21,6 +22,9 @@ Released on TBD (UTC).
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
+- Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
+- Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
+- Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
 
 ### Fixes
 
@@ -35,6 +39,7 @@ Released on TBD (UTC).
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
+- Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX fills for untracked orders arriving without their order terms

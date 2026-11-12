@@ -346,7 +346,7 @@ async fn typed_endpoints_match_exact_wire_and_outputs(
         });
 
         let client = test_client(address);
-        let response = call(&client, operation).await.unwrap();
+        let response = call(&client, operation, 0).await.unwrap();
         let (headers, body) = server.await.unwrap();
         assert_eq!(
             headers.lines().next().unwrap(),
@@ -377,7 +377,58 @@ async fn typed_endpoints_match_exact_wire_and_outputs(
     .unwrap();
 }
 
-async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, KalshiHttpError> {
+#[rstest]
+#[case("balance", "balance")]
+#[case("positions", "positions")]
+#[case("historical_positions", "positions")]
+#[case("fills", "fills")]
+#[case("historical_fills", "fills")]
+#[case("orders", "orders")]
+#[case("historical_orders", "orders")]
+#[case("settlements", "settlements")]
+#[case("amend", "amend")]
+#[case("decrease", "decrease")]
+#[case("cancel", "cancel")]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn numbered_account_endpoints_preserve_scope(
+    #[case] operation: &'static str,
+    #[case] response: &'static str,
+) {
+    Box::pin(time::timeout(Duration::from_secs(5), async {
+        let (listener, address) = peer::bind_peer(0).await;
+        let server = task::spawn(async move {
+            quota_discovery(&listener).await;
+            reply(&listener, 200, fixture(response)).await
+        });
+
+        let result = call(&test_client(address), operation, 7).await.unwrap();
+        let request = server.await.unwrap();
+        let target = request
+            .lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap();
+        let url = url::Url::parse(&format!("http://localhost{target}")).unwrap();
+        let scope = url
+            .query_pairs()
+            .find(|(name, _)| name == "subaccount")
+            .unwrap()
+            .1;
+        assert_eq!(scope, "7");
+        assert_eq!(result, fixture(response));
+    }))
+    .await
+    .unwrap();
+}
+
+async fn call(
+    client: &KalshiHttpClient,
+    operation: &str,
+    subaccount: u32,
+) -> Result<Value, KalshiHttpError> {
     macro_rules! value {
         ($call:expr) => {
             serde_json::to_value($call.await?).map_err(|_| KalshiHttpError::Encoding)
@@ -400,17 +451,30 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
     };
 
     let account = AccountQuery {
-        subaccount: 0,
+        subaccount,
         exchange_index: 3,
     };
 
     let history = HistoryQuery {
+        subaccount,
         ticker: Some("T&X".into()),
         min_ts: Some(0),
         max_ts: Some(123),
         limit: Some(2),
         ..Default::default()
     };
+
+    let mut create = create_request();
+    create.subaccount = subaccount;
+    let mut batch_create = batch_create_request();
+    for order in &mut batch_create.orders {
+        order.subaccount = subaccount;
+    }
+
+    let mut batch_cancel = batch_cancel_request();
+    for order in &mut batch_cancel.orders {
+        order.subaccount = subaccount;
+    }
 
     match operation {
         "status" => value!(client.get_status()),
@@ -459,6 +523,7 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         "cutoff" => value!(client.get_historical_cutoff()),
         "balance" => value!(client.get_account_balance(&account)),
         "positions" => value!(client.get_positions(&PositionsQuery {
+            subaccount,
             limit: Some(2),
             settlement_status: Some(PositionSettlementStatus::All),
             exchange_index: 3,
@@ -466,12 +531,14 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         })),
         "historical_positions" => {
             value!(client.get_historical_positions(&HistoricalPositionsQuery {
+                subaccount,
                 event_ticker: Some("E&X".into()),
                 limit: Some(2),
                 ..Default::default()
             }))
         }
         "fills" => value!(client.get_fills(&FillsQuery {
+            subaccount,
             order_id: Some("O+X".into()),
             min_ts: Some(0),
             limit: Some(2),
@@ -480,6 +547,7 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         })),
         "historical_fills" => value!(client.get_historical_fills(&history)),
         "orders" => value!(client.get_orders(&OrdersQuery {
+            subaccount,
             event_ticker: Some("E&X".into()),
             status: Some(OrderStatusFilter::Resting),
             limit: Some(2),
@@ -489,6 +557,7 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         "order" => value!(client.get_order("order-a")),
         "historical_orders" => value!(client.get_historical_orders(&history)),
         "settlements" => value!(client.get_settlements(&SettlementsQuery {
+            subaccount,
             event_ticker: Some("E&X".into()),
             max_ts: Some(123),
             limit: Some(2),
@@ -496,9 +565,10 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         })),
         "limits" => value!(client.get_account_limits()),
         "costs" => value!(client.get_endpoint_costs()),
-        "create" => value!(client.create_order(&create_request())),
+        "create" => value!(client.create_order(&create)),
         "amend" => value!(client.amend_order(
             "order-a",
+            subaccount,
             &AmendOrderRequest {
                 ticker: "TEST-MARKET".into(),
                 side: BookSide::Ask,
@@ -512,6 +582,7 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
         )),
         "decrease" => value!(client.decrease_order(
             "order-a",
+            subaccount,
             &DecreaseOrderRequest {
                 exchange_index: 3,
                 reduce_by: None,
@@ -520,8 +591,8 @@ async fn call(client: &KalshiHttpClient, operation: &str) -> Result<Value, Kalsh
             }
         )),
         "cancel" => value!(client.cancel_order("order-a", &account)),
-        "batch_create" => value!(client.batch_create_orders(&batch_create_request())),
-        "batch_cancel" => value!(client.batch_cancel_orders(&batch_cancel_request())),
+        "batch_create" => value!(client.batch_create_orders(&batch_create)),
+        "batch_cancel" => value!(client.batch_cancel_orders(&batch_cancel)),
         _ => panic!("unknown test operation {operation}"),
     }
 }
@@ -649,7 +720,7 @@ async fn mutations_are_single_send_on_transient_status_and_transport_failure(
                 assert!(time::timeout(Duration::from_millis(500),listener.accept()).await.is_err());
             });
 
-            let error = call(&test_client(address),operation).await.unwrap_err();
+            let error = call(&test_client(address),operation, 0).await.unwrap_err();
             server.await.unwrap();
 
             if disconnect { assert!(matches!(error,KalshiHttpError::Transport(_))); }
@@ -844,7 +915,7 @@ async fn cancellation_distinguishes_before_dispatch_from_pending_request(#[case]
         });
 
         let operation = if mutation { "create" } else { "status" };
-        let request = task::spawn(async move { call(&client, operation).await });
+        let request = task::spawn(async move { call(&client, operation, 0).await });
         received.await.unwrap();
         clone.cancel();
         assert!(matches!(
@@ -863,7 +934,7 @@ async fn invalid_orders_and_scope_do_not_reach_transport() {
     let (listener, address) = peer::bind_peer(18205).await;
     let client = test_client(address);
     let mut invalid = create_request();
-    invalid.subaccount = 1;
+    invalid.subaccount = 64;
     assert!(matches!(
         client.create_order(&invalid).await,
         Err(KalshiHttpError::Validation(_))
@@ -889,7 +960,7 @@ async fn invalid_orders_and_scope_do_not_reach_transport() {
     };
 
     assert!(matches!(
-        client.decrease_order("order-a", &invalid).await,
+        client.decrease_order("order-a", 0, &invalid).await,
         Err(KalshiHttpError::Validation(_))
     ));
     assert!(matches!(
@@ -1091,7 +1162,7 @@ async fn batch_results_match_request_identities_or_preserve_ambiguous_evidence(
             reply(&listener, 200, response_body).await
         });
 
-        let result = call(&test_client(address), operation).await;
+        let result = call(&test_client(address), operation, 0).await;
         server.await.unwrap();
 
         if mode == "reordered" {
@@ -1376,7 +1447,7 @@ async fn unsafe_writes_send_once_and_preserve_uncertain_outcomes(#[case] operati
                 );
             });
 
-            let error = call(&test_client(address), operation).await.unwrap_err();
+            let error = call(&test_client(address), operation, 0).await.unwrap_err();
             server.await.unwrap();
             assert!(
                 !error.is_definitely_not_sent(),
@@ -1447,6 +1518,61 @@ async fn failed_limit_discovery_keeps_reads_and_prevents_writes(#[case] failed_c
         server.await.unwrap();
         assert!(matches!(error, KalshiHttpError::Quota(_)));
         assert!(error.is_definitely_not_sent());
+    }))
+    .await
+    .unwrap();
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn restricted_key_discovers_costs_and_submits_with_basic_limits(#[case] invalid_costs: bool) {
+    Box::pin(time::timeout(Duration::from_secs(5), async {
+        let (listener, address) = peer::bind_peer(0).await;
+
+        let mut costs = fixture("costs");
+        if invalid_costs {
+            costs["default_cost"] = 0.into();
+        }
+
+        let server = task::spawn(async move {
+            assert!(
+                reply(&listener, 403, quota_fixture("subaccount_restricted"))
+                    .await
+                    .contains("/account/limits ")
+            );
+            assert!(
+                reply(&listener, 200, costs)
+                    .await
+                    .contains("/account/endpoint_costs ")
+            );
+
+            if invalid_costs {
+                return;
+            }
+
+            assert!(
+                reply(&listener, 200, fixture("create"))
+                    .await
+                    .contains("/portfolio/events/orders ")
+            );
+        });
+
+        let response = test_client(address).create_order(&create_request()).await;
+        if invalid_costs {
+            let e = response.unwrap_err();
+            assert!(matches!(e, KalshiHttpError::Discovery(_)));
+            assert!(e.is_definitely_not_sent());
+        } else {
+            assert_eq!(
+                response.unwrap(),
+                serde_json::from_value(fixture("create")).unwrap()
+            );
+        }
+
+        server.await.unwrap();
     }))
     .await
     .unwrap();

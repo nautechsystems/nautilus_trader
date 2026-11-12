@@ -34,16 +34,20 @@ use crate::{
         error::KalshiHttpError,
         models::{Field, Fill, HistoricalCutoff, MarketPosition, Order, OrderStatus},
         parse::Pagination,
-        query::{FillsQuery, HistoricalPositionsQuery, HistoryQuery, OrdersQuery, PositionsQuery},
+        query::{
+            AccountQuery, FillsQuery, HistoricalPositionsQuery, HistoryQuery, OrdersQuery,
+            PositionsQuery,
+        },
     },
 };
 
 const RECOVERY_MAX_PAGES: u32 = 100;
 
-/// Complete REST source collection for one primary-account shard.
+/// Complete REST source collection for one subaccount and shard.
 ///
 /// Records retain the venue's values and omissions. Separate requests are not an atomic account
 /// snapshot. Settled positions are historical evidence, not current exposure or synthetic fills.
+/// For nonzero subaccounts, orders and fills require explicit matching subaccount identity.
 #[derive(Debug)]
 pub struct KalshiExecutionSnapshot {
     /// Orders retained for the shard, including resting orders, orders inside the lookback,
@@ -76,17 +80,17 @@ pub struct KalshiExecutionSnapshot {
 /// or lack scope, fills lack order evidence, or any source fails.
 pub async fn collect_snapshot(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     lookback_start: Option<UnixNanos>,
     max_pages: u32,
 ) -> Result<KalshiExecutionSnapshot, KalshiHttpError> {
     let ts_init = get_atomic_clock_realtime().get_time_ns();
-    collect_snapshot_at(http, exchange_index, lookback_start, max_pages, ts_init).await
+    collect_snapshot_at(http, account, lookback_start, max_pages, ts_init).await
 }
 
 pub(super) async fn collect_snapshot_at(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     lookback_start: Option<UnixNanos>,
     max_pages: u32,
     ts_init: UnixNanos,
@@ -105,12 +109,13 @@ pub(super) async fn collect_snapshot_at(
         ));
     }
 
-    let orders = collect_orders(http, exchange_index, None, max_pages).await?;
+    let orders = collect_orders(http, account, None, max_pages).await?;
 
     let retained_fills = collect_fills(
         http,
         &FillsQuery {
-            exchange_index,
+            exchange_index: account.exchange_index,
+            subaccount: account.subaccount,
             ..Default::default()
         },
         lookback_start,
@@ -122,8 +127,7 @@ pub(super) async fn collect_snapshot_at(
 
     let retained_orders = retain_orders(orders, &retained_fills, lookback_start, &[])?;
 
-    let (positions, positions_settled) =
-        collect_positions(http, exchange_index, None, max_pages).await?;
+    let (positions, positions_settled) = collect_positions(http, account, None, max_pages).await?;
     Ok(KalshiExecutionSnapshot {
         orders: retained_orders,
         fills: retained_fills,
@@ -187,7 +191,7 @@ fn retain_orders(
 
 pub(super) async fn collect_recovery_snapshot(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     start: UnixNanos,
     tracked: &[InstrumentId],
     owned: &[OrderAny],
@@ -204,14 +208,14 @@ pub(super) async fn collect_recovery_snapshot(
         ));
     }
 
-    let mut orders =
-        collect_orders_window(http, exchange_index, None, Some(start), max_pages).await?;
+    let mut orders = collect_orders_window(http, account, None, Some(start), max_pages).await?;
 
     let resting = collect_orders_live(
         http,
         &OrdersQuery {
             status: Some(OrderStatusFilter::Resting),
-            exchange_index,
+            exchange_index: account.exchange_index,
+            subaccount: account.subaccount,
             ..Default::default()
         },
         max_pages,
@@ -225,7 +229,8 @@ pub(super) async fn collect_recovery_snapshot(
     let mut fills = collect_fills(
         http,
         &FillsQuery {
-            exchange_index,
+            exchange_index: account.exchange_index,
+            subaccount: account.subaccount,
             ..Default::default()
         },
         Some(start),
@@ -239,7 +244,7 @@ pub(super) async fn collect_recovery_snapshot(
         if let Some(id) = context.venue_order_id() {
             recover_order(
                 http,
-                exchange_index,
+                account,
                 id.as_str(),
                 context.instrument_id().symbol.as_str(),
                 max_pages,
@@ -252,7 +257,7 @@ pub(super) async fn collect_recovery_snapshot(
     for fill in &fills {
         recover_order(
             http,
-            exchange_index,
+            account,
             &fill.order_id,
             &fill.ticker,
             max_pages,
@@ -261,18 +266,9 @@ pub(super) async fn collect_recovery_snapshot(
         .await?;
     }
 
-    recover_order_fills(
-        http,
-        exchange_index,
-        &orders,
-        owned,
-        &cutoff,
-        ts_init,
-        &mut fills,
-    )
-    .await?;
+    recover_order_fills(http, account, &orders, owned, &cutoff, ts_init, &mut fills).await?;
     let orders = retain_orders(orders, &fills, Some(start), owned)?;
-    let positions = collect_positions_current(http, exchange_index, None, max_pages).await?;
+    let positions = collect_positions_current(http, account, None, max_pages).await?;
     let mut targets: HashSet<_> = tracked.iter().map(|id| id.symbol.to_string()).collect();
     targets.extend(fills.iter().map(|fill| fill.ticker.clone()));
     for position in &positions {
@@ -281,9 +277,8 @@ pub(super) async fn collect_recovery_snapshot(
 
     let mut positions_settled = Vec::new();
     for ticker in targets {
-        positions_settled.extend(
-            collect_positions_settled(http, exchange_index, Some(&ticker), max_pages).await?,
-        );
+        positions_settled
+            .extend(collect_positions_settled(http, account, Some(&ticker), max_pages).await?);
     }
 
     positions_settled.sort_by(|a, b| a.ticker.cmp(&b.ticker));
@@ -300,7 +295,7 @@ pub(super) async fn collect_recovery_snapshot(
 
 async fn recover_order(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     id: &str,
     ticker: &str,
     max_pages: u32,
@@ -312,7 +307,7 @@ async fn recover_order(
 
     match http.get_order(id).await {
         Ok(response) => {
-            validate_order_scope(&response.order, exchange_index, false)?;
+            validate_order_scope(&response.order, account, false)?;
             merge(orders, response.order.order_id.clone(), response.order)?;
         }
         Err(
@@ -320,7 +315,7 @@ async fn recover_order(
             | KalshiHttpError::Http { status: 404, .. }
             | KalshiHttpError::Venue { status: 404, .. },
         ) => {
-            for order in collect_orders(http, exchange_index, Some(ticker), max_pages)
+            for order in collect_orders(http, account, Some(ticker), max_pages)
                 .await?
                 .into_values()
             {
@@ -335,7 +330,7 @@ async fn recover_order(
 
 async fn recover_order_fills(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     orders: &HashMap<String, Order>,
     owned: &[OrderAny],
     cutoff: &HistoricalCutoff,
@@ -364,7 +359,8 @@ async fn recover_order_fills(
         let query = FillsQuery {
             ticker: Some(order.ticker.clone()),
             order_id: Some(order.order_id.clone()),
-            exchange_index,
+            exchange_index: account.exchange_index,
+            subaccount: account.subaccount,
             ..Default::default()
         };
 
@@ -391,16 +387,16 @@ async fn recover_order_fills(
 
 pub(super) async fn collect_orders(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     ticker: Option<&str>,
     max_pages: u32,
 ) -> Result<HashMap<String, Order>, KalshiHttpError> {
-    collect_orders_window(http, exchange_index, ticker, None, max_pages).await
+    collect_orders_window(http, account, ticker, None, max_pages).await
 }
 
 async fn collect_orders_window(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     ticker: Option<&str>,
     start: Option<UnixNanos>,
     max_pages: u32,
@@ -413,7 +409,8 @@ async fn collect_orders_window(
         &OrdersQuery {
             ticker: ticker.map(String::from),
             min_ts,
-            exchange_index,
+            exchange_index: account.exchange_index,
+            subaccount: account.subaccount,
             ..Default::default()
         },
         max_pages,
@@ -432,7 +429,7 @@ async fn collect_orders_window(
                     min_ts,
                     cursor,
                     limit: Some(1000),
-                    subaccount: 0,
+                    subaccount: account.subaccount,
                     ..Default::default()
                 })
                 .await?;
@@ -444,7 +441,7 @@ async fn collect_orders_window(
     .await?;
 
     for order in archived_orders.into_values() {
-        if validate_order_scope(&order, exchange_index, true)? {
+        if validate_order_scope(&order, account, true)? {
             merge(&mut orders, order.order_id.clone(), order)?;
         }
     }
@@ -478,7 +475,14 @@ async fn collect_orders_live(
     .await?;
 
     for order in orders.values() {
-        validate_order_scope(order, query.exchange_index, false)?;
+        validate_order_scope(
+            order,
+            &AccountQuery {
+                subaccount: query.subaccount,
+                exchange_index: query.exchange_index,
+            },
+            false,
+        )?;
     }
 
     Ok(orders)
@@ -492,6 +496,11 @@ pub(super) async fn collect_fills(
     cutoff: &HistoricalCutoff,
     max_pages: u32,
 ) -> Result<Vec<Fill>, KalshiHttpError> {
+    let account = AccountQuery {
+        subaccount: query.subaccount,
+        exchange_index: query.exchange_index,
+    };
+
     let exchange_index = query.exchange_index;
     let start = lookback_start.map(|value| (value.as_u64() / NANOSECONDS_IN_SECOND) as i64);
     let end = (ts_init.as_u64() / NANOSECONDS_IN_SECOND + 1) as i64;
@@ -516,7 +525,7 @@ pub(super) async fn collect_fills(
                     limit: Some(1000),
                     min_ts: live_start,
                     max_ts: Some(end),
-                    subaccount: 0,
+                    subaccount: account.subaccount,
                     exchange_index,
                 })
                 .await?;
@@ -528,7 +537,7 @@ pub(super) async fn collect_fills(
     .await?;
 
     for fill in fills.values() {
-        validate_fill_scope(fill, exchange_index, false)?;
+        validate_fill_scope(fill, &account, false)?;
     }
 
     let mut archived_fills = HashMap::new();
@@ -544,7 +553,7 @@ pub(super) async fn collect_fills(
                     limit: Some(1000),
                     min_ts: start.map(|start| start.saturating_sub(1).max(0)),
                     max_ts: Some(end),
-                    subaccount: 0,
+                    subaccount: account.subaccount,
                 })
                 .await?;
 
@@ -555,7 +564,7 @@ pub(super) async fn collect_fills(
     .await?;
 
     for fill in archived_fills.into_values() {
-        if validate_fill_scope(&fill, exchange_index, true)? {
+        if validate_fill_scope(&fill, &account, true)? {
             let key = format!("{}:{}", fill.exchange_index, fill.fill_id);
             merge(&mut fills, key, fill)?;
         }
@@ -577,7 +586,7 @@ pub(super) async fn collect_fills(
 
 pub(super) async fn collect_positions_current(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     ticker: Option<&str>,
     max_pages: u32,
 ) -> Result<Vec<MarketPosition>, KalshiHttpError> {
@@ -592,8 +601,8 @@ pub(super) async fn collect_positions_current(
                     ticker: ticker.map(String::from),
                     cursor,
                     limit: Some(1000),
-                    subaccount: 0,
-                    exchange_index,
+                    subaccount: account.subaccount,
+                    exchange_index: account.exchange_index,
                     ..Default::default()
                 })
                 .await?;
@@ -606,7 +615,7 @@ pub(super) async fn collect_positions_current(
 
     if positions
         .values()
-        .any(|p| i64::from(p.exchange_index) != i64::from(exchange_index))
+        .any(|p| i64::from(p.exchange_index) != i64::from(account.exchange_index))
     {
         return Err(KalshiHttpError::Parse(
             "current position shard mismatch".into(),
@@ -620,19 +629,18 @@ pub(super) async fn collect_positions_current(
 
 async fn collect_positions(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     ticker: Option<&str>,
     max_pages: u32,
 ) -> Result<(Vec<MarketPosition>, Vec<MarketPosition>), KalshiHttpError> {
-    let positions = collect_positions_current(http, exchange_index, ticker, max_pages).await?;
-    let positions_settled =
-        collect_positions_settled(http, exchange_index, ticker, max_pages).await?;
+    let positions = collect_positions_current(http, account, ticker, max_pages).await?;
+    let positions_settled = collect_positions_settled(http, account, ticker, max_pages).await?;
     Ok((positions, positions_settled))
 }
 
 async fn collect_positions_settled(
     http: &KalshiHttpClient,
-    exchange_index: u32,
+    account: &AccountQuery,
     ticker: Option<&str>,
     max_pages: u32,
 ) -> Result<Vec<MarketPosition>, KalshiHttpError> {
@@ -648,8 +656,8 @@ async fn collect_positions_settled(
                     cursor,
                     limit: Some(1000),
                     settlement_status: Some(PositionSettlementStatus::Settled),
-                    subaccount: 0,
-                    exchange_index,
+                    subaccount: account.subaccount,
+                    exchange_index: account.exchange_index,
                     ..Default::default()
                 })
                 .await?;
@@ -662,7 +670,7 @@ async fn collect_positions_settled(
 
     if positions_settled
         .values()
-        .any(|p| i64::from(p.exchange_index) != i64::from(exchange_index))
+        .any(|p| i64::from(p.exchange_index) != i64::from(account.exchange_index))
     {
         return Err(KalshiHttpError::Parse(
             "settled position shard mismatch".into(),
@@ -679,7 +687,7 @@ async fn collect_positions_settled(
                     ticker: ticker.map(String::from),
                     cursor,
                     limit: Some(1000),
-                    subaccount: 0,
+                    subaccount: account.subaccount,
                     ..Default::default()
                 })
                 .await?;
@@ -692,7 +700,7 @@ async fn collect_positions_settled(
 
     let mut positions_settled: Vec<_> = positions_settled
         .into_values()
-        .filter(|p| i64::from(p.exchange_index) == i64::from(exchange_index))
+        .filter(|p| i64::from(p.exchange_index) == i64::from(account.exchange_index))
         .collect();
     positions_settled.sort_by(|a, b| a.ticker.cmp(&b.ticker));
     Ok(positions_settled)
@@ -756,12 +764,17 @@ fn merge<T: PartialEq>(
 
 pub(super) fn validate_order_scope(
     order: &Order,
-    exchange_index: u32,
+    account: &AccountQuery,
     archived: bool,
 ) -> Result<bool, KalshiHttpError> {
-    if matches!(order.subaccount_number, Field::Value(value) if value != 0) {
+    if matches!(order.subaccount_number, Field::Value(value) if i64::from(value) != i64::from(account.subaccount))
+    {
+        return Err(KalshiHttpError::Parse("order subaccount mismatch".into()));
+    }
+
+    if account.subaccount != 0 && !matches!(order.subaccount_number, Field::Value(_)) {
         return Err(KalshiHttpError::Parse(
-            "order primary-account mismatch".into(),
+            "missing order subaccount identity".into(),
         ));
     }
 
@@ -771,7 +784,7 @@ pub(super) fn validate_order_scope(
         ));
     };
 
-    if i64::from(shard) == i64::from(exchange_index) {
+    if i64::from(shard) == i64::from(account.exchange_index) {
         Ok(true)
     } else if archived {
         Ok(false)
@@ -782,20 +795,25 @@ pub(super) fn validate_order_scope(
 
 fn validate_fill_scope(
     fill: &Fill,
-    exchange_index: u32,
+    account: &AccountQuery,
     archived: bool,
 ) -> Result<bool, KalshiHttpError> {
     if fill.fill_id.is_empty() || fill.order_id.is_empty() || fill.trade_id.is_empty() {
         return Err(KalshiHttpError::Parse("missing fill identity".into()));
     }
 
-    if matches!(fill.subaccount_number, Field::Value(value) if value != 0) {
+    if matches!(fill.subaccount_number, Field::Value(value) if i64::from(value) != i64::from(account.subaccount))
+    {
+        return Err(KalshiHttpError::Parse("fill subaccount mismatch".into()));
+    }
+
+    if account.subaccount != 0 && !matches!(fill.subaccount_number, Field::Value(_)) {
         return Err(KalshiHttpError::Parse(
-            "fill primary-account mismatch".into(),
+            "missing fill subaccount identity".into(),
         ));
     }
 
-    if i64::from(fill.exchange_index) == i64::from(exchange_index) {
+    if i64::from(fill.exchange_index) == i64::from(account.exchange_index) {
         Ok(true)
     } else if archived {
         Ok(false)
@@ -860,4 +878,51 @@ pub(super) fn validate_definition(
         "report instrument shard mismatch"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(Field::Value(7), None)]
+    #[case(Field::Value(0), Some("subaccount mismatch"))]
+    #[case(Field::Value(-1), Some("subaccount mismatch"))]
+    #[case(Field::Missing, Some("missing"))]
+    #[case(Field::Null, Some("missing"))]
+    fn numbered_records_require_matching_account(
+        #[case] identity: Field<i32>,
+        #[case] error: Option<&str>,
+    ) {
+        let f: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
+        let mut order: Order = serde_json::from_value(f["order"]["order"].clone()).unwrap();
+        let mut fill: Fill = serde_json::from_value(f["fills"]["fills"][0].clone()).unwrap();
+        order.subaccount_number = identity.clone();
+        fill.subaccount_number = identity;
+
+        let account = AccountQuery {
+            subaccount: 7,
+            exchange_index: 3,
+        };
+
+        for (kind, result) in [
+            ("order", validate_order_scope(&order, &account, false)),
+            ("fill", validate_fill_scope(&fill, &account, false)),
+        ] {
+            match error {
+                None => assert!(result.unwrap()),
+                Some("missing") => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!("parse error: missing {kind} subaccount identity")
+                ),
+                Some(_) => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!("parse error: {kind} subaccount mismatch")
+                ),
+            }
+        }
+    }
 }

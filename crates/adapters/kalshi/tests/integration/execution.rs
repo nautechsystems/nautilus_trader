@@ -31,6 +31,7 @@ use nautilus_kalshi::{
     http::{
         models::{Event, Field, Fill, Market, MarketPosition, Order as VenueOrder},
         parse::parse_instrument,
+        query::AccountQuery,
     },
 };
 use nautilus_live::ExecutionClientCore;
@@ -47,10 +48,20 @@ use serde_json::Value;
 
 use super::{http, keys, rest};
 
+#[rstest]
+#[case(0)]
+#[case(7)]
+#[case(63)]
 #[tokio::test]
-async fn snapshot_retains_exact_records_and_original_timestamp() {
+async fn snapshot_retains_exact_records_and_original_timestamp(#[case] subaccount: u32) {
     tokio::time::timeout(Duration::from_secs(5), async {
-        let f = fixtures();
+        let mut f = fixtures();
+        for key in ["orders", "fills"] {
+            for record in f[key][key].as_array_mut().unwrap() {
+                record["subaccount_number"] = subaccount.into();
+            }
+        }
+
         let replies = snapshot_replies(&f);
         let (listener, address) = http::bind_peer(0).await;
         let peer = tokio::spawn(async move {
@@ -66,9 +77,19 @@ async fn snapshot_retains_exact_records_and_original_timestamp() {
         });
 
         let before = get_atomic_clock_realtime().get_time_ns();
-        let snapshot = collect_snapshot(&rest::test_client(address), 3, None, 2)
-            .await
-            .unwrap();
+
+        let snapshot = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount,
+                exchange_index: 3,
+            },
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+
         let after = get_atomic_clock_realtime().get_time_ns();
         assert!(before <= snapshot.ts_init && snapshot.ts_init <= after);
         assert_eq!(snapshot.lookback_start, None);
@@ -99,6 +120,14 @@ async fn snapshot_retains_exact_records_and_original_timestamp() {
             .iter()
             .map(|r| r.lines().next().unwrap().split_whitespace().nth(1).unwrap())
             .collect();
+
+        for target in &targets[1..] {
+            assert!(
+                target.contains(&format!("subaccount={subaccount}")),
+                "wrong scope {target}"
+            );
+        }
+
         assert!(targets[1].contains("/portfolio/orders?") && !targets[1].contains("min_ts"));
         assert!(targets[2].contains("/historical/orders?") && !targets[2].contains("min_ts"));
         assert!(
@@ -138,9 +167,18 @@ async fn every_snapshot_source_failure_is_an_error(#[case] source: usize) {
             }
         });
 
-        let e = collect_snapshot(&rest::test_client(address), 3, None, 2)
-            .await
-            .unwrap_err();
+        let e = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            None,
+            2,
+        )
+        .await
+        .unwrap_err();
+
         assert_eq!(e.to_string(), "HTTP 403");
         peer.await.unwrap();
     })
@@ -219,9 +257,18 @@ async fn missing_or_conflicting_authority_fails_closed(
             }
         });
 
-        let e = collect_snapshot(&rest::test_client(address), 3, None, 1)
-            .await
-            .unwrap_err();
+        let e = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            None,
+            1,
+        )
+        .await
+        .unwrap_err();
+
         assert!(e.to_string().ends_with(expected), "{e}");
         peer.await.unwrap();
     })
@@ -245,9 +292,18 @@ async fn old_open_order_ignores_history_window_and_current_flat_is_retained() {
             }
         });
 
-        let snapshot = collect_snapshot(&rest::test_client(address), 3, Some(start), 1)
-            .await
-            .unwrap();
+        let snapshot = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            Some(start),
+            1,
+        )
+        .await
+        .unwrap();
+
         assert_eq!(snapshot.orders.len(), 1);
         assert_eq!(snapshot.orders[0].order_id, "order-a");
         assert_eq!(snapshot.lookback_start, Some(start));
@@ -288,9 +344,18 @@ async fn archive_filter_preserves_selected_shard_and_scoped_fill_identity() {
             }
         });
 
-        let snapshot = collect_snapshot(&rest::test_client(address), 3, None, 1)
-            .await
-            .unwrap();
+        let snapshot = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+
         assert_eq!(
             serde_json::to_value(snapshot.orders).unwrap(),
             f["orders"]["orders"]
@@ -335,9 +400,18 @@ async fn historical_fill_keeps_its_closed_order_outside_the_order_window() {
             }
         });
 
-        let snapshot = collect_snapshot(&rest::test_client(address), 3, Some(start), 1)
-            .await
-            .unwrap();
+        let snapshot = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            Some(start),
+            1,
+        )
+        .await
+        .unwrap();
+
         assert_eq!(
             serde_json::to_value(snapshot.orders).unwrap(),
             Value::Array(vec![expected_order])
@@ -362,9 +436,19 @@ async fn invalid_snapshot_window_fails_before_any_request(
     #[case] start: Option<UnixNanos>,
 ) {
     let (_listener, address) = http::bind_peer(0).await;
-    let e = collect_snapshot(&rest::test_client(address), 3, start, max_pages)
-        .await
-        .unwrap_err();
+
+    let e = collect_snapshot(
+        &rest::test_client(address),
+        &AccountQuery {
+            subaccount: 0,
+            exchange_index: 3,
+        },
+        start,
+        max_pages,
+    )
+    .await
+    .unwrap_err();
+
     assert_eq!(
         e.to_string(),
         "invalid request: invalid execution snapshot window or page budget"
@@ -1498,9 +1582,18 @@ async fn fill_query_widens_seconds_and_filters_exact_nanoseconds() {
             requests
         });
 
-        let snapshot = collect_snapshot(&rest::test_client(address), 3, Some(start), 2)
-            .await
-            .unwrap();
+        let snapshot = collect_snapshot(
+            &rest::test_client(address),
+            &AccountQuery {
+                subaccount: 0,
+                exchange_index: 3,
+            },
+            Some(start),
+            2,
+        )
+        .await
+        .unwrap();
+
         assert_eq!(snapshot.fills.len(), 1);
         assert_eq!(snapshot.fills[0].fill_id, "fill-a");
         let requests = peer.await.unwrap();

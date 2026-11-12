@@ -43,7 +43,8 @@ const DISCOVERY_TTL: Duration = Duration::from_secs(60);
 ///
 /// Pass the same owner to data and execution transports, including transports using different
 /// API keys for that account. Public-only transports can share it with authenticated transports.
-/// Writes remain disabled until both limit and cost discovery succeed.
+/// Writes require discovered endpoint costs and either discovered limits or the conservative
+/// Basic limits used for subaccount-restricted keys.
 #[derive(Debug)]
 pub struct KalshiQuota {
     pub(super) refresh: tokio::sync::Mutex<()>,
@@ -80,6 +81,24 @@ impl KalshiQuota {
             .lock()
             .expect("quota lock is not poisoned")
             .set_limits(limits, unix_ms)
+    }
+
+    pub(super) fn set_basic_limits(&self) -> Result<(), KalshiHttpError> {
+        self.set_limits(
+            &AccountLimits {
+                usage_tier: ApiUsageTier::Basic,
+                read: BucketLimit {
+                    refill_rate: BASIC_READ_TOKENS_PER_SEC.into(),
+                    bucket_capacity: BASIC_READ_TOKENS_PER_SEC.into(),
+                },
+                write: BucketLimit {
+                    refill_rate: BASIC_WRITE_TOKENS_PER_SEC.into(),
+                    bucket_capacity: BASIC_WRITE_TOKENS_PER_SEC.into(),
+                },
+                grants: Vec::new(),
+            },
+            0,
+        )
     }
 
     pub(super) fn set_costs(&self, costs: EndpointCosts) -> Result<(), KalshiHttpError> {
@@ -531,6 +550,30 @@ mod tests {
             bucket,
             items,
         }
+    }
+
+    #[rstest]
+    fn restricted_limits_keep_basic_batch_capacity_and_require_costs() {
+        let quota = KalshiQuota::new();
+        quota.set_basic_limits().unwrap();
+        let charge = charge(Bucket::Write(3), 1);
+        assert_eq!(
+            quota.batch_size(&charge).unwrap_err().to_string(),
+            "quota admission failed: write quota discovery is unavailable or expired"
+        );
+        quota
+            .set_costs(EndpointCosts {
+                default_cost: 10,
+                endpoint_costs: Vec::new(),
+            })
+            .unwrap();
+
+        assert_eq!(quota.batch_size(&charge).unwrap(), 10);
+        quota.discovery_failed();
+        assert_eq!(
+            quota.batch_size(&charge).unwrap_err().to_string(),
+            "quota admission failed: write quota discovery is unavailable or expired"
+        );
     }
 
     #[rstest]
