@@ -73,14 +73,16 @@ Released on TBD (UTC).
 - Upgraded `typos` pre-commit hook to v1.52.0
 - Upgraded `uv` pre-commit hook to v0.13.7
 - Upgraded `zizmor` pre-commit hook to v1.32.0
+- Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `flate2` crate to v1.1.11
 - Upgraded `jiff` crate to v0.2.39
 - Upgraded `redb` crate to v4.5.0
 - Upgraded `smallvec` crate to v1.16.5
 - Upgraded `sockudo-ws` crate to v3.1.1
+- Upgraded `uuid` crate to v1.29.2
 - Upgraded `maturin` package (dev) to v1.16.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.4
-- Upgraded `ty` package (dev) to v0.0.96
+- Upgraded `ty` package (dev) to v0.0.98
 
 ---
 

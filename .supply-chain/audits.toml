@@ -1056,6 +1056,12 @@ criteria = "safe-to-deploy"
 delta = "1.9.2 -> 1.9.3"
 notes = "Reviewed checksum-verified published sources. Exposes the existing RwLock strategy through an explicit rwlock-strategy feature; DefaultStrategy and the strategy implementation are unchanged. No new dependencies, build script, or ambient capabilities."
 
+[[audits.arc-swap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.9.3 -> 1.9.5"
+notes = "Reviewed published sources. Tags distinguish strong and weak reference-count debts, while storage addresses prevent writers from paying unconfirmed debts belonging to other instances after address reuse. Confirmed debts remain payable after storage moves; pointer provenance is recovered only after debt payment. No new dependencies, build script, or ambient capabilities."
+
 [[audits.arrow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5212,6 +5218,12 @@ criteria = "safe-to-deploy"
 delta = "1.28.0 -> 1.29.0"
 importable = false
 notes = "Published delta adds NonNilUuid constructors that delegate to existing versioned UUID constructors; setting UUID version bits guarantees the unchecked non-nil invariant. Existing UUID generation and entropy sources remain unchanged."
+
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.29.0 -> 1.29.2"
+notes = "Reviewed published sources. Timestamp arithmetic uses u128 nanoseconds, normalizes input parts, and bounds v7 reseeding and counter progression. WebAssembly target selection includes wasm64; native entropy sources and UUID v4 generation are unchanged. No new unsafe code, build script, or ambient capabilities."
 
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"

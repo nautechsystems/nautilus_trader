@@ -1223,32 +1223,8 @@ criteria = "safe-to-deploy"
 version = "2.0.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.futures]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-channel]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-executor]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
 [[exemptions.futures-intrusive]]
 version = "0.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-io]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-macro]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-sink]]
-version = "0.3.33"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-task]]
