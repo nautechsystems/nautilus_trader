@@ -4,7 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Kalshi market data support to the FinFeed adapter
+- Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
+- Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
+- Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 
 ### Breaking Changes
 
@@ -13,23 +17,35 @@ Released on TBD (UTC).
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
 - Changed `submission_recovery_policy` default to `RetainUnresolved`; select `ResolveLocally` for prior behavior
 - Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
+- Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
+- Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
-- Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
 
 ### Fixes
 
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
+- Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
+- Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status
+- Fixed execution reconciliation dropping later fills and duplicating executions for split external fills
+- Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
+- Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
+- Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
-- Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
+- Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
+- Fixed OKX balances not refreshing after a WebSocket reconnect
+- Fixed OKX fills for untracked orders arriving without their order terms
+- Fixed OKX post-only rejections reporting as canceled in bulk order status reports
 
 ### Internal Improvements
 
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Refined DeFi pool swap simulation and snapshot comparison
+- Refined core URL decoding with wider Unicode and separator test coverage
+- Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
 - Upgraded `flamegraph` tool to v0.6.15
