@@ -31,9 +31,10 @@ endpoints and received equal rows. The query example's stop-loss-limit row `OBCM
 describes its order as `@ limit 27500.0` with `price2` `0`, a form neither capture returned for a
 canceled or triggered stop-loss-limit, so no test asserts it.
 
-Three robustness tests change one field of a captured row: a malformed `descr.price`, an empty or
-relative `stopprice`, and an untriggered trailing-stop-limit's offset written unsigned. Those
-variants are not venue responses.
+Five robustness tests change captured rows: a malformed `descr.price`, an empty or relative
+`stopprice`, an untriggered trailing-stop-limit's offset written unsigned, a triggered
+take-profit-limit's side flipped with its trigger and limit exchanged, and the same row flipped
+with both prices at the limit. Those variants are not venue responses.
 
 ## Spot executions frames
 

@@ -42,8 +42,8 @@ use crate::{
         consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
-            KrakenInstrumentType, KrakenOrderType, KrakenPositionSide, KrakenSpotTrigger,
-            KrakenTriggerSignal,
+            KrakenInstrumentType, KrakenOrderSide, KrakenOrderType, KrakenPositionSide,
+            KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -750,6 +750,8 @@ pub(crate) fn parse_venue_order_id(
 /// Returns an error if:
 /// - Order ID, quantities, or prices cannot be parsed.
 /// - Order status mapping fails.
+/// - A row mapped to `LimitIfTouched` has its trigger above a buy limit or below a sell
+///   limit.
 pub fn parse_order_status_report(
     order_id: &str,
     order: &SpotOrder,
@@ -840,6 +842,24 @@ pub fn parse_order_status_report(
         | KrakenOrderType::TrailingStop
         | KrakenOrderType::TrailingStopLimit => stop_price,
     };
+
+    // A LimitIfTouched row with its trigger on the wrong side of its limit states an order
+    // Nautilus cannot represent, so fail it with both prices instead of an anonymous drop.
+    if order_type == OrderType::LimitIfTouched
+        && let (Some(limit), Some(trigger)) = (price, trigger_price)
+    {
+        let (side, relation, violates) = match order.descr.order_side {
+            KrakenOrderSide::Buy => ("Buy", "above", trigger > limit),
+            KrakenOrderSide::Sell => ("Sell", "below", trigger < limit),
+        };
+
+        if violates {
+            let kraken_type = order.descr.ordertype;
+            anyhow::bail!(
+                "{side} {kraken_type} with trigger price {trigger} {relation} limit price {limit} cannot be represented as LimitIfTouched"
+            );
+        }
+    }
 
     let expire_time = if has_expiration {
         order
@@ -2097,9 +2117,9 @@ mod tests {
         usdc_eur_instrument(),
         &[
             ("OCAP09-STLMT-000009", Some("0.4464"), Some("1.3394"), None),
-            ("OCAP10-TPLMT-000010", Some("0.4455"), Some("0.4465"), None),
+            // The two take-profit-limit rows violate the LimitIfTouched relation, so the
+            // rejection tests below assert them instead of this priced table.
             ("OCAP11-STLMT-000011", Some("0.4464"), Some("0.8929"), None),
-            ("OCAP12-TPLMT-000012", Some("0.4464"), Some("0.8929"), None),
             ("OCAP13-TRLMT-000013", Some("0.4465"), Some("0.8930"), None),
         ]
     )]
@@ -2213,6 +2233,98 @@ mod tests {
 
         assert_eq!(report.price, None);
         assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
+    }
+
+    /// A buy take-profit-limit with its trigger above its limit cannot be a LimitIfTouched, so
+    /// the row fails naming both prices instead of reaching reconciliation, where the manager
+    /// would drop it without naming the order. Both inputs are captured rows, one triggered and
+    /// one canceled untriggered.
+    #[rstest]
+    #[case::triggered(
+        "OCAP12-TPLMT-000012",
+        "Buy take-profit-limit with trigger price 0.8929 above limit price 0.4464 cannot be represented as LimitIfTouched"
+    )]
+    #[case::untriggered(
+        "OCAP10-TPLMT-000010",
+        "Buy take-profit-limit with trigger price 0.4465 above limit price 0.4455 cannot be represented as LimitIfTouched"
+    )]
+    fn test_parse_order_status_report_rejects_a_take_profit_limit_buy_with_trigger_above_limit(
+        #[case] order_id: &str,
+        #[case] expected: &str,
+    ) {
+        let order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+
+        let error = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    /// The sell mirror: a take-profit-limit with its trigger below its limit likewise violates
+    /// the LimitIfTouched relation. The input is synthetic: a captured triggered row with its
+    /// side flipped and its trigger and limit exchanged.
+    #[rstest]
+    fn test_parse_order_status_report_rejects_a_take_profit_limit_sell_with_trigger_below_limit() {
+        let order_id = "OCAP12-TPLMT-000012";
+        let mut order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.order_side = KrakenOrderSide::Sell;
+        order.descr.price = "0.4464".to_string();
+        order.descr.price2 = "0.8929".to_string();
+        order.stopprice = Some("0.44640000".to_string());
+        order.limitprice = Some("0.89290000".to_string());
+
+        let error = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Sell take-profit-limit with trigger price 0.4464 below limit price 0.8929 cannot be represented as LimitIfTouched"
+        );
+    }
+
+    /// A sell take-profit-limit with its trigger at its limit satisfies the LimitIfTouched
+    /// relation, so the row parses. The input is synthetic: a captured triggered row with its
+    /// side flipped and both prices at the captured limit.
+    #[rstest]
+    fn test_parse_order_status_report_prices_a_take_profit_limit_sell_with_trigger_at_limit() {
+        let order_id = "OCAP12-TPLMT-000012";
+        let mut order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.order_side = KrakenOrderSide::Sell;
+        order.descr.price = "0.4464".to_string();
+        order.descr.price2 = "0.4464".to_string();
+        order.stopprice = Some("0.44640000".to_string());
+        order.limitprice = Some("0.44640000".to_string());
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::LimitIfTouched);
+        assert_eq!(report.price, Some(Price::from("0.4464")));
+        assert_eq!(report.trigger_price, Some(Price::from("0.4464")));
     }
 
     /// The rows of a spot OpenOrders, ClosedOrders or QueryOrders response in `test_data`.

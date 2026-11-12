@@ -792,6 +792,9 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   relative price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
+- A take-profit-limit order whose trigger sits above a buy limit or below a sell limit cannot be a
+  `LimitIfTouched` order, so the row fails naming both prices. An open row fails the read; a closed
+  row is skipped and leaves the set incomplete.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
   fill price.
 
