@@ -179,6 +179,7 @@ pub(super) struct ExecutionStream {
     data_sender: Option<EventSender<DataEvent>>,
     pending: AHashMap<InstrumentId, VecDeque<OKXWsMessage>>,
     recovery: FuturesUnordered<BoxFuture<'static, (InstrumentId, anyhow::Result<()>)>>,
+    account_refreshes: FuturesUnordered<BoxFuture<'static, ()>>,
     buffered: usize,
     fee_cache: FeeCache,
     filled_qty_cache: FilledQtyCache,
@@ -206,6 +207,7 @@ impl ExecutionStream {
             data_sender,
             pending: AHashMap::new(),
             recovery: FuturesUnordered::new(),
+            account_refreshes: FuturesUnordered::new(),
             buffered: 0,
             fee_cache: FeeCache::new(),
             filled_qty_cache: FilledQtyCache::new(),
@@ -235,6 +237,7 @@ impl ExecutionStream {
                         self.dispatch(message);
                     }
                 }
+                Some(()) = self.account_refreshes.next(), if !self.account_refreshes.is_empty() => {}
                 () = self.dispatch.wait_for_linked_child_route() => {
                     self.dispatch(OKXWsMessage::Orders(Vec::new()));
                 }
@@ -332,6 +335,21 @@ impl ExecutionStream {
     }
 
     fn dispatch(&mut self, message: OKXWsMessage) {
+        if matches!(message, OKXWsMessage::Reconnected) {
+            let http = self.state.http.clone();
+            let emitter = self.emitter.clone();
+            let account_id = self.account_id;
+            let account_type = self.account_type;
+            self.account_refreshes.push(Box::pin(async move {
+                match http.request_account_state(account_id, account_type).await {
+                    Ok(account_state) => emitter.send_account_state(account_state),
+                    Err(e) => {
+                        log::warn!("Failed to refresh OKX account state after reconnect: {e}");
+                    }
+                }
+            }));
+        }
+
         dispatch_ws_message(
             message,
             &self.emitter,
@@ -362,10 +380,15 @@ impl Drop for ExecutionStream {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use axum::{Json, Router, routing::get};
-    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_common::{messages::ExecutionEvent, testing::wait_until_async};
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
-    use nautilus_model::{data::Data, identifiers::TraderId};
+    use nautilus_model::{
+        data::Data, events::account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY,
+        identifiers::TraderId,
+    };
     use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
     use serde_json::Value;
@@ -567,6 +590,78 @@ mod tests {
             "required numeric instrument code is unavailable for BTC-USDT-SWAP.OKX"
         );
         assert!(data.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn reconnect_requests_complete_account_state() {
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&request_count);
+        let router = Router::new().route(
+            "/api/v5/account/balance",
+            get(move || {
+                let counter = Arc::clone(&counter);
+                async move {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                    let response: Value =
+                        serde_json::from_str(&load_test_json("http_get_account_balance.json"))
+                            .unwrap();
+                    Json(response)
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let http = OKXHttpClient::with_credentials(
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some("test_passphrase".to_string()),
+            Some(format!("http://{address}")),
+            2,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let (mut worker, _state, mut events) = stream_with_http(http);
+        wait_until_async(
+            || async { tokio::net::TcpStream::connect(address).await.is_ok() },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        worker.dispatch(OKXWsMessage::Reconnected);
+        let refresh = worker.account_refreshes.next();
+        tokio::time::timeout(std::time::Duration::from_secs(5), refresh)
+            .await
+            .unwrap();
+        wait_until_async(
+            || async { request_count.load(Ordering::Relaxed) > 0 },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Account(account_state) = event else {
+            panic!("expected account state after reconnect");
+        };
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            account_state
+                .info
+                .as_ref()
+                .and_then(|info| info.get_bool(BALANCES_SNAPSHOT_COMPLETE_INFO_KEY)),
+            Some(true),
+        );
         server.abort();
     }
 

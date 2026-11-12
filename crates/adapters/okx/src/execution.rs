@@ -7401,10 +7401,19 @@ mod tests {
         );
         let event = rx.try_recv().unwrap();
 
-        let ExecutionEvent::Report(CommonExecutionReport::Fill(report)) = event else {
-            panic!("expected imported child fill report, was {event:?}");
+        let ExecutionEvent::Report(CommonExecutionReport::OrderWithFills(order, fills)) = event
+        else {
+            panic!("expected imported child order with fills, was {event:?}");
         };
 
+        assert_eq!(order.client_order_id, Some(cid));
+        assert_eq!(
+            order.venue_order_id,
+            VenueOrderId::from("2497956918703120501")
+        );
+        assert_eq!(order.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 1);
+        let report = &fills[0];
         assert_eq!(report.client_order_id, Some(cid));
         assert_eq!(
             report.venue_order_id,

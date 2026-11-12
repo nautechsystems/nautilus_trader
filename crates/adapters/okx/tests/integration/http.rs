@@ -44,8 +44,10 @@ use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
     data::{Bar, BarType},
     enums::{
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
+        AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
     },
+    events::account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -103,6 +105,7 @@ struct TestServerState {
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_history_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    order_history_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     mark_price_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     option_summary_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     price_limit_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -836,7 +839,13 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         }
 
                         *state.last_order_history_query.lock().await = Some(params);
-                        Json(load_test_data("http_get_orders_history.json")).into_response()
+                        let response = state
+                            .order_history_response
+                            .lock()
+                            .await
+                            .clone()
+                            .unwrap_or_else(|| load_test_data("http_get_orders_history.json"));
+                        Json(response).into_response()
                     }
                 },
             ),
@@ -869,7 +878,13 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         }
 
                         *state.last_order_detail_query.lock().await = Some(params);
-                        Json(load_test_data("http_get_orders_history.json")).into_response()
+                        let response = state
+                            .order_history_response
+                            .lock()
+                            .await
+                            .clone()
+                            .unwrap_or_else(|| load_test_data("http_get_orders_history.json"));
+                        Json(response).into_response()
                     }
                 },
             )
@@ -5221,6 +5236,39 @@ async fn test_http_request_algo_order_status_reports_uses_details_for_exact_look
 
 #[rstest]
 #[tokio::test]
+async fn test_http_request_account_state_marks_complete_balance_snapshot() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let state = client
+        .request_account_state(AccountId::new("OKX-001"), AccountType::Cash)
+        .await
+        .unwrap();
+
+    assert_eq!(state.balances.len(), 1);
+    assert_eq!(
+        state
+            .info
+            .as_ref()
+            .and_then(|info| info.get_bool(BALANCES_SNAPSHOT_COMPLETE_INFO_KEY)),
+        Some(true),
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_ids() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
@@ -5266,6 +5314,69 @@ async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_i
         .expect("expected linked child order ids");
     assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-sl")));
     assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-tp")));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_order_status_report_paths_map_post_only_cancel_to_rejected() {
+    let state = Arc::new(TestServerState::default());
+    let order = load_test_data("ws_orders_post_only_canceled_first.json")["data"][0].clone();
+    *state.order_history_response.lock().await = Some(okx_response(&[order]));
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let client_order_id = ClientOrderId::from("OPOSTONLYCANCEL001");
+    let reports = client
+        .request_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            Some(instrument_id),
+            None,
+            None,
+            false,
+            Some(50),
+        )
+        .await
+        .unwrap();
+    let detail_query_after_sweep = state.last_order_detail_query.lock().await.clone();
+    let mass_report = reports
+        .into_iter()
+        .find(|report| report.client_order_id == Some(client_order_id))
+        .expect("post-only order must appear in the mass-status sweep");
+    let single_report = client
+        .request_order_status_report(AccountId::new("OKX-001"), instrument_id, client_order_id)
+        .await
+        .unwrap()
+        .expect("post-only order must appear in the single-order query");
+
+    for report in [&mass_report, &single_report] {
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::ZERO);
+        assert!(report.post_only);
+        assert_eq!(
+            report.cancel_reason.as_deref(),
+            Some("POST_ONLY would take liquidity"),
+        );
+    }
+
+    assert!(detail_query_after_sweep.is_none());
 }
 
 #[rstest]

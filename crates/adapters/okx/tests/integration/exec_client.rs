@@ -1416,8 +1416,17 @@ fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send
 }
 
 #[rstest]
-fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report() {
-    let (_, order_msgs) = load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+#[case::filled("0.003", OKXOrderStatus::Filled, OrderStatus::Filled)]
+#[case::partial("0.004", OKXOrderStatus::PartiallyFilled, OrderStatus::PartiallyFilled)]
+fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
+    #[case] order_qty: &str,
+    #[case] venue_status: OKXOrderStatus,
+    #[case] expected_status: OrderStatus,
+) {
+    let (_, mut order_msgs) =
+        load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    order_msgs[0].sz = order_qty.to_string();
+    order_msgs[0].state = venue_status;
     let client_order_id = ClientOrderId::new("OEEADEMOSTOPLIMIT001");
     let instrument_id = InstrumentId::from("ETH-USDT.OKX");
     let venue_order_id = VenueOrderId::new("2497956918703120501");
@@ -1436,7 +1445,7 @@ fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
-        OKXWsMessage::Orders(order_msgs),
+        OKXWsMessage::Orders(order_msgs.clone()),
         &emitter,
         &state,
         AccountId::from("OKX-001"),
@@ -1450,24 +1459,59 @@ fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
+
     match &events[0] {
-        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
-            assert_eq!(report.account_id, AccountId::from("OKX-001"));
-            assert_eq!(report.instrument_id, instrument_id);
-            assert_eq!(report.client_order_id, Some(client_order_id));
-            assert_eq!(report.venue_order_id, venue_order_id);
-            assert_eq!(report.trade_id, TradeId::new("1518905600"));
-            assert_eq!(report.order_side, OrderSide::Buy);
-            assert_eq!(report.last_qty, Quantity::from("0.003"));
-            assert_eq!(report.last_px, Price::from("1886.00"));
-            assert_eq!(report.commission, Money::from("0.000006 ETH"));
-            assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-            assert_eq!(report.venue_position_id, None);
+        ExecutionEvent::Report(CommonExecutionReport::OrderWithFills(order, fills)) => {
+            assert_eq!(order.account_id, AccountId::from("OKX-001"));
+            assert_eq!(order.instrument_id, instrument_id);
+            assert_eq!(order.client_order_id, Some(client_order_id));
+            assert_eq!(order.venue_order_id, venue_order_id);
+            assert_eq!(order.order_side, Some(OrderSide::Buy));
+            assert_eq!(order.order_type, OrderType::Limit);
+            assert_eq!(order.time_in_force, TimeInForce::Gtc);
+            assert_eq!(order.order_status, expected_status);
+            assert_eq!(order.quantity, Quantity::from(order_qty));
+            assert_eq!(order.filled_qty, Quantity::from("0.003"));
+            assert_eq!(order.price, Some(Price::from("1886.00")));
+            assert!(!order.reduce_only);
+
+            assert_eq!(fills.len(), 1);
+            let fill = &fills[0];
+            assert_eq!(fill.account_id, AccountId::from("OKX-001"));
+            assert_eq!(fill.instrument_id, instrument_id);
+            assert_eq!(fill.client_order_id, Some(client_order_id));
+            assert_eq!(fill.venue_order_id, venue_order_id);
+            assert_eq!(fill.trade_id, TradeId::new("1518905600"));
+            assert_eq!(fill.order_side, OrderSide::Buy);
+            assert_eq!(fill.last_qty, Quantity::from("0.003"));
+            assert_eq!(fill.last_px, Price::from("1886.00"));
+            assert_eq!(fill.commission, Money::from("0.000006 ETH"));
+            assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(fill.venue_position_id, None);
         }
-        other => panic!("Expected untracked child fill report, was {other:?}"),
+        other => panic!("Expected untracked child order with fills, was {other:?}"),
     }
     assert!(state.order_identities.is_empty());
     assert!(state.contains_filled(&client_order_id));
+    assert_eq!(
+        state.contains_terminal(&client_order_id),
+        expected_status == OrderStatus::Filled,
+    );
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        AccountType::Margin,
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
 }
 
 struct VenueFillCase {
@@ -1558,10 +1602,18 @@ fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCas
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
+
     match &events[0] {
-        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
-            // Venue-initiated flow (liquidation or ADL): no client order ID,
-            // surfaced as a fill report
+        ExecutionEvent::Report(CommonExecutionReport::OrderWithFills(order, fills)) => {
+            assert_eq!(order.account_id, AccountId::from("OKX-001"));
+            assert_eq!(order.instrument_id, case.instrument_id);
+            assert_eq!(order.client_order_id, None);
+            assert_eq!(order.venue_order_id, VenueOrderId::new(case.venue_order_id));
+            assert_eq!(order.order_status, OrderStatus::Filled);
+            assert_eq!(order.quantity, Quantity::from(case.qty));
+            assert_eq!(order.filled_qty, Quantity::from(case.qty));
+            assert_eq!(fills.len(), 1);
+            let report = &fills[0];
             assert_eq!(report.account_id, AccountId::from("OKX-001"));
             assert_eq!(report.instrument_id, case.instrument_id);
             assert_eq!(report.client_order_id, None);
@@ -1576,7 +1628,7 @@ fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCas
             assert_eq!(report.commission, Money::from(case.fee));
             assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         }
-        other => panic!("Expected venue-initiated fill report, was {other:?}"),
+        other => panic!("Expected venue-initiated order with fills, was {other:?}"),
     }
 }
 
@@ -8239,11 +8291,16 @@ async fn test_filtered_stream_registers_metadata_before_replaying_orders_and_fil
                     assert_eq!(report.order_status, OrderStatus::Accepted);
                     order_ids.push(report.venue_order_id.to_string());
                 }
-                ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+                ExecutionEvent::Report(CommonExecutionReport::OrderWithFills(order, reports)) => {
+                    assert_eq!(order.instrument_id, target);
+                    assert_eq!(order.order_status, OrderStatus::Filled);
+                    order_ids.push(order.venue_order_id.to_string());
+                    assert_eq!(reports.len(), 1);
+                    let report = &reports[0];
                     assert_eq!(report.instrument_id, target);
                     assert_eq!(report.trade_id, TradeId::from("stream-fill-17"));
                     assert_eq!(report.last_qty, Quantity::from("1"));
-                    fills.push(report);
+                    fills.push(report.clone());
                 }
                 event => panic!("unexpected recovered event: {event:?}"),
             }
@@ -8268,7 +8325,7 @@ async fn test_filtered_stream_registers_metadata_before_replaying_orders_and_fil
                 {
                     controls += 1;
                 }
-                ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => fills.push(report),
+                ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => fills.push(*report),
                 event => panic!("unexpected duplicate-stream outcome: {event:?}"),
             }
         }
@@ -8284,7 +8341,8 @@ async fn test_filtered_stream_registers_metadata_before_replaying_orders_and_fil
             "stream-first",
             "stream-second",
             "stream-first",
-            "stream-second"
+            "stream-second",
+            "stream-first"
         ]
     );
     assert_eq!(fills.len(), 1);
@@ -8637,7 +8695,6 @@ async fn test_filtered_stream_session_transition_preserves_generation(
                 event = rx.recv() => {
                     let event = event.unwrap();
                     if let ExecutionEvent::Account(account) = &event {
-                        assert!(restart);
                         assert_eq!(account.account_id, AccountId::from("OKX-001"));
                         continue;
                     }

@@ -728,6 +728,7 @@ Relevant OKX docs:
 | ------------- | --------------------- | ----------------------------------------------------- |
 | `post_only`   | ✓                     | Only for limit orders.                                |
 | `reduce_only` | ✓                     | See the product and position-mode restrictions below. |
+| `display_qty` | -                     | Ignored; orders are sent without a display quantity.  |
 
 Low-level requests explicitly typed `MARGIN` support OKX's literal `reduceOnly` field in `isolated`
 or `cross` trade mode. Futures and swaps use it in `net` position mode. In `long/short` position mode,
@@ -763,7 +764,7 @@ order expiration by canceling the order at the specified expiry time.
 | Operation    | Linear perpetual swap | Notes                                     |
 | ------------ | --------------------- | ----------------------------------------- |
 | Batch Submit | ✓                     | Submit multiple orders in single request. |
-| Batch Modify | ✓                     | Modify multiple orders in single request. |
+| Batch Modify | ✓                     | Sent as individual amend requests.        |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
 Regular-order batch cancels split repeated targets into separate WebSocket requests so each reply
@@ -1442,8 +1443,8 @@ data_config = OKXDataClientConfig(region=OKXRegion.EEA)
 ```
 
 `region` selects the regional defaults, and combines with `environment` to pick the demo
-hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http` and
-`base_url_ws` overrides always take precedence over the region defaults.
+hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http`, `base_url_ws_public`,
+`base_url_ws_private`, and `base_url_ws_business` overrides always take precedence over the region defaults.
 
 ## Funding rates
 
@@ -1669,11 +1670,11 @@ marking reports incomplete does not restore that recovery coverage.
 ### Unacknowledged submissions
 
 OKX defines `50004` and `51149` as [unknown request outcomes](https://my.okx.com/docs-v5/en/#error-code).
-The adapter leaves these submissions unresolved, but the default execution policy can still resolve
-them locally when reconciliation checks exhaust. OKX does not enable submission retention automatically.
+The adapter leaves these submissions unresolved. The OKX client does not enable submission retention itself;
+the default `RetainUnresolved` execution policy preserves them when reconciliation checks exhaust.
 
-To retain unacknowledged submissions, including those with no response, select the existing engine
-policy when constructing the node:
+To resolve unacknowledged submissions locally after recovery exhaustion, select `ResolveLocally` when
+constructing the node:
 
 ```rust
 use nautilus_live::{
@@ -1682,19 +1683,20 @@ use nautilus_live::{
 };
 
 let exec_engine = LiveExecutionEngineConfig {
-    submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+    submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
     ..Default::default()
 };
 ```
 
-This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. Exhaustion
-publishes `SubmissionRecoveryExhausted` once and preserves the submission identity for later authoritative
-evidence without resubmitting the order. See
+This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. With the
+default retention policy, exhaustion publishes `SubmissionRecoveryExhausted` once and preserves the submission
+identity for later authoritative evidence without resubmitting the order. See
 [submission recovery](../concepts/execution/reconciliation.md#submission-recovery) for confirmation and
 query-budget rules. Retained submissions still unresolved at the node's `delay_post_stop` boundary produce an
-[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown. The
-policy does not change timeout resolution for commands on already accepted orders, provide crash-durable
-recovery, or prove that positions are flat.
+[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown.
+When a cancel or update on an already accepted order times out, the retention policy restores the order's
+prior status and does not close it. The policy does not provide crash-durable recovery or prove that
+positions are flat.
 
 ### Request expiry
 

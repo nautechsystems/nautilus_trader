@@ -1473,8 +1473,9 @@ impl OKXWebSocketClient {
 
     /// Subscribes to trade data for an instrument.
     ///
-    /// When `aggregated` is `false`, subscribes to the `trades` channel (per-match updates).
-    /// When `aggregated` is `true`, subscribes to the `trades-all` channel (aggregated updates).
+    /// When `aggregated` is `false`, subscribes to the `trades` channel, where one update can
+    /// aggregate several trades. When `aggregated` is `true`, subscribes to the `trades-all`
+    /// channel, where each update carries one trade.
     ///
     /// # Errors
     ///

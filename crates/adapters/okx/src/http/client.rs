@@ -47,11 +47,12 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::{cache::InstrumentLookupError, live::dst::time};
 use nautilus_core::{
-    AtomicMap, AtomicTime, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var,
-    string::secret::REDACTED, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, Params, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND,
+    env::get_or_env_var, string::secret::REDACTED, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{
@@ -63,7 +64,7 @@ use nautilus_model::{
         AccountType, AggregationSource, BarAggregation, BookAction, BookType, OrderSide,
         OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
-    events::AccountState,
+    events::{AccountState, account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -134,13 +135,14 @@ use crate::{
         models::OKXInstrument,
         parse::{
             extract_inst_family, is_okx_spread_symbol, is_order_status_report_more_advanced,
-            okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
-            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report, parse_funding_rate,
-            parse_index_price_update, parse_instrument_any, parse_mark_price_update,
-            parse_millisecond_timestamp, parse_order_status_report, parse_position_status_report,
-            parse_price, parse_quantity, parse_spot_margin_position_from_balance,
-            parse_spread_fill_report, parse_spread_instrument, parse_spread_order_status_report,
-            parse_trade_tick, prefer_rpi_response_fields,
+            okx_instrument_type, okx_instrument_type_from_symbol,
+            parse_account_state_with_completeness, parse_base_quote_from_symbol, parse_candlestick,
+            parse_fill_report, parse_funding_rate, parse_index_price_update, parse_instrument_any,
+            parse_mark_price_update, parse_millisecond_timestamp, parse_order_status_report,
+            parse_position_status_report, parse_price, parse_quantity,
+            parse_spot_margin_position_from_balance, parse_spread_fill_report,
+            parse_spread_instrument, parse_spread_order_status_report, parse_trade_tick,
+            prefer_rpi_response_fields,
         },
     },
     http::models::{OKXCandlestick, OKXTrade},
@@ -2880,7 +2882,18 @@ impl OKXHttpClient {
         let raw = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("No account state returned from OKX"))?;
-        let account_state = parse_account_state(raw, account_id, account_type, ts_init)?;
+        let (account_state, balances_complete) =
+            parse_account_state_with_completeness(raw, account_id, account_type, ts_init);
+
+        // Only a fully parsed, unfiltered REST response authoritatively zeros omitted currencies
+        let info = balances_complete.then(|| {
+            Params::new(IndexMap::from([(
+                BALANCES_SNAPSHOT_COMPLETE_INFO_KEY.to_string(),
+                serde_json::Value::Bool(true),
+            )]))
+        });
+
+        let account_state = account_state.with_info(info);
 
         Ok(account_state)
     }
@@ -4963,7 +4976,7 @@ impl OKXHttpClient {
                 }
             };
 
-            let report = match parse_order_status_report(
+            let mut report = match parse_order_status_report(
                 &order,
                 account_id,
                 inst.id(),
@@ -4980,6 +4993,7 @@ impl OKXHttpClient {
                 }
             };
 
+            apply_post_only_rejection(&order, &mut report);
             reports.push(report);
         }
 
@@ -5095,20 +5109,7 @@ impl OKXHttpClient {
             }
         })?;
 
-        let post_only_rejected = order.state == OKXOrderStatus::Canceled
-            && report.filled_qty.is_zero()
-            && (order.cancel_source == OKX_POST_ONLY_CANCEL_SOURCE
-                || order.cancel_source_reason.contains("POST_ONLY"));
-        if post_only_rejected {
-            report.order_status = OrderStatus::Rejected;
-            report.post_only = true;
-            let reason = if order.cancel_source_reason.is_empty() {
-                OKX_POST_ONLY_CANCEL_REASON.to_string()
-            } else {
-                order.cancel_source_reason.clone()
-            };
-            report.cancel_reason = Some(reason);
-        }
+        apply_post_only_rejection(order, &mut report);
 
         Ok(Some(report))
     }
@@ -8008,6 +8009,28 @@ fn parse_historical_candlestick(
     };
 
     Ok(bar)
+}
+
+fn apply_post_only_rejection(order: &OKXOrderHistory, report: &mut OrderStatusReport) {
+    let post_only_rejected = order.state == OKXOrderStatus::Canceled
+        && report.filled_qty.is_zero()
+        && (order.cancel_source == OKX_POST_ONLY_CANCEL_SOURCE
+            || order.cancel_source_reason.contains("POST_ONLY"));
+
+    if !post_only_rejected {
+        return;
+    }
+
+    report.order_status = OrderStatus::Rejected;
+    report.post_only = true;
+
+    let reason = if order.cancel_source_reason.is_empty() {
+        OKX_POST_ONLY_CANCEL_REASON.to_string()
+    } else {
+        order.cancel_source_reason.clone()
+    };
+
+    report.cancel_reason = Some(reason);
 }
 
 fn is_open_okx_order(state: OKXOrderStatus, from_pending_source: bool) -> bool {

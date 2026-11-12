@@ -2725,6 +2725,15 @@ pub fn parse_account_state(
     account_type: AccountType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
+    Ok(parse_account_state_with_completeness(okx_account, account_id, account_type, ts_init).0)
+}
+
+pub(crate) fn parse_account_state_with_completeness(
+    okx_account: &OKXAccount,
+    account_id: AccountId,
+    account_type: AccountType,
+    ts_init: UnixNanos,
+) -> (AccountState, bool) {
     let mut balances = Vec::new();
 
     for b in &okx_account.details {
@@ -2754,6 +2763,8 @@ pub fn parse_account_state(
             }
         }
     }
+
+    let balances_complete = balances.len() == okx_account.details.len();
 
     // Ensure at least one balance exists (Nautilus requires non-empty balances)
     // OKX may return empty details for certain account configurations
@@ -2812,17 +2823,20 @@ pub fn parse_account_state(
     let event_id = UUID4::new();
     let ts_event = parse_millisecond_timestamp(okx_account.u_time);
 
-    Ok(AccountState::new(
-        account_id,
-        account_type,
-        balances,
-        margins,
-        is_reported,
-        event_id,
-        ts_event,
-        ts_init,
-        None,
-    ))
+    (
+        AccountState::new(
+            account_id,
+            account_type,
+            balances,
+            margins,
+            is_reported,
+            event_id,
+            ts_event,
+            ts_init,
+            None,
+        ),
+        balances_complete,
+    )
 }
 
 /// Converts an optional `UnixNanos` to an optional `Timestamp`.
@@ -3998,6 +4012,7 @@ mod tests {
         assert_eq!(account_state.balances.len(), 1);
         assert_eq!(account_state.margins.len(), 0); // No margins in this test data (spot account)
         assert!(account_state.is_reported);
+        assert!(account_state.info.is_none());
 
         // Check the USDT balance details
         let usdt_balance = &account_state.balances[0];
@@ -4010,6 +4025,42 @@ mod tests {
             Money::new(94.426_129_903_333_33, Currency::USDT())
         );
         assert_eq!(usdt_balance.locked, Money::new(0.0, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_parse_account_state_completeness() {
+        let response: OKXResponse<OKXAccount> =
+            serde_json::from_str(&load_test_json("http_get_account_balance.json")).unwrap();
+        let valid = response.data[0].clone();
+        let mut invalid = valid.clone();
+        invalid.details[0].cash_bal = "not-a-number".to_string();
+        let empty_json: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_account_empty.json")).unwrap();
+        let empty: OKXAccount = serde_json::from_value(empty_json["data"][0].clone()).unwrap();
+        let account_id = AccountId::new("OKX-001");
+
+        let (_, valid_complete) = parse_account_state_with_completeness(
+            &valid,
+            account_id,
+            AccountType::Cash,
+            UnixNanos::default(),
+        );
+        let (_, invalid_complete) = parse_account_state_with_completeness(
+            &invalid,
+            account_id,
+            AccountType::Cash,
+            UnixNanos::default(),
+        );
+        let (_, empty_complete) = parse_account_state_with_completeness(
+            &empty,
+            account_id,
+            AccountType::Cash,
+            UnixNanos::default(),
+        );
+
+        assert!(valid_complete);
+        assert!(!invalid_complete);
+        assert!(empty_complete);
     }
 
     #[rstest]

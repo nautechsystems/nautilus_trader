@@ -2586,6 +2586,7 @@ mod tests {
     use ahash::AHashMap;
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
+        accounts::BaseAccount,
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::{AccountType, BookType, GreeksConvention},
         identifiers::{ClientOrderId, PositionId, Symbol, VenueOrderId},
@@ -3377,6 +3378,24 @@ mod tests {
         let state = account_state.unwrap();
         assert_eq!(state.account_id, account_id);
         assert_eq!(state.balances.len(), 3);
+
+        let mut base_account = BaseAccount::new(state, true);
+        let mut partial = account.clone();
+        partial.details.retain(|detail| detail.ccy == "BTC");
+        partial.details[0].cash_bal = "0.25".to_string();
+        partial.details[0].avail_bal = "0.25".to_string();
+        let partial_state =
+            parse_account_state(&partial, account_id, AccountType::Margin, ts_init).unwrap();
+        assert!(partial_state.info.is_none());
+
+        base_account.base_apply(partial_state);
+
+        let usdt = base_account.base_balance(Some(Currency::USDT())).unwrap();
+        let btc = base_account.base_balance(Some(Currency::BTC())).unwrap();
+        assert_eq!(usdt.total, Money::from("100.52768569797846 USDT"));
+        assert_eq!(usdt.free, Money::from("100.52768569797846 USDT"));
+        assert_eq!(btc.total, Money::from("0.25 BTC"));
+        assert_eq!(btc.free, Money::from("0.25 BTC"));
     }
 
     #[rstest]
@@ -3408,6 +3427,7 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.margins.len(), 0);
         assert_eq!(account_state.balances.len(), 1);
+        assert!(account_state.info.is_none());
 
         let balance = &account_state.balances[0];
         assert_eq!(balance.total, Money::new(0.0, Currency::USD()));
