@@ -327,6 +327,72 @@ async fn test_exec_client_bulk_position_coverage_by_product_type(
 }
 
 #[rstest]
+#[case::excluded(
+    true,
+    log::Level::Debug,
+    "Skipping out-of-scope fill report for UNLOADEDUSDT-LINEAR.BYBIT"
+)]
+#[case::missing(
+    false,
+    log::Level::Warn,
+    "Instrument UNLOADEDUSDT-LINEAR.BYBIT missing from reconciliation cache, history is incomplete"
+)]
+#[tokio::test]
+async fn test_reconciliation_instrument_miss_log_level(
+    #[case] scoped: bool,
+    #[case] level: log::Level,
+    #[case] message: &str,
+) {
+    let _capture = client_logging::capture_logs().await;
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    if scoped {
+        config.load_ids = Some(vec![InstrumentId::from("ETHUSDT-LINEAR.BYBIT")]);
+    }
+
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    let mut response = load_test_data("http_get_executions.json");
+    response["result"]["nextPageCursor"] = json!("");
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    response["result"]["list"][0]["symbol"] = json!("UNLOADEDUSDT");
+    *state.execution_response.lock().await = Some(response);
+
+    let command = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_fill_reports(command).await;
+
+    if scoped {
+        assert_eq!(result.unwrap(), vec![]);
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "in-scope historical instruments missing from reconciliation cache"
+        );
+    }
+
+    let relevant: Vec<_> = client_logging::messages()
+        .into_iter()
+        .filter(|(_, text)| text == message)
+        .collect();
+    assert_eq!(relevant, vec![(level, message.to_string())]);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::targeted(false)]
 #[case::mass_status(true)]
 #[tokio::test]

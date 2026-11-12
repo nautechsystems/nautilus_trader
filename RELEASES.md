@@ -5,6 +5,8 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
+- Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
+- Added Bybit bounded reconciliation windows that retain older open orders
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
@@ -20,6 +22,8 @@ Released on TBD (UTC).
 - Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
 - Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
+- Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
+- Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
@@ -37,6 +41,7 @@ Released on TBD (UTC).
 - Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
 - Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
+- Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien

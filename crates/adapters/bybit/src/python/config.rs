@@ -17,7 +17,7 @@
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{PyResult, pymethods};
 
@@ -154,6 +154,7 @@ impl BybitExecutionClientConfig {
         smp_type = None,
         transport_backend = None,
         use_ws_execution_fast = None,
+        load_ids = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -179,6 +180,7 @@ impl BybitExecutionClientConfig {
         smp_type: Option<String>,
         transport_backend: Option<TransportBackend>,
         use_ws_execution_fast: Option<bool>,
+        load_ids: Option<Vec<InstrumentId>>,
     ) -> PyResult<Self> {
         let smp_type = smp_type
             .map(|value| parse_smp_type(&value))
@@ -216,6 +218,7 @@ impl BybitExecutionClientConfig {
             margin_mode,
             smp_type,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            load_ids,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -249,6 +252,42 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::valid("ETHUSDT-LINEAR.BYBIT", true)]
+    #[case::invalid("ETHUSDT-LINEAR.BINANCE", false)]
+    #[case::empty_symbol("-LINEAR.BYBIT", false)]
+    fn test_python_execution_config_load_ids(#[case] id: &str, #[case] valid: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let instrument_id = InstrumentId::from(id);
+            let list = PyList::new(py, [Py::new(py, instrument_id).unwrap()]).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("load_ids", list).unwrap();
+            let result = py
+                .get_type::<BybitExecutionClientConfig>()
+                .call((), Some(&kwargs));
+
+            if valid {
+                let actual: Option<Vec<InstrumentId>> = result
+                    .unwrap()
+                    .getattr("load_ids")
+                    .unwrap()
+                    .extract()
+                    .unwrap();
+                assert_eq!(actual, Some(vec![instrument_id]));
+            } else {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    format!(
+                        "invalid load_ids: {id} is not an uppercase BYBIT instrument in a configured product type"
+                    )
+                );
+            }
+        });
+    }
 
     #[rstest]
     #[case::data(false)]
@@ -339,7 +378,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_python_execution_config_fast_parameter_is_last() {
+    fn test_python_execution_config_parameter_order() {
         Python::initialize();
         Python::attach(|py| {
             let inspect = py.import("inspect").unwrap();
@@ -357,12 +396,32 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                names.last().map(String::as_str),
-                Some("use_ws_execution_fast")
-            );
-            assert_eq!(
-                names.get(names.len() - 2).map(String::as_str),
-                Some("transport_backend")
+                names,
+                [
+                    "product_types",
+                    "environment",
+                    "api_key",
+                    "api_secret",
+                    "base_url_http",
+                    "base_url_ws_private",
+                    "base_url_ws_trade",
+                    "proxy_url",
+                    "http_timeout_secs",
+                    "max_retries",
+                    "retry_delay_initial_ms",
+                    "retry_delay_max_ms",
+                    "heartbeat_interval_secs",
+                    "auth_timeout_secs",
+                    "recv_window_ms",
+                    "account_id",
+                    "use_spot_position_reports",
+                    "auto_repay_spot_borrows",
+                    "margin_mode",
+                    "smp_type",
+                    "transport_backend",
+                    "use_ws_execution_fast",
+                    "load_ids",
+                ],
             );
         });
     }
