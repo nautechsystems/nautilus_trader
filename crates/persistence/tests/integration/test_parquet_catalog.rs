@@ -3144,10 +3144,16 @@ fn test_to_object_path_trailing_slash() {
         base_dir.with_file_name("catalog2").display()
     );
     let sibling_object_path = catalog.to_object_path(&sibling_path).unwrap();
-    assert_eq!(
-        sibling_object_path.as_ref(),
-        sibling_path.replace('\\', "/").trim_start_matches('/')
-    );
+    let mut expected = sibling_path
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+
+    if cfg!(target_os = "windows") {
+        expected = expected.replace(':', "%3A");
+    }
+
+    assert_eq!(sibling_object_path.as_ref(), expected);
     assert!(sibling_object_path.as_ref().contains("catalog2/data"));
 }
 
