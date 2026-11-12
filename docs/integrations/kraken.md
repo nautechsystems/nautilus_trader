@@ -728,15 +728,16 @@ before the in-flight retries run out, `SubmissionRecoveryPolicy::ResolveLocally`
 holds it. The default `SubmissionRecoveryPolicy::RetainUnresolved` instead leaves it unresolved for later venue evidence.
 
 `query_order` reads open orders only, so it emits no report for an order the venue has closed. Under
-`RetainUnresolved`, an order restored after a cancel or modify timeout therefore stays open locally if its stream
-cancel was lost. Set `open_check_open_only=False` so the open check resolves such orders from order history.
+`RetainUnresolved`, a cancel or modify timeout restores the prior order status. When periodic open-order checks
+are enabled, bulk history in full-history mode or a targeted status query in open-only mode can recover the
+lost terminal update, subject to the configured lookback.
 
 #### Single-order lookups
 
-A single-order status lookup that finds no report tells reconciliation that the venue
-has no such order, and reconciliation resolves the order on that answer. The lookup
-gives that answer only from a read that rules the order out, and otherwise fails, so
-reconciliation defers the order:
+A single-order status lookup that finds no report tells reconciliation that the venue has no such order.
+Full-history reconciliation can resolve the order on that answer; open-only checks keep it open. The lookup
+gives that answer only from a read that rules the order out, and otherwise fails, so reconciliation defers
+the order:
 
 - A complete read rules out any order it could have returned. A held futures order
   shows only in the orders-status window, which the Futures lookup reads for a cached
@@ -754,8 +755,9 @@ reconciliation defers the order:
   back a continuation token reaches back to its oldest event. A spot closed-order read
   stopped at its page cap rules out none.
 
-An order a read cannot rule out is deferred again on every open-order check. On Futures each such lookup draws
-one order-history token.
+In full-history mode, an order a read cannot rule out is deferred again on every open-order check. In open-only
+mode, another targeted attempt requires a fresh missing-check budget. On Futures each such lookup draws one
+order-history token.
 
 #### Spot pagination limits
 

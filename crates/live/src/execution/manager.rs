@@ -2441,113 +2441,86 @@ impl ExecutionManager {
             }
         }
 
-        // Handle orders missing at venue (skip in open_only mode where the
-        // venue response may omit recently closed orders). When a lookback
-        // window is set, only consider orders within that window so older
-        // GTC orders outside the query range are not falsely marked missing.
-        if self.config.open_check_open_only {
-            let cached_ids: IndexSet<ClientOrderId> = check
-                .filtered_orders
-                .iter()
-                .map(Order::client_order_id)
-                .collect();
-            let missing_at_venue: IndexSet<ClientOrderId> = cached_ids
-                .difference(&venue_reported_ids)
-                .copied()
-                .collect();
+        let candidates: Vec<&OrderAny> = if let Some(cutoff) = check.command.start {
+            let mut candidates = Vec::new();
 
-            if !missing_at_venue.is_empty() {
-                log::debug!(
-                    "{} cached open order{} not present in venue current response",
-                    missing_at_venue.len(),
-                    if missing_at_venue.len() == 1 {
-                        " is"
-                    } else {
-                        "s are"
-                    },
-                );
-
-                for client_order_id in missing_at_venue {
-                    log::debug!("Cached open order missing from venue response: {client_order_id}");
+            for order in &check.filtered_orders {
+                let client_order_id = order.client_order_id();
+                if order.ts_last() >= cutoff {
+                    self.order_lookback_warnings.shift_remove(&client_order_id);
+                    candidates.push(order);
+                } else if !venue_reported_ids.contains(&client_order_id)
+                    && self.order_lookback_warnings.insert(client_order_id)
+                {
+                    log::warn!(
+                        "Skipping missing-order reconciliation for {client_order_id}: last update predates open-check lookback"
+                    );
                 }
             }
+
+            candidates
         } else {
-            let candidates: Vec<&OrderAny> = if let Some(cutoff) = check.command.start {
-                let mut candidates = Vec::new();
+            check.filtered_orders.iter().collect()
+        };
 
-                for order in &check.filtered_orders {
-                    let client_order_id = order.client_order_id();
-                    if order.ts_last() >= cutoff {
-                        self.order_lookback_warnings.shift_remove(&client_order_id);
-                        candidates.push(order);
-                    } else if !venue_reported_ids.contains(&client_order_id)
-                        && self.order_lookback_warnings.insert(client_order_id)
-                    {
-                        log::warn!(
-                            "Skipping missing-order reconciliation for {client_order_id}: its last update predates the configured open-check lookback window; absence from the bulk response cannot be treated as evidence and no targeted query will be issued from it"
-                        );
-                    }
+        for order in candidates {
+            let client_order_id = order.client_order_id();
+            if venue_reported_ids.contains(&client_order_id) {
+                continue;
+            }
+
+            let responsible_clients = match check.client_coverage.get(&client_order_id) {
+                Some(ReportClientCoverage::Resolved(responsible_clients))
+                    if !responsible_clients.is_empty() =>
+                {
+                    responsible_clients
                 }
-
-                candidates
-            } else {
-                check.filtered_orders.iter().collect()
-            };
-
-            for order in candidates {
-                let client_order_id = order.client_order_id();
-                if venue_reported_ids.contains(&client_order_id) {
-                    continue;
-                }
-
-                let responsible_clients = match check.client_coverage.get(&client_order_id) {
-                    Some(ReportClientCoverage::Resolved(responsible_clients))
-                        if !responsible_clients.is_empty() =>
-                    {
-                        responsible_clients
-                    }
-                    _ => {
-                        if self.order_coverage_warnings.insert(client_order_id) {
-                            log::warn!(
-                                "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
-                            );
-                        }
-
-                        continue;
-                    }
-                };
-
-                let missing_clients = responsible_clients
-                    .difference(queried_clients)
-                    .copied()
-                    .collect::<IndexSet<_>>();
-
-                if !missing_clients.is_empty() {
+                _ => {
                     if self.order_coverage_warnings.insert(client_order_id) {
                         log::warn!(
-                            "Skipping order reconciliation for {client_order_id}: responsible execution clients were not queried: {missing_clients:?}"
+                            "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
                         );
                     }
 
                     continue;
                 }
+            };
 
-                let failed_responsible_clients = responsible_clients
-                    .intersection(failed_clients)
-                    .copied()
-                    .collect::<IndexSet<_>>();
+            let missing_clients = responsible_clients
+                .difference(queried_clients)
+                .copied()
+                .collect::<IndexSet<_>>();
 
-                if !failed_responsible_clients.is_empty() {
+            if !missing_clients.is_empty() {
+                if self.order_coverage_warnings.insert(client_order_id) {
+                    log::warn!(
+                        "Skipping order reconciliation for {client_order_id}: responsible execution clients were not queried: {missing_clients:?}"
+                    );
+                }
+
+                continue;
+            }
+
+            let failed_responsible_clients = responsible_clients
+                .intersection(failed_clients)
+                .copied()
+                .collect::<IndexSet<_>>();
+
+            if !failed_responsible_clients.is_empty() {
+                if !self.config.open_check_open_only
+                    || self.order_coverage_warnings.insert(client_order_id)
+                {
                     log::warn!(
                         "Skipping order reconciliation for {client_order_id}: failed to query responsible execution clients: {failed_responsible_clients:?}"
                     );
-                    continue;
                 }
 
-                self.order_coverage_warnings.shift_remove(&client_order_id);
-                if let Some(order) = self.prepare_missing_order_query(client_order_id) {
-                    targeted_candidates.push((order, responsible_clients.clone(), None));
-                }
+                continue;
+            }
+
+            self.order_coverage_warnings.shift_remove(&client_order_id);
+            if let Some(order) = self.prepare_missing_order_query(client_order_id) {
+                targeted_candidates.push((order, responsible_clients.clone(), None));
             }
         }
 
@@ -2582,6 +2555,11 @@ impl ExecutionManager {
             }
 
             planned_queries += required_queries;
+
+            if self.config.open_check_open_only && report.is_none() {
+                self.order_recon_retries.shift_remove(&client_order_id);
+            }
+
             self.order_query_recency.mark(client_order_id);
             self.order_query_pending.insert(client_order_id);
             let command_id = UUID4::new();
@@ -2617,7 +2595,7 @@ impl ExecutionManager {
         }
     }
 
-    /// Reconciles targeted query results, resolving missing orders only with complete coverage.
+    /// Reconciles targeted reports, using absence only in full-history mode.
     pub(crate) fn reconcile_targeted_order_reports(
         &mut self,
         results: Vec<TargetedOrderReportResult>,
@@ -2665,7 +2643,13 @@ impl ExecutionManager {
                 continue;
             }
 
-            if result.coverage_complete {
+            if self.config.open_check_open_only {
+                if result.coverage_complete {
+                    log::warn!(
+                        "Keeping {client_order_id} open: targeted order status query found no report; absence is not terminal evidence in open-only mode"
+                    );
+                }
+            } else if result.coverage_complete {
                 events.extend(self.resolve_missing_order(client_order_id));
             } else {
                 log::warn!(
@@ -3642,6 +3626,17 @@ impl ExecutionManager {
             &client_order_id,
             Duration::from(self.config.open_check_threshold_ns),
         ) {
+            return None;
+        }
+
+        if self.config.open_check_open_only
+            && (order.is_inflight()
+                || self.order_inflight_checks.contains_key(&client_order_id)
+                || self.order_query_recency.within(
+                    &client_order_id,
+                    Duration::from_millis(u64::from(self.config.single_order_query_delay_ms)),
+                ))
+        {
             return None;
         }
 

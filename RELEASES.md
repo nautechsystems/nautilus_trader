@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
+- Added Binance Portfolio Margin balance and account response models
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
@@ -20,6 +21,7 @@ Released on TBD (UTC).
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
 - Changed `submission_recovery_policy` default to `RetainUnresolved`; select `ResolveLocally` for prior behavior
 - Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
+- Changed open-only checks to query missing orders; allow for extra REST traffic and adapter recovery behavior
 - Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
@@ -32,6 +34,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs

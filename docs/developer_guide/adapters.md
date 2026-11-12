@@ -1193,23 +1193,24 @@ returning an empty set.
 
 #### Single-order probes
 
-`generate_order_status_report` resolves a single order. The engine issues it after the open-order
-check retries without confirming a cached order, which requires that check to run in full-history
-mode (`open_check_open_only=false`). The command carries the queried `instrument_id` and
-`client_order_id`, plus `venue_order_id` when the order has one, so support a lookup that has no
-venue identifier yet. The engine discards a report whose identity does not match the query.
+`generate_order_status_report` resolves a single order. After the missing-order retry budget, the engine
+issues it in both open-only and full-history checks. Open-only missing checks skip orders owned by in-flight
+recovery. The command carries the queried `instrument_id` and `client_order_id`, plus `venue_order_id` when
+the order has one, so support a lookup that has no venue identifier yet. The engine discards a report whose
+identity does not match the query.
 
-Distinguish absence from failure in that probe, because the engine acts on the difference:
+Distinguish absence from failure in that probe:
 
-- `Ok(None)` states that the venue answered and has no such order. The engine treats that answer as proof. It
-  resolves an accepted, submitted, or partially filled order to a terminal state. Pending cancel and update
-  states stay unresolved.
-- An error states that the lookup did not answer, so the engine defers the missing-order resolution
-  to a later cycle.
+- `Ok(Some(report))` provides status and filled quantity to reconcile, in either mode. Companion fill reports
+  supply the executions. The engine also applies reports the adapter infers from absence.
+- `Ok(None)` states that the venue answered and has no such order. Only full-history checks use that answer
+  to resolve an accepted, submitted, or partially filled order to a terminal state. Pending cancel and update
+  states stay unresolved. Open-only checks keep the order open.
+- An error states that the lookup did not answer, so the engine defers resolution to a later check.
 
-A failed lookup returned as `Ok(None)` can therefore reject or cancel an order that is live at the
-venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
-implement this method before an open-order check runs in full-history mode.
+A failed lookup returned as `Ok(None)` can reject or cancel an order that is live at the venue in full-history
+mode. The trait default returns `Ok(None)` after logging that the handler is not implemented. Implement this
+method to support missing-order recovery; a working `query_order` handler alone does not provide it.
 
 #### Shared reconciliation changes
 

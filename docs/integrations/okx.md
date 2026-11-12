@@ -1633,9 +1633,11 @@ startup, and applies the venue fills it can obtain. Missing executions and depen
 remain unresolved when history coverage is incomplete.
 
 To recover missing private executions at runtime, enable `LiveExecutionEngineConfig.open_check_interval_secs`.
-Set `open_check_open_only` to `false` to include terminal orders. Open-order checks and targeted follow-up
-queries request fills when a reported filled quantity exceeds the cached quantity. Missing fills and
-dependent status transitions remain unresolved while venue fill reports are unavailable or incomplete.
+Set `open_check_open_only` to `false` to include terminal orders in bulk reports. In open-only mode,
+missing orders outside in-flight recovery can still produce terminal reports through targeted queries.
+Open-order checks and targeted follow-up queries request fills when a reported filled quantity exceeds the
+cached quantity. Missing fills and dependent status transitions remain unresolved while venue fill reports
+are unavailable or incomplete.
 See [Fill reconciliation](../concepts/execution/reconciliation.md#fill-reconciliation).
 
 Periodic position checks treat an absent report as flat only for configured derivative instrument types.

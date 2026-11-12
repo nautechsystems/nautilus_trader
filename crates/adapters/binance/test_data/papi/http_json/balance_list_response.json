@@ -1,0 +1,32 @@
+[
+  {
+    "asset": "USDT",
+    "totalWalletBalance": "250.125000000000000001",
+    "crossMarginAsset": "140.500000000000000002",
+    "crossMarginBorrowed": "12.25",
+    "crossMarginFree": "125.25",
+    "crossMarginInterest": "0.75",
+    "crossMarginLocked": "15.25",
+    "umWalletBalance": "80.5",
+    "umUnrealizedPNL": "-2.5",
+    "cmWalletBalance": "25.25",
+    "cmUnrealizedPNL": "0",
+    "updateTime": 1700000000123,
+    "negativeBalance": "0"
+  },
+  {
+    "asset": "BTC",
+    "totalWalletBalance": "0.050000000000000001",
+    "crossMarginAsset": "0.020000000000000001",
+    "crossMarginBorrowed": "0.005",
+    "crossMarginFree": "0.015",
+    "crossMarginInterest": "0.0001",
+    "crossMarginLocked": "0.005",
+    "umWalletBalance": "0.01",
+    "umUnrealizedPNL": "",
+    "cmWalletBalance": "0.02",
+    "cmUnrealizedPNL": "-0.0002",
+    "updateTime": 1700000000456,
+    "negativeBalance": "-0.003"
+  }
+]

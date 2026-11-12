@@ -17,6 +17,7 @@ use futures_util::FutureExt;
 use nautilus_common::clients::ExecutionReportTask;
 
 use super::*;
+use crate::config::LiveExecutionEngineConfig;
 
 #[rstest]
 #[case::before(-1)]
@@ -162,6 +163,122 @@ async fn test_bulk_report_acceptance_keeps_healthy_client_after_finish_error(
     );
 }
 
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_open_only_missing_budget_resets_after_targeted_timeout() {
+    let budget = 2;
+
+    let config = LiveNodeConfig {
+        exec_engine: LiveExecutionEngineConfig {
+            reconciliation: false,
+            open_check_open_only: true,
+            open_check_lookback_mins: None,
+            open_check_threshold_ms: 0,
+            open_check_missing_retries: budget,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+        timeout_reconciliation: Duration::from_secs(1),
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("MissingBudgetTimeout".to_string(), Some(config)).unwrap();
+    let report = deadline_order_report(0);
+    let client_id = ClientId::from("DEADLINE-0");
+    let client_order_id = report.client_order_id.unwrap();
+    node.exec_clients
+        .push(LiveExecutionClient::new(Box::new(DeadlineReportClient {
+            client_id,
+            report: report.clone(),
+            finish_error: false,
+            finalized: Rc::new(RefCell::new(Vec::new())),
+            inline_release: None,
+            inline_started: Rc::new(Cell::new(false)),
+        })));
+
+    node.kernel
+        .cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+        .unwrap();
+    insert_accepted_limit_order_in_node(
+        &node,
+        report.account_id,
+        client_id,
+        report.instrument_id,
+        client_order_id,
+        report.venue_order_id,
+    );
+
+    let expected = node
+        .kernel
+        .cache
+        .borrow()
+        .order(&client_order_id)
+        .unwrap()
+        .clone();
+
+    for _ in 0..2 {
+        for miss in 1..=budget {
+            let result = {
+                let clients = node
+                    .exec_clients
+                    .iter()
+                    .map(|client| client as &dyn ExecutionClient)
+                    .collect::<Vec<_>>();
+                let check = node
+                    .exec_manager
+                    .prepare_open_order_report_check(UUID4::new(), &clients);
+                node.exec_manager.reconcile_open_order_reports(
+                    &check,
+                    Vec::new(),
+                    &IndexSet::from([client_id]),
+                    &IndexSet::new(),
+                    &clients,
+                )
+            };
+
+            assert!(result.events.is_empty());
+            assert_eq!(result.targeted_queries.len(), usize::from(miss == budget));
+
+            if miss == 1 {
+                assert_eq!(
+                    node.exec_manager.recon_check_retry_count(&client_order_id),
+                    1
+                );
+                continue;
+            }
+
+            let mut task = node.start_targeted_order_report_check(result.targeted_queries);
+            let outcome = task.future.as_mut().await;
+            assert!(matches!(outcome, ReportTaskOutcome::TimedOut));
+            node.complete_targeted_order_report_check(task, &outcome);
+            assert_eq!(
+                node.exec_manager.recon_check_retry_count(&client_order_id),
+                0
+            );
+            let mut errors = Vec::new();
+            LiveNode::finish_report_tasks(&node.exec_clients, &mut errors).await;
+            assert!(errors.is_empty());
+        }
+    }
+
+    assert_eq!(
+        node.kernel
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .clone(),
+        expected
+    );
+    node.dispose();
+}
+
 fn start_bulk_report_check(node: &mut LiveNode) -> (OpenOrderReportTask, dst::time::Instant) {
     let deadline = dst::time::Instant::now() + node.config.timeout_reconciliation;
     let now = dst::time::Instant::now();
@@ -289,6 +406,16 @@ impl ExecutionClient for DeadlineReportClient {
 
                 Ok(reports)
             },
+        ))
+    }
+
+    fn generate_order_status_report_task(
+        &self,
+        _cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        Some(ExecutionReportTask::new(
+            std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>(),
+            Ok,
         ))
     }
 
