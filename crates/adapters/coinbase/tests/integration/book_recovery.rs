@@ -196,11 +196,13 @@ async fn handle_ws_socket(socket: WebSocket, venue: Venue) {
             pending.retain(|product| !products.contains(product));
             if pending.is_empty() {
                 replayed = true;
+
                 for frame in capture_frames() {
                     let envelope: Value = serde_json::from_str(&frame).unwrap();
                     if envelope["sequence_num"].as_u64() == venue.skip_sequence_num {
                         continue;
                     }
+
                     if tx.send(Message::Text(frame.into())).await.is_err() {
                         return;
                     }
@@ -381,6 +383,7 @@ async fn test_capture_replay_emits_every_book_event_without_recovery() {
 
     // Allow any spurious recovery write to reach the venue before checking
     tokio::time::sleep(Duration::from_millis(200)).await;
+
     for product in PRODUCTS {
         let emitted = session.emitted(product);
         assert!(

@@ -470,6 +470,7 @@ impl StressVenue for Coinbase {
             "../../test_data/ws_l2_resubscribe_subscriptions.json"
         ))
         .unwrap();
+
         for step in &setup {
             let request = Message::Text(step["request"].to_string().into());
             let unsubscribed = connection.client(&request);
