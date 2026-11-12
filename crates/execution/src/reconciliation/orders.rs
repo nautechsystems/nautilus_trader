@@ -18,7 +18,7 @@
 //! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
 //! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
@@ -391,16 +391,7 @@ pub fn reconcile_order_report_with_commission(
     }
 
     match report.order_status {
-        OrderStatus::Accepted => {
-            if matches!(
-                order.status(),
-                OrderStatus::Accepted | OrderStatus::PendingUpdate
-            ) && should_reconciliation_update(order, report)
-            {
-                return Some(create_reconciliation_updated(order, report, ts_now));
-            }
-            create_reconciliation_accepted(order, report, ts_now)
-        }
+        OrderStatus::Accepted => reconcile_accepted_report(order, report, ts_now),
         OrderStatus::Rejected => {
             create_reconciliation_rejected(order, report.cancel_reason.as_deref(), ts_now)
         }
@@ -443,6 +434,34 @@ pub fn reconcile_order_report_with_commission(
             None
         }
     }
+}
+
+fn reconcile_accepted_report(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+) -> Option<OrderEventAny> {
+    if order.filled_qty().is_positive()
+        || matches!(
+            order.status(),
+            OrderStatus::PartiallyFilled
+                | OrderStatus::Filled
+                | OrderStatus::Rejected
+                | OrderStatus::Canceled
+        )
+    {
+        return None;
+    }
+
+    if matches!(
+        order.status(),
+        OrderStatus::Accepted | OrderStatus::PendingUpdate
+    ) && should_reconciliation_update(order, report)
+    {
+        return Some(create_reconciliation_updated(order, report, ts_now));
+    }
+
+    create_reconciliation_accepted(order, report, ts_now)
 }
 
 fn is_unchanged_accepted_report_during_pending_command(
@@ -898,6 +917,30 @@ pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport
         }
         _ => false,
     }
+}
+
+/// Preserves later confirmed amendments for clients requiring authoritative fills.
+#[must_use]
+pub fn preserve_order_amendment<'a>(
+    order: &OrderAny,
+    report: &'a OrderStatusReport,
+    requires_authoritative_fills: bool,
+) -> Cow<'a, OrderStatusReport> {
+    if !requires_authoritative_fills || !should_reconciliation_update(order, report) {
+        return Cow::Borrowed(report);
+    }
+
+    if !order.events().iter().any(|event| {
+        matches!(event, OrderEventAny::Updated(updated) if updated.ts_event > report.ts_last)
+    }) {
+        return Cow::Borrowed(report);
+    }
+
+    let mut current = report.clone();
+    current.quantity = order.quantity();
+    current.price = order.price();
+    current.trigger_price = order.trigger_price();
+    Cow::Owned(current)
 }
 
 /// Creates an `OrderAccepted` event for reconciliation.

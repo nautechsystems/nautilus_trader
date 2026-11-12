@@ -26108,6 +26108,99 @@ fn test_zero_quantity_fill_does_not_create_external_order(mut execution_engine: 
 }
 
 #[rstest]
+#[case::stale(1_000_000, false)]
+#[case::newer(3_000_000, true)]
+fn test_reconciliation_preserves_amendment_for_authoritative_client(
+    mut execution_engine: ExecutionEngine,
+    #[values("runtime", "bundle")] path: &str,
+    #[case] report_ts: u64,
+    #[case] expected_update: bool,
+) {
+    execution_engine
+        .register_client(Box::new(LifecycleExecutionClient {
+            client_id: ClientId::from("STUB"),
+            error_message: None,
+            calls: Rc::new(RefCell::new(Vec::new())),
+            connected: true,
+            requires_authoritative_fills: true,
+        }))
+        .unwrap();
+
+    let (instrument, order) = prepare_initialized_order_with_account(
+        &execution_engine,
+        CashAccount::default().into(),
+        OrderType::Limit,
+    );
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-001"),
+    ));
+    let order = cached_order_or(&execution_engine, &order);
+    let amended_price = Price::from("1.00100");
+    let updated = OrderUpdatedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .quantity(order.quantity())
+        .price(amended_price)
+        .ts_event(UnixNanos::from(2_000_000))
+        .ts_init(UnixNanos::from(2_000_000))
+        .build();
+    execution_engine.process(&OrderEventAny::Updated(updated));
+    let mut report = create_order_status_report(
+        Some(order.client_order_id()),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderStatus::Accepted,
+        order.quantity(),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.00200"));
+    report.ts_last = UnixNanos::from(report_ts);
+    match path {
+        "runtime" => execution_engine.reconcile_order_status_report(&report),
+        "bundle" => {
+            let fill = create_fill_report_with_account(
+                report.account_id,
+                instrument.id(),
+                Some(order.client_order_id()),
+                report.venue_order_id,
+                TradeId::from("T-AMENDMENT"),
+                Quantity::from(50_000),
+                Price::from("1.00000"),
+            );
+            execution_engine.reconcile_order_with_fills(&report, &[fill]);
+        }
+        _ => unreachable!(),
+    }
+
+    let cached = execution_engine
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+
+    let expected_price = if expected_update {
+        Price::from("1.00200")
+    } else {
+        amended_price
+    };
+
+    assert_eq!(cached.price(), Some(expected_price));
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if path == "bundle" { 50_000 } else { 0 }),
+    );
+}
+
+#[rstest]
 fn test_reconciliation_requires_authoritative_fills(
     mut execution_engine: ExecutionEngine,
     #[values("runtime", "snapshot", "bundle")] path: &str,
