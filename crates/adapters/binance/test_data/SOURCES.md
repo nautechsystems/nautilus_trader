@@ -36,7 +36,17 @@ for cases where a docs example is missing or stale.
 | Market data streams | `parse_agg_trade`, `parse_trade`, `parse_book_ticker`, `parse_depth_update`, `parse_mark_price`, `parse_kline`, `extract_symbol`, `extract_event_type`                                                             | USD-M Futures market stream docs for aggregate trade, book ticker, diff depth, mark price, and klines. |
 | User data streams   | `parse_futures_order_update_to_order_status`, `parse_futures_order_update_to_fill`, `parse_futures_algo_update_to_order_status`, `parse_futures_account_update`, `decode_order_client_id`, `decode_algo_client_id` | USD-M Futures user-data docs for balance and position updates, order updates, and algo order updates.  |
 
+## Portfolio Margin
+
+| Surface           | Parser functions                                 | Primary source                                                                                                                                 |
+| ----------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| PAPI account REST | Response models under `src/papi/http/models.rs`. | [PAPI account docs](https://developers.binance.com/en/docs/catalog/advanced-trading-derivatives-trading-portfolio-margin/api/rest-api/account) |
+
 ## Notes
+
+- The `papi/http_json/*.json` fixtures are synthetic, independently authored from the official PAPI
+  response schemas and examples. They cover exact decimal values, missing/empty/zero fields, and
+  both balance response shapes; they are not documentation or live captures.
 
 - As of March 12, 2026, Binance spot REST, user-data stream, and WS API docs
   publish canonical JSON examples for the major parser surfaces.

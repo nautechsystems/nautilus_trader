@@ -1,0 +1,14 @@
+{
+  "asset": "USDT",
+  "totalWalletBalance": "42.00000001",
+  "crossMarginBorrowed": "0",
+  "crossMarginFree": "40.00000001",
+  "crossMarginInterest": "",
+  "crossMarginLocked": "2",
+  "umWalletBalance": "",
+  "umUnrealizedPNL": "",
+  "cmWalletBalance": "0",
+  "cmUnrealizedPNL": "0",
+  "updateTime": 1700000000789,
+  "negativeBalance": ""
+}

@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
+- Added Binance Portfolio Margin balance and account response models
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
