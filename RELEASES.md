@@ -28,6 +28,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
 - Upgraded `flamegraph` tool to v0.6.15

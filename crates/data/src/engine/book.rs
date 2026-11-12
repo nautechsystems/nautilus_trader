@@ -401,6 +401,25 @@ impl DataEngine {
         Ok(())
     }
 
+    pub(super) fn clear_book_state(&mut self) {
+        let book_updaters: Vec<_> = self.book_updaters.drain().collect();
+        for (instrument_id, updater) in book_updaters {
+            Self::unsubscribe_book_updater(instrument_id, updater);
+        }
+
+        self.book_subscriptions.clear();
+        self.book_subscription_owners.clear();
+
+        self.book_deltas_counts.clear();
+        self.book_depth_counts.clear();
+        self.book_intervals.clear();
+        self.book_snapshot_counts.clear();
+        self.book_snapshot_sources.clear();
+        self.book_snapshotters.clear();
+        self.buffered_deltas_map.clear();
+        self.deltas_frame.clear();
+    }
+
     pub(super) fn release_book_subscription(&mut self, command: &UnsubscribeCommand) -> bool {
         let key = SubscriptionKey::from_unsubscribe(command);
 
@@ -459,20 +478,24 @@ impl DataEngine {
                 continue;
             };
 
-            let deltas_handler: TypedHandler<OrderBookDeltas> =
-                TypedHandler::new(Rc::clone(&updater));
-            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
-            msgbus::unsubscribe_book_deltas(
-                switchboard::get_book_deltas_topic(target_id).into(),
-                &deltas_handler,
-            );
-            msgbus::unsubscribe_book_depth(
-                switchboard::get_book_depth_topic(target_id).into(),
-                &depth_handler,
-            );
+            Self::unsubscribe_book_updater(target_id, updater);
         }
 
         true
+    }
+
+    fn unsubscribe_book_updater(instrument_id: InstrumentId, updater: Rc<BookUpdater>) {
+        // Updaters use per-underlying topics; release router ownership before dropping them
+        let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(Rc::clone(&updater));
+        let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
+        msgbus::unsubscribe_book_deltas(
+            switchboard::get_book_deltas_topic(instrument_id).into(),
+            &deltas_handler,
+        );
+        msgbus::unsubscribe_book_depth(
+            switchboard::get_book_depth_topic(instrument_id).into(),
+            &depth_handler,
+        );
     }
 
     fn has_book_snapshot_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
