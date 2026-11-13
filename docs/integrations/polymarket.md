@@ -2840,6 +2840,14 @@ Once a watched condition expires, the data client waits `resolve_poll_grace_secs
 every `resolve_poll_interval_secs` until the condition resolves or
 `resolve_poll_max_wait_secs` elapses.
 
+Failed CLOB fallback lookups use per-condition retry delays, starting at 60 seconds and doubling
+after each failure up to 15 minutes. Automatic polling skips that condition's CLOB lookup until the
+delay elapses. A successful CLOB lookup resets the delay, even if the market remains unresolved.
+Gamma polling continues at `resolve_poll_interval_secs` during CLOB backoff.
+
+Manual resolution requests bypass the CLOB delay. Their failed CLOB lookups still increase the delay
+for later automatic polls.
+
 | Delivery path         | Configuration and eligibility                                         | Release                                                      |
 | --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Auto-load outcome.    | A strict outcome in a fetched Gamma payload, regardless of polling.   | Applied immediately; the auto-load task completes.           |

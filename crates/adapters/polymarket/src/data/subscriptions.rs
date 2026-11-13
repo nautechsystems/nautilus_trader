@@ -554,6 +554,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
         watchlist
@@ -722,6 +723,7 @@ mod tests {
                         },
                     )]),
                     paused: false,
+                    clob_retry: None,
                 },
             );
             targets.push((instrument_id, token_id));
