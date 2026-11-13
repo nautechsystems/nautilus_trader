@@ -2152,37 +2152,38 @@ impl DataClient for InteractiveBrokersDataClient {
             let mut all_bars = Vec::new();
 
             if let Some(range) = range {
-                let request = range
-                    .apply(
-                        client_clone.historical_data(&contract, ib_bar_size),
-                        &bar_type.spec(),
-                    )
-                    .what_to_show(ib_what_to_show)
-                    .trading_hours(trading_hours);
+                for bar_request in range.requests(&bar_type.spec()) {
+                    let request = bar_request
+                        .apply(client_clone.historical_data(&contract, ib_bar_size))
+                        .what_to_show(ib_what_to_show)
+                        .trading_hours(trading_hours);
 
-                match request.fetch().await {
-                    Ok(historical_data) => {
-                        // Convert IB bars to Nautilus bars
-                        for ib_bar in &historical_data.bars {
-                            match ib_bar_to_nautilus_bar(ib_bar, bar_type, prices, size_precision) {
-                                Ok(bar) => {
-                                    if range.contains(bar.ts_event) {
-                                        all_bars.push(bar);
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to convert IB bar to Nautilus bar: {:?}",
-                                        e
-                                    );
+                    let historical_data = match request.fetch().await {
+                        Ok(historical_data) => historical_data,
+                        Err(e) => {
+                            tracing::warn!(
+                                "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
+                            );
+                            all_bars.clear();
+                            break;
+                        }
+                    };
+
+                    // Convert IB bars to Nautilus bars
+                    for ib_bar in &historical_data.bars {
+                        match ib_bar_to_nautilus_bar(ib_bar, bar_type, prices, size_precision) {
+                            Ok(bar) => {
+                                if range.contains(bar.ts_event) {
+                                    all_bars.push(bar);
                                 }
                             }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to convert IB bar to Nautilus bar: {:?}",
+                                    e
+                                );
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Historical data request failed for {bar_type} over {range:?}: {e}"
-                        );
                     }
                 }
             }

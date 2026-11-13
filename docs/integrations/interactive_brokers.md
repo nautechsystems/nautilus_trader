@@ -393,10 +393,12 @@ requests with both bounds. They deduplicate the boundary second that IB's second
 re-delivers. When one second holds a full page and the window cannot retreat, the request stops with a warning
 instead of looping.
 
-A bar request with a start time is sent as one request whose duration covers the range, because IB counts
-durations in trading time, and returns the bars closing within `[start, end]`. A failed bar request returns an
-error. Historical trade ticks with IB's zero size are skipped before constructing the positive-quantity
-Nautilus type. Other invalid conversions still fail the request.
+A bar request with a start time returns the bars closing within `[start, end]`. The adapter fetches it in one
+request, or for one-second bars in consecutive requests of at most `2000 S`, IB's limit for that bar size. IB's
+pacing rules refuse six or more requests for one contract within two seconds, so a one-second range over about
+10,000 seconds can fail. If a request fails, the historical client returns an error and the data client
+responds with no bars. Historical trade ticks with IB's zero size are skipped before constructing the
+positive-quantity Nautilus type. Other invalid conversions still fail the request.
 
 IB controls pacing, available history, supported bar sizes, and regular-trading-hours filtering.
 For continuous futures, IB rejects an explicit bar end time. The adapter omits it and requests one

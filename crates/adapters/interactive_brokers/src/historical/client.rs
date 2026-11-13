@@ -370,25 +370,6 @@ impl HistoricalInteractiveBrokersClient {
                 );
 
                 if let Some(range) = range {
-                    tracing::debug!("Requesting historical bars over {range:?}");
-
-                    let request = range
-                        .apply(
-                            self.ib_client.historical_data(&contract, ib_bar_size),
-                            &bar_spec,
-                        )
-                        .what_to_show(ib_what_to_show)
-                        .trading_hours(trading_hours);
-
-                    let historical_data = tokio::time::timeout(
-                        std::time::Duration::from_secs(timeout),
-                        request.fetch(),
-                    )
-                    .await
-                    .context(format!(
-                        "Historical data request timed out after {timeout} seconds"
-                    ))??;
-
                     let instrument =
                         self.instrument_provider
                             .find(&instrument_id)
@@ -402,21 +383,39 @@ impl HistoricalInteractiveBrokersClient {
                     );
                     let size_precision = instrument.size_precision();
 
-                    // Create new bar_type with correct instrument_id
-                    for ib_bar in &historical_data.bars {
-                        let nautilus_bar = ib_bar_to_nautilus_bar(
-                            ib_bar,
-                            bar_type_with_id,
-                            prices,
-                            size_precision,
-                        )?;
+                    for bar_request in range.requests(&bar_spec) {
+                        tracing::debug!("Requesting historical bars over {bar_request:?}");
 
-                        if range.contains(nautilus_bar.ts_event) {
-                            all_bars.push(nautilus_bar);
+                        let request = bar_request
+                            .apply(self.ib_client.historical_data(&contract, ib_bar_size))
+                            .what_to_show(ib_what_to_show)
+                            .trading_hours(trading_hours);
+
+                        let historical_data = tokio::time::timeout(
+                            std::time::Duration::from_secs(timeout),
+                            request.fetch(),
+                        )
+                        .await
+                        .context(format!(
+                            "Historical data request timed out after {timeout} seconds"
+                        ))??;
+
+                        // Create new bar_type with correct instrument_id
+                        for ib_bar in &historical_data.bars {
+                            let nautilus_bar = ib_bar_to_nautilus_bar(
+                                ib_bar,
+                                bar_type_with_id,
+                                prices,
+                                size_precision,
+                            )?;
+
+                            if range.contains(nautilus_bar.ts_event) {
+                                all_bars.push(nautilus_bar);
+                            }
                         }
-                    }
 
-                    tracing::debug!("Retrieved {} bars in batch", historical_data.bars.len());
+                        tracing::debug!("Retrieved {} bars in batch", historical_data.bars.len());
+                    }
                 }
             }
         }
