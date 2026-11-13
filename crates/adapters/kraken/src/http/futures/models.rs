@@ -1197,7 +1197,9 @@ pub struct FuturesEditOrderResponse {
     pub result: KrakenApiResult,
     #[serde(default)]
     pub server_time: Option<String>,
-    pub edit_status: FuturesEditStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+    pub edit_status: Option<FuturesEditStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1497,12 +1499,13 @@ mod tests {
             response.server_time.as_deref(),
             Some("2019-09-05T16:47:47.521Z")
         );
-        assert_eq!(response.edit_status.status, "edited");
+        let edit_status = response.edit_status.unwrap();
+        assert_eq!(edit_status.status, "edited");
         assert_eq!(
-            response.edit_status.order_id.as_deref(),
+            edit_status.order_id.as_deref(),
             Some("022774bc-2c4a-4f26-9317-436c8d85746d")
         );
-        assert_eq!(response.edit_status.order_id_snake_case, None);
+        assert_eq!(edit_status.order_id_snake_case, None);
     }
 
     #[rstest]

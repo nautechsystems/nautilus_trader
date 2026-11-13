@@ -48,7 +48,9 @@ retrieved on 2026-10-13 and unchanged apart from whitespace.
 `http_edit_order_futures.json` is the response example from Kraken's
 [Edit order](https://docs.kraken.com/api-reference/order-management/edit-order) documentation,
 retrieved on 2026-11-06 and unchanged apart from whitespace. Tests also replace or remove its
-`editStatus.orderId` and add an `editStatus.order_id`; those variants are not venue responses.
+`editStatus.orderId`, add an `editStatus.order_id`, replace its `editStatus.status` with each
+status that page documents and some it does not, empty its `editStatus.orderEvents`, and set its
+`result` to `error` with or without an `error` code; those variants are not venue responses.
 
 ## Futures send responses
 
