@@ -220,6 +220,7 @@ step.
 | `cache.trade_ticks`                  | `cache.trades`                 |
 | `cache.quote_tick_count`             | `cache.quote_count`            |
 | `cache.trade_tick_count`             | `cache.trade_count`            |
+| `CacheConfig.tick_capacity`          | `CacheConfig.data_capacity`    |
 
 ### Data subscription lists
 

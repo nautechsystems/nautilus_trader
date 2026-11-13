@@ -57,7 +57,7 @@ def test_cache_config_defaults() -> None:
     assert config.use_instance_id is False
     assert config.flush_on_start is False
     assert config.drop_instruments_on_reset is True
-    assert config.tick_capacity == 10000
+    assert config.data_capacity == 10000
     assert config.bar_capacity == 10000
     assert config.save_market_data is True
     assert config.persist_account_events is True
@@ -108,7 +108,7 @@ def test_cache_config_accepts_explicit_values() -> None:
     assert config.use_instance_id is True
     assert config.flush_on_start is True
     assert config.drop_instruments_on_reset is False
-    assert config.tick_capacity == 5000
+    assert config.data_capacity == 5000
     assert config.bar_capacity == 2000
     assert config.save_market_data is False
     assert config.persist_account_events is False
@@ -316,3 +316,15 @@ def test_message_bus_config_rejects_embedded_backing_config() -> None:
     """
     with pytest.raises(TypeError, match="backing"):
         MessageBusConfig(backing=None)
+
+
+def test_cache_config_uses_data_capacity_keyword() -> None:
+    """
+    Expose the renamed capacity and reject the old keyword.
+    """
+    config = CacheConfig(data_capacity=7, bar_capacity=3)
+
+    assert config.data_capacity == 7
+    assert config.bar_capacity == 3
+    with pytest.raises(TypeError, match="tick_capacity"):
+        CacheConfig(tick_capacity=7)

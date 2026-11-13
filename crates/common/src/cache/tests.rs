@@ -35,6 +35,7 @@ use nautilus_model::{
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
         greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
+        stubs::stub_custom_data,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookType,
@@ -78,6 +79,7 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
+use serde_json::json;
 use ustr::Ustr;
 
 use super::handle_persistence_result;
@@ -8390,9 +8392,9 @@ fn test_bars_when_some(mut cache: Cache) {
     assert_eq!(result, Some(bars.into_iter().rev().collect()));
 }
 
-fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
+fn cache_with_data_capacity(data_capacity: usize, bar_capacity: usize) -> Cache {
     let config = CacheConfig::builder()
-        .tick_capacity(tick_capacity)
+        .data_capacity(data_capacity)
         .bar_capacity(bar_capacity)
         .build()
         .unwrap();
@@ -8510,7 +8512,7 @@ fn test_cache_api_market_data_history_introspection() {
 }
 
 #[rstest]
-fn test_add_quotes_enforces_tick_capacity() {
+fn test_add_quotes_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = QuoteTick::default().instrument_id;
     let quotes = (0..5).map(quote_tick_with_ts).collect::<Vec<_>>();
@@ -8561,7 +8563,7 @@ fn test_add_quotes_indexes_each_instrument() {
 }
 
 #[rstest]
-fn test_add_trades_enforces_tick_capacity() {
+fn test_add_trades_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = TradeTick::default().instrument_id;
     let trades = (0..5).map(trade_tick_with_ts).collect::<Vec<_>>();
@@ -8661,7 +8663,7 @@ fn test_add_bars_indexes_each_bar_type() {
 }
 
 #[rstest]
-fn test_add_mark_prices_enforces_tick_capacity() {
+fn test_add_mark_prices_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -8684,7 +8686,7 @@ fn test_add_mark_prices_enforces_tick_capacity() {
 }
 
 #[rstest]
-fn test_add_index_prices_enforces_tick_capacity() {
+fn test_add_index_prices_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -8707,7 +8709,7 @@ fn test_add_index_prices_enforces_tick_capacity() {
 }
 
 #[rstest]
-fn test_add_funding_rates_enforces_tick_capacity() {
+fn test_add_funding_rates_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
     let funding_rates = (0..5)
@@ -8805,7 +8807,7 @@ fn test_price_updates_at_index_most_recent_first(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_add_instrument_statuses_enforces_tick_capacity() {
+fn test_add_instrument_statuses_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -8828,10 +8830,10 @@ fn test_add_instrument_statuses_enforces_tick_capacity() {
 }
 
 #[rstest]
-#[should_panic(expected = "tick_capacity")]
-fn test_new_rejects_zero_tick_capacity() {
+#[should_panic(expected = "data_capacity")]
+fn test_new_rejects_zero_data_capacity() {
     let config = CacheConfig {
-        tick_capacity: 0,
+        data_capacity: 0,
         ..Default::default()
     };
 
@@ -8850,15 +8852,15 @@ fn test_new_rejects_zero_bar_capacity() {
 }
 
 #[rstest]
-#[case(0, 1, "tick_capacity")]
+#[case(0, 1, "data_capacity")]
 #[case(1, 0, "bar_capacity")]
 fn test_try_new_returns_invalid_capacity(
-    #[case] tick_capacity: usize,
+    #[case] data_capacity: usize,
     #[case] bar_capacity: usize,
     #[case] expected_field: &str,
 ) {
     let config = CacheConfig {
-        tick_capacity,
+        data_capacity,
         bar_capacity,
         ..Default::default()
     };
@@ -10926,10 +10928,13 @@ fn test_purge_instrument_refuses_when_orders_open() {
         OrderEventAny::Accepted(OrderAccepted::default()),
     );
     assert!(order.is_open());
+    let custom = stub_custom_data(1, 11, None, Some(instrument_id.to_string()));
+    cache.add_custom_data(custom.clone());
 
     cache.purge_instrument(instrument_id);
 
     assert!(cache.instrument(&instrument_id).is_some());
+    assert_eq!(cache.custom_data(&custom.data_type), Some(&custom));
     assert!(cache.check_integrity());
 }
 
@@ -17504,4 +17509,163 @@ fn test_token_currency_does_not_replace_cached_legacy_code() {
     assert_eq!(retained.iso4217, 0);
     assert_eq!(retained.name, "Legacy currency");
     assert_eq!(retained.currency_type, CurrencyType::Crypto);
+}
+
+#[rstest]
+#[case(1)]
+#[case(3)]
+fn test_custom_data_history_is_bounded_in_reverse_insertion_order(#[case] capacity: usize) {
+    let mut cache = cache_with_data_capacity(capacity, 2);
+    let data = [30, 10, 40, 20].map(|ts| stub_custom_data(ts, ts as i64, None, None));
+    let data_type = &data[0].data_type;
+    assert_eq!(cache.custom_data(data_type), None);
+    assert_eq!(cache.custom_data_at_index(data_type, 0), None);
+    assert_eq!(
+        cache.custom_data_history(data_type),
+        Vec::<CustomData>::new()
+    );
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    let expected: Vec<_> = data.iter().rev().take(capacity).cloned().collect();
+    assert_eq!(cache.custom_data_history(data_type), expected);
+    assert_eq!(cache.custom_data(data_type), Some(&data[3]));
+
+    for (index, item) in expected.iter().enumerate() {
+        assert_eq!(cache.custom_data_at_index(data_type, index), Some(item));
+    }
+
+    assert_eq!(cache.custom_data_at_index(data_type, capacity), None);
+    assert_eq!(cache.custom_data_at_index(data_type, usize::MAX), None);
+}
+
+#[rstest]
+fn test_custom_data_histories_are_isolated_by_topic() {
+    let mut cache = cache_with_data_capacity(1, 2);
+
+    let data = [
+        stub_custom_data(1, 11, None, None),
+        stub_custom_data(2, 22, None, Some("A.SIM".into())),
+        stub_custom_data(3, 33, None, Some("B.SIM".into())),
+        stub_custom_data(
+            4,
+            44,
+            Some(serde_json::from_value(json!({"source": "a"})).unwrap()),
+            None,
+        ),
+        stub_custom_data(
+            5,
+            55,
+            Some(serde_json::from_value(json!({"source": "b"})).unwrap()),
+            None,
+        ),
+    ];
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    let other_type = CustomData::new(
+        Arc::clone(&data[0].data),
+        DataType::new("Other", None, None),
+    );
+
+    cache.add_custom_data(other_type.clone());
+    for item in data.iter().chain(std::iter::once(&other_type)) {
+        let equivalent = item.data_type.topic().parse::<DataType>().unwrap();
+        assert_eq!(cache.custom_data(&equivalent), Some(item));
+        assert_eq!(cache.custom_data_history(&equivalent), vec![item.clone()]);
+    }
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_reset_clears_custom_data(#[case] drop_instruments_on_reset: bool) {
+    let config = CacheConfig {
+        drop_instruments_on_reset,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), None);
+    let data = stub_custom_data(1, 11, None, None);
+    cache.add_custom_data(data.clone());
+
+    cache.reset();
+
+    assert_eq!(cache.custom_data(&data.data_type), None);
+    assert_eq!(cache.custom_data_at_index(&data.data_type, 0), None);
+    assert_eq!(
+        cache.custom_data_history(&data.data_type),
+        Vec::<CustomData>::new()
+    );
+}
+
+#[rstest]
+fn test_purge_instrument_removes_only_its_custom_data(audusd_sim: CurrencyPair) {
+    let mut cache = cache();
+    let instrument_id = audusd_sim.id;
+    cache.add_instrument(audusd_sim.into()).unwrap();
+
+    let data = [
+        stub_custom_data(1, 11, None, Some(instrument_id.to_string())),
+        stub_custom_data(2, 22, None, Some("OTHER.SIM".into())),
+        stub_custom_data(3, 33, None, None),
+        stub_custom_data(4, 44, None, Some(format!("{instrument_id}-OTHER"))),
+        stub_custom_data(
+            5,
+            55,
+            Some(
+                serde_json::from_value(json!({"instrument_id": instrument_id.to_string()}))
+                    .unwrap(),
+            ),
+            None,
+        ),
+    ];
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    cache.purge_instrument(instrument_id);
+
+    assert_eq!(cache.custom_data(&data[0].data_type), None);
+
+    for item in &data[1..] {
+        assert_eq!(cache.custom_data(&item.data_type), Some(item));
+    }
+}
+
+#[rstest]
+fn test_custom_data_reads_are_available_through_cache_facades() {
+    let cell = Rc::new(RefCell::new(cache_with_data_capacity(2, 1)));
+
+    let data = [
+        stub_custom_data(10, 11, None, None),
+        stub_custom_data(1, 22, None, None),
+    ];
+
+    for item in &data {
+        cell.borrow_mut().add_custom_data(item.clone());
+    }
+
+    let data_type = &data[0].data_type;
+    let api = CacheApi::new(&cell);
+    let snapshot = api.custom_data_history(data_type);
+    let latest = api.custom_data(data_type);
+    let previous = api.custom_data_at_index(data_type, 1);
+    let missing = api.custom_data_at_index(data_type, 2);
+    let view = super::CacheView::new(Rc::clone(&cell));
+    assert_eq!(view.borrow().custom_data(data_type), Some(&data[1]));
+
+    cell.borrow_mut().reset();
+
+    assert_eq!(snapshot, vec![data[1].clone(), data[0].clone()]);
+    assert_eq!(latest, Some(data[1].clone()));
+    assert_eq!(previous, Some(data[0].clone()));
+    assert_eq!(missing, None);
+    assert_eq!(api.custom_data(data_type), None);
+    assert_eq!(api.custom_data_history(data_type), Vec::<CustomData>::new());
 }

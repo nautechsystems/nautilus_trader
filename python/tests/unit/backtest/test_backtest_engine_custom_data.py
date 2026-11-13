@@ -180,6 +180,13 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
         assert engine.backtest_end == 2
         assert [item.data.value for item in strategy.received] == [1.25, 2.5]
         assert [item.ts_init for item in strategy.received] == [1, 2]
+        for cache in (engine.cache, strategy.cache):
+            assert cache.custom_data(data_type) == loaded[1]
+            assert cache.custom_data_at_index(data_type, 0) == loaded[1]
+            assert cache.custom_data_at_index(data_type, 1) == loaded[0]
+            assert cache.custom_data_at_index(data_type, 2) is None
+            assert cache.custom_data_history(data_type) == [loaded[1], loaded[0]]
+
     finally:
         engine.dispose()
 
