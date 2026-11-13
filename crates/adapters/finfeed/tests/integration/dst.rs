@@ -18,12 +18,14 @@
 use std::{
     fmt::Debug,
     future::{Future, poll_fn},
+    pin::Pin,
     sync::Arc,
-    task::Poll,
+    task::{Context, Poll},
     time::Duration,
 };
 
 use jiff::Timestamp;
+use nautilus_common::live::dst::task::JoinError;
 use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_finfeed::{
     common::symbol::to_instrument_id,
@@ -65,14 +67,14 @@ pub(super) fn new_client(config: FinFeedHttpConfig) -> FinFeedHttpClient {
 
 pub(super) async fn start_peer(
     responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
-) -> (task::JoinHandle<Vec<String>>, FinFeedHttpConfig) {
+) -> (HttpPeer, FinFeedHttpConfig) {
     start_peer_delayed(responses, Duration::ZERO).await
 }
 
 pub(super) async fn start_peer_delayed(
     responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
     delay: Duration,
-) -> (task::JoinHandle<Vec<String>>, FinFeedHttpConfig) {
+) -> (HttpPeer, FinFeedHttpConfig) {
     let (peer, config, _) = start_peer_waiting(responses, move |_| time::sleep(delay), false).await;
     (peer, config)
 }
@@ -1413,12 +1415,161 @@ pub(super) async fn bind_peer() -> (TcpListener, String) {
 }
 
 pub(super) async fn read_request(stream: &mut TcpStream) -> String {
+    read_request_pending(stream)
+        .await
+        .expect("connection closed before request headers")
+}
+
+async fn read_request_pending(stream: &mut TcpStream) -> Option<String> {
     let mut bytes = Vec::new();
     while !bytes.ends_with(b"\r\n\r\n") {
-        bytes.push(stream.read_u8().await.unwrap());
+        match stream.read_u8().await {
+            Ok(byte) => bytes.push(byte),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return None,
+            Err(e) => panic!("failed to read request: {e}"),
+        }
     }
 
-    String::from_utf8(bytes).unwrap()
+    Some(String::from_utf8(bytes).unwrap())
+}
+
+#[rstest]
+#[case("")]
+#[case("GET /v1/exchanges HTTP/1.1\r\nHost:")]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn abandoned_connection_does_not_consume_a_scripted_response(#[case] headers: &str) {
+    let (peer, config) = start_peer(vec![(200, "", EXCHANGES)]).await;
+    let address = config
+        .base_url
+        .expose_secret()
+        .strip_prefix("http://")
+        .unwrap()
+        .strip_suffix("/v1/")
+        .unwrap();
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    stream.write_all(headers.as_bytes()).await.unwrap();
+    stream.flush().await.unwrap();
+    stream.shutdown().await.unwrap();
+    drop(stream);
+
+    assert_eq!(
+        new_client(config.clone())
+            .get_exchanges()
+            .await
+            .unwrap()
+            .len(),
+        9
+    );
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_request(&requests[0], "/v1/exchanges", &config);
+}
+
+pub(super) struct HttpPeer {
+    task: task::JoinHandle<Vec<String>>,
+    cancellations: tokio::sync::mpsc::UnboundedSender<RequestCancellation>,
+}
+
+impl HttpPeer {
+    pub(super) fn spawn<F, W>(run: F) -> Self
+    where
+        F: FnOnce(PeerRequests) -> W,
+        W: Future<Output = Vec<String>> + Send + 'static,
+    {
+        let (cancellations, receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let requests = PeerRequests {
+            receiver,
+            cancellation: None,
+        };
+
+        Self {
+            task: task::spawn(run(requests)),
+            cancellations,
+        }
+    }
+
+    pub(super) async fn cancel_request(
+        &self,
+        client: &mut FinFeedDataClient,
+        target: &str,
+        start: impl FnOnce(&mut FinFeedDataClient),
+        cancel: impl FnOnce(&mut FinFeedDataClient),
+    ) -> String {
+        let (started, received) = tokio::sync::oneshot::channel();
+        let (finished, closed) = tokio::sync::oneshot::channel();
+        self.cancellations
+            .send(RequestCancellation {
+                target: target.to_owned(),
+                started,
+                finished,
+            })
+            .unwrap();
+
+        start(client);
+        let request = time::timeout(Duration::from_secs(5), received)
+            .await
+            .expect("poll request did not start")
+            .unwrap();
+        cancel(client);
+        time::timeout(Duration::from_secs(5), closed)
+            .await
+            .expect("obsolete poll request did not close")
+            .unwrap();
+        request
+    }
+
+    pub(super) fn abort(&self) {
+        self.task.abort();
+    }
+}
+
+impl Future for HttpPeer {
+    type Output = Result<Vec<String>, JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.task).poll(cx)
+    }
+}
+
+#[derive(Debug)]
+struct RequestCancellation {
+    target: String,
+    started: tokio::sync::oneshot::Sender<String>,
+    finished: tokio::sync::oneshot::Sender<()>,
+}
+
+pub(super) struct PeerRequests {
+    receiver: tokio::sync::mpsc::UnboundedReceiver<RequestCancellation>,
+    cancellation: Option<RequestCancellation>,
+}
+
+impl PeerRequests {
+    pub(super) async fn accept(&mut self, listener: &TcpListener) -> (TcpStream, String) {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let Some(request) = read_request_pending(&mut stream).await else {
+                continue;
+            };
+
+            if self.cancellation.is_none() {
+                self.cancellation = self.receiver.try_recv().ok();
+            }
+
+            if self.cancellation.as_ref().is_some_and(|cancellation| {
+                request.split_whitespace().nth(1) == Some(cancellation.target.as_str())
+            }) {
+                let cancellation = self.cancellation.take().unwrap();
+                cancellation.started.send(request).unwrap();
+                assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
+                cancellation.finished.send(()).unwrap();
+            } else {
+                return (stream, request);
+            }
+        }
+    }
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -2501,7 +2652,7 @@ pub(super) async fn start_peer_gated(
     responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
     blocked: usize,
 ) -> (
-    task::JoinHandle<Vec<String>>,
+    HttpPeer,
     FinFeedHttpConfig,
     tokio::sync::mpsc::UnboundedReceiver<usize>,
     tokio::sync::oneshot::Sender<()>,
@@ -2530,7 +2681,7 @@ pub(super) async fn start_peer_waiting<F, W>(
     mut wait: F,
     check_silence: bool,
 ) -> (
-    task::JoinHandle<Vec<String>>,
+    HttpPeer,
     FinFeedHttpConfig,
     tokio::sync::mpsc::UnboundedReceiver<usize>,
 )
@@ -2555,14 +2706,14 @@ where
         })
         .build();
 
-    let task = task::spawn(async move {
+    let task = HttpPeer::spawn(move |mut cancellations| async move {
         let mut requests = Vec::new();
         let mut pending = Vec::new();
 
         for (index, (status, headers, body)) in responses.into_iter().enumerate() {
             let body = body.into();
-            let (mut stream, _) = listener.accept().await.unwrap();
-            requests.push(read_request(&mut stream).await);
+            let (mut stream, request) = cancellations.accept(&listener).await;
+            requests.push(request);
             let _ = observed.send(index);
             let wait = wait(index);
             let response = format!(

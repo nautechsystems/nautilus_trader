@@ -38,7 +38,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::{
     data::response,
-    dst::{bind_peer, read_request},
+    dst::{HttpPeer, bind_peer, read_request},
     polling::connected_selection,
 };
 
@@ -71,11 +71,39 @@ async fn terminal_refresh_cancels_all_feeds_and_retains_history_across_reconnect
     let blocked = 2 + usize::from(inflight == "bars");
     let (peer, http, mut observed, release) = terminal_peer(metadata(status), inflight, 4).await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-    subscribe(&mut client, inflight).unwrap();
-    if inflight == "activity" && !restart {
-        subscribe(&mut client, "trade").unwrap();
-    } else if inflight == "book" && !restart {
-        subscribe(&mut client, "depth").unwrap();
+
+    if !restart && matches!(inflight, "activity" | "book") {
+        let target = if inflight == "activity" {
+            format!("/v1/activity/POLYMARKET/{MARKET_ID}/latest?limit=100")
+        } else {
+            format!("/v1/orderbook/POLYMARKET/{MARKET_ID}/current")
+        };
+
+        let request = peer
+            .cancel_request(
+                &mut client,
+                &target,
+                |client| subscribe(client, inflight).unwrap(),
+                |client| {
+                    subscribe(
+                        client,
+                        if inflight == "activity" {
+                            "trade"
+                        } else {
+                            "depth"
+                        },
+                    )
+                    .unwrap();
+                },
+            )
+            .await;
+
+        assert_eq!(
+            request.lines().next().unwrap(),
+            format!("GET {target} HTTP/1.1")
+        );
+    } else {
+        subscribe(&mut client, inflight).unwrap();
     }
 
     let poll_path = match inflight {
@@ -578,7 +606,7 @@ async fn terminal_peer(
     inflight: &str,
     definitions_expected: usize,
 ) -> (
-    task::JoinHandle<Vec<String>>,
+    HttpPeer,
     FinFeedHttpConfig,
     tokio::sync::mpsc::UnboundedReceiver<String>,
     tokio::sync::oneshot::Sender<()>,
@@ -596,14 +624,13 @@ async fn terminal_peer(
     let (release, mut released) = tokio::sync::oneshot::channel();
     let inflight = inflight.to_owned();
 
-    let peer = task::spawn(async move {
+    let peer = HttpPeer::spawn(move |mut cancellations| async move {
         let mut requests = Vec::new();
         let mut pending = Vec::new();
         let mut release_received = false;
         let mut definitions = 0;
-
         while definitions < definitions_expected || !release_received {
-            let (mut stream, _) = tokio::select! {
+            let (mut stream, request) = tokio::select! {
                 biased;
                 result = &mut released, if !release_received => {
                     result.unwrap();
@@ -614,11 +641,9 @@ async fn terminal_peer(
                     }
                     continue;
                 },
-                accepted = listener.accept() => accepted.unwrap(),
+                accepted = cancellations.accept(&listener) => accepted,
             };
-            let request = read_request(&mut stream).await;
             let target = request.split_whitespace().nth(1).unwrap();
-
             let (body, poll) = if target == "/v1/exchanges" {
                 (EXCHANGES, false)
             } else if target == format!("/v1/markets/POLYMARKET/{MARKET_ID}") {

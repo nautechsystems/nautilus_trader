@@ -85,8 +85,15 @@ async fn public_bars_start_at_subscribe_and_restore_without_duplicates() {
                 1 | 6 => MARKET,
                 2 | 7 => PERIODS,
                 3 => {
-                    time::sleep(Duration::from_millis(1100)).await;
-                    fresh = closed_rows();
+                    let end = (get_atomic_clock_realtime().get_time_ns().as_u64() + 1_000_000_000)
+                        / 100
+                        * 100;
+                    wait_for_condition(|| {
+                        get_atomic_clock_realtime().get_time_ns().as_u64() >= end
+                    })
+                    .await;
+
+                    fresh = rows_at(end);
                     BARS
                 }
                 4 | 8 => &fresh,
@@ -373,7 +380,7 @@ async fn response_crossing_period_end_uses_request_cutoff_and_final_later_values
         requests.push(read_request(&mut stream).await);
         let end = (get_atomic_clock_realtime().get_time_ns().as_u64() + 200_000_000) / 100 * 100;
         let source = rows_at(end);
-        time::sleep(Duration::from_millis(400)).await;
+        wait_for_condition(|| get_atomic_clock_realtime().get_time_ns().as_u64() >= end).await;
         stream
             .write_all(
                 format!(
@@ -667,8 +674,10 @@ async fn bar_poll_limit_leaves_a_slot_for_the_closed_period(#[case] limit: u32) 
             requests.push(read_request(&mut stream).await);
 
             if body == PERIODS {
-                time::sleep(Duration::from_millis(1100)).await;
-                end = get_atomic_clock_realtime().get_time_ns().as_u64() / 100 * 100;
+                end = (get_atomic_clock_realtime().get_time_ns().as_u64() + 1_000_000_000) / 100
+                    * 100;
+                wait_for_condition(|| get_atomic_clock_realtime().get_time_ns().as_u64() >= end)
+                    .await;
             }
 
             stream
@@ -780,11 +789,6 @@ async fn bar(receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) -> 
     };
 
     bar
-}
-
-fn closed_rows() -> String {
-    let end = get_atomic_clock_realtime().get_time_ns().as_u64() / 100 * 100;
-    rows_at(end)
 }
 
 fn rows_at(end: u64) -> String {

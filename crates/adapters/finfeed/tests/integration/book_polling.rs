@@ -35,7 +35,10 @@ use rstest::rstest;
 use serde_json::Value;
 
 use super::{
-    dst::{next_request, start_peer, start_peer_gated, wait_for_condition, wait_for_http_idle},
+    dst::{
+        HttpPeer, next_request, start_peer, start_peer_gated, wait_for_condition,
+        wait_for_http_idle,
+    },
     polling::{capture_diagnostics, connected_selection, timed_peer, wait_for_retry_backoff},
 };
 
@@ -76,8 +79,7 @@ async fn shared_snapshot_polls_replace_consumers_and_reject_invalid_duplicate_st
     ])
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-    subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
-    subscribe(&mut client, false, BookType::L2_MBP, Some(1)).unwrap();
+    subscribe_shared(&mut client, &peer, Some(1)).await;
     let mut full = OrderBook::new(id(), BookType::L2_MBP);
     let mut limited = OrderBook::new(id(), BookType::L2_MBP);
 
@@ -355,8 +357,7 @@ async fn unsubscribe_or_disconnect_cancels_inflight_book_without_late_publicatio
     )
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-    subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
-    subscribe(&mut client, false, BookType::L2_MBP, None).unwrap();
+    subscribe_shared(&mut client, &peer, None).await;
 
     for expected in 0..3 {
         assert_eq!(next_request(&mut observed).await, expected);
@@ -397,8 +398,7 @@ async fn partial_unsubscribe_drops_old_request_before_starting_fresh_remaining_f
     )
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-    subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
-    subscribe(&mut client, false, BookType::L2_MBP, Some(1)).unwrap();
+    subscribe_shared(&mut client, &peer, Some(1)).await;
 
     for expected in 0..3 {
         assert_eq!(next_request(&mut observed).await, expected);
@@ -730,8 +730,7 @@ async fn permanent_book_error_stays_suspended_through_partial_unsubscribe(#[case
     ])
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-    subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
-    subscribe(&mut client, false, BookType::L2_MBP, Some(1)).unwrap();
+    subscribe_shared(&mut client, &peer, Some(1)).await;
 
     for expected in 0..3 {
         assert_eq!(observed.recv().await.unwrap().0, expected);
@@ -1014,6 +1013,19 @@ fn subscribe(
             None,
         ))
     }
+}
+
+async fn subscribe_shared(client: &mut FinFeedDataClient, peer: &HttpPeer, depth: Option<usize>) {
+    let target = format!("/v1/orderbook/POLYMARKET/{MARKET_ID}/current");
+    let request = peer
+        .cancel_request(
+            client,
+            &target,
+            |client| subscribe(client, true, BookType::L2_MBP, None).unwrap(),
+            |client| subscribe(client, false, BookType::L2_MBP, depth).unwrap(),
+        )
+        .await;
+    assert_current(&request);
 }
 
 fn unsubscribe(client: &mut FinFeedDataClient, deltas: bool) {
