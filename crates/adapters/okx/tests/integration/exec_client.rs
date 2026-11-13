@@ -2943,16 +2943,19 @@ struct WsTeardownState {
     closed: Arc<AtomicUsize>,
     messages: Option<tokio::sync::broadcast::Sender<serde_json::Value>>,
     order_requests: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>,
+    startup_messages: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_exec_ws_upgrade(
     ws: WebSocketUpgrade,
+    uri: Uri,
     State(state): State<Arc<WsTeardownState>>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_exec_ws_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_exec_ws_socket(socket, uri.path().to_string(), state))
 }
 
-async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
+async fn handle_exec_ws_socket(mut socket: WebSocket, path: String, state: Arc<WsTeardownState>) {
     state.opened.fetch_add(1, Ordering::Relaxed);
 
     let mut messages = state
@@ -2990,10 +2993,32 @@ async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState
         };
 
         if let Message::Text(text) = &message
-            && let Some(tx) = &state.order_requests
+            && let Ok(request) = serde_json::from_str::<Value>(text)
         {
-            let request: Value = serde_json::from_str(text).unwrap();
-            if matches!(request["op"].as_str(), Some("order" | "batch-orders")) {
+            if request["op"] == "subscribe" {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .push((path.clone(), request.clone()));
+
+                if request["args"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|arg| arg["channel"] == "positions")
+                {
+                    let messages = std::mem::take(&mut *state.startup_messages.lock().await);
+                    for message in messages {
+                        let text = message.to_string();
+                        socket.send(Message::Text(text.into())).await.unwrap();
+                    }
+                }
+            }
+
+            if matches!(request["op"].as_str(), Some("order" | "batch-orders"))
+                && let Some(tx) = &state.order_requests
+            {
                 tx.send(request).unwrap();
             }
         }
@@ -9094,6 +9119,320 @@ async fn test_bootstrap_rejects_scope_without_selected_contract_type(#[case] fam
     assert!(error.to_string().contains("No usable instruments for Swap"));
     assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[case::default(vec![], false, vec![])]
+#[case::spot(vec![OKXInstrumentType::Spot], false, vec![])]
+#[case::spot_margin(vec![OKXInstrumentType::Spot], true, vec!["MARGIN"])]
+#[case::margin(vec![OKXInstrumentType::Margin], false, vec!["MARGIN"])]
+#[case::swap(vec![OKXInstrumentType::Swap], false, vec!["SWAP"])]
+#[case::futures(vec![OKXInstrumentType::Futures], false, vec!["FUTURES"])]
+#[case::option(vec![OKXInstrumentType::Option], false, vec!["OPTION"])]
+#[case::mixed(
+    vec![OKXInstrumentType::Spot, OKXInstrumentType::Margin, OKXInstrumentType::Swap, OKXInstrumentType::Futures],
+    true,
+    vec!["MARGIN", "SWAP", "FUTURES"],
+)]
+#[tokio::test]
+async fn test_connect_subscribes_position_channels(
+    #[case] instrument_types: Vec<OKXInstrumentType>,
+    #[case] use_spot_margin: bool,
+    #[case] expected_types: Vec<&str>,
+) {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&format!("http://{}", server.addr), |config| {
+            config.instrument_types = instrument_types.clone();
+            config.use_spot_margin = use_spot_margin;
+            if instrument_types.contains(&OKXInstrumentType::Option) {
+                config.instrument_families = Some(vec!["BTC-USD".into()]);
+            }
+
+            config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", server.addr));
+            config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", server.addr));
+            config.max_retries = 0;
+        });
+
+    client.start().unwrap();
+    let mut connect = Box::pin(client.connect());
+    for _ in 0..instrument_types.len().max(1) {
+        let request = server.next_request(&mut connect).await;
+
+        let fixture = match request.params["instType"].as_str() {
+            "SPOT" | "MARGIN" => "http_get_instruments_spot.json",
+            "SWAP" => "http_get_instruments_swap.json",
+            "FUTURES" => "http_get_instruments_futures.json",
+            "OPTION" => "http_get_instruments_option.json",
+            other => panic!("Unexpected instrument type: {other}"),
+        };
+
+        request.respond(Json(load_test_data(fixture)).into_response());
+    }
+
+    finish_bootstrap_connect(connect, &mut rx, &cache)
+        .await
+        .unwrap();
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+
+    let subscriptions = server.ws.subscriptions.lock().await;
+
+    let actual: Vec<_> = subscriptions
+        .iter()
+        .flat_map(|(path, request)| {
+            request["args"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|arg| {
+                    (arg["channel"] == "positions").then_some((path.as_str(), arg.clone()))
+                })
+        })
+        .collect();
+
+    let expected: Vec<_> = expected_types
+        .iter()
+        .map(|inst_type| {
+            (
+                "/ws/v5/private",
+                json!({
+                    "channel":"positions",
+                    "instType":inst_type,
+                    "extraParams":json!({"updateInterval":"0"}).to_string(),
+                }),
+            )
+        })
+        .collect();
+
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_initial_position_snapshot_recovers_in_batches_without_blocking_connect() {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let mut definitions = load_test_data("http_get_instruments_swap.json");
+    let template = definitions["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["instId"] == "BTC-USDT-SWAP")
+        .unwrap()
+        .clone();
+    let ready_definition = definitions["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["instId"] == "ETH-USDT-SWAP")
+        .unwrap()
+        .clone();
+    let symbols: Vec<_> = (0..66)
+        .map(|index| format!("ASSET{index}-USDT-SWAP"))
+        .collect();
+
+    let instruments: Vec<_> = symbols
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| {
+            let mut row = template.clone();
+            row["instId"] = json!(symbol);
+            row["instFamily"] = json!(format!("ASSET{index}-USDT"));
+            row["instIdCode"] = json!(20_000 + index);
+            row
+        })
+        .chain(std::iter::once(ready_definition))
+        .collect();
+
+    definitions["data"] = json!(instruments);
+
+    let mut snapshot = load_test_data("ws_positions.json");
+    let position = snapshot["data"][0].clone();
+    let rows: Vec<_> = symbols[..65]
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| {
+            let mut row = position.clone();
+            row["instId"] = json!(symbol);
+            row["posSide"] = json!("net");
+            row["pos"] = json!((index + 1).to_string());
+            row
+        })
+        .collect();
+
+    snapshot["data"] = json!(rows);
+    let mut updated = snapshot.clone();
+    updated["data"] = json!([snapshot["data"][64].clone()]);
+    updated["data"][0]["pos"] = json!("100");
+    let mut frames = vec![snapshot];
+
+    for (symbol, order_id) in [(&symbols[65], "1000001"), (&symbols[64], "1000002")] {
+        let mut order = external_stream_order(symbol, "live");
+        order["data"][0]["ordId"] = json!(order_id);
+        frames.push(order);
+    }
+
+    frames.push(updated);
+    let mut ready_order = external_stream_order("ETH-USDT-SWAP", "live");
+    ready_order["data"][0]["ordId"] = json!("1000003");
+    frames.push(ready_order);
+    *server.ws.startup_messages.lock().await = frames;
+
+    let (mut client, mut events, cache) =
+        create_test_execution_client_configured(&format!("http://{}", server.addr), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", server.addr));
+            config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", server.addr));
+            config.max_retries = 0;
+        });
+
+    let ready_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    cache
+        .borrow_mut()
+        .add_instrument(swap_instrument("ETH-USDT-SWAP"))
+        .unwrap();
+    client.start().unwrap();
+    let mut connect = Box::pin(client.connect());
+    server
+        .next_request(&mut connect)
+        .await
+        .respond(Json(definitions).into_response());
+    let mut data = server.data_events.lock().await;
+    let mut registrations = Vec::new();
+    let mut account = None;
+    let mut orders = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while registrations.len() < 64 || account.is_none() || orders.is_empty() {
+            tokio::select! {
+                result = &mut connect => panic!("connect completed before registration barrier: {result:?}"),
+                event = data.recv() => {
+                    let DataEvent::Data(Data::Instrument(instrument)) = event.unwrap() else {
+                        panic!("expected instrument registration");
+                    };
+                    registrations.push(instrument);
+                }
+                event = events.recv() => match event.unwrap() {
+                    ExecutionEvent::Account(state) => account = Some(state),
+                    ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+                        assert_eq!(report.instrument_id, ready_id);
+                        orders.push(report.instrument_id);
+                    }
+                    other => panic!("report emitted before instrument registration: {other:?}"),
+                }
+            }
+        }
+    }).await.expect("snapshot stalled before connect could finish");
+
+    assert!(events.try_recv().is_err());
+    let account = account.unwrap();
+    let account = MarginAccount::new(account, true);
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(account))
+        .unwrap();
+    finish_bootstrap_connect(connect, &mut events, &cache)
+        .await
+        .unwrap();
+
+    let mut registered = Vec::new();
+    for instrument in registrations {
+        registered.push(instrument.id());
+        register_stream_definition(&cache, &instrument);
+    }
+
+    for _ in 0..2 {
+        let event = tokio::time::timeout(Duration::from_secs(5), data.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let DataEvent::Data(Data::Instrument(instrument)) = event else {
+            panic!("expected instrument registration");
+        };
+
+        registered.push(instrument.id());
+        register_stream_definition(&cache, &instrument);
+    }
+
+    let last_id = InstrumentId::from(format!("{}.OKX", symbols[64]).as_str());
+    let mut last_events = Vec::new();
+    let mut positions = HashMap::<InstrumentId, Vec<Quantity>>::new();
+
+    for _ in 0..68 {
+        let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        match event {
+            ExecutionEvent::Report(CommonExecutionReport::Position(report)) => {
+                assert_eq!(report.account_id, AccountId::from("OKX-001"));
+                assert_eq!(report.position_side, PositionSide::Long);
+                assert_eq!(report.signed_decimal_qty, report.quantity.as_decimal());
+                assert_eq!(report.venue_position_id, None);
+                assert_eq!(report.avg_px_open, Some(dec!(10000)));
+                assert_eq!(report.ts_last, UnixNanos::from(1_622_559_930_237_000_000));
+
+                if report.instrument_id == last_id {
+                    last_events.push("position");
+                }
+
+                positions
+                    .entry(report.instrument_id)
+                    .or_default()
+                    .push(report.quantity);
+            }
+            ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+                if report.instrument_id == last_id {
+                    last_events.push("order");
+                }
+
+                orders.push(report.instrument_id);
+            }
+            other => panic!("unexpected execution event: {other:?}"),
+        }
+    }
+
+    let mut expected: HashMap<_, _> = symbols[..65]
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| {
+            (
+                InstrumentId::from(format!("{symbol}.OKX").as_str()),
+                vec![Quantity::from((index + 1).to_string().as_str())],
+            )
+        })
+        .collect();
+
+    expected
+        .get_mut(&last_id)
+        .unwrap()
+        .push(Quantity::from("100"));
+    registered.sort();
+    let mut expected_registered: Vec<_> = symbols
+        .iter()
+        .map(|symbol| InstrumentId::from(format!("{symbol}.OKX").as_str()))
+        .collect();
+    expected_registered.sort();
+    orders.sort();
+    let mut expected_orders = [
+        ready_id,
+        last_id,
+        InstrumentId::from(format!("{}.OKX", symbols[65]).as_str()),
+    ];
+    expected_orders.sort();
+    let connected = client.is_connected();
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+
+    assert!(connected);
+    assert_eq!(registered, expected_registered);
+    assert_eq!(positions, expected);
+    assert_eq!(last_events, ["position", "order", "position"]);
+    assert_eq!(orders, expected_orders);
+    assert!(events.try_recv().is_err());
+    assert!(server.requests.try_recv().is_err());
 }
 
 struct BootstrapRequest {

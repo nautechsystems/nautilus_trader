@@ -815,10 +815,22 @@ Spread orders and single-order `px_usd` or `px_vol` placeholders skip these chec
 
 | Feature          | Linear perpetual swap | Notes                                |
 | ---------------- | --------------------- | ------------------------------------ |
-| Query positions  | ✓                     | Real-time position updates.          |
+| Query positions  | ✓                     | HTTP position snapshots.             |
+| Stream positions | ✓                     | WebSocket position reports.          |
 | Position mode    | ✓                     | Net vs Long/Short mode (see below).  |
 | Leverage control | -                     | Not exposed by the execution client. |
 | Margin mode      | ✓                     | Supports isolated and cross modes.   |
+
+The execution client subscribes to event-driven position updates for configured `MARGIN`, `SWAP`,
+`FUTURES`, and `OPTION` instrument types. With `SPOT`, setting `use_spot_margin=True` also subscribes
+to `MARGIN` positions. Streamed reports compare venue exposure with cached positions and log mismatches;
+they do not update cached positions. Each report restarts the `position_check_threshold_ms` grace window
+for periodic position checks. The subscription disables timer-driven pushes, which would repeatedly
+restart that window.
+
+See [instrument filters](#instrument-filters) for instrument recovery and buffering limits.
+Mismatch logs can be transient: order and position updates can arrive out of order, and startup reports
+can precede initial reconciliation.
 
 #### Position modes
 
@@ -1764,8 +1776,9 @@ Other instruments continue processing during recovery. Recovery uses the configu
 continues across transport reconnects. Pending registration ends when the client stops; it has no separate timeout
 because startup can buffer instrument registration until other execution clients finish connecting.
 
-Recovery retains at most 10,000 update rows across 64 instruments. A failed lookup, an unavailable registration
-channel, or queue overflow marks the client disconnected and logs the failure. If the core cache rejects a
+Recovery retains at most 10,000 update rows across all instruments and recovers up to 64 instruments
+concurrently. A failed lookup, an unavailable registration channel, or queue overflow marks the client
+disconnected and logs the failure. If the core cache rejects a
 definition, updates can remain pending until a matching registration, queue overflow, or shutdown.
 Shutdown reports any incomplete recovery;
 a later session does not replay the abandoned updates. Periodic checks on `LiveExecutionEngineConfig` can

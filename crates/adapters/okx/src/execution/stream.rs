@@ -41,7 +41,7 @@ use crate::{
 };
 
 const MAX_PENDING_MESSAGES: usize = 10_000;
-const MAX_PENDING_INSTRUMENTS: usize = 64;
+const MAX_CONCURRENT_RECOVERIES: usize = 64;
 
 #[derive(Debug)]
 pub(super) struct StreamState {
@@ -178,6 +178,7 @@ pub(super) struct ExecutionStream {
     clock: &'static AtomicTime,
     data_sender: Option<EventSender<DataEvent>>,
     pending: AHashMap<InstrumentId, VecDeque<OKXWsMessage>>,
+    recovery_pending: VecDeque<InstrumentId>,
     recovery: FuturesUnordered<BoxFuture<'static, (InstrumentId, anyhow::Result<()>)>>,
     account_refreshes: FuturesUnordered<BoxFuture<'static, ()>>,
     buffered: usize,
@@ -206,6 +207,7 @@ impl ExecutionStream {
             clock,
             data_sender,
             pending: AHashMap::new(),
+            recovery_pending: VecDeque::new(),
             recovery: FuturesUnordered::new(),
             account_refreshes: FuturesUnordered::new(),
             buffered: 0,
@@ -236,6 +238,7 @@ impl ExecutionStream {
                         self.buffered -= 1;
                         self.dispatch(message);
                     }
+                    self.start_recoveries();
                 }
                 Some(()) = self.account_refreshes.next(), if !self.account_refreshes.is_empty() => {}
                 () = self.dispatch.wait_for_linked_child_route() => {
@@ -314,16 +317,9 @@ impl ExecutionStream {
         );
 
         if !self.pending.contains_key(&id) {
-            anyhow::ensure!(
-                self.pending.len() < MAX_PENDING_INSTRUMENTS,
-                "pending execution instrument limit exceeded"
-            );
             self.pending.insert(id, VecDeque::new());
-            let state = Arc::clone(&self.state);
-            let sender = self.data_sender.clone();
-            self.recovery.push(Box::pin(
-                async move { (id, state.recover(id, sender).await) },
-            ));
+            self.recovery_pending.push_back(id);
+            self.start_recoveries();
         }
 
         self.pending
@@ -332,6 +328,20 @@ impl ExecutionStream {
             .push_back(message);
         self.buffered += 1;
         Ok(())
+    }
+
+    fn start_recoveries(&mut self) {
+        while self.recovery.len() < MAX_CONCURRENT_RECOVERIES {
+            let Some(id) = self.recovery_pending.pop_front() else {
+                break;
+            };
+
+            let state = Arc::clone(&self.state);
+            let sender = self.data_sender.clone();
+            self.recovery.push(Box::pin(
+                async move { (id, state.recover(id, sender).await) },
+            ));
+        }
     }
 
     fn dispatch(&mut self, message: OKXWsMessage) {
@@ -471,16 +481,49 @@ mod tests {
     }
 
     #[rstest]
+    #[case::orders(false)]
+    #[case::positions(true)]
+    #[tokio::test]
+    async fn recovery_limits_concurrent_instruments(#[case] positions: bool) {
+        let (mut worker, state, mut events) = stream_with_http(OKXHttpClient::default());
+
+        let fixture: Value = serde_json::from_str(&load_test_json(if positions {
+            "ws_positions.json"
+        } else {
+            "ws_orders.json"
+        }))
+        .unwrap();
+
+        for index in 0..66 {
+            let mut row = fixture["data"][0].clone();
+            row["instId"] = serde_json::json!(format!("UNKNOWN-{index}"));
+
+            let message = if positions {
+                OKXWsMessage::Positions(serde_json::json!([row]))
+            } else {
+                OKXWsMessage::Orders(vec![serde_json::from_value(row).unwrap()])
+            };
+
+            worker.receive(message).unwrap();
+        }
+
+        assert_eq!(worker.recovery.len(), 64);
+        drop(worker);
+
+        assert_eq!(
+            state.take_failure().as_deref(),
+            Some("incomplete stream recovery with 66 pending execution messages")
+        );
+        assert!(events.try_recv().is_err());
+    }
+
+    #[rstest]
     #[case::messages(
         false,
         MAX_PENDING_MESSAGES,
         "pending execution message limit exceeded"
     )]
-    #[case::instruments(
-        true,
-        MAX_PENDING_INSTRUMENTS,
-        "pending execution instrument limit exceeded"
-    )]
+    #[case::instruments(true, MAX_PENDING_MESSAGES, "pending execution message limit exceeded")]
     #[tokio::test]
     async fn recovery_bounds_pending_execution_messages(
         #[case] distinct: bool,

@@ -52,6 +52,7 @@ Released on TBD (UTC).
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed OKX balances not refreshing after a WebSocket reconnect
+- Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices

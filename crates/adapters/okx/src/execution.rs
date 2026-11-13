@@ -1402,6 +1402,8 @@ impl OKXExecutionClient {
 
         self.ws_private.subscribe_account().await?;
 
+        self.subscribe_positions(&instrument_types).await?;
+
         // Liquidation warnings cover margin and derivative positions; SPOT has none
         if order_routing_types.iter().any(|t| {
             matches!(
@@ -1447,6 +1449,29 @@ impl OKXExecutionClient {
 
         // Wait for account to be registered in cache before completing connect
         self.await_account_registered(30.0).await?;
+
+        Ok(())
+    }
+
+    async fn subscribe_positions(
+        &self,
+        instrument_types: &[OKXInstrumentType],
+    ) -> anyhow::Result<()> {
+        for inst_type in [
+            OKXInstrumentType::Margin,
+            OKXInstrumentType::Swap,
+            OKXInstrumentType::Futures,
+            OKXInstrumentType::Option,
+        ] {
+            if instrument_types.contains(&inst_type)
+                || (inst_type == OKXInstrumentType::Margin
+                    && instrument_types.contains(&OKXInstrumentType::Spot)
+                    && self.config.uses_spot_margin())
+            {
+                log::debug!("Subscribing to positions channel for {inst_type:?}");
+                self.ws_private.subscribe_positions(inst_type).await?;
+            }
+        }
 
         Ok(())
     }
