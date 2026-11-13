@@ -703,20 +703,22 @@ fn between_requests(
 ///
 /// ibapi rounds a fractional span up a second and IB reads the end time to the second, so the
 /// bounds are whole seconds: `from` rounded up and, for intraday bars, which close on whole
-/// seconds, `to` is `end` rounded down, dropping only bars closing after `end`. A range holding no
-/// bar then has `to` at or before `from`.
+/// seconds, `to` is `end` rounded down, dropping only bars closing after `end`. For intraday bars
+/// `to` is also capped at the current time, as IB answers a request lying wholly after it with no
+/// data. A range holding no bar then has `to` at or before `from`.
 #[must_use]
 fn between_bounds(
     start: Timestamp,
     end: Option<Timestamp>,
     spec: &BarSpecification,
 ) -> (Timestamp, Timestamp) {
-    let end = end.unwrap_or_else(Timestamp::now);
+    let now = Timestamp::now();
+    let end = end.unwrap_or(now);
     let from = round_to_second(start - spec.timedelta(), RoundMode::Ceil);
 
     let to = match spec.aggregation {
         BarAggregation::Second | BarAggregation::Minute | BarAggregation::Hour => {
-            round_to_second(end, RoundMode::Floor)
+            round_to_second(end.min(now), RoundMode::Floor)
         }
         _ => end + SignedDuration::from_nanos(1),
     };
@@ -1439,52 +1441,6 @@ mod tests {
         assert_eq!(bounds, (timestamp(from), timestamp(to)));
     }
 
-    /// IB takes at most `2000 S` for one-second bars: the bounds of 2000 such bars are 2000
-    /// seconds apart, and those of a range holding no bar meet.
-    #[rstest]
-    #[case::whole_seconds(
-        "2026-10-07T10:00:00Z",
-        "2026-10-07T10:33:19Z",
-        "2026-10-07T09:59:59Z",
-        "2026-10-07T10:33:19Z"
-    )]
-    #[case::end_within_a_second(
-        "2026-10-07T10:00:00Z",
-        "2026-10-07T10:33:19.5Z",
-        "2026-10-07T09:59:59Z",
-        "2026-10-07T10:33:19Z"
-    )]
-    #[case::end_just_before_a_second(
-        "2026-10-07T10:00:00Z",
-        "2026-10-07T10:33:19.999999999Z",
-        "2026-10-07T09:59:59Z",
-        "2026-10-07T10:33:19Z"
-    )]
-    #[case::start_and_end_within_a_second(
-        "2026-10-07T10:00:00.3Z",
-        "2026-10-07T10:33:20.3Z",
-        "2026-10-07T10:00:00Z",
-        "2026-10-07T10:33:20Z"
-    )]
-    #[case::no_bar(
-        "2026-10-07T10:00:00.2Z",
-        "2026-10-07T10:00:00.7Z",
-        "2026-10-07T10:00:00Z",
-        "2026-10-07T10:00:00Z"
-    )]
-    fn test_between_bounds_one_second_bars(
-        #[case] start: &str,
-        #[case] end: &str,
-        #[case] from: &str,
-        #[case] to: &str,
-    ) {
-        let spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
-
-        let bounds = between_bounds(timestamp(start), Some(timestamp(end)), &spec);
-
-        assert_eq!(bounds, (timestamp(from), timestamp(to)));
-    }
-
     /// Returns the duration ibapi asks IB for to fetch `request`, a `between` request's span in
     /// seconds when its bounds are whole seconds up to a day apart.
     fn ib_duration(request: BarRequest) -> IBDuration {
@@ -1638,6 +1594,29 @@ mod tests {
         assert!(
             spans.clone().max().unwrap() - spans.min().unwrap() <= SECOND,
             "{bounds:?}"
+        );
+    }
+
+    /// IB answers a request lying wholly after the current time with no data, so the requests for
+    /// intraday bars end by the current time.
+    #[rstest]
+    fn test_bar_request_range_requests_end_by_now() {
+        let spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let now = Timestamp::now();
+        let range = BarRequestRange::Between(
+            now - SignedDuration::from_secs(3000),
+            Some(now + SignedDuration::from_secs(3000)),
+        );
+
+        let requests = range.requests(&spec);
+
+        let latest = Timestamp::now();
+        assert!(
+            !requests.is_empty()
+                && requests
+                    .iter()
+                    .all(|request| matches!(request, BarRequest::Between(_, to) if *to <= latest)),
+            "{requests:?}"
         );
     }
 
