@@ -28,25 +28,29 @@ use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
-    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
+    live::{
+        dst::time::{Instant, timeout},
+        runner::get_data_event_sender,
+        sender::EventSender,
+    },
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
-            RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
-            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, DataRequestFailed, DataResponse,
+            FundingRatesResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            RequestBookSnapshot, RequestCustomData, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
+    AtomicMap, Params, UUID4, UnixNanos,
     datetime::{datetime_to_unix_nanos, unix_nanos_to_iso8601},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -235,6 +239,45 @@ impl HyperliquidDataClient {
         if let Err(e) = self.pending_tasks.spawn(future) {
             log::warn!("Skipping Hyperliquid {description} after shutdown began: {e}");
         }
+    }
+
+    fn spawn_instrument_request(
+        &self,
+        request_id: UUID4,
+        request: impl std::future::Future<Output = anyhow::Result<DataResponse>> + Send + 'static,
+    ) -> anyhow::Result<()> {
+        let tasks = self.pending_tasks.spawner()?;
+        let cancelled = tasks.cancellation_token();
+        let sender = self.data_sender.clone();
+
+        // Bound the whole refresh, including time queued behind another instrument update
+        let deadline = Duration::from_secs(self.config.http_timeout_secs);
+
+        tasks.spawn(async move {
+            let result = tokio::select! {
+                biased;
+                () = cancelled.cancelled() => Err(anyhow::anyhow!("Hyperliquid instrument request cancelled")),
+                result = timeout(deadline, request) => match result {
+                    Ok(result) => result,
+                    Err(_) => Err(anyhow::anyhow!("Hyperliquid instrument request timed out")),
+                },
+            };
+
+            let event = match result {
+                Ok(response) => DataEvent::Response(response),
+                Err(e) => DataEvent::RequestFailed(DataRequestFailed {
+                    request_id,
+                    reason: format!("{e:#}"),
+                    response: None,
+                }),
+            };
+
+            if let Err(e) = sender.send(event) {
+                log::error!("Failed to complete instrument request {request_id}: {e}");
+            }
+        })?;
+
+        Ok(())
     }
 
     // Preserve the data client's command order without holding up the next command for a snapshot
@@ -1475,7 +1518,7 @@ impl DataClient for HyperliquidDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        self.spawn_task("request_instruments", async move {
+        self.spawn_instrument_request(request_id, async move {
             // the fetched universe also feeds the cache the periodic refresh diffs
             // against, so it must be published like a refresh pass or a market first
             // seen here would never reach execution
@@ -1492,7 +1535,7 @@ impl DataClient for HyperliquidDataClient {
             refresh.log(client_id);
             let instruments = refresh.fetched;
 
-            let response = DataResponse::Instruments(InstrumentsResponse::new(
+            Ok(DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
                 client_id,
                 venue,
@@ -1501,15 +1544,8 @@ impl DataClient for HyperliquidDataClient {
                 end_nanos,
                 clock.get_time_ns(),
                 params,
-            ));
-
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send instruments response: {e}");
-            }
-            Ok(())
-        });
-
-        Ok(())
+            )))
+        })
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
@@ -1531,7 +1567,7 @@ impl DataClient for HyperliquidDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        self.spawn_task("request_instrument", async move {
+        self.spawn_instrument_request(request_id, async move {
             // the venue only serves the whole universe, so a single-instrument request
             // can discover other new markets and must publish them like a refresh pass
             let refresh = refresh_instruments(
@@ -1545,33 +1581,22 @@ impl DataClient for HyperliquidDataClient {
             )
             .await?;
             refresh.log(client_id);
-            let all_instruments = refresh.fetched;
-
-            if let Some(instrument) = all_instruments
+            let instrument = refresh
+                .fetched
                 .into_iter()
                 .find(|i| i.id() == instrument_id)
-            {
-                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                    request_id,
-                    client_id,
-                    instrument.id(),
-                    instrument,
-                    start_nanos,
-                    end_nanos,
-                    clock.get_time_ns(),
-                    params,
-                )));
-
-                if let Err(e) = sender.send(DataEvent::Response(response)) {
-                    log::error!("Failed to send instrument response: {e}");
-                }
-            } else {
-                log::error!("Instrument not found: {instrument_id}");
-            }
-            Ok(())
-        });
-
-        Ok(())
+                .with_context(|| format!("Hyperliquid instrument {instrument_id} not found"))?;
+            Ok(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                request_id,
+                client_id,
+                instrument_id,
+                instrument,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ))))
+        })
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
@@ -1969,6 +1994,12 @@ async fn refresh_instruments(
         .request_instruments_with_statuses()
         .await
         .context("failed to fetch Hyperliquid instruments")?;
+
+    // The standard perp fallback can supply definitions without full product coverage
+    anyhow::ensure!(
+        !snapshot.instruments.is_empty() || !snapshot.loaded.is_empty(),
+        "failed to fetch Hyperliquid instruments: no usable metadata"
+    );
 
     // emit statuses after definitions, so a subscriber never sees a status for an
     // instrument it has not received

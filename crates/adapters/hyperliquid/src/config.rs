@@ -90,6 +90,8 @@ pub struct HyperliquidDataClientConfig {
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
+    ///
+    /// Also bounds each complete instrument request, including time queued behind another refresh.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// WebSocket timeout in seconds.

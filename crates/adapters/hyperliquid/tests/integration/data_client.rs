@@ -21,10 +21,12 @@
 //! Note: WebSocket subscription tests are in websocket.rs (50+ tests).
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     net::SocketAddr,
     num::NonZeroUsize,
     path::PathBuf,
+    rc::Rc,
     sync::{Arc, OnceLock},
     time::Duration,
 };
@@ -41,29 +43,35 @@ use axum::{
 use futures_util::StreamExt;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
+    actor::{DataActor, DataActorCore},
     clients::DataClient,
+    enums::Environment,
     live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
-            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrumentStatus,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
-            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+            DataResponseEnvelope, RequestBars, RequestBookSnapshot, RequestCustomData,
+            RequestFundingRates, RequestInstrument, RequestInstruments, RequestTrades,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
+            SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeCustomData, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
         },
         system::SocketState,
     },
+    nautilus_actor,
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    node::{LiveNode, LiveNodeHandle},
+};
 use nautilus_model::{
     data::{
         BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas, OrderBookDepth,
     },
     enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, TraderId},
     instruments::Instrument,
     types::Price,
 };
@@ -84,6 +92,7 @@ use crate::{
         HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest, HyperliquidPublicTrade,
         HyperliquidTwapHistory, HyperliquidTwapSliceFill,
     },
+    factories::HyperliquidDataClientFactory,
     http::{
         models::{HyperliquidL2Book, PerpMeta},
         query::InfoRequest,
@@ -92,6 +101,8 @@ use crate::{
 
 #[derive(Clone, Default)]
 struct TestServerState {
+    reject_info_requests: Arc<tokio::sync::Mutex<bool>>,
+    spot_meta_unavailable: Arc<tokio::sync::Mutex<bool>>,
     info_request_count: Arc<tokio::sync::Mutex<usize>>,
     all_perp_metas_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_type: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -257,6 +268,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
 
     *state.last_request_type.lock().await = Some(request_type.clone());
 
+    if *state.reject_info_requests.lock().await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     match request_type.as_str() {
         "meta" => Json(standard_perp_meta(&state).await).into_response(),
         "allPerpMetas" => {
@@ -290,6 +305,9 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         "metaAndAssetCtxs" => {
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()
+        }
+        "spotMeta" if *state.spot_meta_unavailable.lock().await => {
+            axum::http::StatusCode::BAD_REQUEST.into_response()
         }
         "spotMeta" => Json(spot_meta_fixture()).into_response(),
         "spotMetaAndAssetCtxs" => Json(json!([spot_meta_fixture(), []])).into_response(),
@@ -3561,6 +3579,291 @@ async fn test_data_client_request_instruments() {
     client.disconnect().await.unwrap();
 }
 
+fn submit_instrument_request(client: &HyperliquidDataClient, single: bool) -> UUID4 {
+    if single {
+        let request = btc_instrument_request();
+        let id = request.request_id;
+        client.request_instrument(request).unwrap();
+        id
+    } else {
+        let request = instruments_request();
+        let id = request.request_id;
+        client.request_instruments(request).unwrap();
+        id
+    }
+}
+
+#[derive(Debug)]
+struct InstrumentRequestActor {
+    core: DataActorCore,
+    handle: LiveNodeHandle,
+    requests: Rc<RefCell<Vec<UUID4>>>,
+    responses: Rc<RefCell<Vec<DataResponseEnvelope>>>,
+}
+
+nautilus_actor!(InstrumentRequestActor);
+
+impl DataActor for InstrumentRequestActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        let success = self.request_instrument(
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            None,
+            None,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+        )?;
+        let missing = self.request_instrument(
+            InstrumentId::from("MISSING-USD-PERP.HYPERLIQUID"),
+            None,
+            None,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+        )?;
+        let group = self.request_group(vec![success, missing], None)?;
+        self.requests.borrow_mut().extend([success, missing, group]);
+        Ok(())
+    }
+
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "hook errors are logged, so failed assertions must panic"
+    )]
+    fn on_data_response(&mut self, response: &DataResponseEnvelope) -> anyhow::Result<()> {
+        assert!(response.completed());
+        assert!(!self.core.is_pending_request(response.correlation_id()));
+        self.responses.borrow_mut().push(response.clone());
+
+        if self.requests.borrow().last() == Some(response.correlation_id()) {
+            assert!(self.core.pending_requests().is_empty());
+            self.handle.stop();
+        }
+        Ok(())
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_request_failure_completes_actor_and_group() {
+    let addr = start_mock_server(TestServerState::default()).await;
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let responses = Rc::new(RefCell::new(Vec::new()));
+    let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Live)
+        .unwrap()
+        .with_name("HyperliquidInstrumentRequests")
+        .with_reconciliation(false)
+        .with_delay_post_stop_secs(0)
+        .add_data_client(
+            None,
+            Box::new(HyperliquidDataClientFactory::new()),
+            Box::new(create_data_client_config(addr)),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+    node.add_actor(InstrumentRequestActor {
+        core: DataActorCore::new(Default::default()),
+        handle: node.handle(),
+        requests: requests.clone(),
+        responses: responses.clone(),
+    })
+    .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(15), node.run())
+        .await
+        .expect("instrument requests and group must complete")
+        .unwrap();
+    let requests = requests.borrow();
+    let responses = responses.borrow();
+    assert_eq!(responses.len(), 3);
+    for id in requests.iter() {
+        assert_eq!(
+            responses
+                .iter()
+                .filter(|r| r.correlation_id() == id)
+                .count(),
+            1
+        );
+    }
+    let success = responses
+        .iter()
+        .find(|r| r.correlation_id() == &requests[0])
+        .unwrap();
+    assert!(success.failure_reason().is_none());
+    assert!(matches!(
+        success.response(),
+        Some(DataResponse::Instrument(_))
+    ));
+
+    for id in &requests[1..] {
+        let failure = responses.iter().find(|r| r.correlation_id() == id).unwrap();
+        assert!(
+            failure
+                .failure_reason()
+                .unwrap()
+                .contains("MISSING-USD-PERP.HYPERLIQUID")
+        );
+        assert!(failure.response().is_none());
+    }
+}
+
+#[rstest]
+#[case::all(false)]
+#[case::single(true)]
+#[tokio::test]
+async fn test_instrument_request_times_out_while_queued_and_recovers(#[case] single: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.http_timeout_secs = 1;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    // Hold the production refresh lock so the request cannot start HTTP work
+    let update_guard = client.instrument_update_lock.lock().await;
+    let before = *state.info_request_count.lock().await;
+    let id = submit_instrument_request(&client, single);
+    let event = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+        .await
+        .expect("queued request must reach its total deadline")
+        .unwrap();
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected queued request failure, was {event:?}");
+    };
+    assert_eq!(failure.request_id, id);
+    assert!(failure.reason.contains("timed out"));
+    assert!(failure.response.is_none());
+    assert_eq!(*state.info_request_count.lock().await, before);
+
+    drop(update_guard);
+    let next_id = submit_instrument_request(&client, single);
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, DataEvent::RequestFailed(_)))
+    );
+    assert!(matches!(events.last(),
+        Some(DataEvent::Response(response)) if response.correlation_id() == &next_id
+    ));
+    client.disconnect().await.unwrap();
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[case::all_disconnect(false, false)]
+#[case::single_disconnect(true, false)]
+#[case::all_reset(false, true)]
+#[case::single_reset(true, true)]
+#[tokio::test]
+async fn test_instrument_refresh_reports_terminal_failures_and_recovers(
+    #[case] single: bool,
+    #[case] reset: bool,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.http_timeout_secs = 3;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    for reason in [
+        "no usable metadata",
+        "failed to resolve perp collateral currency",
+        "timed out",
+    ] {
+        let stall = reason == "timed out";
+        *state.reject_info_requests.lock().await = reason == "no usable metadata";
+        *state.spot_meta_unavailable.lock().await =
+            reason == "failed to resolve perp collateral currency";
+        *state.hold_next_all_perp_metas.lock().await = stall;
+        let id = submit_instrument_request(&client, single);
+
+        if stall {
+            tokio::time::timeout(Duration::from_secs(5), state.all_perp_metas_held.notified())
+                .await
+                .unwrap();
+        }
+        let event = tokio::time::timeout(Duration::from_secs(6), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let DataEvent::RequestFailed(failure) = event else {
+            panic!("expected request failure, was {event:?}");
+        };
+        assert_eq!(failure.request_id, id);
+        assert!(failure.reason.contains(reason), "{}", failure.reason);
+        assert!(failure.response.is_none());
+
+        if stall {
+            state.all_perp_metas_release.notify_one();
+        }
+    }
+
+    *state.new_perp_listed.lock().await = true;
+    let id = submit_instrument_request(&client, single);
+    let events = recv_until_response(&mut rx).await;
+    let Some(DataEvent::Response(response)) = events.last() else {
+        panic!("expected successful response: {events:?}");
+    };
+    assert_eq!(*response.correlation_id(), id);
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, DataEvent::RequestFailed(_)))
+    );
+    assert_new_listing_published_before_response(&events);
+
+    *state.hold_next_all_perp_metas.lock().await = true;
+    let id = submit_instrument_request(&client, single);
+    tokio::time::timeout(Duration::from_secs(5), state.all_perp_metas_held.notified())
+        .await
+        .unwrap();
+
+    if reset {
+        client.reset().unwrap();
+    }
+
+    client.disconnect().await.unwrap();
+    let event = rx.try_recv().unwrap();
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected cancelled request, was {event:?}");
+    };
+    assert_eq!(failure.request_id, id);
+    assert!(failure.reason.contains("cancelled"));
+    state.all_perp_metas_release.notify_one();
+    let before = *state.info_request_count.lock().await;
+    assert!(
+        if single {
+            client.request_instrument(btc_instrument_request())
+        } else {
+            client.request_instruments(instruments_request())
+        }
+        .is_err()
+    );
+    assert_eq!(*state.info_request_count.lock().await, before);
+    assert!(rx.try_recv().is_err());
+
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+    let id = submit_instrument_request(&client, single);
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, DataEvent::RequestFailed(_)))
+    );
+    assert!(
+        matches!(events.last(), Some(DataEvent::Response(response)) if response.correlation_id() == &id)
+    );
+    client.disconnect().await.unwrap();
+}
+
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_request_instrument() {
@@ -3784,8 +4087,12 @@ async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case]
 }
 
 #[rstest]
+#[case::partial(false)]
+#[case::fallback_only(true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_data_client_instrument_refresh_keeps_status_on_partial_perp_load() {
+async fn test_data_client_instrument_refresh_keeps_status_on_partial_perp_load(
+    #[case] spot_meta_unavailable: bool,
+) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -3813,6 +4120,7 @@ async fn test_data_client_instrument_refresh_keeps_status_on_partial_perp_load()
 
     // the `meta` fallback only returns the standard dex, so perps are not fully loaded
     *state.all_perp_metas_unavailable.lock().await = true;
+    *state.spot_meta_unavailable.lock().await = spot_meta_unavailable;
     *state.btc_delisted.lock().await = true;
     client.request_instruments(instruments_request()).unwrap();
     let events = recv_until_response(&mut rx).await;
