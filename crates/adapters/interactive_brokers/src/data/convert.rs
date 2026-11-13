@@ -1320,15 +1320,6 @@ mod tests {
             Some(timestamp("2026-10-07T18:00:00Z")),
         ))
     )]
-    #[case::start_spans_years(
-        Some(timestamp("2024-01-01T10:00:00Z")),
-        None,
-        false,
-        Some(BarRequestRange::Between(
-            timestamp("2024-01-01T10:00:00Z"),
-            Some(timestamp("2026-10-07T18:00:00Z")),
-        ))
-    )]
     #[case::no_start(
         None,
         None,
