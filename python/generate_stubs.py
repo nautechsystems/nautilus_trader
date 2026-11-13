@@ -618,6 +618,7 @@ def remove_stale_top_level_adapter_stubs(root: Path) -> None:
 IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(
     getters={"value"},
     staticmethods={"_safe_constructor", "from_str"},
+    renames={"safe_constructor": "_safe_constructor"},
 )
 
 INJECTABLE_STATICMETHODS = frozenset({"from_json", "from_msgpack"})
@@ -1171,6 +1172,7 @@ def _collect_identifier_macro_fixups(source: str, fixups: dict[str, ClassMethodF
         fixup = fixups.setdefault(class_name, ClassMethodFixup())
         fixup.getters.update(IDENTIFIER_MACRO_METHOD_FIXUPS.getters)
         fixup.staticmethods.update(IDENTIFIER_MACRO_METHOD_FIXUPS.staticmethods)
+        fixup.renames.update(IDENTIFIER_MACRO_METHOD_FIXUPS.renames)
 
 
 def pyclass_has_option(attribute: str, option: str) -> bool:

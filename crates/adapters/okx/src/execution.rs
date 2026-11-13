@@ -6294,7 +6294,7 @@ mod tests {
                 );
                 cache
                     .borrow_mut()
-                    .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+                    .add_order(order, None, Some(*OKX_CLIENT_ID), false)
                     .unwrap();
                 cache.borrow_mut().update_order(&accepted).unwrap();
             }

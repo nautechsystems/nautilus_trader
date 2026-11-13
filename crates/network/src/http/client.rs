@@ -730,7 +730,7 @@ impl InnerHttpClient {
             header_map.insert(http::header::ACCEPT, HeaderValue::from_static("*/*"));
         }
 
-        let body = body.map(RequestBody::into_bytes).unwrap_or_default();
+        let body = body.map_or_default(RequestBody::into_bytes);
         let body_len = body.len();
         let query_len = url.query().map_or(0, str::len);
         let mut request = http::Request::new(Full::new(body));

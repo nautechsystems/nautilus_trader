@@ -349,13 +349,12 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 let streams = parsed
                     .get("params")
                     .and_then(|p| p.as_array())
-                    .map(|params| {
+                    .map_or_default(|params| {
                         params
                             .iter()
                             .filter_map(|param| param.as_str().map(str::to_string))
                             .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+                    });
 
                 if !streams.is_empty() {
                     state.subscriptions.lock().push(streams.clone());
@@ -490,13 +489,12 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 let streams = parsed
                     .get("params")
                     .and_then(|p| p.as_array())
-                    .map(|params| {
+                    .map_or_default(|params| {
                         params
                             .iter()
                             .filter_map(|param| param.as_str().map(str::to_string))
                             .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+                    });
 
                 let stale_stream = streams
                     .iter()

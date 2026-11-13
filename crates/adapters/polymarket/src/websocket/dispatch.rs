@@ -4302,9 +4302,7 @@ mod tests {
             serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
                 .expect("REST trade fixture");
         trade.status = trade_status.unwrap_or(PolymarketTradeStatus::Confirmed);
-        let trades = trade_status
-            .map(|_| vec![trade.clone()])
-            .unwrap_or_default();
+        let trades = trade_status.map_or_default(|_| vec![trade.clone()]);
         let ws_trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = instrument_for_trade(&ws_trade);
         let token_instruments = AtomicMap::new();

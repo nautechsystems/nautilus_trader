@@ -574,7 +574,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         let data = payload
                             .get("args")
                             .and_then(Value::as_array)
-                            .map(|args| {
+                            .map_or_default(|args| {
                                 args.iter()
                                     .map(|arg| {
                                         json!({
@@ -587,8 +587,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         })
                                     })
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
+
                         let ack = json!({
                             "id": payload.get("id").cloned().unwrap_or(Value::Null),
                             "op": op,

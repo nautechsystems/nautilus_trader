@@ -10589,13 +10589,12 @@ async fn captured_batch_cancel_fields(state: &TestServerState) -> (Vec<String>, 
         value
             .get(key)
             .and_then(Value::as_array)
-            .map(|items| {
+            .map_or_default(|items| {
                 items
                     .iter()
                     .filter_map(|item| item.as_str().map(str::to_string))
                     .collect()
             })
-            .unwrap_or_default()
     };
 
     (read("orders"), read("cl_ord_ids"))

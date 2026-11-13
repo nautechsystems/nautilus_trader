@@ -192,15 +192,10 @@ async fn reply_login(
         json!({"id": id, "result": result})
     };
 
-    if socket
+    socket
         .send(Message::Text(reply.to_string().into()))
         .await
-        .is_err()
-    {
-        return false;
-    }
-
-    true
+        .is_ok()
 }
 
 async fn reply_subscribe(
@@ -314,15 +309,10 @@ async fn reply_unsubscribe(
 
     let reply = json!({"id": id, "result": result});
 
-    if socket
+    socket
         .send(Message::Text(reply.to_string().into()))
         .await
-        .is_err()
-    {
-        return false;
-    }
-
-    true
+        .is_ok()
 }
 
 async fn reply_private(
@@ -373,15 +363,10 @@ async fn reply_private(
 
     let reply = json!({"id": id, "result": result});
 
-    if socket
+    socket
         .send(Message::Text(reply.to_string().into()))
         .await
-        .is_err()
-    {
-        return false;
-    }
-
-    true
+        .is_ok()
 }
 
 async fn subscription_reply(

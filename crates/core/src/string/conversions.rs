@@ -224,7 +224,7 @@ fn title_case_unicode(s: &str) -> String {
 }
 
 fn push_titlecase(out: &mut String, ch: char) {
-    // Stable Rust does not expose `char::to_titlecase`. These Unicode 17 mappings from
+    // Stable Rust does not expose `char::to_titlecase`. These Unicode 18 mappings from
     // UnicodeData.txt and SpecialCasing.txt cannot be reproduced by keeping the first scalar of
     // the uppercase mapping and lowercasing the rest.
     match ch {
@@ -369,6 +369,6 @@ mod tests {
 
     #[rstest]
     fn test_title_case_unicode_version() {
-        assert_eq!(char::UNICODE_VERSION, (17, 0, 0));
+        assert_eq!(char::UNICODE_VERSION, (18, 0, 0));
     }
 }

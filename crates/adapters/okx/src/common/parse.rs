@@ -1641,8 +1641,7 @@ pub fn parse_spread_instrument(
         .ok_or_else(|| anyhow::anyhow!("`list_time` is required for {}", definition.sprd_id))?;
     let expiration_ns = definition
         .exp_time
-        .map(parse_millisecond_timestamp)
-        .unwrap_or_default();
+        .map_or_default(parse_millisecond_timestamp);
     let ts_event = definition
         .u_time
         .map_or(ts_init, parse_millisecond_timestamp);
@@ -2660,12 +2659,10 @@ pub fn parse_event_contract_instrument(
 
     let activation_ns = definition
         .list_time
-        .map(parse_millisecond_timestamp)
-        .unwrap_or_default();
+        .map_or_default(parse_millisecond_timestamp);
     let expiration_ns = definition
         .exp_time
-        .map(parse_millisecond_timestamp)
-        .unwrap_or_default();
+        .map_or_default(parse_millisecond_timestamp);
     let asset_class = okx_inst_category_to_asset_class(definition.inst_category);
     let info = build_event_contract_info(definition)?;
 

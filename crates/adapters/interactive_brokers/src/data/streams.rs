@@ -2009,7 +2009,7 @@ where
                         };
                         sequence += 1;
                         let size = Quantity::new(depth.size, size_precision);
-                        let order_key = (depth.position, depth.market_maker.clone());
+                        let order_key = (depth.position, depth.market_maker);
                         let order_id = *l2_order_ids.entry(order_key.clone()).or_insert_with(|| {
                             let order_id = next_l2_order_id;
                             next_l2_order_id += 1;

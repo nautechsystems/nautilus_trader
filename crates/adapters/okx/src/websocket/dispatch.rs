@@ -648,8 +648,7 @@ pub fn dispatch_ws_message(
             let command_ids = id
                 .as_ref()
                 .and_then(|id| state.pending_command_ids.remove(id))
-                .map(|(_, ids)| ids)
-                .unwrap_or_default();
+                .map_or_default(|(_, ids)| ids);
             let ts_init = clock.get_time_ns();
 
             if code != OKX_SUCCESS_CODE && data.is_empty() {
@@ -881,14 +880,12 @@ fn dispatch_send_failure(
         state
             .pending_command_ids
             .get(request_id)
-            .map(|entry| entry.clone())
-            .unwrap_or_default()
+            .map_or_default(|entry| entry.clone())
     } else {
         state
             .pending_command_ids
             .remove(request_id)
-            .map(|(_, ids)| ids)
-            .unwrap_or_default()
+            .map_or_default(|(_, ids)| ids)
     };
 
     log::warn!(

@@ -22,10 +22,7 @@
 
 use std::time::Duration;
 
-use databento::{
-    dbn::{self},
-    live::Subscription,
-};
+use databento::{dbn, live::Subscription};
 use nautilus_common::testing::wait_until_async;
 use nautilus_databento::live::{DatabentoMessage, HandlerCommand};
 use nautilus_model::{

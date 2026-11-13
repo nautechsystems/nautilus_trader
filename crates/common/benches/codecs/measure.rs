@@ -1306,7 +1306,7 @@ fn data_requests() -> Vec<(String, RequestCommand)> {
                     end,
                     UUID4::new(),
                     ts_init,
-                    parameters.clone(),
+                    parameters,
                     Some(UUID4::new()),
                 )),
             ),

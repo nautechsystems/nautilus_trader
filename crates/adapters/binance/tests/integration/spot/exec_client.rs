@@ -3651,11 +3651,9 @@ async fn test_generate_mass_status_paginates_fill_reports(
 
     assert_eq!(
         mass_status.lookback_start(),
-        Some(
-            lookback_mins
-                .map(|mins| UnixNanos::from(mass_status.ts_init.as_u64() - mins * 60_000_000_000))
-                .unwrap_or_default()
-        ),
+        Some(lookback_mins.map_or_default(|mins| UnixNanos::from(
+            mass_status.ts_init.as_u64() - mins * 60_000_000_000
+        ))),
     );
     assert!(mass_status.reports_complete());
     assert_eq!(fill_reports.len(), expected_reports);

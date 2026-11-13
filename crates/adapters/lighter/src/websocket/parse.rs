@@ -1207,7 +1207,8 @@ pub fn build_unified_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> AccountState {
-    let margins = margin.map(|m| vec![m]).unwrap_or_default();
+    let margins = margin.map_or_default(|m| vec![m]);
+
     AccountState::new(
         account_id,
         AccountType::Margin,

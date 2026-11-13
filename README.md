@@ -14,12 +14,12 @@
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform           | Rust   | Python    |
-| :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.99.1 | 3.13-3.15 |
-| `Linux (ARM64)`    | 1.99.1 | 3.13-3.15 |
-| `macOS (ARM64)`    | 1.99.1 | 3.13-3.15 |
-| `Windows (x86_64)` | 1.99.1 | 3.13-3.15 |
+| Platform           | Rust    | Python    |
+| :----------------- | :------ | :-------- |
+| `Linux (x86_64)`   | 1.100.0 | 3.13-3.15 |
+| `Linux (ARM64)`    | 1.100.0 | 3.13-3.15 |
+| `macOS (ARM64)`    | 1.100.0 | 3.13-3.15 |
+| `Windows (x86_64)` | 1.100.0 | 3.13-3.15 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>

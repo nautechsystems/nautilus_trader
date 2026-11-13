@@ -7336,15 +7336,13 @@ fn incomplete_order_reports(
 fn partial_order_reports(error: &anyhow::Error) -> Vec<OrderStatusReport> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.reports.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.reports.clone())
 }
 
 fn withheld_order_instruments(error: &anyhow::Error) -> AHashSet<InstrumentId> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.withheld_instruments.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.withheld_instruments.clone())
 }
 
 fn is_commission_error(error: &anyhow::Error) -> bool {
@@ -7746,11 +7744,7 @@ impl LighterReportClient {
             .extend(self.markets.iter().map(|market| *market));
 
         let inactive_markets: Vec<i64> = match cmd.instrument_id {
-            Some(id) => self
-                .registry
-                .market_index(&id)
-                .map(|m| vec![m])
-                .unwrap_or_default(),
+            Some(id) => self.registry.market_index(&id).map_or_default(|m| vec![m]),
             None => sweep.markets.iter().copied().collect::<Vec<_>>(),
         };
 

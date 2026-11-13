@@ -5448,8 +5448,7 @@ impl BlockchainExecutionClient {
             })?;
             let hashes = hashes_by_intent
                 .get(&intent.id)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+                .map_or_default(Vec::as_slice);
             let current = hashes
                 .iter()
                 .copied()

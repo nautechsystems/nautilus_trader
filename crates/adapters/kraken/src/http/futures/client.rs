@@ -919,9 +919,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/fills";
-        let query_string = last_fill_time
-            .map(|t| format!("lastFillTime={t}"))
-            .unwrap_or_default();
+        let query_string = last_fill_time.map_or_default(|t| format!("lastFillTime={t}"));
 
         let url = if query_string.is_empty() {
             format!("{}{endpoint}", self.base_url.expose())
@@ -4582,9 +4580,8 @@ mod tests {
     /// A history page of two rows on `PF_XBTUSD`; the first row's order type is `first_order_type`
     /// and the page hands back `continuation_token` when one is given.
     fn history_page(first_order_type: &str, continuation_token: Option<&str>) -> String {
-        let token = continuation_token
-            .map(|token| format!(r#","continuationToken":"{token}""#))
-            .unwrap_or_default();
+        let token =
+            continuation_token.map_or_default(|token| format!(r#","continuationToken":"{token}""#));
         format!(
             r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"H-SKIP-1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1","limitPrice":"70000","orderType":"{first_order_type}","clientId":"cl-1","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"H-KEEP-2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]{token}}}"#
         )
@@ -4973,12 +4970,9 @@ mod tests {
 
     /// An undecodable row naming only what it is given.
     fn partial_row(uid: Option<&str>, tradeable: Option<&str>, event_ms: i64) -> String {
-        let uid = uid
-            .map(|uid| format!(r#""uid":"{uid}","#))
-            .unwrap_or_default();
-        let tradeable = tradeable
-            .map(|tradeable| format!(r#""tradeable":"{tradeable}","#))
-            .unwrap_or_default();
+        let uid = uid.map_or_default(|uid| format!(r#""uid":"{uid}","#));
+        let tradeable =
+            tradeable.map_or_default(|tradeable| format!(r#""tradeable":"{tradeable}","#));
         history_element(
             "OrderCancelled",
             event_ms,

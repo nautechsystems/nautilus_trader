@@ -882,7 +882,7 @@ impl BybitWebSocketClient {
             // Returns true if this is the first subscription (ref count 0 -> 1)
             if self.subscriptions.add_reference(&topic) {
                 self.subscriptions.mark_subscribe(&topic);
-                topics_to_send.push(topic.clone());
+                topics_to_send.push(topic);
             } else {
                 log::debug!("Already subscribed to {topic}, skipping duplicate subscription");
             }
@@ -926,7 +926,7 @@ impl BybitWebSocketClient {
             // Returns true if this was the last subscription (ref count 1 -> 0)
             if self.subscriptions.remove_reference(&topic) {
                 self.subscriptions.mark_unsubscribe(&topic);
-                topics_to_send.push(topic.clone());
+                topics_to_send.push(topic);
             } else {
                 log::debug!("Topic {topic} still has active subscriptions, not unsubscribing");
             }

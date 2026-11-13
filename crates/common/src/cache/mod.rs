@@ -4190,8 +4190,7 @@ impl Cache {
         // Retain an account taken out by the caller even if a referenced currency fails validation
         let currencies: Vec<Currency> = account
             .last_event()
-            .map(|state| Self::state_currencies(&state).collect())
-            .unwrap_or_default();
+            .map_or_default(|state| Self::state_currencies(&state).collect());
         self.cache_account_owned(account);
 
         for currency in currencies {

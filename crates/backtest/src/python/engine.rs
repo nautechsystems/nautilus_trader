@@ -214,9 +214,8 @@ impl PyBacktestEngine {
         liquidation_cancel_open_orders: bool,
         order_priority_reset_policy: OrderPriorityResetPolicy,
     ) -> PyResult<()> {
-        let leverages: AHashMap<InstrumentId, Decimal> = leverages
-            .map(|m| m.into_iter().collect())
-            .unwrap_or_default();
+        let leverages: AHashMap<InstrumentId, Decimal> =
+            leverages.map_or_default(|m| m.into_iter().collect());
         let fill_model = fill_model
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_handle(obj.bind(py))))
             .transpose()?

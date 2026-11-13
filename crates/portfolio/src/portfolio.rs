@@ -151,8 +151,7 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map(DurationNanos::from_millis)
-            .unwrap_or_default();
+            .map_or_default(DurationNanos::from_millis);
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -1177,8 +1176,7 @@ impl Portfolio {
             .borrow()
             .portfolio_snapshots
             .get(account_id)
-            .map(|ring| ring.iter().cloned().collect())
-            .unwrap_or_default()
+            .map_or_default(|ring| ring.iter().cloned().collect())
     }
 
     /// Returns the first error from a cash, betting, or wallet account rejecting a fill's
@@ -1245,18 +1243,15 @@ impl Portfolio {
         let mut ids: Vec<InstrumentId> = match account_id {
             Some(account_id) => observations
                 .and_then(|observations| observations.get(&Some(*account_id)))
-                .map(|ids| ids.iter().copied().collect())
-                .unwrap_or_default(),
-            None => observations
-                .map(|observations| {
-                    observations
-                        .values()
-                        .flat_map(|ids| ids.iter().copied())
-                        .collect::<AHashSet<_>>()
-                        .into_iter()
-                        .collect()
-                })
-                .unwrap_or_default(),
+                .map_or_default(|ids| ids.iter().copied().collect()),
+            None => observations.map_or_default(|observations| {
+                observations
+                    .values()
+                    .flat_map(|ids| ids.iter().copied())
+                    .collect::<AHashSet<_>>()
+                    .into_iter()
+                    .collect()
+            }),
         };
         // Sort so the public Vec is deterministic even though the underlying
         // tracking set is AHash-backed.

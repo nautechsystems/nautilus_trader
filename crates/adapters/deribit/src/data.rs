@@ -2551,10 +2551,7 @@ fn preserve_combo_leg_info(instrument: &mut InstrumentAny, cached: &InstrumentAn
         return;
     };
 
-    let mut merged = info
-        .as_ref()
-        .map(|info| IndexMap::clone(info))
-        .unwrap_or_default();
+    let mut merged = info.as_ref().map_or_default(|info| IndexMap::clone(info));
 
     for key in [
         "deribit_combo_id",

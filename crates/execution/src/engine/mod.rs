@@ -55,8 +55,7 @@ use nautilus_common::{
     },
     msgbus::{
         self, MStr, MessagingSwitchboard, Pattern, TypedHandler, TypedIntoHandler, get_message_bus,
-        switchboard::{self},
-        typed_handler::ShareableMessageHandler,
+        switchboard, typed_handler::ShareableMessageHandler,
     },
     runner::{
         TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,

@@ -984,8 +984,7 @@ impl ExecutionManager {
 
                 let order_fills: Vec<&FillReport> = fill_reports
                     .get(&report.venue_order_id)
-                    .map(|f| f.iter().collect())
-                    .unwrap_or_default();
+                    .map_or_default(|f| f.iter().collect());
                 let engine_ref = exec_engine.borrow();
                 let commission_client = engine_ref.get_client(&mass_status.client_id);
 
@@ -2802,10 +2801,7 @@ impl ExecutionManager {
                 .entry(key)
                 .or_insert_with(|| resolve_position_report_client_coverage(key, clients));
             let prepared_revision = *check.activity_revisions.entry(key).or_default();
-            let venue_reports = venue_positions
-                .get(&key)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let venue_reports = venue_positions.get(&key).map_or_default(Vec::as_slice);
             let comparison = self.position_quantity_comparison(key, venue_reports);
             let tolerance = self.position_reconciliation_tolerance(key.1);
             if comparison.quantities_match(tolerance) {
@@ -3159,10 +3155,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let venue_reports = venue_positions
-                .get(key)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let venue_reports = venue_positions.get(key).map_or_default(Vec::as_slice);
 
             if venue_reports.is_empty() {
                 match coverage {
@@ -3959,8 +3952,7 @@ impl ExecutionManager {
                 venue_avg_px,
                 venue_report
                     .as_ref()
-                    .map(|report| report.avg_px_open_reconciliation)
-                    .unwrap_or_default(),
+                    .map_or_default(|report| report.avg_px_open_reconciliation),
                 venue_report
                     .as_ref()
                     .and_then(|report| report.avg_px_open_precision),
@@ -4906,8 +4898,7 @@ impl ExecutionManager {
         let mut prepared_fills = Vec::new();
         let mut prepared_fill_keys = fill_queue
             .as_deref()
-            .map(|queue| queue.pending_fill_keys.clone())
-            .unwrap_or_default();
+            .map_or_default(|queue| queue.pending_fill_keys.clone());
 
         if replace_inferred_fill {
             let mut sorted_fills: Vec<&FillReport> = fills.to_vec();

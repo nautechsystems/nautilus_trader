@@ -1112,12 +1112,12 @@ pub trait Strategy: DataActor {
             && local_count == 0
             && algo_count == 0
         {
-            let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
+            let side_str = order_side.map_or_default(|s| format!(" {s}"));
             log::info!("No {instrument_id} open, emulated, or inflight{side_str} orders to cancel");
             return Ok(());
         }
 
-        let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
+        let side_str = order_side.map_or_default(|s| format!(" {s}"));
 
         if open_count > 0 {
             log::info!(
@@ -1245,7 +1245,7 @@ pub trait Strategy: DataActor {
             position_side,
         );
 
-        let side_str = position_side.map(|s| format!(" {s}")).unwrap_or_default();
+        let side_str = position_side.map_or_default(|s| format!(" {s}"));
 
         if positions_open.is_empty() {
             log::info!("No {instrument_id} open{side_str} positions to close");

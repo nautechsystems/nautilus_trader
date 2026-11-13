@@ -793,11 +793,7 @@ impl DataClient for KalshiDataClient {
                     .map(|id| id.symbol.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let mut params = scoped
-                    .params
-                    .as_ref()
-                    .map(Params::to_shared_map)
-                    .unwrap_or_default();
+                let mut params = scoped.params.as_ref().map_or_default(Params::to_shared_map);
                 let tickers = Arc::new(tickers.into());
                 params.insert("tickers".into(), tickers);
                 let params = Params::from_shared(params);

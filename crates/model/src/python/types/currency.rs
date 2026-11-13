@@ -52,7 +52,8 @@ impl Currency {
     }
 
     #[staticmethod]
-    fn _unpickle(
+    #[pyo3(name = "_unpickle")]
+    fn py_unpickle(
         code: &str,
         precision: u8,
         iso4217: u16,

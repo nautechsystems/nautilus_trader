@@ -6545,7 +6545,7 @@ mod tests {
             let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
             cache
                 .borrow_mut()
-                .add_order(order.clone(), None, Some(*BYBIT_CLIENT_ID), false)
+                .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
                 .unwrap();
             let order = cache.borrow_mut().update_order(&accepted).unwrap();
 

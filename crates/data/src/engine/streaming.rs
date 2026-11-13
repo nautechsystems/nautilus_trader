@@ -156,9 +156,7 @@ impl DataEngine {
             Value::from(last_timestamp.saturating_add(1))
         });
 
-        let mut params = params
-            .map(|params| IndexMap::clone(params))
-            .unwrap_or_default();
+        let mut params = params.map_or_default(|params| IndexMap::clone(params));
 
         params.insert("start_ns".to_string(), start_ns);
 
@@ -1770,9 +1768,7 @@ fn build_book_depth_catalog_response(
 }
 
 fn catalog_response_params(existing: Option<&Params>) -> Params {
-    let mut params = existing
-        .map(|params| IndexMap::clone(params))
-        .unwrap_or_default();
+    let mut params = existing.map_or_default(|params| IndexMap::clone(params));
     params.insert(PARAM_UPDATE_CATALOG.to_string(), Value::Bool(false));
     Params::new(params)
 }

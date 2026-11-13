@@ -73,7 +73,6 @@ async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 bon = { workspace = true }
 derive_builder = { workspace = true }
-dotenvy = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
@@ -105,6 +104,7 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 criterion = { workspace = true }
 dashmap = { workspace = true }
+dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

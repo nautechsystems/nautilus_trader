@@ -56,6 +56,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added native Cargo dependency cooldown during resolution
 - Refined backtest replay, result collection, and venue setup
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Refined `DataEngine` catalog request planning and response conversion
@@ -65,6 +66,7 @@ Released on TBD (UTC).
 - Refined portfolio realized PnL aggregation and order reservation calculations
 - Refined position replay and accounting, order fill-void validation, and order status report construction
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
+- Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
 - Upgraded `flamegraph` tool to v0.6.15

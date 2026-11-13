@@ -3569,8 +3569,7 @@ impl StagedBracketState {
     fn cancel_for_parent(&mut self, parent_id: &ClientOrderId) -> Vec<OrderAny> {
         self.children_by_parent
             .remove(parent_id)
-            .map(|children| children.into_iter().map(|child| child.order).collect())
-            .unwrap_or_default()
+            .map_or_default(|children| children.into_iter().map(|child| child.order).collect())
     }
 
     fn take_active_sibling(

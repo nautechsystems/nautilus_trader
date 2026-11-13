@@ -787,8 +787,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack_delay_ms =
                             state.subscribe_ack_delay_ms.load(Ordering::Relaxed);
@@ -823,8 +822,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
                         if sink
@@ -10518,9 +10516,7 @@ async fn assert_chunked_submit_events(
     assert_eq!(submitted, expected_ids);
     assert_eq!(
         denied,
-        invalid_submit
-            .map(|i| vec![orders[i].client_order_id()])
-            .unwrap_or_default()
+        invalid_submit.map_or_default(|i| vec![orders[i].client_order_id()])
     );
 }
 
@@ -10575,9 +10571,7 @@ async fn assert_chunked_modify_events(
     assert_eq!(updated, expected);
     assert_eq!(
         rejected,
-        invalid_modify
-            .map(|i| vec![modifies[i].client_order_id])
-            .unwrap_or_default()
+        invalid_modify.map_or_default(|i| vec![modifies[i].client_order_id])
     );
 }
 

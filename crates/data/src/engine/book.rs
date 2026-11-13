@@ -339,8 +339,7 @@ impl DataEngine {
         let mut params = subscription
             .command
             .params()
-            .map(|params| IndexMap::clone(params))
-            .unwrap_or_default();
+            .map_or_default(|params| IndexMap::clone(params));
         params.shift_remove(PARAMS_IS_PARENT);
 
         for active in subscription
@@ -367,8 +366,7 @@ impl DataEngine {
             let mut active_params = active
                 .command
                 .params()
-                .map(|params| IndexMap::clone(params))
-                .unwrap_or_default();
+                .map_or_default(|params| IndexMap::clone(params));
             active_params.shift_remove(PARAMS_IS_PARENT);
             anyhow::ensure!(
                 subscription.client_id == active.client_id

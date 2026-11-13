@@ -1196,8 +1196,7 @@ fn parse_ack_message(message: &str) -> String {
     message
         .strip_circumfix("Subscription request ", " data succeeded")
         .and_then(|rest| rest.split_once(" for "))
-        .map(|(_, schema)| schema.trim().to_string())
-        .unwrap_or_default()
+        .map_or_default(|(_, schema)| schema.trim().to_string())
 }
 
 /// Handles symbol mapping messages and updates the instrument ID map.

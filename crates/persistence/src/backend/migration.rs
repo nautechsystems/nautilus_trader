@@ -2122,8 +2122,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         let metadata = existing
-            .map(|name| HashMap::from([("type_name".to_string(), name.to_string())]))
-            .unwrap_or_default();
+            .map_or_default(|name| HashMap::from([("type_name".to_string(), name.to_string())]));
         let schema = Schema::new_with_metadata(
             vec![Field::new("ts_init", DataType::Int64, false)],
             metadata,

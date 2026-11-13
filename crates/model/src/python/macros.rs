@@ -48,7 +48,8 @@ macro_rules! identifier_for_python {
             }
 
             #[staticmethod]
-            fn _safe_constructor() -> PyResult<Self> {
+            #[pyo3(name = "_safe_constructor")]
+            fn py_safe_constructor() -> PyResult<Self> {
                 <$ty>::new_checked("NULL-NULL").map_err(to_pyvalue_err)
             }
 

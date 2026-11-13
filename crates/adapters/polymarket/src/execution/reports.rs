@@ -1111,14 +1111,13 @@ impl PolymarketReportClient {
             .authority
             .cached_order
             .as_ref()
-            .map(|order| {
+            .map_or_default(|order| {
                 order
                     .venue_order_ids()
                     .into_iter()
                     .copied()
                     .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            });
 
         venue_order_ids.push(request.venue_order_id);
         let trade_ids = trades

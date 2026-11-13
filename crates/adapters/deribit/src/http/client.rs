@@ -1121,10 +1121,7 @@ impl DeribitHttpClient {
             _ => return,
         };
 
-        let mut merged = info
-            .as_ref()
-            .map(|info| IndexMap::clone(info))
-            .unwrap_or_default();
+        let mut merged = info.as_ref().map_or_default(|info| IndexMap::clone(info));
 
         let legs = combo
             .legs

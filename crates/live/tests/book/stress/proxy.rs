@@ -843,8 +843,7 @@ mod tests {
         fn client(&mut self, message: &Message) -> Vec<String> {
             parse(message)["unsubscribe"]
                 .as_str()
-                .map(|key| vec![key.to_string()])
-                .unwrap_or_default()
+                .map_or_default(|key| vec![key.to_string()])
         }
 
         fn corrupt(&mut self, message: &mut Message, _key: &str, kind: FrameKind) -> bool {
