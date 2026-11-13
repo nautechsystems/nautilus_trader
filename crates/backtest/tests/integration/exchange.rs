@@ -40,7 +40,7 @@ use nautilus_common::{
     clock::VirtualClock,
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     msgbus::{
-        self, MessagingSwitchboard,
+        self, MessagingSwitchboard, ShareableMessageHandler,
         stubs::{
             TypedIntoMessageSavingHandler, get_any_saving_handler,
             get_typed_into_message_saving_handler, get_typed_message_saving_handler,
@@ -994,17 +994,25 @@ fn test_same_timestamp_fills_follow_matching_engine_registration_order(
 }
 
 #[rstest]
-fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
+#[case::registered(true)]
+#[case::lazy(false)]
+fn test_exchange_process_quote_tick(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] registered: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
     let exchange = get_exchange(
         Venue::new("BINANCE"),
         AccountType::Margin,
         BookType::L1_MBP,
-        None,
+        Some(Rc::new(RefCell::new(cache))),
     );
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
-    // register instrument
-    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    if registered {
+        exchange.borrow_mut().add_instrument(instrument).unwrap();
+    }
 
     // process tick
     let quote_tick = QuoteTick::new(
@@ -2304,12 +2312,42 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
         .unwrap();
 
     let cache = Rc::new(RefCell::new(cache));
+    let publication_order = Rc::new(RefCell::new(Vec::new()));
     let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    let account_order = publication_order.clone();
+    let account_cache = cache.clone();
+
+    let account_handler = TypedHandler::from(move |state: &AccountState| {
+        assert_eq!(
+            account_cache
+                .borrow()
+                .position(&position_id)
+                .unwrap()
+                .realized_pnl,
+            Some(Money::from("-1 USDT")),
+        );
+        account_order.borrow_mut().push("account");
+        account_handler.handle(state);
+    });
+
     msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
     let (position_handler, position_saver) =
         get_typed_message_saving_handler::<PositionEvent>(None);
+    let position_order = publication_order.clone();
+    let position_handler = TypedHandler::from(move |event: &PositionEvent| {
+        position_order.borrow_mut().push("position");
+        position_handler.handle(event);
+    });
+
     msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
     let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    let settlement_order = publication_order.clone();
+    let settlement_handler =
+        ShareableMessageHandler::from_typed(move |event: &FundingSettlement| {
+            settlement_order.borrow_mut().push("settlement");
+            settlement_handler.handle(event);
+        });
+
     msgbus::subscribe_any(
         "events.funding_settlements.*".into(),
         settlement_handler,
@@ -2377,6 +2415,10 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+    assert_eq!(
+        *publication_order.borrow(),
+        ["account", "settlement", "position"]
+    );
 }
 
 // Opens a 1 ETH long at 1000 USDT on a single-currency margin account holding `balance`,

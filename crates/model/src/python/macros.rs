@@ -47,6 +47,7 @@ macro_rules! identifier_for_python {
                 (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
             }
 
+            #[gen_stub(skip)]
             #[staticmethod]
             #[pyo3(name = "_safe_constructor")]
             fn py_safe_constructor() -> PyResult<Self> {

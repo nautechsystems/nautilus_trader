@@ -62,6 +62,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added native Cargo dependency cooldown during resolution
+- Refined simulated exchange funding settlement, command and market data dispatch, and FX rollover processing
 - Refined backtest replay, result collection, and venue setup
 - Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
 - Refined `DataEngine` catalog request planning and response conversion
