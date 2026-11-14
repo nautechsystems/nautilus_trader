@@ -43,7 +43,10 @@ pub(super) use ibapi::{
     subscriptions::SubscriptionItem,
 };
 pub(super) use nautilus_common::{
-    cache::{Cache, fifo::FifoCacheMap},
+    cache::{
+        Cache,
+        fifo::{FifoCache, FifoCacheMap},
+    },
     clients::{ExecutionClient, ExecutionReportTask},
     enums::LogLevel,
     factories::OrderEventFactory,
@@ -170,8 +173,52 @@ pub struct InteractiveBrokersExecutionClient {
 }
 
 pub(super) type CommissionCache = FifoCacheMap<String, (f64, String), 10_000>;
-pub(super) type PendingExecutionCache =
-    FifoCacheMap<String, (tokio::time::Instant, ExecutionData), 10_000>;
+
+/// Live executions awaiting their commission reports, by execution ID.
+///
+/// Also remembers the executions emitted at zero commission after the wait timed out, so a
+/// commission report arriving later is told apart from one that precedes its execution.
+#[derive(Debug, Default)]
+pub(super) struct PendingExecutionCache {
+    executions: FifoCacheMap<String, (tokio::time::Instant, ExecutionData), 10_000>,
+    emitted_without_commission: FifoCache<String, 10_000>,
+}
+
+impl PendingExecutionCache {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn insert(
+        &mut self,
+        execution_id: String,
+        entry: (tokio::time::Instant, ExecutionData),
+    ) {
+        self.executions.insert(execution_id, entry);
+    }
+
+    pub(super) fn remove(
+        &mut self,
+        execution_id: &str,
+    ) -> Option<(tokio::time::Instant, ExecutionData)> {
+        self.executions.remove(&execution_id.to_string())
+    }
+
+    pub(super) fn drain(&mut self) -> Vec<(String, (tokio::time::Instant, ExecutionData))> {
+        self.executions.drain()
+    }
+
+    pub(super) fn mark_emitted_without_commission(&mut self, execution_id: String) {
+        self.emitted_without_commission.add(execution_id);
+    }
+
+    /// Returns whether the execution was emitted at zero commission. The record is kept, so a
+    /// repeated late report is recognized too.
+    pub(super) fn was_emitted_without_commission(&self, execution_id: &str) -> bool {
+        self.emitted_without_commission
+            .contains(&execution_id.to_string())
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct OrderTracker {

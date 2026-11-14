@@ -3748,7 +3748,7 @@ fn test_fill_report_collector_uses_provider_resolved_stock_venue() {
         create_test_commission_report("exec-aapl-001", 1.25),
     )));
 
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
 
     assert_eq!(evidence.reports.len(), 1);
     assert!(evidence.combo_leg_reports.is_empty());
@@ -4408,7 +4408,167 @@ async fn execution_without_commission_flushes_with_zero_marker() {
                 && event.commission == Some(Money::new(0.0, Currency::USD()))
     ));
     assert!(exec_receiver.try_recv().is_err());
-    assert!(pending_execution_cache.lock().is_empty());
+    assert!(pending_execution_cache.lock().executions.is_empty());
+    assert!(commission_cache.lock().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_commission_report_after_zero_commission_flush_is_not_cached() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7009;
+    let contract_id = 12350;
+    let client_order_id = ClientOrderId::from("O-STREAM-LATE-COMMISSION");
+    let position_tracker = create_position_tracker();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let exec_sender: EventSender<ExecutionEvent> = exec_sender.into();
+    let clock = nautilus_core::time::get_atomic_clock_realtime();
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let mut exec_data =
+        create_test_execution_data(order_id, "exec-late-commission", 1.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    pending_execution_cache.lock().insert(
+        exec_data.execution.execution_id.clone(),
+        (
+            tokio::time::Instant::now() - Duration::from_secs(5),
+            exec_data,
+        ),
+    );
+    InteractiveBrokersExecutionClient::flush_executions_without_commission(
+        &orders,
+        &instrument_provider,
+        &exec_sender,
+        clock,
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.commission == Some(Money::new(0.0, Currency::USD()))
+    ));
+
+    // IB's pending sentinel, the late report, then the late report repeated
+    for commission in [-1.0, 1.25, 1.25] {
+        InteractiveBrokersExecutionClient::handle_order_update(
+            &OrderUpdate::CommissionReport(CommissionReport {
+                execution_id: String::from("exec-late-commission"),
+                commission,
+                currency: String::from("USD"),
+                realized_pnl: None,
+                yields: None,
+                yield_redemption_date: String::new(),
+            }),
+            &orders,
+            &instrument_provider,
+            &exec_sender,
+            clock,
+            AccountId::from("IB-001"),
+            Ustr::from("001"),
+            &commission_cache,
+            &pending_execution_cache,
+            &position_tracker,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert!(exec_receiver.try_recv().is_err());
+    assert!(commission_cache.lock().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_process_order_update_stream_pairs_commission_report_before_execution() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7010;
+    let contract_id = 12351;
+    let client_order_id = ClientOrderId::from("O-STREAM-EARLY-COMMISSION");
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscription = ChannelSubscription::new(update_receiver);
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    let mut context = create_tracked_order_context(client_order_id, instrument_id);
+    context.accepted = true;
+    insert_tracked_order(&orders, order_id, context);
+
+    let mut exec_data =
+        create_test_execution_data(order_id, "exec-early-commission", 100.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    exec_data.execution.order_reference.clear();
+    update_sender
+        .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
+            execution_id: String::from("exec-early-commission"),
+            commission: 1.25,
+            currency: String::from("USD"),
+            realized_pnl: None,
+            yields: None,
+            yield_redemption_date: String::new(),
+        })))
+        .unwrap();
+    update_sender
+        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
+        .unwrap();
+    drop(update_sender);
+
+    InteractiveBrokersExecutionClient::process_order_update_stream(
+        &mut subscription,
+        &orders,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &create_position_tracker(),
+        None,
+    )
+    .await;
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.trade_id == TradeId::from("exec-early-commission")
+                && event.commission == Some(Money::new(1.25, Currency::USD()))
+    ));
+    assert!(exec_receiver.try_recv().is_err());
     assert!(commission_cache.lock().is_empty());
 }
 
@@ -4576,6 +4736,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
     assert!(
         pending_execution_cache
             .lock()
+            .executions
             .contains_key(&String::from("exec-stream-late"))
     );
     assert!(exec_receiver.try_recv().is_err());
@@ -4617,7 +4778,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
                 && event.trade_id == TradeId::from("exec-stream-late")
     ));
     assert!(exec_receiver.try_recv().is_err());
-    assert!(pending_execution_cache.lock().is_empty());
+    assert!(pending_execution_cache.lock().executions.is_empty());
     let state = orders.lock().unwrap();
     assert!(state.active_orders.is_empty());
     let terminal_context = state.terminal_orders.get(&order_id).unwrap();
@@ -5990,7 +6151,7 @@ fn collect_mes_session(
         )));
     }
 
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
     assert!(combo_executions.is_empty());
     evidence
 }
@@ -6162,7 +6323,7 @@ fn test_fill_report_collector_marks_all_missing_on_stream_error() {
     let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
 
     collector.push(Err(ibapi::Error::ConnectionReset));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(evidence.missing_all);
@@ -6179,7 +6340,7 @@ fn test_fill_report_collector_marks_all_missing_on_commission_without_execution(
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report("exec-unseen-001", 0.61),
     )));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(evidence.missing_all);
@@ -6199,7 +6360,7 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report(MES_SESSION_EXECUTIONS[0].0, 0.61),
     )));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(!evidence.missing_all);
@@ -6210,11 +6371,16 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
 }
 
 #[rstest]
-fn test_fill_report_collector_fails_on_execution_without_commission() {
+fn test_fill_report_collector_marks_instrument_missing_on_execution_without_commission() {
     let (client, _, _) = create_test_execution_client();
     client.instrument_provider.insert_test_instrument(
         InstrumentAny::from(create_test_mes_instrument()),
         MES_CONTRACT_ID,
+        1,
+    );
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(equity_aapl()),
+        265598,
         1,
     );
     let context = report_context(&client);
@@ -6224,10 +6390,27 @@ fn test_fill_report_collector_fails_on_execution_without_commission() {
     collector.push(Ok(Executions::ExecutionData(
         create_test_mes_execution_data(0),
     )));
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_stock_execution_data(0, 123, "exec-aapl-001"),
+    )));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-aapl-001", 1.25),
+    )));
+    let (evidence, _) = collector.finish();
 
+    // The other instrument keeps its fill
     assert_eq!(
-        collector.finish().unwrap_err().to_string(),
-        "IB did not provide commission reports for execution IDs: 0000e1a7.6acc4ab7.01.01"
+        evidence
+            .reports
+            .iter()
+            .map(|report| report.trade_id)
+            .collect::<Vec<_>>(),
+        vec![TradeId::from("exec-aapl-001")]
+    );
+    assert!(!evidence.missing_all);
+    assert_eq!(
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
     );
 }
 
@@ -6252,7 +6435,7 @@ fn test_fill_report_collector_moves_combo_leg_fills_to_evidence() {
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report("exec-leg-001", 0.65),
     )));
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert_eq!(evidence.combo_leg_reports.len(), 1);

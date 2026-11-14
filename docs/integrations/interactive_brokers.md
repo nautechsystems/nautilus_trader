@@ -512,6 +512,10 @@ Mass status requests query three independent IB sources:
 - Executions paired with commission reports produce fill reports.
 - Account positions produce position status reports.
 
+An execution without its commission report produces no fill report. The adapter logs a warning and marks
+the fills of that execution's instrument incomplete, or all fills when the instrument does not resolve, as
+for an execution it cannot parse, so the rest of the account still reconciles.
+
 Position updates do not create synthetic order status reports. If IB returns a position without
 matching order or fill history, the execution engine can adopt the position from the position report
 alone by creating its internal reconciliation fill. This preserves the report boundary: the adapter
@@ -573,6 +577,11 @@ never infers a fill at price 0.
 Replies to execution queries (`reqExecutions`) also arrive on IB's order update stream. The adapter
 treats only unsolicited execution details there as live fills, so startup and periodic execution
 queries do not apply the same fills again.
+
+A live fill waits for its commission report, except a combo-level fill, which carries no commission.
+If the report has not arrived after about 5 seconds, the fill is emitted with zero commission. A report
+for that execution arriving later is logged as a warning and not applied, since an emitted fill cannot
+be amended.
 
 ## Symbology and instruments
 
