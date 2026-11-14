@@ -365,12 +365,16 @@ fn decode_option_multiplier(
     contract_multiplier: i32,
     unit_of_measure_qty: i64,
 ) -> anyhow::Result<Quantity> {
-    match (dataset, contract_multiplier) {
-        (Some(dbn::Dataset::OpraPillar), 0 | i32::MAX) => decode_multiplier(unit_of_measure_qty),
-        (Some(dbn::Dataset::OpraPillar), value) if value < 0 => {
+    match (dataset, contract_multiplier, unit_of_measure_qty) {
+        // OPRA definitions can leave both fields unset: use the standard OCC contract size
+        (Some(dbn::Dataset::OpraPillar), 0 | i32::MAX, 0 | i64::MAX) => {
+            Ok(Quantity::from_mantissa_exponent(100, 0, 0))
+        }
+        (Some(dbn::Dataset::OpraPillar), 0 | i32::MAX, _) => decode_multiplier(unit_of_measure_qty),
+        (Some(dbn::Dataset::OpraPillar), value, _) if value < 0 => {
             anyhow::bail!("Invalid negative `contract_multiplier`: {value}")
         }
-        (Some(dbn::Dataset::OpraPillar), value) => {
+        (Some(dbn::Dataset::OpraPillar), value, _) => {
             Ok(Quantity::from_mantissa_exponent(value as u64, 0, 0))
         }
         _ => decode_multiplier(unit_of_measure_qty),
