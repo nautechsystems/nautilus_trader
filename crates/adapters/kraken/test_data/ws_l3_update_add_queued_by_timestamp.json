@@ -1,0 +1,21 @@
+{
+  "channel": "level3",
+  "type": "update",
+  "data": [
+    {
+      "checksum": 3560289535,
+      "symbol": "ETH/USD",
+      "timestamp": "2026-10-21T13:23:37.032215060Z",
+      "bids": [],
+      "asks": [
+        {
+          "event": "add",
+          "order_id": "OJZ4KN-PWGS4-45HCTC",
+          "limit_price": 2478.76,
+          "order_qty": 0.20530845,
+          "timestamp": "2026-10-21T13:22:11.417008856Z"
+        }
+      ]
+    }
+  ]
+}

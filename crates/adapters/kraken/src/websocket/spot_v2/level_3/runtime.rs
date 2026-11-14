@@ -45,6 +45,9 @@ use crate::common::lookup_instrument_in_snapshot;
 pub(crate) struct L3State {
     /// Monotonically increasing sequence counter applied to outbound deltas.
     pub sequence: u64,
+    /// Monotonically increasing arrival counter for orders placed in a queue, used to break
+    /// timestamp ties; independent of `sequence`.
+    pub arrival: u64,
     /// Subscription depth in price levels (one of `10`, `100`, `1000`).
     pub depth: u32,
     /// Whether the next snapshot has not yet been received after a (re)connect.
@@ -124,6 +127,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 .entry(snap.symbol.clone())
                 .or_insert_with(|| L3State {
                     sequence: 0,
+                    arrival: 0,
                     depth: subscription_depth(depths, &snap.symbol),
                     awaiting_snapshot: false,
                     open_orders: AHashMap::new(),
@@ -136,6 +140,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 instrument,
                 hasher,
                 &mut state.sequence,
+                &mut state.arrival,
                 ts_init,
                 &mut state.open_orders,
             ) {
@@ -214,6 +219,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 .entry(update.symbol.clone())
                 .or_insert_with(|| L3State {
                     sequence: 0,
+                    arrival: 0,
                     depth: subscription_depth(depths, &update.symbol),
                     awaiting_snapshot: true,
                     open_orders: AHashMap::new(),
@@ -233,6 +239,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 instrument,
                 hasher,
                 &mut state.sequence,
+                &mut state.arrival,
                 ts_init,
                 &mut state.open_orders,
                 state.depth,
@@ -438,6 +445,7 @@ mod tests {
             "BTC/USD".to_string(),
             L3State {
                 sequence: 42,
+                arrival: 0,
                 depth: 1000,
                 awaiting_snapshot: false,
                 open_orders: AHashMap::new(),
