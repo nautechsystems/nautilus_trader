@@ -51,6 +51,7 @@ impl PolymarketDataClient {
 
         let watchlist = self.resolve_poll_watchlist.clone();
         let instruments = self.instruments.clone();
+        let cache = self.cache.clone();
         let owner_lock = self.resolve_watch_apply_mutex.clone();
         let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
 
@@ -60,6 +61,7 @@ impl PolymarketDataClient {
                 &closed_condition_ids,
                 &watchlist,
                 &instruments,
+                cache.as_ref(),
                 event,
             );
         });
