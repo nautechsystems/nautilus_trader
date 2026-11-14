@@ -2158,6 +2158,160 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_account_info_round_trip() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&pg_cache).await;
+
+        let initial_info = Params::new(indexmap! {
+            "venue".to_string() => serde_json::json!("BINANCE"),
+            "wallet".to_string() => serde_json::json!({
+                "total": "123.456789012345678901",
+                "components": ["1.000000000000000001", null, true],
+            }),
+            "large_number".to_string() => serde_json::Value::from(1e16),
+        });
+        let initial_event = cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
+            .with_info(Some(initial_info.clone()));
+        let mut account = AccountAny::Cash(CashAccount::new(initial_event, false, false));
+        pg_cache.add_currency(&Currency::USD()).unwrap();
+        pg_cache.add_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let updated_info = Params::new(indexmap! {
+            "available".to_string() => serde_json::json!("0.000000000000000001"),
+            "status".to_string() => serde_json::json!("NORMAL"),
+        });
+        let updated_event =
+            cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD")
+                .with_info(Some(updated_info.clone()));
+        account.apply(updated_event).unwrap();
+        pg_cache.update_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.events().len() == 2)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let restored = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_entirely_equal(&restored, &account);
+        let restored_events = restored.events();
+        let restored_info = restored_events[0].info.as_ref().unwrap();
+        assert_eq!(restored_info.get_u64("large_number"), None);
+
+        let empty_info = Params::default();
+        let mut replacement = account.events()[1].clone();
+        for replacement_info in [Some(empty_info), None] {
+            replacement.info = replacement_info.clone();
+            DatabaseQueries::add_account(
+                &restarted.pool,
+                true,
+                replacement.clone(),
+                &TraderId::default(),
+            )
+            .await
+            .unwrap();
+            let updated_events = DatabaseQueries::load_account_events(
+                &restarted.pool,
+                &account.id(),
+                &TraderId::default(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(updated_events.len(), 2);
+            assert_eq!(updated_events[1].info, replacement_info);
+        }
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_account_info_migration_preserves_legacy_rows() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+        init_postgres(
+            &pg,
+            options.database.clone(),
+            options.password.clone(),
+            Some(schema_dir.clone()),
+        )
+        .await
+        .unwrap();
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+        let event = cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
+        DatabaseQueries::add_currency(&database.pool, Currency::USD())
+            .await
+            .unwrap();
+        DatabaseQueries::add_account(&database.pool, false, event.clone(), &TraderId::default())
+            .await
+            .unwrap();
+        database.close().unwrap();
+        sqlx::query("ALTER TABLE account_event DROP COLUMN info")
+            .execute(&pg)
+            .await
+            .unwrap();
+
+        let connection_result = get_test_pg_cache_database().await;
+
+        for _ in 0..2 {
+            init_postgres(
+                &pg,
+                options.database.clone(),
+                options.password.clone(),
+                Some(schema_dir.clone()),
+            )
+            .await
+            .unwrap();
+        }
+
+        let error = connection_result.unwrap_err().to_string();
+        assert!(
+            error.contains("missing cache columns account_event.info"),
+            "{error}"
+        );
+
+        let mut restored_database = get_test_pg_cache_database().await.unwrap();
+        let restored = DatabaseQueries::load_account_events(
+            &restored_database.pool,
+            &event.account_id,
+            &TraderId::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_entirely_equal(&restored[0], &event);
+        reset_test_database(&restored_database).await;
+        restored_database.close().unwrap();
+        pg.close().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_exact_usd_account_restart() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let total = Money::from_str_exact("1.0001 USD").unwrap();

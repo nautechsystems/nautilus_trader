@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Typed tracking of venue `l2Book` streams shared by deltas and depth uses.
+//! Typed tracking of venue book streams shared by deltas and depth uses.
 //!
-//! One venue `l2Book` subscription per coin serves both order book deltas and
+//! One venue book subscription per coin serves both order book deltas and
 //! depth snapshots. This registry records which logical uses are active and
 //! the precision options the stream was opened with, so that:
 //!
@@ -27,28 +27,49 @@
 use std::sync::Arc;
 
 use dashmap::{DashMap, mapref::entry::Entry};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-/// A logical use of a venue `l2Book` stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use super::error::HyperliquidWsError;
+
+#[derive(Debug)]
+pub(crate) struct PendingBookWrite {
+    pub(crate) cancel: CancellationToken,
+    pub(super) completion: tokio::sync::oneshot::Receiver<Result<(), HyperliquidWsError>>,
+}
+
+impl PendingBookWrite {
+    pub(crate) async fn wait(self) -> Result<(), HyperliquidWsError> {
+        tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => Ok(()),
+            result = self.completion => {
+                result.map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?
+            }
+        }
+    }
+}
+
+/// A logical use of a venue book stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum BookStreamUse {
     Deltas,
     Depth,
 }
 
-/// Venue precision options for an `l2Book` subscription.
+/// Venue precision options for a book subscription.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BookStreamOptions {
     pub n_sig_figs: Option<u32>,
     pub mantissa: Option<u32>,
 }
 
-/// Outcome of registering a logical use: whether a venue subscribe should be
-/// sent, the active stream options (first-wins), and whether the requested
-/// options differed from the active stream's.
+/// Records whether registration added a use and whether it needs a venue subscribe,
+/// along with the original precision options and any mismatch with the requested options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BookStreamRegistration {
     pub subscribe: bool,
+    pub new_use: bool,
     pub options: BookStreamOptions,
     pub options_mismatch: bool,
 }
@@ -68,7 +89,16 @@ struct BookStreamEntry {
     depth: bool,
 }
 
-/// Registry of active venue `l2Book` streams keyed by coin, shared across
+impl BookStreamEntry {
+    fn stream_use_mut(&mut self, stream_use: BookStreamUse) -> &mut bool {
+        match stream_use {
+            BookStreamUse::Deltas => &mut self.deltas,
+            BookStreamUse::Depth => &mut self.depth,
+        }
+    }
+}
+
+/// Registry of active venue book streams keyed by coin, shared across
 /// client clones.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BookStreamRegistry {
@@ -86,12 +116,10 @@ impl BookStreamRegistry {
         match self.streams.entry(coin) {
             Entry::Occupied(mut occupied) => {
                 let entry = occupied.get_mut();
-                match stream_use {
-                    BookStreamUse::Deltas => entry.deltas = true,
-                    BookStreamUse::Depth => entry.depth = true,
-                }
+                let new_use = !std::mem::replace(entry.stream_use_mut(stream_use), true);
                 BookStreamRegistration {
                     subscribe: false,
+                    new_use,
                     options: entry.options,
                     options_mismatch: options != entry.options,
                 }
@@ -104,6 +132,7 @@ impl BookStreamRegistry {
                 });
                 BookStreamRegistration {
                     subscribe: true,
+                    new_use: true,
                     options,
                     options_mismatch: false,
                 }
@@ -120,10 +149,7 @@ impl BookStreamRegistry {
         match self.streams.entry(*coin) {
             Entry::Occupied(mut occupied) => {
                 let entry = occupied.get_mut();
-                match stream_use {
-                    BookStreamUse::Deltas => entry.deltas = false,
-                    BookStreamUse::Depth => entry.depth = false,
-                }
+                *entry.stream_use_mut(stream_use) = false;
 
                 if entry.deltas || entry.depth {
                     BookStreamRelease::Retained
@@ -172,6 +198,7 @@ mod tests {
         let registration = registry.register(coin, BookStreamUse::Deltas, options(Some(5), None));
 
         assert!(registration.subscribe);
+        assert!(registration.new_use);
         assert!(!registration.options_mismatch);
         assert_eq!(registration.options, options(Some(5), None));
         assert_eq!(registry.options(&coin), Some(options(Some(5), None)));
@@ -186,6 +213,7 @@ mod tests {
         let registration = registry.register(coin, BookStreamUse::Depth, options(None, None));
 
         assert!(!registration.subscribe);
+        assert!(registration.new_use);
         assert!(registration.options_mismatch);
         assert_eq!(registration.options, options(Some(5), Some(2)));
     }
@@ -211,6 +239,7 @@ mod tests {
         let registration = registry.register(coin, BookStreamUse::Deltas, options(None, None));
 
         assert!(!registration.subscribe);
+        assert!(!registration.new_use);
         assert_eq!(
             registry.release(&coin, BookStreamUse::Deltas),
             BookStreamRelease::Unsubscribe(options(None, None)),

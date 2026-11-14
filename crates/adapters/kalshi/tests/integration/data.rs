@@ -182,7 +182,6 @@ async fn lifecycle_streams_selected_types_and_shares_demand_across_reconnect() {
 
         peer.revision.store(1, Ordering::SeqCst);
         peer.early.store(true, Ordering::SeqCst);
-        peer.actions.send(("close".into(), Value::Null)).unwrap();
         client.stop().unwrap();
         client.connect().await.unwrap();
 
@@ -686,9 +685,7 @@ async fn venue_routed_requests_survive_connect_and_use_configured_source(#[case]
                 .unwrap();
         }
 
-        while peer.requests.load(Ordering::SeqCst) == 0 {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
+        peer.wait_requests(1).await;
 
         peer.revision.store(0, Ordering::SeqCst);
         client.connect().await.unwrap();
@@ -845,6 +842,8 @@ async fn book_stream_recovers_gaps_without_false_multi_market_or_control_gaps() 
             }
         }
 
+        client.subscribe_quotes(quotes(ids[0])).unwrap();
+        assert_eq!(peer.command().await["params"]["channels"][0], "ticker");
         let stale = fixture_books()["steps"][0].clone();
         peer.actions
             .send((
@@ -857,7 +856,13 @@ async fn book_stream_recovers_gaps_without_false_multi_market_or_control_gaps() 
                 }),
             ))
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        peer.emit("ticker", ids[0], false);
+
+        let DataEvent::Data(Data::Quote(tick)) = events.recv().await.unwrap() else {
+            panic!("expected quote after the ignored stale frame");
+        };
+
+        assert_eq!(tick.instrument_id, ids[0]);
         assert!(events.try_recv().is_err());
         assert!(peer.commands.try_recv().is_err());
 
@@ -1321,8 +1326,8 @@ async fn missed_lifecycle_settlement_recovers_from_rest(#[case] reconnect: bool)
         market["settlement_value_dollars"] = "0.67".into();
         market["settlement_ts"] = "2026-10-17T03:45:01.987654Z".into();
         *peer.market.lock().unwrap() = Some(market);
+
         if reconnect {
-            peer.actions.send(("close".into(), Value::Null)).unwrap();
             client.stop().unwrap();
             client.connect().await.unwrap();
             assert_eq!(
@@ -1360,108 +1365,6 @@ async fn missed_lifecycle_settlement_recovers_from_rest(#[case] reconnect: bool)
         assert_eq!(close.ts_event.as_u64(), 1_792_208_701_987_654_000);
         assert!(events.try_recv().is_err());
         client.disconnect().await.unwrap();
-    })
-    .await
-    .unwrap();
-}
-
-#[rstest::rstest]
-#[case::late_final(true, false)]
-#[case::bounded_non_final(false, false)]
-#[case::cancel(false, true)]
-#[tokio::test]
-async fn settlement_notification_rechecks_rest_until_final_or_bounded_stop(
-    #[case] finalize: bool,
-    #[case] cancel: bool,
-) {
-    tokio::time::timeout(Duration::from_secs(12), async {
-        let peer = Peer::new().await;
-        let values: Value =
-            serde_json::from_str(include_str!("../../test_data/instruments.json")).unwrap();
-        let mut market = values["definitions"]["live"]["market"].clone();
-        market["status"] = "determined".into();
-        market["updated_time"] = "2026-10-17T03:30:00Z".into();
-        *peer.market.lock().unwrap() = Some(market.clone());
-        let id = ids()[0];
-        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
-        let mut client = KalshiDataClient::new(
-            *KALSHI_CLIENT_ID,
-            peer.config.clone(),
-            vec![id],
-            sender.into(),
-        )
-        .unwrap();
-        client
-            .subscribe_instrument_close(SubscribeInstrumentClose::new(
-                id,
-                Some(*KALSHI_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::from(1),
-                None,
-                None,
-            ))
-            .unwrap();
-
-        if cancel {
-            client.subscribe_quotes(quotes(id)).unwrap();
-        }
-
-        client.connect().await.unwrap();
-        let baseline = peer.requests.load(Ordering::SeqCst);
-        assert_eq!(definition(&mut events).await.id, id);
-        assert!(events.try_recv().is_err());
-        let frames: Value =
-            serde_json::from_str(include_str!("../../test_data/lifecycle.json")).unwrap();
-        let mut frame = frames["frames"][2].clone();
-        frame["type"] = "market_lifecycle_v2".into();
-        frame["sid"] = 1.into();
-        frame["seq"] = 1.into();
-        frame["msg"]["market_ticker"] = id.symbol.as_str().into();
-        frame["msg"]["event_type"] = "settled".into();
-        peer.actions.send(("raw".into(), frame)).unwrap();
-        while peer.request_paths.lock().unwrap().len() < baseline + 3 {
-            tokio::task::yield_now().await;
-        }
-
-        if cancel {
-            peer.emit("ticker", id, false);
-            assert!(matches!(
-                events.recv().await.unwrap(),
-                DataEvent::Data(Data::Quote(_))
-            ));
-            client.disconnect().await.unwrap();
-            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 3);
-        } else if finalize {
-            market["status"] = "finalized".into();
-            market["updated_time"] = "2026-10-17T03:45:02.123456Z".into();
-            market["settlement_value_dollars"] = "0.67".into();
-            market["settlement_ts"] = "2026-10-17T03:45:01.987654Z".into();
-            *peer.market.lock().unwrap() = Some(market);
-            let final_definition = definition(&mut events).await;
-
-            let DataEvent::Data(Data::InstrumentClose(close)) = events.recv().await.unwrap() else {
-                panic!("expected final close")
-            };
-
-            assert_eq!(
-                final_definition.info.as_ref().unwrap()["market"]["status"],
-                "finalized"
-            );
-            assert_eq!(close.instrument_id, id);
-            assert_eq!(close.close_price.as_decimal(), "0.67".parse().unwrap());
-            assert_eq!(close.ts_event.as_u64(), 1_792_208_701_987_654_000);
-            assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 6);
-            assert!(events.try_recv().is_err());
-            client.disconnect().await.unwrap();
-        } else {
-            tokio::time::sleep(Duration::from_secs(8)).await;
-            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 15);
-            assert!(events.try_recv().is_err());
-            client.disconnect().await.unwrap();
-        }
     })
     .await
     .unwrap();

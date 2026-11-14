@@ -340,6 +340,10 @@ project version within that range:
 
 ### Rust dependency cooldown
 
+Cargo applies `registries.crates-io.min-publish-age` from `.cargo/config.toml` during dependency
+resolution. Keep its duration aligned with `[workspace.metadata.cooldown].days` in `Cargo.toml`.
+Cargo exempts versions already in `Cargo.lock`, so the repository also checks resolved lockfiles.
+
 The Cargo cooldown check rejects resolved registry versions published within the window set by
 `[workspace.metadata.cooldown]` in `Cargo.toml`. It checks every tracked `Cargo.lock` file,
 including versions already committed or pulled from another branch, before dependency build scripts
@@ -362,7 +366,9 @@ Make compilation targets also pass `--locked`, so Cargo fails rather than resolv
 check has not seen.
 
 A version inside the cooldown window requires both an exact entry in `[workspace.metadata.cooldown.allow]` and
-a matching cargo-vet audit. Unsupported registries fail the check. Publication dates come from the committed
+a matching cargo-vet audit. For an approved fresh resolution, set
+`CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow` for the update command; the lockfile check still requires
+the allowance and audit. Unsupported registries fail the check. Publication dates come from the committed
 database at `.supply-chain/crate-dates.json`. Recorded dates are trusted offline. Versions missing from the
 database are looked up on crates.io and fail closed when the registry is unreachable. A clean Git diff does
 not establish that dependencies are old enough.

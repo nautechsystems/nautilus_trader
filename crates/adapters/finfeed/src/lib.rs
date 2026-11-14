@@ -17,7 +17,7 @@
 //! [FinFeedAPI Prediction Markets API](https://www.finfeedapi.com/products/prediction-markets-api?ref=nautilus),
 //! provided by API Bricks.
 //!
-//! This crate provides authenticated REST access, checked Polymarket binary Yes/No instrument
+//! This crate provides authenticated REST access, checked Polymarket and Kalshi binary Yes/No instrument
 //! definitions, historical data requests, and book, quote, trade, and closed-bar polling.
 //! Order execution is unsupported.
 //! Importing the Python package neither reads credentials nor connects.
@@ -59,7 +59,7 @@
 //!
 //! # Integrator Attribution
 //!
-//! REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
+//! FinFeed REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
 //! The fixed header contains no credential or account data.
 //!
 //! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/finfeed/#integrator-attribution).

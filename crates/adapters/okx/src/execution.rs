@@ -62,7 +62,7 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         TrailingOffsetType,
     },
-    events::OrderDeniedReason,
+    events::{OrderDeniedReason, OrderPriceField},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue,
         VenueOrderId,
@@ -194,7 +194,8 @@ impl OKXExecutionClient {
             core.client_id,
             Some(*OKX_VENUE),
             "okx-private-user-streams",
-        ));
+        ))
+        .with_order_request_ttl_ms(config.order_request_ttl_ms);
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),
@@ -1401,6 +1402,8 @@ impl OKXExecutionClient {
 
         self.ws_private.subscribe_account().await?;
 
+        self.subscribe_positions(&instrument_types).await?;
+
         // Liquidation warnings cover margin and derivative positions; SPOT has none
         if order_routing_types.iter().any(|t| {
             matches!(
@@ -1446,6 +1449,29 @@ impl OKXExecutionClient {
 
         // Wait for account to be registered in cache before completing connect
         self.await_account_registered(30.0).await?;
+
+        Ok(())
+    }
+
+    async fn subscribe_positions(
+        &self,
+        instrument_types: &[OKXInstrumentType],
+    ) -> anyhow::Result<()> {
+        for inst_type in [
+            OKXInstrumentType::Margin,
+            OKXInstrumentType::Swap,
+            OKXInstrumentType::Futures,
+            OKXInstrumentType::Option,
+        ] {
+            if instrument_types.contains(&inst_type)
+                || (inst_type == OKXInstrumentType::Margin
+                    && instrument_types.contains(&OKXInstrumentType::Spot)
+                    && self.config.uses_spot_margin())
+            {
+                log::debug!("Subscribing to positions channel for {inst_type:?}");
+                self.ws_private.subscribe_positions(inst_type).await?;
+            }
+        }
 
         Ok(())
     }
@@ -2930,6 +2956,8 @@ impl OKXExecutionClient {
                 .http_client
                 .get_instrument(&order.instrument_id().symbol.inner());
 
+            validate_limit_price(order, instrument.as_ref(), submission, params)?;
+
             let instrument_type = instrument
                 .as_ref()
                 .map(okx_instrument_type)
@@ -3868,6 +3896,42 @@ fn retain_external_regular_order_fallbacks(
             !cached_by_client && !cached_by_venue
         })
     });
+}
+
+fn validate_limit_price(
+    order: &impl Order,
+    instrument: Option<&InstrumentAny>,
+    submission: OrderSubmission,
+    params: Option<&Params>,
+) -> Result<(), OrderDeniedReason> {
+    if order.order_type() != OrderType::Limit
+        || (matches!(submission, OrderSubmission::Single)
+            && (get_param_as_string(params, "px_usd").is_some()
+                || get_param_as_string(params, "px_vol").is_some()))
+    {
+        return Ok(());
+    }
+
+    let Some(price) = order.price() else {
+        return Ok(());
+    };
+
+    if !price.is_positive() {
+        return Err(OrderDeniedReason::PriceNotPositive {
+            field: OrderPriceField::Price,
+            price,
+        });
+    }
+
+    if let Some(instrument) = instrument {
+        instrument
+            .try_normalize_price(price)
+            .map_err(|e| OrderDeniedReason::ValidationFailed {
+                detail: e.to_string(),
+            })?;
+    }
+
+    Ok(())
 }
 
 fn validate_submit_position_id(
@@ -6255,7 +6319,7 @@ mod tests {
                 );
                 cache
                     .borrow_mut()
-                    .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+                    .add_order(order, None, Some(*OKX_CLIENT_ID), false)
                     .unwrap();
                 cache.borrow_mut().update_order(&accepted).unwrap();
             }
@@ -7400,10 +7464,19 @@ mod tests {
         );
         let event = rx.try_recv().unwrap();
 
-        let ExecutionEvent::Report(CommonExecutionReport::Fill(report)) = event else {
-            panic!("expected imported child fill report, was {event:?}");
+        let ExecutionEvent::Report(CommonExecutionReport::OrderWithFills(order, fills)) = event
+        else {
+            panic!("expected imported child order with fills, was {event:?}");
         };
 
+        assert_eq!(order.client_order_id, Some(cid));
+        assert_eq!(
+            order.venue_order_id,
+            VenueOrderId::from("2497956918703120501")
+        );
+        assert_eq!(order.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 1);
+        let report = &fills[0];
         assert_eq!(report.client_order_id, Some(cid));
         assert_eq!(
             report.venue_order_id,
@@ -8002,7 +8075,7 @@ mod tests {
             .client_order_id(ClientOrderId::from("OHEDGEWIRE"))
             .side(side)
             .quantity(Quantity::from("2"))
-            .price(Price::from("123.45"))
+            .price(Price::from("123.4"))
             .trigger_price(Price::from("120.00"))
             .reduce_only(reduce_only)
             .build();

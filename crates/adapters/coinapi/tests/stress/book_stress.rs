@@ -598,15 +598,14 @@ impl StressVenue for CoinApi {
                 .snapshots
                 .lock()
                 .get(&key)
-                .map(|snapshots| {
+                .map_or_default(|snapshots| {
                     snapshots
                         .iter()
                         .rev()
                         .filter(|(sequence, at)| *at == ts && *sequence <= deltas.sequence)
                         .map(|(sequence, _)| *sequence)
                         .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+                });
 
             let book = checker.book(id).expect("checked book");
 

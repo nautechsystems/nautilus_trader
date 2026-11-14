@@ -867,6 +867,8 @@ async fn reconnect_notice_keeps_streaming_until_server_close() {
 async fn error_frame_retires_channel_without_replay() {
     bounded(async {
         let (listener, address) = listener().await;
+        let (quiet, retired) = tokio::sync::oneshot::channel();
+
         let peer = task::spawn(async move {
             let (mut socket, _) = accept(&listener).await;
             next_text(&mut socket).await;
@@ -893,6 +895,7 @@ async fn error_frame_retires_channel_without_replay() {
                         .unwrap_or(true);
             }
 
+            quiet.send(()).unwrap();
             let (mut resubscribed, _) = accept(&listener).await;
             let hello = next_text(&mut resubscribed).await;
             let pause = initial_at.elapsed();
@@ -909,7 +912,7 @@ async fn error_frame_retires_channel_without_replay() {
         );
         assert!(!format!("{error:?}").contains("test-api-key"));
 
-        time::sleep(Duration::from_millis(700)).await;
+        retired.await.unwrap();
         client.subscribe(subscription(TRADES, BTC)).await.unwrap();
 
         let (replayed, hello, pause, _socket) = peer.await.unwrap();

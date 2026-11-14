@@ -858,10 +858,7 @@ fn apply(
 
     for id in emitted {
         let key = id.to_string();
-        let book = runners
-            .get(&id)
-            .map(|book| book.top(DEPTH))
-            .unwrap_or_default();
+        let book = runners.get(&id).map_or_default(|book| book.top(DEPTH));
         views.record(
             &key,
             WireView {

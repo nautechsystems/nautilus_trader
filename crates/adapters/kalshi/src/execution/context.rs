@@ -205,9 +205,7 @@ impl PrivateState {
             prior.source_ts.max(order.ts_last())
         });
 
-        let mut accounted = prior
-            .map(|prior| prior.accounted.clone())
-            .unwrap_or_default();
+        let mut accounted = prior.map_or_default(|prior| prior.accounted.clone());
 
         if self.ledger.total_is_unknown() {
             for trade_id in order.trade_ids() {
@@ -1877,8 +1875,7 @@ impl PrivateState {
         let accounted = self
             .orders
             .get(&id)
-            .map(|context| context.accounted.clone())
-            .unwrap_or_default();
+            .map_or_default(|context| context.accounted.clone());
         let source_ts = self
             .orders
             .get(&id)

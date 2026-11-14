@@ -83,7 +83,8 @@ impl TimeEvent {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> Self {
+    #[pyo3(name = "_safe_constructor")]
+    fn py_safe_constructor() -> Self {
         Self::new(
             Ustr::from("NULL"),
             UUID4::new(),

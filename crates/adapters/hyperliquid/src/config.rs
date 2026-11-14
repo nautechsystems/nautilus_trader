@@ -29,6 +29,31 @@ use crate::common::{
     enums::{HyperliquidEnvironment, HyperliquidProductType},
 };
 
+/// Venue source for the shared Hyperliquid order book.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::EnumString,
+)]
+pub enum HyperliquidBookFeed {
+    /// Documented full-snapshot feed.
+    #[default]
+    #[serde(rename = "l2Book")]
+    #[strum(serialize = "l2Book")]
+    L2Book,
+    /// Compact snapshot/update feed used by the web application.
+    #[serde(rename = "l2")]
+    #[strum(serialize = "l2")]
+    L2,
+}
+
 /// Configuration for the Hyperliquid data client.
 ///
 /// The `stale_stream_*` options control the stream health monitor. With recovery
@@ -59,9 +84,14 @@ pub struct HyperliquidDataClientConfig {
     pub base_url_http: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Order book source, fixed for the client lifetime (`l2Book` by default).
+    #[builder(default)]
+    pub book_feed: HyperliquidBookFeed,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
+    ///
+    /// Also bounds each complete instrument request, including time queued behind another refresh.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// WebSocket timeout in seconds.
@@ -369,6 +399,19 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("must not be empty")
+        );
+    }
+
+    #[rstest]
+    fn data_book_feed_defaults_and_round_trips() {
+        let default: HyperliquidDataClientConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.book_feed, HyperliquidBookFeed::L2Book);
+        let compact: HyperliquidDataClientConfig =
+            serde_json::from_str(r#"{"book_feed":"l2"}"#).unwrap();
+        assert_eq!(compact.book_feed, HyperliquidBookFeed::L2);
+        assert_eq!(serde_json::to_value(compact).unwrap()["book_feed"], "l2");
+        assert!(
+            serde_json::from_str::<HyperliquidDataClientConfig>(r#"{"book_feed":"fast"}"#).is_err()
         );
     }
 

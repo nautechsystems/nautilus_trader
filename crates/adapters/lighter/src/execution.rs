@@ -7336,15 +7336,13 @@ fn incomplete_order_reports(
 fn partial_order_reports(error: &anyhow::Error) -> Vec<OrderStatusReport> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.reports.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.reports.clone())
 }
 
 fn withheld_order_instruments(error: &anyhow::Error) -> AHashSet<InstrumentId> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.withheld_instruments.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.withheld_instruments.clone())
 }
 
 fn is_commission_error(error: &anyhow::Error) -> bool {
@@ -7746,11 +7744,7 @@ impl LighterReportClient {
             .extend(self.markets.iter().map(|market| *market));
 
         let inactive_markets: Vec<i64> = match cmd.instrument_id {
-            Some(id) => self
-                .registry
-                .market_index(&id)
-                .map(|m| vec![m])
-                .unwrap_or_default(),
+            Some(id) => self.registry.market_index(&id).map_or_default(|m| vec![m]),
             None => sweep.markets.iter().copied().collect::<Vec<_>>(),
         };
 
@@ -10717,6 +10711,7 @@ mod tests {
     use axum::{
         Router,
         extract::Query,
+        http::HeaderMap,
         response::IntoResponse,
         routing::{get, post},
     };
@@ -25496,7 +25491,8 @@ mod tests {
             .route(
                 "/api/v1/trades",
                 get(
-                    move |axum::extract::Query(query): axum::extract::Query<
+                    move |headers: HeaderMap,
+                          axum::extract::Query(query): axum::extract::Query<
                         BTreeMap<String, String>,
                     >| {
                         let trades = trades.clone();
@@ -25515,7 +25511,13 @@ mod tests {
                             assert_eq!(query.get("sort_dir").map(String::as_str), Some("desc"));
                             assert_eq!(query.get("limit").map(String::as_str), Some("100"));
                             assert!(!query.contains_key("from"));
-                            assert!(query.get("auth").is_some_and(|auth| !auth.is_empty()));
+                            assert!(
+                                headers
+                                    .get("authorization")
+                                    .is_some_and(|auth| !auth.is_empty())
+                            );
+                            assert!(!query.contains_key("authorization"));
+                            assert!(!query.contains_key("auth"));
                             axum::Json(serde_json::json!({"code":200,"trades":trades}))
                         }
                     },

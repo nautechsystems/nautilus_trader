@@ -31,9 +31,10 @@ endpoints and received equal rows. The query example's stop-loss-limit row `OBCM
 describes its order as `@ limit 27500.0` with `price2` `0`, a form neither capture returned for a
 canceled or triggered stop-loss-limit, so no test asserts it.
 
-Three robustness tests change one field of a captured row: a malformed `descr.price`, an empty or
-relative `stopprice`, and an untriggered trailing-stop-limit's offset written unsigned. Those
-variants are not venue responses.
+Five robustness tests change captured rows: a malformed `descr.price`, an empty or relative
+`stopprice`, an untriggered trailing-stop-limit's offset written unsigned, a triggered
+take-profit-limit's side flipped with its trigger and limit exchanged, and the same row flipped
+with both prices at the limit. Those variants are not venue responses.
 
 ## Spot executions frames
 
@@ -47,7 +48,21 @@ retrieved on 2026-10-13 and unchanged apart from whitespace.
 `http_edit_order_futures.json` is the response example from Kraken's
 [Edit order](https://docs.kraken.com/api-reference/order-management/edit-order) documentation,
 retrieved on 2026-11-06 and unchanged apart from whitespace. Tests also replace or remove its
-`editStatus.orderId` and add an `editStatus.order_id`; those variants are not venue responses.
+`editStatus.orderId`, add an `editStatus.order_id`, replace its `editStatus.status` with each
+status that page documents and some it does not, empty its `editStatus.orderEvents`, and set its
+`result` to `error` with or without an `error` code; those variants are not venue responses.
+
+## Futures send responses
+
+`http_send_order_futures_placed.json` and `http_send_order_futures_executed.json` are the `placed`
+and `executed` response examples from Kraken's
+[Send order](https://docs.kraken.com/api-reference/order-management/send-order) documentation,
+retrieved on 2026-11-08 and unchanged apart from whitespace. Tests replace the order's `type`; those
+variants are not venue responses.
+
+The send-status `orderTrigger` test cases reuse `http_send_order_futures_unknown_trigger.json`, a
+synthetic payload, because the Send order documentation has no `orderTrigger` example; they replace
+its `type` and add a `sendStatus.order_id`.
 
 ## Futures split amendment
 

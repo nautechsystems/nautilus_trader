@@ -1968,7 +1968,6 @@ mod tests {
 
             peer.confirm
                 .store(true, std::sync::atomic::Ordering::SeqCst);
-            peer.actions.send(("close".into(), Value::Null)).unwrap();
             ws_client.stop().await.unwrap();
             ws_client.connect().await.unwrap();
             let tasks = TaskGroup::new();
@@ -2686,7 +2685,6 @@ mod tests {
 
             peer.confirm
                 .store(false, std::sync::atomic::Ordering::SeqCst);
-            peer.actions.send(("close".into(), Value::Null)).unwrap();
             ws_client.stop().await.unwrap();
             let connect = ws_client.connect();
             tokio::pin!(connect);

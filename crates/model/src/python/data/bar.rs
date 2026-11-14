@@ -643,7 +643,8 @@ impl Bar {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> Self {
+    #[pyo3(name = "_safe_constructor")]
+    fn py_safe_constructor() -> Self {
         Self::new(
             BarType::from("NULL.NULL-1-TICK-LAST-EXTERNAL"),
             Price::zero(0),

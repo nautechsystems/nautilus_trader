@@ -19,7 +19,10 @@ Exercise typed FinFeed REST bindings through a real Python event loop and HTTP p
 import ast
 import asyncio
 import json
+import os
 import runpy
+import subprocess
+import sys
 import threading
 from collections import deque
 from collections.abc import Iterator
@@ -38,6 +41,7 @@ from nautilus_trader.adapters import finfeed as ff
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import RecordFlag
+from nautilus_trader.model import get_tick_scheme
 from nautilus_trader.persistence import ParquetDataCatalog
 
 
@@ -81,7 +85,7 @@ def _peer(responses, **controls: Any) -> Iterator:
             entered.set()
 
             if controls.get("block"):
-                release.wait(10)
+                release.wait()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -106,10 +110,13 @@ def _peer(responses, **controls: Any) -> Iterator:
         "max_retries": 0,
     }
 
+    if controls.get("kalshi_metadata"):
+        options["kalshi_metadata_url"] = base_url
+
     if controls.get("client_type") is ff.FinFeedDataLoader:
-        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=2, **options)
+        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=10, **options)
     else:
-        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=2, **options)
+        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=10, **options)
         client = ff.FinFeedHttpClient(config)
 
     try:
@@ -1201,6 +1208,94 @@ def test_loader_reuses_metadata_and_replays_catalog(
         "nautilus",
     )
     assert requests[1] == requests[2]
+
+
+@pytest.mark.parametrize("outcome", ["YES", "NO"])
+def test_kalshi_catalog_reloads_in_fresh_process(tmp_path: Path, outcome: str) -> None:
+    """
+    Restore the exact Yes or complementary No grid after the metadata peer stops.
+    """
+    market = json.loads(_response("kalshi-market.json"))
+    market["market_id"] = f"TEST-KALSHI-30_{outcome}"
+    market["outcome_name"] = outcome.title()
+    native_market = json.loads(_response("kalshi-native-market.json"))
+
+    native_market["market"]["price_ranges"] = [
+        {"start": "0.0000", "end": "0.2000", "step": "0.0010"},
+        {"start": "0.2000", "end": "1.0000", "step": "0.0100"},
+    ]
+
+    instrument_id = InstrumentId.from_str(f"TEST-KALSHI-30_{outcome}.FINFEED_KALSHI")
+
+    responses = [
+        (200, json.dumps(market).encode()),
+        (200, json.dumps(native_market).encode()),
+        (200, _response("kalshi-native-event.json")),
+    ]
+
+    with _peer(responses, client_type=ff.FinFeedDataLoader, kalshi_metadata=True) as (
+        loader,
+        requests,
+        *_,
+    ):
+
+        async def collect():
+            return await loader.request_instrument(instrument_id)
+
+        instrument = asyncio.run(collect())
+
+    catalog = ParquetDataCatalog(str(tmp_path))
+    catalog.write_instruments([instrument])
+    expected = json.dumps(
+        {
+            "instrument": instrument.to_dict(),
+            "ticks": [str(tick) for tick in get_tick_scheme(instrument.tick_scheme).ticks],
+        },
+        default=str,
+    )
+    script = """
+import json
+import sys
+from nautilus_trader.model import get_tick_scheme
+from nautilus_trader.persistence import ParquetDataCatalog
+
+payload = json.loads(sys.stdin.read())
+expected = payload["instrument"]
+name = expected["tick_scheme"]
+try:
+    get_tick_scheme(name)
+except ValueError:
+    pass
+else:
+    raise AssertionError("tick scheme was already registered in the fresh process")
+
+[instrument] = ParquetDataCatalog(sys.argv[1]).instruments()
+assert json.loads(json.dumps(instrument.to_dict(), default=str)) == expected
+scheme = get_tick_scheme(name)
+assert scheme.price_precision == 6
+assert [str(tick) for tick in scheme.ticks] == payload["ticks"]
+assert str(instrument.next_bid_price(0.1055)) == ("0.105000" if expected["outcome"] == "Yes" else "0.100000")
+assert str(instrument.next_ask_price(0.1055)) == ("0.106000" if expected["outcome"] == "Yes" else "0.110000")
+print("restored")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        input=expected,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        env={
+            name: os.environ[name]
+            for name in ("HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "PATH", "SYSTEMROOT")
+            if name in os.environ
+        },
+        check=False,
+    )
+
+    assert len(requests) == 3
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "restored"
 
 
 def test_loader_failed_definition_refresh_preserves_metadata() -> None:

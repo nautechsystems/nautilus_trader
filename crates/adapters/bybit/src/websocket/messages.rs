@@ -568,7 +568,7 @@ impl BybitWsOrderResponse {
             .as_ref()
             .and_then(|ext| ext.get("list"))
             .and_then(|list| list.as_array())
-            .map(|arr| {
+            .map_or_default(|arr| {
                 arr.iter()
                     .filter_map(|item| {
                         let code = item.get("code")?.as_i64()?;
@@ -577,7 +577,6 @@ impl BybitWsOrderResponse {
                     })
                     .collect()
             })
-            .unwrap_or_default()
     }
 }
 

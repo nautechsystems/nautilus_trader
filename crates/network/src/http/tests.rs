@@ -27,6 +27,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
+use futures_util::FutureExt;
 use http::Method;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -152,82 +153,190 @@ async fn pooled_requests_consume_complete_bodies() {
 #[case::permanent(308, "PUT", "PUT", true)]
 #[case::put_found(302, "PUT", "PUT", true)]
 #[tokio::test]
-async fn redirect_method_body_and_credentials_match(
+async fn same_origin_redirect_method_body_and_credentials_match(
     #[case] status: u16,
     #[case] initial: &str,
     #[case] redirected: &str,
     #[case] retained: bool,
 ) {
-    {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let target = destination.local_addr().unwrap();
-
-        let peer = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            read_headers(&mut stream).await;
-            let mut body = [0; 7];
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let mut body = [0; 7];
+        stream.read_exact(&mut body).await.unwrap();
+        assert_eq!(&body, b"payload");
+        stream.write_all(format!("HTTP/1.1 {status} Redirect\r\nContent-Length: 0\r\nConnection: close\r\nLocation: /next\r\n\r\n").as_bytes()).await.unwrap();
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        let mut body = Vec::new();
+        if retained {
+            body.resize(7, 0);
             stream.read_exact(&mut body).await.unwrap();
-            assert_eq!(&body, b"payload");
-            stream.write_all(format!("HTTP/1.1 {status} Redirect\r\nContent-Length: 0\r\nLocation: http://{target}/next\r\n\r\n").as_bytes()).await.unwrap();
-            let (mut stream, _) = destination.accept().await.unwrap();
-            let headers = read_headers(&mut stream).await;
-            let mut body = Vec::new();
-            if retained {
-                body.resize(7, 0);
-                stream.read_exact(&mut body).await.unwrap();
-            }
+        }
 
-            stream
-                .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
-                .await
-                .unwrap();
-            (headers, body)
-        });
-
-        let defaults = HashMap::from([
-            ("authorization".into(), "Bearer private-27".into()),
-            ("cookie".into(), "session=private-91".into()),
-            ("content-type".into(), "application/octet-stream".into()),
-        ]);
-        let client = HttpClient::builder()
-            .headers(defaults.clone())
-            .use_system_proxy(false)
-            .timeout_secs(3)
-            .build()
+        stream
+            .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
+            .await
             .unwrap();
-        let response = send(
-            &client,
-            initial.parse().unwrap(),
-            format!("http://{addr}/start#fragment"),
-            Some(b"payload".to_vec()),
-        )
+        (headers, body)
+    });
+
+    let defaults = HashMap::from([
+        ("authorization".into(), "Bearer private-27".into()),
+        ("cookie".into(), "session=private-91".into()),
+        ("x-venue-apikey".into(), "private-53".into()),
+        ("content-type".into(), "application/octet-stream".into()),
+    ]);
+    let client = HttpClient::builder()
+        .headers(defaults)
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(
+        &client,
+        initial.parse().unwrap(),
+        format!("http://{addr}/start#fragment"),
+        Some(b"payload".to_vec()),
+    )
+    .await
+    .unwrap();
+    let (headers, body) = peer.await.unwrap();
+
+    assert_eq!(response.status.as_u16(), 201);
+    assert_eq!(response.body, Bytes::from_static(b"ok"));
+    assert_eq!(response.headers, HashMap::new());
+    assert!(
+        headers.starts_with(&format!("{redirected} /next HTTP/1.1\r\n")),
+        "{headers}"
+    );
+    assert_eq!(
+        header_value(&headers, "authorization"),
+        Some("Bearer private-27")
+    );
+    assert_eq!(header_value(&headers, "cookie"), Some("session=private-91"));
+    assert_eq!(header_value(&headers, "x-venue-apikey"), Some("private-53"));
+    assert_eq!(
+        header_value(&headers, "content-type"),
+        retained.then_some("application/octet-stream")
+    );
+    assert_eq!(
+        body,
+        if retained {
+            b"payload".to_vec()
+        } else {
+            vec![]
+        }
+    );
+}
+
+#[rstest]
+#[case(301)]
+#[case(302)]
+#[case(303)]
+#[case(307)]
+#[case(308)]
+#[tokio::test]
+async fn cross_origin_redirect_with_body_fails_without_contacting_destination(#[case] status: u16) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = destination.local_addr().unwrap();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let mut body = [0; 7];
+        stream.read_exact(&mut body).await.unwrap();
+        stream.write_all(format!("HTTP/1.1 {status} Redirect\r\nContent-Length: 0\r\nLocation: http://{target}/next\r\n\r\n").as_bytes()).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let result = send(
+        &client,
+        Method::POST,
+        format!("http://{addr}/start"),
+        Some(b"payload".to_vec()),
+    )
+    .await;
+    peer.await.unwrap();
+    // The request has already failed, so a connection to the destination would be queued
+    let contacted = destination.accept().now_or_never().is_some();
+
+    assert!(
+        matches!(result, Err(HttpClientError::Error(ref message)) if message == "cross-origin redirect of a request with a body"),
+        "{result:?}"
+    );
+    assert!(!contacted);
+}
+
+#[tokio::test]
+async fn cross_origin_redirect_retains_only_allowed_headers() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = destination.local_addr().unwrap();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream.write_all(format!("HTTP/1.1 302 Found\r\nContent-Length: 0\r\nLocation: http://{target}/next\r\n\r\n").as_bytes()).await.unwrap();
+        // A later same-origin hop must not restore what the cross-origin hop removed
+        let (mut stream, _) = destination.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream.write_all(b"HTTP/1.1 302 Found\r\nContent-Length: 0\r\nConnection: close\r\nLocation: /final\r\n\r\n").await.unwrap();
+        let (mut stream, _) = destination.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+            .await
+            .unwrap();
+        headers
+    });
+
+    let defaults = HashMap::from([
+        ("authorization".into(), "Bearer private-27".into()),
+        ("cookie".into(), "session=private-91".into()),
+        ("x-venue-apikey".into(), "private-53".into()),
+        ("x-venue-signature".into(), "private-67".into()),
+        ("user-agent".into(), "client-41".into()),
+    ]);
+    let client = HttpClient::builder()
+        .headers(defaults)
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(&client, Method::GET, format!("http://{addr}/start"), None)
         .await
         .unwrap();
-        let (headers, body) = peer.await.unwrap();
-        assert_eq!(response.status.as_u16(), 201);
-        assert_eq!(response.body, Bytes::from_static(b"ok"));
-        assert_eq!(response.headers, HashMap::new());
-        assert!(
-            headers.starts_with(&format!("{redirected} /next HTTP/1.1\r\n")),
-            "{headers}"
-        );
-        assert!(!headers.contains("private-"), "{headers}");
-        assert!(!headers.contains("\r\nreferer:"), "{headers}");
-        assert_eq!(
-            headers.contains("content-type: application/octet-stream"),
-            retained
-        );
-        assert_eq!(
-            body,
-            if retained {
-                b"payload".to_vec()
-            } else {
-                vec![]
-            }
-        );
-    }
+    let headers = peer.await.unwrap();
+    let mut sent: Vec<_> = headers
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_string()))
+        .collect();
+    sent.sort();
+
+    assert_eq!(response.status.as_u16(), 200);
+    assert!(headers.starts_with("GET /final HTTP/1.1\r\n"), "{headers}");
+    assert_eq!(
+        sent,
+        vec![
+            ("accept".to_string(), "*/*".to_string()),
+            ("accept-encoding".to_string(), "gzip".to_string()),
+            ("host".to_string(), target.to_string()),
+            ("referer".to_string(), format!("http://{target}/next")),
+            ("user-agent".to_string(), "client-41".to_string()),
+        ]
+    );
 }
 
 #[rstest]
@@ -919,14 +1028,7 @@ fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
                         .await
                         .unwrap();
                     drop(stream);
-
-                    let (mut stream, _) = listener.accept().await.unwrap();
-                    let final_hop = read_headers(&mut stream).await;
-                    stream
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\naccepted")
-                        .await
-                        .unwrap();
-                    [initial, connect, origin, final_hop]
+                    [initial, connect, origin]
                 });
 
                 let client = HttpClient::builder()
@@ -939,7 +1041,7 @@ fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
                     ("authorization".into(), "Bearer origin-19".into()),
                     ("cookie".into(), "session=origin-23".into()),
                 ]);
-                let response = client
+                let result = client
                     .request(
                         Method::GET,
                         "http://localhost:1/start".into(),
@@ -949,8 +1051,7 @@ fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
                         None,
                         None,
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 let requests = peer.await.unwrap();
                 let expected_auth = format!("Basic {}", BASE64.encode("user:secret"));
 
@@ -960,7 +1061,6 @@ fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
                         "GET http://localhost:1/start HTTP/1.1\r\n",
                         "CONNECT localhost:443 HTTP/1.1\r\n",
                         "GET /secure HTTP/1.1\r\n",
-                        "GET http://localhost:2/final HTTP/1.1\r\n",
                     ])
                     .enumerate()
                 {
@@ -976,9 +1076,11 @@ fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
                     assert_eq!(headers.get("cookie").copied(), (index == 0).then_some("session=origin-23"), "{request}");
                 }
 
-                assert_eq!(response.status.as_u16(), 200);
-                assert_eq!(response.headers, HashMap::new());
-                assert_eq!(response.body, Bytes::from_static(b"accepted"));
+                // The origin answers over TLS with a redirect to plaintext HTTP
+                assert!(
+                    matches!(result, Err(HttpClientError::Error(ref message)) if message.starts_with("redirect downgrades HTTPS to HTTP")),
+                    "{result:?}"
+                );
             })
             .await
             .unwrap();
@@ -1292,8 +1394,7 @@ async fn buffered_request_respects_caller_encoding_and_skips_decoding(
     });
 
     let defaults = default_encoding
-        .map(|value| HashMap::from([("Accept-Encoding".into(), value.into())]))
-        .unwrap_or_default();
+        .map_or_default(|value| HashMap::from([("Accept-Encoding".into(), value.into())]));
     let headers =
         override_encoding.then(|| HashMap::from([("AcCePt-EnCoDiNg".into(), "identity".into())]));
     let client = HttpClient::builder()

@@ -91,6 +91,7 @@ def test_config_defaults(values: dict) -> None:
         "instruments": [],
         "has_api_key": False,
         "has_proxy_url": False,
+        "kalshi_metadata_url": None,
     }
 
     assert {name: getattr(config, name) for name in expected} == expected
@@ -117,6 +118,7 @@ def test_config_distinct_values_and_secret_redaction() -> None:
         "poll_interval_ms": 137,
         "poll_limit": 23,
         "connect_timeout_secs": 43,
+        "kalshi_metadata_url": "http://localhost:8125/trade-api/v2",
     }
 
     config = FinFeedDataClientConfig(
@@ -195,6 +197,7 @@ def test_polling_capacity_reaches_client_construction(limit: int) -> None:
         ({"retry_backoff_factor": 0.0}, "invalid retry backoff"),
         ({"base_url_http": "http://example.com/"}, "base URL must be HTTPS"),
         ({"proxy_url": "bad proxy"}, "invalid proxy URL"),
+        ({"kalshi_metadata_url": "bad endpoint"}, "invalid public Kalshi metadata"),
     ],
 )
 def test_invalid_values_fail_at_client_construction(values: dict, message: str) -> None:

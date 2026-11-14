@@ -134,7 +134,7 @@ pub struct KalshiExecutionClient {
 }
 
 impl KalshiExecutionClient {
-    /// Creates a disconnected execution client using primary-account credentials.
+    /// Creates a disconnected execution client for the configured subaccount and shard.
     ///
     /// # Errors
     ///
@@ -378,6 +378,7 @@ impl KalshiExecutionClient {
             ticker: Some(value.ticker.clone()),
             order_id: Some(value.order_id.clone()),
             exchange_index: self.config.exchange_index,
+            subaccount: self.config.subaccount,
             ..Default::default()
         };
 
@@ -1134,7 +1135,7 @@ impl ExecutionClient for KalshiExecutionClient {
 
         let ts_init = self.clock.get_time_ns();
         let records =
-            collect_orders(&self.http, self.config.exchange_index, None, max_pages).await?;
+            collect_orders(&self.http, &self.config.account_query(), None, max_pages).await?;
 
         let mut matches = Vec::new();
 
@@ -1191,7 +1192,7 @@ impl ExecutionClient for KalshiExecutionClient {
         let ts_init = self.clock.get_time_ns();
         let records = collect_orders(
             &self.http,
-            self.config.exchange_index,
+            &self.config.account_query(),
             cmd.instrument_id.as_ref().map(|id| id.symbol.as_str()),
             max_pages,
         )
@@ -1247,12 +1248,13 @@ impl ExecutionClient for KalshiExecutionClient {
         let cutoff = self.http.get_historical_cutoff().await?;
         let ticker = cmd.instrument_id.as_ref().map(|id| id.symbol.as_str());
         let orders =
-            collect_orders(&self.http, self.config.exchange_index, ticker, max_pages).await?;
+            collect_orders(&self.http, &self.config.account_query(), ticker, max_pages).await?;
 
         let query = FillsQuery {
             ticker: ticker.map(String::from),
             order_id: cmd.venue_order_id.map(|id| id.to_string()),
             exchange_index: self.config.exchange_index,
+            subaccount: self.config.subaccount,
             ..Default::default()
         };
 
@@ -1308,7 +1310,7 @@ impl ExecutionClient for KalshiExecutionClient {
         let ts_init = self.clock.get_time_ns();
         let positions = collect_positions_current(
             &self.http,
-            self.config.exchange_index,
+            &self.config.account_query(),
             cmd.instrument_id.as_ref().map(|id| id.symbol.as_str()),
             max_pages,
         )
@@ -1347,7 +1349,7 @@ impl ExecutionClient for KalshiExecutionClient {
         let max_pages = 100;
         let snapshot = collect_snapshot_at(
             &self.http,
-            self.config.exchange_index,
+            &self.config.account_query(),
             start,
             max_pages,
             requested_at,
@@ -1590,8 +1592,12 @@ impl KalshiExecutionClient {
             state.session.clone()
         };
 
-        let request = match submit::request(&order, cmd.params.as_ref(), self.config.exchange_index)
-        {
+        let request = match submit::request(
+            &order,
+            cmd.params.as_ref(),
+            self.config.exchange_index,
+            self.config.subaccount,
+        ) {
             Ok(request) => request,
             Err(reason) => {
                 self.private
@@ -1909,6 +1915,7 @@ impl KalshiExecutionClient {
             order,
             definition,
             shard: self.config.exchange_index,
+            subaccount: self.config.subaccount,
             http: self.http.clone(),
             state: Arc::clone(&self.private),
             emitter: self.emitter.clone(),

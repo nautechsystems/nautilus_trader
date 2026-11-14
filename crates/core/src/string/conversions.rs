@@ -224,7 +224,7 @@ fn title_case_unicode(s: &str) -> String {
 }
 
 fn push_titlecase(out: &mut String, ch: char) {
-    // Stable Rust does not expose `char::to_titlecase`. These Unicode 17 mappings from
+    // Stable Rust does not expose `char::to_titlecase`. These Unicode 18 mappings from
     // UnicodeData.txt and SpecialCasing.txt cannot be reproduced by keeping the first scalar of
     // the uppercase mapping and lowercasing the rest.
     match ch {
@@ -318,6 +318,10 @@ mod tests {
     #[case("SimpleHTTPServer", "simple_http_server")]
     #[case("version2Release", "version2_release")]
     #[case("ALLCAPS", "allcaps")]
+    #[case("__Bar__", "bar")]
+    #[case("éXMLParser", "é_xml_parser")]
+    #[case("é123DEf", "é123_d_ef")]
+    #[case("\u{4E2D}XMLParser", "\u{4E2D}xml_parser")]
     #[case("é--x", "é_x")]
     #[case("nautilus_model::data::bar::Bar", "nautilus_model_data_bar_bar")] // nautilus-import-ok
     fn test_to_snake_case(#[case] input: &str, #[case] expected: &str) {
@@ -365,6 +369,6 @@ mod tests {
 
     #[rstest]
     fn test_title_case_unicode_version() {
-        assert_eq!(char::UNICODE_VERSION, (17, 0, 0));
+        assert_eq!(char::UNICODE_VERSION, (18, 0, 0));
     }
 }

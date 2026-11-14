@@ -23,8 +23,8 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
-        YieldCurve,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, InstrumentClose, InstrumentStatus,
+        QuoteTick, TradeTick, YieldCurve,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -257,6 +257,15 @@ impl PyCache {
             .map_err(to_pyvalue_err)
     }
 
+    /// Adds custom data as the newest entry in its bounded history.
+    ///
+    /// Each data type topic has its own history, limited by `CacheConfig::data_capacity`.
+    /// This operation updates memory only.
+    #[pyo3(name = "add_custom_data")]
+    fn py_add_custom_data(&mut self, data: CustomData) {
+        self.0.borrow_mut().add_custom_data(data);
+    }
+
     #[pyo3(name = "add_yield_curve")]
     fn py_add_yield_curve(&mut self, yield_curve: YieldCurve) -> PyResult<()> {
         self.0
@@ -322,6 +331,32 @@ impl PyCache {
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
         self.0.borrow().bars(&bar_type)
+    }
+
+    /// Returns the most recently added custom data for the `data_type`, or `None` if absent.
+    #[pyo3(name = "custom_data")]
+    fn py_custom_data(&self, data_type: &DataType) -> Option<CustomData> {
+        self.0.borrow().custom_data(data_type).cloned()
+    }
+
+    /// Returns custom data at `index` for the `data_type`.
+    ///
+    /// Index 0 is the most recently added item. Entries are not sorted by timestamp.
+    /// Returns `None` when no item exists at the index.
+    #[pyo3(name = "custom_data_at_index")]
+    fn py_custom_data_at_index(&self, data_type: &DataType, index: usize) -> Option<CustomData> {
+        self.0
+            .borrow()
+            .custom_data_at_index(data_type, index)
+            .cloned()
+    }
+
+    /// Returns custom data for the `data_type` in reverse insertion order.
+    ///
+    /// Entries are not sorted by timestamp. The history is empty when no data is cached.
+    #[pyo3(name = "custom_data_history")]
+    fn py_custom_data_history(&self, data_type: &DataType) -> Vec<CustomData> {
+        self.0.borrow().custom_data_history(data_type)
     }
 
     #[pyo3(name = "bar_types", signature = (aggregation_source, instrument_id=None, price_type=None))]
@@ -1678,7 +1713,7 @@ mod tests {
     fn test_py_cache_constructor_returns_value_error_for_invalid_config() {
         Python::initialize();
         let config = CacheConfig {
-            tick_capacity: 0,
+            data_capacity: 0,
             ..Default::default()
         };
 
@@ -1737,7 +1772,7 @@ impl CacheConfig {
         use_instance_id=None,
         flush_on_start=None,
         drop_instruments_on_reset=None,
-        tick_capacity=None,
+        data_capacity=None,
         bar_capacity=None,
         save_market_data=None,
         persist_account_events=None,
@@ -1751,7 +1786,7 @@ impl CacheConfig {
         use_instance_id: Option<bool>,
         flush_on_start: Option<bool>,
         drop_instruments_on_reset: Option<bool>,
-        tick_capacity: Option<usize>,
+        data_capacity: Option<usize>,
         bar_capacity: Option<usize>,
         save_market_data: Option<bool>,
         persist_account_events: Option<bool>,
@@ -1765,7 +1800,7 @@ impl CacheConfig {
             use_instance_id: use_instance_id.unwrap_or(false),
             flush_on_start: flush_on_start.unwrap_or(false),
             drop_instruments_on_reset: drop_instruments_on_reset.unwrap_or(true),
-            tick_capacity: tick_capacity.unwrap_or(10_000),
+            data_capacity: data_capacity.unwrap_or(10_000),
             bar_capacity: bar_capacity.unwrap_or(10_000),
             persist_account_events: persist_account_events.unwrap_or(true),
             save_market_data: save_market_data.unwrap_or(false),
@@ -1823,8 +1858,8 @@ impl CacheConfig {
     }
 
     #[getter]
-    fn tick_capacity(&self) -> usize {
-        self.tick_capacity
+    fn data_capacity(&self) -> usize {
+        self.data_capacity
     }
 
     #[getter]

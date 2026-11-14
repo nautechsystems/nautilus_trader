@@ -117,8 +117,8 @@ place orders during this validation. A **dark book** is a subscribed book that n
   is an empty snapshot.
 - An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
 - Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic within a
-  snapshot episode. OKX `seqId` can reset. Polymarket, Hyperliquid, Betfair, and AX Exchange books carry no
-  venue sequence. Thus, the checkers for all these venues skip this rule and rely on the oracle.
+  snapshot episode. OKX `seqId` can reset. Polymarket, Hyperliquid, Betfair, AX Exchange, and Coinbase books
+  carry no venue sequence. Thus, the checkers for all these venues skip this rule and rely on the oracle.
 - A book emits nothing after its unsubscribe settles.
 
 ### Validation levels
@@ -168,9 +168,9 @@ subscribe). Message count alone does not justify a probe.
 | Serial repetition of the race scenario                                      | Scheduler sensitivity                                                | 5+ consecutive live passes. 100x repetition for deterministic harnesses                 | Flakes that pass once and fail rarely                                     |
 
 Route each venue through a network location that it serves. Polymarket restricts access by region. OKX,
-Lighter, Binance, Hyperliquid, and AX Exchange validate direct. Confirm the route delivers venue data before a
-long run: sockets can connect while the venue stays silent. Branches the venue never produces live belong in a
-captured-wire deterministic harness, not in the live run.
+Lighter, Binance, Hyperliquid, AX Exchange, and Coinbase validate direct. Confirm the route delivers venue
+data before a long run: sockets can connect while the venue stays silent. Branches the venue never produces
+live belong in a captured-wire deterministic harness, not in the live run.
 
 ### Oracles
 
@@ -277,7 +277,7 @@ with `cargo nextest run -p nautilus-live --features test-support --test book`.
 
 **Harness documentation**: Add a `Live recovery validation` heading to the adapter's integration guide.
 Include its checks, injected faults, run command, scenarios, flags, and required endpoints. OKX, Binance,
-Kalshi, Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnesses.
+Kalshi, Lighter, Polymarket, Hyperliquid, Bybit, Betfair, AX Exchange, and Coinbase provide harnesses.
 
 ### In-band verification
 

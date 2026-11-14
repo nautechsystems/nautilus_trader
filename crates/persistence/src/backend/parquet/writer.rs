@@ -1683,8 +1683,7 @@ mod tests {
         let mut rows = Vec::new();
         for batch in batches {
             rows.extend(
-                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch.clone())
-                    .unwrap(),
+                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch).unwrap(),
             );
         }
 

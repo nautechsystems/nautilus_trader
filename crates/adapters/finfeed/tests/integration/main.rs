@@ -23,6 +23,7 @@ mod delivery;
 mod dst;
 mod exchange_ohlcv;
 mod flat_file_ohlcv;
+mod kalshi;
 mod lifecycle;
 mod live;
 mod node;

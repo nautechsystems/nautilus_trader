@@ -136,7 +136,8 @@ impl OrderBook {
     }
 
     #[staticmethod]
-    fn _safe_constructor(instrument_id: InstrumentId, book_type: &str) -> PyResult<Self> {
+    #[pyo3(name = "_safe_constructor")]
+    fn py_safe_constructor(instrument_id: InstrumentId, book_type: &str) -> PyResult<Self> {
         let book_type = BookType::from_str(book_type).map_err(to_pyvalue_err)?;
         Ok(Self::new(instrument_id, book_type))
     }

@@ -388,15 +388,10 @@ impl Entry {
             }
         }
 
-        if source_time
+        Ok(!(source_time
             .zip(self.version)
             .is_some_and(|(incoming, previous)| incoming < previous)
-            || serial < self.serial
-        {
-            return Ok(false);
-        }
-
-        Ok(true)
+            || serial < self.serial))
     }
 
     fn accepts_revisions(&self, instrument: &BinaryOption) -> anyhow::Result<bool> {

@@ -91,6 +91,7 @@ use super::{
         BybitUpdateMasterApiParams, BybitUpdateSubApiParams, BybitWalletBalanceParams,
         BybitWithdrawParams, BybitWithdrawalRecordsParams,
     },
+    reconciliation::{ReportRead, instrument_in_scope, millis_in_window},
 };
 use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
@@ -98,8 +99,8 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitExecType,
         BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderSmpType,
-        BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType, BybitRepayStatus,
-        BybitTpSlMode,
+        BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType,
+        BybitRepayStatus, BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -4327,14 +4328,14 @@ impl BybitHttpClient {
         parse_account_state(wallet_balance, account_id, ts_init)
     }
 
-    /// Request multiple order status reports.
-    ///
-    /// Orders for instruments not currently loaded in cache will be skipped.
+    /// Requests multiple order status reports.
     ///
     /// When `open_only` is true the realtime endpoint is queried for currently
     /// open orders and again for recently closed orders, so terminal reports
-    /// are included. The closed pass fetches the most recent page only and is
-    /// not constrained by `start` or `end`.
+    /// are included. The closed pass fetches the most recent page only.
+    ///
+    /// Terminal orders are filtered by `updatedTime` against `start` and `end`.
+    /// Open orders are returned regardless of age.
     ///
     /// # Errors
     ///
@@ -4342,6 +4343,7 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    /// - A returned order has no symbol, has no cached instrument, or cannot be parsed.
     #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
@@ -4353,6 +4355,46 @@ impl BybitHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_scoped(
+            account_id,
+            product_type,
+            instrument_id,
+            open_only,
+            start,
+            end,
+            limit,
+            None,
+            (
+                start.map(|ts| ts.as_millisecond()),
+                end.map(|ts| ts.as_millisecond()),
+            ),
+        )
+        .await?
+        .into_reports()
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn request_order_status_reports_scoped(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+        load_ids: Option<&[InstrumentId]>,
+        history_window: (Option<i64>, Option<i64>),
+    ) -> anyhow::Result<ReportRead<OrderStatusReport>> {
+        let (history_start, history_end) = history_window;
+
+        if let Some(instrument_id) = instrument_id {
+            anyhow::ensure!(
+                instrument_in_scope(instrument_id, load_ids),
+                "requested instrument {instrument_id} is outside reconciliation scope"
+            );
+        }
+
         // Extract symbol parameter from instrument_id if provided
         let symbol_param = if let Some(id) = instrument_id.as_ref() {
             let symbol_str = id.symbol.as_str();
@@ -4655,50 +4697,52 @@ impl BybitHttpClient {
         }
 
         let ts_init = self.generate_ts_init();
-
-        let mut reports = Vec::new();
+        let mut read = ReportRead::new();
 
         for order in all_collected_orders {
-            if let Some(ref instrument_id) = instrument_id {
-                let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+            anyhow::ensure!(!order.symbol.is_empty(), "order symbol is empty");
+            let symbol = Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type));
+            let id = InstrumentId::new(symbol, *BYBIT_VENUE);
 
-                if let Ok(report) =
-                    parse_order_status_report(&order, &instrument, account_id, ts_init)
-                {
-                    reports.push(report);
-                }
-            } else {
-                // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
-                // Note: instruments are stored in cache by symbol only (without venue)
-                if !order.symbol.is_empty() {
-                    let symbol_with_product =
-                        Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type));
-
-                    let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        log::debug!(
-                            "Skipping order report for instrument not in cache: symbol={}, full_symbol={}",
-                            order.symbol,
-                            symbol_with_product
-                        );
-                        continue;
-                    };
-
-                    match parse_order_status_report(&order, &instrument, account_id, ts_init) {
-                        Ok(report) => reports.push(report),
-                        Err(e) => {
-                            log::error!("Failed to parse order status report: {e}");
-                        }
-                    }
-                }
+            if instrument_id.is_some_and(|requested| requested != id)
+                || !instrument_in_scope(id, load_ids)
+            {
+                log::debug!("Skipping out-of-scope order report for {id}");
+                continue;
             }
+
+            let historical = matches!(
+                order.order_status,
+                BybitOrderStatus::Rejected
+                    | BybitOrderStatus::PartiallyFilledCanceled
+                    | BybitOrderStatus::Filled
+                    | BybitOrderStatus::Canceled
+                    | BybitOrderStatus::Deactivated
+            );
+
+            if historical && !millis_in_window(&order.updated_time, history_start, history_end)? {
+                continue;
+            }
+
+            let instrument = match self.instrument_from_cache(&symbol) {
+                Ok(instrument) => instrument,
+                Err(_) if historical => {
+                    read.record_historical_miss(id);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            let report = parse_order_status_report(&order, &instrument, account_id, ts_init)?;
+            read.reports.push(report);
         }
 
-        Ok(reports)
+        Ok(read)
     }
 
     /// Fetches execution history (fills) for the account and returns a list of [`FillReport`]s.
     ///
-    /// Funding executions and executions for instruments not currently loaded in cache are skipped.
+    /// Funding executions are skipped.
     ///
     /// # Errors
     ///
@@ -4706,7 +4750,7 @@ impl BybitHttpClient {
     /// - The request fails.
     /// - The instrument ID is invalid.
     /// - Pagination cannot advance.
-    /// - A fill for a cached instrument cannot be parsed.
+    /// - A returned fill has no symbol, has no cached instrument, or cannot be parsed.
     ///
     /// # References
     ///
@@ -4720,6 +4764,37 @@ impl BybitHttpClient {
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_scoped(
+            account_id,
+            product_type,
+            instrument_id,
+            start,
+            end,
+            limit,
+            None,
+        )
+        .await?
+        .into_reports()
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn request_fill_reports_scoped(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+        load_ids: Option<&[InstrumentId]>,
+    ) -> anyhow::Result<ReportRead<FillReport>> {
+        if let Some(instrument_id) = instrument_id {
+            anyhow::ensure!(
+                instrument_in_scope(instrument_id, load_ids),
+                "requested instrument {instrument_id} is outside reconciliation scope"
+            );
+        }
+
         // Build query parameters
         let symbol = if let Some(id) = instrument_id {
             let bybit_symbol = BybitSymbol::new(id.symbol.as_str())?;
@@ -4732,15 +4807,12 @@ impl BybitHttpClient {
         let mut all_executions = Vec::new();
         let mut cursor: Option<String> = None;
         let mut cursor_walk = CursorWalk::default();
-        let mut total_executions = 0;
 
         loop {
             // Calculate how many more executions we can request
-            let remaining = if let Some(limit) = limit {
-                (limit as usize).saturating_sub(total_executions)
-            } else {
-                usize::MAX
-            };
+            let remaining = limit.map_or(usize::MAX, |limit| {
+                (limit as usize).saturating_sub(all_executions.len())
+            });
 
             // If we've reached the limit, stop
             if remaining == 0 {
@@ -4776,7 +4848,6 @@ impl BybitHttpClient {
                 }
 
                 all_executions.push(execution);
-                total_executions += 1;
             }
 
             cursor = cursor_walk.advance(BYBIT_EXECUTION_LIST, response.result.next_page_cursor)?;
@@ -4786,34 +4857,41 @@ impl BybitHttpClient {
         }
 
         let ts_init = self.generate_ts_init();
-        let mut reports = Vec::new();
+        let mut read = ReportRead::new();
 
         for execution in all_executions {
-            // Get instrument for this execution
-            // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
-            let symbol_with_product =
+            anyhow::ensure!(!execution.symbol.is_empty(), "execution symbol is empty");
+            let symbol =
                 Symbol::from_ustr_unchecked(make_bybit_symbol(execution.symbol, product_type));
+            let id = InstrumentId::new(symbol, *BYBIT_VENUE);
 
-            let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                log::debug!(
-                    "Skipping fill report for instrument not in cache: symbol={}, full_symbol={}",
-                    execution.symbol,
-                    symbol_with_product
-                );
+            if instrument_id.is_some_and(|requested| requested != id)
+                || !instrument_in_scope(id, load_ids)
+            {
+                log::debug!("Skipping out-of-scope fill report for {id}");
+                continue;
+            }
+
+            if !millis_in_window(&execution.exec_time, start, end)? {
+                continue;
+            }
+
+            let Ok(instrument) = self.instrument_from_cache(&symbol) else {
+                read.record_historical_miss(id);
                 continue;
             };
 
             let report = parse_fill_report(&execution, account_id, &instrument, ts_init)?;
-            reports.push(report);
+            read.reports.push(report);
         }
 
-        Ok(reports)
+        Ok(read)
     }
 
     /// Fetches position information for the account and returns a list of [`PositionStatusReport`]s.
     ///
     /// Derivative position reports fail as a set if any row cannot be resolved or parsed.
-    /// When SPOT position reports are enabled, an uncached instrument yields no report.
+    /// When SPOT position reports are enabled, the requested instrument must be cached.
     ///
     /// # Errors
     ///
@@ -4822,7 +4900,7 @@ impl BybitHttpClient {
     /// - The instrument ID is invalid.
     /// - Pagination cannot advance.
     /// - A derivative position row has no symbol.
-    /// - A derivative position's instrument is not cached.
+    /// - A derivative position's instrument, or the requested SPOT instrument, is not cached.
     /// - A derivative position row cannot be parsed.
     /// - SPOT position reports are enabled and no instrument is specified, because wallet balances
     ///   carry no pair identity.
@@ -4836,6 +4914,24 @@ impl BybitHttpClient {
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        self.request_position_status_reports_scoped(account_id, product_type, instrument_id, None)
+            .await
+    }
+
+    pub(crate) async fn request_position_status_reports_scoped(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        load_ids: Option<&[InstrumentId]>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        if let Some(instrument_id) = instrument_id {
+            anyhow::ensure!(
+                instrument_in_scope(instrument_id, load_ids),
+                "requested instrument {instrument_id} is outside reconciliation scope"
+            );
+        }
+
         // Handle SPOT position reports via wallet balances if flag is enabled
         if product_type == BybitProductType::Spot {
             if self.use_spot_position_reports.load(Ordering::Relaxed) {
@@ -4844,6 +4940,8 @@ impl BybitHttpClient {
                         "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
                     );
                 };
+
+                self.instrument_from_cache(&instrument_id.symbol)?;
                 return self
                     .generate_spot_position_reports_from_wallet(account_id, instrument_id)
                     .await;
@@ -4886,7 +4984,7 @@ impl BybitHttpClient {
                 cursor: None,
             };
 
-            self.request_position_pages(account_id, params, ts_init, &mut reports)
+            self.request_position_pages(account_id, params, ts_init, load_ids, &mut reports)
                 .await?;
         }
 
@@ -4898,6 +4996,7 @@ impl BybitHttpClient {
         account_id: AccountId,
         mut params: BybitPositionListParams,
         ts_init: UnixNanos,
+        load_ids: Option<&[InstrumentId]>,
         reports: &mut Vec<PositionStatusReport>,
     ) -> anyhow::Result<()> {
         let mut cursor_walk = CursorWalk::default();
@@ -4920,6 +5019,18 @@ impl BybitHttpClient {
                     position.symbol.as_str(),
                     params.category.suffix()
                 ));
+                let id = InstrumentId::new(symbol, *BYBIT_VENUE);
+
+                if params
+                    .symbol
+                    .as_ref()
+                    .is_some_and(|requested| requested != position.symbol.as_str())
+                    || !instrument_in_scope(id, load_ids)
+                {
+                    log::debug!("Skipping out-of-scope position report for {id}");
+                    continue;
+                }
+
                 let instrument = self.instrument_from_cache(&symbol)?;
                 let report =
                     parse_position_status_report(&position, account_id, &instrument, ts_init)

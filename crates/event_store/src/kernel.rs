@@ -754,11 +754,8 @@ impl Drop for EventStoreLifecycle {
         if self.session.is_none() {
             return;
         }
-        let ts = self
-            .clock
-            .try_borrow()
-            .map(|c| c.timestamp_ns())
-            .unwrap_or_default();
+
+        let ts = self.clock.try_borrow().map_or_default(|c| c.timestamp_ns());
         self.seal(ts);
     }
 }

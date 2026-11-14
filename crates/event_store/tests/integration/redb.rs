@@ -1526,8 +1526,8 @@ fn observed_cache_state(
 ) -> ObservedCacheState {
     let account_events = cache
         .account_owned(account_id)
-        .map(|account| account.events())
-        .unwrap_or_default();
+        .map_or_default(|account| account.events());
+
     let orders = client_order_ids
         .iter()
         .filter_map(|client_order_id| {

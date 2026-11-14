@@ -334,7 +334,7 @@ pub(crate) fn validate_regular_order_params(
 /// - OKX implements IOC and FOK as order types rather than separate time-in-force parameters.
 /// - FOK is only supported with Limit orders (Market + FOK is not supported).
 /// - IOC with Market orders uses `OptimalLimitIoc`, with Limit orders uses Ioc.
-/// - GTD is supported via `expire_time` parameter.
+/// - GTD is not supported: OKX `expTime` is a request deadline, not an order expiry.
 pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
     TimeInForce::Gtc, // Good Till Cancel (default)
     TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc or OptimalLimitIoc)

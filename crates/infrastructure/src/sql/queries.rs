@@ -1945,6 +1945,11 @@ impl DatabaseQueries {
             .get("margins")
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Serialized account event has no margins"))?;
+        let info = account_event
+            .info
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
 
         sqlx::query(
             r#"
@@ -1970,15 +1975,15 @@ impl DatabaseQueries {
 
         let inserted = sqlx::query(r#"
             INSERT INTO "account_event" (
-                id, kind, account_id, trader_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
+                id, kind, account_id, trader_id, base_currency, balances, margins, info, is_reported, ts_event, ts_init, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $10, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $1, $2, $3, $10, $4, $5, $6, $11::json, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
                 kind = $2, account_id = $3,
-                base_currency = $4, balances = $5, margins = $6, is_reported = $7,
+                base_currency = $4, balances = $5, margins = $6, info = $11::json, is_reported = $7,
                 ts_event = $8, ts_init = $9, updated_at = CURRENT_TIMESTAMP
             WHERE "account_event".trader_id = $10
         "#)
@@ -1992,6 +1997,7 @@ impl DatabaseQueries {
             .bind(account_event.ts_event.to_string())
             .bind(account_event.ts_init.to_string())
             .bind(trader_id.to_string())
+            .bind(info)
             .execute(&mut *transaction)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to insert into account_event table: {e}"))?;

@@ -148,12 +148,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         let params = value
                             .get("params")
                             .and_then(|v| v.as_array())
-                            .map(|arr| {
+                            .map_or_default(|arr| {
                                 arr.iter()
                                     .filter_map(|v| v.as_str().map(String::from))
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
 
                         {
                             let mut fail_list = state.fail_next_subscriptions.lock().await;
@@ -200,12 +199,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         let params = value
                             .get("params")
                             .and_then(|v| v.as_array())
-                            .map(|arr| {
+                            .map_or_default(|arr| {
                                 arr.iter()
                                     .filter_map(|v| v.as_str().map(String::from))
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
 
                         let mut streams = state.subscribed_streams.lock().await;
                         streams.retain(|s| !params.contains(s));

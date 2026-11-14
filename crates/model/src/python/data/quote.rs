@@ -138,7 +138,8 @@ impl QuoteTick {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
+    #[pyo3(name = "_safe_constructor")]
+    fn py_safe_constructor() -> PyResult<Self> {
         Self::new_checked(
             InstrumentId::from("NULL.NULL"),
             Price::zero(0),

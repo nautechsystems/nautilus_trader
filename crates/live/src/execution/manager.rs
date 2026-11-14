@@ -67,7 +67,7 @@ use nautilus_execution::{
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        position_prices_match, process_mass_status_for_reconciliation,
+        position_prices_match, preserve_order_amendment, process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission, should_reconciliation_update,
     },
@@ -109,10 +109,11 @@ use super::{
         FillKey, InflightCheck, PositionQuantityComparison, PositionReconciliationState,
         PositionReportShape, ReconciliationFillQueue, RetainedFillState,
         create_orphan_fill_order_report, create_position_reconciliation_report,
-        create_reconciliation_canceled, distinct_position_reports, has_active_inferred_fill,
-        is_exact_order_match, order_report_has_missing_fills, position_avg_px,
-        position_qty_aggregates, preserve_order_amendment, resolve_inferred_fill_commission,
-        responsible_client_ids, should_project_fill, sort_reconciliation_events,
+        create_reconciliation_canceled, create_reconciliation_command_rejections,
+        distinct_position_reports, has_active_inferred_fill, is_exact_order_match,
+        order_report_has_missing_fills, position_avg_px, position_qty_aggregates,
+        resolve_inferred_fill_commission, responsible_client_ids, should_project_fill,
+        sort_reconciliation_events,
     },
     submission::{SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource},
 };
@@ -124,6 +125,7 @@ static TAG_VENUE: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("VENUE"));
 static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from(RECONCILIATION_ORDER_TAG));
 
 const LOG_SAMPLES_MAX: usize = 5;
+const INFLIGHT_TIMEOUT_REASON: &str = "INFLIGHT_TIMEOUT";
 
 #[derive(Clone, Debug)]
 struct SubmissionRecoveryState {
@@ -982,8 +984,7 @@ impl ExecutionManager {
 
                 let order_fills: Vec<&FillReport> = fill_reports
                     .get(&report.venue_order_id)
-                    .map(|f| f.iter().collect())
-                    .unwrap_or_default();
+                    .map_or_default(|f| f.iter().collect());
                 let engine_ref = exec_engine.borrow();
                 let commission_client = engine_ref.get_client(&mass_status.client_id);
 
@@ -1412,7 +1413,7 @@ impl ExecutionManager {
 
         log::info!(
             color = LogColor::Blue as u8;
-            "Reconciliation complete for {venue}: reconciled={orders_reconciled}, external={external_orders_created}, open={open_orders_initialized}, fills={fills_applied}, positions={positions_created}, skipped={orders_skipped_duplicate}, filtered={orders_skipped_filtered}",
+            "Reconciliation complete for {venue}: reconciled={orders_reconciled}, external={external_orders_created}, external_open={open_orders_initialized}, fills={fills_applied}, positions={positions_created}, in_sync={orders_skipped_duplicate}, filtered={orders_skipped_filtered}",
         );
 
         ReconciliationResult {
@@ -1915,12 +1916,14 @@ impl ExecutionManager {
         }
     }
 
-    /// Checks inflight orders and returns terminal events and intermediate venue queries.
+    /// Checks inflight orders and returns resolution events and intermediate venue queries.
     ///
     /// For retries below `inflight_max_retries`, generates `QueryOrder` commands to poll
     /// the venue for the order's current status. At max retries, generates terminal events
     /// (rejection or cancellation) based on the order's status. Orders never accepted are
     /// retained when the recovery policy or their client requires definitive venue evidence.
+    /// Under `RetainUnresolved`, a pending cancel or update on an accepted order generates
+    /// command rejections which restore its prior status.
     pub fn check_inflight_orders(&mut self) -> InflightCheckResult {
         let mut result = InflightCheckResult::default();
         let now = dst::time::Instant::now();
@@ -1981,29 +1984,9 @@ impl ExecutionManager {
                 }
 
                 let ts_now = self.clock.borrow().timestamp_ns();
-
                 if let Some(order) = self.get_order(client_order_id) {
-                    match order.status() {
-                        OrderStatus::Submitted => {
-                            // Generate rejection for submitted orders that never got accepted
-                            if let Some(event) = create_reconciliation_rejected(
-                                &order,
-                                Some("INFLIGHT_TIMEOUT"),
-                                ts_now,
-                            ) {
-                                result.events.push(event);
-                            }
-                        }
-                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
-                            // Generate cancellation for orders stuck in pending modify/cancel
-                            result
-                                .events
-                                .push(create_reconciliation_canceled(&order, ts_now));
-                        }
-                        _ => {
-                            // Order already resolved, just clear tracking
-                        }
-                    }
+                    let events = self.resolve_inflight_timeout(&order, ts_now);
+                    result.events.extend(events);
                 }
 
                 self.clear_recon_tracking(&client_order_id, true);
@@ -2028,6 +2011,35 @@ impl ExecutionManager {
         }
 
         result
+    }
+
+    fn resolve_inflight_timeout(&self, order: &OrderAny, ts_now: UnixNanos) -> Vec<OrderEventAny> {
+        match order.status() {
+            // Generate rejection for submitted orders that never got accepted
+            OrderStatus::Submitted => {
+                create_reconciliation_rejected(order, Some(INFLIGHT_TIMEOUT_REASON), ts_now)
+                    .into_iter()
+                    .collect()
+            }
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
+                if self.config.submission_recovery_policy
+                    == SubmissionRecoveryPolicy::RetainUnresolved
+                {
+                    // Retention restores the pre-command status for later venue evidence
+                    create_reconciliation_command_rejections(order, INFLIGHT_TIMEOUT_REASON, ts_now)
+                } else {
+                    // Generate cancellation for orders stuck in pending modify/cancel
+                    let canceled = create_reconciliation_canceled(
+                        order,
+                        Some(INFLIGHT_TIMEOUT_REASON),
+                        ts_now,
+                    );
+                    vec![canceled]
+                }
+            }
+            // Order already resolved
+            _ => Vec::new(),
+        }
     }
 
     pub(crate) fn register_submission_retention(&mut self, client: &dyn ExecutionClient) {
@@ -2428,113 +2440,86 @@ impl ExecutionManager {
             }
         }
 
-        // Handle orders missing at venue (skip in open_only mode where the
-        // venue response may omit recently closed orders). When a lookback
-        // window is set, only consider orders within that window so older
-        // GTC orders outside the query range are not falsely marked missing.
-        if self.config.open_check_open_only {
-            let cached_ids: IndexSet<ClientOrderId> = check
-                .filtered_orders
-                .iter()
-                .map(Order::client_order_id)
-                .collect();
-            let missing_at_venue: IndexSet<ClientOrderId> = cached_ids
-                .difference(&venue_reported_ids)
-                .copied()
-                .collect();
+        let candidates: Vec<&OrderAny> = if let Some(cutoff) = check.command.start {
+            let mut candidates = Vec::new();
 
-            if !missing_at_venue.is_empty() {
-                log::debug!(
-                    "{} cached open order{} not present in venue current response",
-                    missing_at_venue.len(),
-                    if missing_at_venue.len() == 1 {
-                        " is"
-                    } else {
-                        "s are"
-                    },
-                );
-
-                for client_order_id in missing_at_venue {
-                    log::debug!("Cached open order missing from venue response: {client_order_id}");
+            for order in &check.filtered_orders {
+                let client_order_id = order.client_order_id();
+                if order.ts_last() >= cutoff {
+                    self.order_lookback_warnings.shift_remove(&client_order_id);
+                    candidates.push(order);
+                } else if !venue_reported_ids.contains(&client_order_id)
+                    && self.order_lookback_warnings.insert(client_order_id)
+                {
+                    log::warn!(
+                        "Skipping missing-order reconciliation for {client_order_id}: last update predates open-check lookback"
+                    );
                 }
             }
+
+            candidates
         } else {
-            let candidates: Vec<&OrderAny> = if let Some(cutoff) = check.command.start {
-                let mut candidates = Vec::new();
+            check.filtered_orders.iter().collect()
+        };
 
-                for order in &check.filtered_orders {
-                    let client_order_id = order.client_order_id();
-                    if order.ts_last() >= cutoff {
-                        self.order_lookback_warnings.shift_remove(&client_order_id);
-                        candidates.push(order);
-                    } else if !venue_reported_ids.contains(&client_order_id)
-                        && self.order_lookback_warnings.insert(client_order_id)
-                    {
-                        log::warn!(
-                            "Skipping missing-order reconciliation for {client_order_id}: its last update predates the configured open-check lookback window; absence from the bulk response cannot be treated as evidence and no targeted query will be issued from it"
-                        );
-                    }
+        for order in candidates {
+            let client_order_id = order.client_order_id();
+            if venue_reported_ids.contains(&client_order_id) {
+                continue;
+            }
+
+            let responsible_clients = match check.client_coverage.get(&client_order_id) {
+                Some(ReportClientCoverage::Resolved(responsible_clients))
+                    if !responsible_clients.is_empty() =>
+                {
+                    responsible_clients
                 }
-
-                candidates
-            } else {
-                check.filtered_orders.iter().collect()
-            };
-
-            for order in candidates {
-                let client_order_id = order.client_order_id();
-                if venue_reported_ids.contains(&client_order_id) {
-                    continue;
-                }
-
-                let responsible_clients = match check.client_coverage.get(&client_order_id) {
-                    Some(ReportClientCoverage::Resolved(responsible_clients))
-                        if !responsible_clients.is_empty() =>
-                    {
-                        responsible_clients
-                    }
-                    _ => {
-                        if self.order_coverage_warnings.insert(client_order_id) {
-                            log::warn!(
-                                "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
-                            );
-                        }
-
-                        continue;
-                    }
-                };
-
-                let missing_clients = responsible_clients
-                    .difference(queried_clients)
-                    .copied()
-                    .collect::<IndexSet<_>>();
-
-                if !missing_clients.is_empty() {
+                _ => {
                     if self.order_coverage_warnings.insert(client_order_id) {
                         log::warn!(
-                            "Skipping order reconciliation for {client_order_id}: responsible execution clients were not queried: {missing_clients:?}"
+                            "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
                         );
                     }
 
                     continue;
                 }
+            };
 
-                let failed_responsible_clients = responsible_clients
-                    .intersection(failed_clients)
-                    .copied()
-                    .collect::<IndexSet<_>>();
+            let missing_clients = responsible_clients
+                .difference(queried_clients)
+                .copied()
+                .collect::<IndexSet<_>>();
 
-                if !failed_responsible_clients.is_empty() {
+            if !missing_clients.is_empty() {
+                if self.order_coverage_warnings.insert(client_order_id) {
+                    log::warn!(
+                        "Skipping order reconciliation for {client_order_id}: responsible execution clients were not queried: {missing_clients:?}"
+                    );
+                }
+
+                continue;
+            }
+
+            let failed_responsible_clients = responsible_clients
+                .intersection(failed_clients)
+                .copied()
+                .collect::<IndexSet<_>>();
+
+            if !failed_responsible_clients.is_empty() {
+                if !self.config.open_check_open_only
+                    || self.order_coverage_warnings.insert(client_order_id)
+                {
                     log::warn!(
                         "Skipping order reconciliation for {client_order_id}: failed to query responsible execution clients: {failed_responsible_clients:?}"
                     );
-                    continue;
                 }
 
-                self.order_coverage_warnings.shift_remove(&client_order_id);
-                if let Some(order) = self.prepare_missing_order_query(client_order_id) {
-                    targeted_candidates.push((order, responsible_clients.clone(), None));
-                }
+                continue;
+            }
+
+            self.order_coverage_warnings.shift_remove(&client_order_id);
+            if let Some(order) = self.prepare_missing_order_query(client_order_id) {
+                targeted_candidates.push((order, responsible_clients.clone(), None));
             }
         }
 
@@ -2569,6 +2554,11 @@ impl ExecutionManager {
             }
 
             planned_queries += required_queries;
+
+            if self.config.open_check_open_only && report.is_none() {
+                self.order_recon_retries.shift_remove(&client_order_id);
+            }
+
             self.order_query_recency.mark(client_order_id);
             self.order_query_pending.insert(client_order_id);
             let command_id = UUID4::new();
@@ -2604,7 +2594,7 @@ impl ExecutionManager {
         }
     }
 
-    /// Reconciles targeted query results, resolving missing orders only with complete coverage.
+    /// Reconciles targeted reports, using absence only in full-history mode.
     pub(crate) fn reconcile_targeted_order_reports(
         &mut self,
         results: Vec<TargetedOrderReportResult>,
@@ -2652,7 +2642,13 @@ impl ExecutionManager {
                 continue;
             }
 
-            if result.coverage_complete {
+            if self.config.open_check_open_only {
+                if result.coverage_complete {
+                    log::warn!(
+                        "Keeping {client_order_id} open: targeted order status query found no report; absence is not terminal evidence in open-only mode"
+                    );
+                }
+            } else if result.coverage_complete {
                 events.extend(self.resolve_missing_order(client_order_id));
             } else {
                 log::warn!(
@@ -2805,10 +2801,7 @@ impl ExecutionManager {
                 .entry(key)
                 .or_insert_with(|| resolve_position_report_client_coverage(key, clients));
             let prepared_revision = *check.activity_revisions.entry(key).or_default();
-            let venue_reports = venue_positions
-                .get(&key)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let venue_reports = venue_positions.get(&key).map_or_default(Vec::as_slice);
             let comparison = self.position_quantity_comparison(key, venue_reports);
             let tolerance = self.position_reconciliation_tolerance(key.1);
             if comparison.quantities_match(tolerance) {
@@ -3162,10 +3155,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let venue_reports = venue_positions
-                .get(key)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let venue_reports = venue_positions.get(key).map_or_default(Vec::as_slice);
 
             if venue_reports.is_empty() {
                 match coverage {
@@ -3632,6 +3622,17 @@ impl ExecutionManager {
             return None;
         }
 
+        if self.config.open_check_open_only
+            && (order.is_inflight()
+                || self.order_inflight_checks.contains_key(&client_order_id)
+                || self.order_query_recency.within(
+                    &client_order_id,
+                    Duration::from_millis(u64::from(self.config.single_order_query_delay_ms)),
+                ))
+        {
+            return None;
+        }
+
         if order.is_inflight() && Self::submission_is_unacknowledged(&order) {
             let client_id = self.cache.borrow().client_id(&client_order_id).copied();
             self.track_submission(order.init_event(), client_id);
@@ -3723,7 +3724,7 @@ impl ExecutionManager {
                 log::warn!(
                     "Order {client_order_id} not found at venue after {retries} retries and a targeted query, marking as CANCELED"
                 );
-                events.push(create_reconciliation_canceled(&order, ts_now));
+                events.push(create_reconciliation_canceled(&order, None, ts_now));
             }
             OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
                 log::debug!(
@@ -3951,8 +3952,7 @@ impl ExecutionManager {
                 venue_avg_px,
                 venue_report
                     .as_ref()
-                    .map(|report| report.avg_px_open_reconciliation)
-                    .unwrap_or_default(),
+                    .map_or_default(|report| report.avg_px_open_reconciliation),
                 venue_report
                     .as_ref()
                     .and_then(|report| report.avg_px_open_precision),
@@ -4516,6 +4516,8 @@ impl ExecutionManager {
     ) -> anyhow::Result<Vec<OrderEventAny>> {
         let requires_authoritative_fills =
             commission_client.is_some_and(ExecutionClient::requires_authoritative_fills);
+        let current_report = preserve_order_amendment(order, report, requires_authoritative_fills);
+        let report = current_report.as_ref();
         let has_missing_fills = order_report_has_missing_fills(
             report,
             order.filled_qty(),
@@ -4896,8 +4898,7 @@ impl ExecutionManager {
         let mut prepared_fills = Vec::new();
         let mut prepared_fill_keys = fill_queue
             .as_deref()
-            .map(|queue| queue.pending_fill_keys.clone())
-            .unwrap_or_default();
+            .map_or_default(|queue| queue.pending_fill_keys.clone());
 
         if replace_inferred_fill {
             let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
@@ -5302,6 +5303,14 @@ impl ExecutionManager {
         instrument: &InstrumentAny,
         pending_fill_keys: &IndexSet<FillKey>,
     ) -> Option<(OrderFilled, FillKey)> {
+        if order.is_fill_report_order() && fill.instrument_id != order.instrument_id() {
+            log::warn!(
+                "Skipping fill report with mismatched instrument for {}",
+                order.client_order_id()
+            );
+            return None;
+        }
+
         if fill.last_qty.is_zero() {
             log::warn!("Skipping zero-quantity fill report: {fill}");
             return None;
@@ -5513,15 +5522,15 @@ mod tests {
         accounts::AccountAny,
         enums::{LiquiditySide, OmsType, OrderType, PositionSide, TimeInForce},
         events::order::spec::{
-            OrderCancelDeniedSpec, OrderModifyDeniedSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelDeniedSpec, OrderInitializedSpec, OrderModifyDeniedSpec,
+            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
         },
         identifiers::{Symbol, Venue},
         instruments::{
             CurrencyPair, Instrument,
             stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
-        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{FILL_REPORT_ORDER_TAG, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{AccountBalance, Currency, MarginBalance, Money, Price, fixed::FIXED_PRECISION},
     };
     use rstest::rstest;
@@ -5531,6 +5540,41 @@ mod tests {
         super::reconciliation::tests::{CommissionOutcome, CommissionStubClient},
         *,
     };
+
+    #[rstest]
+    fn test_create_fill_report_order_fill_rejects_source_instrument_mismatch() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let (_, mut fill) = external_report_with_partial_fill(&instrument);
+        let init = OrderInitializedSpec::builder()
+            .instrument_id(instrument.id())
+            .quantity(fill.last_qty)
+            .reconciliation(true)
+            .tags(vec![Ustr::from(FILL_REPORT_ORDER_TAG)])
+            .build();
+        let mut order = OrderAny::try_from(init).unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .account_id(fill.account_id)
+                    .venue_order_id(fill.venue_order_id)
+                    .build(),
+            ))
+            .unwrap();
+        let manager = ExecutionManager::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+            ExecutionManagerConfig::default(),
+        )
+        .unwrap();
+        manager
+            .create_order_fill(&order, &fill, &instrument, &IndexSet::new())
+            .expect("matching source instrument produces a fill");
+        fill.instrument_id = btcusd_bybit().id();
+
+        let result = manager.create_order_fill(&order, &fill, &instrument, &IndexSet::new());
+
+        assert_eq!(result, None);
+    }
 
     #[rstest]
     fn test_new_validates_open_check_lookback_mins_boundaries() {
@@ -6370,6 +6414,100 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::Accepted);
         assert_eq!(order.filled_qty(), Quantity::from("0.0"));
         assert!(fill_queue.pending_fill_keys.is_empty());
+    }
+
+    #[rstest]
+    #[case::stale_authoritative(1, true, false)]
+    #[case::newer_authoritative(3, true, true)]
+    #[case::stale_other_client(1, false, true)]
+    fn test_reconcile_order_report_scopes_amendment_freshness(
+        #[values(false, true)] bundled: bool,
+        #[case] report_ts: u64,
+        #[case] requires_authoritative_fills: bool,
+        #[case] expected_update: bool,
+    ) {
+        let (mut manager, _cache, mut order, mut report, instrument) = cached_commission_fixtures();
+        let amended_price = Price::from("101.0");
+        let updated = OrderUpdatedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .quantity(order.quantity())
+            .price(amended_price)
+            .ts_event(UnixNanos::from(2))
+            .ts_init(UnixNanos::from(2))
+            .build();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+        report.order_status = OrderStatus::Accepted;
+        report.filled_qty = Quantity::from("0.0");
+        report.price = Some(Price::from("102.0"));
+        report.ts_last = UnixNanos::from(report_ts);
+        let mut client = CommissionStubClient::new(CommissionOutcome::Failure);
+        client.requires_authoritative_fills = requires_authoritative_fills;
+
+        let events = if bundled {
+            let fill = FillReport::new(
+                report.account_id,
+                report.instrument_id,
+                report.venue_order_id,
+                TradeId::from("T-AMENDMENT"),
+                OrderSide::Buy,
+                Quantity::from("4.0"),
+                Price::from("100.0"),
+                Money::from("0.25 USDT"),
+                LiquiditySide::Taker,
+                report.client_order_id,
+                None,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                None,
+            );
+
+            let mut queue = ReconciliationFillQueue::default();
+            manager.reconcile_order_with_fills(
+                false,
+                &order,
+                &report,
+                &[&fill],
+                Some(&instrument),
+                &mut queue,
+                Some(&client),
+            )
+        } else {
+            manager
+                .reconcile_order_report(&order, &report, Some(&instrument), Some(&client))
+                .unwrap()
+        };
+
+        assert_eq!(
+            events.len(),
+            usize::from(expected_update) + usize::from(bundled),
+        );
+
+        if expected_update {
+            assert!(matches!(events[0], OrderEventAny::Updated(_)));
+        }
+
+        for event in &events {
+            order.apply(event.clone()).unwrap();
+        }
+
+        let expected_price = if expected_update {
+            Price::from("102.0")
+        } else {
+            amended_price
+        };
+
+        assert_eq!(order.price(), Some(expected_price));
+
+        let expected_filled_qty = if bundled {
+            Quantity::from(4)
+        } else {
+            Quantity::from(0)
+        };
+
+        assert_eq!(order.filled_qty(), expected_filled_qty);
     }
 
     #[rstest]

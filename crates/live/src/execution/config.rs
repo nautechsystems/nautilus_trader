@@ -50,13 +50,13 @@ pub struct ExecutionManagerConfig {
     pub inflight_threshold_ms: u64,
     /// Maximum number of retries for inflight checks.
     pub inflight_max_retries: u32,
-    /// Policy when a submitted order exhausts automatic recovery.
+    /// Policy when a submitted order, or a pending cancel or update, exhausts automatic recovery.
     pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The lookback minutes for open order checks.
     pub open_check_lookback_mins: Option<u64>,
     /// Threshold before acting on venue discrepancies for open orders.
     pub open_check_threshold_ns: DurationNanos,
-    /// Maximum retries before resolving an open order missing at the venue.
+    /// Eligible missing-order checks before issuing a targeted order status query.
     pub open_check_missing_retries: u32,
     /// Whether open-order polling should only request open orders from the venue.
     pub open_check_open_only: bool,

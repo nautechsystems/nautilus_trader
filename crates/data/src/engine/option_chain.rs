@@ -624,6 +624,18 @@ impl DataEngine {
         }
     }
 
+    pub(super) fn clear_option_chain_managers(&mut self) {
+        // Tear down option chain managers to unregister their msgbus handlers
+        let managers: Vec<_> = self.option_chain_managers.drain().collect();
+        for (_, manager) in managers {
+            manager.borrow_mut().teardown(&self.clock);
+        }
+
+        self.option_chain_instrument_index.clear();
+        self.cancel_pending_option_chain_requests(None);
+        self.clear_option_chain_greeks_bootstraps();
+    }
+
     pub(super) fn unsubscribe_option_chain(&mut self, cmd: &UnsubscribeOptionChain) {
         self.drain_deferred_commands();
         let series_id = cmd.series_id;

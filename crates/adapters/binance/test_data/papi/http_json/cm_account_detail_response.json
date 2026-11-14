@@ -1,0 +1,30 @@
+{
+  "assets": [
+    {
+      "asset": "BTC",
+      "crossWalletBalance": "0.050000000000000001",
+      "crossUnPnl": "-0.0002",
+      "maintMargin": "0.0004",
+      "initialMargin": "0.0005",
+      "positionInitialMargin": "0.0003",
+      "openOrderInitialMargin": "0.0002",
+      "updateTime": 1700000004000
+    }
+  ],
+  "positions": [
+    {
+      "symbol": "BTCUSD_261225",
+      "positionAmt": "-15",
+      "initialMargin": "0.0005",
+      "maintMargin": "0.0004",
+      "unrealizedProfit": "-0.00001",
+      "positionInitialMargin": "0.0003",
+      "openOrderInitialMargin": "0.0002",
+      "leverage": "5",
+      "positionSide": "SHORT",
+      "entryPrice": "60000.5",
+      "maxQty": "100",
+      "updateTime": 1700000004001
+    }
+  ]
+}

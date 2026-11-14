@@ -1986,17 +1986,13 @@ impl PolymarketPolyBoltFeed {
 
     fn matching_data_types(&self, channel: PolyBoltChannel, symbol_lower: &str) -> Vec<DataType> {
         let key = tracked_key(channel, symbol_lower);
-        self.inner
-            .subscriptions
-            .get(&key)
-            .map(|entry| {
-                entry
-                    .data_types
-                    .values()
-                    .map(|tracked| tracked.data_type.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.inner.subscriptions.get(&key).map_or_default(|entry| {
+            entry
+                .data_types
+                .values()
+                .map(|tracked| tracked.data_type.clone())
+                .collect()
+        })
     }
 
     fn has_channel_subscription(&self, channel: PolyBoltChannel) -> bool {

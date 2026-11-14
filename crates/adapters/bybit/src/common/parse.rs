@@ -190,6 +190,7 @@ use nautilus_core::{
     Params, UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, nanos_to_millis as nanos_to_millis_u64},
     nanos::UnixNanos,
+    serialization::decimal,
 };
 use nautilus_model::{
     data::{
@@ -650,14 +651,12 @@ fn parse_optional_notional(
     let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
-    let amount: f64 = s
-        .parse()
-        .with_context(|| format!("invalid f64 for {field}: {s:?}"))?;
 
-    if !amount.is_finite() || amount <= 0.0 {
-        return Ok(None);
-    }
-    Ok(Some(Money::new(amount, currency)))
+    let amount = decimal::parse(s).with_context(|| format!("invalid {field}: {s:?}"))?;
+    let notional = Money::from_decimal(amount, currency)?;
+    anyhow::ensure!(notional.is_positive(), "{field} must be positive, was {s}");
+
+    Ok(Some(notional))
 }
 
 /// Parses an inverse contract definition into a Nautilus instrument.
@@ -1313,28 +1312,39 @@ pub fn parse_account_state(
         // Position IM is reserved against open positions; order IM is reserved against
         // pending orders. Sum both so an account that only has open orders still
         // reports a non-zero initial margin.
-        let position_im_f64 = match &coin.total_position_im {
-            Some(im) if !im.is_empty() => im.parse::<f64>()?,
-            _ => 0.0,
-        };
-        let order_im_f64 = match &coin.total_order_im {
-            Some(im) if !im.is_empty() => im.parse::<f64>()?,
-            _ => 0.0,
-        };
-        let initial_margin_f64 = position_im_f64 + order_im_f64;
-
-        let maintenance_margin_f64 = match &coin.total_position_mm {
-            Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
-            _ => 0.0,
+        let position_im_dec = match &coin.total_position_im {
+            Some(im) if !im.is_empty() => decimal::parse(im).context("invalid totalPositionIM")?,
+            _ => Decimal::ZERO,
         };
 
-        if initial_margin_f64 == 0.0 && maintenance_margin_f64 == 0.0 {
+        let order_im_dec = match &coin.total_order_im {
+            Some(im) if !im.is_empty() => decimal::parse(im).context("invalid totalOrderIM")?,
+            _ => Decimal::ZERO,
+        };
+
+        let initial_margin_dec = position_im_dec
+            .checked_add(order_im_dec)
+            .context("initial margin overflowed")?;
+
+        let maintenance_margin_dec = match &coin.total_position_mm {
+            Some(mm) if !mm.is_empty() => decimal::parse(mm).context("invalid totalPositionMM")?,
+            _ => Decimal::ZERO,
+        };
+
+        anyhow::ensure!(
+            position_im_dec >= Decimal::ZERO
+                && order_im_dec >= Decimal::ZERO
+                && maintenance_margin_dec >= Decimal::ZERO,
+            "margin must be non-negative"
+        );
+
+        if initial_margin_dec.is_zero() && maintenance_margin_dec.is_zero() {
             continue;
         }
 
         let currency = get_currency(&coin.coin);
-        let initial_margin = Money::new(initial_margin_f64, currency);
-        let maintenance_margin = Money::new(maintenance_margin_f64, currency);
+        let initial_margin = Money::from_decimal(initial_margin_dec, currency)?;
+        let maintenance_margin = Money::from_decimal(maintenance_margin_dec, currency)?;
 
         margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
@@ -1830,12 +1840,16 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
     let value = params.get(key)?;
     if let Some(s) = value.as_str() {
         Some(s.to_string())
-    } else if let Some(n) = value.as_f64() {
-        Some(n.to_string())
-    } else if let Some(n) = value.as_i64() {
-        Some(n.to_string())
     } else {
-        value.as_u64().map(|n| n.to_string())
+        let raw = value.as_number()?.to_string();
+
+        if raw.contains('e')
+            && let Ok(number) = decimal::parse(&raw)
+        {
+            return Some(number.to_string());
+        }
+
+        Some(raw)
     }
 }
 
@@ -1916,7 +1930,7 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         let p =
             Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'take_profit' price: {e}"))?;
 
-        if p.as_f64() < 0.0 {
+        if p.as_decimal() < Decimal::ZERO {
             anyhow::bail!("invalid 'take_profit' price: '{s}', expected a non-negative value");
         }
         result.take_profit = Some(p);
@@ -1926,7 +1940,7 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         let p =
             Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'stop_loss' price: {e}"))?;
 
-        if p.as_f64() < 0.0 {
+        if p.as_decimal() < Decimal::ZERO {
             anyhow::bail!("invalid 'stop_loss' price: '{s}', expected a non-negative value");
         }
         result.stop_loss = Some(p);
@@ -1942,11 +1956,10 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         ("sl_trigger_price", &mut result.sl_trigger_price),
     ] {
         if let Some(s) = get_price_str(params, key) {
-            let v: f64 = s
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid price for '{key}': '{s}'"))?;
+            let v =
+                decimal::parse(&s).with_context(|| format!("invalid price for '{key}': '{s}'"))?;
 
-            if !v.is_finite() || v < 0.0 {
+            if s.contains('_') || v < Decimal::ZERO {
                 anyhow::bail!(
                     "invalid price for '{key}': '{s}', expected a finite non-negative number"
                 );
@@ -2113,6 +2126,7 @@ mod tests {
         orders::OrderAny,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::*;
@@ -2128,11 +2142,187 @@ mod tests {
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
             BybitOpenOrdersResponse, BybitPositionListResponse, BybitTradeHistoryResponse,
-            BybitTradesResponse,
+            BybitTradesResponse, BybitWalletBalanceResponse,
         },
     };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    #[rstest]
+    #[case("100000000.00000001", Currency::BTC(), dec!(100000000.00000001))]
+    #[case("0.006", Currency::USD(), dec!(0.01))]
+    #[case("0.000000006", Currency::USDT(), dec!(0.00000001))]
+    fn test_parse_optional_notional_preserves_decimal(
+        #[case] raw: &str,
+        #[case] currency: Currency,
+        #[case] expected: Decimal,
+    ) {
+        let notional = parse_optional_notional(Some(raw), currency, "minNotionalValue")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(notional, Money::from_decimal(expected, currency).unwrap());
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(""))]
+    #[case(Some("  "))]
+    fn test_parse_optional_notional_absent(#[case] raw: Option<&str>) {
+        let result = parse_optional_notional(raw, Currency::USDT(), "minNotionalValue").unwrap();
+
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    #[case("NaN")]
+    #[case("inf")]
+    #[case("-inf")]
+    #[case("invalid")]
+    #[case("1.00000000000000000000000000001")]
+    #[case("0")]
+    #[case("-1")]
+    #[case("79228162514264337593543950335")]
+    fn test_parse_optional_notional_rejects_invalid(#[case] raw: &str) {
+        let result = parse_optional_notional(Some(raw), Currency::USDT(), "minNotionalValue");
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case("0.004", Currency::USD())]
+    #[case("0.005", Currency::USD())]
+    #[case("0.000000004", Currency::USDT())]
+    #[case("0.000000005", Currency::USDT())]
+    fn test_parse_optional_notional_rejects_rounded_zero(
+        #[case] raw: &str,
+        #[case] currency: Currency,
+    ) {
+        let result = parse_optional_notional(Some(raw), currency, "minNotionalValue");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("minNotionalValue must be positive, was {raw}")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_account_state_preserves_decimal_margins() {
+        let json = load_test_json("http_get_wallet_balance.json");
+        let mut response: BybitWalletBalanceResponse = serde_json::from_str(&json).unwrap();
+        let wallet = &mut response.result.list[0];
+        let coin = &mut wallet.coin[0];
+        coin.total_position_im = Some("100000000.00000001".to_string());
+        coin.total_order_im = Some("0.00000002".to_string());
+        coin.total_position_mm = Some("100000000.00000001".to_string());
+        let account_id = AccountId::from("BYBIT-001");
+
+        let account = parse_account_state(wallet, account_id, TS).unwrap();
+
+        let expected = MarginBalance::new(
+            Money::from_decimal(dec!(100000000.00000003), Currency::BTC()).unwrap(),
+            Money::from_decimal(dec!(100000000.00000001), Currency::BTC()).unwrap(),
+            None,
+        );
+
+        assert_eq!(account.margins, vec![expected]);
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(""))]
+    #[case(Some("0"))]
+    fn test_parse_account_state_absent_margins(#[case] raw: Option<&str>) {
+        let json = load_test_json("http_get_wallet_balance.json");
+        let mut response: BybitWalletBalanceResponse = serde_json::from_str(&json).unwrap();
+        let wallet = &mut response.result.list[0];
+        let coin = &mut wallet.coin[0];
+        coin.total_position_im = raw.map(str::to_string);
+        coin.total_order_im = raw.map(str::to_string);
+        coin.total_position_mm = raw.map(str::to_string);
+
+        let account = parse_account_state(wallet, AccountId::from("BYBIT-001"), TS).unwrap();
+
+        assert_eq!(account.margins, Vec::<MarginBalance>::new());
+    }
+
+    #[rstest]
+    fn test_parse_account_state_rejects_margin_sum_overflow() {
+        let json = load_test_json("http_get_wallet_balance.json");
+        let mut response: BybitWalletBalanceResponse = serde_json::from_str(&json).unwrap();
+        let wallet = &mut response.result.list[0];
+        let coin = &mut wallet.coin[0];
+        coin.total_position_im = Some(Decimal::MAX.to_string());
+        coin.total_order_im = Some(Decimal::MAX.to_string());
+
+        let result = parse_account_state(wallet, AccountId::from("BYBIT-001"), TS);
+
+        assert_eq!(result.unwrap_err().to_string(), "initial margin overflowed");
+    }
+
+    #[rstest]
+    fn test_parse_account_state_rejects_invalid_margin(
+        #[values("totalPositionIM", "totalOrderIM", "totalPositionMM")] field: &str,
+        #[values(
+            "NaN",
+            "inf",
+            "invalid",
+            "-1",
+            "79228162514264337593543950335",
+            "-0.00000000000000000000000000001",
+            "2.00000000000000000000000000001"
+        )]
+        raw: &str,
+    ) {
+        let json = load_test_json("http_get_wallet_balance.json");
+        let mut response: BybitWalletBalanceResponse = serde_json::from_str(&json).unwrap();
+        let wallet = &mut response.result.list[0];
+        let coin = &mut wallet.coin[0];
+        coin.total_position_im = Some("2".to_string());
+        coin.total_order_im = Some("3".to_string());
+        coin.total_position_mm = Some("4".to_string());
+        match field {
+            "totalPositionIM" => coin.total_position_im = Some(raw.to_string()),
+            "totalOrderIM" => coin.total_order_im = Some(raw.to_string()),
+            "totalPositionMM" => coin.total_position_mm = Some(raw.to_string()),
+            _ => unreachable!(),
+        }
+
+        let result = parse_account_state(wallet, AccountId::from("BYBIT-001"), TS);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(json!(u64::MAX), "18446744073709551615")]
+    #[case(json!(i64::MIN), "-9223372036854775808")]
+    #[case(json!(1.25), "1.25")]
+    #[case(json!(55000.0), "55000.0")]
+    #[case(json!(0.0000012), "0.0000012")]
+    #[case(json!(1e16), "10000000000000000")]
+    #[case(json!("123.4500"), "123.4500")]
+    fn test_get_price_str_preserves_value(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let params = params_from(&[("take_profit", value)]);
+
+        assert_eq!(
+            get_price_str(&params, "take_profit").as_deref(),
+            Some(expected)
+        );
+    }
+
+    #[rstest]
+    #[case(json!(null))]
+    #[case(json!(true))]
+    #[case(json!([]))]
+    #[case(json!({}))]
+    fn test_get_price_str_rejects_non_numeric(#[case] value: serde_json::Value) {
+        let params = params_from(&[("take_profit", value)]);
+
+        assert_eq!(get_price_str(&params, "take_profit"), None);
+    }
 
     #[rstest]
     #[case::snake("borrow", BybitMarginAction::Borrow)]
@@ -3008,6 +3198,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_tp_sl_params_preserves_scientific_prices() {
+        let p = params_from(&[
+            ("take_profit", json!("55000")),
+            ("stop_loss", json!("47000")),
+            ("tp_order_type", json!("Limit")),
+            ("sl_order_type", json!("Limit")),
+            ("tp_limit_price", json!("5.499e4")),
+            ("sl_limit_price", json!("4.699e4")),
+            ("tp_trigger_price", json!("5.5e4")),
+            ("sl_trigger_price", json!("4.7e4")),
+        ]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.tp_limit_price.as_deref(), Some("5.499e4"));
+        assert_eq!(result.sl_limit_price.as_deref(), Some("4.699e4"));
+        assert_eq!(result.tp_trigger_price.as_deref(), Some("5.5e4"));
+        assert_eq!(result.sl_trigger_price.as_deref(), Some("4.7e4"));
+    }
+
+    #[rstest]
     fn test_parse_tp_sl_params_preserves_tpsl_mode() {
         let p = params_from(&[
             ("take_profit", json!("55000.00")),
@@ -3145,6 +3355,10 @@ mod tests {
     #[case("nan")]
     #[case("inf")]
     #[case("-5.0")]
+    #[case("-1e-400")]
+    #[case("-0.00000000000000000000000000001")]
+    #[case("-0.00000000000000000000000000001e1")]
+    #[case("55_000")]
     #[case("not_a_number")]
     fn test_parse_tp_sl_params_rejects_invalid_limit_price(#[case] price: &str) {
         let p = params_from(&[

@@ -152,6 +152,7 @@ mod tests {
             adjustments: Vec::new(),
             instrument_class: InstrumentClass::Spot,
             is_currency_pair: true,
+            allows_negative_price: Some(false),
         }
     }
 

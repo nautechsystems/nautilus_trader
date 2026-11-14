@@ -410,7 +410,7 @@ pub struct HistoricalCutoff {
     pub market_positions_last_updated_ts: Field<Timestamp>,
 }
 
-/// Primary-account collateral; integer amounts use venue cents.
+/// Subaccount collateral; integer amounts use venue cents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     pub balance: i64,

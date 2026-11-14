@@ -340,6 +340,22 @@ impl PyPolymarketPositionClient {
             Ok(PyPolymarketPositionTransaction::from(tx))
         })
     }
+
+    fn redeem_positions_batch<'py>(
+        &self,
+        py: Python<'py>,
+        condition_ids: Vec<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let condition_ids = condition_ids.iter().map(String::as_str).collect::<Vec<_>>();
+            let tx = inner
+                .redeem_positions_batch(&condition_ids)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(PyPolymarketPositionTransaction::from(tx))
+        })
+    }
 }
 
 fn extract_amount(value: &Bound<'_, PyAny>) -> PyResult<Decimal> {

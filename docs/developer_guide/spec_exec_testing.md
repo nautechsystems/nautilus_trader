@@ -1766,8 +1766,14 @@ conditions hold, the adapter emits the matching denied event with the command ID
 - Explicit per-order venue rejections still emit the matching rejection event with the venue
   reason.
 
-After an ambiguous outcome, the order remains in the appropriate in-flight state until a venue
-update, query result, or reconciliation pass resolves it.
+These criteria apply to adapter request failures. Separately, when the engine exhausts in-flight retries
+under `RetainUnresolved`, it emits `OrderCancelRejected` or `OrderModifyRejected` with reason
+`INFLIGHT_TIMEOUT` for a pending cancel or modify on an accepted order. This restores the prior order status
+without proving a venue rejection. See [In-flight checks](../concepts/execution/reconciliation.md#in-flight-checks).
+
+After an ambiguous outcome, the order remains in flight until venue evidence resolves it or the engine's
+in-flight timeout policy handles it. When periodic open-order checks are enabled, open-only missing-order
+queries can return a terminal report for a restored order; a missing report or failed query leaves it open.
 
 ### TC-E70: PostOnly rejection
 

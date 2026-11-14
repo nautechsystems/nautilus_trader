@@ -1,0 +1,26 @@
+[
+  {
+    "request": {"type": "subscribe", "channel": "level2", "product_ids": ["BTC-USD", "ETH-USD"]},
+    "ack_sequence_num": 10
+  },
+  {
+    "request": {"type": "subscribe", "channel": "heartbeats"},
+    "ack_sequence_num": 11
+  },
+  {
+    "request": {"type": "subscribe", "channel": "market_trades", "product_ids": ["BTC-USD"]},
+    "ack_sequence_num": 13
+  },
+  {
+    "request": {"type": "subscribe", "channel": "level2", "product_ids": ["BTC-USD"]},
+    "ack_sequence_num": 105
+  },
+  {
+    "request": {"type": "unsubscribe", "channel": "level2", "product_ids": ["BTC-USD"]},
+    "ack_sequence_num": 238
+  },
+  {
+    "request": {"type": "subscribe", "channel": "level2", "product_ids": ["BTC-USD"]},
+    "ack_sequence_num": 283
+  }
+]

@@ -131,6 +131,14 @@ impl Peer {
     }
 
     async fn with_timeout(fail: Option<&'static str>, http_timeout_secs: u64) -> Self {
+        Self::with_scope(fail, http_timeout_secs, 0).await
+    }
+
+    async fn with_scope(
+        fail: Option<&'static str>,
+        http_timeout_secs: u64,
+        subaccount: u32,
+    ) -> Self {
         let http_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let websocket_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 
@@ -144,11 +152,13 @@ impl Peer {
             ws_timeout_secs: 3,
             http_timeout_secs,
             exchange_index: 3,
+            subaccount,
             ..Default::default()
         };
 
-        let f: Value =
+        let mut f: Value =
             serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
+        f["order"]["order"]["subaccount_number"] = subaccount.into();
         let mut initial = f["balance"].clone();
         initial["balance_dollars"] = "1.0001".into();
         initial["updated_ts"] = 1792800000.into();
@@ -253,7 +263,7 @@ impl Peer {
 
                 if path == "/portfolio/events/orders/batched" {
                     batches_http
-                        .respond(stream, &headers, &f, &orders_http)
+                        .respond(stream, &headers, &f, &orders_http, subaccount)
                         .await;
                     continue;
                 }
@@ -281,7 +291,10 @@ impl Peer {
                         target.contains("exchange_index=3"),
                         "unscoped request {target}"
                     );
-                    assert!(target.contains("subaccount=0"), "unscoped request {target}");
+                    assert!(
+                        target.contains(&format!("subaccount={subaccount}")),
+                        "unscoped request {target}"
+                    );
                 }
 
                 let body = match path {
@@ -629,6 +642,80 @@ async fn bootstrap_accepts_advancing_timestamps_and_marks_and_reconnect_uses_a_n
         client.dispose().unwrap();
         assert!(client.connect().await.unwrap_err().to_string().contains("disposed"));
     }).await.unwrap();
+}
+
+#[rstest]
+#[case::aggregate("aggregate")]
+#[case::cents("cents")]
+#[case::dollars("dollars")]
+#[tokio::test]
+async fn recovery_fences_scoped_cash_and_ignores_sibling_balances(
+    #[case] changed: &str,
+    #[values(0, 7)] subaccount: u32,
+) {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        let peer = Peer::with_scope(None, 2, subaccount).await;
+        peer.balance_gate
+            .forget_permits(peer.balance_gate.available_permits());
+        let (mut client, cache, mut output) = client(&peer);
+        {
+            let connect = client.connect();
+            tokio::pin!(connect);
+            tokio::select! {
+                result = &mut connect => panic!("connect returned before balance collection: {result:?}"),
+                () = peer.balance_read.notified() => {},
+            }
+
+            {
+                let mut balance = peer.balance.lock().unwrap();
+                balance["balance_breakdown"] =
+                    json!([{"exchange_index": 3, "balance": "987.6543"}]);
+
+                match changed {
+                    "cents" => {
+                        let cents = balance["balance"].as_i64().unwrap();
+                        balance["balance"] = (cents + 1).into();
+                    }
+                    "dollars" => balance["balance_dollars"] = "1.0002".into(),
+                    "aggregate" => {},
+                    _ => unreachable!(),
+                }
+            }
+
+            peer.balance_gate.add_permits(2);
+            tokio::select! {
+                result = &mut connect => panic!("connect returned before second balance read: {result:?}"),
+                () = peer.balance_read.notified() => {},
+            }
+
+            if changed == "aggregate" {
+                let event = tokio::select! {
+                    result = &mut connect => panic!("connect returned before account observation: {result:?}"),
+                    () = peer.balance_read.notified() => panic!("sibling balance changes restarted recovery"),
+                    event = output.recv() => event.unwrap(),
+                };
+                let state = account(event, &cache);
+                connect.await.unwrap();
+                let total = Money::from_decimal_exact(dec("1.0001"), Currency::USD()).unwrap();
+                assert_eq!(
+                    state.balances,
+                    vec![AccountBalance::new(total, Money::zero(Currency::USD()), total)],
+                );
+            } else {
+                tokio::select! {
+                    result = &mut connect => panic!("changed cash completed recovery: {result:?}"),
+                    event = output.recv() => panic!("changed cash published an event: {event:?}"),
+                    () = peer.balance_read.notified() => {},
+                }
+                assert_eq!(peer.balance_reads.load(Ordering::SeqCst), 3);
+            }
+        }
+
+        assert_eq!(client.is_connected(), changed == "aggregate");
+        client.disconnect().await.unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[rstest]
@@ -6555,9 +6642,10 @@ async fn native_change_wire_and_final_state(
     #[case] price: &str,
     #[case] canceled: bool,
     #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(0, 7)] subaccount: u32,
 ) {
     tokio::time::timeout(Duration::from_secs(18), async {
-        let peer = Peer::with_timeout(None, 10).await;
+        let peer = Peer::with_scope(None, 10, subaccount).await;
         peer.submissions.ack_gate.add_permits(1);
         peer.changes.ack_gate.add_permits(1);
 
@@ -6621,7 +6709,11 @@ async fn native_change_wire_and_final_state(
         let writes = peer.changes.writes.lock().unwrap().clone();
         assert_eq!(writes.len(), 1);
 
-        assert_change_wire(&writes[0], mode, &order);
+        assert_change_wire(&writes[0], mode, &order, subaccount);
+        assert_eq!(
+            peer.submissions.writes.lock().unwrap()[0]["subaccount"],
+            subaccount
+        );
         assert_eq!(
             events
                 .iter()
@@ -6665,7 +6757,7 @@ async fn native_change_wire_and_final_state(
     .unwrap();
 }
 
-fn assert_change_wire(wire: &(String, String), mode: &str, order: &OrderAny) {
+fn assert_change_wire(wire: &(String, String), mode: &str, order: &OrderAny, subaccount: u32) {
     let side = order.order_side();
 
     if mode == "cancel" {
@@ -6673,7 +6765,7 @@ fn assert_change_wire(wire: &(String, String), mode: &str, order: &OrderAny) {
             *wire,
             (
                 format!(
-                    "DELETE /portfolio/events/orders/native-1?subaccount=0&exchange_index=3&market_ticker={} HTTP/1.1",
+                    "DELETE /portfolio/events/orders/native-1?subaccount={subaccount}&exchange_index=3&market_ticker={} HTTP/1.1",
                     order.instrument_id().symbol
                 ),
                 String::new()
@@ -6689,7 +6781,9 @@ fn assert_change_wire(wire: &(String, String), mode: &str, order: &OrderAny) {
             body["reduce_by"] = if mode == "zero" { "1.25" } else { "0.75" }.into();
 
             (
-                "POST /portfolio/events/orders/native-1/decrease?subaccount=0 HTTP/1.1",
+                format!(
+                    "POST /portfolio/events/orders/native-1/decrease?subaccount={subaccount} HTTP/1.1"
+                ),
                 body,
             )
         } else {
@@ -6700,12 +6794,14 @@ fn assert_change_wire(wire: &(String, String), mode: &str, order: &OrderAny) {
             body["ticker"] = order.instrument_id().symbol.as_str().into();
 
             (
-                "POST /portfolio/events/orders/native-1/amend?subaccount=0 HTTP/1.1",
+                format!(
+                    "POST /portfolio/events/orders/native-1/amend?subaccount={subaccount} HTTP/1.1"
+                ),
                 body,
             )
         };
 
-        assert_eq!(*wire, (path.into(), body.to_string()));
+        assert_eq!(*wire, (path, body.to_string()));
     }
 }
 
@@ -8453,6 +8549,7 @@ impl BatchPeer {
         headers: &str,
         fixtures: &Value,
         orders: &Mutex<Value>,
+        subaccount: u32,
     ) {
         let target = headers.lines().next().unwrap().to_owned();
 
@@ -8480,7 +8577,7 @@ impl BatchPeer {
 
         for (index, child) in request["orders"].as_array().unwrap().iter().enumerate() {
             assert_eq!(child["exchange_index"], 3);
-            assert_eq!(child["subaccount"], 0);
+            assert_eq!(child["subaccount"], subaccount);
 
             let result = if target.starts_with("POST ") {
                 Self::create(child, fixtures, orders, &mode, sequence, index)
@@ -8750,19 +8847,23 @@ fn native_cancel_batch(harness: &ExecutionHarness, orders: &[OrderAny]) -> Batch
 }
 
 #[rstest]
-#[case("success")]
-#[case("reordered")]
-#[case("missing")]
-#[case("duplicate")]
-#[case("lost")]
-#[case("venue-duplicate")]
-#[case("reject")]
-#[case("reject-details")]
-#[case("reject-invalid")]
+#[case("success", 0)]
+#[case("reordered", 0)]
+#[case("missing", 0)]
+#[case("duplicate", 0)]
+#[case("lost", 0)]
+#[case("venue-duplicate", 0)]
+#[case("reject", 0)]
+#[case("reject-details", 0)]
+#[case("reject-invalid", 0)]
+#[case("reordered", 7)]
 #[tokio::test]
-async fn native_batch_list_correlates_each_child_and_recovers(#[case] mode: &str) {
+async fn native_batch_list_correlates_each_child_and_recovers(
+    #[case] mode: &str,
+    #[case] subaccount: u32,
+) {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let peer = Peer::new(None).await;
+        let peer = Peer::with_scope(None, 2, subaccount).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "10.0001".into();
         *peer.batches.mode.lock().unwrap() = mode.into();
         peer.batches.ack_gate.add_permits(1);
@@ -8838,6 +8939,7 @@ async fn native_batch_list_correlates_each_child_and_recovers(#[case] mode: &str
                 serde_json::from_str::<Value>(include_str!("../../test_data/rest_requests.json"))
                     .unwrap()["native_batch_create"]
                     .clone();
+            expected_request["subaccount"] = subaccount.into();
             expected_request["ticker"] = serde_json::json!(order.instrument_id().symbol.as_str());
             expected_request["count"] = serde_json::json!(count);
             expected_request["client_order_id"] =
@@ -8961,17 +9063,21 @@ async fn native_batch_cancel_skips_closed_children(#[values(false, true)] closed
 }
 
 #[rstest]
-#[case("success")]
-#[case("reordered")]
-#[case("missing")]
-#[case("duplicate")]
-#[case("lost")]
-#[case("reject")]
-#[case("reject-null")]
+#[case("success", 0)]
+#[case("reordered", 0)]
+#[case("missing", 0)]
+#[case("duplicate", 0)]
+#[case("lost", 0)]
+#[case("reject", 0)]
+#[case("reject-null", 0)]
+#[case("reordered", 7)]
 #[tokio::test]
-async fn native_batch_cancel_correlates_each_child_and_recovers(#[case] mode: &str) {
+async fn native_batch_cancel_correlates_each_child_and_recovers(
+    #[case] mode: &str,
+    #[case] subaccount: u32,
+) {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let peer = Peer::new(None).await;
+        let peer = Peer::with_scope(None, 2, subaccount).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "10.0001".into();
         peer.batches.ack_gate.add_permits(2);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -9025,7 +9131,7 @@ async fn native_batch_cancel_correlates_each_child_and_recovers(#[case] mode: &s
 
         for (i, child) in writes[1].1["orders"].as_array().unwrap().iter().enumerate() {
             assert_eq!(child["order_id"], format!("batch-1-{i}"));
-            assert_eq!(child["subaccount"], 0);
+            assert_eq!(child["subaccount"], subaccount);
             assert_eq!(child["exchange_index"], 3);
             assert_eq!(
                 child["market_ticker"],
@@ -10936,7 +11042,13 @@ async fn conformance_schedule_preserves_order_totals_reports_and_teardown() {
                 .clone();
         frame["msg"]["market_ticker"] = serde_json::json!(id.symbol.as_str());
         data_peer.actions.send(("raw".into(), frame)).unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        data_peer.emit("ticker", id, false);
+
+        let DataEvent::Data(Data::Quote(tick)) = data_events.recv().await.unwrap() else {
+            panic!("expected quote after the ignored stale frame");
+        };
+
+        assert_eq!(tick.instrument_id, id);
         assert!(data_events.try_recv().is_err());
 
         let peer = Peer::with_timeout(None, 10).await;
@@ -11086,7 +11198,11 @@ async fn conformance_schedule_preserves_order_totals_reports_and_teardown() {
         let data_requests = data_peer.requests.load(Ordering::SeqCst);
         let writes = peer.submissions.writes.lock().unwrap().len();
         let balance_reads = peer.balance_reads.load(Ordering::SeqCst);
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_until_async(
+            || async { peer.sessions.load(Ordering::SeqCst) == 0 },
+            Duration::from_secs(2),
+        )
+        .await;
         assert_eq!(data_peer.requests.load(Ordering::SeqCst), data_requests);
         assert!(data_events.try_recv().is_err());
 

@@ -1005,9 +1005,7 @@ fn build_continuous_future_unsubscribe_command(
     correlation_id: UUID4,
     ts_init: UnixNanos,
 ) -> DataCommand {
-    let mut child_params = parent_params
-        .map(|params| IndexMap::clone(params))
-        .unwrap_or_default();
+    let mut child_params = parent_params.map_or_default(|params| IndexMap::clone(params));
     child_params.shift_remove("continuous_future_transitions");
     child_params.shift_remove("continuous_future_adjustment_mode");
     child_params.shift_remove("last_post_instrument_id");

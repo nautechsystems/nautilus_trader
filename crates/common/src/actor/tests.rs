@@ -1873,7 +1873,7 @@ fn test_subscription_facade_sends_exact_command_matrix(
         actor.subscribe_funding_rates(instrument_id, Some(client_id), Some(params.clone()));
         actor.subscribe_instrument_status(instrument_id, Some(client_id), Some(params.clone()));
         actor.subscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
-        actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params));
     }
 
     actor
@@ -5594,7 +5594,7 @@ fn test_defi_subscription_facade_sends_exact_command_matrix(
             Some(params.clone()),
         );
         actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
-        actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params));
     }
     actor.unsubscribe_blocks(chain, Some(client_id), Some(params.clone()));
     actor.unsubscribe_pool(instrument_id, Some(client_id), Some(params.clone()));

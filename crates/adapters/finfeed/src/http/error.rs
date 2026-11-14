@@ -42,6 +42,10 @@ pub enum Error {
     /// Requested instrument is unavailable from the provider.
     #[error("FinFeed instrument {0} is unavailable")]
     Unavailable(InstrumentId),
+    /// Public Kalshi metadata retrieval, decoding, retry, or cancellation failed.
+    /// The underlying cause and response content are omitted.
+    #[error("Public Kalshi metadata request failed")]
+    KalshiMetadata,
     /// Unsuccessful HTTP response, retaining status and retry guidance.
     #[error("FinFeed HTTP status {status}")]
     Http {

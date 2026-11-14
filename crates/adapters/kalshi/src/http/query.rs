@@ -143,7 +143,7 @@ pub struct CandlesticksQuery {
     pub period_interval: CandlestickInterval,
 }
 
-/// Explicit primary-account shard selection.
+/// Explicit subaccount and exchange shard selection.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct AccountQuery {
     pub subaccount: u32,

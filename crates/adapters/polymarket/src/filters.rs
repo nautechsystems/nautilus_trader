@@ -291,8 +291,7 @@ pub(crate) fn set_market_closed(instrument: &mut BinaryOption, closed: bool) {
     let mut info = instrument
         .info
         .as_ref()
-        .map(Params::to_shared_map)
-        .unwrap_or_default();
+        .map_or_default(Params::to_shared_map);
     info.insert(MARKET_CLOSED_KEY.to_string(), Arc::new(closed.into()));
     instrument.info = Some(Params::from_shared(info));
 }

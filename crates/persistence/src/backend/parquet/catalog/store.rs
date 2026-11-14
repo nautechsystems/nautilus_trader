@@ -399,10 +399,39 @@ impl ParquetDataCatalog {
         Ok(all_files)
     }
 
+    fn is_windows_local(&self) -> bool {
+        cfg!(target_os = "windows") && !self.is_remote_uri()
+    }
+
+    /// Encodes colons as `%3A` in an [`ObjectPath`] for Windows local filesystem compatibility.
+    pub(crate) fn encode_windows_colon_path(path: &ObjectPath) -> ObjectPath {
+        if path.as_ref().contains(':')
+            && let Ok(encoded) = ObjectPath::parse(path.as_ref().replace(':', "%3A"))
+        {
+            encoded
+        } else {
+            path.clone()
+        }
+    }
+
+    /// Converts a directory path to an [`ObjectPath`] listing prefix.
+    ///
+    /// On Windows local filesystem catalogs, colons in instrument identifiers are encoded
+    /// as `%3A` to match the on-disk directory names stored by `object_store::local::LocalFileSystem`.
+    pub(super) fn directory_listing_prefix(&self, dir: &str) -> ObjectPath {
+        let prefix = ObjectPath::from(format!("{dir}/"));
+
+        if self.is_windows_local() {
+            Self::encode_windows_colon_path(&prefix)
+        } else {
+            prefix
+        }
+    }
+
     /// Recursively lists all objects under `{dir}/` in the object store.
     pub(crate) fn list_objects(&self, dir: &str) -> anyhow::Result<Vec<ObjectMeta>> {
+        let prefix = self.directory_listing_prefix(dir);
         self.execute_async(|| async {
-            let prefix = ObjectPath::from(format!("{dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut objects = Vec::new();
             while let Some(object) = stream.next().await {
@@ -699,7 +728,14 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn to_object_path(&self, path: &str) -> anyhow::Result<ObjectPath> {
-        Ok(ObjectPath::from(self.object_store_path(path)?))
+        let store_path = self.object_store_path(path)?;
+        let object_path = ObjectPath::from(store_path);
+
+        if self.is_windows_local() {
+            Ok(Self::encode_windows_colon_path(&object_path))
+        } else {
+            Ok(object_path)
+        }
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
@@ -1182,5 +1218,41 @@ mod tests {
                 .unwrap(),
             ["BTC€.SIM"]
         );
+    }
+
+    #[rstest]
+    #[case::local(false)]
+    #[case::remote(true)]
+    fn test_directory_listing_prefix_matches_object_path(#[case] remote: bool) {
+        let mut catalog = memory_catalog("");
+        if remote {
+            catalog.original_uri = "s3://test-bucket".to_string();
+        }
+
+        let directory = "data/trades/io:ANTH-USD-PERP.HYPERLIQUID";
+        let prefix = catalog.directory_listing_prefix(directory);
+        let target = catalog.to_object_path(directory).unwrap();
+
+        let expected = if cfg!(target_os = "windows") && !remote {
+            "data/trades/io%3AANTH-USD-PERP.HYPERLIQUID"
+        } else {
+            directory
+        };
+
+        assert_eq!(prefix.as_ref(), expected);
+        assert_eq!(target, prefix);
+    }
+
+    #[rstest]
+    #[case(
+        "data/trades/io:ANTH-USD-PERP.HYPERLIQUID",
+        "data/trades/io%3AANTH-USD-PERP.HYPERLIQUID"
+    )]
+    #[case("data/quotes/BTC€.SIM", "data/quotes/BTC%E2%82%AC.SIM")]
+    #[case("data/quotes/EURUSD", "data/quotes/EURUSD")]
+    fn test_encode_windows_colon_path(#[case] input: &str, #[case] expected: &str) {
+        let path = ObjectPath::from(input);
+        let encoded = ParquetDataCatalog::encode_windows_colon_path(&path);
+        assert_eq!(encoded.as_ref(), expected);
     }
 }

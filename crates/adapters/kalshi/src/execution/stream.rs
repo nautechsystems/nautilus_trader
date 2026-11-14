@@ -163,10 +163,7 @@ impl PrivateStream {
             .context("private transport is not active")?;
         self.scope_position_notices().await?;
 
-        let query = AccountQuery {
-            subaccount: 0,
-            exchange_index: self.config.exchange_index,
-        };
+        let query = self.config.account_query();
 
         let (start, refresh_ticket) = {
             let state = self
@@ -415,7 +412,7 @@ impl PrivateStream {
     }
 
     fn notice(&self, message: &KalshiWsMessage) -> bool {
-        if !relevant(message, self.config.exchange_index) {
+        if !relevant(message, &self.config.account_query()) {
             return false;
         }
 
@@ -447,7 +444,7 @@ impl PrivateStream {
                     anyhow::bail!("private connection changed during preparation")
                 }
                 KalshiWsEvent::Message { message, .. }
-                    if relevant(&message, self.config.exchange_index) =>
+                    if relevant(&message, &self.config.account_query()) =>
                 {
                     self.notice(&message);
                     anyhow::bail!("private evidence changed during preparation")
@@ -488,8 +485,7 @@ impl PrivateStream {
             };
 
             let mut snapshot =
-                collect_recovery_snapshot(&http, query.exchange_index, start, &tracked, &owned)
-                    .await?;
+                collect_recovery_snapshot(&http, query, start, &tracked, &owned).await?;
 
             for id in external {
                 if snapshot
@@ -501,7 +497,7 @@ impl PrivateStream {
                 }
 
                 let order = http.get_order(id.as_str()).await?.order;
-                super::validate_order_scope(&order, query.exchange_index, false)?;
+                super::validate_order_scope(&order, query, false)?;
                 anyhow::ensure!(
                     order.order_id == id.as_str(),
                     "external order lookup identity mismatch"
@@ -510,10 +506,10 @@ impl PrivateStream {
             }
 
             let after = http.get_account_balance(query).await?;
+
+            // The breakdown spans all subaccounts; these balances follow the selected scope
             anyhow::ensure!(
-                before.balance == after.balance
-                    && before.balance_dollars == after.balance_dollars
-                    && before.balance_breakdown == after.balance_breakdown,
+                before.balance == after.balance && before.balance_dollars == after.balance_dollars,
                 "Kalshi account changed during recovery"
             );
             Ok::<_, anyhow::Error>((after, snapshot))
@@ -529,7 +525,7 @@ impl PrivateStream {
                     Some(KalshiWsEvent::Error { .. }) | None => anyhow::bail!("private transport changed during recovery"),
                     Some(KalshiWsEvent::Ready { .. }) => { changed = true; self.state.lock().expect("private state lock is not poisoned").invalidate(); },
                     Some(KalshiWsEvent::Message { message, .. }) => {
-                        if relevant(&message, query.exchange_index) {
+                        if relevant(&message, query) {
                             changed = true;
                             self.notice(&message);
                         }
@@ -620,7 +616,7 @@ impl PrivateStream {
                     .get_all_settlements(
                         SettlementsQuery {
                             ticker: Some(position.ticker.clone()),
-                            subaccount: 0,
+                            subaccount: self.config.subaccount,
                             ..Default::default()
                         },
                         100,
@@ -908,7 +904,7 @@ impl PrivateStream {
     }
 }
 
-fn relevant(message: &KalshiWsMessage, shard: u32) -> bool {
+fn relevant(message: &KalshiWsMessage, scope: &AccountQuery) -> bool {
     let data = match message {
         KalshiWsMessage::UserOrder(data)
         | KalshiWsMessage::Fill(data)
@@ -921,17 +917,23 @@ fn relevant(message: &KalshiWsMessage, shard: u32) -> bool {
         .get("subaccount")
         .or_else(|| data.msg.get("subaccount_number"));
 
-    if account
-        .and_then(serde_json::Value::as_u64)
-        .is_some_and(|value| value != 0)
-    {
+    let account = match account {
+        Some(value) => match value.as_u64() {
+            Some(value) => value,
+            None => return false,
+        },
+        None if scope.subaccount == 0 => 0,
+        None => return false,
+    };
+
+    if account != u64::from(scope.subaccount) {
         return false;
     }
 
     data.msg
         .get("exchange_index")
         .and_then(serde_json::Value::as_u64)
-        .is_none_or(|actual| actual == u64::from(shard))
+        .is_none_or(|actual| actual == u64::from(scope.exchange_index))
 }
 
 #[cfg(test)]
@@ -944,6 +946,60 @@ mod tests {
 
     use super::*;
     use crate::config::KalshiDataClientConfig;
+
+    #[rstest]
+    #[case(Some(serde_json::json!(7)), false, true)]
+    #[case(Some(serde_json::json!(0)), true, false)]
+    #[case(Some(serde_json::json!(-1)), false, false)]
+    #[case(Some(serde_json::Value::Null), false, false)]
+    #[case(Some(serde_json::json!("7")), false, false)]
+    #[case(None, true, false)]
+    fn account_notices_require_matching_identity(
+        #[case] identity: Option<serde_json::Value>,
+        #[case] expected_primary: bool,
+        #[case] expected_numbered: bool,
+        #[values(0, 7)] subaccount: u32,
+    ) {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/websocket_messages.json")).unwrap();
+
+        for key in ["fill", "position_notice", "order_native"] {
+            for field in ["subaccount", "subaccount_number"] {
+                let mut raw = fixtures[key].clone();
+                let payload = raw["msg"].as_object_mut().unwrap();
+                payload.remove("subaccount");
+                payload.remove("subaccount_number");
+                payload.insert("exchange_index".into(), 3.into());
+                if let Some(value) = &identity {
+                    payload.insert(field.into(), value.clone());
+                }
+
+                let message: KalshiWsMessage = serde_json::from_value(raw).unwrap();
+                assert_eq!(
+                    relevant(
+                        &message,
+                        &AccountQuery {
+                            subaccount,
+                            exchange_index: 3
+                        }
+                    ),
+                    if subaccount == 0 {
+                        expected_primary
+                    } else {
+                        expected_numbered
+                    },
+                    "{key} {field}"
+                );
+                assert!(!relevant(
+                    &message,
+                    &AccountQuery {
+                        subaccount,
+                        exchange_index: 1
+                    }
+                ));
+            }
+        }
+    }
 
     #[rstest]
     #[case(KalshiWsEvent::Ready {generation: 2})]
@@ -1548,9 +1604,20 @@ mod tests {
             let server = tokio::spawn(server); // tokio-import-ok
 
             let tracked = if canceled_empty { Vec::new() } else { vec![id] };
-            let snapshot = collect_recovery_snapshot(&http, 3, start, &tracked, &owned)
-                .await
-                .unwrap();
+
+            let snapshot = collect_recovery_snapshot(
+                &http,
+                &AccountQuery {
+                    subaccount: 0,
+                    exchange_index: 3,
+                },
+                start,
+                &tracked,
+                &owned,
+            )
+            .await
+            .unwrap();
+
             server.abort();
             assert_eq!(snapshot.orders, vec![expected_order]);
             assert_eq!(
@@ -2076,9 +2143,15 @@ mod tests {
 
             stream.http = KalshiHttpClient::new_authenticated(&private).unwrap();
             let recovery_start = stream.state.lock().unwrap().start;
-            let snapshot = collect_recovery_snapshot(&stream.http, 3, recovery_start, &[], &[])
-                .await
-                .unwrap();
+            let snapshot = collect_recovery_snapshot(
+                &stream.http,
+                &stream.config.account_query(),
+                recovery_start,
+                &[],
+                &[],
+            )
+            .await
+            .unwrap();
             assert_eq!(snapshot.lookback_start, Some(start));
             assert!(snapshot.orders.is_empty());
             assert!(snapshot.fills.is_empty());

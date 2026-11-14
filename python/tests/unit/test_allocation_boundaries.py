@@ -156,10 +156,10 @@ def test_backtest_chunk_size_boundaries() -> None:
             _backtest_config(value)
 
 
-@pytest.mark.parametrize("field", ["tick_capacity", "bar_capacity"])
+@pytest.mark.parametrize("field", ["data_capacity", "bar_capacity"])
 def test_cache_capacity_boundaries(field: str) -> None:
     """
-    Test cache tick and bar capacity boundaries.
+    Test cache data and bar capacity boundaries.
     """
     assert getattr(CacheConfig(**{field: 1}), field) == 1
     assert getattr(CacheConfig(**{field: 200_000}), field) == 200_000
@@ -213,7 +213,7 @@ calls = (
     lambda: TestInstrumentProvider.audusd_sim().next_bid_prices(1.0, sys.maxsize),
     lambda: stream_tardis_quotes('missing.csv', chunk_size=sys.maxsize),
     lambda: BacktestRunConfig(venues=[], data=[], chunk_size=sys.maxsize),
-    lambda: CacheConfig(tick_capacity=sys.maxsize),
+    lambda: CacheConfig(data_capacity=sys.maxsize),
     lambda: HurstVpinDirectionalConfig(
         instrument_id=InstrumentId.from_str('BTCUSDT.BINANCE'),
         bar_type=BarType.from_str('BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL'),

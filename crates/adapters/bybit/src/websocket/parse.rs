@@ -2426,6 +2426,37 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_ticker_option_greeks_keeps_f64_domain_values() {
+        let instrument = option_instrument();
+        let json = load_test_json("ws_ticker_option.json");
+        let mut msg: BybitWsTickerOptionMsg = serde_json::from_str(&json).unwrap();
+        msg.data.bid_iv = "0.4812".to_string();
+
+        let greeks = parse_ticker_option_greeks(&msg, &instrument, TS).unwrap();
+
+        let expected = OptionGreeks {
+            instrument_id: instrument.id(),
+            convention: GreeksConvention::BlackScholes,
+            greeks: OptionGreekValues {
+                delta: 0.047831,
+                gamma: 0.00021453,
+                vega: 0.81351067,
+                theta: -19.9115368,
+                rho: 0.0,
+            },
+            mark_iv: Some(0.4896),
+            bid_iv: Some(0.4812),
+            ask_iv: Some(0.514),
+            underlying_price: Some(16815.1),
+            open_interest: Some(49.85),
+            ts_event: UnixNanos::new(1_672_917_511_074_000_000),
+            ts_init: TS,
+        };
+
+        assert_eq!(greeks, expected);
+    }
+
+    #[rstest]
     fn parse_ws_order_stop_market_sell_preserves_type() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_order_stop_market.json");

@@ -3144,10 +3144,16 @@ fn test_to_object_path_trailing_slash() {
         base_dir.with_file_name("catalog2").display()
     );
     let sibling_object_path = catalog.to_object_path(&sibling_path).unwrap();
-    assert_eq!(
-        sibling_object_path.as_ref(),
-        sibling_path.replace('\\', "/").trim_start_matches('/')
-    );
+    let mut expected = sibling_path
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+
+    if cfg!(target_os = "windows") {
+        expected = expected.replace(':', "%3A");
+    }
+
+    assert_eq!(sibling_object_path.as_ref(), expected);
     assert!(sibling_object_path.as_ref().contains("catalog2/data"));
 }
 
@@ -11246,4 +11252,72 @@ fn test_raw_consolidation_preserves_identifier_partitions(#[values(false, true)]
 
     assert_eq!(actual_files, expected_files);
     assert_eq!(actual_rows, expected.map(Vec::from));
+}
+
+#[rstest]
+fn test_colon_identifier_listing_get_intervals_and_consolidation() {
+    let root = tempfile::tempdir().unwrap();
+    let mut catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
+    let id = "io:ANTH-USD-PERP.HYPERLIQUID";
+
+    let trades = [10_000u64, 20_000].map(|ts| {
+        TradeTick::new(
+            InstrumentId::from(id),
+            Price::from("12.34"),
+            Quantity::from("5.67"),
+            AggressorSide::Buy,
+            TradeId::new(ts.to_string()),
+            (ts - 1).into(),
+            ts.into(),
+        )
+    });
+
+    for trade in &trades {
+        catalog
+            .write_to_parquet(&[*trade], None, None, None)
+            .unwrap();
+    }
+
+    let dt: CatalogDataType = NautilusDataType::TradeTick.into();
+    let dir = catalog.make_path("trades", Some(id)).unwrap();
+
+    let query_files = catalog
+        .query_files(&dt, Some(vec![id.into()]), None, None)
+        .unwrap();
+    assert_eq!(query_files.len(), 2);
+
+    let intervals = catalog.get_intervals(&dt, Some(id)).unwrap();
+    assert_eq!(intervals, vec![(10_000, 10_000), (20_000, 20_000)]);
+
+    let files = catalog.list_parquet_files(&dir).unwrap();
+    assert_eq!(files.len(), 2);
+
+    catalog
+        .consolidate_data_by_period(&dt, Some(id), None, None, None, Some(false))
+        .unwrap();
+
+    let after_files = catalog
+        .query_files(&dt, Some(vec![id.into()]), None, None)
+        .unwrap();
+    assert_eq!(after_files.len(), 1);
+
+    let trades_after_first = catalog
+        .trade_ticks(Some(vec![id.into()]), None, None)
+        .unwrap();
+    assert_eq!(trades_after_first, trades);
+
+    // Repeating consolidation must preserve the merged file and both rows
+    catalog
+        .consolidate_data_by_period(&dt, Some(id), None, None, None, Some(false))
+        .unwrap();
+
+    let after_second_files = catalog
+        .query_files(&dt, Some(vec![id.into()]), None, None)
+        .unwrap();
+    assert_eq!(after_second_files.len(), 1);
+
+    let trades_after_second = catalog
+        .trade_ticks(Some(vec![id.into()]), None, None)
+        .unwrap();
+    assert_eq!(trades_after_second, trades);
 }

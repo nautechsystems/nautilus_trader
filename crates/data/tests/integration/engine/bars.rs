@@ -414,8 +414,7 @@ fn test_request_scoped_bar_aggregator_older_history_inserted_before_newer_live_b
     let stamps: Vec<_> = cache
         .borrow()
         .bars(&bar_type)
-        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
-        .unwrap_or_default();
+        .map_or_default(|bars| bars.iter().map(|bar| bar.ts_event).collect());
     assert_eq!(stamps, vec![UnixNanos::from(2_000), UnixNanos::from(1_000)]);
 
     // the live path continues to extend the series
@@ -424,8 +423,7 @@ fn test_request_scoped_bar_aggregator_older_history_inserted_before_newer_live_b
     let stamps: Vec<_> = cache
         .borrow()
         .bars(&bar_type)
-        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
-        .unwrap_or_default();
+        .map_or_default(|bars| bars.iter().map(|bar| bar.ts_event).collect());
     assert_eq!(
         stamps,
         vec![

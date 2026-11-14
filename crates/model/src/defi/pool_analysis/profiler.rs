@@ -35,7 +35,7 @@ use crate::defi::{
         quote::SwapQuote,
         size_estimator,
         snapshot::{PROTOCOL_FEE_BASIS_POINTS_DENOMINATOR, PoolAnalytics, PoolSnapshot, PoolState},
-        swap_math::compute_swap_step,
+        swap_math::{SwapStepResult, compute_swap_step},
     },
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
     tick_map::{
@@ -333,93 +333,8 @@ impl PoolProfiler {
             .simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96, true)
             .map_err(|e| Self::wrap_liquidity_error(e, location.clone()))?;
 
-        let tick_mismatch = swap.tick != swap_quote.tick_after;
-        let liquidity_mismatch = swap.liquidity != swap_quote.liquidity_after;
-        let sqrt_mismatch = swap.sqrt_price_x96 != swap_quote.sqrt_price_after_x96;
-        let structural_mismatch = tick_mismatch || liquidity_mismatch;
-        let anchoring_crossed_tick = if tick_mismatch {
-            self.tick_map
-                .get_all_ticks()
-                .keys()
-                .copied()
-                .filter(|&tick| {
-                    self.tick_map.is_tick_initialized(tick)
-                        && (swap_quote.tick_after >= tick) != (swap.tick >= tick)
-                })
-                .min()
-        } else {
-            None
-        };
-
-        if structural_mismatch
-            && (!swap_quote.crossed_ticks.is_empty() || anchoring_crossed_tick.is_some())
-        {
-            return Err(PoolProfilerError::SwapReplayMismatch {
-                location,
-                simulated_tick: swap_quote.tick_after,
-                event_tick: swap.tick,
-                simulated_liquidity: swap_quote.liquidity_after,
-                event_liquidity: swap.liquidity,
-                simulated_crossed_tick_count: swap_quote.crossed_ticks.len(),
-                anchoring_crossed_tick,
-            }
-            .into());
-        }
-        self.apply_swap_quote(&swap_quote);
-
-        // Verify simulation against event data - correct with event values if mismatch detected
-        if tick_mismatch {
-            log::warn!(
-                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
-                swap_quote.tick_after,
-                swap.tick,
-                swap.block
-            );
-        }
-
-        if swap.tick != self.state.current_tick {
-            self.state.current_tick = swap.tick;
-        }
-
-        if liquidity_mismatch {
-            log::warn!(
-                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
-                swap_quote.liquidity_after,
-                swap.liquidity,
-                swap.block
-            );
-        }
-
-        if swap.liquidity != self.tick_map.liquidity {
-            self.tick_map.liquidity = swap.liquidity;
-        }
-
-        if sqrt_mismatch {
-            log::warn!(
-                "Inconsistency in swap processing: Sqrt price mismatch: simulated {}, event {} on block {}",
-                swap_quote.sqrt_price_after_x96,
-                swap.sqrt_price_x96,
-                swap.block
-            );
-        }
-
-        if swap.sqrt_price_x96 != self.state.price_sqrt_ratio_x96 {
-            self.state.price_sqrt_ratio_x96 = swap.sqrt_price_x96;
-        }
-
-        self.last_processed_event = Some(
-            BlockPosition::new(
-                swap.block,
-                swap.transaction_hash.clone(),
-                swap.transaction_index,
-                swap.log_index,
-            )
-            .with_block_hash(swap.block_hash.clone()),
-        );
-        self.last_processed_ts = Some(swap.ts_event);
-        self.update_reporter_if_enabled(swap.block);
-        self.update_liquidity_analytics();
-
+        self.validate_swap_replay(swap, &swap_quote, location)?;
+        self.apply_swap_event(swap, &swap_quote);
         Ok(())
     }
 
@@ -479,6 +394,7 @@ impl PoolProfiler {
         Ok(swap_event)
     }
 
+    // panics-doc-ok (transitive via SwapSimulation::new)
     /// Core **read-only** swap simulation engine implementing `UniswapV3` mathematics.
     ///
     /// This method performs a complete swap simulation without modifying pool state,
@@ -525,200 +441,15 @@ impl PoolProfiler {
     ) -> anyhow::Result<SwapQuote> {
         self.validate_price_limit(sqrt_price_limit_x96, zero_for_one, true)?;
 
-        let exact_input = amount_specified.is_positive();
-        let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
-
-        let mut current_sqrt_price = self.state.price_sqrt_ratio_x96;
-        let mut current_tick = self.state.current_tick;
-        let mut current_active_liquidity = self.tick_map.liquidity;
-        let mut amount_specified_remaining = amount_specified;
-        let mut amount_calculated = I256::ZERO;
-        let mut protocol_fee = U256::ZERO;
-        let mut lp_fee = U256::ZERO;
-        let mut crossed_ticks = Vec::new();
-
-        // Swapping cache variables
-        let fee_protocol = self.state.uniswap_v3_fee_protocol(zero_for_one);
-        let fee_protocol_basis_points = self.state.fee_protocol_basis_points(zero_for_one);
-
-        // Track current fee growth during swap
-        let mut current_fee_growth_global = if zero_for_one {
-            self.state.fee_growth_global_0
-        } else {
-            self.state.fee_growth_global_1
-        };
-
-        // A replayed swap's recorded input was consumed in full, so input left at the event
-        // price is charged as fee even when that price equals the starting price.
-        let replay_exact_input = traverse_empty_ranges && exact_input;
-
-        // The replay clause keeps crossing empty ranges to the limit after the amount runs out
-        while (amount_specified_remaining != I256::ZERO
-            || (traverse_empty_ranges && current_active_liquidity == 0))
-            && (sqrt_price_limit_x96 != current_sqrt_price
-                || (replay_exact_input && amount_specified_remaining.is_positive()))
-        {
-            let iteration_start = (current_sqrt_price, current_tick, amount_specified_remaining);
-            let sqrt_price_start_x96 = current_sqrt_price;
-
-            let (mut tick_next, initialized) = self
-                .tick_map
-                .next_initialized_tick(current_tick, zero_for_one);
-
-            // Make sure we do not overshoot MIN/MAX tick
-            tick_next = tick_next.clamp(PoolTick::MIN_TICK, PoolTick::MAX_TICK);
-
-            // Get the price for the next tick
-            let sqrt_price_next = get_sqrt_ratio_at_tick(tick_next);
-
-            // Compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
-            let sqrt_price_target = if (zero_for_one && sqrt_price_next < sqrt_price_limit_x96)
-                || (!zero_for_one && sqrt_price_next > sqrt_price_limit_x96)
-            {
-                sqrt_price_limit_x96
-            } else {
-                sqrt_price_next
-            };
-
-            let mut swap_step_result = compute_swap_step(
-                current_sqrt_price,
-                sqrt_price_target,
-                current_active_liquidity,
-                amount_specified_remaining,
-                fee_tier,
-            )?;
-
-            // Matches the on-chain step that ran out of input before its target; a step ending on
-            // a tick boundary keeps its fee because the chain crosses first.
-            if replay_exact_input
-                && swap_step_result.sqrt_ratio_next_x96 == sqrt_price_limit_x96
-                && swap_step_result.sqrt_ratio_next_x96 != sqrt_price_next
-            {
-                swap_step_result.fee_amount =
-                    amount_specified_remaining.into_raw() - swap_step_result.amount_in;
-            }
-
-            // Update current price to the new price after this swap step (BEFORE amount updates, matching Solidity)
-            current_sqrt_price = swap_step_result.sqrt_ratio_next_x96;
-
-            // Update amounts based on swap direction and type
-            if exact_input {
-                // For exact input swaps: subtract input amount and fees from remaining, subtract output from calculated
-                amount_specified_remaining -= FullMath::truncate_to_i256(
-                    swap_step_result.amount_in + swap_step_result.fee_amount,
-                );
-                amount_calculated -= FullMath::truncate_to_i256(swap_step_result.amount_out);
-            } else {
-                // For exact output swaps: add output to remaining, add input and fees to calculated
-                amount_specified_remaining +=
-                    FullMath::truncate_to_i256(swap_step_result.amount_out);
-                amount_calculated += FullMath::truncate_to_i256(
-                    swap_step_result.amount_in + swap_step_result.fee_amount,
-                );
-            }
-
-            // Calculate protocol fee if enabled
-            let mut step_fee_amount = swap_step_result.fee_amount;
-
-            if fee_protocol > 0 || fee_protocol_basis_points.is_some() {
-                let protocol_fee_delta = Self::protocol_fee_delta(
-                    swap_step_result.fee_amount,
-                    fee_protocol,
-                    fee_protocol_basis_points,
-                )?;
-                step_fee_amount -= protocol_fee_delta;
-                protocol_fee += protocol_fee_delta;
-            }
-
-            // Accumulate LP fee (protocol fee is already deducted if it exists).
-            lp_fee += step_fee_amount;
-
-            // Update global fee tracker
-            if current_active_liquidity > 0 {
-                let fee_growth_delta =
-                    FullMath::mul_div(step_fee_amount, Q128, U256::from(current_active_liquidity))?;
-                current_fee_growth_global += fee_growth_delta;
-            }
-
-            // Shift tick if we reached the next price
-            if swap_step_result.sqrt_ratio_next_x96 == sqrt_price_next {
-                // We have swapped all the way to the boundary of the next tick.
-                // Time to handle crossing into the next tick, which may change liquidity.
-                // If the tick is initialized, run the tick transition logic (liquidity changes, fee accumulators, etc.).
-                if initialized {
-                    crossed_ticks.push(CrossedTick::new(
-                        tick_next,
-                        zero_for_one,
-                        if zero_for_one {
-                            current_fee_growth_global
-                        } else {
-                            self.state.fee_growth_global_0
-                        },
-                        if zero_for_one {
-                            self.state.fee_growth_global_1
-                        } else {
-                            current_fee_growth_global
-                        },
-                    ));
-
-                    // Update local liquidity tracking when crossing ticks
-                    if let Some(tick_data) = self.tick_map.get_tick(tick_next) {
-                        let liquidity_net = tick_data.liquidity_net;
-                        current_active_liquidity = if zero_for_one {
-                            try_liquidity_math_add(current_active_liquidity, -liquidity_net)?
-                        } else {
-                            try_liquidity_math_add(current_active_liquidity, liquidity_net)?
-                        };
-                    }
-                }
-
-                current_tick = if zero_for_one {
-                    tick_next - 1
-                } else {
-                    tick_next
-                };
-            } else if swap_step_result.sqrt_ratio_next_x96 != sqrt_price_start_x96 {
-                // The price moved during this swap step, but didn't reach a tick boundary.
-                // So, update the tick to match the new price.
-                current_tick = get_tick_at_sqrt_ratio(current_sqrt_price);
-            }
-
-            if (current_sqrt_price, current_tick, amount_specified_remaining) == iteration_start {
-                anyhow::bail!(
-                    "Swap simulation made no progress at tick {current_tick} with sqrt price \
-                     {current_sqrt_price} and remaining amount {amount_specified_remaining}"
-                );
-            }
-        }
-
-        // Calculate final amounts
-        let (amount0, amount1) = if zero_for_one == exact_input {
-            (
-                amount_specified - amount_specified_remaining,
-                amount_calculated,
-            )
-        } else {
-            (
-                amount_calculated,
-                amount_specified - amount_specified_remaining,
-            )
-        };
-
-        let quote = SwapQuote::new(
-            self.pool.instrument_id,
-            amount0,
-            amount1,
-            self.state.price_sqrt_ratio_x96,
-            current_sqrt_price,
-            self.state.current_tick,
-            current_tick,
-            current_active_liquidity,
-            current_fee_growth_global,
-            lp_fee,
-            protocol_fee,
-            crossed_ticks,
+        let simulation = SwapSimulation::new(
+            self,
+            amount_specified,
+            zero_for_one,
+            sqrt_price_limit_x96,
+            traverse_empty_ranges,
         );
-        Ok(quote)
+
+        simulation.run()
     }
 
     /// Applies a swap quote to the pool state (mutations only, no simulation).
@@ -1569,44 +1300,8 @@ impl PoolProfiler {
         let current_tick = self.state.current_tick;
         let position_key = PoolPosition::get_position_key(owner, tick_lower, tick_upper);
 
-        // Only validate when burning (negative liquidity_delta)
-        if liquidity_delta < 0 {
-            let position_liquidity = self
-                .positions
-                .get(&position_key)
-                .map_or(0, |position| position.liquidity);
-            let burn_amount = liquidity_delta.unsigned_abs();
-            if position_liquidity < burn_amount {
-                anyhow::bail!(
-                    "Position liquidity {position_liquidity} is less than the requested burn amount of {burn_amount}"
-                );
-            }
-        }
-
-        // Pre-validate so an over/underflow error returns before mutating tick map
-        // or position state.
-        let new_active_liquidity = if tick_lower <= current_tick && current_tick < tick_upper {
-            Some(try_liquidity_math_add(
-                self.tick_map.liquidity,
-                liquidity_delta,
-            )?)
-        } else {
-            None
-        };
-
-        for tick_value in [tick_lower, tick_upper] {
-            let liquidity_gross = self
-                .tick_map
-                .get_tick(tick_value)
-                .map_or(0, |tick| tick.liquidity_gross);
-            let liquidity_after = try_liquidity_math_add(liquidity_gross, liquidity_delta)?;
-            if liquidity_after > self.tick_map.max_liquidity_per_tick {
-                anyhow::bail!(
-                    "Liquidity {liquidity_after} exceeds maximum per tick {} at tick {tick_value}",
-                    self.tick_map.max_liquidity_per_tick,
-                );
-            }
-        }
+        let new_active_liquidity =
+            self.validate_position_update(&position_key, tick_lower, tick_upper, liquidity_delta)?;
 
         let position = self
             .positions
@@ -2184,6 +1879,453 @@ impl PoolProfiler {
             reporter.log_final_stats();
         }
         self.reporter = None;
+    }
+}
+
+impl PoolProfiler {
+    fn validate_swap_replay(
+        &self,
+        swap: &PoolSwap,
+        swap_quote: &SwapQuote,
+        location: PoolEventLocation,
+    ) -> anyhow::Result<()> {
+        let tick_mismatch = swap.tick != swap_quote.tick_after;
+        let liquidity_mismatch = swap.liquidity != swap_quote.liquidity_after;
+        let structural_mismatch = tick_mismatch || liquidity_mismatch;
+
+        let anchoring_crossed_tick = if tick_mismatch {
+            self.tick_map
+                .get_all_ticks()
+                .keys()
+                .copied()
+                .filter(|&tick| {
+                    self.tick_map.is_tick_initialized(tick)
+                        && (swap_quote.tick_after >= tick) != (swap.tick >= tick)
+                })
+                .min()
+        } else {
+            None
+        };
+
+        if structural_mismatch
+            && (!swap_quote.crossed_ticks.is_empty() || anchoring_crossed_tick.is_some())
+        {
+            return Err(PoolProfilerError::SwapReplayMismatch {
+                location,
+                simulated_tick: swap_quote.tick_after,
+                event_tick: swap.tick,
+                simulated_liquidity: swap_quote.liquidity_after,
+                event_liquidity: swap.liquidity,
+                simulated_crossed_tick_count: swap_quote.crossed_ticks.len(),
+                anchoring_crossed_tick,
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
+    fn apply_swap_event(&mut self, swap: &PoolSwap, swap_quote: &SwapQuote) {
+        let tick_mismatch = swap.tick != swap_quote.tick_after;
+        let liquidity_mismatch = swap.liquidity != swap_quote.liquidity_after;
+        let sqrt_mismatch = swap.sqrt_price_x96 != swap_quote.sqrt_price_after_x96;
+        self.apply_swap_quote(swap_quote);
+
+        // Verify simulation against event data - correct with event values if mismatch detected
+        if tick_mismatch {
+            log::warn!(
+                "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
+                swap_quote.tick_after,
+                swap.tick,
+                swap.block
+            );
+        }
+
+        if swap.tick != self.state.current_tick {
+            self.state.current_tick = swap.tick;
+        }
+
+        if liquidity_mismatch {
+            log::warn!(
+                "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
+                swap_quote.liquidity_after,
+                swap.liquidity,
+                swap.block
+            );
+        }
+
+        if swap.liquidity != self.tick_map.liquidity {
+            self.tick_map.liquidity = swap.liquidity;
+        }
+
+        if sqrt_mismatch {
+            log::warn!(
+                "Inconsistency in swap processing: Sqrt price mismatch: simulated {}, event {} on block {}",
+                swap_quote.sqrt_price_after_x96,
+                swap.sqrt_price_x96,
+                swap.block
+            );
+        }
+
+        if swap.sqrt_price_x96 != self.state.price_sqrt_ratio_x96 {
+            self.state.price_sqrt_ratio_x96 = swap.sqrt_price_x96;
+        }
+
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                swap.block,
+                swap.transaction_hash.clone(),
+                swap.transaction_index,
+                swap.log_index,
+            )
+            .with_block_hash(swap.block_hash.clone()),
+        );
+        self.last_processed_ts = Some(swap.ts_event);
+        self.update_reporter_if_enabled(swap.block);
+        self.update_liquidity_analytics();
+    }
+
+    fn validate_position_update(
+        &self,
+        position_key: &str,
+        tick_lower: i32,
+        tick_upper: i32,
+        liquidity_delta: i128,
+    ) -> anyhow::Result<Option<u128>> {
+        let current_tick = self.state.current_tick;
+
+        // Only validate when burning (negative liquidity_delta)
+        if liquidity_delta < 0 {
+            let position_liquidity = self
+                .positions
+                .get(position_key)
+                .map_or(0, |position| position.liquidity);
+            let burn_amount = liquidity_delta.unsigned_abs();
+            if position_liquidity < burn_amount {
+                anyhow::bail!(
+                    "Position liquidity {position_liquidity} is less than the requested burn amount of {burn_amount}"
+                );
+            }
+        }
+
+        // Pre-validate so an over/underflow error returns before mutating tick map
+        // or position state.
+        let new_active_liquidity = if tick_lower <= current_tick && current_tick < tick_upper {
+            Some(try_liquidity_math_add(
+                self.tick_map.liquidity,
+                liquidity_delta,
+            )?)
+        } else {
+            None
+        };
+
+        for tick_value in [tick_lower, tick_upper] {
+            let liquidity_gross = self
+                .tick_map
+                .get_tick(tick_value)
+                .map_or(0, |tick| tick.liquidity_gross);
+            let liquidity_after = try_liquidity_math_add(liquidity_gross, liquidity_delta)?;
+            if liquidity_after > self.tick_map.max_liquidity_per_tick {
+                anyhow::bail!(
+                    "Liquidity {liquidity_after} exceeds maximum per tick {} at tick {tick_value}",
+                    self.tick_map.max_liquidity_per_tick,
+                );
+            }
+        }
+
+        Ok(new_active_liquidity)
+    }
+}
+
+struct SwapSimulation<'a> {
+    profiler: &'a PoolProfiler,
+    amount_specified: I256,
+    zero_for_one: bool,
+    sqrt_price_limit_x96: U160,
+    traverse_empty_ranges: bool,
+    exact_input: bool,
+    fee_tier: u32,
+    fee_protocol: u8,
+    fee_protocol_basis_points: Option<u32>,
+    current_sqrt_price: U160,
+    current_tick: i32,
+    current_active_liquidity: u128,
+    amount_specified_remaining: I256,
+    amount_calculated: I256,
+    protocol_fee: U256,
+    lp_fee: U256,
+    crossed_ticks: Vec<CrossedTick>,
+    current_fee_growth_global: U256,
+}
+
+impl<'a> SwapSimulation<'a> {
+    fn new(
+        profiler: &'a PoolProfiler,
+        amount_specified: I256,
+        zero_for_one: bool,
+        sqrt_price_limit_x96: U160,
+        traverse_empty_ranges: bool,
+    ) -> Self {
+        let exact_input = amount_specified.is_positive();
+        let fee_tier = profiler.pool.fee.expect("Pool fee should be initialized");
+        Self {
+            profiler,
+            amount_specified,
+            zero_for_one,
+            sqrt_price_limit_x96,
+            traverse_empty_ranges,
+            exact_input,
+            fee_tier,
+            fee_protocol: profiler.state.uniswap_v3_fee_protocol(zero_for_one),
+            fee_protocol_basis_points: profiler.state.fee_protocol_basis_points(zero_for_one),
+            current_sqrt_price: profiler.state.price_sqrt_ratio_x96,
+            current_tick: profiler.state.current_tick,
+            current_active_liquidity: profiler.tick_map.liquidity,
+            amount_specified_remaining: amount_specified,
+            amount_calculated: I256::ZERO,
+            protocol_fee: U256::ZERO,
+            lp_fee: U256::ZERO,
+            crossed_ticks: Vec::new(),
+            current_fee_growth_global: if zero_for_one {
+                profiler.state.fee_growth_global_0
+            } else {
+                profiler.state.fee_growth_global_1
+            },
+        }
+    }
+
+    fn run(mut self) -> anyhow::Result<SwapQuote> {
+        while self.should_continue() {
+            self.advance()?;
+        }
+
+        Ok(self.into_quote())
+    }
+
+    fn should_continue(&self) -> bool {
+        // The replay clause keeps crossing empty ranges to the limit after the amount runs out
+        (self.amount_specified_remaining != I256::ZERO
+            || (self.traverse_empty_ranges && self.current_active_liquidity == 0))
+            && (self.sqrt_price_limit_x96 != self.current_sqrt_price
+                || (self.replays_exact_input() && self.amount_specified_remaining.is_positive()))
+    }
+
+    // A replayed swap's recorded input was consumed in full, so input left at the event
+    // price is charged as fee even when that price equals the starting price.
+    fn replays_exact_input(&self) -> bool {
+        self.traverse_empty_ranges && self.exact_input
+    }
+
+    fn advance(&mut self) -> anyhow::Result<()> {
+        let iteration_start = (
+            self.current_sqrt_price,
+            self.current_tick,
+            self.amount_specified_remaining,
+        );
+
+        let sqrt_price_start_x96 = self.current_sqrt_price;
+
+        let (mut tick_next, initialized) = self
+            .profiler
+            .tick_map
+            .next_initialized_tick(self.current_tick, self.zero_for_one);
+
+        // Make sure we do not overshoot MIN/MAX tick
+        tick_next = tick_next.clamp(PoolTick::MIN_TICK, PoolTick::MAX_TICK);
+
+        // Get the price for the next tick
+        let sqrt_price_next = get_sqrt_ratio_at_tick(tick_next);
+
+        // Compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
+        let sqrt_price_target = if (self.zero_for_one
+            && sqrt_price_next < self.sqrt_price_limit_x96)
+            || (!self.zero_for_one && sqrt_price_next > self.sqrt_price_limit_x96)
+        {
+            self.sqrt_price_limit_x96
+        } else {
+            sqrt_price_next
+        };
+
+        let mut swap_step_result = compute_swap_step(
+            self.current_sqrt_price,
+            sqrt_price_target,
+            self.current_active_liquidity,
+            self.amount_specified_remaining,
+            self.fee_tier,
+        )?;
+
+        // Matches the on-chain step that ran out of input before its target; a step ending on
+        // a tick boundary keeps its fee because the chain crosses first.
+        if self.replays_exact_input()
+            && swap_step_result.sqrt_ratio_next_x96 == self.sqrt_price_limit_x96
+            && swap_step_result.sqrt_ratio_next_x96 != sqrt_price_next
+        {
+            swap_step_result.fee_amount =
+                self.amount_specified_remaining.into_raw() - swap_step_result.amount_in;
+        }
+
+        // Update current price to the new price after this swap step (BEFORE amount updates, matching Solidity)
+        self.current_sqrt_price = swap_step_result.sqrt_ratio_next_x96;
+
+        self.update_amounts(&swap_step_result);
+        // Accrue against pre-crossing liquidity; crossings record the updated fee growth
+        self.accrue_fees(swap_step_result.fee_amount)?;
+        self.advance_tick(
+            tick_next,
+            initialized,
+            sqrt_price_next,
+            sqrt_price_start_x96,
+        )?;
+
+        if (
+            self.current_sqrt_price,
+            self.current_tick,
+            self.amount_specified_remaining,
+        ) == iteration_start
+        {
+            anyhow::bail!(
+                "Swap simulation made no progress at tick {} with sqrt price \
+                 {} and remaining amount {}",
+                self.current_tick,
+                self.current_sqrt_price,
+                self.amount_specified_remaining,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn update_amounts(&mut self, step: &SwapStepResult) {
+        // Update amounts based on swap direction and type
+        if self.exact_input {
+            // For exact input swaps: subtract input amount and fees from remaining, subtract output from calculated
+            self.amount_specified_remaining -=
+                FullMath::truncate_to_i256(step.amount_in + step.fee_amount);
+            self.amount_calculated -= FullMath::truncate_to_i256(step.amount_out);
+        } else {
+            // For exact output swaps: add output to remaining, add input and fees to calculated
+            self.amount_specified_remaining += FullMath::truncate_to_i256(step.amount_out);
+            self.amount_calculated += FullMath::truncate_to_i256(step.amount_in + step.fee_amount);
+        }
+    }
+
+    fn accrue_fees(&mut self, fee_amount: U256) -> anyhow::Result<()> {
+        // Calculate protocol fee if enabled
+        let mut step_fee_amount = fee_amount;
+
+        if self.fee_protocol > 0 || self.fee_protocol_basis_points.is_some() {
+            let protocol_fee_delta = PoolProfiler::protocol_fee_delta(
+                fee_amount,
+                self.fee_protocol,
+                self.fee_protocol_basis_points,
+            )?;
+            step_fee_amount -= protocol_fee_delta;
+            self.protocol_fee += protocol_fee_delta;
+        }
+
+        // Accumulate LP fee (protocol fee is already deducted if it exists).
+        self.lp_fee += step_fee_amount;
+
+        // Update global fee tracker
+        if self.current_active_liquidity > 0 {
+            let fee_growth_delta = FullMath::mul_div(
+                step_fee_amount,
+                Q128,
+                U256::from(self.current_active_liquidity),
+            )?;
+            self.current_fee_growth_global += fee_growth_delta;
+        }
+
+        Ok(())
+    }
+
+    fn advance_tick(
+        &mut self,
+        tick_next: i32,
+        initialized: bool,
+        sqrt_price_next: U160,
+        sqrt_price_start_x96: U160,
+    ) -> anyhow::Result<()> {
+        // Shift tick if we reached the next price
+        if self.current_sqrt_price == sqrt_price_next {
+            // We have swapped all the way to the boundary of the next tick.
+            // Time to handle crossing into the next tick, which may change liquidity.
+            // If the tick is initialized, run the tick transition logic (liquidity changes, fee accumulators, etc.).
+            if initialized {
+                self.cross_tick(tick_next)?;
+            }
+
+            self.current_tick = if self.zero_for_one {
+                tick_next - 1
+            } else {
+                tick_next
+            };
+        } else if self.current_sqrt_price != sqrt_price_start_x96 {
+            // The price moved during this swap step, but didn't reach a tick boundary.
+            // So, update the tick to match the new price.
+            self.current_tick = get_tick_at_sqrt_ratio(self.current_sqrt_price);
+        }
+
+        Ok(())
+    }
+
+    fn cross_tick(&mut self, tick_next: i32) -> anyhow::Result<()> {
+        self.crossed_ticks.push(CrossedTick::new(
+            tick_next,
+            self.zero_for_one,
+            if self.zero_for_one {
+                self.current_fee_growth_global
+            } else {
+                self.profiler.state.fee_growth_global_0
+            },
+            if self.zero_for_one {
+                self.profiler.state.fee_growth_global_1
+            } else {
+                self.current_fee_growth_global
+            },
+        ));
+
+        // Update local liquidity tracking when crossing ticks
+        if let Some(tick_data) = self.profiler.tick_map.get_tick(tick_next) {
+            let liquidity_net = tick_data.liquidity_net;
+            self.current_active_liquidity = if self.zero_for_one {
+                try_liquidity_math_add(self.current_active_liquidity, -liquidity_net)?
+            } else {
+                try_liquidity_math_add(self.current_active_liquidity, liquidity_net)?
+            };
+        }
+
+        Ok(())
+    }
+
+    fn into_quote(self) -> SwapQuote {
+        // Calculate final amounts
+        let (amount0, amount1) = if self.zero_for_one == self.exact_input {
+            (
+                self.amount_specified - self.amount_specified_remaining,
+                self.amount_calculated,
+            )
+        } else {
+            (
+                self.amount_calculated,
+                self.amount_specified - self.amount_specified_remaining,
+            )
+        };
+
+        SwapQuote::new(
+            self.profiler.pool.instrument_id,
+            amount0,
+            amount1,
+            self.profiler.state.price_sqrt_ratio_x96,
+            self.current_sqrt_price,
+            self.profiler.state.current_tick,
+            self.current_tick,
+            self.current_active_liquidity,
+            self.current_fee_growth_global,
+            self.lp_fee,
+            self.protocol_fee,
+            self.crossed_ticks,
+        )
     }
 }
 

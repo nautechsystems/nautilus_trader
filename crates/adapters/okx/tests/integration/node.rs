@@ -335,9 +335,11 @@ fn build_node(
         ..Default::default()
     };
 
-    if retain {
-        exec_engine.submission_recovery_policy = SubmissionRecoveryPolicy::RetainUnresolved;
-    }
+    exec_engine.submission_recovery_policy = if retain {
+        SubmissionRecoveryPolicy::RetainUnresolved
+    } else {
+        SubmissionRecoveryPolicy::ResolveLocally
+    };
 
     build_node_with_config(addr, events, query_on, exec_engine)
 }

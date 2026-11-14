@@ -15,7 +15,7 @@
 
 //! Subscription and recovery tasks for Hyperliquid books.
 //!
-//! The tasks here write gated `l2Book` subscriptions, monitor snapshot deadlines, and supply
+//! The tasks here write gated book subscriptions, monitor snapshot deadlines, and supply
 //! Hyperliquid replacement operations and error classification to the shared [`BookRecovery`]
 //! runner. The runner owns snapshot waits, backoff, the retry budget, and the retry ceiling that
 //! follows it. A successful write alone does not complete recovery: the tracker must accept a
@@ -36,9 +36,12 @@ use nautilus_live::{
     task::TaskSpawner,
 };
 use nautilus_model::identifiers::InstrumentId;
+use tokio_util::sync::CancellationToken;
 
 use super::sync::BookSyncTracker;
-use crate::websocket::{client::HyperliquidWebSocketClient, error::HyperliquidWsError};
+use crate::websocket::{
+    book::PendingBookWrite, client::HyperliquidWebSocketClient, error::HyperliquidWsError,
+};
 
 pub(crate) type BookRecovery = Recovery<HyperliquidWsError>;
 
@@ -76,18 +79,11 @@ pub(crate) fn spawn_subscription_task(
             return;
         }
 
-        match result {
-            Ok(()) => {
-                if !snapshot_expired(&cancel, snapshot_timeout).await {
-                    return;
-                }
-
-                log::warn!(
-                    "Initial book snapshot missing for {instrument_id}; requesting a fresh snapshot"
-                );
-            }
+        let write_failed = match result {
+            Ok(()) => false,
             Err(e) if is_retryable_error(&e) => {
                 log::warn!("Initial book subscription write failed for {instrument_id}: {e}");
+                true
             }
             Err(e) => {
                 // Nothing reached the venue, so recovery would have no stream to replace
@@ -95,21 +91,83 @@ pub(crate) fn spawn_subscription_task(
                 log::warn!("Book subscription rejected for {instrument_id}: {e}");
                 return;
             }
-        }
+        };
 
-        if let Some(recovery) = book_sync.claim_subscription_recovery(instrument_id, &cancel) {
-            spawn_recovery_task(
-                instrument_id,
-                recovery,
-                ws_client,
-                snapshot_timeout,
-                &spawner,
-            );
-        }
+        watch_initial_snapshot(
+            instrument_id,
+            &cancel,
+            write_failed,
+            &book_sync,
+            ws_client,
+            snapshot_timeout,
+            &spawner,
+        )
+        .await;
     }) {
         // A book whose write never runs would suppress every frame
         tracker.remove(instrument_id);
         log::debug!("Skipping Hyperliquid book subscription after shutdown began: {e}");
+    }
+}
+
+/// Watches the compact stream's write and initial snapshot after command admission.
+pub(crate) async fn watch_compact_subscription(
+    instrument_id: InstrumentId,
+    write: PendingBookWrite,
+    book_sync: &BookSyncTracker,
+    ws_client: HyperliquidWebSocketClient,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let cancel = write.cancel.clone();
+    let _guard = cancel.clone().drop_guard();
+    let result = write.wait().await;
+
+    if cancel.is_cancelled() {
+        return;
+    }
+
+    if let Err(e) = &result {
+        log::warn!("Initial compact book subscription write failed for {instrument_id}: {e}");
+    }
+
+    watch_initial_snapshot(
+        instrument_id,
+        &cancel,
+        result.is_err(),
+        book_sync,
+        ws_client,
+        snapshot_timeout,
+        tasks,
+    )
+    .await;
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "snapshot wait needs shared adapter state"
+)]
+async fn watch_initial_snapshot(
+    instrument_id: InstrumentId,
+    cancel: &CancellationToken,
+    write_failed: bool,
+    book_sync: &BookSyncTracker,
+    ws_client: HyperliquidWebSocketClient,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    if !write_failed {
+        if !snapshot_expired(cancel, snapshot_timeout).await {
+            return;
+        }
+
+        log::warn!(
+            "Initial book snapshot missing for {instrument_id}; requesting a fresh snapshot"
+        );
+    }
+
+    if let Some(recovery) = book_sync.claim_subscription_recovery(instrument_id, cancel) {
+        spawn_recovery_task(instrument_id, recovery, ws_client, snapshot_timeout, tasks);
     }
 }
 
@@ -202,7 +260,7 @@ pub(crate) fn reject_snapshot(
     snapshot_timeout: Duration,
     tasks: &TaskSpawner,
 ) {
-    let error = HyperliquidWsError::InvalidSnapshot(format!("l2Book frame for {instrument_id}"));
+    let error = HyperliquidWsError::InvalidSnapshot(format!("Book frame for {instrument_id}"));
 
     let Some(recovery) = book_sync.reject_snapshot(instrument_id, error) else {
         return;

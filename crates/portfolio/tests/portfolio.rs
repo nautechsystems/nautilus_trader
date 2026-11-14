@@ -7640,8 +7640,8 @@ fn test_snapshot_aggregation_overflow_is_account_local_and_recovers_after_settle
     );
 }
 
-/// Snapshot PnL outside the NETTING branch must convert through the same rate source as the
-/// position PnL it is summed with, otherwise one total mixes MARK and MID rates.
+// Snapshot PnL without NETTING cycle adjustment uses the same rate source as position PnL
+// so the total cannot mix MARK and MID conversions.
 #[rstest]
 fn test_realized_pnl_snapshot_without_netting_position_uses_mark_xrate(
     mut simple_cache: Cache,
@@ -7692,7 +7692,7 @@ fn test_realized_pnl_snapshot_without_netting_position_uses_mark_xrate(
     snapshotted.realized_pnl = Some(Money::from("100.00 USD"));
     {
         let mut cache = portfolio.cache().borrow_mut();
-        // HEDGING keeps `is_netting` false, which selects the simple aggregation branch.
+        // HEDGING skips the NETTING closed-cycle adjustment
         cache.add_position(&position, OmsType::Hedging).unwrap();
         cache.snapshot_position(&snapshotted).unwrap();
         // No MID rate is seeded, so a MID lookup yields no rate at all.
@@ -7708,6 +7708,7 @@ fn test_realized_pnl_snapshot_without_netting_position_uses_mark_xrate(
 fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
+    #[values(false, true)] snapshot_without_pnl: bool,
 ) {
     // Setup account
     let account_state = get_margin_account(None);
@@ -7822,12 +7823,20 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         .add_position(&position2, OmsType::Netting)
         .unwrap();
 
+    if snapshot_without_pnl {
+        let mut snapshot = position1.clone();
+        snapshot.id = PositionId::new("P-WITHOUT-PNL");
+        snapshot.realized_pnl = None;
+        let mut cache = portfolio.cache().borrow_mut();
+        cache.snapshot_position(&snapshot).unwrap();
+        cache.add_position(&snapshot, OmsType::Netting).unwrap();
+    }
+
     // Calculate realized PnL - should include snapshot PnL
     let realized_pnl = portfolio.realized_pnl(&instrument_audusd.id());
 
-    // NETTING 3-case rule with the margin account: LAST snapshot's realized PnL
-    // (positive first cycle, net of commissions) is converted through the margin
-    // account's base currency xrate to 15.00 USD.
+    // The archived cycle contributes 16 USD after commissions, and the new cycle's
+    // opening commission contributes -1 USD, for a combined 15 USD.
     let pnl = realized_pnl.expect("realized_pnl should be Some");
     assert_eq!(pnl.currency, Currency::USD());
     assert_eq!(pnl, Money::from("15.00 USD"));

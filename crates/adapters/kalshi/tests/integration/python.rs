@@ -220,7 +220,6 @@ async fn python_extracted_data_client_requests_the_configured_peer() {
         );
         let requests = peer.requests.load(Ordering::SeqCst);
         client.disconnect().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
         assert_eq!(peer.requests.load(Ordering::SeqCst), requests);
     })
     .await

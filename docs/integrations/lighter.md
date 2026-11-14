@@ -670,9 +670,9 @@ Use `post_only` on limit-style orders. The adapter does not synthesize maker-onl
 The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
 otherwise to `OrderRejected` with `due_post_only=true`.
 
-Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only
-opens can be dropped without a venue order report and reconcile as `INFLIGHT_TIMEOUT`, without
-a venue rejection reason.
+Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only opens can
+be dropped without a venue order report. `ResolveLocally` reconciles them as `INFLIGHT_TIMEOUT` without a venue
+rejection reason; the default `RetainUnresolved` leaves them `SUBMITTED`.
 
 ### Advanced order features
 
@@ -1063,6 +1063,13 @@ Execution clients authenticate and subscribe to six private streams:
 - `user_stats`: perp-account margin rollup (collateral and available balance).
 
 The adapter emits merged `account_all_assets` and `user_stats` state only after both first frames arrive.
+
+`LighterWsFrame` preserves optional `transaction_time` integers on `account_all_positions` and
+`account_all_assets` frames, including zero. The field uses
+[venue microseconds](https://docs.lighter.xyz/developers/reference/timestamps).
+It is available through `NautilusWsMessage::Raw` only without an execution context; trading nodes do
+not expose it in typed account or position reports. Frames are processed in receive order without
+timestamp filtering or deduplication, and report timestamps remain unchanged.
 
 Construction allows missing credentials, but `connect()` requires `private_key`, `account_index`, and
 `api_key_index`. Private streams and nonce refresh are mandatory.

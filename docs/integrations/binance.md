@@ -845,7 +845,9 @@ Synchronization starts at the first diff after a subscription or data WebSocket 
 1. Diffs are buffered and a REST snapshot is requested.
 1. Buffered diffs covered by the snapshot's `lastUpdateId` are dropped.
 1. The remaining diffs must continue from the snapshot. Otherwise another snapshot is requested.
-1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs.
+1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs. A buffered
+   diff received before the snapshot takes the snapshot's `ts_init`, so replayed diffs never sort
+   before the snapshot.
 1. Each later diff is validated against the previous one before it is sent.
 
 Each diff must continue from the snapshot or the previous diff:
@@ -959,9 +961,18 @@ trade count, taker-buy base volume, and taker-buy quote volume. Historical core 
 Request `BinanceBar` custom data with `bar_type` metadata to retain the extended fields in historical
 responses.
 
-Real-time trade subscriptions use the `<symbol>@aggTrade` stream on Futures, because Binance only
-publishes aggregated trades on the Futures WebSocket, and the individual `<symbol>@trade` stream on
-Spot.
+Real-time trade subscriptions use the individual `<symbol>@trade` stream on Spot and the
+`<symbol>@aggTrade` stream on Futures.
+
+Set `use_usdm_raw_trades=True` on a USD-M data client to subscribe to the raw `<symbol>@trade`
+stream on the `/public` route instead. Binance does not list this stream in its USD-M
+documentation, so aggregate trades remain the default. Binance publishes raw trades at their trade
+time, while it batches aggregate trades every 100 ms, so an aggregate trade can arrive up to about
+150 ms later. Each raw trade emits one `TradeTick` with the venue trade ID. An aggregate trade
+combines fills at one price and taker side into one `TradeTick` with the aggregate trade ID, so
+tick counts and trade IDs differ between the two settings. The adapter skips insurance fund, ADL,
+and zero-quantity `NA` messages, which the aggregate stream does not include. Spot and COIN-M
+clients reject the option.
 
 Historical trade requests without bounds use the recent-trades endpoint. A request with time bounds uses
 aggregate trades and accepts at most 1000 records, so the source follows the request rather than a config
@@ -1396,6 +1407,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `base_url_ws`                      | `None`    | Optional market WebSocket endpoint override.                                   |
 | `api_key` / `api_secret`           | `None`    | Required for Spot SBE; optional for public JSON and Futures data.              |
 | `spot_market_data_mode`            | `Sbe`     | `Json` keeps the credential-free Global Spot path. Binance US requires `Json`. |
+| `use_usdm_raw_trades`              | `False`   | Subscribe USD-M trades to raw `<symbol>@trade` instead of `<symbol>@aggTrade`. |
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                       |
 | `instrument_refresh_interval_secs` | `3,600`   | Full catalog refresh interval; `0` disables it.                                |
 | `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |

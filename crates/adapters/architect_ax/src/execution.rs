@@ -136,13 +136,11 @@ impl AxExecutionClient {
             config
                 .api_key
                 .clone()
-                .map(|value| value.into_inner())
-                .unwrap_or_default(),
+                .map_or_default(|value| value.into_inner()),
             config
                 .api_secret
                 .clone()
-                .map(|value| value.into_inner())
-                .unwrap_or_default(),
+                .map_or_default(|value| value.into_inner()),
             Some(config.http_base_url()),
             Some(config.orders_base_url()),
             config.http_timeout_secs,

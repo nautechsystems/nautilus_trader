@@ -51,7 +51,7 @@ impl PyFinFeedDataLoader {
     /// Missing credentials fall back to `FINFEED_API_KEY` on the first network request.
     /// Construction sends no requests.
     #[new]
-    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, attempt_budget=None, min_request_interval_ms=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_backoff_factor=None, retry_jitter_ms=None, retry_operation_timeout_ms=None, retry_immediate_first=None, retry_max_elapsed_ms=None))]
+    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, attempt_budget=None, min_request_interval_ms=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_backoff_factor=None, retry_jitter_ms=None, retry_operation_timeout_ms=None, retry_immediate_first=None, retry_max_elapsed_ms=None, kalshi_metadata_url=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -69,6 +69,7 @@ impl PyFinFeedDataLoader {
         retry_operation_timeout_ms: Option<u64>,
         retry_immediate_first: Option<bool>,
         retry_max_elapsed_ms: Option<u64>,
+        kalshi_metadata_url: Option<String>,
     ) -> Self {
         let config = http_config(
             base_url,
@@ -85,6 +86,7 @@ impl PyFinFeedDataLoader {
             retry_operation_timeout_ms,
             retry_immediate_first,
             retry_max_elapsed_ms,
+            kalshi_metadata_url,
         );
         let loader = FinFeedDataLoader::with_http_config(api_key.map(SecretString::from), config);
 

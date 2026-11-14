@@ -40,6 +40,7 @@ use crate::defi::{
         profiler::PoolProfiler,
         quote::SwapQuote,
         size_estimator::{estimate_max_size_for_impact, slippage_for_size_bps},
+        snapshot::PoolSnapshot,
     },
     stubs::{arbitrum, uniswap_v3},
     tick_map::{
@@ -1577,6 +1578,72 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
         PoolProfilerComparison::Mismatch
     );
     assert!(!PoolProfilerComparison::Mismatch.is_valid_for_snapshot());
+}
+
+#[rstest]
+#[case::current_tick(|snapshot: &mut PoolSnapshot| snapshot.state.current_tick += 1, PoolProfilerComparison::Mismatch)]
+#[case::tick_net(|snapshot: &mut PoolSnapshot| snapshot.ticks[0].liquidity_net += 1, PoolProfilerComparison::Mismatch)]
+#[case::tick_gross(|snapshot: &mut PoolSnapshot| snapshot.ticks[0].liquidity_gross += 1, PoolProfilerComparison::Mismatch)]
+#[case::tick_missing(|snapshot: &mut PoolSnapshot| snapshot.ticks[0].value += 1, PoolProfilerComparison::Mismatch)]
+#[case::position_liquidity(|snapshot: &mut PoolSnapshot| snapshot.positions[0].liquidity += 1, PoolProfilerComparison::Mismatch)]
+#[case::position_missing(|snapshot: &mut PoolSnapshot| snapshot.positions[0].tick_upper -= 1, PoolProfilerComparison::Mismatch)]
+#[case::fee_share_token0(
+    |snapshot: &mut PoolSnapshot| snapshot.state.fee_protocol0_basis_points = Some(3_200),
+    PoolProfilerComparison::FeeProtocolMismatch
+)]
+#[case::fee_share_token1(
+    |snapshot: &mut PoolSnapshot| snapshot.state.fee_protocol1_basis_points = Some(4_000),
+    PoolProfilerComparison::FeeProtocolMismatch
+)]
+#[case::sqrt_precedes_fees(
+    |snapshot: &mut PoolSnapshot| {
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+        snapshot.state.fee_protocol = 68;
+        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+    },
+    PoolProfilerComparison::SqrtPriceMismatch
+)]
+#[case::fee_protocol_precedes_balances(
+    |snapshot: &mut PoolSnapshot| {
+        snapshot.state.fee_protocol = 68;
+        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+    },
+    PoolProfilerComparison::FeeProtocolMismatch
+)]
+#[case::state_precedes_sqrt(
+    |snapshot: &mut PoolSnapshot| {
+        snapshot.state.current_tick += 1;
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+    },
+    PoolProfilerComparison::Mismatch
+)]
+#[case::ticks_precede_nonstructural_mismatches(
+    |snapshot: &mut PoolSnapshot| {
+        snapshot.ticks[0].liquidity_net += 1;
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+        snapshot.state.fee_protocol = 68;
+        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+    },
+    PoolProfilerComparison::Mismatch
+)]
+fn test_compare_pool_profiler_classifies_snapshot_mismatches(
+    mut profiler: PoolProfiler,
+    #[case] change: fn(&mut PoolSnapshot),
+    #[case] expected: PoolProfilerComparison,
+) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10_000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
+    change(&mut snapshot);
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        expected
+    );
 }
 
 #[rstest]

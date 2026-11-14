@@ -285,6 +285,37 @@ identifier_for_python!(crate::identifiers::AccountId);
     assert fixups["AccountId"].staticmethods == {"_safe_constructor", "from_str"}
 
 
+def test_identifier_macro_fixups_suppress_renamed_constructor(tmp_path: Path) -> None:
+    """
+    Private constructor aliases stay hidden in generated stubs.
+    """
+    rust_file = tmp_path / "crates" / "model" / "src" / "python" / "account_id.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        "identifier_for_python!(crate::identifiers::AccountId);\n",
+        encoding="utf-8",
+    )
+    content = """
+class AccountId:
+    def __init__(self, value: str) -> None: ...
+    def safe_constructor(self) -> AccountId: ...
+    def from_str(self, value: str) -> AccountId: ...
+""".strip()
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_rust_class_fixups(content, fixups)
+
+    assert (
+        updated
+        == """
+class AccountId:
+    def __init__(self, value: str) -> None: ...
+    @staticmethod
+    def from_str(value: str) -> AccountId: ...
+""".strip()
+    )
+
+
 def test_collect_rust_class_fixups_keeps_fallback_name_when_pyo3_name_is_ignored(
     tmp_path: Path,
 ) -> None:

@@ -1088,8 +1088,8 @@ pub(crate) fn parse_lighter_order_filled(
 
 /// Parses a Lighter position payload into a [`PositionStatusReport`].
 ///
-/// The `account_all_positions` frame carries no top-level event timestamp;
-/// callers should pass the wall-clock arrival time captured by the handler.
+/// Callers pass the wall-clock arrival time captured by the handler;
+/// optional frame `transaction_time` values remain raw metadata.
 ///
 /// # Errors
 ///
@@ -1207,7 +1207,8 @@ pub fn build_unified_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> AccountState {
-    let margins = margin.map(|m| vec![m]).unwrap_or_default();
+    let margins = margin.map_or_default(|m| vec![m]);
+
     AccountState::new(
         account_id,
         AccountType::Margin,

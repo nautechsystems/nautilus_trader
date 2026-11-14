@@ -36,7 +36,6 @@ fn rustc_version() -> String {
     if !output.status.success() {
         return String::new();
     }
-    String::from_utf8(output.stdout)
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+
+    String::from_utf8(output.stdout).map_or_default(|s| s.trim().to_string())
 }

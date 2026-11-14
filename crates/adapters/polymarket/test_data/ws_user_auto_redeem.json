@@ -1,0 +1,15 @@
+{
+  "event_type": "auto_redeem",
+  "proxy_wallet": "0x0000000000000000000000000000000000000000",
+  "txn_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "amount": "70",
+  "condition_id": "0xb88862256916cb0c82e72667bd43f3e6cfe94cd7d5cda0bf763ec82394021e07",
+  "question": "Bitcoin Up or Down - August 17, 9:35AM-9:40AM ET",
+  "slug": "btc-updown-5m-1786973700",
+  "neg_risk": false,
+  "timestamp": "1786974414920",
+  "position_id": "",
+  "outcome_index": 0,
+  "legs": 0,
+  "owner": "00000000-0000-0000-0000-000000000000"
+}

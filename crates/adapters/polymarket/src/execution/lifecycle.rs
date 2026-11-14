@@ -526,21 +526,26 @@ impl PolymarketExecutionClient {
 
                             let future = async move {
                                 match fetch_and_emit_account_state(
-                                    &http, &emit, clock, signature_type, &reservations, &settlement,
+                                    &http,
+                                    &emit,
+                                    clock,
+                                    signature_type,
+                                    &reservations,
+                                    &settlement,
                                 )
                                 .await
                                 {
                                     Ok(()) => log::debug!(
-                                        "Account state refreshed after finalized trade for {account_id}"
+                                        "Account state refreshed after user event for {account_id}"
                                     ),
                                     Err(e) => log::warn!(
-                                        "Failed to refresh account after finalized trade: {e}"
+                                        "Failed to refresh account after user event: {e}"
                                     ),
                                 }
                             };
 
                             if let Err(e) = session_spawner.spawn(future) {
-                                log::debug!("Skipping finalized trade refresh during shutdown: {e}");
+                                log::debug!("Skipping user event refresh during shutdown: {e}");
                             }
                         }
                     }
@@ -553,7 +558,9 @@ impl PolymarketExecutionClient {
                         settlement.note_stream_gap(clock.get_time_ns());
 
                         if stopping.load(Ordering::Acquire) {
-                            log::debug!("Skipping account refresh because execution client is stopping");
+                            log::debug!(
+                                "Skipping account refresh because execution client is stopping"
+                            );
                             continue;
                         }
 
@@ -561,9 +568,17 @@ impl PolymarketExecutionClient {
                         let emit = emitter.clone();
                         let reservations = collateral_locks.clone();
                         let settlement = settlement.clone();
+
                         let future = async move {
-                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type, &reservations, &settlement)
-                                .await
+                            match fetch_and_emit_account_state(
+                                &http,
+                                &emit,
+                                clock,
+                                signature_type,
+                                &reservations,
+                                &settlement,
+                            )
+                            .await
                             {
                                 Ok(()) => {
                                     log::info!("Account state refreshed after WebSocket reconnect");

@@ -6421,9 +6421,8 @@ impl OrderMatchingEngine {
         )?;
 
         // Resolve implicit membership before dispatch can close the cached position
-        let reduce_only_order_ids = position
-            .map(|position| self.reduce_only_order_ids(position.id))
-            .unwrap_or_default();
+        let reduce_only_order_ids =
+            position.map_or_default(|position| self.reduce_only_order_ids(position.id));
 
         self.orders
             .cached_filled_qty

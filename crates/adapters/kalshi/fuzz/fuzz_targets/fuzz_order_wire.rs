@@ -49,8 +49,8 @@ fuzz_target!(|data: &[u8]| {
     let Some(order) = order(&instrument.id, data) else {
         return;
     };
-    let first = request(&order, None, 0);
-    let second = request(&order, None, 0);
+    let first = request(&order, None, 0, 0);
+    let second = request(&order, None, 0, 0);
     assert_eq!(
         first.is_ok(),
         second.is_ok(),
@@ -171,7 +171,7 @@ fn assert_stable_rejections(instrument_id: &InstrumentId) {
             count,
         )
         .expect("rejection probe must be constructible");
-        assert!(request(&order, None, 0).is_err(), "{message}");
+        assert!(request(&order, None, 0, 0).is_err(), "{message}");
     }
 }
 

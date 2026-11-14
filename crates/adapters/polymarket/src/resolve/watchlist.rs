@@ -48,6 +48,7 @@ pub(crate) struct ResolveWatchEntry {
     pub(crate) expiration_ns: UnixNanos,
     pub(crate) tracked: ahash::AHashMap<String, TrackedInstrument>,
     pub(crate) paused: bool,
+    pub(crate) clob_retry: Option<(DurationNanos, UnixNanos)>,
 }
 
 pub(crate) type ResolveWatchlist = RwLock<AHashMap<String, ResolveWatchEntry>>;
@@ -142,6 +143,7 @@ pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
                 expiration_ns,
                 tracked: ahash::AHashMap::new(),
                 paused: false,
+                clob_retry: None,
             });
         entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
@@ -203,6 +205,7 @@ pub(crate) fn upsert_resolve_watch_entry_from_instrument(
                 expiration_ns,
                 tracked: ahash::AHashMap::new(),
                 paused: false,
+                clob_retry: None,
             });
         entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
@@ -935,6 +938,7 @@ mod tests {
                 expiration_ns: UnixNanos::from(1_000_000_000_000),
                 tracked,
                 paused: false,
+                clob_retry: None,
             },
         );
 
@@ -981,6 +985,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
 
@@ -1020,6 +1025,7 @@ mod tests {
                     },
                 )]),
                 paused: true,
+                clob_retry: None,
             },
         );
         watchlist.insert(
@@ -1039,6 +1045,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
 
@@ -1072,6 +1079,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
 

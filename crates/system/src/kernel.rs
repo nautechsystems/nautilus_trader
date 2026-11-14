@@ -261,8 +261,7 @@ impl NautilusKernel {
         let mut filter = config
             .record_types
             .clone()
-            .map(WriterRecordFilter::from_record_types)
-            .unwrap_or_default();
+            .map_or_default(WriterRecordFilter::from_record_types);
 
         if let Some(data_types) = &config.data_types {
             for data_type in data_types {

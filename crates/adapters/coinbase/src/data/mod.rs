@@ -31,7 +31,7 @@ use anyhow::Context;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
-    live::{runner::get_data_event_sender, sender::EventSender},
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -53,11 +53,12 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControl,
-    task::{TaskGroup, TaskGroupGuard},
+    book::snapshot::{SnapshotGate, snapshot_expired},
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
-    data::Data,
-    enums::{BarAggregation, BookType},
+    data::{Data, OrderBookDeltas},
+    enums::{BarAggregation, BookAction, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -69,6 +70,11 @@ use ustr::Ustr;
 pub(crate) mod poll;
 
 use crate::{
+    book::{
+        BookSequenceOutcome,
+        recovery::{spawn_recovery_monitor, spawn_recovery_task, spawn_task, start_recovery},
+        sync::BookSyncTracker,
+    },
     common::{
         consts::COINBASE_VENUE, credential::CoinbaseCredential, enums::CoinbaseWsChannel,
         parse::bar_type_to_granularity,
@@ -92,7 +98,6 @@ use crate::{
 #[derive(Debug)]
 pub struct CoinbaseDataClient {
     client_id: ClientId,
-    #[allow(dead_code)]
     config: CoinbaseDataClientConfig,
     http_client: CoinbaseHttpClient,
     ws_client: CoinbaseWebSocketClient,
@@ -107,6 +112,9 @@ pub struct CoinbaseDataClient {
     deriv_polls: DerivPollManager,
     clock: &'static AtomicTime,
     instrument_status_subs: Arc<Mutex<AHashSet<InstrumentId>>>,
+    book_sync: BookSyncTracker,
+    /// Maps each subscribed book to the wire `product_id` its `level2` subscription uses.
+    book_products: Arc<AtomicMap<InstrumentId, Ustr>>,
 }
 
 impl CoinbaseDataClient {
@@ -188,6 +196,8 @@ impl CoinbaseDataClient {
             deriv_polls,
             clock,
             instrument_status_subs: Arc::new(Mutex::new(AHashSet::new())),
+            book_sync: BookSyncTracker::default(),
+            book_products: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -266,6 +276,19 @@ impl CoinbaseDataClient {
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let status_subs = Arc::clone(&self.instrument_status_subs);
+        let books = match self.book_router() {
+            Ok(books) => books,
+            Err(e) => {
+                self.ws_client
+                    .disconnect()
+                    .await
+                    .context("failed to roll back Coinbase WebSocket after shutdown began")?;
+                return Err(e);
+            }
+        };
+
+        // Books retained from a previous session resync from the replayed subscriptions
+        books.resync();
 
         let future = async move {
             log::debug!("Coinbase WebSocket consumption loop started");
@@ -278,7 +301,7 @@ impl CoinbaseDataClient {
                     }
                     msg_opt = out_rx.recv() => {
                         match msg_opt {
-                            Some(msg) => dispatch_ws_message(msg, &data_sender, &status_subs),
+                            Some(msg) => dispatch_ws_message(msg, &data_sender, &status_subs, &books),
                             None => {
                                 log::debug!("WebSocket output channel closed");
                                 break;
@@ -305,7 +328,23 @@ impl CoinbaseDataClient {
         Ok(())
     }
 
+    fn book_router(&self) -> anyhow::Result<BookRouter> {
+        let tasks = self
+            .session_tasks
+            .spawner()
+            .context("Coinbase data session task admission is closed")?;
+
+        Ok(BookRouter {
+            sync: self.book_sync.clone(),
+            products: Arc::clone(&self.book_products),
+            ws: self.ws_client.clone(),
+            snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            tasks,
+        })
+    }
+
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.book_sync.clear();
         self.cancellation_token.cancel();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
@@ -353,10 +392,100 @@ impl CoinbaseDataClient {
     }
 }
 
+/// Routes `level2` events through book synchronization and starts recovery.
+#[derive(Debug)]
+struct BookRouter {
+    sync: BookSyncTracker,
+    products: Arc<AtomicMap<InstrumentId, Ustr>>,
+    ws: CoinbaseWebSocketClient,
+    snapshot_timeout: Duration,
+    tasks: TaskSpawner,
+}
+
+impl BookRouter {
+    /// Returns whether the deltas may be emitted.
+    fn accept(&self, deltas: &OrderBookDeltas) -> bool {
+        let instrument_id = deltas.instrument_id;
+
+        // An unsubscribed book emits nothing, including frames still in flight
+        if !self.products.contains_key(&instrument_id) {
+            return false;
+        }
+
+        let is_snapshot = deltas
+            .deltas
+            .first()
+            .is_some_and(|delta| delta.action == BookAction::Clear);
+
+        if is_snapshot {
+            return self.sync.record_snapshot(instrument_id, Instant::now());
+        }
+
+        match self.sync.validate_update(instrument_id, Instant::now()) {
+            BookSequenceOutcome::Accept => true,
+            BookSequenceOutcome::Suppress => false,
+            BookSequenceOutcome::Recover => {
+                log::warn!("Book update for unsynced {instrument_id}; requesting a fresh snapshot");
+                self.start_recovery(instrument_id);
+                false
+            }
+        }
+    }
+
+    fn handle_sequence_gap(&self, expected: u64, received: u64) {
+        log::warn!("WebSocket sequence gap: expected {expected}, was {received}");
+
+        for instrument_id in self
+            .sync
+            .mark_connection_gap(&self.products, Instant::now())
+        {
+            log::warn!(
+                "Book for {instrument_id} out of sync after sequence gap; requesting a fresh snapshot"
+            );
+            self.start_recovery(instrument_id);
+        }
+    }
+
+    /// Restarts synchronization for every subscribed book after the connection changes.
+    fn resync(&self) {
+        self.sync.reset_on_reconnect(&self.products);
+
+        if self.snapshot_timeout.is_zero() {
+            return;
+        }
+
+        let pending =
+            self.sync
+                .seed_pending_snapshots(&self.products, self.snapshot_timeout, Instant::now());
+
+        if pending > 0 {
+            spawn_recovery_monitor(
+                self.sync.clone(),
+                self.ws.clone(),
+                Arc::clone(&self.products),
+                self.snapshot_timeout,
+                &self.tasks,
+            );
+        }
+    }
+
+    fn start_recovery(&self, instrument_id: InstrumentId) {
+        start_recovery(
+            instrument_id,
+            &self.products,
+            &self.sync,
+            &self.ws,
+            self.snapshot_timeout,
+            &self.tasks,
+        );
+    }
+}
+
 fn dispatch_ws_message(
     msg: NautilusWsMessage,
     data_sender: &EventSender<DataEvent>,
     status_subs: &Arc<Mutex<AHashSet<InstrumentId>>>,
+    books: &BookRouter,
 ) {
     match msg {
         NautilusWsMessage::Trade(trade) => {
@@ -370,6 +499,10 @@ fn dispatch_ws_message(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
+            if !books.accept(&deltas) {
+                return;
+            }
+
             if let Err(e) = data_sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
                 log::error!("Failed to send order book deltas: {e}");
             }
@@ -391,6 +524,10 @@ fn dispatch_ws_message(
         }
         NautilusWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");
+            books.resync();
+        }
+        NautilusWsMessage::SequenceGap { expected, received } => {
+            books.handle_sequence_gap(expected, received);
         }
         NautilusWsMessage::Error(e) => {
             log::warn!("WebSocket error: {e}");
@@ -443,6 +580,7 @@ impl DataClient for CoinbaseDataClient {
         self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         self.instrument_status_subs.lock().clear();
+        self.book_sync.clear();
         Ok(())
     }
 
@@ -549,6 +687,11 @@ impl DataClient for CoinbaseDataClient {
                 anyhow::bail!("Coinbase only supports L2_MBP order book deltas");
             }
 
+            if self.book_products.contains_key(&instrument_id) {
+                log::debug!("Already subscribed to book deltas: {instrument_id}");
+                return Ok(());
+            }
+
             let ws = self.ws_client.clone();
             let subscribed_id = Self::product_id(instrument_id);
             let wire_id = self.resolve_wire_product_id(subscribed_id);
@@ -556,9 +699,50 @@ impl DataClient for CoinbaseDataClient {
                 ws.register_subscription_alias(wire_id, subscribed_id);
             }
 
-            self.spawn_command(async move {
-                if let Err(e) = ws.subscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
-                    log::error!("Failed to subscribe to book deltas: {e:?}");
+            let spawner = self
+                .session_tasks
+                .spawner()
+                .context("Coinbase data session task admission is closed")?;
+
+            // The gate holds back frames from any earlier subscription until this write completes
+            let gate = SnapshotGate::default();
+            gate.lock().close();
+            self.book_products.insert(instrument_id, wire_id);
+            let cancel =
+                self.book_sync
+                    .record_subscription(instrument_id, Instant::now(), gate.clone());
+            let guard = cancel.clone().drop_guard();
+            let tracker = self.book_sync.clone();
+            let timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
+            spawn_task(&spawner.clone(), async move {
+                let _guard = guard;
+                let result = ws.subscribe_book(wire_id, cancel.clone(), gate).await;
+
+                if cancel.is_cancelled() {
+                    return;
+                }
+
+                match result {
+                    Ok(()) => {
+                        if !snapshot_expired(&cancel, timeout).await {
+                            return;
+                        }
+
+                        log::warn!(
+                            "Initial book snapshot missing for {instrument_id}; requesting a fresh snapshot"
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Initial book subscription send failed for {instrument_id}: {e}"
+                        );
+                    }
+                }
+
+                if let Some(recovery) = tracker.claim_subscription_recovery(instrument_id, &cancel)
+                {
+                    spawn_recovery_task(instrument_id, wire_id, recovery, ws, timeout, &spawner);
                 }
             });
 
@@ -733,6 +917,11 @@ impl DataClient for CoinbaseDataClient {
             let ws = self.ws_client.clone();
             let subscribed_id = Self::product_id(instrument_id);
             let wire_id = self.resolve_wire_product_id(subscribed_id);
+
+            // Removing the book cancels its recovery and pending snapshot wait
+            self.book_products.remove(&instrument_id);
+            self.book_sync.remove(instrument_id);
+
             self.spawn_command(async move {
                 if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
                     log::error!("Failed to unsubscribe from book deltas: {e:?}");
@@ -1210,6 +1399,7 @@ mod tests {
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::identifiers::InstrumentId;
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
 
     use super::*;
@@ -1271,6 +1461,16 @@ mod tests {
         NautilusWsMessage::InstrumentStatus(Box::new(status))
     }
 
+    fn test_book_router(tasks: &TaskGroup) -> BookRouter {
+        BookRouter {
+            sync: BookSyncTracker::default(),
+            products: Arc::new(AtomicMap::new()),
+            ws: CoinbaseWebSocketClient::new("ws://127.0.0.1:1", TransportBackend::default(), None),
+            snapshot_timeout: Duration::from_secs(10),
+            tasks: tasks.spawner().unwrap(),
+        }
+    }
+
     // The dispatch filter is what keeps the venue-wide `status` feed from
     // leaking every product's events to a subscriber that only cares about
     // one. A regression that drops the `subs.contains(...)` guard would let
@@ -1282,8 +1482,14 @@ mod tests {
         let mut set = AHashSet::new();
         set.insert(instrument_id);
         let subs = Arc::new(Mutex::new(set));
+        let tasks = TaskGroup::new();
 
-        dispatch_ws_message(make_status_event(instrument_id), &tx.into(), &subs);
+        dispatch_ws_message(
+            make_status_event(instrument_id),
+            &tx.into(),
+            &subs,
+            &test_book_router(&tasks),
+        );
 
         match rx.try_recv() {
             Ok(DataEvent::Data(Data::InstrumentStatus(status))) => {
@@ -1301,8 +1507,14 @@ mod tests {
         let mut set = AHashSet::new();
         set.insert(subscribed);
         let subs = Arc::new(Mutex::new(set));
+        let tasks = TaskGroup::new();
 
-        dispatch_ws_message(make_status_event(unsubscribed), &tx.into(), &subs);
+        dispatch_ws_message(
+            make_status_event(unsubscribed),
+            &tx.into(),
+            &subs,
+            &test_book_router(&tasks),
+        );
 
         assert!(
             rx.try_recv().is_err(),

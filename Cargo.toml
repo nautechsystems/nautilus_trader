@@ -53,7 +53,7 @@ members = [
 [workspace.package]
 version = "0.69.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-only"
 categories = ["finance", "simulation", "asynchronous"]
@@ -129,7 +129,7 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = [
   "serde",
 ] }
 anyhow = "1.0.104"
-arc-swap = "1.9.3"
+arc-swap = "1.9.5"
 arraydeque = "0.5.1"
 arrow = { version = "59.3.2", default-features = false, features = [
   "ipc",
@@ -328,7 +328,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 ] }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.29.0", features = ["v4", "serde"] }
+uuid = { version = "1.29.2", features = ["v4", "serde"] }
 webpki-roots = "1.0.11"
 zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 

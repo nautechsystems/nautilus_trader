@@ -88,7 +88,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 #[cfg(not(feature = "turmoil"))]
-use super::proxy::{ProxyKind, WsTarget, tunnel_via_proxy};
+use super::proxy::{ProxyTarget, WsTarget, tunnel_via_proxy};
 use super::{
     auth::{AuthState, AuthTracker},
     config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig},
@@ -716,9 +716,8 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognized but unsupported proxy schemes (currently SOCKS) log a
-    /// warning and fall back to a direct connection so existing REST proxy
-    /// configs remain usable. Only available in production builds; the
+    /// A SOCKS or other unsupported proxy scheme is an error; the client never
+    /// falls back to a direct connection. Only available in production builds; the
     /// turmoil simulator does not model arbitrary outbound TCP via a proxy.
     #[inline]
     #[cfg(not(feature = "turmoil"))]
@@ -728,16 +727,7 @@ impl WebSocketClientInner {
         proxy_url: &str,
         limits: InboundConfig,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
-        let proxy = match ProxyKind::parse(proxy_url)? {
-            ProxyKind::Http(target) => target,
-            ProxyKind::Unsupported { scheme } => {
-                log::warn!(
-                    "WebSocket proxy_url scheme '{scheme}' is not yet supported; \
-                     connecting without a WebSocket proxy"
-                );
-                return Self::connect_tungstenite(url, headers, limits).await;
-            }
-        };
+        let proxy = ProxyTarget::parse(proxy_url)?;
 
         let request = tungstenite_request(url, headers)?;
 
@@ -828,8 +818,8 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the sockudo WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognized but unsupported proxy schemes (currently SOCKS) log a warning
-    /// and fall back to a direct connection, matching the Tungstenite path.
+    /// A SOCKS or other unsupported proxy scheme is an error, matching the
+    /// Tungstenite path.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
     async fn connect_sockudo_via_proxy(
@@ -838,16 +828,7 @@ impl WebSocketClientInner {
         proxy_url: &str,
         limits: InboundConfig,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
-        let proxy = match ProxyKind::parse(proxy_url)? {
-            ProxyKind::Http(target) => target,
-            ProxyKind::Unsupported { scheme } => {
-                log::warn!(
-                    "WebSocket proxy_url scheme '{scheme}' is not yet supported; \
-                     connecting without a WebSocket proxy"
-                );
-                return Self::connect_sockudo(url, headers, limits).await;
-            }
-        };
+        let proxy = ProxyTarget::parse(proxy_url)?;
 
         let target = SockudoTarget::parse(url)?;
         validate_extra_headers(&headers).map_err(TransportError::from)?;

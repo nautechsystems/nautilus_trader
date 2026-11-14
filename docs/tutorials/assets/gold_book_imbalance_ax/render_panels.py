@@ -176,7 +176,7 @@ def run_backtest() -> object:
         BacktestEngineConfig(
             trader_id=TraderId("BACKTESTER-001"),
             logging=LoggerConfig(stdout_level=LogLevel.ERROR),
-            cache=CacheConfig(bar_capacity=10_000, tick_capacity=10_000),
+            cache=CacheConfig(bar_capacity=10_000, data_capacity=10_000),
         ),
     )
 

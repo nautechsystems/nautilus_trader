@@ -36,6 +36,11 @@ All other fixtures are authored test inputs under the repository license. Their 
 IDs, prices, sizes, and event sequences describe test cases, not actual markets or API observations.
 Venue names and wire field names identify the protocol being tested.
 
+- `kalshi-market.json`, `kalshi-native-market.json`, and `kalshi-native-event.json` supply
+  FinFeed and public Kalshi metadata scenarios. They test USD units, lifecycle, per-market grids,
+  identity checks, and metadata transport separation. The public responses omit quote, fee,
+  and execution routing fields.
+  `kalshi-book.json` and `kalshi-activity.json` test FinFeed routing with exact two-decimal sizes.
 - `polymarket-market.json` and listing pages supply checked binary definitions, distinct outcome
   tokens, descriptions, tags, ticks, expiries, and pagination cursors. Extra token `price` and `winner`
   fields check that instrument conversion ignores unrecognized token fields. Other venue listings

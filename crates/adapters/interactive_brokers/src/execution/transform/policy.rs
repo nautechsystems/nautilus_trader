@@ -118,8 +118,7 @@ pub(super) fn apply_trailing_order_policy(
         ib_order.trail_stop_price = Some(converted_trigger);
         ib_order.trigger_method = order
             .trigger_type()
-            .map(trigger_type_to_ib_trigger_method)
-            .unwrap_or_default();
+            .map_or_default(trigger_type_to_ib_trigger_method);
     }
 
     Ok(())

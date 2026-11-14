@@ -157,6 +157,24 @@ local native request tests separately cover inclusive hour boundaries.
 
 ## LiveNode and DataTester checks
 
+### Recorded Kalshi samples
+
+Two bounded Python `LiveNode` runs on 2026-11-10 UTC each load one `FINFEED_KALSHI` outcome with public
+Kalshi market/event metadata. Each run receives one FinFeed quote and an L2 book, then stops cleanly. Each uses
+four FinFeed managed attempts and two public Kalshi metadata GETs, ten-second pacing, and no application retries. Definitions and data retain
+six-place prices and two-place sizes; both public markets define a `0.01` tick.
+
+| Outcome                   | Bid levels | Ask levels |
+| ------------------------- | ---------- | ---------- |
+| `BEYONCEGENRE-30-TCA_YES` | 1          | 11         |
+| `CHINAUSGDP-30_NO`        | 20         | 18         |
+
+These samples do not verify Kalshi history or trade delivery. Local [Kalshi tests](integration/kalshi.rs)
+cover Yes and No outcomes, price bands, archive lookup, mixed-venue reconnect, and failed-refresh preservation.
+The committed live runners below target Polymarket.
+
+### Runnable Polymarket checks
+
 Local [Rust node tests](integration/node.rs) route quotes and managed books through `DataTester`, checking
 exact values, headers, and four requests. Python's `test_builtin_data_tester_shares_activity_and_stops`
 checks every quote/trade field and releases a held response after stop to verify quiet shutdown.
@@ -203,18 +221,19 @@ pagination termination/bounds/cycles/duplicates, malformed data, precision, over
 redirects, timeouts, cancellation, pacing, concurrency, budgets, and redaction. Native tests cover
 explicit proxies and disabled ambient proxies.
 
-| Endpoint family              | Transport evidence                                             | Domain evidence                                                                      |
-| ---------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Exchanges and metadata       | `exchanges_use_authenticated_shared_transport`                 | Startup and selected-exchange validation                                             |
-| Listings and active IDs      | `cursor_and_active_pagination_terminate_only_at_terminal_page` | `dst::paginated_discovery_loads_only_the_explicit_outcome`                           |
-| Outcome metadata             | Exact route/model tests                                        | `data::fresh_instrument_requests_and_empty_windows_preserve_every_field`             |
-| Current/latest activity      | Exact route/model tests                                        | Exact quote/trade polling and deduplication                                          |
-| Current book                 | Exact route/model tests                                        | Atomic L2 MBP snapshots, delta batches, and depth                                    |
-| Historical book events       | [Book history tests](integration/book_history.rs)              | [Bounded replay](book_history.md#bounded-replay-contract)                            |
-| OHLCV periods/latest/history | Exact route/model tests                                        | Catalog matching, closed-bar polling, and historical bars                            |
-| Exchange-wide OHLCV          | [Exchange OHLCV tests](integration/exchange_ohlcv.rs)          | Raw market rows; no native mapping or metadata traversal                             |
-| Flat-file OHLCV              | [Flat-file tests](integration/flat_file_ohlcv.rs)              | Explicit raw source; native bars stay DB-backed                                      |
-| Trade/quote history          | Exact route/model tests                                        | Covering-hour retrieval, checked continuation, filtering, ordering, ties, and limits |
+| Endpoint family              | Transport evidence                                             | Domain evidence                                                                           |
+| ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Exchanges and metadata       | `exchanges_use_authenticated_shared_transport`                 | Startup and selected-exchange validation                                                  |
+| Listings and active IDs      | `cursor_and_active_pagination_terminate_only_at_terminal_page` | `dst::paginated_discovery_loads_only_the_explicit_outcome`                                |
+| Outcome metadata             | Exact route/model tests                                        | `data::fresh_instrument_requests_and_empty_windows_preserve_every_field`                  |
+| Public Kalshi metadata       | [Kalshi tests](integration/kalshi.rs)                          | Market/event identity, archive fallback, retry pacing, and credential/allowance isolation |
+| Current/latest activity      | Exact route/model tests                                        | Exact quote/trade polling and deduplication                                               |
+| Current book                 | Exact route/model tests                                        | Atomic L2 MBP snapshots, delta batches, and depth                                         |
+| Historical book events       | [Book history tests](integration/book_history.rs)              | [Bounded replay](book_history.md#bounded-replay-contract)                                 |
+| OHLCV periods/latest/history | Exact route/model tests                                        | Catalog matching, closed-bar polling, and historical bars                                 |
+| Exchange-wide OHLCV          | [Exchange OHLCV tests](integration/exchange_ohlcv.rs)          | Raw market rows; no native mapping or metadata traversal                                  |
+| Flat-file OHLCV              | [Flat-file tests](integration/flat_file_ohlcv.rs)              | Explicit raw source; native bars stay DB-backed                                           |
+| Trade/quote history          | Exact route/model tests                                        | Covering-hour retrieval, checked continuation, filtering, ordering, ties, and limits      |
 
 `all_endpoint_paths_queries_and_models` supplies the shared route/model checks.
 [Model](../src/http/models.rs), [symbol](../src/common/symbol.rs), [parser](../src/http/parse.rs),
@@ -351,7 +370,7 @@ CARGO_BUILD_JOBS=8 cargo nextest run --locked \
   -E 'test(workload::)' --no-capture
 ```
 
-For `N` markets without retries, bootstrap costs `1 + N` calls, the first round costs `4N`, and later
+For `N` Polymarket outcomes without retries, bootstrap costs `1 + N` calls, the first round costs `4N`, and later
 rounds cost `3N`. Each bar scope loads its period catalog once per connection generation.
 At default ten-second pacing, saturated steady cycles have these minimum start-to-start intervals,
 excluding response time and retries:
@@ -362,7 +381,7 @@ excluding response time and retries:
 | 16      | 17              | 64               | 48               | 480 seconds          |
 | 128     | 129             | 512              | 384              | 3840 seconds         |
 
-The default 100-attempt allowance cannot bootstrap 128 markets. Sixteen markets need at least 160
+The default 100-attempt allowance cannot bootstrap 128 markets. Sixteen Polymarket outcomes need at least 160
 seconds of pacing, beyond the default 120-second bootstrap deadline. Budget at least
 `1 + N + 4N + 3N * R` attempts for `R` later rounds, plus explicit requests and retries, and size deadlines
 for response times. These local measurements do not prove provider throughput or billing; reconnect

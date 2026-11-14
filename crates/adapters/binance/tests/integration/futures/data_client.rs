@@ -79,8 +79,8 @@ use nautilus_model::{
         BarType, BookOrder, CustomData, Data, DataType, InstrumentStatus, OrderBookDelta,
         OrderBookDeltas, QuoteTick,
     },
-    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
-    identifiers::InstrumentId,
+    enums::{AggressorSide, BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
+    identifiers::{InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -93,6 +93,12 @@ use serde_json::json;
 
 type MarketQuery = (String, HashMap<String, String>);
 type MarketQueries = Arc<Mutex<Vec<MarketQuery>>>;
+
+// Captured USD-M raw trade stream messages: a zero-quantity NA message, then a trade
+const RAW_TRADE_STREAM_MESSAGES: [&str; 2] = [
+    include_str!("../../../test_data/futures/market_data_json/trade_stream_na.json"),
+    include_str!("../../../test_data/futures/market_data_json/trade_stream.json"),
+];
 
 #[derive(Clone)]
 struct DataTestServerState {
@@ -343,13 +349,12 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 let streams = parsed
                     .get("params")
                     .and_then(|p| p.as_array())
-                    .map(|params| {
+                    .map_or_default(|params| {
                         params
                             .iter()
                             .filter_map(|param| param.as_str().map(str::to_string))
                             .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+                    });
 
                 if !streams.is_empty() {
                     state.subscriptions.lock().push(streams.clone());
@@ -376,6 +381,13 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                         });
                         tokio::time::sleep(Duration::from_millis(50)).await;
                         let _result = socket.send(Message::Text(trade.to_string().into())).await;
+                    } else if stream.ends_with("@trade") {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+
+                        for trade in RAW_TRADE_STREAM_MESSAGES {
+                            let _result =
+                                socket.send(Message::Text(trade.to_string().into())).await;
+                        }
                     } else if stream.contains("@bookTicker") {
                         let quote = json!({
                             "e": "bookTicker",
@@ -477,13 +489,12 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 let streams = parsed
                     .get("params")
                     .and_then(|p| p.as_array())
-                    .map(|params| {
+                    .map_or_default(|params| {
                         params
                             .iter()
                             .filter_map(|param| param.as_str().map(str::to_string))
                             .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+                    });
 
                 let stale_stream = streams
                     .iter()
@@ -976,6 +987,31 @@ fn create_test_data_client_for_product_type(
     };
 
     let client = BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, product_type).unwrap();
+
+    (client, rx)
+}
+
+fn create_test_data_client_with_raw_trades(
+    base_url_http: String,
+    base_url_ws: String,
+) -> (
+    BinanceFuturesDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        product_type: BinanceProductType::UsdM,
+        base_url_http: Some(base_url_http),
+        base_url_ws: Some(base_url_ws),
+        use_usdm_raw_trades: true,
+        ..Default::default()
+    };
+
+    let client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
 
     (client, rx)
 }
@@ -1981,6 +2017,202 @@ async fn test_subscribe_trades() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[case::aggregate(
+    false,
+    "btcusdt@aggTrade",
+    "1",
+    dec!(50000.00),
+    dec!(0.001),
+    AggressorSide::Buy,
+    1_700_000_000_000
+)]
+#[case::raw(
+    true,
+    "btcusdt@trade",
+    "8251028467",
+    dec!(75047.30),
+    dec!(0.201),
+    AggressorSide::Sell,
+    1_794_270_806_233
+)]
+#[tokio::test]
+async fn test_trades_follow_raw_trades_config(
+    #[case] use_usdm_raw_trades: bool,
+    #[case] expected_stream: &str,
+    #[case] expected_trade_id: &str,
+    #[case] expected_price: Decimal,
+    #[case] expected_size: Decimal,
+    #[case] expected_aggressor_side: AggressorSide,
+    #[case] expected_ts_event_ms: u64,
+) {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, mut rx) = if use_usdm_raw_trades {
+        create_test_data_client_with_raw_trades(base_url_http, base_url_ws)
+    } else {
+        create_test_data_client(base_url_http, base_url_ws)
+    };
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    client.connect().await.unwrap();
+
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    // The mock raw stream sends a zero-quantity NA message ahead of the trade
+    let Data::Trade(trade) = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected trade")
+    else {
+        panic!("expected trade");
+    };
+
+    client
+        .unsubscribe_trades(&UnsubscribeTrades::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let found = !state.unsubscriptions.lock().is_empty();
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(trade.instrument_id, instrument_id);
+    assert_eq!(trade.price.as_decimal(), expected_price);
+    assert_eq!(trade.size.as_decimal(), expected_size);
+    assert_eq!(trade.aggressor_side, expected_aggressor_side);
+    assert_eq!(trade.trade_id, TradeId::new(expected_trade_id));
+    assert_eq!(trade.ts_event, UnixNanos::from_millis(expected_ts_event_ms));
+    assert_eq!(
+        *state.subscriptions.lock(),
+        vec![vec![expected_stream.to_string()]]
+    );
+    assert_eq!(
+        *state.unsubscriptions.lock(),
+        vec![vec![expected_stream.to_string()]]
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_raw_trades_resubscribe_on_public_reconnect() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx) = registry.scope(|| {
+        create_test_data_client_with_raw_trades(format!("http://{addr}"), format!("ws://{addr}/ws"))
+    });
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let trade_stream = "btcusdt@trade";
+    let mark_price_stream = "btcusdt@markPrice@1s";
+    client.connect().await.unwrap();
+
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_mark_prices(SubscribeMarkPrices::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let found = recorded_stream_count(&state.subscriptions, trade_stream) == 1
+                && recorded_stream_count(&state.subscriptions, mark_price_stream) == 1;
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // A connection replays its streams in one request, so the market connection
+    // would restore the raw trade stream together with the mark price stream.
+    let market_handle = registry
+        .handle(
+            *BINANCE_CLIENT_ID,
+            ustr::Ustr::from("binance-futures-market-streams"),
+        )
+        .unwrap();
+    assert_eq!(
+        market_handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until_async(
+        || {
+            let found = recorded_stream_count(&state.subscriptions, mark_price_stream) == 2;
+            async move { found }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(recorded_stream_count(&state.subscriptions, trade_stream), 1);
+
+    let public_handle = registry
+        .handle(
+            *BINANCE_CLIENT_ID,
+            ustr::Ustr::from("binance-futures-public-streams"),
+        )
+        .unwrap();
+    assert_eq!(
+        public_handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until_async(
+        || {
+            let found = recorded_stream_count(&state.subscriptions, trade_stream) == 2;
+            async move { found }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    assert_eq!(
+        recorded_stream_count(&state.subscriptions, mark_price_stream),
+        2
+    );
+    assert!(!recorded_streams_include(
+        &state.subscriptions,
+        "btcusdt@aggTrade"
+    ));
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -5032,6 +5264,15 @@ fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str
         .lock()
         .iter()
         .any(|streams| streams.iter().any(|recorded| recorded == stream))
+}
+
+fn recorded_stream_count(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> usize {
+    records
+        .lock()
+        .iter()
+        .flatten()
+        .filter(|recorded| *recorded == stream)
+        .count()
 }
 
 fn ticker_stream_payload() -> serde_json::Value {

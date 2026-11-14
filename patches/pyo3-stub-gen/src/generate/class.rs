@@ -339,8 +339,8 @@ impl fmt::Display for ClassDef {
             .iter()
             .map(|i| i.name.clone())
             .reduce(|acc, path| format!("{acc}, {path}"))
-            .map(|bases| format!("({bases})"))
-            .unwrap_or_default();
+            .map_or_default(|bases| format!("({bases})"));
+
         if !self.subclass {
             writeln!(f, "@typing.final")?;
         }
@@ -424,8 +424,7 @@ impl ClassDef {
             .iter()
             .map(|i| i.qualified_for_module(target_module))
             .reduce(|acc, path| format!("{acc}, {path}"))
-            .map(|bases| format!("({bases})"))
-            .unwrap_or_default();
+            .map_or_default(|bases| format!("({bases})"));
 
         if !self.subclass {
             writeln!(f, "@typing.final")?;

@@ -174,7 +174,7 @@ fn verify_run_file_inner(path: &Path) -> ExitCode {
                     print_finding(finding);
                 }
 
-                print_marker_error(marker_path.as_path(), &err);
+                let _ = print_marker_error(marker_path.as_path(), &err);
                 ExitCode::from(EXIT_CORRUPT)
             }
         },

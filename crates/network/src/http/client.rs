@@ -78,6 +78,10 @@ pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "request deadline elapsed";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HttpRedirectPolicy {
     /// Follow up to ten redirects.
+    ///
+    /// A redirect to another origin keeps only the `Accept`, `Accept-Encoding`, and `User-Agent`
+    /// request headers. The request fails when a redirect goes from HTTPS to HTTP, or when a
+    /// request with a body is redirected to another origin.
     #[default]
     Follow,
     /// Reject every redirect response.
@@ -730,7 +734,7 @@ impl InnerHttpClient {
             header_map.insert(http::header::ACCEPT, HeaderValue::from_static("*/*"));
         }
 
-        let body = body.map(RequestBody::into_bytes).unwrap_or_default();
+        let body = body.map_or_default(RequestBody::into_bytes);
         let body_len = body.len();
         let query_len = url.query().map_or(0, str::len);
         let mut request = http::Request::new(Full::new(body));
