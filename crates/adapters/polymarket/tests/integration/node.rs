@@ -47,7 +47,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
-    types::Quantity,
+    types::{Price, Quantity},
 };
 use nautilus_polymarket::{
     common::consts::POLYMARKET,
@@ -205,12 +205,21 @@ fn build_node_with_execution_config(
 }
 
 #[rstest]
+#[case::startup(None)]
+#[case::winner(Some((r#"["1","0"]"#, "1")))]
+#[case::loser(Some((r#"["0","1"]"#, "0")))]
 #[tokio::test]
+async fn startup_mass_status_loads_position_in_past_end_open_market(
+    #[case] resolution: Option<(&str, &str)>,
+) {
+    check_wallet_position_lifecycle(resolution).await;
+}
+
 #[expect(
     clippy::await_holding_refcell_ref,
     reason = "the node is stopped before the standalone report request"
 )]
-async fn startup_mass_status_loads_position_in_past_end_open_market() {
+async fn check_wallet_position_lifecycle(resolution: Option<(&str, &str)>) {
     let state = TestServerState::default();
     let market = load_json("gamma_market_past_end_date_open.json");
     let condition_id = market["conditionId"].as_str().unwrap();
@@ -257,7 +266,9 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
             )])),
             ..Default::default()
         }),
-        resolve_poll_enabled: false,
+        resolve_poll_enabled: resolution.is_some(),
+        resolve_poll_interval_secs: 1,
+        resolve_poll_max_wait_secs: u64::MAX,
         ..Default::default()
     };
 
@@ -285,6 +296,9 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
     );
     let handle = node.handle();
     let data_engine = node.kernel().data_engine.clone();
+    let cache = node.kernel().cache.clone();
+    let resolve_state = state.clone();
+    let mut resolved_market = market.clone();
     let (handler, instruments) = get_typed_message_saving_handler::<InstrumentAny>(None);
     let pattern = msgbus::switchboard::get_instruments_pattern(instrument_id.venue);
     msgbus::subscribe_instruments(pattern, handler, None);
@@ -296,6 +310,33 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         )
         .await;
         let running = handle.state();
+
+        if let Some((outcome_prices, close_price)) = resolution {
+            {
+                let cache = cache.borrow();
+                assert_eq!(
+                    cache.positions_open_count(None, Some(&instrument_id), None, None, None),
+                    1
+                );
+            }
+            resolved_market["closed"] = json!(true);
+            resolved_market["outcomePrices"] = json!(outcome_prices);
+            *resolve_state.gamma_response.lock().await = Some(json!([resolved_market]));
+            *resolve_state.positions_response_override.lock().await = Some(json!([]));
+            wait_until_async(
+                || async {
+                    let cache = cache.borrow();
+                    cache.positions_closed_count(None, Some(&instrument_id), None, None, None) == 1
+                },
+                DEADLINE,
+            )
+            .await;
+            let cache = cache.borrow();
+            assert_eq!(
+                cache.instrument_close(&instrument_id).unwrap().close_price,
+                Price::from(close_price),
+            );
+        }
         assert!(data_engine.borrow().subscribed_book_deltas().is_empty());
         assert!(data_engine.borrow().subscribed_quotes().is_empty());
         assert!(data_engine.borrow().subscribed_trades().is_empty());
@@ -304,7 +345,7 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
     };
 
     let (result, running) =
-        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.start(), driver) })
+        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
             .await
             .unwrap();
     result.expect("startup mass status");
@@ -315,10 +356,13 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
             .orders_open_count(None, None, None, None, None),
         1,
     );
-    node.stop().await.unwrap();
     assert!(instruments.get_messages().is_empty());
     let queries = state.gamma_queries.lock().await;
-    assert_eq!(queries.len(), 2);
+    if resolution.is_some() {
+        assert!(queries.len() >= 3);
+    } else {
+        assert_eq!(queries.len(), 2);
+    }
     assert_eq!(queries[0]["end_date_min"], "2100-01-01T00:00:00Z");
     assert_eq!(queries[1]["condition_ids"], condition_id);
     drop(queries);
@@ -344,6 +388,11 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         cached.expiration_ns().unwrap()
             < nautilus_core::time::get_atomic_clock_realtime().get_time_ns()
     );
+
+    if resolution.is_some() {
+        assert!(mass_status.position_reports().is_empty());
+        return;
+    }
     assert_eq!(mass_status.position_reports().len(), 1);
     let positions = &mass_status.position_reports()[&instrument_id];
     assert_eq!(positions.len(), 1);

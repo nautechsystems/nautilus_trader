@@ -4977,6 +4977,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(yes.id()),
         );
 
@@ -5030,6 +5031,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(yes.id()),
         );
         update_resolve_watchlist_from_position_event_serialized(
@@ -5037,6 +5039,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(no.id()),
         );
 
