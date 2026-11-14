@@ -2702,6 +2702,76 @@ fn test_check_integrity_detects_missing_or_stale_index_entries(
 }
 
 #[rstest]
+#[case::venue_accounts(|cache: &mut Cache| {
+    let account_id = AccountId::from("STALE-001");
+    let venue = account_id.get_issuer();
+    cache.index.venue_accounts.entry(venue).or_default().insert(account_id);
+})]
+#[case::venue_order_ids(|cache: &mut Cache| {
+    let client_order_id = ClientOrderId::from("O-STALE");
+    cache.index.venue_order_ids.insert(VenueOrderId::from("V-STALE"), client_order_id);
+})]
+#[case::client_order_ids(|cache: &mut Cache| {
+    let venue_order_id = VenueOrderId::from("V-STALE");
+    cache.index.client_order_ids.insert(ClientOrderId::from("O-STALE"), venue_order_id);
+})]
+#[case::order_position(|cache: &mut Cache| {
+    let position_id = PositionId::from("P-STALE");
+    cache.index.order_position.insert(ClientOrderId::from("O-STALE"), position_id);
+})]
+#[case::order_strategy(|cache: &mut Cache| {
+    let strategy_id = StrategyId::from("S-STALE");
+    cache.index.order_strategy.insert(ClientOrderId::from("O-STALE"), strategy_id);
+})]
+#[case::position_strategy(|cache: &mut Cache| {
+    let strategy_id = StrategyId::from("S-STALE");
+    cache.index.position_strategy.insert(PositionId::from("P-STALE"), strategy_id);
+})]
+#[case::position_orders(|cache: &mut Cache| {
+    cache.index.position_orders.entry(PositionId::from("P-STALE")).or_default();
+})]
+#[case::strategy_orders(|cache: &mut Cache| {
+    let strategy_orders = cache.index.strategy_orders.entry(StrategyId::from("S-STALE"));
+    strategy_orders.or_default().insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::strategy_positions(|cache: &mut Cache| {
+    let strategy_positions = cache.index.strategy_positions.entry(StrategyId::from("S-STALE"));
+    strategy_positions.or_default().insert(PositionId::from("P-STALE"));
+})]
+#[case::orders_emulated(|cache: &mut Cache| {
+    cache.index.orders_emulated.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_active_local(|cache: &mut Cache| {
+    cache.index.orders_active_local.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_inflight(|cache: &mut Cache| {
+    cache.index.orders_inflight.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_open(|cache: &mut Cache| {
+    cache.index.orders_open.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_closed(|cache: &mut Cache| {
+    cache.index.orders_closed.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::positions_open(|cache: &mut Cache| {
+    cache.index.positions_open.insert(PositionId::from("P-STALE"));
+})]
+#[case::positions_closed(|cache: &mut Cache| {
+    cache.index.positions_closed.insert(PositionId::from("P-STALE"));
+})]
+#[case::exec_algorithms(|cache: &mut Cache| {
+    cache.index.exec_algorithms.insert(ExecAlgorithmId::from("STALE"));
+})]
+fn test_check_integrity_detects_stale_index_entry(
+    mut cache: Cache,
+    #[case] corrupt: fn(&mut Cache),
+) {
+    corrupt(&mut cache);
+
+    assert!(!cache.check_integrity());
+}
+
+#[rstest]
 fn test_check_residuals_when_empty(cache: Cache) {
     let result = cache.check_residuals();
     assert!(!result);
@@ -7840,16 +7910,50 @@ fn test_price_when_empty(cache: Cache, audusd_sim: CurrencyPair, #[case] price_t
 }
 
 #[rstest]
-fn test_price_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+#[case(PriceType::Bid, "1.00001")]
+#[case(PriceType::Ask, "1.00003")]
+#[case(PriceType::Last, "1.00002")]
+#[case(PriceType::Mark, "1.00000")]
+fn test_price_when_some(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] price_type: PriceType,
+    #[case] expected: &str,
+) {
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.00001"),
+        Price::from("1.00003"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
+    let trade = TradeTick::new(
+        audusd_sim.id,
+        Price::from("1.00002"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-1"),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
     let mark_price = MarkPriceUpdate::new(
         audusd_sim.id,
         Price::from("1.00000"),
         UnixNanos::from(5),
         UnixNanos::from(10),
     );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_trade(trade).unwrap();
     cache.add_mark_price(mark_price).unwrap();
-    let result = cache.price(&audusd_sim.id, PriceType::Mark);
-    assert_eq!(result, Some(mark_price.value));
+
+    let result = cache.price(&audusd_sim.id, price_type);
+
+    assert_eq!(result, Some(Price::from(expected)));
 }
 
 #[rstest]

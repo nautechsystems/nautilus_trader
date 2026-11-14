@@ -1312,7 +1312,6 @@ impl Cache {
     #[must_use]
     pub fn check_integrity(&mut self) -> bool {
         let mut error_count = 0;
-        let failure = "Integrity failure";
 
         // Get current timestamp in microseconds
         let timestamp_us = SystemTime::now()
@@ -1331,7 +1330,7 @@ impl Cache {
                 .is_some_and(|account_ids| account_ids.contains(account_id))
             {
                 log::error!(
-                    "{failure} in accounts: {account_id} not found in `self.index.venue_accounts`",
+                    "{INTEGRITY_FAILURE} in accounts: {account_id} not found in `self.index.venue_accounts`",
                 );
                 error_count += 1;
             }
@@ -1342,21 +1341,21 @@ impl Cache {
 
             if !self.index.order_strategy.contains_key(client_order_id) {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.order_strategy`"
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.order_strategy`"
                 );
                 error_count += 1;
             }
 
             if !self.index.orders.contains(client_order_id) {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders`",
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.orders`",
                 );
                 error_count += 1;
             }
 
             if order.is_inflight() && !self.index.orders_inflight.contains(client_order_id) {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders_inflight`",
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.orders_inflight`",
                 );
                 error_count += 1;
             }
@@ -1364,21 +1363,21 @@ impl Cache {
             if order.is_active_local() && !self.index.orders_active_local.contains(client_order_id)
             {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders_active_local`",
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.orders_active_local`",
                 );
                 error_count += 1;
             }
 
             if order.is_open() && !self.index.orders_open.contains(client_order_id) {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders_open`",
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.orders_open`",
                 );
                 error_count += 1;
             }
 
             if order.is_closed() && !self.index.orders_closed.contains(client_order_id) {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders_closed`",
+                    "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.orders_closed`",
                 );
                 error_count += 1;
             }
@@ -1390,7 +1389,7 @@ impl Cache {
                     .contains_key(&exec_algorithm_id)
                 {
                     log::error!(
-                        "{failure} in orders: {client_order_id} not found in `self.index.exec_algorithm_orders`",
+                        "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.exec_algorithm_orders`",
                     );
                     error_count += 1;
                 }
@@ -1399,7 +1398,7 @@ impl Cache {
                     && !self.index.exec_spawn_orders.contains_key(client_order_id)
                 {
                     log::error!(
-                        "{failure} in orders: {client_order_id} not found in `self.index.exec_spawn_orders`",
+                        "{INTEGRITY_FAILURE} in orders: {client_order_id} not found in `self.index.exec_spawn_orders`",
                     );
                     error_count += 1;
                 }
@@ -1411,249 +1410,163 @@ impl Cache {
 
             if !self.index.position_strategy.contains_key(position_id) {
                 log::error!(
-                    "{failure} in positions: {position_id} not found in `self.index.position_strategy`",
+                    "{INTEGRITY_FAILURE} in positions: {position_id} not found in `self.index.position_strategy`",
                 );
                 error_count += 1;
             }
 
             if !self.index.position_orders.contains_key(position_id) {
                 log::error!(
-                    "{failure} in positions: {position_id} not found in `self.index.position_orders`",
+                    "{INTEGRITY_FAILURE} in positions: {position_id} not found in `self.index.position_orders`",
                 );
                 error_count += 1;
             }
 
             if !self.index.positions.contains(position_id) {
                 log::error!(
-                    "{failure} in positions: {position_id} not found in `self.index.positions`",
+                    "{INTEGRITY_FAILURE} in positions: {position_id} not found in `self.index.positions`",
                 );
                 error_count += 1;
             }
 
             if position.is_open() && !self.index.positions_open.contains(position_id) {
                 log::error!(
-                    "{failure} in positions: {position_id} not found in `self.index.positions_open`",
+                    "{INTEGRITY_FAILURE} in positions: {position_id} not found in `self.index.positions_open`",
                 );
                 error_count += 1;
             }
 
             if position.is_closed() && !self.index.positions_closed.contains(position_id) {
                 log::error!(
-                    "{failure} in positions: {position_id} not found in `self.index.positions_closed`",
+                    "{INTEGRITY_FAILURE} in positions: {position_id} not found in `self.index.positions_closed`",
                 );
                 error_count += 1;
             }
         }
 
         // Check indexes
-        for account_id in self.index.venue_accounts.values().flatten() {
-            if !self.accounts.contains_key(account_id) {
-                log::error!(
-                    "{failure} in `index.venue_accounts`: {account_id} not found in `self.accounts`",
-                );
-                error_count += 1;
-            }
-        }
+        let order_cached =
+            |client_order_id: &ClientOrderId| self.orders.contains_key(client_order_id);
+        let position_cached = |position_id: &PositionId| self.positions.contains_key(position_id);
 
-        for client_order_id in self.index.venue_order_ids.values() {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.venue_order_ids`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in self.index.client_order_ids.keys() {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.client_order_ids`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in self.index.order_position.keys() {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.order_position`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        // Check indexes
-        for client_order_id in self.index.order_strategy.keys() {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.order_strategy`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for position_id in self.index.position_strategy.keys() {
-            if !self.positions.contains_key(position_id) {
-                log::error!(
-                    "{failure} in `index.position_strategy`: {position_id} not found in `self.positions`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for position_id in self.index.position_orders.keys() {
-            if !self.positions.contains_key(position_id) {
-                log::error!(
-                    "{failure} in `index.position_orders`: {position_id} not found in `self.positions`",
-                );
-                error_count += 1;
-            }
-        }
+        error_count += Self::count_index_ids_missing(
+            "venue_accounts",
+            self.index.venue_accounts.values().flatten(),
+            "self.accounts",
+            |account_id| self.accounts.contains_key(account_id),
+        );
+        error_count += Self::count_index_ids_missing(
+            "venue_order_ids",
+            self.index.venue_order_ids.values(),
+            "self.orders",
+            order_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "client_order_ids",
+            self.index.client_order_ids.keys(),
+            "self.orders",
+            order_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "order_position",
+            self.index.order_position.keys(),
+            "self.orders",
+            order_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "order_strategy",
+            self.index.order_strategy.keys(),
+            "self.orders",
+            order_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "position_strategy",
+            self.index.position_strategy.keys(),
+            "self.positions",
+            position_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "position_orders",
+            self.index.position_orders.keys(),
+            "self.positions",
+            position_cached,
+        );
 
         for (instrument_id, client_order_ids) in &self.index.instrument_orders {
             for client_order_id in client_order_ids {
                 if !self.orders.contains_key(client_order_id) {
                     log::error!(
-                        "{failure} in `index.instrument_orders`: {instrument_id} not found in `self.orders`",
+                        "{INTEGRITY_FAILURE} in `index.instrument_orders`: {instrument_id} not found in `self.orders`",
                     );
                     error_count += 1;
                 }
             }
         }
 
-        for instrument_id in self.index.instrument_positions.keys() {
-            if !self.index.instrument_orders.contains_key(instrument_id) {
-                log::error!(
-                    "{failure} in `index.instrument_positions`: {instrument_id} not found in `index.instrument_orders`",
-                );
-                error_count += 1;
-            }
+        error_count += Self::count_index_ids_missing(
+            "instrument_positions",
+            self.index.instrument_positions.keys(),
+            "index.instrument_orders",
+            |instrument_id| self.index.instrument_orders.contains_key(instrument_id),
+        );
+        error_count += Self::count_index_ids_missing(
+            "strategy_orders",
+            self.index.strategy_orders.values().flatten(),
+            "self.orders",
+            order_cached,
+        );
+        error_count += Self::count_index_ids_missing(
+            "strategy_positions",
+            self.index.strategy_positions.values().flatten(),
+            "self.positions",
+            position_cached,
+        );
+
+        for (index_name, client_order_ids) in [
+            ("orders", &self.index.orders),
+            ("orders_emulated", &self.index.orders_emulated),
+            ("orders_active_local", &self.index.orders_active_local),
+            ("orders_inflight", &self.index.orders_inflight),
+            ("orders_open", &self.index.orders_open),
+            ("orders_closed", &self.index.orders_closed),
+        ] {
+            error_count += Self::count_index_ids_missing(
+                index_name,
+                client_order_ids,
+                "self.orders",
+                order_cached,
+            );
         }
 
-        for client_order_ids in self.index.strategy_orders.values() {
-            for client_order_id in client_order_ids {
-                if !self.orders.contains_key(client_order_id) {
-                    log::error!(
-                        "{failure} in `index.strategy_orders`: {client_order_id} not found in `self.orders`",
-                    );
-                    error_count += 1;
-                }
-            }
+        for (index_name, position_ids) in [
+            ("positions", &self.index.positions),
+            ("positions_open", &self.index.positions_open),
+            ("positions_closed", &self.index.positions_closed),
+        ] {
+            error_count += Self::count_index_ids_missing(
+                index_name,
+                position_ids,
+                "self.positions",
+                position_cached,
+            );
         }
 
-        for position_ids in self.index.strategy_positions.values() {
-            for position_id in position_ids {
-                if !self.positions.contains_key(position_id) {
-                    log::error!(
-                        "{failure} in `index.strategy_positions`: {position_id} not found in `self.positions`",
-                    );
-                    error_count += 1;
-                }
-            }
-        }
-
-        for client_order_id in &self.index.orders {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in &self.index.orders_emulated {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders_emulated`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in &self.index.orders_active_local {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders_active_local`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in &self.index.orders_inflight {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders_inflight`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in &self.index.orders_open {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders_open`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for client_order_id in &self.index.orders_closed {
-            if !self.orders.contains_key(client_order_id) {
-                log::error!(
-                    "{failure} in `index.orders_closed`: {client_order_id} not found in `self.orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for position_id in &self.index.positions {
-            if !self.positions.contains_key(position_id) {
-                log::error!(
-                    "{failure} in `index.positions`: {position_id} not found in `self.positions`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for position_id in &self.index.positions_open {
-            if !self.positions.contains_key(position_id) {
-                log::error!(
-                    "{failure} in `index.positions_open`: {position_id} not found in `self.positions`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for position_id in &self.index.positions_closed {
-            if !self.positions.contains_key(position_id) {
-                log::error!(
-                    "{failure} in `index.positions_closed`: {position_id} not found in `self.positions`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for strategy_id in &self.index.strategies {
-            if !self.index.strategy_orders.contains_key(strategy_id) {
-                log::error!(
-                    "{failure} in `index.strategies`: {strategy_id} not found in `index.strategy_orders`",
-                );
-                error_count += 1;
-            }
-        }
-
-        for exec_algorithm_id in &self.index.exec_algorithms {
-            if !self
-                .index
-                .exec_algorithm_orders
-                .contains_key(exec_algorithm_id)
-            {
-                log::error!(
-                    "{failure} in `index.exec_algorithms`: {exec_algorithm_id} not found in `index.exec_algorithm_orders`",
-                );
-                error_count += 1;
-            }
-        }
+        error_count += Self::count_index_ids_missing(
+            "strategies",
+            &self.index.strategies,
+            "index.strategy_orders",
+            |strategy_id| self.index.strategy_orders.contains_key(strategy_id),
+        );
+        error_count += Self::count_index_ids_missing(
+            "exec_algorithms",
+            &self.index.exec_algorithms,
+            "index.exec_algorithm_orders",
+            |exec_algorithm_id| {
+                self.index
+                    .exec_algorithm_orders
+                    .contains_key(exec_algorithm_id)
+            },
+        );
 
         let total_us = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1671,6 +1584,26 @@ impl Cache {
             );
             false
         }
+    }
+
+    fn count_index_ids_missing<'a, T: Display + 'a>(
+        index_name: &str,
+        ids: impl IntoIterator<Item = &'a T>,
+        source_name: &str,
+        contains: impl Fn(&T) -> bool,
+    ) -> usize {
+        let mut count = 0;
+
+        for id in ids {
+            if !contains(id) {
+                log::error!(
+                    "{INTEGRITY_FAILURE} in `index.{index_name}`: {id} not found in `{source_name}`"
+                );
+                count += 1;
+            }
+        }
+
+        count
     }
 
     /// Checks for any residual open state and log warnings if any are found.
@@ -1951,29 +1884,21 @@ impl Cache {
         self.index.client_order_ids.remove(&client_order_id);
 
         if let Some(details) = &order_details {
-            if let Some(venue_orders) = self
-                .index
-                .venue_orders
-                .get_mut(&details.instrument_id.venue)
-            {
-                venue_orders.remove(&client_order_id);
-                if venue_orders.is_empty() {
-                    self.index.venue_orders.remove(&details.instrument_id.venue);
-                }
+            if Self::remove_from_bucket(
+                &mut self.index.venue_orders,
+                &details.instrument_id.venue,
+                &client_order_id,
+            ) {
+                self.index.venue_orders.remove(&details.instrument_id.venue);
             }
 
             // As with the strategy buckets below, an absent bucket is left absent: recreating
             // it would suppress the `index.instrument_positions` integrity check.
-            // As with the strategy buckets below, an absent bucket is left absent: recreating
-            // it would suppress the `index.instrument_positions` integrity check.
-            let instrument_orders_became_empty = self
-                .index
-                .instrument_orders
-                .get_mut(&details.instrument_id)
-                .is_some_and(|instrument_orders| {
-                    instrument_orders.remove(&client_order_id);
-                    instrument_orders.is_empty()
-                });
+            let instrument_orders_became_empty = Self::remove_from_bucket(
+                &mut self.index.instrument_orders,
+                &details.instrument_id,
+                &client_order_id,
+            );
 
             let has_instrument_positions = self
                 .index
@@ -1985,38 +1910,35 @@ impl Cache {
                 self.index.instrument_orders.remove(&details.instrument_id);
             }
 
-            if let Some(exec_algorithm_id) = details.exec_algorithm_id {
-                let became_empty = self
-                    .index
-                    .exec_algorithm_orders
-                    .get_mut(&exec_algorithm_id)
-                    .is_some_and(|orders| {
-                        orders.remove(&client_order_id);
-                        orders.is_empty()
-                    });
-
-                if became_empty {
-                    self.index.exec_algorithm_orders.remove(&exec_algorithm_id);
-                    self.index.exec_algorithms.remove(&exec_algorithm_id);
-                }
+            if let Some(exec_algorithm_id) = details.exec_algorithm_id
+                && Self::remove_from_bucket(
+                    &mut self.index.exec_algorithm_orders,
+                    &exec_algorithm_id,
+                    &client_order_id,
+                )
+            {
+                self.index.exec_algorithm_orders.remove(&exec_algorithm_id);
+                self.index.exec_algorithms.remove(&exec_algorithm_id);
             }
 
             if let Some(account_id) = details.account_id
-                && let Some(account_orders) = self.index.account_orders.get_mut(&account_id)
+                && Self::remove_from_bucket(
+                    &mut self.index.account_orders,
+                    &account_id,
+                    &client_order_id,
+                )
             {
-                account_orders.remove(&client_order_id);
-                if account_orders.is_empty() {
-                    self.index.account_orders.remove(&account_id);
-                }
+                self.index.account_orders.remove(&account_id);
             }
 
             if let Some(exec_spawn_id) = details.exec_spawn_id
-                && let Some(spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
+                && Self::remove_from_bucket(
+                    &mut self.index.exec_spawn_orders,
+                    &exec_spawn_id,
+                    &client_order_id,
+                )
             {
-                spawn_orders.remove(&client_order_id);
-                if spawn_orders.is_empty() {
-                    self.index.exec_spawn_orders.remove(&exec_spawn_id);
-                }
+                self.index.exec_spawn_orders.remove(&exec_spawn_id);
             }
         }
 
@@ -2067,28 +1989,25 @@ impl Cache {
             self.index.position_orders.remove(&position_id);
             if let Some(strategy_id) = self.index.position_strategy.remove(&position_id) {
                 strategy_ids.insert(strategy_id);
-                if let Some(strategy_positions) =
-                    self.index.strategy_positions.get_mut(&strategy_id)
-                {
-                    strategy_positions.remove(&position_id);
-                    if strategy_positions.is_empty() {
-                        self.index.strategy_positions.remove(&strategy_id);
-                    }
+                if Self::remove_from_bucket(
+                    &mut self.index.strategy_positions,
+                    &strategy_id,
+                    &position_id,
+                ) {
+                    self.index.strategy_positions.remove(&strategy_id);
                 }
             }
 
             if let Some(details) = &order_details
-                && let Some(venue_positions) = self
-                    .index
-                    .venue_positions
-                    .get_mut(&details.instrument_id.venue)
+                && Self::remove_from_bucket(
+                    &mut self.index.venue_positions,
+                    &details.instrument_id.venue,
+                    &position_id,
+                )
             {
-                venue_positions.remove(&position_id);
-                if venue_positions.is_empty() {
-                    self.index
-                        .venue_positions
-                        .remove(&details.instrument_id.venue);
-                }
+                self.index
+                    .venue_positions
+                    .remove(&details.instrument_id.venue);
             }
         }
 
@@ -2098,14 +2017,11 @@ impl Cache {
             // Retiring the registry entry here would both drop a live strategy from
             // `strategy_ids` and stop `check_integrity` reporting the missing bucket, so the
             // absent case is left exactly as found.
-            let strategy_orders_became_empty = self
-                .index
-                .strategy_orders
-                .get_mut(&strategy_id)
-                .is_some_and(|strategy_orders| {
-                    strategy_orders.remove(&client_order_id);
-                    strategy_orders.is_empty()
-                });
+            let strategy_orders_became_empty = Self::remove_from_bucket(
+                &mut self.index.strategy_orders,
+                &strategy_id,
+                &client_order_id,
+            );
 
             let has_positions = self
                 .index
@@ -2171,26 +2087,20 @@ impl Cache {
             self.positions.remove(&position_id);
 
             // Remove from venue positions index
-            if let Some(venue_positions) =
-                self.index.venue_positions.get_mut(&pos.instrument_id.venue)
-            {
-                venue_positions.remove(&position_id);
-                if venue_positions.is_empty() {
-                    self.index.venue_positions.remove(&pos.instrument_id.venue);
-                }
+            if Self::remove_from_bucket(
+                &mut self.index.venue_positions,
+                &pos.instrument_id.venue,
+                &position_id,
+            ) {
+                self.index.venue_positions.remove(&pos.instrument_id.venue);
             }
 
             // Remove from instrument positions index
-            let instrument_positions_became_empty = self
-                .index
-                .instrument_positions
-                .get_mut(&pos.instrument_id)
-                .is_some_and(|positions| {
-                    positions.remove(&position_id);
-                    positions.is_empty()
-                });
-
-            if instrument_positions_became_empty {
+            if Self::remove_from_bucket(
+                &mut self.index.instrument_positions,
+                &pos.instrument_id,
+                &position_id,
+            ) {
                 self.index.instrument_positions.remove(&pos.instrument_id);
                 let instrument_orders_empty = self
                     .index
@@ -2204,16 +2114,11 @@ impl Cache {
             }
 
             // Remove from strategy positions index
-            let strategy_positions_became_empty = self
-                .index
-                .strategy_positions
-                .get_mut(&pos.strategy_id)
-                .is_some_and(|positions| {
-                    positions.remove(&position_id);
-                    positions.is_empty()
-                });
-
-            if strategy_positions_became_empty {
+            if Self::remove_from_bucket(
+                &mut self.index.strategy_positions,
+                &pos.strategy_id,
+                &position_id,
+            ) {
                 self.index.strategy_positions.remove(&pos.strategy_id);
                 let strategy_orders_empty = self
                     .index
@@ -2228,11 +2133,12 @@ impl Cache {
             }
 
             // Remove from account positions index
-            if let Some(account_positions) = self.index.account_positions.get_mut(&pos.account_id) {
-                account_positions.remove(&position_id);
-                if account_positions.is_empty() {
-                    self.index.account_positions.remove(&pos.account_id);
-                }
+            if Self::remove_from_bucket(
+                &mut self.index.account_positions,
+                &pos.account_id,
+                &position_id,
+            ) {
+                self.index.account_positions.remove(&pos.account_id);
             }
 
             // Remove position ID from orders that reference it
@@ -3571,13 +3477,13 @@ impl Cache {
         let old_strategy_id = old_order.strategy_id();
 
         if old_venue != new_instrument_id.venue
-            && Self::remove_order_from_bucket(&mut index.venue_orders, &old_venue, &client_order_id)
+            && Self::remove_from_bucket(&mut index.venue_orders, &old_venue, &client_order_id)
         {
             index.venue_orders.remove(&old_venue);
         }
 
         if old_instrument_id != new_instrument_id {
-            let became_empty = Self::remove_order_from_bucket(
+            let became_empty = Self::remove_from_bucket(
                 &mut index.instrument_orders,
                 &old_instrument_id,
                 &client_order_id,
@@ -3593,7 +3499,7 @@ impl Cache {
         }
 
         if old_strategy_id != replacement.strategy_id() {
-            let became_empty = Self::remove_order_from_bucket(
+            let became_empty = Self::remove_from_bucket(
                 &mut index.strategy_orders,
                 &old_strategy_id,
                 &client_order_id,
@@ -3611,18 +3517,14 @@ impl Cache {
 
         if let Some(account_id) = old_order.account_id()
             && Some(account_id) != replacement.account_id()
-            && Self::remove_order_from_bucket(
-                &mut index.account_orders,
-                &account_id,
-                &client_order_id,
-            )
+            && Self::remove_from_bucket(&mut index.account_orders, &account_id, &client_order_id)
         {
             index.account_orders.remove(&account_id);
         }
 
         if let Some(exec_algorithm_id) = old_order.exec_algorithm_id()
             && Some(exec_algorithm_id) != replacement.exec_algorithm_id()
-            && Self::remove_order_from_bucket(
+            && Self::remove_from_bucket(
                 &mut index.exec_algorithm_orders,
                 &exec_algorithm_id,
                 &client_order_id,
@@ -3634,7 +3536,7 @@ impl Cache {
 
         if let Some(exec_spawn_id) = old_order.exec_spawn_id()
             && Some(exec_spawn_id) != replacement.exec_spawn_id()
-            && Self::remove_order_from_bucket(
+            && Self::remove_from_bucket(
                 &mut index.exec_spawn_orders,
                 &exec_spawn_id,
                 &client_order_id,
@@ -3698,30 +3600,28 @@ impl Cache {
 
         index.position_orders.remove(&old_position_id);
         if let Some(strategy_id) = index.position_strategy.remove(&old_position_id)
-            && let Some(strategy_positions) = index.strategy_positions.get_mut(&strategy_id)
+            && Self::remove_from_bucket(
+                &mut index.strategy_positions,
+                &strategy_id,
+                &old_position_id,
+            )
         {
-            strategy_positions.remove(&old_position_id);
-            if strategy_positions.is_empty() {
-                index.strategy_positions.remove(&strategy_id);
-            }
+            index.strategy_positions.remove(&strategy_id);
         }
 
-        if let Some(venue_positions) = index.venue_positions.get_mut(&old_venue) {
-            venue_positions.remove(&old_position_id);
-            if venue_positions.is_empty() {
-                index.venue_positions.remove(&old_venue);
-            }
+        if Self::remove_from_bucket(&mut index.venue_positions, &old_venue, &old_position_id) {
+            index.venue_positions.remove(&old_venue);
         }
     }
 
-    fn remove_order_from_bucket<K: Eq + std::hash::Hash>(
-        buckets: &mut AHashMap<K, AHashSet<ClientOrderId>>,
+    fn remove_from_bucket<K: Eq + std::hash::Hash, V: Eq + std::hash::Hash>(
+        buckets: &mut AHashMap<K, AHashSet<V>>,
         key: &K,
-        client_order_id: &ClientOrderId,
+        member: &V,
     ) -> bool {
-        buckets.get_mut(key).is_some_and(|orders| {
-            orders.remove(client_order_id);
-            orders.is_empty()
+        buckets.get_mut(key).is_some_and(|members| {
+            members.remove(member);
+            members.is_empty()
         })
     }
 
@@ -3931,15 +3831,13 @@ impl Cache {
             };
 
             for client_order_id in linked_order_ids {
-                match self.orders.get(client_order_id) {
-                    None => {
-                        log::error!("Contingency order {client_order_id} not found");
-                    }
-                    Some(contingent_order_cell) => {
-                        if contingent_order_cell.borrow().position_id().is_none() {
-                            assignments.push((parent_position_id, *client_order_id));
-                        }
-                    }
+                let Some(contingent_order_cell) = self.orders.get(client_order_id) else {
+                    log::error!("Contingency order {client_order_id} not found");
+                    continue;
+                };
+
+                if contingent_order_cell.borrow().position_id().is_none() {
+                    assignments.push((parent_position_id, *client_order_id));
                 }
             }
         }
@@ -7001,16 +6899,9 @@ impl Cache {
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
-            PriceType::Bid => self
-                .quotes
-                .get(instrument_id)
-                .and_then(|quotes| quotes.front().map(|quote| quote.bid_price)),
-            PriceType::Ask => self
-                .quotes
-                .get(instrument_id)
-                .and_then(|quotes| quotes.front().map(|quote| quote.ask_price)),
-            PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
-                let quote = quotes.front()?;
+            PriceType::Bid => self.quote(instrument_id).map(|quote| quote.bid_price),
+            PriceType::Ask => self.quote(instrument_id).map(|quote| quote.ask_price),
+            PriceType::Mid => self.quote(instrument_id).and_then(|quote| {
                 let bid = quote.bid_price;
                 let ask = quote.ask_price;
                 if bid.is_undefined() || bid.is_error() || ask.is_undefined() || ask.is_error() {
@@ -7055,14 +6946,8 @@ impl Cache {
                 let raw = PriceRaw::try_from(raw).ok()?;
                 Price::from_raw_checked(raw, precision).ok()
             }),
-            PriceType::Last => self
-                .trades
-                .get(instrument_id)
-                .and_then(|trades| trades.front().map(|trade| trade.price)),
-            PriceType::Mark => self
-                .mark_prices
-                .get(instrument_id)
-                .and_then(|marks| marks.front().map(|mark| mark.value)),
+            PriceType::Last => self.trade(instrument_id).map(|trade| trade.price),
+            PriceType::Mark => self.mark_price(instrument_id).map(|mark| mark.value),
         }
     }
 
@@ -7214,6 +7099,7 @@ impl Cache {
 
     /// Returns the most recently added quote for the `instrument_id`, or `None` if absent.
     #[must_use]
+    #[inline]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
             .get(instrument_id)
@@ -7233,6 +7119,7 @@ impl Cache {
 
     /// Returns the most recently added trade for the `instrument_id`, or `None` if absent.
     #[must_use]
+    #[inline]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
             .get(instrument_id)
@@ -7252,6 +7139,7 @@ impl Cache {
 
     /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
     #[must_use]
+    #[inline]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
             .get(instrument_id)
@@ -8087,6 +7975,7 @@ type QuoteTable = (
 );
 
 const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
+const INTEGRITY_FAILURE: &str = "Integrity failure";
 
 #[cfg_attr(
     not(feature = "defi"),

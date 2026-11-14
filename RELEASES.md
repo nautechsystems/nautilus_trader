@@ -84,6 +84,7 @@ Released on TBD (UTC).
 - Refined value-imbalance trade splitting and time-bar timer setup
 - Refined portfolio realized PnL aggregation and order reservation calculations
 - Refined position replay and accounting, order fill-void validation, and order status report construction
+- Refined `Cache` purge index cleanup and integrity checks
 - Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
