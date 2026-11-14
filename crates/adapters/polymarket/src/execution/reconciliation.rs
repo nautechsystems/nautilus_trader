@@ -1411,6 +1411,7 @@ pub(crate) async fn generate_mass_status(
     resolved_balances: &ResolvedBalanceScope,
     retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
     cached_orders: &AHashMap<VenueOrderId, Vec<CachedOrderScope>>,
+    load_instruments: impl AsyncFnOnce(Vec<InstrumentId>) -> anyhow::Result<()>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let client_id = core.client_id;
     let venue = core.venue;
@@ -1425,10 +1426,9 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch orders for mass status")?;
 
-    filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids).await?;
-
-    let (mut order_reports, orders_filtered) =
-        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
+    let mut required =
+        filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids)
+            .await?;
 
     let trades = http_client
         .get_trades(trades_params_for_window(
@@ -1447,15 +1447,21 @@ pub(crate) async fn generate_mass_status(
             .context("failed to fetch positions for mass status")?
     };
 
-    filter_unsupported_positions(
-        http_client,
-        &mut positions,
-        instruments,
-        None,
-        load_ids,
-        resolved_balances,
-    )
-    .await?;
+    required.extend(
+        filter_unsupported_positions(
+            http_client,
+            &mut positions,
+            instruments,
+            None,
+            load_ids,
+            resolved_balances,
+        )
+        .await?,
+    );
+    load_instruments(required).await?;
+
+    let (mut order_reports, orders_filtered) =
+        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
 
     let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
@@ -1587,7 +1593,7 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_position_reports(position_reports);
     mass_status.add_fill_reports(fill_reports);
     if lookback_start.is_some() {
-        validate_open_order_history(&mass_status, core)?;
+        validate_open_order_history(&mass_status, instruments, core)?;
     }
 
     Ok(Some(mass_status))
@@ -1600,7 +1606,7 @@ pub(crate) async fn filter_unsupported_orders(
     ctx: &FillContext<'_>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     orders.retain(|order| {
         instruments
             .get_cloned(&order.asset_id)
@@ -1642,7 +1648,13 @@ pub(crate) async fn filter_unsupported_orders(
         true
     });
 
-    Ok(())
+    Ok(orders
+        .iter()
+        .filter(|order| requires_lookup(order))
+        .map(|order| {
+            instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str())
+        })
+        .collect())
 }
 
 pub(crate) async fn filter_unsupported_positions(
@@ -1652,7 +1664,7 @@ pub(crate) async fn filter_unsupported_positions(
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
 
     positions.retain(|position| {
@@ -1688,7 +1700,11 @@ pub(crate) async fn filter_unsupported_positions(
         true
     });
 
-    Ok(())
+    Ok(positions
+        .iter()
+        .filter(|position| requires_lookup(position))
+        .map(|position| instrument_id_from_market_token(&position.condition_id, &position.asset))
+        .collect())
 }
 
 fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
@@ -1849,11 +1865,13 @@ async fn fetch_associated_trade(
 
 fn validate_open_order_history(
     mass_status: &ExecutionMassStatus,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     core: &ExecutionClientCore,
 ) -> anyhow::Result<()> {
     let orders = mass_status.order_reports();
     let fills = mass_status.fill_reports();
     let cache = core.cache();
+    let loaded = instruments.load();
     let mut adjusted = AHashMap::new();
 
     for order in orders.values().filter(|order| order.order_status.is_open()) {
@@ -1877,7 +1895,12 @@ fn validate_open_order_history(
         if !adjusted.contains_key(&order.instrument_id) {
             let instrument = cache
                 .instrument(&order.instrument_id)
-                .context("open order history has no cached instrument")?;
+                .or_else(|| {
+                    loaded
+                        .values()
+                        .find(|instrument| instrument.id() == order.instrument_id)
+                })
+                .context("open order history has no instrument")?;
             let result = process_mass_status_for_reconciliation(mass_status, instrument, None)?;
             adjusted.insert(order.instrument_id, result);
         }
@@ -2364,7 +2387,10 @@ fn instrument_in_load_ids_scope(
     }
 }
 
-fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId) -> bool {
+pub(super) fn polymarket_instrument_ids_equivalent(
+    left: InstrumentId,
+    right: InstrumentId,
+) -> bool {
     if left == right {
         return true;
     }

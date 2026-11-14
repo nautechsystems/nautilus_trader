@@ -75,6 +75,7 @@ pub(super) fn execution_config_with_retries(
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         base_url_data_api: Some(format!("http://{addr}")),
+        base_url_gamma: Some(format!("http://{addr}")),
         http_timeout_secs: 5,
         max_retries,
         retry_delay_initial_ms: 1,
@@ -140,6 +141,7 @@ pub(super) struct TestServerState {
     pub(super) trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) gamma_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
     pub(super) market_responses: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
     pub(super) market_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -226,6 +228,7 @@ impl Default for TestServerState {
             trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
             ))),
@@ -824,13 +827,26 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
     }
 }
 
-async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Response {
-    let markets = state
+async fn handle_gamma_markets_keyset(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    state.gamma_queries.lock().await.push(query.clone());
+    let mut markets = state
         .gamma_response
         .lock()
         .await
         .clone()
         .unwrap_or_else(|| json!([]));
+
+    if let Some(end_date_min) = query.get("end_date_min") {
+        markets.as_array_mut().unwrap().retain(|market| {
+            market["endDate"]
+                .as_str()
+                .is_some_and(|end_date| end_date >= end_date_min.as_str())
+        });
+    }
+
     Json(json!({"markets": markets, "next_cursor": null})).into_response()
 }
 

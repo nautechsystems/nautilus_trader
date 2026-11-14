@@ -69,7 +69,7 @@ impl DataClientFactory for PolymarketDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: CacheView,
+        cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let polymarket_config = config
@@ -81,7 +81,9 @@ impl DataClientFactory for PolymarketDataClientFactory {
                 )
             })?;
 
-        Ok(Box::new(Self::create_client(name, polymarket_config)?))
+        let mut client = Self::create_client(name, polymarket_config)?;
+        client.cache = Some(cache);
+        Ok(Box::new(client))
     }
 
     fn name(&self) -> &'static str {

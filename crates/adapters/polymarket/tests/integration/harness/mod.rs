@@ -23,7 +23,7 @@ use std::{
     time::Duration,
 };
 
-use nautilus_common::clients::ExecutionClient;
+use nautilus_common::{cache::Cache, clients::ExecutionClient};
 use nautilus_core::{UUID4, UnixNanos};
 pub(crate) use nautilus_live::testing::invariants;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, testing::ExecutionHarness};
@@ -70,7 +70,7 @@ impl Harness {
         let instrument = instrument();
         let execution =
             ExecutionHarness::new(trader_id, *POLYMARKET_CLIENT_ID, account_id, instrument);
-        add_account(&execution, account_id);
+        add_account(&mut execution.cache().borrow_mut(), account_id);
         seed(&execution);
 
         let mock_state = TestServerState::default();
@@ -181,7 +181,7 @@ pub(crate) fn quote(instrument_id: InstrumentId) -> QuoteTick {
     )
 }
 
-fn add_account(execution: &ExecutionHarness, account_id: AccountId) {
+pub(crate) fn add_account(cache: &mut Cache, account_id: AccountId) {
     let state = AccountState::new(
         account_id,
         AccountType::Cash,
@@ -197,9 +197,7 @@ fn add_account(execution: &ExecutionHarness, account_id: AccountId) {
         UnixNanos::default(),
         None,
     );
-    execution
-        .cache()
-        .borrow_mut()
+    cache
         .add_account(AccountAny::Cash(CashAccount::new(state, true, false)))
         .unwrap();
 }

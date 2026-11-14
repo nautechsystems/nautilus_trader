@@ -973,6 +973,10 @@ impl LiveNode {
 
             match mass_status_result {
                 Ok(Some(mass_status)) => {
+                    self.kernel
+                        .exec_engine
+                        .borrow()
+                        .cache_reconciliation_instruments(&client_id)?;
                     log_info!(
                         "Reconciling ExecutionMassStatus for {}",
                         client_id,

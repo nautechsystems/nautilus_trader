@@ -16,6 +16,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_common::cache::CacheView;
 use nautilus_core::{AtomicMap, DurationNanos, UnixNanos};
 use nautilus_model::{
     events::PositionEvent,
@@ -264,6 +265,7 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     watchlist: &Arc<ResolveWatchlist>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    cache: Option<&CacheView>,
     event: &PositionEvent,
 ) {
     let _guard = owner_lock.lock();
@@ -272,11 +274,13 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
         return;
     }
 
-    let loaded = instruments.load();
-    let Some(instrument) = loaded.get(&instrument_id) else {
+    let Some(instrument) = instruments
+        .get_cloned(&instrument_id)
+        .or_else(|| cache?.borrow().instrument(&instrument_id).cloned())
+    else {
         return;
     };
-    let (_, _, condition_id) = instrument_market_context(instrument);
+    let (_, _, condition_id) = instrument_market_context(&instrument);
     let condition_id = condition_id.or_else(|| extract_condition_id(&instrument.id()).ok());
     let Some(condition_id) = condition_id else {
         return;
@@ -287,7 +291,7 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
     {
         return;
     }
-    apply_position_event_to_watchlist(watchlist, instrument, event);
+    apply_position_event_to_watchlist(watchlist, &instrument, event);
 }
 
 fn apply_position_event_to_watchlist(
@@ -795,6 +799,7 @@ mod tests {
                 &closed_condition_ids,
                 &watchlist_for_thread,
                 &instruments_for_thread,
+                None,
                 &event,
             );
             done_tx.send(()).expect("report position update");
@@ -839,6 +844,7 @@ mod tests {
             &closed_condition_ids,
             &watchlist,
             &instruments,
+            None,
             &stub_position_opened_event(instrument.id()),
         );
 

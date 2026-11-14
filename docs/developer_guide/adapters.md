@@ -1371,17 +1371,21 @@ economic application rules.
 ### Instrument resolution during reconciliation
 
 Report generation resolves each record's instrument to parse venue payloads at the correct price and size
-precision. Resolve it from the instruments that the adapter loaded during connect. Classify a miss by whether
-the record was in scope.
+precision. Reuse definitions loaded during connect. If a bulk wallet snapshot identifies additional required
+instruments, collect their definitions in bounded identity-based batches before constructing reports. Use the
+same wallet records for acquisition and report construction, and classify a miss by whether the record was
+in scope.
 
-Do not request an instrument from the venue while generating reports:
+Do not request individual instrument definitions while constructing reports:
 
 - Per-record requests multiply the bulk queries that startup reconciliation already issues against
   the venue's rate limits.
 - Hidden requests make reconciliation timing and results irreproducible.
 - A failed request cannot be distinguished from an instrument the venue does not have.
 
-Load what the adapter needs during connect instead.
+Expose collected definitions through `ExecutionClient::reconciliation_instruments`. The execution engine
+caches missing definitions before applying mass status, without publishing market-data instrument events.
+Keep metadata acquisition separate from strategy discovery and subscription decisions.
 
 An in-scope record whose instrument is missing is never dropped silently. The engine cannot distinguish a
 discarded open order report from an order that the venue did not have. Thus, it resolves a live order as

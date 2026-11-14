@@ -598,6 +598,10 @@ impl ExecutionClient for LiveExecutionClient {
         );
     }
 
+    fn reconciliation_instruments(&self) -> Vec<InstrumentAny> {
+        self.client.borrow().reconciliation_instruments()
+    }
+
     fn on_instrument(&mut self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
 

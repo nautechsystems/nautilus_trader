@@ -3276,7 +3276,7 @@ After such a failure, explicitly disconnect and reconnect the client to restore 
 
 Set `proxy_url` to apply one HTTP or HTTPS proxy to every transport owned by that client. The data
 client routes CLOB HTTP, Gamma HTTP, Data API HTTP, the market WebSocket pool, and PolyBolt through the
-proxy. The execution client routes authenticated CLOB HTTP, Data API HTTP, and the authenticated
+proxy. The execution client routes authenticated CLOB HTTP, Gamma HTTP, Data API HTTP, and the authenticated
 user WebSocket through it. Configure the same value on both clients when running data and execution
 together.
 
@@ -3302,8 +3302,14 @@ is in scope.
 
 For unmapped open orders and positions inside either scope, the adapter checks the market protocol on
 CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
-exclusions. It skips rows for unsupported markets with a warning. An unmapped supported `v1` or `v2` row
-or a failed version lookup still fails the report request.
+exclusions. It skips rows for unsupported markets with a warning. Mass status collection loads missing
+supported `v1` or `v2` instruments by condition ID from Gamma for the same wallet records used to build
+reports, independently of discovery filters. The execution engine caches those definitions without
+publishing instrument events or subscribing to market data. Missing metadata or a failed lookup still
+fails reconciliation. Disabling reconciliation does not add wallet queries during connection.
+
+The cache includes metadata needed to understand existing exposure. Strategies must apply their own
+entry scope rather than treating every cached instrument as an entry candidate.
 
 Cached open orders and positions without explicit supported protocol metadata are skipped with a warning.
 Confirmed trades on those instruments fail fill-report generation. Reload old cached instruments before trading.

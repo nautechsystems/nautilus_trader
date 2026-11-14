@@ -38,6 +38,7 @@ use nautilus_model::{
     orders::Order,
     types::{Money, Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -45,19 +46,24 @@ use ustr::Ustr;
 use super::PolymarketExecutionClient;
 use crate::{
     common::enums::PolymarketOrderStatus,
+    config::PolymarketInstrumentProviderConfig,
     execution::{
         collateral::CollateralLocks,
         context::OrderContextRegistry,
-        reconciliation::venue_leg_filled_before_and_quantity,
+        reconciliation::{
+            polymarket_instrument_ids_equivalent, venue_leg_filled_before_and_quantity,
+        },
         reports::{fetch_and_emit_account_state, get_pusd_currency},
         settlement::{SettlementRegistry, UncertainOrder, UncertainOrderKind},
     },
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
         error::Error as HttpError,
+        gamma::PolymarketGammaHttpClient,
         models::PolymarketTradeReport,
         query::GetTradesParams,
     },
+    providers::fetch_configured_instruments,
     websocket::{
         dispatch::{
             WsDispatchContext, WsDispatchState, apply_rest_trade_evidence,
@@ -788,6 +794,44 @@ impl PolymarketExecutionClient {
                 &instruments,
             );
         }
+    }
+
+    pub(super) async fn load_wallet_instruments(
+        &self,
+        mut required: Vec<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        required.sort_unstable();
+        required.dedup();
+
+        if required.is_empty() {
+            return Ok(());
+        }
+
+        let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
+            Some(self.config.gamma_url()),
+            self.config.http_timeout_secs,
+            RetryConfig::default(),
+            self.config.validated_proxy_url()?,
+        )?;
+        let config = PolymarketInstrumentProviderConfig {
+            load_ids: Some(required.clone()),
+            ..Default::default()
+        };
+        let mut instruments =
+            Box::pin(fetch_configured_instruments(&gamma_client, &config, &[])).await?;
+        instruments.retain(|instrument| {
+            required
+                .iter()
+                .any(|id| polymarket_instrument_ids_equivalent(instrument.id(), *id))
+        });
+
+        upsert_execution_lookups(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &instruments,
+        );
+
+        Ok(())
     }
 
     pub(super) fn load_orders_from_cache(&self) {

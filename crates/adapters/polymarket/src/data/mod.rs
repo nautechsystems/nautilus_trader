@@ -38,7 +38,7 @@ use std::{
 
 use dashmap::DashMap;
 use nautilus_common::{
-    cache::InstrumentLookupError,
+    cache::{CacheView, InstrumentLookupError},
     clients::{DataClient, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
@@ -126,6 +126,7 @@ pub struct PolymarketDataClient {
     cancellation_token: CancellationToken,
     tasks: TaskGroup,
     data_sender: EventSender<DataEvent>,
+    pub(crate) cache: Option<CacheView>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscriptions: DataSubscriptions,
     instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
@@ -245,6 +246,7 @@ impl PolymarketDataClient {
             cancellation_token,
             tasks,
             data_sender,
+            cache: None,
             instruments,
             subscriptions,
             instrument_update_state: Arc::new(Mutex::new(InstrumentUpdateState::default())),
