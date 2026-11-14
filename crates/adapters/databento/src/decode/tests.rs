@@ -1515,6 +1515,26 @@ fn test_decode_opra_option_contract_falls_back_when_contract_multiplier_missing(
 }
 
 #[rstest]
+#[case(i32::MAX, i64::MAX)]
+#[case(0, 0)]
+fn test_decode_opra_option_contract_uses_standard_multiplier_when_both_missing(
+    #[case] contract_multiplier: i32,
+    #[case] unit_of_measure_qty: i64,
+) {
+    let msg = option_definition_msg(22, "XCBO", contract_multiplier, unit_of_measure_qty);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(100));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
 fn test_decode_opra_option_contract_rejects_negative_contract_multiplier() {
     let msg = option_definition_msg(22, "XCBO", -1, 1_000_000_000);
 
