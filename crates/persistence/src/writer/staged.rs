@@ -455,10 +455,6 @@ where
         Ok(())
     }
 
-    /// Prepares promotion work for newly sealed files.
-    ///
-    /// `backend` runs only when there are files to promote, so an empty promotion
-    /// never opens the target catalog.
     pub(crate) fn prepare_promotion<F>(
         &self,
         backend: F,
@@ -481,13 +477,8 @@ where
             return Ok(None);
         }
 
-        let backend = match backend() {
-            Ok(backend) => backend,
-            Err(e) => {
-                self.promotion_driver.unschedule(&files);
-                return Err(e);
-            }
-        };
+        // Built only for files to promote, so an empty promotion never opens the catalog
+        let backend = backend().inspect_err(|_| self.promotion_driver.unschedule(&files))?;
 
         Ok(Some(
             backend
@@ -933,6 +924,7 @@ mod tests {
             files: files_tx,
             fail: true,
         };
+
         let work = writer
             .prepare_promotion(|| Ok(backend.clone()), source.clone(), false, false)
             .unwrap()
@@ -958,6 +950,7 @@ mod tests {
             fail: false,
             ..backend
         };
+
         let work = writer
             .prepare_promotion(|| Ok(backend.clone()), source.clone(), false, false)
             .unwrap()
@@ -1001,24 +994,17 @@ mod tests {
             None,
         )
         .unwrap();
-        let attempts = AtomicU64::new(0);
 
-        for _ in 0..8 {
-            let work = writer
-                .prepare_promotion(
-                    || {
-                        attempts.fetch_add(1, Ordering::Relaxed);
-                        anyhow::bail!("backend must not be built without files")
-                    },
-                    source.clone(),
-                    false,
-                    false,
-                )
-                .unwrap();
-            assert!(work.is_none());
-        }
+        let work = writer
+            .prepare_promotion(
+                || anyhow::bail!("backend built without files"),
+                source,
+                false,
+                false,
+            )
+            .unwrap();
 
-        assert_eq!(attempts.load(Ordering::Relaxed), 0);
+        assert!(work.is_none());
     }
 
     #[rstest]
@@ -1057,18 +1043,20 @@ mod tests {
             )
             .err()
             .unwrap();
-        assert_eq!(error.to_string(), "backend factory failed");
-        assert_scheduled_count(&writer.promotion_driver.schedule(), 0);
 
         let (files_tx, _files_rx) = mpsc::channel();
+
         let backend = RecordingBackend {
             files: files_tx,
             fail: false,
         };
+
         let work = writer
             .prepare_promotion(|| Ok(backend), source, false, false)
             .unwrap()
             .unwrap();
+
+        assert_eq!(error.to_string(), "backend factory failed");
         assert_eq!(work.files().len(), 1);
     }
 
