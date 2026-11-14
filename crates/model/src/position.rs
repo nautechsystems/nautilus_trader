@@ -898,9 +898,24 @@ impl Position {
             return Ok(());
         }
 
-        let delta = mul_rounded(sub(new_px, previous_px)?, trade_qty)?;
-        self.cost_open = add_rounded(self.cost_open, delta)?;
-        self.avg_px_open = div(self.cost_open, open_qty)?;
+        if self
+            .instrument_class
+            .divides_notional_by_price(self.is_inverse)
+        {
+            self.avg_px_open = inverse_restated_avg_px(
+                open_qty,
+                self.avg_px_open,
+                trade_qty,
+                previous_px,
+                new_px,
+            )?;
+            self.cost_open = mul_rounded(self.avg_px_open, open_qty)?;
+        } else {
+            let delta = mul_rounded(sub(new_px, previous_px)?, trade_qty)?;
+            self.cost_open = add_rounded(self.cost_open, delta)?;
+            self.avg_px_open = div(self.cost_open, open_qty)?;
+        }
+
         Ok(())
     }
 
@@ -1053,8 +1068,18 @@ impl Position {
         let mut pnl = Decimal::ZERO;
 
         if increases {
-            self.cost_open = add_rounded(self.cost_open, mul_rounded(last_px, last_qty)?)?;
-            self.avg_px_open = div(self.cost_open, add(prior_qty, last_qty)?)?;
+            let open_qty = add(prior_qty, last_qty)?;
+            if !prior_qty.is_zero()
+                && self
+                    .instrument_class
+                    .divides_notional_by_price(self.is_inverse)
+            {
+                self.avg_px_open = inverse_avg_px(prior_qty, self.avg_px_open, last_qty, last_px)?;
+                self.cost_open = mul_rounded(self.avg_px_open, open_qty)?;
+            } else {
+                self.cost_open = add_rounded(self.cost_open, mul_rounded(last_px, last_qty)?)?;
+                self.avg_px_open = div(self.cost_open, open_qty)?;
+            }
         } else {
             pnl = self.close_fill(last_px, last_qty.min(prior_qty), prior_qty)?;
             if last_qty > prior_qty {
@@ -2413,6 +2438,50 @@ fn decimal_quotient(dividend: U512, divisor: U512, scale: u32, negative: bool) -
     from_raw(if negative { -mantissa } else { mantissa }, scale).ok()
 }
 
+/// Returns the inverse average price after `qty` at `px` adds to `prior_qty` at `avg_px`.
+///
+/// Inverse contracts are worth `qty / px` in base currency, so the average is the harmonic mean
+/// `(prior_qty + qty) / (prior_qty / avg_px + qty / px)`, evaluated without reciprocals so an
+/// average with an exact decimal form stays exact.
+fn inverse_avg_px(
+    prior_qty: Decimal,
+    avg_px: Decimal,
+    qty: Decimal,
+    px: Decimal,
+) -> CorrectnessResult<Decimal> {
+    check_predicate_true(
+        avg_px > Decimal::ZERO && px > Decimal::ZERO,
+        "inverse prices must be positive",
+    )?;
+    let numerator = mul_rounded(mul_rounded(add(prior_qty, qty)?, avg_px)?, px)?;
+    let denominator = add_rounded(mul_rounded(prior_qty, px)?, mul_rounded(qty, avg_px)?)?;
+    div(numerator, denominator)
+}
+
+/// Returns the inverse average price after `qty` of `open_qty` at `avg_px` moves from
+/// `previous_px` to `px`.
+///
+/// Evaluates `open_qty / (open_qty / avg_px + qty / px - qty / previous_px)` without reciprocals.
+fn inverse_restated_avg_px(
+    open_qty: Decimal,
+    avg_px: Decimal,
+    qty: Decimal,
+    previous_px: Decimal,
+    px: Decimal,
+) -> CorrectnessResult<Decimal> {
+    check_predicate_true(
+        avg_px > Decimal::ZERO && previous_px > Decimal::ZERO && px > Decimal::ZERO,
+        "inverse prices must be positive",
+    )?;
+    let px_product = mul_rounded(previous_px, px)?;
+    let numerator = mul_rounded(mul_rounded(open_qty, avg_px)?, px_product)?;
+    let denominator = add_rounded(
+        mul_rounded(open_qty, px_product)?,
+        mul_rounded(mul_rounded(qty, avg_px)?, sub(previous_px, px)?)?,
+    )?;
+    div(numerator, denominator)
+}
+
 pub(crate) fn mul_rounded(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
     let value = lhs
         .checked_mul(rhs)
@@ -2827,6 +2896,145 @@ mod tests {
         assert_eq!(settled.quantity, Quantity::from(0));
         assert_eq!(position.side, PositionSide::Flat);
         assert!(settled.is_settled());
+    }
+
+    fn inverse_fill(
+        instrument: &InstrumentAny,
+        position_id: &str,
+        trade_id: &str,
+        side: OrderSide,
+        quantity: &str,
+        price: &str,
+    ) -> OrderFilled {
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from(position_id))
+            .trade_id(TradeId::from(trade_id))
+            .event_id(UUID4::new())
+            .order_side(side)
+            .last_qty(Quantity::from(quantity))
+            .last_px(Price::from(price))
+            .commission(Money::zero(Currency::BTC()))
+            .build()
+    }
+
+    #[rstest]
+    #[case::long(OrderSide::Buy, OrderSide::Sell, dec!(1))]
+    #[case::short(OrderSide::Sell, OrderSide::Buy, dec!(-1))]
+    fn test_inverse_netting_pnl_matches_hedging_positions(
+        btcusd_bybit: CryptoPerpetual,
+        #[case] side: OrderSide,
+        #[case] closing_side: OrderSide,
+        #[case] sign: Decimal,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
+        let fill = |position_id, trade_id, side, quantity, price| {
+            inverse_fill(&instrument, position_id, trade_id, side, quantity, price)
+        };
+        let mut netting = Position::new(&instrument, fill("P-1", "T-1", side, "50", "10000.0"));
+        netting.apply(&fill("P-1", "T-2", side, "50", "15000.0"));
+        let unrealized = netting.unrealized_pnl(Price::from("11000.0")).unwrap();
+        netting.apply(&fill("P-1", "T-3", closing_side, "100", "12000.0"));
+        let mut first = Position::new(&instrument, fill("P-2", "T-1", side, "50", "10000.0"));
+        let mut second = Position::new(&instrument, fill("P-3", "T-2", side, "50", "15000.0"));
+        first.apply(&fill("P-2", "T-3", closing_side, "50", "12000.0"));
+        second.apply(&fill("P-3", "T-4", closing_side, "50", "12000.0"));
+
+        assert_eq!(netting.avg_px_open, dec!(12000));
+        assert_eq!(
+            unrealized,
+            native_money(sign * dec!(-1) / dec!(1320), Currency::BTC())
+        );
+        assert_eq!(
+            netting.realized_pnl,
+            Some(first.realized_pnl.unwrap() + second.realized_pnl.unwrap())
+        );
+        assert_eq!(netting.realized_pnl, Some(Money::zero(Currency::BTC())));
+    }
+
+    #[rstest]
+    #[case::two_prices(&["10000.0", "15000.0"], dec!(12000))]
+    #[case::three_prices(&["10000.0", "15000.0", "30000.0"], dec!(15000))]
+    #[case::equal_prices(&["15000.5", "15000.5", "15000.5"], dec!(15000.5))]
+    fn test_inverse_avg_px_open_is_harmonic_mean(
+        btcusd_bybit: CryptoPerpetual,
+        #[case] prices: &[&str],
+        #[case] expected: Decimal,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
+        let mut position = Position::new(
+            &instrument,
+            inverse_fill(&instrument, "P-1", "T-0", OrderSide::Buy, "50", prices[0]),
+        );
+
+        for (index, price) in prices.iter().enumerate().skip(1) {
+            let trade_id = format!("T-{index}");
+            position.apply(&inverse_fill(
+                &instrument,
+                "P-1",
+                &trade_id,
+                OrderSide::Buy,
+                "50",
+                price,
+            ));
+        }
+
+        assert_eq!(position.avg_px_open, expected);
+        assert_eq!(position.cost_open, expected * position.signed_qty);
+    }
+
+    #[rstest]
+    #[case::long(OrderSide::Buy, OrderSide::Sell, dec!(1))]
+    #[case::short(OrderSide::Sell, OrderSide::Buy, dec!(-1))]
+    fn test_inverse_realized_pnl_after_reduce_then_add(
+        btcusd_bybit: CryptoPerpetual,
+        #[case] side: OrderSide,
+        #[case] closing_side: OrderSide,
+        #[case] sign: Decimal,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
+        let fill = |trade_id, side, quantity, price| {
+            inverse_fill(&instrument, "P-1", trade_id, side, quantity, price)
+        };
+        let mut position = Position::new(&instrument, fill("T-1", side, "50", "10000.0"));
+        position.apply(&fill("T-2", closing_side, "20", "12000.0"));
+        position.apply(&fill("T-3", side, "30", "15000.0"));
+        let avg_px_open = position.avg_px_open;
+        position.apply(&fill("T-4", closing_side, "60", "11000.0"));
+
+        // Base value opened (50/10000 + 30/15000) less base value closed (20/12000 + 60/11000)
+        assert_eq!(avg_px_open, dec!(12000));
+        assert_eq!(
+            position.realized_pnl,
+            Some(native_money(sign * dec!(-1) / dec!(8250), Currency::BTC()))
+        );
+    }
+
+    #[rstest]
+    fn test_inverse_price_restatement_uses_harmonic_mean(btcusd_bybit: CryptoPerpetual) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
+        let mut position = Position::new(
+            &instrument,
+            inverse_fill(&instrument, "P-1", "T-1", OrderSide::Buy, "50", "10000.0"),
+        );
+        let addition = inverse_fill(&instrument, "P-1", "T-2", OrderSide::Buy, "50", "15000.0");
+        position.apply(&addition);
+        let mut restatement = addition;
+        restatement.event_id = UUID4::new();
+        restatement.last_px = Price::from("40000.0");
+
+        position.try_apply(&restatement).unwrap();
+        position.apply(&inverse_fill(
+            &instrument,
+            "P-1",
+            "T-3",
+            OrderSide::Sell,
+            "100",
+            "20000.0",
+        ));
+
+        assert_eq!(position.avg_px_open, dec!(16000));
+        assert_eq!(position.realized_pnl, Some(Money::from("0.00125 BTC")));
     }
 
     #[rstest]

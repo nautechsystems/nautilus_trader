@@ -154,15 +154,15 @@ fn apply_adjustment(
 proptest! {
     #[rstest]
     fn prop_simulate_position_value_non_negative(fills in fill_sequence_strategy(0, 30)) {
-        let (qty, value) = simulate_position(&fills);
+        let (qty, value) = simulate_position(&fills, false);
         prop_assert!(value >= Decimal::ZERO);
         prop_assert!(!(qty != Decimal::ZERO && value.is_sign_negative()));
     }
 
     #[rstest]
     fn prop_simulate_position_deterministic(fills in fill_sequence_strategy(0, 20)) {
-        let a = simulate_position(&fills);
-        let b = simulate_position(&fills);
+        let a = simulate_position(&fills, false);
+        let b = simulate_position(&fills, false);
         prop_assert_eq!(a, b);
     }
 
@@ -185,7 +185,7 @@ proptest! {
             })
             .collect();
 
-        let (qty, value) = simulate_position(&snapshots);
+        let (qty, value) = simulate_position(&snapshots, false);
         prop_assert_eq!(qty, expected_qty);
         prop_assert_eq!(value, expected_value);
     }
@@ -207,7 +207,7 @@ proptest! {
 
         let min_px = fills.iter().map(|(_, p, _)| *p).min().unwrap();
         let max_px = fills.iter().map(|(_, p, _)| *p).max().unwrap();
-        let (qty, value) = simulate_position(&snapshots);
+        let (qty, value) = simulate_position(&snapshots, false);
         prop_assert!(qty > Decimal::ZERO);
         let avg_px = value / qty;
         prop_assert!(avg_px >= min_px);
@@ -271,7 +271,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px), AvgPxReconciliation::Match, None);
+        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px), AvgPxReconciliation::Match, None, false);
         prop_assert_eq!(result, None);
     }
 
@@ -287,6 +287,7 @@ proptest! {
             Some(target_px),
             AvgPxReconciliation::Match,
             None,
+            false,
         );
         prop_assert_eq!(result, Some(target_px));
     }
@@ -296,7 +297,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None, AvgPxReconciliation::Match, None);
+        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None, AvgPxReconciliation::Match, None, false);
         prop_assert_eq!(result, Some(px));
     }
 
@@ -315,6 +316,7 @@ proptest! {
             Some(target_px),
             AvgPxReconciliation::Match,
             None,
+            false,
         );
 
         if let Some(px) = recon_px {
@@ -325,7 +327,7 @@ proptest! {
                 FillSnapshot::new(voi, OrderSide::Buy, current_qty, current_px, 1),
                 FillSnapshot::new(voi, OrderSide::Buy, extra_qty, px, 2),
             ];
-            let (sim_qty, sim_value) = simulate_position(&fills);
+            let (sim_qty, sim_value) = simulate_position(&fills, false);
             prop_assert_eq!(sim_qty, target_qty);
             let sim_avg = sim_value / sim_qty;
             prop_assert!((sim_avg - target_px).abs() / target_px <= dec!(0.0001));
@@ -373,7 +375,7 @@ proptest! {
             avg_px_reconciliation: AvgPxReconciliation::Match,
             avg_px_precision: None,
         };
-        let result = adjust_fills_for_partial_window(&[], &venue, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&[], &venue, dec!(0.0001), false);
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
@@ -386,7 +388,7 @@ proptest! {
             avg_px_reconciliation: AvgPxReconciliation::Match,
             avg_px_precision: None,
         };
-        let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001), false);
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
@@ -405,7 +407,7 @@ proptest! {
                 FillSnapshot::new(*voi, OrderSide::Buy, *qty, *px, (i as u64) + 1)
             })
             .collect();
-        let (sim_qty, sim_value) = simulate_position(&snapshots);
+        let (sim_qty, sim_value) = simulate_position(&snapshots, false);
         prop_assume!(sim_qty > Decimal::ZERO);
         let sim_avg = sim_value / sim_qty;
 
@@ -416,7 +418,7 @@ proptest! {
             avg_px_reconciliation: AvgPxReconciliation::Match,
             avg_px_precision: None,
         };
-        let result = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001), false);
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
@@ -446,7 +448,7 @@ proptest! {
                 )
             })
             .collect();
-        let (sim_qty, sim_value) = simulate_position(&snapshots);
+        let (sim_qty, sim_value) = simulate_position(&snapshots, false);
 
         // Construct venue = sim + extra opening (same-side accumulation). This
         // is the case where reconciliation must prepend a synthetic opening.
@@ -464,13 +466,13 @@ proptest! {
             avg_px_precision: None,
         };
 
-        let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
+        let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001), false);
         let is_synth_opening =
             matches!(adjustment, FillAdjustmentResult::AddSyntheticOpening { .. });
         prop_assert!(is_synth_opening);
 
         let effective = apply_adjustment(snapshots, &adjustment);
-        let (eff_qty, eff_value) = simulate_position(&effective);
+        let (eff_qty, eff_value) = simulate_position(&effective, false);
         prop_assert_eq!(eff_qty, target_qty);
         let eff_avg = eff_value / eff_qty;
         prop_assert!(
@@ -500,6 +502,7 @@ proptest! {
             Some(target_px),
             AvgPxReconciliation::Match,
             None,
+            false,
         );
         prop_assert_eq!(recon_px, Some(target_px));
 
@@ -516,7 +519,7 @@ proptest! {
                 2,
             ),
         ];
-        let (sim_qty, sim_value) = simulate_position(&fills);
+        let (sim_qty, sim_value) = simulate_position(&fills, false);
         prop_assert_eq!(sim_qty, target_qty);
         let sim_avg = sim_value / sim_qty.abs();
         prop_assert_eq!(sim_avg, target_px);
@@ -570,7 +573,7 @@ proptest! {
                 FillSnapshot::new(*voi, OrderSide::Buy, *q, px, (i as u64) + 1)
             })
             .collect();
-        let (qty, value) = simulate_position(&snapshots);
+        let (qty, value) = simulate_position(&snapshots, false);
         prop_assert!(value >= Decimal::ZERO);
         prop_assert!(qty > Decimal::ZERO);
     }
