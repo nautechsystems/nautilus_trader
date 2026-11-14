@@ -2626,11 +2626,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::schema_3_5(5, 19)]
-    #[case::schema_3_6(6, 22)]
-    #[case::future_schema(7, 25)]
-    fn test_decode_exchange_info_multiple_symbols(#[case] version: u16, #[case] block_length: u16) {
-        let header = create_header(0, EXCHANGE_INFO_TEMPLATE_ID, SBE_SCHEMA_ID, version);
+    fn test_decode_exchange_info_multiple_symbols(#[values(19, 22, 25)] block_length: u16) {
+        let header = create_header(
+            0,
+            EXCHANGE_INFO_TEMPLATE_ID,
+            SBE_SCHEMA_ID,
+            SBE_SCHEMA_VERSION,
+        );
         let padding = usize::from(block_length) - SYMBOL_BLOCK_LENGTH;
 
         let mut buf = Vec::new();
