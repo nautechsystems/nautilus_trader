@@ -1894,6 +1894,88 @@ mod tests {
     }
 
     #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_option_terms_round_trip(#[case] instrument: InstrumentAny) {
+        let underlying_id = match &instrument {
+            InstrumentAny::OptionContract(_) => "AAPL.NASDAQ",
+            InstrumentAny::CryptoOption(_) => "BTCUSDT.BINANCE",
+            _ => unreachable!("option fixtures only"),
+        };
+
+        for (known, settlement) in [
+            (true, Some("CASH")),
+            (true, Some("PHYSICAL")),
+            (false, Some("CASH")),
+            (true, None),
+            (false, None),
+        ] {
+            let mut encoded = serde_json::to_value(&instrument).unwrap();
+            let fields = encoded
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap();
+            fields["underlying_instrument_id"] =
+                serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
+            let instrument: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
+            let metadata = instrument.metadata();
+            let batch =
+                InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+            let restored = decode_instrument_any_batch(&metadata, &batch).unwrap();
+            assert_eq!(serde_json::to_value(&restored[0]).unwrap(), encoded);
+
+            let legacy = batch_without_column(&batch, "underlying_instrument_id");
+            let legacy = batch_without_column(&legacy, "settlement_type");
+            let decoded = decode_instrument_any_batch(&metadata, &legacy).unwrap();
+            let restored = serde_json::to_value(&decoded[0]).unwrap();
+            let fields = restored.as_object().unwrap().values().next().unwrap();
+            assert_eq!(fields["underlying_instrument_id"], serde_json::Value::Null);
+            assert_eq!(fields["settlement_type"], serde_json::Value::Null);
+        }
+    }
+
+    #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_invalid_option_terms_return_field_error(
+        #[case] instrument: InstrumentAny,
+        #[values("underlying_instrument_id", "settlement_type")] field: &'static str,
+    ) {
+        let metadata = instrument.metadata();
+        let batch = InstrumentAny::encode_batch(&metadata, &[instrument]).unwrap();
+        let schema = batch.schema();
+        let index = schema.index_of(field).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[index] = Arc::new(StringArray::from(vec!["INVALID"]));
+        let invalid = RecordBatch::try_new(schema, columns).unwrap();
+        let error = decode_instrument_any_batch(&metadata, &invalid).unwrap_err();
+
+        let EncodingError::ParseError(actual_field, detail) = error else {
+            panic!("expected field parse error, was {error:?}");
+        };
+
+        assert_eq!(actual_field, field);
+        assert!(detail.starts_with("row 0: "));
+    }
+
+    #[rstest]
     fn test_roundtrip_option_contract() {
         use nautilus_model::instruments::stubs::option_contract_appl;
         roundtrip_case(&InstrumentAny::OptionContract(option_contract_appl()));

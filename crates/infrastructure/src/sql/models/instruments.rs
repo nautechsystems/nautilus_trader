@@ -21,7 +21,7 @@ use std::str::FromStr;
 
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    enums::{AssetClass, OptionKind},
+    enums::{AssetClass, OptionKind, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
@@ -115,7 +115,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "CRYPTO_OPTION" {
             Ok(Self(InstrumentAny::CryptoOption(
-                CryptoOptionRow::from_row(row).unwrap().0,
+                CryptoOptionRow::from_row(row)?.0,
             )))
         } else if kind == "CRYPTO_OPTION_SPREAD" {
             Ok(Self(InstrumentAny::CryptoOptionSpread(
@@ -143,7 +143,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "OPTION_CONTRACT" {
             Ok(Self(InstrumentAny::OptionContract(
-                OptionContractRow::from_row(row).unwrap().0,
+                OptionContractRow::from_row(row)?.0,
             )))
         } else if kind == "COMMODITY" {
             Ok(Self(InstrumentAny::Commodity(
@@ -598,6 +598,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
+        let (underlying_instrument_id, settlement_type) = read_option_terms(row)?;
+
         let inst = CryptoOption::builder()
             .instrument_id(id)
             .raw_symbol(raw_symbol)
@@ -606,6 +608,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(option_kind)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)
@@ -1049,6 +1053,8 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
+        let (underlying_instrument_id, settlement_type) = read_option_terms(row)?;
+
         let inst = OptionContract::builder()
             .instrument_id(id)
             .raw_symbol(raw_symbol)
@@ -1056,6 +1062,8 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
             .maybe_exchange(exchange)
             .underlying(underlying)
             .option_kind(option_kind)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .currency(currency)
             .activation_ns(activation_ns)
@@ -1721,4 +1729,34 @@ fn read_optional_quantity(row: &PgRow, column: &str) -> Option<Quantity> {
     row.try_get::<Option<String>, _>(column)
         .ok()
         .and_then(|res| res.map(|res| Quantity::from(res.as_str())))
+}
+
+fn read_option_terms(
+    row: &PgRow,
+) -> Result<(Option<InstrumentId>, Option<SettlementType>), sqlx::Error> {
+    let underlying_instrument_id = row
+        .try_get::<Option<String>, _>("underlying_instrument_id")?
+        .map(|value| {
+            value
+                .parse::<InstrumentId>()
+                .map_err(|e| sqlx::Error::ColumnDecode {
+                    index: "underlying_instrument_id".to_string(),
+                    source: Box::new(e),
+                })
+        })
+        .transpose()?;
+
+    let settlement_type = row
+        .try_get::<Option<String>, _>("settlement_type")?
+        .map(|value| {
+            value
+                .parse::<SettlementType>()
+                .map_err(|e| sqlx::Error::ColumnDecode {
+                    index: "settlement_type".to_string(),
+                    source: Box::new(e),
+                })
+        })
+        .transpose()?;
+
+    Ok((underlying_instrument_id, settlement_type))
 }

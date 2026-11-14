@@ -1110,6 +1110,212 @@ mod serial_tests {
     }
 
     #[rstest]
+    #[case("underlying_instrument_id")]
+    #[case("settlement_type")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_connect_requires_option_terms_schema_migration(#[case] column: &str) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+        database.close().unwrap();
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pool = connect_test_pg(options.into()).await.unwrap();
+        sqlx::query(AssertSqlSafe(format!(
+            "ALTER TABLE instrument DROP COLUMN {column}"
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let blocked = get_test_pg_cache_database().await;
+        sqlx::query(AssertSqlSafe(format!(
+            "ALTER TABLE instrument ADD COLUMN {column} TEXT"
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut restored = get_test_pg_cache_database().await.unwrap();
+        restored.close().unwrap();
+        pool.close().await;
+        assert!(
+            blocked
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("missing cache columns instrument.{column}"))
+        );
+    }
+
+    #[rstest]
+    #[case::option_contract(option_contract_appl().into_any())]
+    #[case::crypto_option(crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")).into_any())]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_option_terms_round_trip(
+        #[case] instrument: InstrumentAny,
+        #[values(false, true)] boxed: bool,
+    ) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        for currency in [
+            instrument.base_currency(),
+            Some(instrument.quote_currency()),
+            Some(instrument.settlement_currency()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            DatabaseQueries::add_currency(&database.pool, currency)
+                .await
+                .unwrap();
+        }
+
+        let id = instrument.id();
+        let underlying_id = match &instrument {
+            InstrumentAny::OptionContract(_) => "AAPL.NASDAQ",
+            InstrumentAny::CryptoOption(_) => "BTCUSDT.BINANCE",
+            _ => unreachable!("option fixtures only"),
+        };
+
+        for (known, settlement) in [
+            (true, Some("CASH")),
+            (true, Some("PHYSICAL")),
+            (false, Some("CASH")),
+            (true, None),
+            (false, None),
+        ] {
+            let mut encoded = serde_json::to_value(&instrument).unwrap();
+            let fields = encoded
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap();
+            fields["underlying_instrument_id"] =
+                serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
+            let expected: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
+            if boxed {
+                let kind = match &expected {
+                    InstrumentAny::OptionContract(_) => "OPTION_CONTRACT",
+                    InstrumentAny::CryptoOption(_) => "CRYPTO_OPTION",
+                    _ => unreachable!("option fixtures only"),
+                };
+
+                DatabaseQueries::add_instrument(&database.pool, kind, Box::new(expected.clone()))
+                    .await
+                    .unwrap();
+            } else {
+                database.add_instrument(&expected).unwrap();
+                wait_until_async(
+                    || async {
+                        database
+                            .load_instrument(&id)
+                            .await
+                            .unwrap()
+                            .is_some_and(|loaded| serde_json::to_value(loaded).unwrap() == encoded)
+                    },
+                    Duration::from_secs(5),
+                )
+                .await;
+            }
+
+            let loaded = database.load_instrument(&id).await.unwrap().unwrap();
+            let all = database.load_instruments().await.unwrap();
+            assert_entirely_equal(&loaded, &expected);
+            assert_entirely_equal(&all[&id], &expected);
+        }
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::option_contract(option_contract_appl().into_any())]
+    #[case::crypto_option(crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")).into_any())]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_invalid_option_terms_return_field_error(
+        #[case] instrument: InstrumentAny,
+        #[values("single", "bulk", "all")] load: &str,
+    ) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+        let valid = currency_pair_ethusdt().into_any();
+
+        for currency in [
+            instrument.base_currency(),
+            Some(instrument.quote_currency()),
+            Some(instrument.settlement_currency()),
+            valid.base_currency(),
+            Some(valid.quote_currency()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            DatabaseQueries::add_currency(&database.pool, currency)
+                .await
+                .unwrap();
+        }
+
+        let id = instrument.id();
+        database.add_instrument(&instrument).unwrap();
+        database.add_instrument(&valid).unwrap();
+        wait_until_async(
+            || async { database.load_instruments().await.unwrap().len() == 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        for field in ["underlying_instrument_id", "settlement_type"] {
+            sqlx::query(AssertSqlSafe(format!(
+                "UPDATE instrument SET {field} = 'INVALID' WHERE id = $1"
+            )))
+            .bind(id.to_string())
+            .execute(&database.pool)
+            .await
+            .unwrap();
+
+            let error = match load {
+                "single" => database.load_instrument(&id).await.unwrap_err(),
+                "bulk" => database.load_instruments().await.unwrap_err(),
+                "all" => database.load_all().await.unwrap_err(),
+                _ => unreachable!("cache load methods only"),
+            };
+
+            let valid_loaded = database
+                .load_instrument(&valid.id())
+                .await
+                .unwrap()
+                .unwrap();
+
+            if load == "all" {
+                assert!(error.to_string().contains(field));
+            } else {
+                let sqlx::Error::ColumnDecode { index, .. } =
+                    error.downcast_ref::<sqlx::Error>().unwrap()
+                else {
+                    panic!("expected column decode error, was {error:?}");
+                };
+
+                assert_eq!(index, field);
+            }
+
+            assert_entirely_equal(&valid_loaded, &valid);
+
+            sqlx::query(AssertSqlSafe(format!(
+                "UPDATE instrument SET {field} = NULL WHERE id = $1"
+            )))
+            .bind(id.to_string())
+            .execute(&database.pool)
+            .await
+            .unwrap();
+            let restored = database.load_all().await.unwrap().instruments;
+
+            assert_eq!(restored.len(), 2);
+            assert_entirely_equal(&restored[&id], &instrument);
+            assert_entirely_equal(&restored[&valid.id()], &valid);
+        }
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
+    }
+
+    #[rstest]
     #[case(binary_option().into_any())]
     #[case(cfd_gold().into_any())]
     #[case(commodity_gold().into_any())]

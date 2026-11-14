@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::any::Any;
+
 use ahash::AHashMap;
 use nautilus_common::signal::Signal;
 #[cfg(feature = "defi")]
@@ -28,7 +30,7 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
-    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
+    instruments::{CryptoOption, Instrument, InstrumentAny, OptionContract, SyntheticInstrument},
     orders::OrderAny,
     position::Position,
     types::Currency,
@@ -383,20 +385,36 @@ impl DatabaseQueries {
         kind: &str,
         instrument: Box<dyn Instrument>,
     ) -> anyhow::Result<()> {
+        let instrument_any = instrument.as_ref() as &dyn Any;
+        let instrument_any: &dyn Any = match instrument_any.downcast_ref::<InstrumentAny>() {
+            Some(InstrumentAny::OptionContract(option)) => option,
+            Some(InstrumentAny::CryptoOption(option)) => option,
+            _ => instrument_any,
+        };
+
+        let (underlying_instrument_id, settlement_type) =
+            if let Some(option) = instrument_any.downcast_ref::<OptionContract>() {
+                (option.underlying_instrument_id, option.settlement_type)
+            } else if let Some(option) = instrument_any.downcast_ref::<CryptoOption>() {
+                (option.underlying_instrument_id, option.settlement_type)
+            } else {
+                (None, None)
+            };
+
         sqlx::query(r#"
             INSERT INTO "instrument" (
                 id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
                 strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
-                min_notional, max_price, min_price, ts_init, ts_event, info, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, settlement_type, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
                 kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
                  strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
                  price_increment = $20, size_increment = $21, margin_init = $22, margin_maint = $23, lot_size = $24, max_quantity = $25,
-                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, updated_at = CURRENT_TIMESTAMP
+                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, settlement_type = $35, updated_at = CURRENT_TIMESTAMP
             "#)
             .bind(instrument.id().to_string())
             .bind(kind)
@@ -431,6 +449,8 @@ impl DatabaseQueries {
             .bind(instrument.ts_init().to_string())
             .bind(instrument.ts_event().to_string())
             .bind(instrument.info().map(serde_json::to_string).transpose()?)
+            .bind(underlying_instrument_id.map(|id| id.to_string()))
+            .bind(settlement_type.map(|kind| kind.to_string()))
             .execute(executor)
             .await
             .map(|_| ())

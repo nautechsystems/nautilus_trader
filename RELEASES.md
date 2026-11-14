@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added per-`DataType` custom data histories to `Cache`, populated by the `DataEngine`, thanks @faysou
+- Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
@@ -20,6 +21,8 @@ Released on TBD (UTC).
 
 - Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
+- Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
+- Changed PostgreSQL instrument storage to add option underlying and settlement columns; run `nautilus database init`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating

@@ -514,6 +514,8 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('yield_curve', 'curve_name'),
             ('yield_curve', 'value'),
             ('instrument', 'info'),
+            ('instrument', 'underlying_instrument_id'),
+            ('instrument', 'settlement_type'),
             ('account_event', 'info'),
             ('account_event', 'trader_id'),
             ('order_position_index', 'trader_id'),
@@ -829,21 +831,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
-        match DatabaseQueries::load_instruments(&self.pool).await {
-            Ok(items) => Ok(items
-                .into_iter()
-                .map(|instrument| (instrument.id(), instrument))
-                .collect()),
-            Err(e) => {
-                #[cfg(feature = "defi")]
-                if e.is::<crate::defi::IntegrityError>() {
-                    return Err(e);
-                }
-
-                log::error!("Failed to load_instruments: {e}");
-                Ok(AHashMap::new())
-            }
-        }
+        let instruments = DatabaseQueries::load_instruments(&self.pool).await?;
+        Ok(instruments
+            .into_iter()
+            .map(|instrument| (instrument.id(), instrument))
+            .collect())
     }
 
     async fn load_instrument_closes(
