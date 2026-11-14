@@ -158,8 +158,10 @@ def test_hyperliquid_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatc
     """
     captured = capture_exec_tester_main(monkeypatch, hyperliquid_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
+    exec_engine_config = captured["exec_engine_config"]
 
     assert isinstance(kwargs, dict)
+    assert exec_engine_config.reconciliation_lookback_mins == 1440
     assert kwargs["dry_run"] is False
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True

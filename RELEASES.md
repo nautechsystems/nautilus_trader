@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
+- Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
