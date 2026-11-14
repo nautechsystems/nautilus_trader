@@ -3956,6 +3956,9 @@ impl ExecutionManager {
                 venue_report
                     .as_ref()
                     .and_then(|report| report.avg_px_open_precision),
+                instrument
+                    .instrument_class()
+                    .divides_notional_by_price(instrument.is_inverse()),
             );
 
             reconciliation_px
@@ -4471,6 +4474,9 @@ impl ExecutionManager {
             report.avg_px_open,
             report.avg_px_open_reconciliation,
             report.avg_px_open_precision,
+            instrument
+                .instrument_class()
+                .divides_notional_by_price(instrument.is_inverse()),
         );
 
         let fill_px = reconciliation_px

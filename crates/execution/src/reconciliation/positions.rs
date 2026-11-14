@@ -88,6 +88,9 @@ fn process_mass_status_for_reconciliation_inner(
     let instrument_id = instrument.id();
     let account_id = mass_status.account_id;
     let tol = tolerance.unwrap_or(DEFAULT_TOLERANCE);
+    let divides_notional_by_price = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
 
     let position_reports = mass_status.position_reports();
 
@@ -115,7 +118,12 @@ fn process_mass_status_for_reconciliation_inner(
         });
     }
 
-    let result = adjust_fills_for_partial_window(&fill_snapshots, &venue_position, tol);
+    let result = adjust_fills_for_partial_window(
+        &fill_snapshots,
+        &venue_position,
+        tol,
+        divides_notional_by_price,
+    );
 
     match result {
         FillAdjustmentResult::NoAdjustment => {}
@@ -225,6 +233,7 @@ fn process_mass_status_for_reconciliation_inner(
 ///
 /// This function analyzes fills and determines if adjustments are needed when the reconciliation
 /// window doesn't capture the complete position history (missing opening fills).
+/// `divides_notional_by_price` selects inverse averaging, as in [`simulate_position`].
 ///
 /// # Returns
 ///
@@ -234,6 +243,7 @@ pub(super) fn adjust_fills_for_partial_window(
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
+    divides_notional_by_price: bool,
 ) -> FillAdjustmentResult {
     let Some(first_fill) = fills.first() else {
         return FillAdjustmentResult::NoAdjustment;
@@ -275,7 +285,8 @@ pub(super) fn adjust_fills_for_partial_window(
             return FillAdjustmentResult::NoAdjustment;
         };
 
-        let (current_qty, current_value) = simulate_position(&current_lifecycle_fills);
+        let (current_qty, current_value) =
+            simulate_position(&current_lifecycle_fills, divides_notional_by_price);
 
         if check_position_match(current_qty, current_value, venue_position, tolerance) {
             // Current lifecycle matches - filter out old lifecycles
@@ -297,7 +308,7 @@ pub(super) fn adjust_fills_for_partial_window(
         return FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill };
     }
 
-    let (oldest_qty, oldest_value) = simulate_position(fills);
+    let (oldest_qty, oldest_value) = simulate_position(fills, divides_notional_by_price);
 
     if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
         return FillAdjustmentResult::NoAdjustment;
@@ -310,8 +321,12 @@ pub(super) fn adjust_fills_for_partial_window(
         Some(oldest_value / oldest_qty.abs())
     };
 
-    let Some(opening_px) = synthetic_opening_price(oldest_qty, oldest_avg_px, venue_position)
-    else {
+    let Some(opening_px) = synthetic_opening_price(
+        oldest_qty,
+        oldest_avg_px,
+        venue_position,
+        divides_notional_by_price,
+    ) else {
         return FillAdjustmentResult::NoAdjustment;
     };
 
@@ -350,6 +365,7 @@ fn synthetic_opening_price(
     window_qty: Decimal,
     window_avg_px: Option<Decimal>,
     venue_position: &VenuePositionSnapshot,
+    divides_notional_by_price: bool,
 ) -> Option<Decimal> {
     match venue_position.avg_px_reconciliation {
         // The synthetic fill opens the position before the window's fills
@@ -361,6 +377,7 @@ fn synthetic_opening_price(
             Some(venue_position.avg_px),
             AvgPxReconciliation::Match,
             venue_position.avg_px_precision,
+            divides_notional_by_price,
         ),
     }
 }
@@ -687,11 +704,17 @@ fn extract_fills_for_instrument(
 
 /// Simulate position from chronologically ordered fills using netting logic.
 ///
+/// The value is the open quantity times its average price. When `divides_notional_by_price`, fills
+/// average by base currency value, as a non-premium inverse [`Position`] does.
+///
 /// # Returns
 ///
 /// Returns a tuple of (quantity, value) after applying all fills.
 #[must_use]
-pub(super) fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
+pub(super) fn simulate_position(
+    fills: &[FillSnapshot],
+    divides_notional_by_price: bool,
+) -> (Decimal, Decimal) {
     let mut qty = Decimal::ZERO;
     let mut value = Decimal::ZERO;
 
@@ -709,7 +732,16 @@ pub(super) fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
             || (qty <= Decimal::ZERO && direction < Decimal::ZERO)
         {
             // Accumulating in same direction
-            value += fill.qty * fill.px;
+            if divides_notional_by_price && value > Decimal::ZERO && fill.px > Decimal::ZERO {
+                let prior_qty = qty.abs();
+                let total_qty = prior_qty + fill.qty;
+                let avg_px = value / prior_qty;
+                let new_avg_px =
+                    total_qty * avg_px * fill.px / (prior_qty * fill.px + fill.qty * avg_px);
+                value = total_qty * new_avg_px;
+            } else {
+                value += fill.qty * fill.px;
+            }
             qty = new_qty;
         } else {
             // Closing or flipping position
@@ -863,7 +895,8 @@ pub fn position_prices_match(
 /// 2. Flat to position: `reconciliation_px` = `target_avg_px`
 /// 3. Position flip (sign change): `reconciliation_px` = `target_avg_px` (due to value reset in simulation)
 /// 4. Reduction: target average price by default (remaining entry average is unchanged)
-/// 5. Accumulation: weighted average formula by default
+/// 5. Accumulation: weighted average formula by default, weighted by base currency value
+///    (`qty / px`) when `divides_notional_by_price`, as a non-premium inverse [`Position`] averages
 pub fn calculate_reconciliation_price(
     current_position_qty: Decimal,
     current_position_avg_px: Option<Decimal>,
@@ -871,6 +904,7 @@ pub fn calculate_reconciliation_price(
     target_position_avg_px: Option<Decimal>,
     target_avg_px_reconciliation: AvgPxReconciliation,
     target_avg_px_precision: Option<u8>,
+    divides_notional_by_price: bool,
 ) -> Option<Decimal> {
     let qty_diff = target_position_qty - current_position_qty;
 
@@ -926,14 +960,26 @@ pub fn calculate_reconciliation_price(
         return Some(target_avg_px);
     }
 
-    // For accumulation, use weighted average formula
-    // Formula: (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
-    let target_value = target_position_qty * target_avg_px;
-    let current_value = current_position_qty * current_avg_px;
-    let diff_value = target_value - current_value;
+    let reconciliation_px = if divides_notional_by_price {
+        // Formula: (target_qty / target_avg_px) = (current_qty / current_avg_px) + (qty_diff / reconciliation_px)
+        let base_value_diff =
+            target_position_qty * current_avg_px - current_position_qty * target_avg_px;
 
-    // qty_diff is guaranteed non-zero by the early return above
-    let reconciliation_px = diff_value / qty_diff;
+        if base_value_diff.is_zero() {
+            return None;
+        }
+
+        qty_diff * target_avg_px * current_avg_px / base_value_diff
+    } else {
+        // For accumulation, use weighted average formula
+        // Formula: (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
+        let target_value = target_position_qty * target_avg_px;
+        let current_value = current_position_qty * current_avg_px;
+        let diff_value = target_value - current_value;
+
+        // qty_diff is guaranteed non-zero by the early return above
+        diff_value / qty_diff
+    };
 
     // Ensure price is positive
     if reconciliation_px > Decimal::ZERO {
