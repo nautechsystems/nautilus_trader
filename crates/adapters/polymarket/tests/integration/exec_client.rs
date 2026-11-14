@@ -2520,6 +2520,7 @@ async fn test_generate_mass_status_recovers_open_order_history_before_completion
         InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET").as_str());
     add_instrument_to_cache_with_tick_and_taker_fee(&cache, instrument_id, "0.01", 6, dec!(0.05));
     client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    cache.borrow_mut().purge_instrument(instrument_id);
     let mass_status = client
         .generate_mass_status(Some(60))
         .await
@@ -2565,6 +2566,9 @@ async fn test_generate_mass_status_recovers_open_order_history_before_completion
     .unwrap();
     let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
     engine.register_client(Box::new(client)).unwrap();
+    engine
+        .cache_reconciliation_instruments(&POLYMARKET_CLIENT_ID)
+        .unwrap();
     let engine = Rc::new(RefCell::new(engine));
     let result = manager.reconcile_execution_mass_status(&mass_status, &engine);
     assert!(result.unresolved_positions.is_empty());
