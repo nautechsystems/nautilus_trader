@@ -335,6 +335,10 @@ The position side selects the formula. Premium-based inverse instruments (such a
 the premium in the base currency. Thus, they use the standard formula and report PnL and notional value in the
 base currency.
 
+Other inverse instruments average opening fills by their base currency value: `avg_px_open` is the
+quantity-weighted harmonic mean `quantity / Σ(fill_quantity / fill_price)`, as venues average inverse entries.
+This keeps realized PnL additive across opening fills, matching separate `HEDGING` positions for the same fills.
+
 ### Unrealized PnL
 
 `unrealized_pnl()` calculates PnL for an open position from the supplied `price`. You can pass a
@@ -506,8 +510,9 @@ The fallible fill, adjustment, settlement, purge, and fill-void operations leave
 ### Cost basis and rounding
 
 Opening and closing cost accumulators retain the amounts behind average prices. A rounded average never
-feeds the cost basis. A partial reduction retains unallocated opening cost, and the final reduction consumes
-that remainder. A separate Decimal PnL remainder retains fractions below the native Money scale between
+feeds the cost basis of a linear position. An inverse position that averages by base currency value keeps its
+opening cost at the open quantity times that harmonic mean. A partial reduction retains unallocated opening
+cost, and the final reduction consumes that remainder. A separate Decimal PnL remainder retains fractions below the native Money scale between
 updates.
 
 Derived Money amounts round midpoint to even at the native scale: nine decimal places in standard mode and
