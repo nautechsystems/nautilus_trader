@@ -38,7 +38,7 @@ use crate::{
     http::{
         gamma::PolymarketGammaHttpClient,
         models::GammaTag,
-        query::{GetGammaEventsParams, GetGammaMarketsParams},
+        query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
     },
 };
 
@@ -362,7 +362,237 @@ impl PolymarketInstrumentProvider {
     }
 }
 
+pub(crate) enum InstrumentRequest {
+    All,
+    Markets(GetGammaMarketsParams),
+    Slugs(Vec<String>),
+    EventSlugs(Vec<String>),
+    EventQuery(String, GetGammaMarketsParams),
+    Events(GetGammaEventsParams),
+    Search(GetSearchParams),
+}
+
+impl InstrumentRequest {
+    pub(crate) async fn fetch(
+        self,
+        http: &PolymarketGammaHttpClient,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        match self {
+            Self::All => http.request_instruments().await,
+            Self::Markets(params) => http.request_instruments_by_params(params).await,
+            Self::Slugs(slugs) => http.request_instruments_by_slugs(slugs).await,
+            Self::EventSlugs(slugs) => http.request_instruments_by_event_slugs(slugs).await,
+            Self::EventQuery(slug, params) => {
+                http.request_instruments_by_event_query(&slug, params).await
+            }
+            Self::Events(params) => http.request_instruments_by_event_params(params).await,
+            Self::Search(params) => http.request_instruments_by_search(params).await,
+        }
+    }
+}
+
+pub(crate) struct InstrumentRequests {
+    pub(crate) required: Vec<(InstrumentRequest, bool)>,
+    pub(crate) retained_slugs: Vec<String>,
+}
+
+fn filter_requests(filters: &[Arc<dyn InstrumentFilter>]) -> InstrumentRequests {
+    let mut requests = InstrumentRequests {
+        required: Vec::new(),
+        retained_slugs: Vec::new(),
+    };
+    let mut slug_requests = Vec::new();
+
+    for filter in filters {
+        let params = filter.query_params();
+        if let Some(slugs) = filter.market_slugs().filter(|slugs| !slugs.is_empty()) {
+            if params.is_some() {
+                requests.retained_slugs.extend(slugs);
+            } else {
+                slug_requests.push((InstrumentRequest::Slugs(slugs), true));
+            }
+        }
+
+        if let Some(params) = params {
+            requests
+                .required
+                .push((InstrumentRequest::Markets(params), true));
+        }
+
+        if let Some(slugs) = filter.event_slugs().filter(|slugs| !slugs.is_empty()) {
+            requests
+                .required
+                .push((InstrumentRequest::EventSlugs(slugs), true));
+        }
+
+        if let Some(queries) = filter.event_queries() {
+            requests.required.extend(
+                queries
+                    .into_iter()
+                    .map(|(slug, params)| (InstrumentRequest::EventQuery(slug, params), true)),
+            );
+        }
+
+        if let Some(params) = filter.event_params() {
+            requests
+                .required
+                .push((InstrumentRequest::Events(params), true));
+        }
+
+        if let Some(params) = filter.search_params() {
+            requests
+                .required
+                .push((InstrumentRequest::Search(params), true));
+        }
+    }
+    requests.required.extend(slug_requests);
+    requests.retained_slugs.sort();
+    requests.retained_slugs.dedup();
+    requests
+}
+
+pub(crate) fn configured_requests(
+    config: &PolymarketInstrumentProviderConfig,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<InstrumentRequests> {
+    config.validate()?;
+    let mut requests = filter_requests(filters);
+
+    if has_bootstrap_scope(config, filters) {
+        if filters.is_empty() {
+            if let Some(map) = config.filters.as_ref().filter(|map| !map.is_empty()) {
+                requests.required.push((
+                    InstrumentRequest::Markets(build_gamma_params_from_hashmap(map)?),
+                    false,
+                ));
+            } else if !config.has_explicit_scope() {
+                requests.required.push((InstrumentRequest::All, false));
+            }
+        }
+
+        if let Some(ids) = config.series_ids.clone().filter(|ids| !ids.is_empty()) {
+            requests
+                .required
+                .push((InstrumentRequest::Events(series_events_params(ids)), false));
+        }
+        let slugs = config.resolve_event_slugs()?;
+        if !slugs.is_empty() {
+            requests
+                .required
+                .push((InstrumentRequest::EventSlugs(slugs), false));
+        }
+        let slugs = config
+            .market_slugs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|slug| !slug.trim().is_empty())
+            .collect::<Vec<_>>();
+
+        if !slugs.is_empty() {
+            requests
+                .required
+                .push((InstrumentRequest::Slugs(slugs), false));
+        }
+    }
+    let ids = config
+        .load_ids
+        .clone()
+        .unwrap_or_default()
+        .iter()
+        .map(validated_condition_id)
+        .collect::<anyhow::Result<AHashSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    for chunk in ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
+        requests.required.push((
+            InstrumentRequest::Markets(GetGammaMarketsParams {
+                condition_ids: Some(chunk.to_vec()),
+                ..Default::default()
+            }),
+            false,
+        ));
+    }
+    Ok(requests)
+}
+
+pub(crate) async fn fetch_required_instruments(
+    http: &PolymarketGammaHttpClient,
+    requests: Vec<(InstrumentRequest, bool)>,
+    filters: &[Arc<dyn InstrumentFilter>],
+    seen: &mut AHashSet<InstrumentId>,
+    mut publish: impl FnMut(&[InstrumentAny]),
+) -> anyhow::Result<()> {
+    let mut accepted = AHashSet::new();
+    let mut failure = None;
+
+    for (request, filtered) in requests {
+        match request.fetch(http).await {
+            Ok(mut instruments) => {
+                instruments.retain(|instrument| {
+                    let fresh = seen.insert(instrument.id());
+                    (!filtered || (fresh && filters.iter().all(|filter| filter.accept(instrument))))
+                        && accepted.insert(instrument.id())
+                });
+                publish(&instruments);
+            }
+            Err(e) => {
+                failure.get_or_insert(e);
+            }
+        }
+    }
+    failure.map_or(Ok(()), Err)
+}
+
+pub(crate) async fn fetch_retained_slugs(
+    http: &PolymarketGammaHttpClient,
+    slugs: Vec<String>,
+) -> Vec<InstrumentAny> {
+    let mut instruments = Vec::new();
+    // Slugs have variable length. Small batches also leave room for encoded query parameters.
+    for chunk in slugs.chunks(16) {
+        match http
+            .request_instruments_by_params(GetGammaMarketsParams {
+                slug: Some(chunk.to_vec()),
+                max_markets: Some(chunk.len() as u32),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(batch) => instruments.extend(batch),
+            Err(e) => log::warn!("Failed optional retained Polymarket slug lookup: {e}"),
+        }
+    }
+    instruments
+}
+
+async fn fetch_requests(
+    http: &PolymarketGammaHttpClient,
+    requests: InstrumentRequests,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<Vec<InstrumentAny>> {
+    let mut instruments = Vec::new();
+    let mut seen = AHashSet::new();
+    fetch_required_instruments(http, requests.required, filters, &mut seen, |batch| {
+        instruments.extend_from_slice(batch);
+    })
+    .await?;
+
+    for instrument in
+        fetch_retained_slugs(&http.for_retained_refresh(), requests.retained_slugs).await
+    {
+        if seen.insert(instrument.id()) && filters.iter().all(|filter| filter.accept(&instrument)) {
+            instruments.push(instrument);
+        }
+    }
+    Ok(instruments)
+}
+
 /// Fetches instruments from the Gamma API, respecting any configured filters.
+///
+/// Rolling queries take precedence over slug results before acceptance. A filter with both
+/// query parameters and market slugs treats those slugs as optional retained metadata.
 pub async fn fetch_instruments(
     http_client: &PolymarketGammaHttpClient,
     filters: &[Arc<dyn InstrumentFilter>],
@@ -370,58 +600,7 @@ pub async fn fetch_instruments(
     if filters.is_empty() {
         return http_client.request_instruments().await;
     }
-
-    let mut instruments = Vec::new();
-
-    for filter in filters {
-        if let Some(slugs) = filter.market_slugs()
-            && !slugs.is_empty()
-        {
-            let result = http_client.request_instruments_by_slugs(slugs).await?;
-            instruments.extend(result);
-        }
-
-        if let Some(event_slugs) = filter.event_slugs()
-            && !event_slugs.is_empty()
-        {
-            let result = http_client
-                .request_instruments_by_event_slugs(event_slugs)
-                .await?;
-            instruments.extend(result);
-        }
-
-        if let Some(params) = filter.query_params() {
-            let result = http_client.request_instruments_by_params(params).await?;
-            instruments.extend(result);
-        }
-
-        if let Some(event_queries) = filter.event_queries() {
-            for (event_slug, params) in event_queries {
-                let result = http_client
-                    .request_instruments_by_event_query(&event_slug, params)
-                    .await?;
-                instruments.extend(result);
-            }
-        }
-
-        if let Some(params) = filter.event_params() {
-            let result = http_client
-                .request_instruments_by_event_params(params)
-                .await?;
-            instruments.extend(result);
-        }
-
-        if let Some(params) = filter.search_params() {
-            let result = http_client.request_instruments_by_search(params).await?;
-            instruments.extend(result);
-        }
-    }
-
-    let mut seen = AHashSet::new();
-    instruments.retain(|inst| seen.insert(inst.id()));
-    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
-
-    Ok(instruments)
+    fetch_requests(http_client, filter_requests(filters), filters).await
 }
 
 /// Fetches instruments using the configured provider bootstrap scope without
@@ -431,96 +610,7 @@ pub async fn fetch_configured_instruments(
     config: &PolymarketInstrumentProviderConfig,
     filters: &[Arc<dyn InstrumentFilter>],
 ) -> anyhow::Result<Vec<InstrumentAny>> {
-    config.validate()?;
-
-    let mut instruments = Vec::new();
-
-    if has_bootstrap_scope(config, filters) {
-        let has_explicit_scope = config.has_explicit_scope();
-        let event_slugs = config.resolve_event_slugs()?;
-
-        let market_slugs = config
-            .market_slugs
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|slug| !slug.trim().is_empty())
-            .collect::<Vec<_>>();
-
-        let series_ids = config.series_ids.clone().unwrap_or_default();
-
-        // Explicit scoping never broadens into an unfiltered full-universe
-        // fetch, but every filter-driven query is bounded, so it composes with
-        // explicit series and slug scopes instead of being silently dropped.
-        // This mirrors `load_scoped_all`, which the interval refresh and
-        // `request_instruments` paths must stay consistent with.
-        if !filters.is_empty() {
-            instruments.extend(fetch_instruments(http_client, filters).await?);
-        } else if let Some(map) = config.filters.as_ref().filter(|map| !map.is_empty()) {
-            let params = build_gamma_params_from_hashmap(map)?;
-            instruments.extend(http_client.request_instruments_by_params(params).await?);
-        } else if !has_explicit_scope {
-            instruments.extend(http_client.request_instruments().await?);
-        }
-
-        if !series_ids.is_empty() {
-            instruments.extend(
-                http_client
-                    .request_instruments_by_event_params(series_events_params(series_ids))
-                    .await?,
-            );
-        }
-
-        if !event_slugs.is_empty() {
-            instruments.extend(
-                http_client
-                    .request_instruments_by_event_slugs(event_slugs)
-                    .await?,
-            );
-        }
-
-        if !market_slugs.is_empty() {
-            instruments.extend(
-                http_client
-                    .request_instruments_by_slugs(market_slugs)
-                    .await?,
-            );
-        }
-    }
-
-    if config.has_load_ids() {
-        // Queried by condition ID alone. Merging `config.filters` in here would
-        // intersect an explicit scope with a filter scope, so an ID outside those
-        // filters would never load despite being named directly. Mirrors the
-        // `load_ids` call in `initialize`.
-        let condition_ids = config
-            .load_ids
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|id| validated_condition_id(&id))
-            .collect::<anyhow::Result<AHashSet<_>>>()?
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
-            let params = GetGammaMarketsParams {
-                condition_ids: Some(chunk.to_vec()),
-                ..Default::default()
-            };
-            instruments.extend(http_client.request_instruments_by_params(params).await?);
-        }
-    }
-
-    // Deduplicated but NOT filtered by `accept` here. `fetch_instruments` already
-    // applies acceptance to the results of filter-driven queries, which is the only
-    // place it belongs: applying it again across the whole collection would let a
-    // registered filter reject series, slug, and ID instruments that the provider's
-    // `load_scoped_all` adds unconditionally, so a refresh would silently drop
-    // instruments the bootstrap had loaded.
-    let mut seen = AHashSet::new();
-    instruments.retain(|inst| seen.insert(inst.id()));
-    Ok(instruments)
+    fetch_requests(http_client, configured_requests(config, filters)?, filters).await
 }
 
 // Registered filters live on the provider, not the config, so the config predicate alone cannot

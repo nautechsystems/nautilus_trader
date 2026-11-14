@@ -2789,6 +2789,18 @@ The same composition applies to periodic refreshes driven by `update_instruments
 Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
 universes match.
 
+Periodic refresh also covers instruments needed by individual subscriptions, resolution watches,
+active orders, or open positions outside discovery filters. Factories attach the cache automatically;
+direct Rust clients use `with_cache`. Cached definitions and venue-wide subscriptions are not owners.
+
+Retained lookups use condition-ID batches independently of discovery, with Gamma capacity reserved
+for discovery. They add no market-data subscriptions and stop when the last owner is released.
+Discovery definitions take precedence over retained results.
+
+For registered filters supplying both query parameters and market slugs, slug lookups are optional;
+failures do not delay discovery. Explicitly configured sources and slug-only filters remain required.
+Disabling periodic refresh also disables retained lookups.
+
 #### Markets awaiting CLOB metadata
 
 Gamma can report a newly listed market before usable outcome IDs are available, or omit it from a
