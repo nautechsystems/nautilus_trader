@@ -64,6 +64,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
+- Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms

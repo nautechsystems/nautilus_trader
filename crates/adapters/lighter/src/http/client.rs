@@ -319,7 +319,9 @@ impl LighterRawHttpClient {
     ///
     /// Returns an error if the request fails or the response is invalid.
     pub async fn get_trades(&self, query: &LighterTradesQuery) -> LighterHttpResult<LighterTrades> {
-        self.send_get_request(ENDPOINT_TRADES, Some(query)).await
+        let headers = authorization_headers(query.authorization.as_ref(), query.auth.as_ref());
+        self.send_get_request_with_headers(ENDPOINT_TRADES, Some(query), headers)
+            .await
     }
 
     /// Calls `GET /api/v1/candles`.
@@ -367,7 +369,8 @@ impl LighterRawHttpClient {
         &self,
         query: &LighterAccountActiveOrdersQuery,
     ) -> LighterHttpResult<LighterOrders> {
-        self.send_get_request(ENDPOINT_ACCOUNT_ACTIVE_ORDERS, Some(query))
+        let headers = authorization_headers(query.authorization.as_ref(), query.auth.as_ref());
+        self.send_get_request_with_headers(ENDPOINT_ACCOUNT_ACTIVE_ORDERS, Some(query), headers)
             .await
     }
 
@@ -380,7 +383,8 @@ impl LighterRawHttpClient {
         &self,
         query: &LighterAccountInactiveOrdersQuery,
     ) -> LighterHttpResult<LighterOrders> {
-        self.send_get_request(ENDPOINT_ACCOUNT_INACTIVE_ORDERS, Some(query))
+        let headers = authorization_headers(query.authorization.as_ref(), query.auth.as_ref());
+        self.send_get_request_with_headers(ENDPOINT_ACCOUNT_INACTIVE_ORDERS, Some(query), headers)
             .await
     }
 
@@ -395,7 +399,8 @@ impl LighterRawHttpClient {
     ) -> LighterHttpResult<LighterOrders> {
         validate_client_order_indexes(&query.client_order_indexes)
             .map_err(LighterHttpError::Parse)?;
-        self.send_get_request(ENDPOINT_ACCOUNT_ORDERS, Some(query))
+        let headers = authorization_headers(query.authorization.as_ref(), query.auth.as_ref());
+        self.send_get_request_with_headers(ENDPOINT_ACCOUNT_ORDERS, Some(query), headers)
             .await
     }
 
@@ -433,16 +438,8 @@ impl LighterRawHttpClient {
         let params = LighterMakerOnlyApiKeysParams {
             account_index: query.account_index,
         };
-        let headers = query
-            .authorization
-            .as_ref()
-            .or(query.auth.as_ref())
-            .map(|auth| {
-                HashMap::from([(
-                    HEADER_AUTHORIZATION.to_string(),
-                    auth.expose_secret().to_owned(),
-                )])
-            });
+
+        let headers = authorization_headers(query.authorization.as_ref(), query.auth.as_ref());
         self.send_get_request_with_headers(ENDPOINT_MAKER_ONLY_API_KEYS, Some(&params), headers)
             .await
     }
@@ -736,6 +733,18 @@ impl LighterRawHttpClient {
 #[derive(Serialize)]
 struct LighterMakerOnlyApiKeysParams {
     account_index: i64,
+}
+
+fn authorization_headers(
+    authorization: Option<&SecretString>,
+    auth: Option<&SecretString>,
+) -> Option<HashMap<String, String>> {
+    authorization.or(auth).map(|token| {
+        HashMap::from([(
+            HEADER_AUTHORIZATION.to_string(),
+            token.expose_secret().to_owned(),
+        )])
+    })
 }
 
 fn multipart_headers() -> HashMap<String, String> {

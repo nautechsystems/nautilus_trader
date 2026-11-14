@@ -1843,9 +1843,7 @@ async fn test_connect_disconnect_lifecycle() {
     assert!(channels.iter().any(|c| c == &"user_stats/12345"));
     assert!(channels.iter().any(|c| c == &"account_tx/12345"));
 
-    // Subscribe frames must carry the L2 auth token; the data-client tests
-    // pin the token shape via the REST `auth=` parameter, here the same
-    // contract reaches the venue via the WS `auth` field.
+    // The WebSocket auth field shares the REST Authorization token format
     for sub in &subs {
         let auth = sub["auth"].as_str().expect("auth on account subscribe");
         assert_eq!(
@@ -9847,6 +9845,8 @@ async fn test_order_batches_chunk_commands(
     *state.account_type.lock().await = Some(1);
     let mut config = build_config(addr);
     config.sendtx_quota_per_min = Some(9);
+    // Keep REST confirmation probes outside the transaction quota test
+    config.rest_quota_per_min = Some(600_000);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.unwrap();
 

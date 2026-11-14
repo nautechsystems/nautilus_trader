@@ -10711,6 +10711,7 @@ mod tests {
     use axum::{
         Router,
         extract::Query,
+        http::HeaderMap,
         response::IntoResponse,
         routing::{get, post},
     };
@@ -25490,7 +25491,8 @@ mod tests {
             .route(
                 "/api/v1/trades",
                 get(
-                    move |axum::extract::Query(query): axum::extract::Query<
+                    move |headers: HeaderMap,
+                          axum::extract::Query(query): axum::extract::Query<
                         BTreeMap<String, String>,
                     >| {
                         let trades = trades.clone();
@@ -25509,7 +25511,13 @@ mod tests {
                             assert_eq!(query.get("sort_dir").map(String::as_str), Some("desc"));
                             assert_eq!(query.get("limit").map(String::as_str), Some("100"));
                             assert!(!query.contains_key("from"));
-                            assert!(query.get("auth").is_some_and(|auth| !auth.is_empty()));
+                            assert!(
+                                headers
+                                    .get("authorization")
+                                    .is_some_and(|auth| !auth.is_empty())
+                            );
+                            assert!(!query.contains_key("authorization"));
+                            assert!(!query.contains_key("auth"));
                             axum::Json(serde_json::json!({"code":200,"trades":trades}))
                         }
                     },
