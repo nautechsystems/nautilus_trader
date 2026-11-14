@@ -1593,7 +1593,7 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_position_reports(position_reports);
     mass_status.add_fill_reports(fill_reports);
     if lookback_start.is_some() {
-        validate_open_order_history(&mass_status, core)?;
+        validate_open_order_history(&mass_status, instruments, core)?;
     }
 
     Ok(Some(mass_status))
@@ -1865,11 +1865,13 @@ async fn fetch_associated_trade(
 
 fn validate_open_order_history(
     mass_status: &ExecutionMassStatus,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     core: &ExecutionClientCore,
 ) -> anyhow::Result<()> {
     let orders = mass_status.order_reports();
     let fills = mass_status.fill_reports();
     let cache = core.cache();
+    let loaded = instruments.load();
     let mut adjusted = AHashMap::new();
 
     for order in orders.values().filter(|order| order.order_status.is_open()) {
@@ -1893,7 +1895,12 @@ fn validate_open_order_history(
         if !adjusted.contains_key(&order.instrument_id) {
             let instrument = cache
                 .instrument(&order.instrument_id)
-                .context("open order history has no cached instrument")?;
+                .or_else(|| {
+                    loaded
+                        .values()
+                        .find(|instrument| instrument.id() == order.instrument_id)
+                })
+                .context("open order history has no instrument")?;
             let result = process_mass_status_for_reconciliation(mass_status, instrument, None)?;
             adjusted.insert(order.instrument_id, result);
         }
