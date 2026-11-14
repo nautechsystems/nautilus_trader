@@ -97,9 +97,7 @@ impl MessageHeader {
     /// instrument loading on a server-side bump. A different schema ID is a breaking
     /// change and is still rejected.
     ///
-    /// The decoders assume block layouts are stable within a schema ID.
-    /// `decode_exchange_info` verifies the symbol block length and fails loudly on a
-    /// mismatch; the market-data decoders read groups at a fixed offset, so a future
+    /// The market-data decoders read groups at a fixed offset, so a future
     /// version that adds fixed-block fields to those messages would need them updated
     /// to advance past the added bytes via `block_length`.
     fn validate(&self) -> Result<(), SbeDecodeError> {
@@ -1211,7 +1209,7 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
     // Decode symbols group
     let (symbols_block_len, symbols_count) = cursor.read_group_header()?;
 
-    if symbols_block_len != SYMBOL_BLOCK_LENGTH as u16 {
+    if symbols_block_len < SYMBOL_BLOCK_LENGTH as u16 {
         return Err(SbeDecodeError::InvalidBlockLength {
             expected: SYMBOL_BLOCK_LENGTH as u16,
             actual: symbols_block_len,
@@ -1242,6 +1240,7 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
         let _default_self_trade_prevention_mode = cursor.read_u8()?;
         let _allowed_self_trade_prevention_modes = cursor.read_u8()?;
         let _peg_instructions_allowed = cursor.read_u8()?;
+        cursor.advance(usize::from(symbols_block_len) - SYMBOL_BLOCK_LENGTH)?;
 
         let (_filters_block_len, filters_count) = cursor.read_group_header()?;
         let mut filters = BinanceSymbolFiltersSbe::default();
@@ -2627,13 +2626,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_exchange_info_multiple_symbols() {
-        let header = create_header(
-            0,
-            EXCHANGE_INFO_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
+    #[case::schema_3_5(5, 19)]
+    #[case::schema_3_6(6, 22)]
+    #[case::future_schema(7, 25)]
+    fn test_decode_exchange_info_multiple_symbols(#[case] version: u16, #[case] block_length: u16) {
+        let header = create_header(0, EXCHANGE_INFO_TEMPLATE_ID, SBE_SCHEMA_ID, version);
+        let padding = usize::from(block_length) - SYMBOL_BLOCK_LENGTH;
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
@@ -2645,7 +2643,7 @@ mod tests {
         buf.extend_from_slice(&create_group_header(0, 0));
 
         // Symbols group: 2 symbols
-        buf.extend_from_slice(&create_group_header(SYMBOL_BLOCK_LENGTH as u16, 2));
+        buf.extend_from_slice(&create_group_header(block_length, 2));
 
         // Symbol 1: BTCUSDT
         buf.push(0); // status
@@ -2666,6 +2664,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
+        buf.resize(buf.len() + padding, 0xFF);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "BTCUSDT");
@@ -2691,6 +2690,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
+        buf.resize(buf.len() + padding, 0xFF);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "ETHUSDT");
