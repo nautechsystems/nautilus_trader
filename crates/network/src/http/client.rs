@@ -78,6 +78,10 @@ pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "request deadline elapsed";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HttpRedirectPolicy {
     /// Follow up to ten redirects.
+    ///
+    /// A redirect to another origin keeps only the `Accept`, `Accept-Encoding`, and `User-Agent`
+    /// request headers. The request fails when a redirect goes from HTTPS to HTTP, or when a
+    /// request with a body is redirected to another origin.
     #[default]
     Follow,
     /// Reject every redirect response.

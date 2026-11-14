@@ -17,6 +17,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
@@ -25,6 +26,9 @@ Released on TBD (UTC).
 - Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
 - Changed open-only checks to query missing orders; allow for extra REST traffic and adapter recovery behavior
 - Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
+- Changed WebSocket SOCKS `proxy_url` to return an error instead of connecting directly; use an HTTP(S) proxy
+- Changed followed HTTP redirects to fail on HTTPS-to-HTTP downgrades and on cross-origin requests with a body
+- Changed cross-origin HTTP redirects to drop custom headers; request the final URL when they are required
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
@@ -34,6 +38,10 @@ Released on TBD (UTC).
 - Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
+
+### Security
+
+- Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
 
 ### Fixes
 
@@ -73,7 +81,9 @@ Released on TBD (UTC).
 - Refined value-imbalance trade splitting and time-bar timer setup
 - Refined portfolio realized PnL aggregation and order reservation calculations
 - Refined position replay and accounting, order fill-void validation, and order status report construction
+- Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
+- Optimized socket client framing to search only unscanned bytes on each read
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151

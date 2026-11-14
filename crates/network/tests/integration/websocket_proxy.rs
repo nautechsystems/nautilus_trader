@@ -38,10 +38,10 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use nautilus_network::{
     mode::ConnectionMode,
-    transport::Message,
+    transport::{Message, TransportError},
     websocket::{TransportBackend, WebSocketClient, WebSocketConfig, types::MessageHandler},
 };
 use rstest::rstest;
@@ -522,17 +522,14 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials(
     case::sockudo(TransportBackend::Sockudo)
 )]
 #[tokio::test]
-async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: TransportBackend) {
-    // SOCKS proxies are not yet supported on the WS path. To preserve REST
-    // proxy configs that use SOCKS, the client should log a warning and fall
-    // back to a direct connection rather than failing the handshake. We verify
-    // the direct path works by spinning up an echo server and pointing the
-    // target URL at it while supplying a SOCKS proxy_url.
-    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+async fn websocket_client_rejects_socks_proxy_without_connecting(
+    #[case] backend: TransportBackend,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
 
     let config = WebSocketConfig {
-        url: format!("ws://{echo_addr}/"),
+        url: format!("ws://{addr}/"),
         headers: vec![],
         heartbeat_interval_secs: None,
         heartbeat_payload: None,
@@ -552,25 +549,20 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: 
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let client = WebSocketClient::builder()
+    let result = WebSocketClient::builder()
         .config(config)
         .message_handler(handler)
         .connect()
-        .await
-        .expect("connect should succeed via direct fallback when SOCKS is requested");
-    client.send_text("ping".to_string(), None).await.unwrap();
+        .await;
+    // The connect has already failed, so a direct connection would be queued
+    let contacted = listener.accept().now_or_never().is_some();
 
-    for _ in 0..40 {
-        if !received.lock().await.is_empty() {
-            break;
-        }
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-
-    let msgs = received.lock().await.clone();
-    client.disconnect().await;
-    assert_eq!(msgs, vec!["ping".to_string()]);
+    assert!(
+        matches!(result, Err(TransportError::InvalidUrl(_))),
+        "{:?}",
+        result.err()
+    );
+    assert!(!contacted);
 }
 
 /// Spawn an echo server that drops the *first* incoming WebSocket

@@ -537,6 +537,9 @@ impl SocketClientInner {
         R: AsyncRead + Unpin,
     {
         let mut buf = Vec::new();
+        // Leading bytes of `buf` already searched, so a peer that withholds the suffix cannot
+        // force a rescan of the whole buffer on every read.
+        let mut scanned = 0;
         let mut last_data_time = dst::time::Instant::now();
 
         'read: loop {
@@ -579,13 +582,14 @@ impl SocketClientInner {
                         break;
                     }
 
-                    while let Some((i, _)) = &buf
+                    while let Some(i) = buf[scanned..]
                         .windows(suffix.len())
-                        .enumerate()
-                        .find(|(_, pair)| pair.eq(&suffix))
+                        .position(|window| window == suffix)
                     {
-                        let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                        let end = scanned + i + suffix.len();
+                        let mut data: Vec<u8> = buf.drain(0..end).collect();
                         data.truncate(data.len() - suffix.len());
+                        scanned = 0;
 
                         if let Some(ref handler) = handler {
                             if !ConnectionMode::from_atomic(&connection_state).is_active()
@@ -602,6 +606,9 @@ impl SocketClientInner {
                             handler(&data);
                         }
                     }
+
+                    // A suffix can still complete across the last `suffix.len() - 1` bytes
+                    scanned = buf.len().saturating_sub(suffix.len() - 1);
 
                     if buf.len() > MAX_READ_BUFFER_BYTES {
                         log::error!(
@@ -2561,6 +2568,25 @@ mod rust_tests {
         }
     }
 
+    /// Yields one scripted chunk per read, then end of stream.
+    struct ChunkReader {
+        chunks: VecDeque<&'static [u8]>,
+    }
+
+    impl AsyncRead for ChunkReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if let Some(chunk) = self.chunks.pop_front() {
+                buf.put_slice(chunk);
+            }
+
+            Poll::Ready(Ok(()))
+        }
+    }
+
     struct LimitProbeReader {
         remaining: usize,
         read_after_limit: Arc<AtomicBool>,
@@ -3259,6 +3285,36 @@ mod rust_tests {
         .unwrap();
 
         assert_eq!(received.lock().as_slice(), &[b"first".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_frames_suffix_split_across_reads() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let received = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let received_clone = Arc::clone(&received);
+        let handler: TcpMessageHandler =
+            Arc::new(move |data| received_clone.lock().push(data.to_vec()));
+
+        // The suffix straddles two reads twice: after `first` and for the final empty frame
+        let reader = ChunkReader {
+            chunks: VecDeque::from([&b"fir"[..], b"st\r", b"\nsecond\r\n\r", b"\n"]),
+        };
+
+        SocketClientInner::run_read_loop(
+            connection_state,
+            ReadSessionFence::new(),
+            reader,
+            Some(handler),
+            b"\r\n".to_vec(),
+            None,
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert_eq!(
+            received.lock().as_slice(),
+            &[b"first".to_vec(), b"second".to_vec(), Vec::new()]
+        );
     }
 
     #[tokio::test]
