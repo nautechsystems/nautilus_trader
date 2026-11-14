@@ -52,12 +52,12 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, postgres::PgConnectOptions};
+use sqlx::PgPool;
 use tokio::{time::Instant, try_join};
 use ustr::Ustr;
 
 use crate::sql::{
-    pg::{connect_pg, get_postgres_connect_options},
+    pg::get_postgres_connect_options,
     queries::{CACHE_DATABASE_KEY_PREFIX, DatabaseQueries, trader_key_prefix},
 };
 
@@ -117,6 +117,7 @@ mod tests {
     use nautilus_model::enums::BookType;
     use rstest::rstest;
     use serde_json::json;
+    use sqlx::postgres::PgConnectOptions;
 
     use super::*;
     #[cfg(feature = "defi")]
@@ -131,6 +132,26 @@ mod tests {
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
         assert_eq!(config.database, None);
+    }
+
+    #[tokio::test]
+    async fn test_postgres_cache_connect_returns_error_when_unavailable() {
+        let config = PostgresCacheConfig {
+            host: Some("127.0.0.1".to_string()),
+            port: Some(1),
+            username: Some("nautilus".to_string()),
+            password: Some("pass".to_string()),
+            database: Some("nautilus".to_string()),
+        };
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(40),
+            PostgresCacheDatabase::connect(config, TraderId::from("TRADER-001")),
+        )
+        .await
+        .expect("Postgres connection should fail within SQLx's default pool acquire timeout");
+
+        assert!(result.is_err(), "connection failure must return an error");
     }
 
     #[rstest]
@@ -318,10 +339,6 @@ impl PostgresCacheDatabase {
     /// Returns an error if establishing the database connection fails, if the schema is out of
     /// date, if any account events have no trader (the error lists the accounts to assign), or if
     /// checking account ownership fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal Postgres pool connection attempt (`connect_pg`) unwraps on error.
     pub async fn connect(
         config: PostgresCacheConfig,
         trader_id: TraderId,
@@ -333,18 +350,16 @@ impl PostgresCacheDatabase {
             config.password,
             config.database,
         );
-        let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
+        let pool = PgPool::connect_with(pg_connect_options.clone().into()).await?;
         check_schema_migrated(&pool).await?;
         check_account_ownership(&pool).await?;
+        // Validate the writer's connection before reporting a successful startup.
+        // Keep a dedicated write pool so reader operations are not starved by writes.
+        let write_pool = PgPool::connect_with(pg_connect_options.into()).await?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         let handle = get_runtime().spawn(async move {
-            Box::pin(Self::process_commands(
-                rx,
-                pg_connect_options.clone().into(),
-                trader_id,
-            ))
-            .await;
+            Box::pin(Self::process_commands(rx, write_pool, trader_id)).await;
         });
         Ok(Self {
             pool,
@@ -379,12 +394,10 @@ impl PostgresCacheDatabase {
 
     async fn process_commands(
         mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseQuery>,
-        pg_connect_options: PgConnectOptions,
+        pool: PgPool,
         trader_id: TraderId,
     ) {
         log_task_started(CACHE_PROCESS);
-
-        let pool = connect_pg(pg_connect_options).await.unwrap();
 
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
