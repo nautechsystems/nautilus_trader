@@ -301,8 +301,8 @@ Locks release through either path:
   precedes startup reconciliation; discovered orders affect the next refresh.
 - **Order events**: Core order events, including reconciled events, update reservations and unsettled spend.
   Account balances change only on refresh, not on each event.
-- **Triggers**: Refreshes run at connect, on account queries, after finalized trade updates, and on user
-  WebSocket reconnect. They do not request open orders.
+- **Triggers**: Refreshes run at connect, on account queries, after finalized trade updates or user
+  `auto_redeem` events, and on user WebSocket reconnect. They do not request open orders.
 - **Reconnect and reset**: Transport reconnect preserves unsettled BUY spend; reset clears it.
 - **Response ordering**: The adapter discards responses superseded by a newer refresh or invalidated by an
   execution-client reconnect or reset. A user WebSocket reconnect retains in-flight refreshes;

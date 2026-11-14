@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
 - Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
+- Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Fixes
 
@@ -58,6 +59,7 @@ Released on TBD (UTC).
 - Fixed OKX fills for untracked orders arriving without their order terms
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
+- Fixed Polymarket balances not refreshing after auto-redemption events
 
 ### Internal Improvements
 

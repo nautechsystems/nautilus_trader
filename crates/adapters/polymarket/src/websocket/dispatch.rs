@@ -96,7 +96,7 @@ use crate::{
     },
 };
 
-/// Signal returned when a finalized trade requires an async account refresh.
+/// Signal returned when a user event requires an async account refresh.
 #[derive(Debug)]
 pub(crate) struct AccountRefreshRequest;
 
@@ -635,6 +635,7 @@ pub(crate) fn dispatch_user_message(
             None
         }
         UserWsMessage::Trade(trade) => dispatch_trade_update(trade, ctx, state),
+        UserWsMessage::AutoRedeem => Some(AccountRefreshRequest),
     }
 }
 

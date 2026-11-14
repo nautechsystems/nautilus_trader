@@ -23429,6 +23429,79 @@ async fn test_query_order_does_not_emit_report_for_target_fill_contradiction(
 }
 
 #[rstest]
+#[case::single(false)]
+#[case::batch(true)]
+#[tokio::test]
+async fn test_auto_redeem_refreshes_account_balance(#[case] batch: bool) {
+    let state = TestServerState::default();
+    state.balance_response.lock().await["balance"] = Value::String("100000000".into());
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("POLYMARKET-001");
+    add_test_account_to_cache(&cache, account_id);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let initial = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let ExecutionEvent::Account(initial) = initial else {
+        panic!("Expected initial account state");
+    };
+
+    assert_eq!(
+        initial.balances,
+        vec![AccountBalance::new(
+            Money::from("100 pUSD"),
+            Money::from("0 pUSD"),
+            Money::from("100 pUSD"),
+        )],
+    );
+
+    state.balance_response.lock().await["balance"] = Value::String("107250000".into());
+    let redemption = load_json("ws_user_auto_redeem.json");
+
+    let message = if batch {
+        Value::Array(vec![redemption])
+    } else {
+        redemption
+    };
+
+    state.send_user(message).await;
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("Auto-redeem should refresh the account without another trade or query")
+        .unwrap();
+
+    let ExecutionEvent::Account(event) = event else {
+        panic!("Expected account state after auto-redeem");
+    };
+
+    assert_eq!(event.account_id, account_id);
+    assert_eq!(
+        event.balances,
+        vec![AccountBalance::new(
+            Money::from("107.25 pUSD"),
+            Money::from("0 pUSD"),
+            Money::from("107.25 pUSD"),
+        )],
+    );
+    assert!(event.margins.is_empty());
+    assert!(event.is_reported);
+    assert_eq!(
+        state.startup_request_paths.lock().await.as_slice(),
+        [
+            "/version",
+            "/ws",
+            "/balance-allowance",
+            "/balance-allowance"
+        ],
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::cancel(false)]
 #[case::fill(true)]
 #[tokio::test]
