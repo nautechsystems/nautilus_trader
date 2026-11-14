@@ -76,6 +76,8 @@ class KalshiExecutionClientConfig:
     @property
     def exchange_index(self) -> int: ...
     @property
+    def subaccount(self) -> int: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -90,6 +92,7 @@ class KalshiExecutionClientConfig:
         ws_timeout_secs: int | None = None,
         exchange_index: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        subaccount: int | None = None,
     ) -> None: ...
     @property
     def has_credentials(self) -> bool: ...

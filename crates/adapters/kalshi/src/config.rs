@@ -26,11 +26,15 @@ use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::common::{
-    credential::validate_credentials,
-    enums::KalshiEnvironment,
-    parse::parse_ticker,
-    urls::{kalshi_http_base_url, kalshi_ws_url},
+use crate::{
+    common::{
+        consts::MAX_SUBACCOUNT,
+        credential::validate_credentials,
+        enums::KalshiEnvironment,
+        parse::parse_ticker,
+        urls::{kalshi_http_base_url, kalshi_ws_url},
+    },
+    http::query::AccountQuery,
 };
 
 /// Configuration for the Kalshi data client.
@@ -197,7 +201,7 @@ impl KalshiDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kalshi")
 )]
 pub struct KalshiExecutionClientConfig {
-    /// Local account identifier for the primary account.
+    /// Nautilus account ID; use a distinct value for each subaccount and shard client in the runtime.
     #[builder(default = AccountId::from("KALSHI-001"))]
     pub account_id: AccountId,
     /// Kalshi API key ID; supply with `private_key` or leave both absent.
@@ -219,12 +223,15 @@ pub struct KalshiExecutionClientConfig {
     /// Positive WebSocket connection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
-    /// Explicit exchange shard owned by this primary-account client.
+    /// Explicit exchange shard owned by this execution client.
     #[builder(default)]
     pub exchange_index: u32,
     /// WebSocket transport backend; only Sockudo is supported.
     #[builder(default = TransportBackend::Sockudo)]
     pub transport_backend: TransportBackend,
+    /// Selected subaccount in [0, 63]; zero selects the primary account.
+    #[builder(default)]
+    pub subaccount: u32,
 }
 
 #[cfg(feature = "python")]
@@ -234,6 +241,7 @@ nautilus_core::impl_pyo3_config_getters!(KalshiExecutionClientConfig {
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     exchange_index: u32,
+    subaccount: u32,
     transport_backend: TransportBackend,
 });
 
@@ -280,16 +288,23 @@ impl KalshiExecutionClientConfig {
         )
     }
 
-    /// Validates explicit credentials, endpoints, and positive timing values.
+    /// Validates the subaccount, explicit credentials, endpoints, and positive timing values.
     ///
     /// This does not read credentials from the environment or validate key algorithms.
     ///
     /// # Errors
     ///
     /// Returns an error if credential fields are incomplete or invalid, URLs select the wrong
-    /// venue environment or have an invalid format, the backend is unsupported, or timing values
-    /// are zero or overflow.
+    /// venue environment or have an invalid format, the backend is unsupported, timing values
+    /// are zero or overflow, or the subaccount is outside `[0, 63]`.
     pub fn validate(&self) -> ConfigResult<()> {
+        if self.subaccount > MAX_SUBACCOUNT {
+            return Err(ConfigError::invalid_value(
+                "subaccount",
+                "must be in [0, 63]",
+            ));
+        }
+
         validate_credentials(self.api_key_id.as_ref(), self.private_key.as_ref())?;
         validate_transport(
             self.environment,
@@ -302,6 +317,13 @@ impl KalshiExecutionClientConfig {
         )?;
 
         Ok(())
+    }
+
+    pub(crate) const fn account_query(&self) -> AccountQuery {
+        AccountQuery {
+            subaccount: self.subaccount,
+            exchange_index: self.exchange_index,
+        }
     }
 }
 
@@ -451,6 +473,27 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case(0, true)]
+    #[case(7, true)]
+    #[case(63, true)]
+    #[case(64, false)]
+    #[case(u32::MAX, false)]
+    fn test_subaccount_scope(#[case] subaccount: u32, #[case] valid: bool) {
+        let config = KalshiExecutionClientConfig {
+            subaccount,
+            exchange_index: 3,
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate().is_ok(), valid);
+        let decoded: KalshiExecutionClientConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        assert_eq!(decoded, config);
+        assert_eq!(config.account_query().subaccount, subaccount);
+        assert_eq!(config.account_query().exchange_index, 3);
+    }
+
+    #[rstest]
     fn test_defaults_have_one_source() {
         let data = KalshiDataClientConfig::default();
         let execution = KalshiExecutionClientConfig::default();
@@ -490,6 +533,7 @@ mod tests {
                 http_timeout_secs: 60,
                 ws_timeout_secs: 30,
                 exchange_index: 0,
+                subaccount: 0,
                 transport_backend: TransportBackend::Sockudo,
             }
         );

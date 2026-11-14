@@ -66,12 +66,13 @@ impl DatabentoHistoricalClient {
     /// This client provides both synchronous and asynchronous interfaces for fetching
     /// various types of historical market data from Databento.
     #[new]
-    #[pyo3(signature = (key, publishers_filepath, use_exchange_as_venue, futures_year_digits=None))]
+    #[pyo3(signature = (key, publishers_filepath, use_exchange_as_venue, futures_year_digits=None, share_class_space=true))]
     fn py_new(
         key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         futures_year_digits: Option<u8>,
+        share_class_space: bool,
     ) -> PyResult<Self> {
         let futures_year_digits = futures_year_digits
             .map(FuturesYearDigits::try_from)
@@ -87,7 +88,11 @@ impl DatabentoHistoricalClient {
             clock,
             use_exchange_as_venue,
         )
-        .map(|client| client.with_futures_year_digits(futures_year_digits))
+        .map(|client| {
+            client
+                .with_futures_year_digits(futures_year_digits)
+                .with_share_class_space(share_class_space)
+        })
         .map_err(to_pyvalue_err)?;
 
         Ok(Self { inner })

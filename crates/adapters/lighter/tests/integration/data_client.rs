@@ -298,8 +298,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"subscribed", "channel": channel});
                         if sink
@@ -331,8 +330,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
                         if sink

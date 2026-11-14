@@ -30,7 +30,7 @@ use crate::{
     http::{
         client::FinFeedHttpClient,
         error::Error,
-        parse::{TOKEN_ID_KEY, parse_instrument},
+        parse::{TOKEN_ID_KEY, kalshi_identity, parse_instrument, parse_kalshi},
     },
 };
 
@@ -175,7 +175,13 @@ pub(crate) async fn fetch_instrument(
         });
     }
 
-    parse_instrument(&market, ts_init)
+    if exchange_id == "KALSHI" {
+        let (ticker, event_ticker) = kalshi_identity(&market)?;
+        let (native, event) = http.kalshi_metadata(&ticker, &event_ticker).await?;
+        parse_kalshi(&market, &native, &event, ts_init)
+    } else {
+        parse_instrument(&market, ts_init)
+    }
 }
 
 pub(crate) fn selected_ids(

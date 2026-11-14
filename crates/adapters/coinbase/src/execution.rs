@@ -833,7 +833,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 .request_position_status_report(self.core.account_id, instrument_id)
                 .await
                 .with_context(|| format!("failed to request CFM position for {instrument_id}"))?;
-            Ok(report.map(|r| vec![r]).unwrap_or_default())
+            Ok(report.map_or_default(|r| vec![r]))
         } else {
             self.http_client
                 .request_position_status_reports(self.core.account_id)

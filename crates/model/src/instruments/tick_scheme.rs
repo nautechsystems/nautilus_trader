@@ -168,6 +168,12 @@ pub enum TickSchemeError {
         /// The requested tick scheme name.
         name: String,
     },
+    /// Expanded ticks were not strictly increasing.
+    #[error("tick at index {index} is not greater than the previous tick")]
+    TicksNotIncreasing {
+        /// The invalid tick index.
+        index: usize,
+    },
 }
 
 pub const BETFAIR_TICK_SCHEME_NAME: &str = "BETFAIR";
@@ -418,6 +424,48 @@ impl TieredTickScheme {
         }
         Ok(Self {
             ticks,
+            precision: price_precision,
+        })
+    }
+
+    /// Reconstructs a tiered scheme from exact expanded prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if ticks are empty, are not strictly increasing, or cannot
+    /// be represented exactly at the requested price precision.
+    pub fn from_ticks(ticks: Vec<Price>, price_precision: u8) -> Result<Self, TickSchemeError> {
+        check_in_range_inclusive_u8(price_precision, 0, FIXED_PRECISION, "precision")
+            .map_err(|source| TickSchemeError::InvalidPrecision { source })?;
+
+        if ticks.is_empty() {
+            return Err(TickSchemeError::EmptyTickExpansion);
+        }
+
+        let mut raw_ticks = Vec::with_capacity(ticks.len());
+        for (index, tick) in ticks.into_iter().enumerate() {
+            if !(PRICE_RAW_MIN..=PRICE_RAW_MAX).contains(&tick.raw())
+                || fixed_tick_raw(tick, tick.precision).is_none()
+                || fixed_tick_raw(tick, price_precision).is_none()
+            {
+                return Err(TickSchemeError::TickNotRepresentable {
+                    tick,
+                    precision: price_precision,
+                });
+            }
+
+            if raw_ticks
+                .last()
+                .is_some_and(|previous| *previous >= tick.raw())
+            {
+                return Err(TickSchemeError::TicksNotIncreasing { index });
+            }
+
+            raw_ticks.push(tick.raw());
+        }
+
+        Ok(Self {
+            ticks: raw_ticks,
             precision: price_precision,
         })
     }
@@ -860,6 +908,57 @@ mod tests {
 
     use super::*;
     use crate::instruments::{CurrencyPair, Instrument, stubs::currency_pair_btcusdt};
+
+    #[rstest]
+    fn tiered_from_ticks_preserves_exact_prices_and_precision() {
+        let ticks = vec![
+            Price::from("-0.000000001"),
+            Price::from("0.000000002"),
+            Price::from("0.123456789"),
+        ];
+        let scheme = TieredTickScheme::from_ticks(ticks.clone(), 9).unwrap();
+
+        assert_eq!(scheme.ticks(), ticks);
+        assert_eq!(scheme.precision(), 9);
+        assert_eq!(scheme.tick_count(), 3);
+        assert_eq!(scheme.min_price(), ticks[0]);
+        assert_eq!(scheme.max_price(), ticks[2]);
+    }
+
+    #[rstest]
+    #[case::empty(vec![], TickSchemeError::EmptyTickExpansion)]
+    #[case::duplicate(vec![Price::from("0.01"), Price::from("0.01")], TickSchemeError::TicksNotIncreasing { index: 1 })]
+    #[case::descending(vec![Price::from("0.03"), Price::from("0.01")], TickSchemeError::TicksNotIncreasing { index: 1 })]
+    #[case::inexact(vec![Price::from("0.001")], TickSchemeError::TickNotRepresentable { tick: Price::from("0.001"), precision: 2 })]
+    fn tiered_from_ticks_rejects_invalid_prices(
+        #[case] ticks: Vec<Price>,
+        #[case] expected_error: TickSchemeError,
+    ) {
+        assert_eq!(TieredTickScheme::from_ticks(ticks, 2), Err(expected_error));
+    }
+
+    #[rstest]
+    fn tiered_from_ticks_rejects_invalid_precision() {
+        let precision = FIXED_PRECISION + 1;
+        let source =
+            check_in_range_inclusive_u8(precision, 0, FIXED_PRECISION, "precision").unwrap_err();
+
+        assert_eq!(
+            TieredTickScheme::from_ticks(vec![Price::from("0.01")], precision),
+            Err(TickSchemeError::InvalidPrecision { source })
+        );
+    }
+
+    #[rstest]
+    #[case::raw_fraction(Price { raw: 1, precision: 2 })]
+    #[case::out_of_range(Price { raw: PRICE_RAW_MAX + 1, precision: FIXED_PRECISION })]
+    #[case::invalid_precision(Price { raw: 0, precision: FIXED_PRECISION + 1 })]
+    fn tiered_from_ticks_rejects_invalid_raw_price(#[case] tick: Price) {
+        assert_eq!(
+            TieredTickScheme::from_ticks(vec![tick], 2),
+            Err(TickSchemeError::TickNotRepresentable { tick, precision: 2 })
+        );
+    }
 
     #[rstest]
     #[case(" test_builder_registered_scheme ", true)]

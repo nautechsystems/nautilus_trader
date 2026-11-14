@@ -812,15 +812,13 @@ pub(crate) fn order_status_scope_awaits_application(
     cached: Option<&OrderAny>,
     venue_order_id: &VenueOrderId,
 ) -> bool {
-    let mut ids = cached
-        .map(|order| {
-            order
-                .venue_order_ids()
-                .into_iter()
-                .copied()
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let mut ids = cached.map_or_default(|order| {
+        order
+            .venue_order_ids()
+            .into_iter()
+            .copied()
+            .collect::<Vec<_>>()
+    });
 
     if !ids.contains(venue_order_id) {
         ids.push(*venue_order_id);
@@ -1933,7 +1931,7 @@ fn cached_order_trade_ids(
             order.account_id() == Some(report.account_id)
                 && order.instrument_id() == report.instrument_id
         })
-        .map(|order| {
+        .map_or_default(|order| {
             order
                 .events()
                 .iter()
@@ -1945,7 +1943,6 @@ fn cached_order_trade_ids(
                 })
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

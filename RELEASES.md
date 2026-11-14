@@ -1,3 +1,120 @@
+# NautilusTrader 2.0.0
+
+Released on TBD (UTC).
+
+### Enhancements
+
+- Added per-`DataType` custom data histories to `Cache`, populated by the `DataEngine`, thanks @faysou
+- Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
+- Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
+- Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
+- Added Bybit bounded reconciliation windows that retain older open orders
+- Added Binance Portfolio Margin balance and account response models
+- Added Kalshi market data support to the FinFeed adapter
+- Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
+- Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
+- Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
+- Added optional Lighter account transaction timestamps to WebSocket wire models
+- Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
+
+### Breaking Changes
+
+- Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
+- Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
+- Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
+- Changed PostgreSQL instrument storage to add option underlying and settlement columns; run `nautilus database init`
+- Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
+- Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
+- Changed `submission_recovery_policy` default to `RetainUnresolved`; select `ResolveLocally` for prior behavior
+- Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
+- Changed open-only checks to query missing orders; allow for extra REST traffic and adapter recovery behavior
+- Changed PostgreSQL account state storage to preserve `info`; run `nautilus database init` before cache startup
+- Changed WebSocket SOCKS `proxy_url` to return an error instead of connecting directly; use an HTTP(S) proxy
+- Changed followed HTTP redirects to fail on HTTPS-to-HTTP downgrades and on cross-origin requests with a body
+- Changed cross-origin HTTP redirects to drop custom headers; request the final URL when they are required
+- Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
+- Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
+- Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
+- Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
+- Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
+- Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
+- Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
+- Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
+- Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
+- Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
+
+### Security
+
+- Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
+
+### Fixes
+
+- Fixed open-only order checks leaving closed venue orders unresolved after lost updates
+- Fixed trailing stops updating while markets are not open or from stale reopen prices
+- Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
+- Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
+- Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
+- Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status
+- Fixed execution reconciliation dropping later fills and duplicating executions for split external fills
+- Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
+- Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
+- Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
+- Fixed socket client sending a superseded replayable command after its replacement on reconnect
+- Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
+- Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
+- Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
+- Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
+- Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
+- Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
+- Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
+- Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
+- Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
+- Fixed OKX balances not refreshing after a WebSocket reconnect
+- Fixed OKX execution clients not subscribing to venue position updates
+- Fixed OKX fills for untracked orders arriving without their order terms
+- Fixed OKX post-only rejections reporting as canceled in bulk order status reports
+- Fixed OKX submitting non-positive or misaligned `LIMIT` prices
+- Fixed Polymarket balances not refreshing after auto-redemption events
+
+### Internal Improvements
+
+- Added native Cargo dependency cooldown during resolution
+- Refined simulated exchange funding settlement, command and market data dispatch, and FX rollover processing
+- Refined backtest replay, result collection, and venue setup
+- Refined `DataEngine` reset, bar aggregator subscription handling, and DeFi event buffering
+- Refined `DataEngine` catalog request planning and response conversion
+- Refined DeFi pool swap simulation and snapshot comparison
+- Refined core URL decoding with wider Unicode and separator test coverage
+- Refined value-imbalance trade splitting and time-bar timer setup
+- Refined portfolio realized PnL aggregation and order reservation calculations
+- Refined position replay and accounting, order fill-void validation, and order status report construction
+- Refined `Cache` purge index cleanup and integrity checks
+- Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
+- Improved Kraken logging for subscription commands dropped without an active WebSocket client
+- Optimized socket client framing to search only unscanned bytes on each read
+- Upgraded Rust (MSRV) to 1.100.0
+- Upgraded `cargo-hack` tool to v0.6.46
+- Upgraded `cargo-nextest` tool to v0.9.151
+- Upgraded `flamegraph` tool to v0.6.15
+- Upgraded `prek` tool to v0.5.10
+- Upgraded `uv` tool to v0.13.7
+- Upgraded `typos` pre-commit hook to v1.52.0
+- Upgraded `uv` pre-commit hook to v0.13.7
+- Upgraded `zizmor` pre-commit hook to v1.32.0
+- Upgraded `arc-swap` crate to v1.9.5
+- Upgraded `flate2` crate to v1.1.11
+- Upgraded `jiff` crate to v0.2.39
+- Upgraded `redb` crate to v4.5.0
+- Upgraded `smallvec` crate to v1.16.5
+- Upgraded `sockudo-ws` crate to v3.1.1
+- Upgraded `uuid` crate to v1.29.2
+- Upgraded `maturin` package (dev) to v1.16.0
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.4
+- Upgraded `ty` package (dev) to v0.0.98
+
+---
+
 # NautilusTrader 2.0.0rc9
 
 Released on 10th November 2026 (UTC).

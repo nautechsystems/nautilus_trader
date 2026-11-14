@@ -728,6 +728,7 @@ Relevant OKX docs:
 | ------------- | --------------------- | ----------------------------------------------------- |
 | `post_only`   | ✓                     | Only for limit orders.                                |
 | `reduce_only` | ✓                     | See the product and position-mode restrictions below. |
+| `display_qty` | -                     | Ignored; orders are sent without a display quantity.  |
 
 Low-level requests explicitly typed `MARGIN` support OKX's literal `reduceOnly` field in `isolated`
 or `cross` trade mode. Futures and swaps use it in `net` position mode. In `long/short` position mode,
@@ -763,7 +764,7 @@ order expiration by canceling the order at the specified expiry time.
 | Operation    | Linear perpetual swap | Notes                                     |
 | ------------ | --------------------- | ----------------------------------------- |
 | Batch Submit | ✓                     | Submit multiple orders in single request. |
-| Batch Modify | ✓                     | Modify multiple orders in single request. |
+| Batch Modify | ✓                     | Sent as individual amend requests.        |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
 Regular-order batch cancels split repeated targets into separate WebSocket requests so each reply
@@ -782,9 +783,16 @@ Side-filtered cancellation excludes orders absent from the cache and orders stil
 Without a side filter, ordinary non-spread cancellation also uses cached open orders. Spread instruments
 use the venue bulk endpoint.
 
-The Rust config rejects `use_mm_mass_cancel=true` because OKX's
-[WebSocket mass cancel](https://www.okx.com/docs-v5/en/) only covers option market maker protection (MMP)
-orders in Portfolio margin mode. The adapter submits ordinary orders, which that endpoint does not cancel.
+OKX still documents its
+[WebSocket mass cancel API](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order).
+It cancels only pending market maker protection (MMP) orders within an option instrument family in
+Portfolio Margin mode and requires explicit MMP permission. OKX's
+[MMP access instructions](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-mmp) direct users to
+apply through `institutional@okx.com` or their account manager; they do not specify a minimum VIP tier.
+
+Keep the Rust config option `use_mm_mass_cancel` set to `false`. Setting it to `true` fails validation,
+even for accounts with MMP permission, because the adapter submits ordinary orders that the MMP endpoint
+does not cancel.
 
 ### Rejection reasons
 
@@ -798,14 +806,31 @@ reports only its code, such as `OKX error 51008`, because OKX sends only a `fail
 Local modify and cancel refusals proven not sent produce `OrderModifyDenied` or `OrderCancelDenied`.
 They carry the adapter's own message and no OKX error code.
 
+`LIMIT` orders with non-positive prices produce `OrderDenied` with reason code `PRICE_NOT_POSITIVE`
+before submission. With loaded instrument metadata, prices that require rounding to its price precision
+or do not align with its price increment produce `VALIDATION_FAILED`.
+Spread orders and single-order `px_usd` or `px_vol` placeholders skip these checks (see [pricing modes](#pricing-modes)).
+
 ### Position management
 
 | Feature          | Linear perpetual swap | Notes                                |
 | ---------------- | --------------------- | ------------------------------------ |
-| Query positions  | ✓                     | Real-time position updates.          |
+| Query positions  | ✓                     | HTTP position snapshots.             |
+| Stream positions | ✓                     | WebSocket position reports.          |
 | Position mode    | ✓                     | Net vs Long/Short mode (see below).  |
 | Leverage control | -                     | Not exposed by the execution client. |
 | Margin mode      | ✓                     | Supports isolated and cross modes.   |
+
+The execution client subscribes to event-driven position updates for configured `MARGIN`, `SWAP`,
+`FUTURES`, and `OPTION` instrument types. With `SPOT`, setting `use_spot_margin=True` also subscribes
+to `MARGIN` positions. Streamed reports compare venue exposure with cached positions and log mismatches;
+they do not update cached positions. Each report restarts the `position_check_threshold_ms` grace window
+for periodic position checks. The subscription disables timer-driven pushes, which would repeatedly
+restart that window.
+
+See [instrument filters](#instrument-filters) for instrument recovery and buffering limits.
+Mismatch logs can be transient: order and position updates can arrive out of order, and startup reports
+can precede initial reconciliation.
 
 #### Position modes
 
@@ -1442,8 +1467,8 @@ data_config = OKXDataClientConfig(region=OKXRegion.EEA)
 ```
 
 `region` selects the regional defaults, and combines with `environment` to pick the demo
-hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http` and
-`base_url_ws` overrides always take precedence over the region defaults.
+hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http`, `base_url_ws_public`,
+`base_url_ws_private`, and `base_url_ws_business` overrides always take precedence over the region defaults.
 
 ## Funding rates
 
@@ -1627,9 +1652,11 @@ startup, and applies the venue fills it can obtain. Missing executions and depen
 remain unresolved when history coverage is incomplete.
 
 To recover missing private executions at runtime, enable `LiveExecutionEngineConfig.open_check_interval_secs`.
-Set `open_check_open_only` to `false` to include terminal orders. Open-order checks and targeted follow-up
-queries request fills when a reported filled quantity exceeds the cached quantity. Missing fills and
-dependent status transitions remain unresolved while venue fill reports are unavailable or incomplete.
+Set `open_check_open_only` to `false` to include terminal orders in bulk reports. In open-only mode,
+missing orders outside in-flight recovery can still produce terminal reports through targeted queries.
+Open-order checks and targeted follow-up queries request fills when a reported filled quantity exceeds the
+cached quantity. Missing fills and dependent status transitions remain unresolved while venue fill reports
+are unavailable or incomplete.
 See [Fill reconciliation](../concepts/execution/reconciliation.md#fill-reconciliation).
 
 Periodic position checks treat an absent report as flat only for configured derivative instrument types.
@@ -1669,11 +1696,11 @@ marking reports incomplete does not restore that recovery coverage.
 ### Unacknowledged submissions
 
 OKX defines `50004` and `51149` as [unknown request outcomes](https://my.okx.com/docs-v5/en/#error-code).
-The adapter leaves these submissions unresolved, but the default execution policy can still resolve
-them locally when reconciliation checks exhaust. OKX does not enable submission retention automatically.
+The adapter leaves these submissions unresolved. The OKX client does not enable submission retention itself;
+the default `RetainUnresolved` execution policy preserves them when reconciliation checks exhaust.
 
-To retain unacknowledged submissions, including those with no response, select the existing engine
-policy when constructing the node:
+To resolve unacknowledged submissions locally after recovery exhaustion, select `ResolveLocally` when
+constructing the node:
 
 ```rust
 use nautilus_live::{
@@ -1682,19 +1709,41 @@ use nautilus_live::{
 };
 
 let exec_engine = LiveExecutionEngineConfig {
-    submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+    submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
     ..Default::default()
 };
 ```
 
-This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. Exhaustion
-publishes `SubmissionRecoveryExhausted` once and preserves the submission identity for later authoritative
-evidence without resubmitting the order. See
+This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. With the
+default retention policy, exhaustion publishes `SubmissionRecoveryExhausted` once and preserves the submission
+identity for later authoritative evidence without resubmitting the order. See
 [submission recovery](../concepts/execution/reconciliation.md#submission-recovery) for confirmation and
 query-budget rules. Retained submissions still unresolved at the node's `delay_post_stop` boundary produce an
-[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown. The
-policy does not change timeout resolution for commands on already accepted orders, provide crash-durable
-recovery, or prove that positions are flat.
+[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown.
+When a cancel or update on an already accepted order times out, the retention policy restores the order's
+prior status and does not close it. The policy does not provide crash-durable recovery or prove that
+positions are flat.
+
+### Request expiry
+
+Set `order_request_ttl_ms` on the execution client config to send OKX's
+[`expTime`](https://www.okx.com/docs-v5/en/#overview-transaction-timeouts) on WebSocket place and amend
+requests, single and batch. OKX does not process a request once its server time is past `expTime`. The
+default `None` omits `expTime`, and `0` is rejected.
+
+```python
+OKXExecutionClientConfig(
+    account_id=AccountId("OKX-001"),
+    order_request_ttl_ms=5_000,
+)
+```
+
+- The adapter sets `expTime` to the local time plus the TTL when it builds the request. Time spent waiting
+  for rate limits or a WebSocket reconnect counts against the TTL, so a request delayed past it reaches OKX
+  expired and is rejected.
+- `expTime` is compared with OKX's clock, not the local one. Allow for clock skew when choosing the TTL.
+
+Algo and spread orders do not carry `expTime`.
 
 ## Configuration
 
@@ -1727,8 +1776,9 @@ Other instruments continue processing during recovery. Recovery uses the configu
 continues across transport reconnects. Pending registration ends when the client stops; it has no separate timeout
 because startup can buffer instrument registration until other execution clients finish connecting.
 
-Recovery retains at most 10,000 update rows across 64 instruments. A failed lookup, an unavailable registration
-channel, or queue overflow marks the client disconnected and logs the failure. If the core cache rejects a
+Recovery retains at most 10,000 update rows across all instruments and recovers up to 64 instruments
+concurrently. A failed lookup, an unavailable registration channel, or queue overflow marks the client
+disconnected and logs the failure. If the core cache rejects a
 definition, updates can remain pending until a matching registration, queue overflow, or shutdown.
 Shutdown reports any incomplete recovery;
 a later session does not replay the abandoned updates. Periodic checks on `LiveExecutionEngineConfig` can
@@ -1808,6 +1858,7 @@ The OKX execution client provides the following Python configuration options.
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                             |
 | `max_reconciliation_history_pages` | `None`                     | Pages per startup history query, capped at 50; `0` skips history.                        |
+| `order_request_ttl_ms`             | `None`                     | Place and amend request TTL, sent as `expTime`; see [Request expiry](#request-expiry).   |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting

@@ -28,6 +28,24 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
+Vanilla `OptionContract` and `CryptoOption` also carry two optional contract fields:
+
+- `underlying_instrument_id`: the actual underlying instrument. It is independent of
+  `OptionSeriesId.underlying_instrument_id`, which supplies the reference price.
+- `settlement_type`: `CASH` pays intrinsic value in the settlement currency; `PHYSICAL` delivers a position
+  in the underlying. The value is `None` when unknown or when no single type represents the settlement.
+
+The Interactive Brokers provider fills the underlying ID when it has already resolved that contract to an
+instrument; unresolved IDs remain `None`. Deribit leaves both fields `None`: its option definitions supply
+no exact underlying instrument ID, and its
+[inverse](https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options) and
+[linear](https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options) options settle
+through futures in two steps, which a single settlement type does not represent.
+
+Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
+preserve them; missing fields in older JSON and Arrow records load as `None`. Equality and hashing use
+only the instrument ID. The matching engine and Greeks calculator do not read these fields.
+
 ## Simulated spread execution
 
 Build spread IDs with `new_generic_spread_id` from signed leg ratios; venue-native IDs without encoded

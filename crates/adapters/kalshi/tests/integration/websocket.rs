@@ -16,14 +16,14 @@
 use std::{sync::Arc, time::Duration};
 
 use futures_util::StreamExt;
-use nautilus_common::config::ConfigError;
+use nautilus_common::{config::ConfigError, testing::wait_until_async};
 use nautilus_kalshi::{config::KalshiDataClientConfig, websocket::client::connect};
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use tokio_tungstenite::{accept_hdr_async, tungstenite::handshake::server};
 
 use super::{
-    http::{assert_auth_request, bind_peer},
+    http::{assert_auth_request, assert_no_connection, bind_peer},
     keys,
 };
 
@@ -76,20 +76,12 @@ async fn fresh_clients_sign_and_disable_transparent_reconnect(
 
         let (first, first_timestamp) = tokio::join!(connect(&config, Arc::new(|_| {})), first_peer);
         let first = first.unwrap();
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !first.is_closed() {
-                tokio::task::yield_now().await;
-            }
+        assert_no_connection(&listener, address, async {
+            wait_until_async(|| async { first.is_disconnected() }, Duration::from_secs(2)).await;
         })
-        .await
-        .unwrap();
+        .await;
 
-        assert!(
-            tokio::time::timeout(Duration::from_millis(100), listener.accept())
-                .await
-                .is_err(),
-            "closed Kalshi client attempted a transparent reconnect"
-        );
+        assert!(first.is_closed());
 
         let second_peer = async {
             let (stream, _) = listener.accept().await.unwrap();
@@ -177,11 +169,7 @@ async fn invalid_credentials_prevent_websocket_traffic(#[case] pem: &str) {
         ))
     );
     assert!(!format!("{error:?}").contains("secret-invalid-id"));
-    assert!(
-        tokio::time::timeout(Duration::from_millis(30), listener.accept())
-            .await
-            .is_err()
-    );
+    assert_no_connection(&listener, address, std::future::ready(())).await;
 }
 
 #[tokio::test]
@@ -204,9 +192,5 @@ async fn tungstenite_backend_is_rejected_before_network_traffic() {
             "Kalshi requires the Sockudo WebSocket backend",
         ))
     );
-    assert!(
-        tokio::time::timeout(Duration::from_millis(30), listener.accept())
-            .await
-            .is_err()
-    );
+    assert_no_connection(&listener, address, std::future::ready(())).await;
 }

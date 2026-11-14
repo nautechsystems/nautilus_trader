@@ -42,7 +42,7 @@ use nautilus_common::{
     messages::{SystemEvent, system::SocketState},
     testing::wait_until_async,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::BarType,
@@ -574,7 +574,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         let data = payload
                             .get("args")
                             .and_then(Value::as_array)
-                            .map(|args| {
+                            .map_or_default(|args| {
                                 args.iter()
                                     .map(|arg| {
                                         json!({
@@ -587,8 +587,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         })
                                     })
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
+
                         let ack = json!({
                             "id": payload.get("id").cloned().unwrap_or(Value::Null),
                             "op": op,
@@ -1750,6 +1750,167 @@ async fn test_batch_submit_event_order_omits_speed_bump() {
     assert_eq!(messages[0]["op"], "batch-orders");
     assert!(arg.get("speedBump").is_none());
     assert_eq!(arg["outcome"], "yes");
+
+    client.close().await.expect("close failed");
+}
+
+async fn send_event_order_operation(client: &OKXWebSocketClient, operation: &str) {
+    let instrument_id = InstrumentId::from(EVENT_INSTRUMENT_ID);
+    let client_order_id = ClientOrderId::from("O-event-exp-time");
+
+    match operation {
+        "order" => client
+            .submit_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                OKXTradeMode::Cash,
+                client_order_id,
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("10"),
+                Some(TimeInForce::Gtc),
+                Some(Price::from("0.420")),
+                None,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("yes".to_string()),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("submit failed"),
+        "batch-orders" => client
+            .batch_submit_orders(vec![(
+                OKXInstrumentType::Events,
+                instrument_id,
+                OKXTradeMode::Cash,
+                client_order_id,
+                OrderSide::Buy,
+                None,
+                OrderType::Limit,
+                Quantity::from("10"),
+                Some(Price::from("0.420")),
+                None,
+                Some(false),
+                None,
+                None,
+                Some("yes".to_string()),
+                None,
+                None,
+                None,
+            )])
+            .await
+            .expect("batch submit failed"),
+        "amend-order" => client
+            .modify_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                Some(client_order_id),
+                Some(Price::from("0.430")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("modify failed"),
+        "batch-amend-orders" => client
+            .batch_modify_orders(vec![(
+                OKXInstrumentType::Events,
+                instrument_id,
+                client_order_id,
+                None,
+                Some(Price::from("0.430")),
+                None,
+                None,
+                None,
+            )])
+            .await
+            .expect("batch modify failed"),
+        "cancel-order" => client
+            .cancel_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                Some(client_order_id),
+                None,
+            )
+            .await
+            .expect("cancel failed"),
+        other => panic!("unsupported operation {other}"),
+    }
+}
+
+#[rstest]
+#[case::order("order", Some(5_000), true)]
+#[case::batch_orders("batch-orders", Some(5_000), true)]
+#[case::amend_order("amend-order", Some(5_000), true)]
+#[case::batch_amend_orders("batch-amend-orders", Some(5_000), true)]
+#[case::cancel_order("cancel-order", Some(5_000), false)]
+#[case::order_without_ttl("order", None, false)]
+#[case::amend_order_without_ttl("amend-order", None, false)]
+#[tokio::test]
+async fn test_order_request_exp_time_on_wire(
+    #[case] operation: &str,
+    #[case] ttl_ms: Option<u64>,
+    #[case] expects_exp_time: bool,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).with_order_request_ttl_ms(ttl_ms);
+    cache_event_instrument(&client);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let clock = get_atomic_clock_realtime();
+    let before_ms = clock.get_time_ms();
+    send_event_order_operation(&client, operation).await;
+    let after_ms = clock.get_time_ms();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    assert_eq!(messages[0]["op"], operation);
+
+    if expects_exp_time {
+        let ttl_ms = ttl_ms.unwrap();
+        let exp_time: u64 = messages[0]["expTime"]
+            .as_str()
+            .expect("expTime must be a string")
+            .parse()
+            .expect("expTime must be unix milliseconds");
+        assert!(
+            (before_ms + ttl_ms..=after_ms + ttl_ms).contains(&exp_time),
+            "expTime {exp_time} outside [{}, {}]",
+            before_ms + ttl_ms,
+            after_ms + ttl_ms,
+        );
+    } else {
+        assert!(messages[0].get("expTime").is_none());
+    }
 
     client.close().await.expect("close failed");
 }

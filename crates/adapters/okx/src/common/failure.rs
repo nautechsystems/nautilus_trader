@@ -107,6 +107,11 @@ mod tests {
     #[case::system_busy("50013", "System busy, please retry later", false)]
     #[case::request_timeout("50004", "API endpoint request timeout", false)]
     #[case::order_timeout("51149", "Order timed out. Please try again.", false)]
+    #[case::request_expired(
+        "50036",
+        "The expTime can't be earlier than the current system time. Please adjust the expTime and try again.",
+        true
+    )]
     #[case::rate_limit("50011", "Request too frequent", false)]
     #[case::ws_rate_limit("60014", "WebSocket requests too frequent", true)]
     #[case::ws_internal_error("64007", "WebSocket internal error", true)]

@@ -703,8 +703,7 @@ impl GreeksCalculator {
         let utc_now = utc_now_ns.to_datetime_utc();
         let expiry_utc = instrument
             .expiration_ns()
-            .map(|ns| ns.to_datetime_utc())
-            .unwrap_or_default();
+            .map_or_default(|ns| ns.to_datetime_utc());
         let expiry_int = expiry_utc
             .strftime("%Y%m%d")
             .to_string()
@@ -1334,8 +1333,7 @@ impl GreeksCalculator {
     ) -> f64 {
         let expiry_utc = call_instrument
             .expiration_ns()
-            .map(|ns| ns.to_datetime_utc())
-            .unwrap_or_default();
+            .map_or_default(|ns| ns.to_datetime_utc());
         let now = self.clock.borrow().timestamp_ns().to_datetime_utc();
         let expiry_in_days = (now.duration_until(expiry_utc).as_hours() / 24).max(1) as i32;
         let expiry_in_years = expiry_in_days as f64 / 365.25;

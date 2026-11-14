@@ -63,9 +63,9 @@ use tokio_util::sync::CancellationToken;
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        IbPriceConverter, bar_request_segments, bar_type_to_ib_bar_size,
-        calculate_duration_segments, extend_historical_tick_batch, ib_bar_to_nautilus_bar,
-        jiff_to_ib_datetime, price_type_to_ib_realtime_what_to_show_for_security,
+        IbPriceConverter, bar_request_range, bar_type_to_ib_bar_size, extend_historical_tick_batch,
+        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
+        price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         should_continue_historical_tick_pagination,
     },
@@ -747,10 +747,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let instrument = self
                 .instrument_provider
                 .find(&instrument_id)
-                .context(format!(
-                    "Instrument {} not found in provider",
-                    instrument_id
-                ))?;
+                .context(format!("Instrument {instrument_id} not found in provider"))?;
 
             let contract = self
                 .instrument_provider
@@ -847,10 +844,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let instrument = self
                 .instrument_provider
                 .find(&instrument_id)
-                .context(format!(
-                    "Instrument {} not found in provider",
-                    instrument_id
-                ))?;
+                .context(format!("Instrument {instrument_id} not found in provider"))?;
 
             if !matches!(
                 instrument,
@@ -1000,10 +994,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let instrument = self
                 .instrument_provider
                 .find(&instrument_id)
-                .context(format!(
-                    "Instrument {} not found in provider",
-                    instrument_id
-                ))?;
+                .context(format!("Instrument {instrument_id} not found in provider"))?;
 
             // Check if instrument is a CurrencyPair (IB doesn't support trades for CurrencyPair)
             if matches!(instrument, InstrumentAny::CurrencyPair(_)) {
@@ -1285,10 +1276,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let instrument = self
                 .instrument_provider
                 .find(&instrument_id)
-                .context(format!(
-                    "Instrument {} not found in provider",
-                    instrument_id
-                ))?;
+                .context(format!("Instrument {instrument_id} not found in provider"))?;
 
             // Book levels are not rounded to the increment: two IB levels could round to one price
             let prices = IbPriceConverter::new(instrument.price_precision())
@@ -2132,11 +2120,9 @@ impl DataClient for InteractiveBrokersDataClient {
         let ib_what_to_show =
             price_type_to_ib_what_to_show_for_security(bar_type.spec().price_type, is_crypto);
 
-        // Calculate segments to break down the request if needed.
         // Omit the end date for continuous futures (IB error 10339).
         let is_continuous_future = contract.security_type == SecurityType::ContinuousFuture;
-        let segments = calculate_duration_segments(cmd.start, cmd.end, None);
-        let segments = bar_request_segments(segments, is_continuous_future);
+        let range = bar_request_range(cmd.start, cmd.end, None, is_continuous_future);
 
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
@@ -2147,49 +2133,45 @@ impl DataClient for InteractiveBrokersDataClient {
         let end_nanos = cmd.end.map(datetime_to_unix_nanos);
         let limit = cmd.limit.map(|limit| limit.get());
 
-        // Spawn async task to handle the request with segmentation
         let client_clone = client.as_arc().clone();
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
 
         self.spawn_command(async move {
             let mut all_bars = Vec::new();
 
-            for (seg_end, seg_duration) in segments {
-                let mut request = client_clone
-                    .historical_data(&contract, ib_bar_size)
-                    .duration(seg_duration)
-                    .what_to_show(ib_what_to_show)
-                    .trading_hours(trading_hours);
+            if let Some(range) = range {
+                for bar_request in range.requests(&bar_type.spec()) {
+                    let request = bar_request
+                        .apply(client_clone.historical_data(&contract, ib_bar_size))
+                        .what_to_show(ib_what_to_show)
+                        .trading_hours(trading_hours);
 
-                if let Some(end) = seg_end {
-                    request = request.ending(jiff_to_ib_datetime(&end));
-                }
+                    let historical_data = match request.fetch().await {
+                        Ok(historical_data) => historical_data,
+                        Err(e) => {
+                            tracing::warn!(
+                                "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
+                            );
+                            all_bars.clear();
+                            break;
+                        }
+                    };
 
-                match request.fetch().await {
-                    Ok(historical_data) => {
-                        // Convert IB bars to Nautilus bars
-                        for ib_bar in &historical_data.bars {
-                            match ib_bar_to_nautilus_bar(
-                                ib_bar,
-                                bar_type,
-                                prices,
-                                size_precision,
-                            ) {
-                                Ok(bar) => all_bars.push(bar),
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to convert IB bar to Nautilus bar: {:?}",
-                                        e
-                                    );
+                    // Convert IB bars to Nautilus bars
+                    for ib_bar in &historical_data.bars {
+                        match ib_bar_to_nautilus_bar(ib_bar, bar_type, prices, size_precision) {
+                            Ok(bar) => {
+                                if range.contains(bar.ts_event) {
+                                    all_bars.push(bar);
                                 }
                             }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to convert IB bar to Nautilus bar: {:?}",
+                                    e
+                                );
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Historical data request failed for {bar_type} segment ending at {seg_end:?}: {e}, emitting the bars already retrieved"
-                        );
-                        break;
                     }
                 }
             }
@@ -2199,7 +2181,6 @@ impl DataClient for InteractiveBrokersDataClient {
                 tracing::warn!("No bar data received for {}", bar_type);
             }
 
-            // Sort and deduplicate bars as segments might overlap or be out of order from IB.
             all_bars.sort_by_key(|b| b.ts_event);
             all_bars.dedup();
             if let Some(limit) = limit
@@ -2224,11 +2205,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if let Err(e) = data_sender.send(DataEvent::Response(response)) {
                 tracing::error!("Failed to send bars response: {e}");
             } else {
-                tracing::debug!(
-                    "Successfully sent {} bars for {} (segmented)",
-                    bars_count,
-                    bar_type
-                );
+                tracing::debug!("Successfully sent {bars_count} bars for {bar_type}");
             }
         });
 

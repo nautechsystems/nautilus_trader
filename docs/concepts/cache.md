@@ -13,12 +13,12 @@ The cache:
 
 ## How caching works
 
-The engines add built-in data to the `Cache` as events flow through the system. Live adapters feed
+The engines add built-in and custom data to the `Cache` as events flow through the system. Live adapters feed
 events to the engine asynchronously, so the cache changes **when the engine processes an event**, not
 when the adapter first receives it.
 
-For quotes, trades, and bars, the `DataEngine` attempts to write to the `Cache` before publishing to
-subscribers. After a successful write, the latest value is available by the time the strategy handler runs.
+For quotes, trades, bars, and custom data, the `DataEngine` attempts to write to the `Cache` before
+publishing to subscribers. After a successful write, the latest value is available by the time the strategy handler runs.
 Order book deltas and depth snapshots are published directly. `BookUpdater` subscriptions maintain current
 book state separately:
 
@@ -73,8 +73,8 @@ from nautilus_trader.config import LiveNodeConfig
 # For backtesting
 engine_config = BacktestEngineConfig(
     cache=CacheConfig(
-        # Retain up to 10,000 entries per history per instrument
-        tick_capacity=10_000,
+        # Retain up to 10,000 entries per instrument history or custom data topic
+        data_capacity=10_000,
         # Store last 5,000 bars per bar type
         bar_capacity=5_000,
     ),
@@ -83,17 +83,19 @@ engine_config = BacktestEngineConfig(
 # For live trading
 node_config = LiveNodeConfig(
     cache=CacheConfig(
-        tick_capacity=10_000,
+        data_capacity=10_000,
         bar_capacity=5_000,
     ),
 )
 ```
 
 :::tip
-By default, the `Cache` keeps up to 10,000 values in each per-instrument tick sequence and 10,000
-bars for each bar type. These are separate limits, not combined totals. Set each capacity to a value
-in `[1, 1_000_000]`. Increase them when a strategy needs a longer in-memory lookback and the
-additional memory use is acceptable.
+By default, `data_capacity` retains up to 10,000 values per instrument history or custom data topic.
+`bar_capacity` retains up to 10,000 bars per bar type. These are separate limits, not combined totals.
+Custom histories reserve space for the full `data_capacity` on first insertion, even if they remain
+short. Memory use grows with the capacity and number of distinct topics. Custom and built-in histories
+share this setting. Set each capacity to a value in `[1, 1_000_000]`. Increase them when a strategy
+needs a longer in-memory lookback and the additional memory use is acceptable.
 :::
 
 ### Configuration options
@@ -112,7 +114,7 @@ let config = CacheConfig {
     use_instance_id: false,
     flush_on_start: false,
     drop_instruments_on_reset: true,
-    tick_capacity: 10_000,
+    data_capacity: 10_000,
     bar_capacity: 10_000,
     persist_account_events: true,
     save_market_data: false,
@@ -342,16 +344,19 @@ entry. The list accessors use the same order as the single-entry accessors.
 | Index prices        | `index_prices(instrument_id)`        | `index_price(instrument_id)`       |
 | Funding rates       | `funding_rates(instrument_id)`       | `funding_rate(instrument_id)`      |
 | Instrument statuses | `instrument_statuses(instrument_id)` | `instrument_status(instrument_id)` |
+| Custom data         | `custom_data_history(data_type)`     | `custom_data(data_type)`           |
 
 - **Ordering:** Bars use descending `ts_event`. Other histories use reverse insertion order, even
   for older timestamps; they are not sorted by `ts_event` or `ts_init`.
-- **History lists:** Accessors return a list, or `None` when the key has no entries. `[-1]` selects
-  the oldest retained bar or the least recently inserted entry in other histories.
-- **Single entries:** Only `quote()`, `trade()`, and `bar()` accept `index`. They return `None` for a
-  missing entry at a valid non-negative index. Negative indices or values beyond the platform's
-  unsigned index limit raise `OverflowError`; negative indexing works on returned Python lists.
-- **Capacity:** `bar_capacity` limits each bar type; `tick_capacity` limits each other history per
-  instrument. A new insertion at capacity removes the last entry.
+- **History lists:** Built-in histories return a list, or `None` when the key has no entries. Custom
+  histories return an empty list when absent. `[-1]` selects the oldest retained bar or the least
+  recently inserted entry in other histories.
+- **Single entries:** `quote()`, `trade()`, `bar()`, `mark_price()`, `index_price()`, and `funding_rate()`
+  accept `index`; custom data uses `custom_data_at_index()`. They return `None` for a missing entry at
+  a valid non-negative index. Negative indices or values beyond the platform's unsigned index limit
+  raise `OverflowError`; negative indexing works on returned Python lists.
+- **Capacity:** `bar_capacity` limits each bar type; `data_capacity` limits each other history per
+  instrument and each custom history per data type topic. A new insertion at capacity removes the last entry.
 
 #### Order book
 
@@ -718,7 +723,8 @@ also target IDs absent from memory.
   index entries. Skips open positions.
 - `cache.purge_instrument(instrument_id)`: removes the instrument and its transient per-instrument
   maps (order book, quotes, trades, mark/index/funding prices, instrument status and close, greeks,
-  and bars referencing the instrument). Skips while any associated order is non-terminal (anything
+  and bars referencing the instrument), plus custom histories whose `DataType.identifier` equals the
+  instrument ID. Skips while any associated order is non-terminal (anything
   that has not reached a closed state, including initialized, submitted, accepted, emulated,
   released, and inflight orders) or any associated position is non-closed. Cached orders and
   positions remain indexed until purged separately, preserving historical queries and realized PnL.
@@ -785,11 +791,34 @@ strategy that owns the instrument's lifecycle.
 
 ### Custom data
 
+#### Event histories
+
+Each `DataType` topic, including its metadata and optional identifier, has an independent history.
+Use the payload's `data_type` for reads. A subscription without an identifier can receive identified
+payloads, whose histories remain separate from the subscription's data type.
+
+Automatic retention applies to custom events processed by the data engine. Actor-published custom
+data and signals, and custom-data request responses, do not populate these histories automatically.
+Call `self.cache.add_custom_data(data)` explicitly when retaining one of those events.
+
+```python
+def on_data(self, data: CustomData) -> None:
+    latest = self.cache.custom_data(data.data_type)
+    previous = self.cache.custom_data_at_index(data.data_type, 1)
+    history = self.cache.custom_data_history(data.data_type)
+```
+
+- **Persistence:** Custom histories stay in memory, including when `save_market_data` is enabled;
+  database startup does not restore them.
+- **Pipeline:** Processing honors `DataEngineConfig.disable_historical_cache`. Direct, non-pipeline
+  processing, including backtests, caches custom data regardless of that setting.
+- **Reset:** A cache reset clears all custom histories.
+
+#### Basic storage and retrieval
+
 The `Cache` stores raw bytes under application-defined string keys. Serialize values before adding
 them and deserialize them after retrieval. Actors and strategies can use these entries to share
 small amounts of application data.
-
-#### Basic storage and retrieval
 
 ```python
 # Store serialized data

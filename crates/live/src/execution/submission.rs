@@ -44,9 +44,10 @@ use serde::{Deserialize, Serialize};
 )]
 pub enum SubmissionRecoveryPolicy {
     /// Selects local resolution using the existing timeout and missing-order policies.
-    #[default]
     ResolveLocally,
-    /// Retains unacknowledged orders without further automatic per-order recovery queries.
+    /// Retains unacknowledged orders without further automatic per-order recovery queries, and
+    /// restores an accepted order's prior status when a pending cancel or update times out.
+    #[default]
     RetainUnresolved,
 }
 

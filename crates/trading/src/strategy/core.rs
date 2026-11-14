@@ -174,9 +174,7 @@ impl StrategyCore {
             log_commands: config.log_commands,
         };
 
-        let strategy_id_str = strategy_id
-            .map(|id| id.inner().to_string())
-            .unwrap_or_default();
+        let strategy_id_str = strategy_id.map_or_default(|id| id.inner().to_string());
         let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id_str}"));
 
         Ok(Self {

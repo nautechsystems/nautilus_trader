@@ -157,6 +157,7 @@ pub struct OrderMatchingEngine {
     tob_initialized: bool,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
+    trailing_reopen_prices: ReopenPrices,
     precision_mismatch_streak: u32,
     instrument_close: Option<InstrumentClose>,
 
@@ -256,6 +257,7 @@ impl OrderMatchingEngine {
             tob_initialized: false,
             last_quote_bid: None,
             last_quote_ask: None,
+            trailing_reopen_prices: ReopenPrices::default(),
             precision_mismatch_streak: 0,
             instrument_close: None,
             pending_resolution: None,
@@ -335,6 +337,7 @@ impl OrderMatchingEngine {
         self.tob_initialized = false;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
+        self.trailing_reopen_prices = ReopenPrices::default();
         self.last_bar_bid = None;
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
@@ -1442,6 +1445,10 @@ impl OrderMatchingEngine {
             && let Some(status) = self.pending_resolution.take()
         {
             self.market_status = status;
+
+            if self.market_status == MarketStatus::Open {
+                self.record_trailing_reopen_prices();
+            }
         }
 
         let changed = instrument.price_increment() != self.instrument.price_increment()
@@ -1660,7 +1667,10 @@ impl OrderMatchingEngine {
             return Ok(());
         }
 
+        let side = self.trailing_delta_side(delta);
+        let update_count = self.book.update_count;
         self.book.apply_delta(delta)?;
+        self.confirm_trailing_delta_price(delta, side, update_count);
 
         let is_snapshot = RecordFlag::F_SNAPSHOT.matches(delta.flags);
         let is_last = RecordFlag::F_LAST.matches(delta.flags);
@@ -1717,7 +1727,7 @@ impl OrderMatchingEngine {
             return Ok(());
         }
 
-        self.book.apply_deltas(deltas)?;
+        self.apply_book_deltas(deltas)?;
 
         let mut has_snapshot_or_clear = false;
 
@@ -1740,6 +1750,32 @@ impl OrderMatchingEngine {
         }
 
         self.iterate(deltas.ts_init, AggressorSide::NoAggressor);
+        Ok(())
+    }
+
+    fn apply_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        let reopen_pending = !self.trailing_reopen_prices.bids.is_empty()
+            || !self.trailing_reopen_prices.asks.is_empty();
+
+        if deltas.instrument_id == self.book.instrument_id
+            && reopen_pending
+            && deltas.deltas.iter().any(|delta| delta.order.side.is_none())
+        {
+            // Resolve each side before later deltas can change its ambiguity
+            for delta in &deltas.deltas {
+                let side = self.trailing_delta_side(delta);
+                let update_count = self.book.update_count;
+                self.book.apply_delta_unchecked(delta)?;
+                self.confirm_trailing_delta_price(delta, side, update_count);
+            }
+        } else {
+            let update_count = self.book.update_count;
+            self.book.apply_deltas(deltas)?;
+            for delta in &deltas.deltas {
+                self.confirm_trailing_delta_price(delta, delta.order.side, update_count);
+            }
+        }
+
         Ok(())
     }
 
@@ -1789,12 +1825,19 @@ impl OrderMatchingEngine {
                 depth.ts_event,
                 depth.ts_init,
             );
+
+            let update_count = self.book.update_count;
             self.book.update_quote_tick(&quote)?;
+            self.confirm_trailing_book_prices(update_count);
             self.reset_trade_liquidity(quote.ts_event);
             self.last_quote_bid = top_bid.map(|order| order.price);
             self.last_quote_ask = top_ask.map(|order| order.price);
         } else {
             self.book.apply_depth(depth)?;
+
+            // The depth replaced every level the reopen left in the book
+            self.trailing_reopen_prices.bids.clear();
+            self.trailing_reopen_prices.asks.clear();
         }
 
         // Depth always replaces the full book via apply_depth regardless of flags
@@ -1841,6 +1884,9 @@ impl OrderMatchingEngine {
     /// The latest mark remains valid until replaced or the engine is reset.
     pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) {
         self.core.mark = Some(mark.value);
+        self.trailing_reopen_prices
+            .mark
+            .take_if(|price| *price == mark.value);
         self.iterate_with_mode(
             mark.ts_init,
             AggressorSide::NoAggressor,
@@ -2135,6 +2181,7 @@ impl OrderMatchingEngine {
 
         if size.is_zero() {
             self.core.set_last_raw(price);
+            self.trailing_reopen_prices.last_stale = false;
             return true;
         }
 
@@ -2145,6 +2192,7 @@ impl OrderMatchingEngine {
             }
             self.last_bar_trade = Some((price, size, aggressor_side));
             self.core.set_last_raw(price);
+            self.trailing_reopen_prices.last_stale = false;
             return true;
         }
 
@@ -2164,6 +2212,7 @@ impl OrderMatchingEngine {
 
         // Set last before matching so last-price triggers see this leg, as for trade ticks
         self.core.set_last_raw(price);
+        self.trailing_reopen_prices.last_stale = false;
         self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
         true
     }
@@ -2367,6 +2416,9 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(bid, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+        self.trailing_reopen_prices
+            .bids
+            .swap_remove(&quote.bid_price);
     }
 
     fn clear_bar_quote_bid(&mut self, quote: &QuoteTick) {
@@ -2383,6 +2435,9 @@ impl OrderMatchingEngine {
         );
         self.book
             .add(ask, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+        self.trailing_reopen_prices
+            .asks
+            .swap_remove(&quote.ask_price);
     }
 
     fn clear_bar_quote_ask(&mut self, quote: &QuoteTick) {
@@ -2403,19 +2458,47 @@ impl OrderMatchingEngine {
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
+        if !self.accept_trade_tick(trade) {
+            return;
+        }
+
+        self.core.set_last_raw(trade.price);
+        self.confirm_trailing_trade_price(trade);
+        if !self.config.trade_execution {
+            self.process_non_executable_trade_tick(trade);
+            return;
+        }
+
+        let aggressor_side = trade.aggressor_side;
+        let (original_bid, original_ask) = self.update_trade_prices(trade);
+        self.start_trade_iteration(trade.size);
+
+        if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
+            self.seed_trade_consumption(
+                trade.price.raw(),
+                trade.size.raw(),
+                trade.ts_event,
+                aggressor_side,
+            );
+        }
+
+        self.iterate(trade.ts_init, aggressor_side);
+        self.finish_trade_iteration();
+        self.restore_trade_prices(trade, original_bid, original_ask);
+    }
+
+    fn accept_trade_tick(&mut self, trade: &TradeTick) -> bool {
         if let Err(e) = self.check_price_precision(trade.price.precision, "trade price") {
             self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
-            return;
+            return false;
         }
 
         if let Err(e) = self.check_size_precision(trade.size.precision, "trade size") {
             self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
-            return;
+            return false;
         }
 
         self.precision_mismatch_streak = 0;
-
-        let price_raw = trade.price.raw();
 
         if self.book_type == BookType::L1_MBP {
             // Stale update: skip book mutation and trade execution
@@ -2427,72 +2510,74 @@ impl OrderMatchingEngine {
                     self.book.instrument_id,
                 );
                 self.iterate(trade.ts_init, AggressorSide::NoAggressor);
-                return;
+                return false;
             }
 
             if !self.update_trade_tick_or_skip(trade, "trade tick") {
-                return;
+                return false;
             }
         }
 
-        self.core.set_last_raw(trade.price);
+        true
+    }
 
-        if !self.config.trade_execution {
-            if self.book_type == BookType::L1_MBP {
-                if let Some(bid) = self.book.best_bid_price() {
-                    self.core.set_bid_raw(bid);
-                }
+    fn confirm_trailing_trade_price(&mut self, trade: &TradeTick) {
+        self.trailing_reopen_prices.last_stale = false;
 
-                if let Some(ask) = self.book.best_ask_price() {
-                    self.core.set_ask_raw(ask);
+        if self.book_type != BookType::L1_MBP {
+            match trade.aggressor_side {
+                AggressorSide::Buy => {
+                    self.trailing_reopen_prices.asks.swap_remove(&trade.price);
                 }
-            } else {
-                self.iterate_with_mode(
-                    trade.ts_init,
-                    AggressorSide::NoAggressor,
-                    OrderMatchMode::StopTriggers(TriggerType::LastPrice),
-                );
+                AggressorSide::Sell => {
+                    self.trailing_reopen_prices.bids.swap_remove(&trade.price);
+                }
+                AggressorSide::NoAggressor => {
+                    self.trailing_reopen_prices.bids.swap_remove(&trade.price);
+                    self.trailing_reopen_prices.asks.swap_remove(&trade.price);
+                }
+            }
+        }
+    }
+
+    fn process_non_executable_trade_tick(&mut self, trade: &TradeTick) {
+        if self.book_type == BookType::L1_MBP {
+            if let Some(bid) = self.book.best_bid_price() {
+                self.core.set_bid_raw(bid);
             }
 
-            return;
+            if let Some(ask) = self.book.best_ask_price() {
+                self.core.set_ask_raw(ask);
+            }
+        } else {
+            self.iterate_with_mode(
+                trade.ts_init,
+                AggressorSide::NoAggressor,
+                OrderMatchMode::StopTriggers(TriggerType::LastPrice),
+            );
         }
+    }
 
+    fn update_trade_prices(&mut self, trade: &TradeTick) -> (Option<Price>, Option<Price>) {
         let aggressor_side = trade.aggressor_side;
-
         match aggressor_side {
             AggressorSide::Buy => {
-                // Buyer lifted the ask: ask was at trade.price, post-trade
-                // ask is at least this level (only widen)
-                if self.core.ask.is_none_or(|ask| trade.price > ask) {
-                    self.core.set_ask_raw(trade.price);
-                }
-
-                // Initialize bid from first trade if needed
-                if self.core.bid.is_none() {
-                    self.core.set_bid_raw(trade.price);
-                }
+                self.core.ask = Some(
+                    self.core
+                        .ask
+                        .map_or(trade.price, |ask| ask.max(trade.price)),
+                );
+                self.core.bid.get_or_insert(trade.price);
             }
             AggressorSide::Sell => {
-                // Seller hit the bid: bid was at trade.price, post-trade
-                // bid is at most this level (only narrow)
-                if self.core.bid.is_none_or(|bid| trade.price < bid) {
-                    self.core.set_bid_raw(trade.price);
-                }
-
-                // Initialize ask from first trade if needed
-                if self.core.ask.is_none() {
-                    self.core.set_ask_raw(trade.price);
-                }
+                self.core.bid = Some(
+                    self.core
+                        .bid
+                        .map_or(trade.price, |bid| bid.min(trade.price)),
+                );
+                self.core.ask.get_or_insert(trade.price);
             }
-            AggressorSide::NoAggressor => {
-                if self.core.bid.is_none_or(|bid| trade.price <= bid) {
-                    self.core.set_bid_raw(trade.price);
-                }
-
-                if self.core.ask.is_none_or(|ask| trade.price >= ask) {
-                    self.core.set_ask_raw(trade.price);
-                }
-            }
+            AggressorSide::NoAggressor => {}
         }
 
         let original_bid = self.core.bid;
@@ -2524,58 +2609,44 @@ impl OrderMatchingEngine {
             }
         }
 
-        self.start_trade_iteration(trade.size);
+        (original_bid, original_ask)
+    }
 
-        if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
-            self.seed_trade_consumption(
-                price_raw,
-                trade.size.raw(),
-                trade.ts_event,
-                aggressor_side,
-            );
-        }
-
-        self.iterate(trade.ts_init, aggressor_side);
-
-        self.finish_trade_iteration();
-
+    fn restore_trade_prices(
+        &mut self,
+        trade: &TradeTick,
+        original_bid: Option<Price>,
+        original_ask: Option<Price>,
+    ) {
         // Restore the non-aggressor side after temporary trade price override.
         // For L2/L3 books the book has independent depth so restore from originals.
         // For L1_MBP restore from the last quote values (not originals, which are
         // polluted by iterate's L1 book sync). Without quotes, skip the restore
         // so the core tracks the latest trade price.
-        if self.book_type == BookType::L1_MBP {
-            match aggressor_side {
-                AggressorSide::Sell => {
-                    if let Some(ask) = self.last_quote_ask {
-                        self.core.ask = Some(ask);
-                    }
+        match trade.aggressor_side {
+            AggressorSide::Sell => {
+                let restore = if self.book_type == BookType::L1_MBP {
+                    self.last_quote_ask
+                } else {
+                    original_ask.filter(|ask| trade.price < *ask)
+                };
+
+                if let Some(ask) = restore {
+                    self.core.ask = Some(ask);
                 }
-                AggressorSide::Buy => {
-                    if let Some(bid) = self.last_quote_bid {
-                        self.core.bid = Some(bid);
-                    }
-                }
-                AggressorSide::NoAggressor => {}
             }
-        } else {
-            match aggressor_side {
-                AggressorSide::Sell => {
-                    if let Some(ask) = original_ask
-                        && trade.price < ask
-                    {
-                        self.core.ask = Some(ask);
-                    }
+            AggressorSide::Buy => {
+                let restore = if self.book_type == BookType::L1_MBP {
+                    self.last_quote_bid
+                } else {
+                    original_bid.filter(|bid| trade.price > *bid)
+                };
+
+                if let Some(bid) = restore {
+                    self.core.bid = Some(bid);
                 }
-                AggressorSide::Buy => {
-                    if let Some(bid) = original_bid
-                        && trade.price > bid
-                    {
-                        self.core.bid = Some(bid);
-                    }
-                }
-                AggressorSide::NoAggressor => {}
             }
+            AggressorSide::NoAggressor => {}
         }
     }
 
@@ -2604,6 +2675,8 @@ impl OrderMatchingEngine {
     }
 
     fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
+        let update_count = self.book.update_count;
+
         if let Err(e) = self.book.update_quote_tick(quote) {
             log::warn!(
                 "Skipping {context} for {}: update_quote_tick failed: {e}",
@@ -2612,11 +2685,14 @@ impl OrderMatchingEngine {
             return false;
         }
 
+        self.confirm_trailing_book_prices(update_count);
         self.reset_trade_liquidity(quote.ts_event);
         true
     }
 
     fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
+        let update_count = self.book.update_count;
+
         if let Err(e) = self.book.update_trade_tick(trade) {
             log::warn!(
                 "Skipping {context} for {}: update_trade_tick failed: {e}",
@@ -2625,6 +2701,7 @@ impl OrderMatchingEngine {
             return false;
         }
 
+        self.confirm_trailing_book_prices(update_count);
         self.reset_trade_liquidity(trade.ts_event);
         true
     }
@@ -2632,6 +2709,7 @@ impl OrderMatchingEngine {
     /// Processes a market status action to update the market state.
     pub fn process_status(&mut self, action: MarketStatusAction) {
         log::debug!("Processing {action}");
+        let was_open = self.market_status == MarketStatus::Open;
         let market_status = self
             .pending_resolution
             .as_mut()
@@ -2659,6 +2737,98 @@ impl OrderMatchingEngine {
             }
             _ => {}
         }
+
+        if !was_open && self.market_status == MarketStatus::Open {
+            self.record_trailing_reopen_prices();
+        }
+    }
+
+    fn record_trailing_reopen_prices(&mut self) {
+        self.trailing_reopen_prices = ReopenPrices {
+            bids: self
+                .book
+                .bids(None)
+                .map(|level| level.price.value)
+                .chain(self.core.bid)
+                .chain(self.last_quote_bid)
+                .collect(),
+            asks: self
+                .book
+                .asks(None)
+                .map(|level| level.price.value)
+                .chain(self.core.ask)
+                .chain(self.last_quote_ask)
+                .collect(),
+            last_stale: true,
+            mark: self.core.mark,
+        };
+    }
+
+    // An L1 quote or trade tick the book accepts replaces both of its sides
+    fn confirm_trailing_book_prices(&mut self, update_count: u64) {
+        if self.book.update_count == update_count {
+            return;
+        }
+
+        if let Some(bid) = self.book.best_bid_price() {
+            self.trailing_reopen_prices.bids.swap_remove(&bid);
+        }
+
+        if let Some(ask) = self.book.best_ask_price() {
+            self.trailing_reopen_prices.asks.swap_remove(&ask);
+        }
+    }
+
+    fn trailing_delta_side(&self, delta: &OrderBookDelta) -> Option<OrderSide> {
+        if delta.order.side.is_some() {
+            return delta.order.side;
+        }
+
+        if delta.order.order_id == 0
+            || !delta.order.size.is_positive()
+            || !matches!(delta.action, BookAction::Add | BookAction::Update)
+            || (self.trailing_reopen_prices.bids.is_empty()
+                && self.trailing_reopen_prices.asks.is_empty())
+        {
+            return None;
+        }
+
+        let contains_order = |level: &BookLevel| {
+            level
+                .iter()
+                .any(|order| order.order_id == delta.order.order_id)
+        };
+
+        match (
+            self.book.bids(None).any(contains_order),
+            self.book.asks(None).any(contains_order),
+        ) {
+            (true, false) => Some(OrderSide::Buy),
+            (false, true) => Some(OrderSide::Sell),
+            _ => None,
+        }
+    }
+
+    fn confirm_trailing_delta_price(
+        &mut self,
+        delta: &OrderBookDelta,
+        side: Option<OrderSide>,
+        update_count: u64,
+    ) {
+        if self.book.update_count == update_count
+            || !delta.order.size.is_positive()
+            || !matches!(delta.action, BookAction::Add | BookAction::Update)
+        {
+            return;
+        }
+
+        let prices = match side {
+            Some(OrderSide::Buy) => &mut self.trailing_reopen_prices.bids,
+            Some(OrderSide::Sell) => &mut self.trailing_reopen_prices.asks,
+            None => return,
+        };
+
+        prices.swap_remove(&delta.order.price);
     }
 
     /// Processes an instrument close event.
@@ -4492,27 +4662,14 @@ impl OrderMatchingEngine {
     /// Returns whether a trailing stop activates at the current market: its activation price is
     /// touched, or it has none and a market price to activate at is available.
     fn trailing_stop_activates_now(&self, order: &OrderAny) -> bool {
-        let side = order.order_side();
-        match order.activation_price() {
-            Some(activation_price) => self.core.is_touch_triggered_with_trigger_type(
-                side,
-                activation_price,
-                if order.trigger_type() == Some(TriggerType::MarkPrice) {
-                    TriggerType::MarkPrice
-                } else {
-                    TriggerType::BidAsk
-                },
-            ),
-            None => self
-                .get_trailing_activation_price(
-                    order.trigger_type().unwrap_or(TriggerType::Default),
-                    side,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                )
-                .is_some(),
-        }
+        Self::trailing_stop_activation_price(
+            order,
+            self.core.bid,
+            self.core.ask,
+            self.core.last,
+            self.core.mark,
+        )
+        .is_some()
     }
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -4567,35 +4724,56 @@ impl OrderMatchingEngine {
         let mut matched_order = false;
 
         if self.market_status == MarketStatus::Open {
-            // Process bid actions before snapshotting asks so cross-side
-            // contingencies (OCO/OUO) mutate state between sides
-            for action in self.core.iterate_bids() {
-                if !self.should_process_match_action(action, match_mode) {
-                    continue;
-                }
+            // Process bids before snapshotting asks so cross-side contingencies take effect
+            let actions = self.core.iterate_bids();
+            matched_order = self.process_match_actions(actions, match_mode);
+            let actions = self.core.iterate_asks();
+            matched_order = self.process_match_actions(actions, match_mode) || matched_order;
+        }
 
-                matched_order = true;
+        self.maintain_orders_after_match(timestamp_ns, matched_order);
+        // Restore overrides even when matching closes every resting order
+        self.restore_fill_prices();
 
-                match action {
-                    MatchAction::FillLimit(id) => self.fill_resting_limit_order(id),
-                    MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
-                }
+        // Restore core bid/ask to book values after iteration
+        // (during trade execution, transient override was used for matching)
+        self.core.bid = self.book.best_bid_price();
+        self.core.ask = self.book.best_ask_price();
+
+        // Process instrument expiration last so orders at the expiration tick
+        // get a chance to fill before positions are closed.
+        self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement, &[]);
+        self.purge_closed_cached_filled_qty();
+        self.purge_applied_updates();
+        self.purge_applied_fills();
+        self.purge_applied_rejections();
+        self.purge_applied_oto_terminals();
+    }
+
+    fn process_match_actions(
+        &mut self,
+        actions: Vec<MatchAction>,
+        match_mode: OrderMatchMode,
+    ) -> bool {
+        let mut matched_order = false;
+
+        for action in actions {
+            if !self.should_process_match_action(action, match_mode) {
+                continue;
             }
 
-            for action in self.core.iterate_asks() {
-                if !self.should_process_match_action(action, match_mode) {
-                    continue;
-                }
+            matched_order = true;
 
-                matched_order = true;
-
-                match action {
-                    MatchAction::FillLimit(id) => self.fill_resting_limit_order(id),
-                    MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
-                }
+            match action {
+                MatchAction::FillLimit(id) => self.fill_resting_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
             }
         }
 
+        matched_order
+    }
+
+    fn maintain_orders_after_match(&mut self, timestamp_ns: UnixNanos, matched_order: bool) {
         let order_ids: Vec<ClientOrderId> = if matched_order {
             self.core.iter_orders().map(|m| m.client_order_id).collect()
         } else if self.post_match_order_ids.is_empty() {
@@ -4646,12 +4824,10 @@ impl OrderMatchingEngine {
                     continue;
                 }
                 PostMatchOrderAction::UpdateTrailing(mut order) => {
-                    if self.maybe_activate_trailing_stop(
-                        &mut order,
-                        self.core.bid,
-                        self.core.ask,
-                        self.core.last,
-                    ) {
+                    // Trailing stops wait for fresh market data after reopening
+                    if self.market_status == MarketStatus::Open
+                        && self.maybe_activate_trailing_stop(&mut order)
+                    {
                         self.update_trailing_stop_order(&order);
                         self.resync_core_entry(client_order_id);
                     }
@@ -4665,25 +4841,11 @@ impl OrderMatchingEngine {
 
             // Single-shot: only the first order after a trigger fill sees
             // the mutated core; the restore clears the override here.
-            if self.target_bid.is_some() || self.target_ask.is_some() || self.target_last.is_some()
-            {
-                if let Some(t) = self.target_bid.take() {
-                    self.core.bid = Some(t);
-                }
-
-                if let Some(t) = self.target_ask.take() {
-                    self.core.ask = Some(t);
-                }
-
-                if let Some(t) = self.target_last.take() {
-                    self.core.last = Some(t);
-                }
-            }
+            self.restore_fill_prices();
         }
+    }
 
-        // Fallback for when the per-order loop hit no eligible order (e.g.,
-        // all closed by the matching pass) so the fill override on
-        // `core.last` cannot leak into the next iterate.
+    fn restore_fill_prices(&mut self) {
         if let Some(t) = self.target_bid.take() {
             self.core.bid = Some(t);
         }
@@ -4695,20 +4857,6 @@ impl OrderMatchingEngine {
         if let Some(t) = self.target_last.take() {
             self.core.last = Some(t);
         }
-
-        // Restore core bid/ask to book values after iteration
-        // (during trade execution, transient override was used for matching)
-        self.core.bid = self.book.best_bid_price();
-        self.core.ask = self.book.best_ask_price();
-
-        // Process instrument expiration last so orders at the expiration tick
-        // get a chance to fill before positions are closed.
-        self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement, &[]);
-        self.purge_closed_cached_filled_qty();
-        self.purge_applied_updates();
-        self.purge_applied_fills();
-        self.purge_applied_rejections();
-        self.purge_applied_oto_terminals();
     }
 
     fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
@@ -4789,37 +4937,80 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn get_trailing_activation_price(
+    fn trailing_market_prices(
         &self,
-        trigger_type: TriggerType,
         order_side: OrderSide,
+    ) -> (Option<Price>, Option<Price>, Option<Price>, Option<Price>) {
+        if self.market_status != MarketStatus::Open {
+            return (None, None, None, None);
+        }
+
+        let reopen = &self.trailing_reopen_prices;
+        let (touch, target, stale) = match order_side {
+            OrderSide::Buy => (self.core.ask, self.target_ask, &reopen.asks),
+            OrderSide::Sell => (self.core.bid, self.target_bid, &reopen.bids),
+        };
+
+        let quote_is_stale = touch
+            .into_iter()
+            .chain(target)
+            .any(|price| stale.contains(&price));
+
+        let (bid, ask) = if quote_is_stale {
+            (None, None)
+        } else {
+            (self.core.bid, self.core.ask)
+        };
+
+        let last = self.core.last.filter(|_| !reopen.last_stale);
+        let mark = self.core.mark.filter(|mark| reopen.mark != Some(*mark));
+
+        (bid, ask, last, mark)
+    }
+
+    fn trailing_stop_activation_price(
+        order: &OrderAny,
         bid: Option<Price>,
         ask: Option<Price>,
         last: Option<Price>,
+        mark: Option<Price>,
     ) -> Option<Price> {
-        match trigger_type {
-            TriggerType::LastPrice => last,
-            TriggerType::MarkPrice => self.core.mark,
-            TriggerType::LastOrBidAsk => last.or(match order_side {
-                OrderSide::Buy => ask,
-                OrderSide::Sell => bid,
-            }),
+        let side = order.order_side();
+        let trigger_type = order.trigger_type().unwrap_or(TriggerType::Default);
 
-            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice
-            _ => match order_side {
-                OrderSide::Buy => ask,
-                OrderSide::Sell => bid,
+        let (bid, ask) = if trigger_type == TriggerType::MarkPrice {
+            (mark, mark)
+        } else {
+            (bid, ask)
+        };
+
+        match order.activation_price() {
+            Some(price) => {
+                let hit = match side {
+                    OrderSide::Buy => ask.is_some_and(|ask| ask <= price),
+                    OrderSide::Sell => bid.is_some_and(|bid| bid >= price),
+                };
+
+                hit.then_some(price)
+            }
+            None => match trigger_type {
+                TriggerType::LastPrice => last,
+                TriggerType::MarkPrice => mark,
+                TriggerType::LastOrBidAsk => last.or(match side {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                }),
+
+                // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice
+                _ => match side {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                },
             },
         }
     }
 
-    fn maybe_activate_trailing_stop(
-        &self,
-        order: &mut OrderAny,
-        bid: Option<Price>,
-        ask: Option<Price>,
-        last: Option<Price>,
-    ) -> bool {
+    fn maybe_activate_trailing_stop(&self, order: &mut OrderAny) -> bool {
         let is_activated = match order {
             OrderAny::TrailingStopMarket(inner) => inner.is_activated,
             OrderAny::TrailingStopLimit(inner) => inner.is_activated,
@@ -4830,33 +5021,18 @@ impl OrderMatchingEngine {
             return true;
         }
 
-        let (bid, ask) = if order.trigger_type() == Some(TriggerType::MarkPrice) {
-            (self.core.mark, self.core.mark)
-        } else {
-            (bid, ask)
-        };
+        // Simulated fills can change last before any fresh market trade arrives
+        if order.trigger_type() == Some(TriggerType::LastPrice)
+            && self.trailing_reopen_prices.last_stale
+        {
+            return false;
+        }
 
-        let activation_price = match order.activation_price() {
-            Some(price) => {
-                let hit = match order.order_side() {
-                    OrderSide::Buy => ask.is_some_and(|ask| ask <= price),
-                    OrderSide::Sell => bid.is_some_and(|bid| bid >= price),
-                };
+        let (bid, ask, last, mark) = self.trailing_market_prices(order.order_side());
 
-                hit.then_some(price)
-            }
-            None => self.get_trailing_activation_price(
-                order
-                    .trigger_type()
-                    .expect("Trailing order has a trigger type"),
-                order.order_side(),
-                bid,
-                ask,
-                last,
-            ),
-        };
-
-        let Some(activation_price) = activation_price else {
+        let Some(activation_price) =
+            Self::trailing_stop_activation_price(order, bid, ask, last, mark)
+        else {
             return false;
         };
 
@@ -4994,9 +5170,9 @@ impl OrderMatchingEngine {
                                 let last_px = fill.0;
                                 if last_px < order_price {
                                     // Marketable BUY would have filled at limit
-                                    self.target_bid = self.core.bid;
-                                    self.target_ask = self.core.ask;
-                                    self.target_last = self.core.last;
+                                    self.target_bid = self.target_bid.or(self.core.bid);
+                                    self.target_ask = self.target_ask.or(self.core.ask);
+                                    self.target_last = self.target_last.or(self.core.last);
                                     self.core.set_ask_raw(target_price);
                                     self.core.set_last_raw(target_price);
                                     fill.0 = target_price;
@@ -5016,9 +5192,9 @@ impl OrderMatchingEngine {
                                 let last_px = fill.0;
                                 if last_px > order_price {
                                     // Marketable SELL would have filled at limit
-                                    self.target_bid = self.core.bid;
-                                    self.target_ask = self.core.ask;
-                                    self.target_last = self.core.last;
+                                    self.target_bid = self.target_bid.or(self.core.bid);
+                                    self.target_ask = self.target_ask.or(self.core.ask);
+                                    self.target_last = self.target_last.or(self.core.last);
                                     self.core.set_bid_raw(target_price);
                                     self.core.set_last_raw(target_price);
                                     fill.0 = target_price;
@@ -6245,9 +6421,8 @@ impl OrderMatchingEngine {
         )?;
 
         // Resolve implicit membership before dispatch can close the cached position
-        let reduce_only_order_ids = position
-            .map(|position| self.reduce_only_order_ids(position.id))
-            .unwrap_or_default();
+        let reduce_only_order_ids =
+            position.map_or_default(|position| self.reduce_only_order_ids(position.id));
 
         self.orders
             .cached_filled_qty
@@ -7129,16 +7304,35 @@ impl OrderMatchingEngine {
     }
 
     fn update_trailing_stop_order(&self, order: &OrderAny) {
+        let (bid, ask, last, mark) = self.trailing_market_prices(order.order_side());
+
+        let (bid, ask, last) = if order.trigger_type() == Some(TriggerType::LastOrBidAsk)
+            && self.core.bid.is_some()
+            && self.core.ask.is_some()
+            && self.core.last.is_some()
+        {
+            (
+                bid.or(last),
+                ask.or(last),
+                last.or(match order.order_side() {
+                    OrderSide::Buy => ask,
+                    OrderSide::Sell => bid,
+                }),
+            )
+        } else {
+            (bid, ask, last)
+        };
+
         let (new_trigger_price, new_price) = match trailing_stop_calculate(
             self.instrument.price_increment(),
             order.trigger_price(),
             order,
-            self.core.bid,
-            self.core.ask,
+            bid,
+            ask,
             if order.trigger_type() == Some(TriggerType::MarkPrice) {
-                self.core.mark
+                mark
             } else {
-                self.core.last
+                last
             },
         ) {
             Ok(prices) => prices,
@@ -7190,12 +7384,7 @@ impl OrderMatchingEngine {
                 order.order_type(),
                 OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
             ) && order.trigger_price().is_none()
-                && self.maybe_activate_trailing_stop(
-                    order,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                )
+                && self.maybe_activate_trailing_stop(order)
             {
                 self.update_trailing_stop_order(order);
             }
@@ -8630,6 +8819,16 @@ struct PendingFill {
     position_id: Option<PositionId>,
     opening_trade_id: Option<TradeId>,
     quantity_change: Decimal,
+}
+
+// Closure levels wait for accepted updates; last-price freshness is separate because
+// simulated fills also change core.last.
+#[derive(Debug, Default)]
+struct ReopenPrices {
+    bids: IndexSet<Price>,
+    asks: IndexSet<Price>,
+    last_stale: bool,
+    mark: Option<Price>,
 }
 
 /// Records liquidity consumption changes during a fill-or-kill (FOK) attempt for rollback.

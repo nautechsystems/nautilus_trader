@@ -1603,7 +1603,7 @@ async fn test_request_fill_reports_excluded_commission_failure(#[case] scenario:
 
     *state.execution_response.lock().await = Some(response);
 
-    let reports = client
+    let result = client
         .request_fill_reports(
             AccountId::from("BYBIT-UNIFIED"),
             BybitProductType::Linear,
@@ -1612,10 +1612,16 @@ async fn test_request_fill_reports_excluded_commission_failure(#[case] scenario:
             None,
             None,
         )
-        .await
-        .unwrap();
+        .await;
 
-    assert_eq!(reports, vec![]);
+    if scenario == "uncached" {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "in-scope historical instruments missing from reconciliation cache"
+        );
+    } else {
+        assert_eq!(result.unwrap(), vec![]);
+    }
 }
 
 #[rstest]

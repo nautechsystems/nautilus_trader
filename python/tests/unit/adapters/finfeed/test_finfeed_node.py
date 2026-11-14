@@ -77,6 +77,7 @@ class Consumer(DataActor):
         super().__init__()
         self.instruments = []
         self.quotes = []
+        self.quote_received = asyncio.Event()
 
     def on_start(self) -> None:
         """
@@ -96,6 +97,7 @@ class Consumer(DataActor):
         Record sampled quotes.
         """
         self.quotes.append(quote)
+        self.quote_received.set()
 
 
 def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noqa: C901 - One selection crosses both node lifecycles
@@ -186,6 +188,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             node.add_actor(consumer)
             node.add_actor(historical)
             handle = node.handle()
+            cache = node.cache
             task = asyncio.create_task(node.run_async())
 
             try:
@@ -193,21 +196,19 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
                     async with asyncio.timeout(10):
                         await historical.received.wait()
 
-                        while not consumer.instruments or not consumer.quotes:
-                            await asyncio.sleep(0.01)
+                        await consumer.quote_received.wait()
+                        quotes = cache.quotes(instrument.id)
                 finally:
                     handle.stop()
                     await asyncio.wait_for(task, timeout=10)
 
-                quotes = node.cache.quotes(instrument.id)
-                await asyncio.sleep(0.05)
                 results.append(
                     (
                         handle.state,
                         consumer,
                         historical,
                         quotes,
-                        node.cache.quotes(instrument.id),
+                        cache.quotes(instrument.id),
                     ),
                 )
             finally:

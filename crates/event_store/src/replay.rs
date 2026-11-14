@@ -2713,6 +2713,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "add_custom_data",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_greeks",
             CacheMutationRecoveryClass::MissingLiveRecovery,
             &[],

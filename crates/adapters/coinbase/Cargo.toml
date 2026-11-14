@@ -95,7 +95,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-live = { workspace = true, features = ["node"] }
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -136,3 +136,11 @@ name = "coinbase-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
+
+# Run with `cargo test -p nautilus-coinbase --features examples --test coinbase-book-stress -- --scenario churn --timeout 10 --rounds 18`.
+[[test]]
+name = "coinbase-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

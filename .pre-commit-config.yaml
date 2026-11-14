@@ -73,7 +73,7 @@ repos:
         args: [--strict]
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.31.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -98,7 +98,7 @@ repos:
         files: (^|/)Dockerfile[^/]*$
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.51.1
+    rev: v1.52.0
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
@@ -488,7 +488,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+    rev: v0.17.4
     hooks:
       - id: ruff
         name: ruff
@@ -526,7 +526,7 @@ repos:
         files: "\\.py$"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.6 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.7 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]

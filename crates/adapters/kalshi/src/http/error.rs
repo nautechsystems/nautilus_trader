@@ -164,6 +164,37 @@ impl KalshiHttpError {
         }
     }
 
+    pub(super) fn is_subaccount_restricted(&self) -> bool {
+        const MESSAGE: &str =
+            "this API key is restricted to a single sub-account and cannot access this endpoint";
+
+        let evidence = match self {
+            Self::Http {
+                status: 403,
+                evidence,
+            }
+            | Self::Venue {
+                status: 403,
+                evidence,
+            } => evidence,
+            _ => return false,
+        };
+
+        if evidence
+            .venue
+            .as_ref()
+            .is_some_and(|e| matches!(&e.message, Field::Value(message) if message == MESSAGE))
+        {
+            return true;
+        }
+
+        let body = evidence.body.expose_secret().trim();
+        body == MESSAGE
+            || serde_json::from_str::<serde_json::Value>(body).is_ok_and(|value| {
+                value.get("error").and_then(serde_json::Value::as_str) == Some(MESSAGE)
+            })
+    }
+
     /// Returns whether local evidence proves no attempt reached the send operation.
     ///
     /// Execution callers can map true to `CommandFailure::NotSent`. False preserves an unknown
@@ -183,5 +214,51 @@ impl KalshiHttpError {
                     ..
                 }
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(403, true)]
+    #[case(401, false)]
+    #[case(500, false)]
+    fn restricted_denial_requires_exact_status_and_message(
+        #[case] status: u16,
+        #[case] expected: bool,
+    ) {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/quota_responses.json")).unwrap();
+        let body = serde_json::to_string(&fixtures["subaccount_restricted"]).unwrap();
+
+        let error = KalshiHttpError::Http {
+            status,
+            evidence: Box::new(ResponseEvidence {
+                body: body.into(),
+                venue: None,
+                retry_after: None,
+                request_id: None,
+            }),
+        };
+
+        assert_eq!(error.is_subaccount_restricted(), expected);
+
+        let unrelated = KalshiHttpError::Http {
+            status,
+            evidence: Box::new(ResponseEvidence {
+                body: serde_json::to_string(&fixtures["malformed_success"])
+                    .unwrap()
+                    .into(),
+                venue: None,
+                retry_after: None,
+                request_id: None,
+            }),
+        };
+
+        assert!(!unrelated.is_subaccount_restricted());
     }
 }

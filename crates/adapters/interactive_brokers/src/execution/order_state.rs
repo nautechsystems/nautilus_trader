@@ -590,35 +590,35 @@ impl InteractiveBrokersExecutionClient {
             })
             .unwrap_or(0);
 
-        if let Some(existing) = state.venue_order_id_map.get(&ib_order_id).copied() {
-            if existing != client_order_id {
-                let parent = state.group_for_client(client_order_id);
-                anyhow::ensure!(
-                    parent.is_some() && parent == state.group_for_client(existing),
-                    "IB order ID {ib_order_id} is already mapped to client order {existing}"
-                );
-                state
-                    .auxiliary_orders
-                    .entry(client_order_id)
-                    .or_insert_with(|| TrackedOrder {
-                        client_order_id: target_order.client_order_id(),
-                        trader_id: target_order.trader_id(),
-                        strategy_id: target_order.strategy_id(),
-                        instrument_id: target_order.instrument_id(),
-                        order_side: target_order.order_side(),
-                        order_type: target_order.order_type(),
-                        accepted: true,
-                        avg_px: None,
-                        pending_cancel: false,
-                        pending_modify: None,
-                        perm_id,
-                        spread_fill_ids: ahash::AHashSet::new(),
-                        spread_fills_held: HeldSpreadFills::default(),
-                        last_update: None,
-                    });
+        if let Some(existing) = state.venue_order_id_map.get(&ib_order_id).copied()
+            && existing != client_order_id
+        {
+            let parent = state.group_for_client(client_order_id);
+            anyhow::ensure!(
+                parent.is_some() && parent == state.group_for_client(existing),
+                "IB order ID {ib_order_id} is already mapped to client order {existing}"
+            );
+            state
+                .auxiliary_orders
+                .entry(client_order_id)
+                .or_insert_with(|| TrackedOrder {
+                    client_order_id: target_order.client_order_id(),
+                    trader_id: target_order.trader_id(),
+                    strategy_id: target_order.strategy_id(),
+                    instrument_id: target_order.instrument_id(),
+                    order_side: target_order.order_side(),
+                    order_type: target_order.order_type(),
+                    accepted: true,
+                    avg_px: None,
+                    pending_cancel: false,
+                    pending_modify: None,
+                    perm_id,
+                    spread_fill_ids: ahash::AHashSet::new(),
+                    spread_fills_held: HeldSpreadFills::default(),
+                    last_update: None,
+                });
 
-                return Ok(());
-            }
+            return Ok(());
         }
 
         state.order_id_map.insert(client_order_id, ib_order_id);

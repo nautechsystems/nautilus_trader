@@ -211,10 +211,13 @@ impl ParquetWriter {
     }
 
     fn prepare_promotion(&self) -> anyhow::Result<Option<PromotionWork<ParquetPromotionBackend>>> {
-        let backend =
-            ParquetPromotionBackend::new(&self.catalog, Arc::clone(&self.legacy_manifest_missing))?;
         self.core.prepare_promotion(
-            backend,
+            || {
+                ParquetPromotionBackend::new(
+                    &self.catalog,
+                    Arc::clone(&self.legacy_manifest_missing),
+                )
+            },
             self.source.clone(),
             self.use_ts_event_for_ts_init,
             self.delete_feather_after_commit,
@@ -284,18 +287,19 @@ impl StagedWriter for ParquetWriter {
             return Ok(());
         };
 
-        if self
-            .core
-            .promotion_driver
-            .is_due(self.core.clock.timestamp_ns(), interval_ns)
-            && let Some(work) = self.prepare_promotion()?
-        {
+        let now = self.core.clock.timestamp_ns();
+        if !self.core.promotion_driver.is_due(now, interval_ns) {
+            return Ok(());
+        }
+
+        // A due check starts the next interval even when it finds nothing or fails,
+        // otherwise every later message would seal and open the catalog again
+        self.core.promotion_driver.mark_committed_at(now);
+
+        if let Some(work) = self.prepare_promotion()? {
             self.core
                 .promotion_driver
                 .submit(work, "parquet-promotion")?;
-            self.core
-                .promotion_driver
-                .mark_committed_at(self.core.clock.timestamp_ns());
         }
 
         Ok(())
@@ -630,6 +634,7 @@ mod tests {
         writer::{
             feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
             promotion::{list_session_feather_files, tests::assert_scheduled_count},
+            traits::StreamingSink,
         },
     };
 
@@ -1169,6 +1174,100 @@ mod tests {
     }
 
     #[rstest]
+    fn due_promotion_without_staged_files_skips_catalog_and_waits_for_next_interval() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-idle");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promotion_interval_ms = Some(1);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::clone(&clock))).unwrap();
+
+        // Any catalog open fails from here, so an empty promotion must not open one
+        writer.catalog.params = Some(Params::new(
+            [("compression".to_string(), serde_json::json!(0))].into(),
+        ));
+
+        clock.store(1_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+
+        // Data staged during the idle interval promotes once the next interval is due
+        writer.catalog.params = None;
+        writer.core.write_data(Data::Quote(sample_quote())).unwrap();
+        writer.maybe_promote().unwrap();
+        assert!(writer.wait().unwrap().is_empty());
+
+        clock.store(2_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        assert_eq!(writer.wait().unwrap().len(), 1);
+    }
+
+    #[rstest]
+    fn failed_catalog_open_seals_once_per_interval_and_keeps_files_retryable() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-failing");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promotion_interval_ms = Some(1);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::clone(&clock))).unwrap();
+
+        let quotes = (1..=5)
+            .map(|timestamp| QuoteTick {
+                ts_event: UnixNanos::from(timestamp),
+                ts_init: UnixNanos::from(timestamp),
+                ..sample_quote()
+            })
+            .collect::<Vec<_>>();
+
+        let sealed_count = |writer: &ParquetWriter| {
+            list_session_feather_files(&writer.source.storage, Environment::Backtest, "run-failing")
+                .unwrap()
+                .len()
+        };
+
+        // Any catalog open fails from here
+        writer.catalog.params = Some(Params::new(
+            [("compression".to_string(), serde_json::json!(0))].into(),
+        ));
+
+        clock.store(1_000_000, Ordering::Relaxed);
+        let first_error = writer.write_data(Data::Quote(quotes[0])).unwrap_err();
+        writer.write_data(Data::Quote(quotes[1])).unwrap();
+        writer.write_data(Data::Quote(quotes[2])).unwrap();
+        let sealed_first_interval = sealed_count(&writer);
+
+        clock.store(2_000_000, Ordering::Relaxed);
+        let second_error = writer.write_data(Data::Quote(quotes[3])).unwrap_err();
+        writer.write_data(Data::Quote(quotes[4])).unwrap();
+        let sealed_second_interval = sealed_count(&writer);
+
+        writer.catalog.params = None;
+        clock.store(3_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        writer.wait().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        let open_error =
+            "Unknown Parquet catalog param 'compression': this catalog takes no params";
+        assert_eq!(first_error.to_string(), open_error);
+        assert_eq!(second_error.to_string(), open_error);
+        assert_eq!(sealed_first_interval, 1);
+        assert_eq!(sealed_second_interval, 2);
+        assert_eq!(rows.as_ref(), &quotes[..]);
+    }
+
+    #[rstest]
     fn parquet_streaming_funding_round_trip() {
         use nautilus_model::data::FundingRateUpdate;
         let directory = TempDir::new().unwrap();
@@ -1683,8 +1782,7 @@ mod tests {
         let mut rows = Vec::new();
         for batch in batches {
             rows.extend(
-                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch.clone())
-                    .unwrap(),
+                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch).unwrap(),
             );
         }
 

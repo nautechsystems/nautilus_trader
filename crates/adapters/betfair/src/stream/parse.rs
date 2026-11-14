@@ -1414,9 +1414,7 @@ fn serialize_json_value<T>(value: Option<&T>) -> String
 where
     T: serde::Serialize,
 {
-    value
-        .map(|value| serde_json::to_string(value).unwrap_or_default())
-        .unwrap_or_default()
+    value.map_or_default(|value| serde_json::to_string(value).unwrap_or_default())
 }
 
 #[cfg(test)]

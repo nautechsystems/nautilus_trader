@@ -253,7 +253,7 @@ pub(crate) fn limit_order(instrument: &BinaryOption) -> OrderAny {
 }
 
 pub(crate) fn sign_submit(credential: &KalshiCredential, order: &OrderAny) -> (Vec<u8>, usize) {
-    let built = request(black_box(order), None, 0).unwrap();
+    let built = request(black_box(order), None, 0, 0).unwrap();
     validate_create(&built).unwrap();
     let body = stable_object_key_bytes(serde_json::to_value(&built).unwrap()).unwrap();
     let headers = credential

@@ -187,15 +187,13 @@ fn rustc_version() -> String {
         return String::new();
     }
 
-    String::from_utf8(output.stdout)
-        .map(|value| {
-            value
-                .trim()
-                .strip_prefix("rustc ")
-                .unwrap_or(value.trim())
-                .to_string()
-        })
-        .unwrap_or_default()
+    String::from_utf8(output.stdout).map_or_default(|value| {
+        value
+            .trim()
+            .strip_prefix("rustc ")
+            .unwrap_or(value.trim())
+            .to_string()
+    })
 }
 
 fn resolved_package_version(

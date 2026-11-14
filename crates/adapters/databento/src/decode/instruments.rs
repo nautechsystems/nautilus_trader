@@ -177,6 +177,7 @@ pub fn decode_equity(
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<Equity> {
+    let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
     let currency = parse_currency_or_usd_default(msg.currency());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -185,7 +186,7 @@ pub fn decode_equity(
 
     Ok(Equity::builder()
         .instrument_id(instrument_id)
-        .raw_symbol(instrument_id.symbol)
+        .raw_symbol(raw_symbol)
         // No ISIN available yet
         .currency(currency)
         .price_precision(price_increment.precision)

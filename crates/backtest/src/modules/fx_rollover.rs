@@ -384,163 +384,370 @@ impl FXRolloverInterestModule {
         let mut adjustments = Vec::new();
 
         for instrument_id in instrument_ids {
-            let instrument = &ctx.instruments[&instrument_id];
-
-            if instrument.asset_class() != AssetClass::FX {
-                continue;
-            }
-
-            let positions =
-                ctx.cache
-                    .positions_open(Some(&ctx.venue), Some(&instrument_id), None, None, None);
-
-            if positions.is_empty() {
-                continue;
-            }
-
-            // Look up the immutable rate data before any transient market
-            // inputs: a permanently missing rate must skip the instrument
-            // even when the engine or price would first retry the day.
-            let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
-                Ok(rate) => rate,
-                Err(e) => {
-                    let kind = RolloverFailureKind::Rate;
-                    self.log_calculation_failure(
-                        date,
-                        instrument_id,
-                        kind,
-                        &format!("Skipping rollover for {instrument_id} on {date}: {e}"),
-                    );
-
-                    match kind.disposition() {
-                        RolloverFailureDisposition::RetryDay => {
-                            return RolloverCalculationOutcome::Retry;
-                        }
-                        RolloverFailureDisposition::SkipInstrument => continue,
-                    }
-                }
-            };
-
-            let Some(matching_engine) = ctx.matching_engines.get(&instrument_id) else {
-                self.log_calculation_failure(
-                    date,
-                    instrument_id,
-                    RolloverFailureKind::Engine,
-                    &format!("Cannot calculate rollover for {instrument_id}: no matching engine"),
-                );
-                return RolloverCalculationOutcome::Retry;
-            };
-            let book = matching_engine.get_book();
-
-            let mid = match (book.best_bid_price(), book.best_ask_price()) {
-                (Some(bid), Some(ask)) => price_decimal(bid).and_then(|bid| {
-                    let ask = price_decimal(ask)?;
-                    bid.checked_add(ask)
-                        .and_then(|sum| sum.checked_div(Decimal::TWO))
-                        .ok_or_else(|| anyhow::anyhow!("rollover midpoint overflow"))
-                }),
-                (Some(price), None) | (None, Some(price)) => price_decimal(price),
-                (None, None) => Err(anyhow::anyhow!("no market price")),
-            };
-
-            let mid = match mid {
-                Ok(mid) => mid,
-                Err(e) => {
-                    self.log_calculation_failure(
-                        date,
-                        instrument_id,
-                        RolloverFailureKind::Price,
-                        &format!("Cannot calculate rollover for {instrument_id}: {e}"),
-                    );
-                    return RolloverCalculationOutcome::Retry;
-                }
-            };
-
-            let net_qty = positions.iter().try_fold(Decimal::ZERO, |total, position| {
-                total.checked_add(position.signed_qty)
-            });
-
-            let mut rollover = net_qty
-                .and_then(|qty| qty.checked_mul(mid))
-                .and_then(|value| value.checked_mul(interest_rate));
-
-            if iso_weekday == 3 || iso_weekday == 5 {
-                rollover = rollover.and_then(|value| value.checked_mul(Decimal::from(3)));
-            }
-
-            let currency = if let Some(base) = ctx.base_currency {
-                let xrate_result = ctx.cache.try_get_xrate(
-                    ctx.venue,
-                    instrument.quote_currency(),
-                    base,
-                    PriceType::Mid,
-                );
-
-                let xrate = match xrate_result {
-                    Ok(Some(rate)) => Some(rate),
-                    Ok(None) => None,
-                    Err(e) => {
-                        self.log_calculation_failure(
-                            date,
-                            instrument_id,
-                            RolloverFailureKind::Xrate,
-                            &format!(
-                                "Cannot calculate rollover for {instrument_id}: exchange rate from {} to {base}: {e}",
-                                instrument.quote_currency()
-                            ),
-                        );
+            match self.calculate_instrument_rollover(date, iso_weekday, ctx, instrument_id) {
+                Ok(Some(adjustment)) => adjustments.push(adjustment),
+                Ok(None) => {}
+                Err(kind) => match kind.disposition() {
+                    RolloverFailureDisposition::RetryDay => {
                         return RolloverCalculationOutcome::Retry;
                     }
-                };
-                let Some(xrate) = xrate else {
-                    self.log_calculation_failure(
-                        date,
-                        instrument_id,
-                        RolloverFailureKind::Xrate,
-                        &format!(
-                            "Cannot calculate rollover for {instrument_id}: no exchange rate from {} to {base}",
-                            instrument.quote_currency()
-                        ),
-                    );
-                    return RolloverCalculationOutcome::Retry;
-                };
-
-                rollover = rollover.and_then(|value| value.checked_mul(xrate));
-                base
-            } else {
-                instrument.quote_currency()
-            };
-
-            let adjustment = rollover
-                .ok_or_else(|| anyhow::anyhow!("rollover interest arithmetic overflow"))
-                .and_then(|value| Money::from_decimal(value, currency).map_err(Into::into));
-
-            let adjustment = match adjustment {
-                Ok(adjustment) => adjustment,
-                Err(e) => {
-                    let kind = RolloverFailureKind::Money;
-                    self.log_calculation_failure(
-                        date,
-                        instrument_id,
-                        kind,
-                        &format!(
-                            "Skipping rollover for {instrument_id} on {date}: invalid adjustment: {e}"
-                        ),
-                    );
-
-                    match kind.disposition() {
-                        RolloverFailureDisposition::RetryDay => {
-                            return RolloverCalculationOutcome::Retry;
-                        }
-                        RolloverFailureDisposition::SkipInstrument => continue,
-                    }
-                }
-            };
-
-            adjustments.push(adjustment);
+                    RolloverFailureDisposition::SkipInstrument => {}
+                },
+            }
         }
 
         RolloverCalculationOutcome::Completed(adjustments)
+    }
+
+    fn calculate_instrument_rollover(
+        &self,
+        date: Date,
+        iso_weekday: i8,
+        ctx: &ExchangeContext,
+        instrument_id: InstrumentId,
+    ) -> Result<Option<Money>, RolloverFailureKind> {
+        let instrument = &ctx.instruments[&instrument_id];
+
+        if instrument.asset_class() != AssetClass::FX {
+            return Ok(None);
+        }
+
+        let positions =
+            ctx.cache
+                .positions_open(Some(&ctx.venue), Some(&instrument_id), None, None, None);
+
+        if positions.is_empty() {
+            return Ok(None);
+        }
+
+        // Look up the immutable rate data before any transient market
+        // inputs: a permanently missing rate must skip the instrument
+        // even when the engine or price would first retry the day.
+        let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
+            Ok(rate) => rate,
+            Err(e) => {
+                let kind = RolloverFailureKind::Rate;
+                self.log_calculation_failure(
+                    date,
+                    instrument_id,
+                    kind,
+                    &format!("Skipping rollover for {instrument_id} on {date}: {e}"),
+                );
+
+                return Err(kind);
+            }
+        };
+
+        let Some(matching_engine) = ctx.matching_engines.get(&instrument_id) else {
+            self.log_calculation_failure(
+                date,
+                instrument_id,
+                RolloverFailureKind::Engine,
+                &format!("Cannot calculate rollover for {instrument_id}: no matching engine"),
+            );
+            return Err(RolloverFailureKind::Engine);
+        };
+
+        let book = matching_engine.get_book();
+
+        let mid = rollover_midpoint(book.best_bid_price(), book.best_ask_price());
+
+        let mid = match mid {
+            Ok(mid) => mid,
+            Err(e) => {
+                self.log_calculation_failure(
+                    date,
+                    instrument_id,
+                    RolloverFailureKind::Price,
+                    &format!("Cannot calculate rollover for {instrument_id}: {e}"),
+                );
+                return Err(RolloverFailureKind::Price);
+            }
+        };
+
+        let net_qty = positions.iter().try_fold(Decimal::ZERO, |total, position| {
+            total.checked_add(position.signed_qty)
+        });
+
+        let mut rollover = net_qty
+            .and_then(|qty| qty.checked_mul(mid))
+            .and_then(|value| value.checked_mul(interest_rate));
+
+        if iso_weekday == 3 || iso_weekday == 5 {
+            rollover = rollover.and_then(|value| value.checked_mul(Decimal::from(3)));
+        }
+
+        let currency = if let Some(base) = ctx.base_currency {
+            let xrate = self
+                .rollover_xrate(date, instrument_id, instrument.quote_currency(), base, ctx)
+                .ok_or(RolloverFailureKind::Xrate)?;
+
+            rollover = rollover.and_then(|value| value.checked_mul(xrate));
+            base
+        } else {
+            instrument.quote_currency()
+        };
+
+        let adjustment = rollover
+            .ok_or_else(|| anyhow::anyhow!("rollover interest arithmetic overflow"))
+            .and_then(|value| Money::from_decimal(value, currency).map_err(Into::into));
+
+        let adjustment = match adjustment {
+            Ok(adjustment) => adjustment,
+            Err(e) => {
+                let kind = RolloverFailureKind::Money;
+                self.log_calculation_failure(
+                    date,
+                    instrument_id,
+                    kind,
+                    &format!(
+                        "Skipping rollover for {instrument_id} on {date}: invalid adjustment: {e}"
+                    ),
+                );
+
+                return Err(kind);
+            }
+        };
+
+        Ok(Some(adjustment))
+    }
+
+    fn rollover_xrate(
+        &self,
+        date: Date,
+        instrument_id: InstrumentId,
+        quote_currency: Currency,
+        base: Currency,
+        ctx: &ExchangeContext,
+    ) -> Option<Decimal> {
+        let xrate_result = ctx
+            .cache
+            .try_get_xrate(ctx.venue, quote_currency, base, PriceType::Mid);
+
+        let xrate = match xrate_result {
+            Ok(Some(rate)) => Some(rate),
+            Ok(None) => None,
+            Err(e) => {
+                self.log_calculation_failure(
+                    date,
+                    instrument_id,
+                    RolloverFailureKind::Xrate,
+                    &format!(
+                        "Cannot calculate rollover for {instrument_id}: exchange rate from {quote_currency} to {base}: {e}"
+                    ),
+                );
+                return None;
+            }
+        };
+
+        let Some(xrate) = xrate else {
+            self.log_calculation_failure(
+                date,
+                instrument_id,
+                RolloverFailureKind::Xrate,
+                &format!(
+                    "Cannot calculate rollover for {instrument_id}: no exchange rate from {quote_currency} to {base}"
+                ),
+            );
+            return None;
+        };
+
+        Some(xrate)
+    }
+
+    fn prepare_rollover_day(&self, observed_date: Date) {
+        let initialize_date = {
+            let day = self.rollover_day.borrow();
+            match day.as_ref() {
+                None => Some(Self::weekday_on_or_before(observed_date)),
+                Some(day) if self.rollover_completed.get() && day.date < observed_date => {
+                    Some(Self::next_weekday(day.date))
+                }
+                Some(_) => None,
+            }
+        };
+
+        if let Some(date) = initialize_date {
+            self.initialize_rollover_day(date);
+        }
+    }
+
+    fn stage_rollover_batch(
+        &self,
+        ts_now: UnixNanos,
+        observed_date: Date,
+        date: Date,
+        ctx: &ExchangeContext,
+    ) -> SimulationModuleResult {
+        // Drain every due weekday so sparse data cannot leave the booking cursor behind.
+        // This is complete by booked-day count, but uses the current positions, prices, and
+        // exchange rates for every date because historical cutoff snapshots are unavailable.
+        // Work is proportional to the gap length times the instrument count. This is a weekday
+        // calendar rather than a pair-specific business-day calendar. The existing Wednesday
+        // and Friday triple multipliers are retained for parity, even though standard spot FX
+        // usually applies the weekend triple on Wednesday only.
+        let mut booking_date = date;
+        let mut batch = Vec::new();
+        let batch_end_date = loop {
+            if booking_date > observed_date
+                || (booking_date == observed_date
+                    && ts_now.as_u64() < Self::rollover_time_ns(booking_date))
+            {
+                return SimulationModuleResult::NotReady;
+            }
+
+            let iso_weekday = booking_date.weekday().to_monday_one_offset();
+            match self.calculate_rollover_interest(booking_date, iso_weekday, ctx) {
+                RolloverCalculationOutcome::Completed(adjustments) => {
+                    batch.extend(adjustments.into_iter().map(|amount| RolloverAdjustment {
+                        booking_date,
+                        amount,
+                    }));
+                }
+                RolloverCalculationOutcome::Retry => {
+                    return SimulationModuleResult::NotReady;
+                }
+            }
+
+            let next = Self::next_weekday(booking_date);
+            if next > observed_date
+                || (next == observed_date && ts_now.as_u64() < Self::rollover_time_ns(next))
+            {
+                break booking_date;
+            }
+            booking_date = next;
+        };
+
+        let adjustments = batch.iter().map(|adjustment| adjustment.amount).collect();
+        let mut day = self.rollover_day.borrow_mut();
+        let day = day.as_mut().expect("rollover day initialized");
+        day.pending_adjustments = Some(batch);
+        day.pending_end_date = Some(batch_end_date);
+        day.attempt_time = Some(ts_now);
+        SimulationModuleResult::Completed(adjustments)
+    }
+
+    fn record_adjustment_failure(
+        &self,
+        adjustment: &RolloverAdjustment,
+        error: &AccountAdjustmentError,
+    ) -> AccountAdjustmentFailureDisposition {
+        let kind = AccountAdjustmentFailureKind::from(error);
+        let first_failure = self
+            .rollover_day
+            .borrow_mut()
+            .as_mut()
+            .expect("rollover day initialized")
+            .warned_adjustment_failures
+            .insert((adjustment.booking_date, adjustment.amount.currency, kind));
+
+        match kind.disposition() {
+            AccountAdjustmentFailureDisposition::Retry => {
+                if first_failure {
+                    log::warn!(
+                        "Cannot apply rollover adjustment for {} on {}: {error}",
+                        adjustment.amount.currency,
+                        adjustment.booking_date
+                    );
+                } else {
+                    log::debug!(
+                        "Cannot apply rollover adjustment for {} on {}: {error}",
+                        adjustment.amount.currency,
+                        adjustment.booking_date
+                    );
+                }
+            }
+            AccountAdjustmentFailureDisposition::RecordUnapplied => {
+                if first_failure {
+                    log::warn!(
+                        "Rollover adjustment for {} on {} failed with {kind:?} and is recorded as unapplied: {error}",
+                        adjustment.amount,
+                        adjustment.booking_date
+                    );
+                } else {
+                    log::debug!(
+                        "Rollover adjustment for {} on {} failed with {kind:?} and is recorded as unapplied: {error}",
+                        adjustment.amount,
+                        adjustment.booking_date
+                    );
+                }
+            }
+        }
+
+        kind.disposition()
+    }
+
+    fn complete_rollover_batch(&self, attempt_time: UnixNanos, batch_end_date: Date) {
+        self.rollover_completed.set(true);
+        let mut day = self.rollover_day.borrow_mut();
+        let day = day.as_mut().expect("rollover day initialized");
+        day.date = batch_end_date;
+        day.pending_end_date = None;
+        day.warned_failures.clear();
+
+        let attempt_eastern = attempt_time
+            .to_datetime_utc()
+            .to_zoned(eastern_timezone().clone());
+
+        if attempt_eastern.date() != batch_end_date {
+            log::warn!(
+                "Rollover batch through {batch_end_date}, scheduled through {}, booked late at {attempt_time}",
+                UnixNanos::from(Self::rollover_time_ns(batch_end_date))
+            );
+        }
+    }
+}
+
+impl RolloverDayState {
+    fn take_adjustments(
+        &mut self,
+        outcome_count: usize,
+    ) -> anyhow::Result<(Vec<RolloverAdjustment>, UnixNanos, Date)> {
+        let adjustment_count = self
+            .pending_adjustments
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no completed FX rollover batch to acknowledge"))?
+            .len();
+        anyhow::ensure!(
+            outcome_count == adjustment_count,
+            "FX rollover acknowledgement count {outcome_count}, expected {adjustment_count}"
+        );
+        let adjustments = self
+            .pending_adjustments
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no completed FX rollover batch to acknowledge"))?;
+        Ok((
+            adjustments,
+            self.attempt_time
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("FX rollover attempt time was not recorded"))?,
+            self.pending_end_date
+                .ok_or_else(|| anyhow::anyhow!("FX rollover batch end date was not recorded"))?,
+        ))
+    }
+}
+
+fn add_rollover_total(
+    totals: &mut AHashMap<Currency, Decimal>,
+    amount: Money,
+) -> anyhow::Result<()> {
+    let total = totals.entry(amount.currency).or_insert(Decimal::ZERO);
+    *total = total
+        .checked_add(amount.as_decimal())
+        .ok_or_else(|| anyhow::anyhow!("rollover diagnostic total overflow"))?;
+    Ok(())
+}
+
+fn rollover_midpoint(bid: Option<Price>, ask: Option<Price>) -> anyhow::Result<Decimal> {
+    match (bid, ask) {
+        (Some(bid), Some(ask)) => price_decimal(bid).and_then(|bid| {
+            let ask = price_decimal(ask)?;
+            bid.checked_add(ask)
+                .and_then(|sum| sum.checked_div(Decimal::TWO))
+                .ok_or_else(|| anyhow::anyhow!("rollover midpoint overflow"))
+        }),
+        (Some(price), None) | (None, Some(price)) => price_decimal(price),
+        (None, None) => Err(anyhow::anyhow!("no market price")),
     }
 }
 
@@ -568,20 +775,7 @@ impl SimulationModule for FXRolloverInterestModule {
             .to_zoned(eastern_timezone().clone());
         let observed_date = eastern_dt.date();
 
-        let initialize_date = {
-            let day = self.rollover_day.borrow();
-            match day.as_ref() {
-                None => Some(Self::weekday_on_or_before(observed_date)),
-                Some(day) if self.rollover_completed.get() && day.date < observed_date => {
-                    Some(Self::next_weekday(day.date))
-                }
-                Some(_) => None,
-            }
-        };
-
-        if let Some(date) = initialize_date {
-            self.initialize_rollover_day(date);
-        }
+        self.prepare_rollover_day(observed_date);
 
         if self.rollover_completed.get() {
             return Ok(SimulationModuleResult::NotReady);
@@ -610,85 +804,16 @@ impl SimulationModule for FXRolloverInterestModule {
             return Ok(SimulationModuleResult::NotReady);
         }
 
-        // Drain every due weekday so sparse data cannot leave the booking cursor behind.
-        // This is complete by booked-day count, but uses the current positions, prices, and
-        // exchange rates for every date because historical cutoff snapshots are unavailable.
-        // Work is proportional to the gap length times the instrument count. This is a weekday
-        // calendar rather than a pair-specific business-day calendar. The existing Wednesday
-        // and Friday triple multipliers are retained for parity, even though standard spot FX
-        // usually applies the weekend triple on Wednesday only.
-        let mut booking_date = date;
-        let mut batch = Vec::new();
-        let batch_end_date = loop {
-            if booking_date > observed_date
-                || (booking_date == observed_date
-                    && ts_now.as_u64() < Self::rollover_time_ns(booking_date))
-            {
-                return Ok(SimulationModuleResult::NotReady);
-            }
-
-            let iso_weekday = booking_date.weekday().to_monday_one_offset();
-            match self.calculate_rollover_interest(booking_date, iso_weekday, ctx) {
-                RolloverCalculationOutcome::Completed(adjustments) => {
-                    batch.extend(adjustments.into_iter().map(|amount| RolloverAdjustment {
-                        booking_date,
-                        amount,
-                    }));
-                }
-                RolloverCalculationOutcome::Retry => {
-                    return Ok(SimulationModuleResult::NotReady);
-                }
-            }
-
-            let next = Self::next_weekday(booking_date);
-            if next > observed_date
-                || (next == observed_date && ts_now.as_u64() < Self::rollover_time_ns(next))
-            {
-                break booking_date;
-            }
-            booking_date = next;
-        };
-
-        let adjustments = batch.iter().map(|adjustment| adjustment.amount).collect();
-        let mut day = self.rollover_day.borrow_mut();
-        let day = day.as_mut().expect("rollover day initialized");
-        day.pending_adjustments = Some(batch);
-        day.pending_end_date = Some(batch_end_date);
-        day.attempt_time = Some(ts_now);
-        Ok(SimulationModuleResult::Completed(adjustments))
+        Ok(self.stage_rollover_batch(ts_now, observed_date, date, ctx))
     }
 
     fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
-        let (adjustments, attempt_time, batch_end_date) = {
-            let mut day = self.rollover_day.borrow_mut();
-            let day = day
-                .as_mut()
-                .ok_or_else(|| anyhow::anyhow!("FX rollover day is not initialized"))?;
-            let adjustment_count = day
-                .pending_adjustments
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("no completed FX rollover batch to acknowledge"))?
-                .len();
-            anyhow::ensure!(
-                outcomes.len() == adjustment_count,
-                "FX rollover acknowledgement count {}, expected {}",
-                outcomes.len(),
-                adjustment_count
-            );
-            let adjustments = day
-                .pending_adjustments
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("no completed FX rollover batch to acknowledge"))?;
-            (
-                adjustments,
-                day.attempt_time
-                    .take()
-                    .ok_or_else(|| anyhow::anyhow!("FX rollover attempt time was not recorded"))?,
-                day.pending_end_date.ok_or_else(|| {
-                    anyhow::anyhow!("FX rollover batch end date was not recorded")
-                })?,
-            )
-        };
+        let (adjustments, attempt_time, batch_end_date) = self
+            .rollover_day
+            .borrow_mut()
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("FX rollover day is not initialized"))?
+            .take_adjustments(outcomes.len())?;
 
         let mut failed = Vec::new();
         {
@@ -698,62 +823,13 @@ impl SimulationModule for FXRolloverInterestModule {
             for (adjustment, outcome) in adjustments.into_iter().zip(outcomes) {
                 match outcome {
                     AccountAdjustmentOutcome::Applied => {
-                        let total = totals
-                            .entry(adjustment.amount.currency)
-                            .or_insert(Decimal::ZERO);
-                        *total = total
-                            .checked_add(adjustment.amount.as_decimal())
-                            .ok_or_else(|| anyhow::anyhow!("rollover diagnostic total overflow"))?;
+                        add_rollover_total(&mut totals, adjustment.amount)?;
                     }
                     AccountAdjustmentOutcome::Failed(error) => {
-                        let kind = AccountAdjustmentFailureKind::from(error);
-                        let first_failure = self
-                            .rollover_day
-                            .borrow_mut()
-                            .as_mut()
-                            .expect("rollover day initialized")
-                            .warned_adjustment_failures
-                            .insert((adjustment.booking_date, adjustment.amount.currency, kind));
-
-                        match kind.disposition() {
-                            AccountAdjustmentFailureDisposition::Retry => {
-                                if first_failure {
-                                    log::warn!(
-                                        "Cannot apply rollover adjustment for {} on {}: {error}",
-                                        adjustment.amount.currency,
-                                        adjustment.booking_date
-                                    );
-                                } else {
-                                    log::debug!(
-                                        "Cannot apply rollover adjustment for {} on {}: {error}",
-                                        adjustment.amount.currency,
-                                        adjustment.booking_date
-                                    );
-                                }
-                                failed.push(adjustment);
-                            }
+                        match self.record_adjustment_failure(&adjustment, error) {
+                            AccountAdjustmentFailureDisposition::Retry => failed.push(adjustment),
                             AccountAdjustmentFailureDisposition::RecordUnapplied => {
-                                if first_failure {
-                                    log::warn!(
-                                        "Rollover adjustment for {} on {} failed with {kind:?} and is recorded as unapplied: {error}",
-                                        adjustment.amount,
-                                        adjustment.booking_date
-                                    );
-                                } else {
-                                    log::debug!(
-                                        "Rollover adjustment for {} on {} failed with {kind:?} and is recorded as unapplied: {error}",
-                                        adjustment.amount,
-                                        adjustment.booking_date
-                                    );
-                                }
-                                let total = unapplied_totals
-                                    .entry(adjustment.amount.currency)
-                                    .or_insert(Decimal::ZERO);
-                                *total = total
-                                    .checked_add(adjustment.amount.as_decimal())
-                                    .ok_or_else(|| {
-                                        anyhow::anyhow!("rollover diagnostic total overflow")
-                                    })?;
+                                add_rollover_total(&mut unapplied_totals, adjustment.amount)?;
                             }
                         }
                     }
@@ -762,23 +838,7 @@ impl SimulationModule for FXRolloverInterestModule {
         }
 
         if failed.is_empty() {
-            self.rollover_completed.set(true);
-            let mut day = self.rollover_day.borrow_mut();
-            let day = day.as_mut().expect("rollover day initialized");
-            day.date = batch_end_date;
-            day.pending_end_date = None;
-            day.warned_failures.clear();
-
-            let attempt_eastern = attempt_time
-                .to_datetime_utc()
-                .to_zoned(eastern_timezone().clone());
-
-            if attempt_eastern.date() != batch_end_date {
-                log::warn!(
-                    "Rollover batch through {batch_end_date}, scheduled through {}, booked late at {attempt_time}",
-                    UnixNanos::from(Self::rollover_time_ns(batch_end_date))
-                );
-            }
+            self.complete_rollover_batch(attempt_time, batch_end_date);
         } else {
             self.rollover_day
                 .borrow_mut()
@@ -1249,6 +1309,7 @@ mod tests {
             let mut day = module.rollover_day.borrow_mut();
             let day = day.as_mut().unwrap();
             day.pending_adjustments = Some(vec![rollover_adjustment(date, "10.00 USD")]);
+            day.pending_end_date = Some(date);
             day.attempt_time = Some(UnixNanos::from(1));
         }
 
@@ -1267,5 +1328,14 @@ mod tests {
                 .pending_adjustments,
             Some(vec![rollover_adjustment(date, "10.00 USD")])
         );
+        module
+            .acknowledge(&[AccountAdjustmentOutcome::Applied])
+            .unwrap();
+        assert!(module.rollover_completed.get());
+        assert_eq!(
+            *module.rollover_totals.borrow(),
+            AHashMap::from([(Currency::USD(), dec!(10.00))]),
+        );
+        assert_eq!(module.rollover_day.borrow().as_ref().unwrap().date, date);
     }
 }

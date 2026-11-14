@@ -455,13 +455,16 @@ where
         Ok(())
     }
 
-    pub(crate) fn prepare_promotion(
+    pub(crate) fn prepare_promotion<F>(
         &self,
-        backend: B,
+        backend: F,
         source: FeatherSessionSource,
         use_ts_event_for_ts_init: bool,
         delete_feather_after_commit: bool,
-    ) -> anyhow::Result<Option<PromotionWork<B>>> {
+    ) -> anyhow::Result<Option<PromotionWork<B>>>
+    where
+        F: FnOnce() -> anyhow::Result<B>,
+    {
         let schedule = self.promotion_driver.schedule();
         let files = prepare_promotion_paths(
             &self.staging.client,
@@ -473,6 +476,9 @@ where
         if files.is_empty() {
             return Ok(None);
         }
+
+        // Built only for files to promote, so an empty promotion never opens the catalog
+        let backend = backend().inspect_err(|_| self.promotion_driver.unschedule(&files))?;
 
         Ok(Some(
             backend
@@ -918,8 +924,9 @@ mod tests {
             files: files_tx,
             fail: true,
         };
+
         let work = writer
-            .prepare_promotion(backend.clone(), source.clone(), false, false)
+            .prepare_promotion(|| Ok(backend.clone()), source.clone(), false, false)
             .unwrap()
             .unwrap();
         let files = work.files().to_vec();
@@ -932,7 +939,7 @@ mod tests {
         for _ in 0..32 {
             assert!(
                 writer
-                    .prepare_promotion(backend.clone(), source.clone(), false, false)
+                    .prepare_promotion(|| Ok(backend.clone()), source.clone(), false, false)
                     .unwrap()
                     .is_none()
             );
@@ -943,15 +950,16 @@ mod tests {
             fail: false,
             ..backend
         };
+
         let work = writer
-            .prepare_promotion(backend.clone(), source.clone(), false, false)
+            .prepare_promotion(|| Ok(backend.clone()), source.clone(), false, false)
             .unwrap()
             .unwrap();
         assert_eq!(work.files(), &files[..1]);
         assert_eq!(writer.finalize_promotion(work.execute()).unwrap().len(), 1);
         assert!(
             writer
-                .prepare_promotion(backend, source, false, false)
+                .prepare_promotion(|| Ok(backend), source, false, false)
                 .unwrap()
                 .is_none()
         );
@@ -959,6 +967,97 @@ mod tests {
             files_rx.try_iter().collect::<Vec<_>>(),
             vec![files[0].clone(), files[1].clone(), files[0].clone()]
         );
+    }
+
+    #[rstest]
+    fn empty_promotion_does_not_build_backend() {
+        let directory = TempDir::new().unwrap();
+        let root =
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap();
+        let source = FeatherSessionSource::new(root, Environment::Backtest, "run-empty");
+        let storage = create_storage_backend_from_path(
+            directory
+                .path()
+                .join("backtest/run-empty")
+                .to_str()
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+        let writer = StagedFeatherWriter::<RecordingBackend>::new(
+            storage,
+            &source,
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let work = writer
+            .prepare_promotion(
+                || anyhow::bail!("backend built without files"),
+                source,
+                false,
+                false,
+            )
+            .unwrap();
+
+        assert!(work.is_none());
+    }
+
+    #[rstest]
+    fn failed_backend_build_releases_scheduled_paths() {
+        let directory = TempDir::new().unwrap();
+        let root =
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap();
+        let source = FeatherSessionSource::new(root, Environment::Backtest, "run-factory");
+        let storage = create_storage_backend_from_path(
+            directory
+                .path()
+                .join("backtest/run-factory")
+                .to_str()
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+        let writer = StagedFeatherWriter::<RecordingBackend>::new(
+            storage,
+            &source,
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+            None,
+        )
+        .unwrap();
+        writer.write_data(Data::Quote(quote_at(1))).unwrap();
+
+        let error = writer
+            .prepare_promotion(
+                || anyhow::bail!("backend factory failed"),
+                source.clone(),
+                false,
+                false,
+            )
+            .err()
+            .unwrap();
+
+        let (files_tx, _files_rx) = mpsc::channel();
+
+        let backend = RecordingBackend {
+            files: files_tx,
+            fail: false,
+        };
+
+        let work = writer
+            .prepare_promotion(|| Ok(backend), source, false, false)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(error.to_string(), "backend factory failed");
+        assert_eq!(work.files().len(), 1);
     }
 
     #[rstest]

@@ -127,13 +127,17 @@ limitation. *Not currently implemented* identifies an adapter limitation.
 
 ### Accounts and shards
 
-- **Account scope**: Each execution client uses one Direct primary account, subaccount `0`, and one
-  exchange shard. Direct membership does not use a futures commission merchant (FCM).
+- **Account scope**: Each execution client uses one Direct subaccount and one exchange shard.
+  Set `subaccount` to a value in `[0, 63]`; the default `0` selects the primary account.
+  Direct membership does not use a futures commission merchant (FCM).
+- **Restricted keys**: Set `subaccount` to the key's locked subaccount. Requests naming another
+  subaccount fail. These keys use conservative Basic [token budgets](#token-budgets). See
+  [Kalshi subaccounts](https://docs.kalshi.com/getting_started/subaccounts).
 - **Shard resources**: Each shard has its own matching engine and collateral.
 - **Shard identity**: The market's `exchange_index` identifies its shard; the ticker does not. The
   execution client rejects orders for any other shard.
-- **Multiple shards**: Configure separate execution clients, with a distinct `account_id` for each
-  client in the same runtime.
+- **Multiple clients**: Configure separate execution clients for each subaccount and shard, with a
+  distinct `account_id` for each client in the same runtime.
 - **Collateral movement**: The adapter does not transfer or rebalance collateral between shards.
 
 ### Market admission
@@ -155,9 +159,8 @@ The instrument provider accepts only markets with:
   ordinary contract.
 - **Payouts**: Admission does not guarantee a USD 0 or USD 1 payout. Contract-specific rules can
   produce a fractional settlement value. See [Settlement and restart](#settlement-and-restart).
-- **Other operations**: The adapter does not support FCM accounts, sub-user accounts, numbered
-  subaccounts, transfers, automatic rebalancing, RFQ order entry, multivariate market creation, or
-  native order groups.
+- **Other operations**: The adapter does not support FCM accounts, sub-user accounts, transfers,
+  automatic rebalancing, RFQ order entry, multivariate market creation, or native order groups.
 
 ## Symbology
 
@@ -228,8 +231,10 @@ settlement timestamp.
   complete grid still rejects off-grid prices.
 - **Registration**: Fresh definition parsing registers and verifies a tick scheme. A grid change
   publishes an updated instrument.
-- **Restart**: Restore the retained grid and scheme after deserializing an instrument for correct
-  price navigation. Without the scheme, navigation falls back to the base increment.
+- **Restart**: Parquet catalogs retain and restore the instrument's exact tick scheme for price
+  navigation. Older files that contain only a custom scheme name require that scheme to be registered
+  before loading. Other serialization formats require the retained grid and scheme to be restored.
+  Catalog writes require any named scheme to be registered in the writing process.
 - **Live orders**: Submission independently fetches fresh metadata and validates the complete grid,
   rejecting an off-grid price rather than rounding it.
 
@@ -658,7 +663,7 @@ Before dispatch, the adapter checks:
   also apply.
 - **Trading status**: Fresh market and exchange status which permits trading on the configured
   shard.
-- **Identity**: Matching command, cached order, instrument, primary subaccount `0`, and
+- **Identity**: Matching command, cached order, instrument, configured subaccount, and
   execution-client identity.
 - **Position binding**: Command, order, and cached position binding equal to
   `<instrument_id>-<strategy_id>` when a position ID is present.
@@ -827,7 +832,7 @@ managing an uncertain modification or cancellation again.
 
 #### Balance model
 
-- **Scope**: Cash and reservations belong to one Direct primary account, subaccount `0`, and shard.
+- **Scope**: Cash and reservations belong to the configured Direct subaccount and shard.
 - **Account net**: Positive net represents YES exposure; negative net represents NO exposure.
   Strategy positions remain scoped by instrument and strategy, while cash and reservations use the
   account-level net.
@@ -950,9 +955,11 @@ explains the rounding mechanics; it does not establish `fee_cost` semantics.
 - **Private streams**: Recovery subscribes to `user_orders`, `fill`, and `market_positions` before
   collecting REST evidence.
 - **Ownership**: Recovery validates account, subaccount, and shard ownership and requires received
-  fill IDs, order fill counts, and position economics to agree with REST evidence. An absent
-  subaccount field does not prove subaccount `0`; venue records must establish ownership before
-  publication.
+  fill IDs, order fill counts, and position economics to agree with REST evidence.
+- **Subaccount identity**: Records naming another subaccount fail collection. Subaccount `0` accepts
+  missing subaccount fields in scoped REST requests and private notices. Nonzero subaccounts
+  require explicit matching identity: REST records without it fail collection, and private notices
+  without it are ignored.
 - **Incomplete recovery**: Missing identities, fees, pagination, or conflicting evidence keep
   recovery incomplete.
 
@@ -1051,7 +1058,7 @@ explains the rounding mechanics; it does not establish `fee_cost` semantics.
 
 | Report fields                                              | Source or absence rule                                                                                                                         |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared `account_id`, `instrument_id`                       | Configured primary account and shard, with the confirmed market ticker.                                                                        |
+| Shared `account_id`, `instrument_id`                       | Configured `account_id` (distinct per subaccount and shard client), with the confirmed market ticker.                                          |
 | Shared `report_id`, `ts_init`                              | Local report UUID and initialization time.                                                                                                     |
 | Order/fill `client_order_id`, `venue_order_id`             | Supplied or cached client ID; recovery uses `order_id` when empty. Venue ID is `order_id`.                                                     |
 | Order `order_side`, `price`, `order_type`                  | Canonical direction, `yes_price_dollars`, and supported venue `type=limit`.                                                                    |
@@ -1160,7 +1167,11 @@ cached orders. Keep clients active until their positions settle.
   for valid discovery.
 - **Discovery fallback**: Failed discovery starts a five-second conservative read fallback: 200
   tokens per second, capacity 200, cost 50 per request, and one balance request per second. Writes
-  remain disabled until both discovery reads succeed.
+  remain disabled until limits and costs load; restricted keys load Basic limits as described below.
+- **Restricted-key limits**: When `/account/limits` returns Kalshi's explicit subaccount-restriction
+  denial, the adapter uses Basic read and write limits: 200 and 100 tokens per second, respectively,
+  with one second of capacity and one balance request per second. Endpoint costs must still load
+  successfully.
 - **Balance bucket**: Basic and Advanced tiers allow one balance read per second; higher known tiers
   allow five.
 - **Batch cost**: Cost scales per item, and the full chunk must fit before transmission.
@@ -1175,7 +1186,7 @@ cached orders. Keep clients active until their positions settle.
 - **Quota sharing**: Use `new_authenticated_with_quota` to share a `KalshiQuota` across account
   data and execution transports with distinct API keys. Use `new_with_quota` for public traffic
   which must consume the same budget. Default authenticated construction shares quota for the same
-  key and origin.
+  key and origin. Clients with distinct keys do not share local quota unless explicitly configured.
 
 ### Retries and writes
 
@@ -1211,7 +1222,8 @@ cached orders. Keep clients active until their positions settle.
 | Option              | Default      | Description                                                                                 |
 | ------------------- | ------------ | ------------------------------------------------------------------------------------------- |
 | `environment`       | `Production` | Select production or demo endpoints and credential variables.                               |
-| `account_id`        | `KALSHI-001` | Nautilus account ID; use a distinct value for each colocated shard client.                  |
+| `account_id`        | `KALSHI-001` | Nautilus account ID; use a distinct value for each subaccount and shard client.             |
+| `subaccount`        | `0`          | Direct subaccount in `[0, 63]`; must equal a restricted key's subaccount.                   |
 | `exchange_index`    | `0`          | Exchange shard for orders, reports, and collateral.                                         |
 | `api_key_id`        | `None`       | API key ID; must be paired with `private_key`.                                              |
 | `private_key`       | `None`       | PEM private-key text; must be paired with `api_key_id`.                                     |

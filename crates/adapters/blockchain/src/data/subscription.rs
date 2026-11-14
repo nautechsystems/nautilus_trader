@@ -266,8 +266,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_swap_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_swaps
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to mint events for a given DEX.
@@ -275,8 +274,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_mint_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_mints
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to burn events for a given DEX.
@@ -284,8 +282,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_burn_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_burns
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to collect events for a given DEX.
@@ -293,8 +290,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_collect_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_collects
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to flash events for a given DEX.
@@ -302,8 +298,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_flash_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_flashes
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to fee-protocol update events for a given DEX.
@@ -311,8 +306,7 @@ impl DefiDataSubscriptionManager {
     pub fn get_subscribed_pool_fee_protocol_update_addresses(&self, dex: &DexType) -> Vec<Address> {
         self.subscribed_pool_fee_protocol_updates
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets pool addresses subscribed to fee-protocol collect events for a given DEX.
@@ -323,8 +317,7 @@ impl DefiDataSubscriptionManager {
     ) -> Vec<Address> {
         self.subscribed_pool_fee_protocol_collects
             .get(dex)
-            .map(|addresses| addresses.keys().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|addresses| addresses.keys().copied().collect())
     }
 
     /// Gets the swap event signature for a specific DEX.

@@ -18,8 +18,6 @@
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.
 # - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
-#
-# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %%
 import os

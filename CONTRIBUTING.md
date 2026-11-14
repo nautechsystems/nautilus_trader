@@ -56,6 +56,26 @@ Local validation remains required under the
 [local check requirements](#run-local-checks-and-follow-repository-rules), and summaries of results
 remain optional. Maintainers may request specific evidence when they need it to assess a change.
 
+## Commercial conflicts
+
+NautilusTrader provides a free and open-source framework to help quant traders and firms research,
+develop, and deploy trading strategies and systems. The project builds its own commercial offerings
+around the engine. The contribution process is not intended to support the development or promotion
+of competing commercial products.
+
+Before contributing, disclose any ownership, employment, sponsorship, or other commercial
+relationship with a product that may compete with the project's offerings. Maintainers assess
+competition against both announced offerings and products we are planning or developing, across local
+and cloud deployments.
+
+Maintainers may decline or close issues and pull requests where a contributor's commercial activities
+conflict with the project's commercial direction. They may also ask the contributor to pause
+contributions.
+
+Maintainers apply this policy consistently to comparable situations to avoid implying support for
+or endorsement of competing products through ongoing collaboration. This policy governs participation
+in the contribution process and does not change the project's [license](LICENSE).
+
 ## Use of AI
 
 If you use AI tools, you remain responsible for every submission. Read and follow the

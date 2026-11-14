@@ -14,6 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Query parameter builders for Lighter REST endpoints.
+//!
+//! Trade and account order queries send `authorization`, or legacy `auth` when unset,
+//! in the HTTP Authorization header. Serialization omits both fields.
 
 use derive_builder::Builder;
 use nautilus_core::string::secret::SecretString;
@@ -95,11 +98,11 @@ pub struct LighterFundingsQuery {
 pub struct LighterTradesQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub auth: Option<SecretString>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -153,11 +156,11 @@ pub struct LighterTradesQuery {
 pub struct LighterAccountOrdersQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub auth: Option<SecretString>,
     pub account_index: i64,
     /// Client order indexes encoded as one to 20 comma-separated values.
@@ -207,11 +210,11 @@ pub struct LighterAccountQuery {
 pub struct LighterAccountActiveOrdersQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub auth: Option<SecretString>,
     pub account_index: i64,
     pub market_id: i64,
@@ -222,11 +225,11 @@ pub struct LighterAccountActiveOrdersQuery {
 pub struct LighterAccountInactiveOrdersQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub auth: Option<SecretString>,
     pub account_index: i64,
     #[builder(default)]
@@ -530,8 +533,8 @@ mod tests {
         let value = serde_json::to_value(&query).unwrap();
         let debug = format!("{query:?}");
 
-        assert_eq!(value["authorization"], "bearer-token");
-        assert_eq!(value["auth"], "auth-token");
+        assert!(value.get("authorization").is_none());
+        assert!(value.get("auth").is_none());
         assert_eq!(value["market_id"], 0);
         assert_eq!(value["account_index"], 1234);
         assert_eq!(value["order_index"], 5678);
@@ -585,7 +588,7 @@ mod tests {
         let value = serde_json::to_value(&query).unwrap();
         let decoded: LighterAccountOrdersQuery = serde_json::from_value(value.clone()).unwrap();
 
-        assert_eq!(value["authorization"], "bearer-token");
+        assert!(value.get("authorization").is_none());
         assert_eq!(value["account_index"], 123);
         assert_eq!(value["client_order_indexes"], expected);
         assert!(value.get("auth").is_none());
@@ -630,7 +633,7 @@ mod tests {
 
         let value = serde_json::to_value(query).unwrap();
 
-        assert_eq!(value["auth"], "auth-token");
+        assert!(value.get("auth").is_none());
         assert_eq!(value["account_index"], 123);
         assert_eq!(value["market_id"], 0);
         assert!(value.get("authorization").is_none());
@@ -651,7 +654,7 @@ mod tests {
 
         let value = serde_json::to_value(query).unwrap();
 
-        assert_eq!(value["authorization"], "bearer-token");
+        assert!(value.get("authorization").is_none());
         assert_eq!(value["account_index"], 123);
         assert_eq!(value["market_id"], 0);
         assert_eq!(value["ask_filter"], 1);

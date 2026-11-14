@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{net::SocketAddr, time::Duration};
+use std::{future::Future, net::SocketAddr, time::Duration};
 
 use aws_lc_rs::signature::{ED25519, RSA_PSS_2048_8192_SHA256, UnparsedPublicKey};
 use base64::prelude::*;
@@ -23,11 +23,14 @@ use nautilus_kalshi::{
     http::{client::KalshiHttpClient, error::KalshiHttpError},
 };
 use nautilus_network::{
-    dst::{net::TcpListener, task, time},
+    dst::{
+        net::{TcpListener, TcpStream},
+        task, time,
+    },
     http::HttpClientError,
 };
 use rstest::rstest;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(super) use super::http_request::read_headers;
 use super::keys;
@@ -308,6 +311,8 @@ async fn authenticated_read_refreshes_headers_on_retry(#[case] pem: &str, #[case
 async fn authenticated_read_does_not_retry_permanent_responses(#[case] status: u16) {
     time::timeout(Duration::from_secs(5), async {
         let (listener, address) = bind_peer(18186).await;
+        let (completed, completion) = tokio::sync::oneshot::channel();
+
         let peer = task::spawn(async move {
             super::rest::quota_discovery(&listener).await;
             let (mut stream, _) = listener.accept().await.unwrap();
@@ -316,7 +321,7 @@ async fn authenticated_read_does_not_retry_permanent_responses(#[case] status: u
             let response = format!("HTTP/1.1 {status} Response\r\nLocation: http://secret-redirect.invalid/path\r\nContent-Length: 16\r\nConnection: close\r\n\r\nsensitive-secret");
             stream.write_all(response.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
-            assert!(time::timeout(Duration::from_millis(700), listener.accept()).await.is_err());
+            assert_no_connection(&listener, address, async { completion.await.unwrap(); }).await;
         });
 
         let config = KalshiDataClientConfig {
@@ -327,6 +332,7 @@ async fn authenticated_read_does_not_retry_permanent_responses(#[case] status: u
 
         let client = KalshiHttpClient::new_authenticated(&config).unwrap();
         let error = Box::pin(client.get_balance(0)).await.unwrap_err();
+        completed.send(()).unwrap();
         peer.await.unwrap();
         assert!(matches!(error, KalshiHttpError::Status(actual) if actual == status));
         assert_eq!(error.to_string(),format!("HTTP {status}"));
@@ -443,4 +449,55 @@ pub(super) async fn bind_peer(port: u16) -> (TcpListener, SocketAddr) {
     #[cfg(not(all(feature = "simulation", madsim)))]
     let address = listener.local_addr().unwrap();
     (listener, address)
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+#[should_panic(expected = "unexpected connection")]
+async fn no_connection_check_rejects_queued_traffic() {
+    let (listener, address) = bind_peer(18230).await;
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    stream
+        .write_all(b"GET /unexpected HTTP/1.1\r\n\r\n")
+        .await
+        .unwrap();
+    stream.flush().await.unwrap();
+
+    assert_no_connection(&listener, address, std::future::ready(())).await;
+}
+
+pub(super) async fn assert_no_connection(
+    listener: &TcpListener,
+    address: SocketAddr,
+    completed: impl Future<Output = ()>,
+) {
+    tokio::select! {
+        biased;
+        connection = listener.accept() => panic!("unexpected connection: {connection:?}"),
+        () = completed => {},
+    }
+
+    // A known connection fences requests still waiting for reactor readiness
+    time::timeout(Duration::from_secs(2), async {
+        let marker = 0;
+
+        let probe = async {
+            let mut stream = TcpStream::connect(address).await.unwrap();
+            stream.write_all(&[marker]).await.unwrap();
+            stream.flush().await.unwrap();
+        };
+
+        let accept = async {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            assert_eq!(
+                stream.read_u8().await.unwrap(),
+                marker,
+                "unexpected connection before completion probe"
+            );
+        };
+
+        tokio::join!(probe, accept);
+    })
+    .await
+    .unwrap();
 }

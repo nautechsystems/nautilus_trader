@@ -3,6 +3,12 @@
 This document describes how NautilusTrader classifies adapters, the path between
 tiers, and how community adapters can be listed.
 
+> [!IMPORTANT]
+>
+> Third-party listings support wider connectivity options for the community beyond what the official
+> project can maintain alone. They are not a distribution channel for commercial products. Monetization
+> is limited to approved incentive programs that fund NautilusTrader.
+
 For naming rules, disclaimer requirements, and trademark guidance, see [TRADEMARK.md](./TRADEMARK.md).
 
 ## Adapter tiers
@@ -91,6 +97,7 @@ The following adapters are maintained in the core repository:
 | dYdX                | Data/Execution |
 | Hyperliquid         | Data/Execution |
 | Interactive Brokers | Data/Execution |
+| Kalshi              | Data/Execution |
 | Kraken              | Data/Execution |
 | Lighter             | Data/Execution |
 | OKX                 | Data/Execution |
@@ -106,15 +113,28 @@ Community adapters listed here met the listing criteria at the time of review.
 - Complies with [TRADEMARK.md](./TRADEMARK.md) (naming and disclaimer).
 - Licensed under an open-source license *compatible* with LGPL v3.0.
 - Maintainer is identifiable and contactable.
+- Overall quality meets NautilusTrader maintainers' expectations.
 - Repository shows activity within the last six months.
 - Repository includes installation or usage documentation.
+- Repository is the original upstream, not a fork, mirror, or republished copy.
+- Does not promote, require, or form part of commercial offerings by its maintainer or sponsors.
+- Does not use referral, affiliate, broker, builder-code, or similar incentive programs.
+
+The restriction on commercial offerings also covers the adapter maintainer's employer.
+
+As an exception to the incentive program restriction, an adapter may use a program that directs all
+rewards other than user fee discounts to NautilusTrader, with prior written approval from
+NautilusTrader maintainers. All other criteria still apply.
+
+These criteria apply for as long as an adapter is listed.
 
 ### How to list
 
 Open a GitHub issue or discussion with a link to the repository and a brief
-description. Maintainers review against the listing criteria above and decide
-whether to add the listing.
+description. Disclose any ownership, employment, sponsorship, or other commercial relationship with a product,
+service, or organization the adapter involves.
 
+Maintainers review against the listing criteria above and decide whether to add the listing.
 Maintainers may update or remove a community listing if it no longer meets the
 listing criteria or misrepresents its relationship to NautilusTrader.
 
@@ -122,19 +142,15 @@ listing criteria or misrepresents its relationship to NautilusTrader.
 
 Community adapters are externally maintained and are not supported by NautilusTrader maintainers.
 
-| Project                                          | Description                                | Maintainer    |
-| ------------------------------------------------ | ------------------------------------------ | ------------- |
-| [mt5-connector][mt5-connector]                   | MetaTrader 5 adapter.                      | aulekator     |
-| [sinopac-nt-community][sinopac-nt-community]     | SinoPac Securities Taiwan markets adapter. | Martingale42  |
-| [tickerall-nt-community][tickerall-nt-community] | MetaTrader 5 market data adapter.          | Miguel Santos |
+| Project                                      | Description                                | Maintainer   |
+| -------------------------------------------- | ------------------------------------------ | ------------ |
+| [sinopac-nt-community][sinopac-nt-community] | SinoPac Securities Taiwan markets adapter. | Martingale42 |
 
-[mt5-connector]: https://github.com/aulekator/mt5-connector
 [sinopac-nt-community]: https://github.com/Martingale42/sinopac-nt-community
-[tickerall-nt-community]: https://github.com/miguelangelo78/tickerall-nt-community
 
 ## Updates
 
 This document may be updated from time to time. Changes are tracked through the
 repository's version control history.
 
-Last updated: 2026-08-24
+Last updated: 2026-11-11

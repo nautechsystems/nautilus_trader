@@ -544,13 +544,11 @@ async fn handle_gamma_markets_keyset(
 }
 
 fn query_pairs(uri: &Uri) -> Vec<(String, String)> {
-    uri.query()
-        .map(|query| {
-            url::form_urlencoded::parse(query.as_bytes())
-                .into_owned()
-                .collect()
-        })
-        .unwrap_or_default()
+    uri.query().map_or_default(|query| {
+        url::form_urlencoded::parse(query.as_bytes())
+            .into_owned()
+            .collect()
+    })
 }
 
 async fn handle_gamma_markets_with_clob_tokens(

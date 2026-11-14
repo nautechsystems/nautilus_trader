@@ -186,6 +186,54 @@ HIP-4 remains experimental; keep [synthetic settlement polling disabled](#settle
 All four product types load automatically at connect when their metadata is available.
 No per-product opt-in is required.
 
+### Execution product scope
+
+`HyperliquidExecutionClientConfig.product_types` limits order submissions, modifications,
+instrument-specific cancellations, queries, private execution reports, and reconciliation coverage
+independently of instrument loading and market-data subscriptions. Omit `product_types` or pass
+`None` in Python to keep execution enabled for all supported products (`PERP`, `SPOT`, and `OUTCOME`).
+HIP-3 builder-deployed perpetuals are included in `PERP`. Set a non-empty list to restrict execution
+to specific products, as in the Spot-only example below. Client construction rejects an empty list.
+
+```python
+from nautilus_trader.adapters.hyperliquid import (
+    HyperliquidExecutionClientConfig,
+    HyperliquidProductType,
+)
+
+config = HyperliquidExecutionClientConfig(
+    product_types=[HyperliquidProductType.SPOT],
+)
+```
+
+Spot and Outcome holdings share a venue endpoint but are filtered separately. Instruments outside
+the configured scope are excluded from bulk position coverage; their absence from a scoped snapshot
+is not evidence that their positions are flat. Startup and reconnect recovery use the same scope.
+The scope is fixed when the client is created.
+
+Order queries, private reports, startup recovery, and reconnect recovery use the configured scope,
+including for previously tracked orders. A Spot-only client does not recover or reconcile Perp
+orders or positions. Configure both `SPOT` and `PERP` to recover and reconcile both product families.
+Account balances and scheduled cancellation remain account-wide: product scope does not isolate
+collateral or change the venue's account-wide scheduled-cancel behavior.
+
+Before narrowing `product_types`, resolve all outstanding orders that would fall outside the new
+scope, or keep an execution client whose scope covers those orders and that remains responsible for
+managing them. For example, before switching to Spot only, cancel any open Perp orders and confirm
+their terminal status, or retain a client that covers Perp. Excluded orders can remain live at the
+venue while the narrowed client rejects their cancellation requests and ignores their execution reports.
+
+When reusing a cache with a narrower scope, set `reconciliation_instrument_ids` to match the
+instruments this node manages. This setting only limits reconciliation checks. Excluded orders retain
+their cached status when absent from scoped reports. In either open-order check mode or the fallback
+single-order query path, the execution manager can repeatedly query out-of-scope orders and consume the
+per-cycle query budget. A generic order-report coverage contract is tracked separately in
+[issue #5569](https://github.com/nautechsystems/nautilus_trader/issues/5569).
+
+Use a single execution client configured with all required products for an account. Complementary
+Spot-only and Perp-only clients for the same account do not establish independent reconciliation
+ownership; the manager can conservatively skip position reconciliation when their coverage differs.
+
 :::note
 Perpetuals are quoted and settled in their dex's collateral token: USDC for standard
 perps, and for HIP-3 dexes possibly another token such as USDH, USDE, or USDT0.
@@ -371,10 +419,28 @@ truncated history from creating positions, but can leave a cached position open 
 when flat positions are omitted from the reports. See
 [bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety).
 
+#### Single-order lookups
+
+`QueryOrder` and `GenerateOrderStatusReport` look up one order in this sequence:
+
+1. If the command carries a client order ID, search `frontendOpenOrders` for its CLOID. A match is
+   the live order, including a replacement under a new venue order ID.
+1. Look up the supplied or cached venue order ID, falling back to `orderStatus` when the order is
+   no longer open.
+1. Without a venue order ID, query `orderStatus` by CLOID. This finds an order that closed before
+   its acceptance arrived, such as a filled IOC order.
+
+- **No match**: An empty open-order response alone does not establish absence. `unknownOid` means
+  the status lookup found no order. `QueryOrder` emits no report; `GenerateOrderStatusReport`
+  returns no report unless its CLOID search failed.
+- **Errors**: `QueryOrder` logs lookup failures. `GenerateOrderStatusReport` returns status-lookup
+  errors, and returns a failed CLOID search as an error when the status lookup finds no order, so
+  reconciliation does not treat a failed lookup as an absent order.
+
 #### Reduce-only fill quantity
 
 Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a position
-smaller than the order. During startup mass status or a single-order lookup by venue order ID, the adapter
+smaller than the order. During startup mass status or a single-order `orderStatus` lookup, the adapter
 clamps such an order to its total fills. Thus, it closes `Filled` at a quantity smaller than the submitted
 size. The clamp applies only when the `userFills` history is complete and under its 2,000-record limit.
 Otherwise the adapter keeps the venue's quantity, and reconciliation can infer the missing fill.
@@ -396,8 +462,8 @@ cached perpetual instruments:
   a venue row cannot be decoded, resolved to an instrument, or converted into a report. Fill and
   historical-order report requests fail the same way.
 - If a targeted HTTP order-status lookup matches an unusable venue row, it returns an error instead of
-  reporting the order as missing. The `GenerateOrderStatusReport` command does the same once no venue order ID
-  fallback remains.
+  reporting the order as missing. The `GenerateOrderStatusReport` command does the same when its `orderStatus`
+  fallback finds no order.
 
 #### Inferred-fill commissions
 
@@ -1042,6 +1108,23 @@ All triggers evaluate the [mark price](https://hyperliquid.gitbook.io/hyperliqui
 Standalone triggers rest at the venue until triggered, regardless of `reduce_only`.
 The adapter always submits grouped (bracket) TP/SL children as reduce-only.
 
+### Bracket orders
+
+The adapter treats an order list as a bracket when its first order is an `OTO` entry that is not
+reduce-only and every other order is a reduce-only `OCO` or `OUO` child of that entry. It submits
+the entry alone and holds the TP/SL children locally until the entry's first fill.
+
+- **Before the first fill**: The children stay `INITIALIZED` and have no venue order, so venue
+  open orders and status reports do not include them.
+- **First entry fill**: The adapter submits the children in one batch.
+- **Entry closed without a fill**: A canceled, rejected, or expired entry emits `OrderCanceled`
+  for each held child.
+- **Cancel of a held child**: The adapter emits `OrderCanceled` without a venue request.
+- **Restart**: The adapter restores held children from cached order lists when it connects, and
+  submits those whose entry already has a fill.
+- **In-flight checks**: A live node tracks each held child as an unacknowledged submission. When
+  its retries run out, it logs a `Submission recovery exhausted` warning and leaves the child unchanged.
+
 ### Market-order pricing
 
 Market orders use IOC limits priced from the best ask for buys or best bid for sells, plus a slippage buffer.
@@ -1428,14 +1511,48 @@ Direct recovery would require tracking retired venue order IDs or draining fills
 
 ## Order books
 
-Each L2 WebSocket message is a snapshot of up to 20 price levels per side, not an incremental update.
-The adapter rebuilds the book with one event group: `Clear` then `Add` deltas, all flagged `F_SNAPSHOT`,
-with `F_LAST` on the final delta.
+The default `book_feed="l2Book"` receives snapshots of up to 20 price levels per side.
+The adapter publishes each complete book as one event group: `Clear` then `Add` deltas, all flagged
+`F_SNAPSHOT`, with `F_LAST` on the final delta.
 
 :::note
 A trader instance maintains one order book per instrument, so all subscribers to an instrument
 share the same book and the same venue-side precision options.
 :::
+
+### Compact web book feed
+
+Set `book_feed="l2"` in `HyperliquidDataClientConfig` to use the web application's compact book feed,
+with up to 20 levels per side. Sparse books contain fewer levels.
+The source is fixed for the client lifetime; strategy subscriptions do not select or switch it.
+
+```python
+config = HyperliquidDataClientConfig(book_feed="l2")
+```
+
+The compact feed sends an initial snapshot followed by compressed updates. The adapter replaces its
+local baseline on a snapshot, removes the previous side's indexed levels before applying price
+upserts, and publishes the reconstructed full book through the same snapshot-style deltas interface.
+Updates are applied in arrival order, including equal timestamps, matching the web reducer.
+
+Once synchronized, each snapshot or update produces a complete event group, including repeated
+timestamps or unchanged levels. Recording subscribers can retain this full stream while strategies
+sample managed books at their chosen cadence.
+
+Strategies continue to call `subscribe_book_deltas` with `BookType.L2_MBP`. Set `managed=True` to read
+the maintained book through `cache.order_book` in `on_book_deltas`; do not apply the deltas a second
+time. These snapshot records describe complete books, not individual exchange order actions.
+
+Compact updates omit per-level order counts. Native depth snapshots retain their 10-level limit
+and report counts as `0` (unavailable) in this mode. Use book deltas to receive up to 20 levels.
+The compact protocol is not listed in the public subscription documentation; its wire behavior
+follows the web application.
+
+Reconnect and targeted resubscribe discard the compact baseline and wait for a new snapshot.
+An update cannot finish snapshot recovery. Invalid indices stop that book's output and trigger
+recovery; malformed compact messages with no identifiable coin reconnect the data socket.
+Deltas and depth share this recovery. If one subscription ends during recovery, the remaining
+subscription resumes after the replacement snapshot. The last unsubscribe cancels recovery.
 
 ### Order book recovery
 
@@ -1474,8 +1591,10 @@ Deltas and depth for an instrument share one `l2Book` stream, so recovering the 
 refreshes depth snapshots. Subscribing to deltas while depth already holds the stream replaces the
 stream, so the book starts from a fresh snapshot. A depth-only stream emits no deltas.
 
-The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
-queued before a replacement can complete recovery once the replacement write finishes.
+For `l2Book`, the client does not correlate subscription acknowledgements with recovery attempts.
+A snapshot queued before a replacement can complete recovery once the replacement write finishes.
+The compact `l2` feed also waits for the current subscribe acknowledgement before accepting its
+baseline, so acknowledgements of replaced subscriptions cannot admit queued old snapshots.
 
 Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only from a
 failed initial write, an invalid frame, or a stale-stream report. Within the retry budget, a replacement that
@@ -1594,8 +1713,9 @@ Recovery requires all of these conditions:
 
 - The order is a cached ordinary limit order sized in base currency and tracked by this client
   since submission, without reduce-only behavior or contingent relationships.
-- At query start, it has one venue order ID, no modification history or pending modify, and no
-  applied fills.
+- At query start, it has no modification history, no pending modify, and no applied fills.
+- At query start, it is open with one venue order ID, or submitted with none because its acceptance
+  never arrived.
 - The venue reports the same order as `Filled`, with quantity and filled quantity equal to its
   cached quantity.
 
@@ -1607,7 +1727,8 @@ price, or fee. Identical records count once; conflicting records for one trade I
 Complete coverage permits recovery even at the 2,000-fill response cap.
 
 The adapter emits validated fills in chronological order, then the ordinary status report. It discards them
-if the binding or order terms change during the history read, or a modify is pending afterward.
+if the order binds to a different venue order ID than the report's, its terms change during the history read,
+or a modify is pending afterward.
 Engine deduplication handles live fills arriving during the request.
 
 Unavailable history, incomplete coverage, or any row that cannot be decoded, resolved to an instrument, or
@@ -1937,33 +2058,40 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `stale_stream_recovery_cooldown_secs`    | `120`     | Seconds between recovery actions per stream; must be positive for recovery to run.                   |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Depth-only or BBO resubscribe attempts before a full WebSocket reconnect.                            |
 | `book_snapshot_timeout_secs`             | `10`      | Initial, reconnect, and recovery snapshot wait in seconds; `0` disables deadlines.                   |
+| `book_feed`                              | `l2Book`  | Fixed book source: documented `l2Book` snapshots or the web application's compact `l2` feed.         |
 | `update_instruments_interval_mins`       | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                               |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                         |
 
+For `request_instrument` and `request_instruments`, `http_timeout_secs` also bounds the entire
+request, including time waiting for another instrument refresh. Failed refreshes, missing requested
+instruments, timeouts, and client shutdown produce a failed completion with the original request ID.
+Partial metadata loads retain their existing best-effort behavior.
+
 ### Execution client configuration options
 
-| Option                          | Default   | Description                                                                                                                                |
-| ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `account_id`                    | `Venue`   | Nautilus account ID; defaults to `HYPERLIQUID-001`.                                                                                        |
-| `private_key`                   | `None`    | EVM key; reads `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                                  |
-| `vault_address`                 | `None`    | Vault address; reads `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` when omitted.                                                      |
-| `account_address`               | `None`    | Master address for agent wallets; reads `HYPERLIQUID_ACCOUNT_ADDRESS` when omitted.                                                        |
-| `environment`                   | `None`    | `MAINNET` or `TESTNET`; `None` resolves to `MAINNET`.                                                                                      |
-| `base_url_ws`                   | `None`    | WebSocket URL override.                                                                                                                    |
-| `base_url_http`                 | `None`    | HTTP info URL override.                                                                                                                    |
-| `base_url_exchange`             | `None`    | Exchange API URL override.                                                                                                                 |
-| `max_retries`                   | `3`       | Read-only `/info` retries after the initial attempt; `0` disables retries.                                                                 |
-| `retry_delay_initial_ms`        | `100`     | Initial full-jitter backoff bound in milliseconds for `/info` retries.                                                                     |
-| `retry_delay_max_ms`            | `5,000`   | Maximum `/info` backoff bound in milliseconds; valid `Retry-After` can exceed it.                                                          |
-| `http_timeout_secs`             | `60`      | REST timeout in seconds.                                                                                                                   |
-| `ws_post_timeout_secs`          | `10`      | WebSocket trading request timeout in seconds.                                                                                              |
-| `normalize_prices`              | `True`    | Normalize order prices to 5 significant figures before submission.                                                                         |
-| `include_builder_attribution`   | `True`    | Zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                          |
-| `market_order_slippage_bps`     | `50`      | MARKET and stop-trigger slippage in bps; overridable in `SubmitOrder.params`.                                                              |
-| `outcome_settlement_poll_secs`  | `0`       | Rust-only HIP-4 `outcomeMeta` polling interval in seconds; disabled as venue fills cover settlement.                                       |
-| `scheduled_cancel_timeout_secs` | `None`    | Account-wide timeout in seconds, at least 15; refreshes every third of the timeout. See [Scheduled cancellation](#scheduled-cancellation). |
-| `proxy_url`                     | `None`    | Optional HTTP and WebSocket proxy.                                                                                                         |
-| `transport_backend`             | `Sockudo` | WebSocket transport backend.                                                                                                               |
+| Option                          | Default           | Description                                                                                                                                |
+| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `product_types`                 | All               | Execution products: `PERP`, `SPOT`, `OUTCOME`; Python accepts `None` for all. See [Execution product scope](#execution-product-scope).     |
+| `account_id`                    | `HYPERLIQUID-001` | Nautilus account ID.                                                                                                                       |
+| `private_key`                   | `None`            | EVM key; reads `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                                  |
+| `vault_address`                 | `None`            | Vault address; reads `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` when omitted.                                                      |
+| `account_address`               | `None`            | Master address for agent wallets; reads `HYPERLIQUID_ACCOUNT_ADDRESS` when omitted.                                                        |
+| `environment`                   | `None`            | `MAINNET` or `TESTNET`; `None` resolves to `MAINNET`.                                                                                      |
+| `base_url_ws`                   | `None`            | WebSocket URL override.                                                                                                                    |
+| `base_url_http`                 | `None`            | HTTP info URL override.                                                                                                                    |
+| `base_url_exchange`             | `None`            | Exchange API URL override.                                                                                                                 |
+| `max_retries`                   | `3`               | Read-only `/info` retries after the initial attempt; `0` disables retries.                                                                 |
+| `retry_delay_initial_ms`        | `100`             | Initial full-jitter backoff bound in milliseconds for `/info` retries.                                                                     |
+| `retry_delay_max_ms`            | `5,000`           | Maximum `/info` backoff bound in milliseconds; valid `Retry-After` can exceed it.                                                          |
+| `http_timeout_secs`             | `60`              | REST timeout in seconds.                                                                                                                   |
+| `ws_post_timeout_secs`          | `10`              | WebSocket trading request timeout in seconds.                                                                                              |
+| `normalize_prices`              | `True`            | Normalize order prices to 5 significant figures before submission.                                                                         |
+| `include_builder_attribution`   | `True`            | Zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                          |
+| `market_order_slippage_bps`     | `50`              | MARKET and stop-trigger slippage in bps; overridable in `SubmitOrder.params`.                                                              |
+| `outcome_settlement_poll_secs`  | `0`               | Rust-only HIP-4 `outcomeMeta` polling interval in seconds; disabled as venue fills cover settlement.                                       |
+| `scheduled_cancel_timeout_secs` | `None`            | Account-wide timeout in seconds, at least 15; refreshes every third of the timeout. See [Scheduled cancellation](#scheduled-cancellation). |
+| `proxy_url`                     | `None`            | Optional HTTP and WebSocket proxy.                                                                                                         |
+| `transport_backend`             | `Sockudo`         | WebSocket transport backend.                                                                                                               |
 
 :::note
 Only `outcome_settlement_poll_secs` is Rust-only; Python always uses its default.

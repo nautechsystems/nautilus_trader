@@ -15,7 +15,7 @@
 
 //! Python bindings for Hyperliquid configuration.
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -56,6 +56,7 @@ impl HyperliquidDataClientConfig {
         stale_stream_recovery_cooldown_secs = None,
         stale_stream_max_targeted_resubscribes = None,
         book_snapshot_timeout_secs = None,
+        book_feed = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -75,12 +76,20 @@ impl HyperliquidDataClientConfig {
         stale_stream_recovery_cooldown_secs: Option<u64>,
         stale_stream_max_targeted_resubscribes: Option<u32>,
         book_snapshot_timeout_secs: Option<u64>,
-    ) -> Self {
+        book_feed: Option<String>,
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+        let book_feed = book_feed
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(|_| to_pyvalue_err("book_feed must be 'l2Book' or 'l2'"))?
+            .unwrap_or(defaults.book_feed);
+
+        Ok(Self {
             private_key: private_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
+            book_feed,
             proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -102,7 +111,13 @@ impl HyperliquidDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        })
+    }
+
+    /// The fixed venue order book source.
+    #[getter]
+    fn book_feed(&self) -> &str {
+        self.book_feed.as_ref()
     }
 
     #[getter]
@@ -140,6 +155,7 @@ impl HyperliquidExecutionClientConfig {
         ws_post_timeout_secs = None,
         transport_backend = None,
         scheduled_cancel_timeout_secs = None,
+        product_types = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -162,6 +178,7 @@ impl HyperliquidExecutionClientConfig {
         ws_post_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         scheduled_cancel_timeout_secs: Option<u64>,
+        product_types: Option<Vec<crate::common::enums::HyperliquidProductType>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -188,6 +205,7 @@ impl HyperliquidExecutionClientConfig {
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             outcome_settlement_poll_secs: defaults.outcome_settlement_poll_secs,
             scheduled_cancel_timeout_secs,
+            product_types: product_types.unwrap_or(defaults.product_types),
         }
     }
 

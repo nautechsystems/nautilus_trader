@@ -10,7 +10,7 @@
     "positions": 225,
     "accounts": 1,
     "account_digest": "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc",
-    "state_digest": "blake3:5cad2028054afec4b9a19753c95538fe71d75ee6e0f9d59df28aa870c97eff7c"
+    "state_digest": "blake3:7df0da1f2aec6bb893d3bd665c9130a3e7534c9002d92dd01d1ec92e5e2ddac1"
   },
   "numerical_values": {
     "/position_snapshots/0/realized_return": "3f83ecc2b2134392",

@@ -463,7 +463,7 @@ pub struct LiveExecutionEngineConfig {
     /// The number of retry attempts for verifying in-flight order status.
     #[builder(default = 5)]
     pub inflight_check_retries: u32,
-    /// Policy when a submitted order exhausts automatic recovery.
+    /// Policy when a submitted order, or a pending cancel or update, exhausts automatic recovery.
     #[builder(default)]
     pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The interval (seconds) between checks for open orders at the venue.
@@ -1865,7 +1865,7 @@ mean_dispatch_ns_clear = 700
 
     #[rstest]
     #[case(0.0)]
-    #[case(0.5e-9)]
+    #[case(0.4e-9)]
     #[case(-1.0)]
     #[case(f64::NAN)]
     #[case(f64::INFINITY)]
@@ -2161,7 +2161,7 @@ mean_dispatch_ns_clear = 700
         assert_eq!(config.inflight_check_retries, 5);
         assert_eq!(
             config.submission_recovery_policy,
-            SubmissionRecoveryPolicy::ResolveLocally,
+            SubmissionRecoveryPolicy::RetainUnresolved,
         );
         assert_eq!(config.open_check_threshold_ms, 5_000);
         assert_eq!(config.open_check_lookback_mins, Some(60));
@@ -2181,11 +2181,11 @@ mean_dispatch_ns_clear = 700
 
         assert_eq!(
             deserialized.submission_recovery_policy,
-            SubmissionRecoveryPolicy::ResolveLocally,
+            SubmissionRecoveryPolicy::RetainUnresolved,
         );
         assert_eq!(
             built.submission_recovery_policy,
-            SubmissionRecoveryPolicy::ResolveLocally,
+            SubmissionRecoveryPolicy::RetainUnresolved,
         );
     }
 

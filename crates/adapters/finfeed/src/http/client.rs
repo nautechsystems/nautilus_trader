@@ -40,6 +40,7 @@ use ustr::Ustr;
 
 use super::{
     error::Error,
+    kalshi::{Event as KalshiEvent, EventResponse, Market as KalshiMarket, MarketResponse},
     models::{
         ActivityBatch, ActivityCurrent, Book, BookEvent, Exchange, Market, MarketsPage, Ohlcv,
         OhlcvPeriod, Quote, Trade,
@@ -60,10 +61,11 @@ pub const REST_URL: &str = "https://api.prediction-markets.finfeedapi.com/v1/";
 ///
 /// # Local Attempt Allowance
 ///
-/// The allowance counts managed `HttpClient` invocations, including retries, with no refunds.
+/// The allowance counts managed FinFeed `HttpClient` invocations, including retries, with no refunds.
 /// The native transport can resend twice after remote HTTP/2 `REFUSED_STREAM` or
 /// `GOAWAY(NO_ERROR)` errors without consuming allowance or pacing. These limits do not
 /// establish billing, account-wide quota, or continuity guarantees.
+/// Public Kalshi metadata requests share transport controls but do not consume the allowance.
 ///
 /// # Timeouts and Retries
 ///
@@ -85,7 +87,7 @@ pub struct FinFeedHttpConfig {
     /// Maximum managed requests in flight on this instance.
     #[builder(default = FinFeedHttpConfig::default().max_concurrent_requests)]
     pub max_concurrent_requests: usize,
-    /// Lifetime managed attempt allowance, including failed and canceled attempts after admission.
+    /// Lifetime FinFeed attempt allowance, including failed and canceled attempts after admission.
     #[builder(default = FinFeedHttpConfig::default().attempt_budget)]
     pub attempt_budget: u64,
     /// Minimum spacing between managed attempt starts, in milliseconds.
@@ -99,6 +101,9 @@ pub struct FinFeedHttpConfig {
     #[serde(deserialize_with = "deserialize_retry")]
     #[builder(default = FinFeedHttpConfig::default().retry)]
     pub retry: RetryConfig,
+    /// Public Kalshi metadata endpoint override, including the API version prefix.
+    /// Accepts HTTPS or loopback HTTP; `None` uses production. FinFeed credentials are never sent there.
+    pub kalshi_metadata_url: Option<SecretString>,
 }
 
 impl Default for FinFeedHttpConfig {
@@ -116,6 +121,7 @@ impl Default for FinFeedHttpConfig {
                 max_elapsed_ms: Some(600_000),
                 ..RetryConfig::default()
             },
+            kalshi_metadata_url: None,
         }
     }
 }
@@ -136,6 +142,7 @@ pub struct FinFeedHttpClient {
     attempts_remaining: AtomicU64,
     retry: RetryManager<Error>,
     cancellation: CancellationToken,
+    kalshi_base_url: ConnectionUrl,
 }
 
 impl FinFeedHttpClient {
@@ -147,38 +154,7 @@ impl FinFeedHttpClient {
     /// or transport construction fails.
     pub fn new(api_key: Option<SecretString>, config: FinFeedHttpConfig) -> Result<Self, Error> {
         let api_key = resolve_api_key(api_key)?;
-        let mut base_url = Url::parse(config.base_url.expose_secret())
-            .map_err(|_| Error::Validation("invalid base URL".into()))?;
-
-        let loopback = base_url.host_str().is_some_and(|host| {
-            host == "localhost"
-                || host
-                    .trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
-        });
-
-        if !(base_url.scheme() == "https" || (base_url.scheme() == "http" && loopback))
-            || base_url.host_str().is_none()
-            || !base_url.username().is_empty()
-            || base_url.password().is_some()
-            || base_url.query().is_some()
-            || base_url.fragment().is_some()
-            || config
-                .base_url
-                .expose_secret()
-                .contains(api_key.expose_secret())
-        {
-            return Err(Error::Validation(
-                "base URL must be HTTPS or loopback HTTP without credentials, query, or fragment"
-                    .into(),
-            ));
-        }
-
-        if !base_url.path().ends_with('/') {
-            base_url.set_path(&format!("{}/", base_url.path()));
-        }
-
+        let base_url = endpoint_url(&config.base_url, &api_key)?;
         if let Some(proxy) = &config.proxy_url {
             let proxy = Url::parse(proxy.expose_secret())
                 .map_err(|_| Error::Validation("invalid proxy URL".into()))?;
@@ -196,6 +172,17 @@ impl FinFeedHttpClient {
         }
 
         validate_controls(&config)?;
+
+        let kalshi_endpoint = config.kalshi_metadata_url.as_ref().map_or(
+            "https://external-api.kalshi.com/trade-api/v2/",
+            SecretString::expose_secret,
+        );
+        let kalshi_endpoint = SecretString::from(kalshi_endpoint);
+
+        let kalshi_base_url = endpoint_url(&kalshi_endpoint, &api_key).map_err(|_| {
+            Error::Validation("invalid public Kalshi metadata configuration".into())
+        })?;
+
         let client = HttpClient::builder()
             .timeout_secs(config.timeout_secs)
             .redact_url(true)
@@ -219,10 +206,11 @@ impl FinFeedHttpClient {
             attempts_remaining: AtomicU64::new(config.attempt_budget),
             retry: RetryManager::new(config.retry),
             cancellation: CancellationToken::new(),
+            kalshi_base_url: kalshi_base_url.as_str().into(),
         })
     }
 
-    /// Permanently cancels pending and future requests, including admission and retry waits.
+    /// Permanently cancels pending and future requests, including local admission and retry waits.
     ///
     /// Construct a new client to make further requests.
     pub fn cancel(&self) {
@@ -637,10 +625,43 @@ impl FinFeedHttpClient {
         Err(Error::Response("active page bound exceeded"))
     }
 
+    pub(crate) async fn kalshi_metadata(
+        &self,
+        ticker: &str,
+        event_ticker: &str,
+    ) -> Result<(KalshiMarket, KalshiEvent), Error> {
+        let market = match self
+            .get_from::<MarketResponse, _>(&["markets", ticker], &(), false)
+            .await
+        {
+            Err(Error::Http { status: 404, .. }) => {
+                self.get_from(&["historical", "markets", ticker], &(), false)
+                    .await
+            }
+            result => result,
+        }
+        .map_err(|_| Error::KalshiMetadata)?;
+
+        let event: EventResponse = self
+            .get_from(&["events", event_ticker], &(), false)
+            .await
+            .map_err(|_| Error::KalshiMetadata)?;
+        Ok((market.market, event.event))
+    }
+
     async fn get<T: DeserializeOwned, Q: Serialize>(
         &self,
         path: &[&str],
         query: &Q,
+    ) -> Result<T, Error> {
+        self.get_from(path, query, true).await
+    }
+
+    async fn get_from<T: DeserializeOwned, Q: Serialize>(
+        &self,
+        path: &[&str],
+        query: &Q,
+        finfeed: bool,
     ) -> Result<T, Error> {
         if path
             .iter()
@@ -651,7 +672,13 @@ impl FinFeedHttpClient {
             ));
         }
 
-        let mut url = Url::parse(self.base_url.expose())
+        let base_url = if finfeed {
+            &self.base_url
+        } else {
+            &self.kalshi_base_url
+        };
+
+        let mut url = Url::parse(base_url.expose())
             .map_err(|_| Error::Validation("invalid base URL".into()))?;
         url.path_segments_mut()
             .map_err(|()| Error::Validation("invalid base URL path".into()))?
@@ -659,7 +686,11 @@ impl FinFeedHttpClient {
             .extend(path);
         self.retry
             .invocation(
-                "FinFeed GET",
+                if finfeed {
+                    "FinFeed GET"
+                } else {
+                    "Public Kalshi metadata GET"
+                },
                 || async {
                     let _permit = self
                         .concurrency
@@ -671,22 +702,25 @@ impl FinFeedHttpClient {
                         time::sleep_until(deadline).await;
                     }
 
-                    self.attempts_remaining
-                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                            remaining.checked_sub(1)
-                        })
-                        .map_err(|_| Error::AttemptBudget)?;
+                    if finfeed {
+                        self.attempts_remaining
+                            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                                remaining.checked_sub(1)
+                            })
+                            .map_err(|_| Error::AttemptBudget)?;
+                    }
 
                     *next = Some(time::Instant::now() + self.interval);
                     drop(next);
-                    let headers = HashMap::from([
-                        (
+                    let mut headers = HashMap::from([("Accept".into(), "application/json".into())]);
+                    if finfeed {
+                        headers.insert(
                             "Authorization".into(),
                             self.api_key.expose_secret().to_owned(),
-                        ),
-                        ("X-Referrer".into(), "nautilus".into()),
-                        ("Accept".into(), "application/json".into()),
-                    ]);
+                        );
+                        headers.insert("X-Referrer".into(), "nautilus".into());
+                    }
+
                     let response = self
                         .client
                         .request_with_params(
@@ -720,6 +754,39 @@ impl FinFeedHttpClient {
             .execute()
             .await
     }
+}
+
+fn endpoint_url(endpoint: &SecretString, api_key: &SecretString) -> Result<Url, Error> {
+    let mut base_url = Url::parse(endpoint.expose_secret())
+        .map_err(|_| Error::Validation("invalid base URL".into()))?;
+
+    let loopback = base_url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+
+    if !(base_url.scheme() == "https" || (base_url.scheme() == "http" && loopback))
+        || base_url.host_str().is_none()
+        || !base_url.username().is_empty()
+        || base_url.password().is_some()
+        || base_url.query().is_some()
+        || base_url.fragment().is_some()
+        || endpoint.expose_secret().contains(api_key.expose_secret())
+    {
+        return Err(Error::Validation(
+            "base URL must be HTTPS or loopback HTTP without credentials, query, or fragment"
+                .into(),
+        ));
+    }
+
+    if !base_url.path().ends_with('/') {
+        base_url.set_path(&format!("{}/", base_url.path()));
+    }
+
+    Ok(base_url)
 }
 
 fn deserialize_retry<'de, D>(deserializer: D) -> Result<RetryConfig, D::Error>

@@ -67,7 +67,7 @@ impl FinFeedDataClientConfig {
     /// Python exposes nested Rust HTTP controls as flat constructor keywords:
     ///
     /// - `http`: `base_url_http`, `proxy_url`, `http_timeout_secs`, `max_concurrent_requests`,
-    ///   `attempt_budget`, and `min_request_interval_ms`.
+    ///   `attempt_budget`, `min_request_interval_ms`, and `kalshi_metadata_url`.
     /// - `http.retry`: `max_retries`, `retry_delay_initial_ms`, `retry_delay_max_ms`,
     ///   `retry_backoff_factor`, `retry_jitter_ms`, `retry_operation_timeout_ms`,
     ///   `retry_immediate_first`, and `retry_max_elapsed_ms`.
@@ -101,6 +101,7 @@ impl FinFeedDataClientConfig {
         poll_interval_ms = None,
         poll_limit = None,
         connect_timeout_secs = None,
+        kalshi_metadata_url = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -123,6 +124,7 @@ impl FinFeedDataClientConfig {
         poll_interval_ms: Option<u64>,
         poll_limit: Option<u32>,
         connect_timeout_secs: Option<u64>,
+        kalshi_metadata_url: Option<String>,
     ) -> Self {
         let defaults = Self::default();
 
@@ -143,6 +145,7 @@ impl FinFeedDataClientConfig {
                 retry_operation_timeout_ms,
                 retry_immediate_first,
                 retry_max_elapsed_ms,
+                kalshi_metadata_url,
             ),
             instruments: instruments.unwrap_or(defaults.instruments),
             poll_interval_ms: poll_interval_ms.unwrap_or(defaults.poll_interval_ms),
@@ -158,7 +161,16 @@ impl FinFeedDataClientConfig {
         self.http.base_url.expose_secret()
     }
 
-    /// Exact Polymarket Yes/No outcomes loaded and published before readiness.
+    /// Public Kalshi metadata endpoint override, or `None` for production.
+    #[getter]
+    fn kalshi_metadata_url(&self) -> Option<&str> {
+        self.http
+            .kalshi_metadata_url
+            .as_ref()
+            .map(SecretString::expose_secret)
+    }
+
+    /// Exact Polymarket or Kalshi Yes/No outcomes loaded and published before readiness.
     #[getter]
     fn instruments(&self) -> Vec<FinFeedInstrumentSelection> {
         self.instruments.clone()
@@ -176,7 +188,7 @@ impl FinFeedDataClientConfig {
         self.http.max_concurrent_requests
     }
 
-    /// Lifetime managed attempt allowance, including failed and canceled attempts after admission.
+    /// Lifetime FinFeed attempt allowance, including failed and canceled attempts after admission.
     #[getter]
     fn attempt_budget(&self) -> u64 {
         self.http.attempt_budget
@@ -303,6 +315,7 @@ pub(super) fn http_config(
     retry_operation_timeout_ms: Option<u64>,
     retry_immediate_first: Option<bool>,
     retry_max_elapsed_ms: Option<u64>,
+    kalshi_metadata_url: Option<String>,
 ) -> FinFeedHttpConfig {
     let defaults = FinFeedHttpConfig::default();
 
@@ -328,6 +341,7 @@ pub(super) fn http_config(
             immediate_first: retry_immediate_first.unwrap_or(defaults.retry.immediate_first),
             max_elapsed_ms: retry_max_elapsed_ms.or(defaults.retry.max_elapsed_ms),
         },
+        kalshi_metadata_url: kalshi_metadata_url.map(SecretString::from),
     }
 }
 
@@ -350,6 +364,12 @@ mod tests {
                 .unwrap();
             kwargs
                 .set_item("proxy_url", "http://user:proxy-secret@localhost:8124")
+                .unwrap();
+            kwargs
+                .set_item(
+                    "kalshi_metadata_url",
+                    "http://localhost:8125/metadata-sentinel/",
+                )
                 .unwrap();
             let selection = Py::new(
                 py,
@@ -385,6 +405,23 @@ mod tests {
                 .call((), Some(&kwargs))
                 .unwrap();
             let config: FinFeedDataClientConfig = object.extract().unwrap();
+            assert_eq!(
+                config
+                    .http
+                    .kalshi_metadata_url
+                    .as_ref()
+                    .unwrap()
+                    .expose_secret(),
+                "http://localhost:8125/metadata-sentinel/"
+            );
+            assert_eq!(
+                object
+                    .getattr("kalshi_metadata_url")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "http://localhost:8125/metadata-sentinel/"
+            );
             assert_eq!(
                 config.api_key.as_ref().unwrap().expose_secret(),
                 "projection-secret"

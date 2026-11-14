@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "a7ea5c90472753c7c54892b60d17b396a5e4d52f"
+revision = "f415b95b1ba7bb01d85be74179143c8f589b071a"
 manifest_sha256 = "e4b3be265c62ccd21a5655dc5b68e98e9e69549acc767310c0d9d9d59f813961"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -38,13 +38,13 @@ executable = false
 [[file]]
 artifact = "pre-commit-zizmor"
 path = ".nautilus-engineering/pre-commit/zizmor.yaml"
-sha256 = "87887f9f623502a425f560e8a96f86a18857a7c30fd852d65418f8a262a82190"
+sha256 = "a2a9e2f97dbddb267a8a69f57e3b0f52cca53583205027518a00baf6bab3f681"
 executable = false
 
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "1701cc3d98a5ba539ae499b1a5eb44e41ab21c91755cf660d3b4012b80241f9e"
+sha256 = "3b0b367b561af60d6842f769c06198b463b15b050b3fadc5162d8d5c21768801"
 executable = false
 
 [[file]]

@@ -51,9 +51,9 @@ members = [
 ]
 
 [workspace.package]
-version = "0.68.0"
+version = "0.69.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-only"
 categories = ["finance", "simulation", "asynchronous"]
@@ -69,53 +69,53 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-nautilus-analysis = { path = "crates/analysis", version = "0.68.0" }
-nautilus-backtest = { path = "crates/backtest", version = "0.68.0" }
-nautilus-common = { path = "crates/common", version = "0.68.0" }
-nautilus-core = { path = "crates/core", version = "0.68.0" }
-nautilus-cryptography = { path = "crates/cryptography", version = "0.68.0" }
-nautilus-data = { path = "crates/data", version = "0.68.0" }
-nautilus-execution = { path = "crates/execution", version = "0.68.0" }
-nautilus-indicators = { path = "crates/indicators", version = "0.68.0" }
-nautilus-infrastructure = { path = "crates/infrastructure", version = "0.68.0", default-features = false }
-nautilus-live = { path = "crates/live", version = "0.68.0", default-features = false }
-nautilus-macros = { path = "crates/macros", version = "0.68.0" }
-nautilus-model = { path = "crates/model", version = "0.68.0" }
-nautilus-network = { path = "crates/network", version = "0.68.0", default-features = false }
-nautilus-persistence = { path = "crates/persistence", version = "0.68.0" }
-nautilus-portfolio = { path = "crates/portfolio", version = "0.68.0" }
-nautilus-risk = { path = "crates/risk", version = "0.68.0" }
-nautilus-serialization = { path = "crates/serialization", version = "0.68.0" }
-nautilus-system = { path = "crates/system", version = "0.68.0" }
-nautilus-testkit = { path = "crates/testkit", version = "0.68.0", default-features = false }
-nautilus-trading = { path = "crates/trading", version = "0.68.0" }
+nautilus-analysis = { path = "crates/analysis", version = "0.69.0" }
+nautilus-backtest = { path = "crates/backtest", version = "0.69.0" }
+nautilus-common = { path = "crates/common", version = "0.69.0" }
+nautilus-core = { path = "crates/core", version = "0.69.0" }
+nautilus-cryptography = { path = "crates/cryptography", version = "0.69.0" }
+nautilus-data = { path = "crates/data", version = "0.69.0" }
+nautilus-execution = { path = "crates/execution", version = "0.69.0" }
+nautilus-indicators = { path = "crates/indicators", version = "0.69.0" }
+nautilus-infrastructure = { path = "crates/infrastructure", version = "0.69.0", default-features = false }
+nautilus-live = { path = "crates/live", version = "0.69.0", default-features = false }
+nautilus-macros = { path = "crates/macros", version = "0.69.0" }
+nautilus-model = { path = "crates/model", version = "0.69.0" }
+nautilus-network = { path = "crates/network", version = "0.69.0", default-features = false }
+nautilus-persistence = { path = "crates/persistence", version = "0.69.0" }
+nautilus-portfolio = { path = "crates/portfolio", version = "0.69.0" }
+nautilus-risk = { path = "crates/risk", version = "0.69.0" }
+nautilus-serialization = { path = "crates/serialization", version = "0.69.0" }
+nautilus-system = { path = "crates/system", version = "0.69.0" }
+nautilus-testkit = { path = "crates/testkit", version = "0.69.0", default-features = false }
+nautilus-trading = { path = "crates/trading", version = "0.69.0" }
 
 # -----------------------------------------------------------------------------
 # Adapters
 #
 # Note: default-features = false keeps high-precision selection explicit
 # -----------------------------------------------------------------------------
-nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.68.0" }
-nautilus-betfair = { path = "crates/adapters/betfair", version = "0.68.0", default-features = false }
-nautilus-binance = { path = "crates/adapters/binance", version = "0.68.0", default-features = false }
-nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.68.0" }
-nautilus-bybit = { path = "crates/adapters/bybit", version = "0.68.0", default-features = false }
-nautilus-coinapi = { path = "crates/adapters/coinapi", version = "0.68.0", default-features = false }
-nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.68.0", default-features = false }
-nautilus-databento = { path = "crates/adapters/databento", version = "0.68.0", default-features = false }
-nautilus-deribit = { path = "crates/adapters/deribit", version = "0.68.0", default-features = false }
-nautilus-derive = { path = "crates/adapters/derive", version = "0.68.0", default-features = false }
-nautilus-dydx = { path = "crates/adapters/dydx", version = "0.68.0", default-features = false }
-nautilus-finfeed = { path = "crates/adapters/finfeed", version = "0.68.0", default-features = false }
-nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.68.0", default-features = false }
-nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.68.0" }
-nautilus-kalshi = { path = "crates/adapters/kalshi", version = "0.68.0", default-features = false }
-nautilus-kraken = { path = "crates/adapters/kraken", version = "0.68.0", default-features = false }
-nautilus-lighter = { path = "crates/adapters/lighter", version = "0.68.0", default-features = false }
-nautilus-okx = { path = "crates/adapters/okx", version = "0.68.0", default-features = false }
-nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.68.0", default-features = false }
-nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.68.0", default-features = false }
-nautilus-tardis = { path = "crates/adapters/tardis", version = "0.68.0", default-features = false }
+nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.69.0" }
+nautilus-betfair = { path = "crates/adapters/betfair", version = "0.69.0", default-features = false }
+nautilus-binance = { path = "crates/adapters/binance", version = "0.69.0", default-features = false }
+nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.69.0" }
+nautilus-bybit = { path = "crates/adapters/bybit", version = "0.69.0", default-features = false }
+nautilus-coinapi = { path = "crates/adapters/coinapi", version = "0.69.0", default-features = false }
+nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.69.0", default-features = false }
+nautilus-databento = { path = "crates/adapters/databento", version = "0.69.0", default-features = false }
+nautilus-deribit = { path = "crates/adapters/deribit", version = "0.69.0", default-features = false }
+nautilus-derive = { path = "crates/adapters/derive", version = "0.69.0", default-features = false }
+nautilus-dydx = { path = "crates/adapters/dydx", version = "0.69.0", default-features = false }
+nautilus-finfeed = { path = "crates/adapters/finfeed", version = "0.69.0", default-features = false }
+nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.69.0", default-features = false }
+nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.69.0" }
+nautilus-kalshi = { path = "crates/adapters/kalshi", version = "0.69.0", default-features = false }
+nautilus-kraken = { path = "crates/adapters/kraken", version = "0.69.0", default-features = false }
+nautilus-lighter = { path = "crates/adapters/lighter", version = "0.69.0", default-features = false }
+nautilus-okx = { path = "crates/adapters/okx", version = "0.69.0", default-features = false }
+nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.69.0", default-features = false }
+nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.69.0", default-features = false }
+nautilus-tardis = { path = "crates/adapters/tardis", version = "0.69.0", default-features = false }
 
 # -----------------------------------------------------------------------------
 # Core dependencies
@@ -129,7 +129,7 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = [
   "serde",
 ] }
 anyhow = "1.0.104"
-arc-swap = "1.9.3"
+arc-swap = "1.9.5"
 arraydeque = "0.5.1"
 arrow = { version = "59.3.2", default-features = false, features = [
   "ipc",
@@ -159,7 +159,7 @@ derive_builder = { version = "0.20.2", default-features = false, features = [
 dotenvy = "0.15.7"
 ed25519-dalek = "3.0.0"
 enum_dispatch = "0.3.13"
-flate2 = "1.1.10"
+flate2 = "1.1.11"
 futures = { version = "0.3.34", default-features = false, features = [
   "std",
   "async-await",
@@ -188,7 +188,7 @@ hyper-util = { version = "0.1.21", default-features = false, features = [
 implied-vol = { version = "2.1.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 itchy = "0.3"
-jiff = { version = "0.2.38", default-features = false, features = [
+jiff = { version = "0.2.39", default-features = false, features = [
   "perf-inline",
   "serde",
   "std",
@@ -238,7 +238,7 @@ rand = { version = "0.10.3", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redb = { version = "4.4.0", default-features = false }
+redb = { version = "4.5.0", default-features = false }
 redis = { version = "1.8.1", default-features = false, features = [
   "connection-manager",
   "sentinel",
@@ -274,9 +274,9 @@ serde_json = { version = "1.0.154", default-features = false, features = [
   "std",
 ] }
 serde_urlencoded = "0.7.1"
-smallvec = { version = "1.16.4", features = ["serde"] }
+smallvec = { version = "1.16.5", features = ["serde"] }
 socket2 = { version = "0.6.5", features = ["all"] }
-sockudo-ws = { version = "3.1.0", default-features = false, features = [
+sockudo-ws = { version = "3.1.1", default-features = false, features = [
   "simd",
   "fastrand",
   "rustls-webpki-roots",
@@ -328,7 +328,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 ] }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.29.0", features = ["v4", "serde"] }
+uuid = { version = "1.29.2", features = ["v4", "serde"] }
 webpki-roots = "1.0.11"
 zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 
@@ -398,7 +398,7 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 [workspace.metadata.tools]
 cargo-codspeed = "6.0.0"
 cbindgen = "0.29.4"
-flamegraph = "0.6.14"
+flamegraph = "0.6.15"
 lychee = "0.24.2"
 
 # cargo-vet supply chain security configuration

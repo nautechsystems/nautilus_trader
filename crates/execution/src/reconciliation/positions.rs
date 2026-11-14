@@ -586,7 +586,7 @@ fn extract_instrument_reports(
 
     for (id, order) in mass_status.order_reports() {
         if order.instrument_id == instrument_id {
-            orders.insert(id, order.clone());
+            orders.insert(id, order);
         }
     }
 
@@ -640,7 +640,7 @@ fn extract_fills_for_instrument(
     // Seed order_map
     for (id, order) in mass_status.order_reports() {
         if order.instrument_id == instrument_id {
-            order_map.insert(id, order.clone());
+            order_map.insert(id, order);
         }
     }
 
@@ -670,7 +670,7 @@ fn extract_fills_for_instrument(
                 fill_map
                     .entry(venue_order_id)
                     .or_insert_with(Vec::new)
-                    .push(fill.clone());
+                    .push(fill);
             }
         }
     }

@@ -21,7 +21,7 @@ use crate::{
         parse::is_false_or_none,
     },
     http::models::{
-        HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
+        Cloid, HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
         HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
         HyperliquidExchangePlaceOrderRequest,
     },
@@ -139,6 +139,16 @@ pub struct OrderStatusParams {
     pub oid: u64,
 }
 
+/// Parameters for order status request by CLOID.
+///
+/// Hyperliquid names this field `oid`, but accepts a CLOID in place of the numeric order ID.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrderStatusByCloidParams {
+    pub user: String,
+    #[serde(rename = "oid")]
+    pub cloid: Cloid,
+}
+
 /// Parameters for open orders request.
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenOrdersParams {
@@ -195,6 +205,7 @@ pub enum InfoRequestParams {
     RecentTrades(RecentTradesParams),
     UserFills(UserFillsParams),
     OrderStatus(OrderStatusParams),
+    OrderStatusByCloid(OrderStatusByCloidParams),
     OpenOrders(OpenOrdersParams),
     ClearinghouseState(ClearinghouseStateParams),
     SpotClearinghouseState(SpotClearinghouseStateParams),
@@ -306,6 +317,17 @@ impl InfoRequest {
             params: InfoRequestParams::OrderStatus(OrderStatusParams {
                 user: user.to_string(),
                 oid,
+            }),
+        }
+    }
+
+    /// Creates a request to get order status for a user by CLOID.
+    pub(crate) fn order_status_by_cloid(user: &str, cloid: Cloid) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::OrderStatus,
+            params: InfoRequestParams::OrderStatusByCloid(OrderStatusByCloidParams {
+                user: user.to_string(),
+                cloid,
             }),
         }
     }
@@ -623,6 +645,27 @@ mod tests {
         assert_eq!(req.request_type, HyperliquidInfoRequestType::RecentTrades);
         let json = serde_json::to_string(&req).unwrap();
         assert_eq!(json, r#"{"type":"recentTrades","coin":"BTC"}"#);
+    }
+
+    #[rstest]
+    fn test_info_request_order_status_serialization() {
+        let cloid = Cloid::from_hex("0x00000000000000000000000000000abc").unwrap();
+        let by_oid = serde_json::to_value(InfoRequest::order_status("0xabc", 42)).unwrap();
+        let by_cloid =
+            serde_json::to_value(InfoRequest::order_status_by_cloid("0xabc", cloid)).unwrap();
+
+        assert_eq!(
+            by_oid,
+            serde_json::json!({"type": "orderStatus", "user": "0xabc", "oid": 42})
+        );
+        assert_eq!(
+            by_cloid,
+            serde_json::json!({
+                "type": "orderStatus",
+                "user": "0xabc",
+                "oid": "0x00000000000000000000000000000abc",
+            })
+        );
     }
 
     #[rstest]

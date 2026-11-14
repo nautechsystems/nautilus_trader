@@ -93,6 +93,33 @@ The data and execution clients load all instruments for their configured `produc
 connect. The default is `LINEAR`. Include each product type required by your subscriptions or
 orders.
 
+## Reconciliation
+
+`BybitExecutionClientConfig.load_ids` limits reconciliation to the listed instrument IDs.
+It does not limit instrument loading or order submission. Instrument loading still follows
+`product_types`. `None` or an empty list includes every configured product type. IDs must use the
+`BYBIT` venue, an uppercase symbol, and a configured product-type suffix.
+
+Uncached instruments follow the
+[instrument availability](../concepts/execution/reconciliation.md#instrument-availability) rules.
+Bybit uses the execution client's `load_ids` for this scope.
+
+- A closed order or fill with an uncached in-scope instrument fails direct report requests.
+- With `reconciliation_lookback_mins`, mass status records one cutoff at millisecond precision
+  for order and fill history, marks missing historical instruments or unlinked fills incomplete,
+  and keeps open orders of any age.
+- Lookbacks of 24 hours or longer mark history incomplete because fully canceled, rejected,
+  and deactivated orders have only
+  [24-hour retention](https://bybit-exchange.github.io/docs/v5/order/order-list).
+  The default venue order-history query covers seven days. With a lookback longer than seven days,
+  the fill query returns only the first seven days after the cutoff, so recent fills can be absent.
+- Bulk option fill queries use Bybit's
+  [BTC default](https://bybit-exchange.github.io/docs/v5/order/execution).
+  Bounded mass status marks history incomplete whenever `OPTION` is configured.
+- Order parse and commission construction errors fail the request.
+
+See [Reconciliation reports](#reconciliation-reports) for report collection and order status mapping.
+
 ## Environments
 
 Bybit provides three trading environments. Configure the appropriate
@@ -1215,6 +1242,7 @@ The product types for each client must be specified in the configurations.
 | `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                                               |
 | `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                                              |
 | `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                                               |
+| `load_ids`                  | `None`     | Instrument IDs included in reconciliation. See [Reconciliation](#reconciliation).                                                          |
 
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.

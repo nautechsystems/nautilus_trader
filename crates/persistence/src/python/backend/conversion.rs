@@ -155,9 +155,7 @@ pub(crate) fn write_record_params_from_py(
     params: Option<Py<PyDict>>,
 ) -> PyResult<Option<Params>> {
     let mut params = match params {
-        Some(params) => from_pydict(py, &params)?
-            .map(|params| IndexMap::clone(&params))
-            .unwrap_or_default(),
+        Some(params) => from_pydict(py, &params)?.map_or_default(|params| IndexMap::clone(&params)),
         None => IndexMap::new(),
     };
 

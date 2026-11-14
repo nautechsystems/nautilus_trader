@@ -3029,6 +3029,10 @@ mod tests {
     #[case::batch_cancel_rejected(OKXWsOperation::BatchCancelOrders, "50124", true)]
     #[case::amend_rejected(OKXWsOperation::AmendOrder, "50124", true)]
     #[case::batch_amend_rejected(OKXWsOperation::BatchAmendOrders, "50124", true)]
+    #[case::submit_expired(OKXWsOperation::Order, "50036", true)]
+    #[case::batch_submit_expired(OKXWsOperation::BatchOrders, "50036", true)]
+    #[case::amend_expired(OKXWsOperation::AmendOrder, "50036", true)]
+    #[case::batch_amend_expired(OKXWsOperation::BatchAmendOrders, "50036", true)]
     #[case::submit_timeout(OKXWsOperation::Order, "50004", false)]
     #[case::cancel_timeout(OKXWsOperation::CancelOrder, "50004", false)]
     #[case::amend_timeout(OKXWsOperation::AmendOrder, "50004", false)]
@@ -3116,7 +3120,7 @@ mod tests {
             );
 
             if rejected {
-                let reason = "OKX error 50124: Venue reason";
+                let reason = format!("OKX error {code}: Venue reason");
 
                 match &events[index] {
                     ExecutionEvent::Order(OrderEventAny::Rejected(event)) if submit => {

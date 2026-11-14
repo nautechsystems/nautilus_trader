@@ -112,7 +112,10 @@ class HyperliquidDataClientConfig:
         stale_stream_recovery_cooldown_secs: int | None = None,
         stale_stream_max_targeted_resubscribes: int | None = None,
         book_snapshot_timeout_secs: int | None = None,
+        book_feed: str | None = None,
     ) -> None: ...
+    @property
+    def book_feed(self) -> str: ...
     @property
     def has_proxy_url(self) -> bool: ...
 
@@ -123,6 +126,8 @@ class HyperliquidDataClientFactory:
 
 @typing.final
 class HyperliquidExecutionClientConfig:
+    @property
+    def product_types(self) -> list[HyperliquidProductType]: ...
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -178,6 +183,7 @@ class HyperliquidExecutionClientConfig:
         ws_post_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         scheduled_cancel_timeout_secs: int | None = None,
+        product_types: typing.Sequence[HyperliquidProductType] | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

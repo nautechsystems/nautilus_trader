@@ -117,6 +117,16 @@ impl OrderAny {
         }
     }
 
+    /// Returns whether standalone venue fills determine this synthetic order's quantity.
+    ///
+    /// Each distinct fill can increase the quantity, including after the order is filled.
+    /// Requires a never-submitted market order that reconciliation initialized with
+    /// [`super::FILL_REPORT_ORDER_TAG`]; a user tag alone does not qualify.
+    #[must_use]
+    pub fn is_fill_report_order(&self) -> bool {
+        matches!(self, Self::Market(order) if order.is_fill_report_order())
+    }
+
     /// Assigns the order to the list identified by `id`.
     ///
     /// # Panics

@@ -2113,8 +2113,7 @@ impl FeedHandler {
             return Vec::new();
         };
 
-        // The position frame carries no top-level event timestamp, so stamp
-        // ts_event with the wall-clock time the handler observed the frame.
+        // Account transaction times stay on raw frames; reports use arrival time
         let ts_event = ts_init;
 
         let mut reports = Vec::new();
@@ -3434,6 +3433,80 @@ mod tests {
                 }
             }
             other => panic!("expected execution reports, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::positions(include_str!("../../test_data/ws_account_all_positions_transaction_time.json"), true)]
+    #[case::assets(include_str!("../../test_data/ws_account_all_assets_transaction_time.json"), false)]
+    fn account_transaction_time_preserves_raw_frames_and_receive_order(
+        #[case] fixture: &str,
+        #[case] positions: bool,
+    ) {
+        let mut handler = make_handler_with_account();
+        let mut raw_handler = make_handler_with_account();
+        raw_handler.exec_account = None;
+        let stats: LighterWsFrame = serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
+        handler.handle_frame(stats, UnixNanos::from(10));
+
+        for (index, (transaction_time, amount)) in [
+            (200, "1.5000"),
+            (200, "2.5000"),
+            (100, "3.5000"),
+            (100, "3.5000"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut value: serde_json::Value = serde_json::from_str(fixture).unwrap();
+            value["transaction_time"] = json!(transaction_time);
+            if positions {
+                value["positions"]["0"]["position"] = json!(amount);
+            } else {
+                value["assets"]["3"]["balance"] = json!(amount);
+            }
+
+            let frame: LighterWsFrame = serde_json::from_value(value).unwrap();
+            let ts_init = UnixNanos::from(11 + index as u64);
+            let raw = raw_handler.handle_frame(frame.clone(), ts_init);
+            let messages = strip_account_marker(handler.handle_frame(frame, ts_init));
+
+            assert_eq!(raw.len(), 1);
+
+            let NautilusWsMessage::Raw(value) = &raw[0] else {
+                panic!("expected raw account frame");
+            };
+
+            assert_eq!(value["transaction_time"], json!(transaction_time));
+            assert_eq!(messages.len(), 1);
+
+            match &messages[0] {
+                NautilusWsMessage::PositionUpdate {
+                    reports,
+                    closed_market_ids,
+                    skipped_market_ids,
+                } => {
+                    assert!(positions);
+                    assert_eq!(reports.len(), 1);
+                    assert_eq!(reports[0].quantity, Quantity::from(amount));
+                    assert_eq!(reports[0].ts_last, ts_init);
+                    assert_eq!(reports[0].ts_init, ts_init);
+                    assert!(closed_market_ids.is_empty());
+                    assert!(skipped_market_ids.is_empty());
+                }
+                NautilusWsMessage::AccountState(state) => {
+                    assert!(!positions);
+                    assert_eq!(state.balances.len(), 1);
+                    assert_eq!(
+                        state.balances[0].total.as_decimal(),
+                        Decimal::from_str_exact(amount).unwrap() + Decimal::from(40),
+                    );
+                    assert_eq!(state.ts_event, UnixNanos::from(1_781_161_199_648_000_000));
+                    assert_eq!(state.ts_init, ts_init);
+                    assert_eq!(state.info, None);
+                }
+                other => panic!("expected account state or position update, was {other:?}"),
+            }
         }
     }
 

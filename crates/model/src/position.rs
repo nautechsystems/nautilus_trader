@@ -149,6 +149,9 @@ pub struct Position {
     pub cost_close: Decimal,
     pub qty_closed: Decimal,
     pub realized_pnl_remainder: Decimal,
+    /// The instrument's negative-price allowance, absent in older serialized positions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allows_negative_price: Option<bool>,
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -241,6 +244,7 @@ impl Position {
             cost_close: Decimal::ZERO,
             qty_closed: Decimal::ZERO,
             realized_pnl_remainder: Decimal::ZERO,
+            allows_negative_price: Some(instrument.allows_negative_price()),
         };
 
         item.check_accounting()?;
@@ -299,6 +303,7 @@ impl Position {
             cost_close: self.cost_close,
             qty_closed: self.qty_closed,
             realized_pnl_remainder: self.realized_pnl_remainder,
+            allows_negative_price: self.allows_negative_price,
         }
     }
 
@@ -375,26 +380,7 @@ impl Position {
                 self.id,
                 client_order_id
             );
-            self.events.clear();
-            self.trade_ids.clear();
-            self.adjustments.clear();
-            self.buy_qty = Quantity::zero(self.size_precision);
-            self.sell_qty = Quantity::zero(self.size_precision);
-            self.commissions.clear();
-            self.signed_qty = Decimal::ZERO;
-            self.quantity = Quantity::zero(self.size_precision);
-            self.side = PositionSide::Flat;
-            self.avg_px_close = None;
-            self.realized_pnl = None;
-            self.realized_return = 0.0;
-            self.ts_opened = UnixNanos::default();
-            self.ts_last = UnixNanos::default();
-            self.ts_closed = Some(UnixNanos::default());
-            self.duration_ns = DurationNanos::default();
-            self.cost_open = Decimal::ZERO;
-            self.cost_close = Decimal::ZERO;
-            self.qty_closed = Decimal::ZERO;
-            self.realized_pnl_remainder = Decimal::ZERO;
+            self.clear_derived_state();
             return Ok(());
         }
 
@@ -412,6 +398,26 @@ impl Position {
         self.ts_closed = None;
         self.duration_ns = DurationNanos::default();
 
+        self.replay_retained_fills(&filtered_events)?;
+
+        // Reapply preserved adjustments to maintain full state
+        for adjustment in preserved_adjustments {
+            self.apply_adjustment_state(adjustment, false)?;
+        }
+
+        log::info!(
+            "Purged fills for order {} from position {}; recalculated state: qty={}, signed_qty={}, side={:?}",
+            client_order_id,
+            position_id,
+            self.quantity,
+            self.signed_qty,
+            self.side
+        );
+        Ok(())
+    }
+
+    fn replay_retained_fills(&mut self, filtered_events: &[OrderFilled]) -> CorrectnessResult<()> {
+        let first_event = &filtered_events[0];
         let restatement_indexes = Self::price_restatement_indexes(&self.replay_events);
 
         let start = self.replay_events.iter().position(|event| {
@@ -448,24 +454,11 @@ impl Position {
                 }
             }
         } else {
-            for event in &filtered_events {
+            for event in filtered_events {
                 self.apply_fill(event, false)?;
             }
         }
 
-        // Reapply preserved adjustments to maintain full state
-        for adjustment in preserved_adjustments {
-            self.apply_adjustment_state(adjustment, false)?;
-        }
-
-        log::info!(
-            "Purged fills for order {} from position {}; recalculated state: qty={}, signed_qty={}, side={:?}",
-            client_order_id,
-            position_id,
-            self.quantity,
-            self.signed_qty,
-            self.side
-        );
         Ok(())
     }
 
@@ -1063,30 +1056,7 @@ impl Position {
             self.cost_open = add_rounded(self.cost_open, mul_rounded(last_px, last_qty)?)?;
             self.avg_px_open = div(self.cost_open, add(prior_qty, last_qty)?)?;
         } else {
-            let closing_qty = last_qty.min(prior_qty);
-
-            let allocated_cost = if closing_qty == prior_qty {
-                self.cost_open
-            } else {
-                proportion(self.cost_open, closing_qty, prior_qty)?
-            };
-
-            pnl = self.pnl_from_cost(
-                last_px,
-                closing_qty,
-                allocated_cost,
-                prior_qty,
-                self.cost_open,
-            )?;
-            self.cost_open = sub(self.cost_open, allocated_cost)?;
-            self.cost_close = add_rounded(self.cost_close, mul_rounded(last_px, closing_qty)?)?;
-            self.qty_closed = add(self.qty_closed, closing_qty)?;
-            self.avg_px_close = Some(div(self.cost_close, self.qty_closed)?);
-            self.realized_return = self.calculate_return(
-                self.avg_px_open,
-                self.avg_px_close.expect("closing average is set"),
-            );
-
+            pnl = self.close_fill(last_px, last_qty.min(prior_qty), prior_qty)?;
             if last_qty > prior_qty {
                 let opening_qty = sub(last_qty, prior_qty)?;
                 self.cost_open = mul_rounded(last_px, opening_qty)?;
@@ -1132,6 +1102,37 @@ impl Position {
         *cumulative = quantity_add(*cumulative, qty, self.size_precision)?;
 
         Ok(())
+    }
+
+    fn close_fill(
+        &mut self,
+        last_px: Decimal,
+        closing_qty: Decimal,
+        prior_qty: Decimal,
+    ) -> CorrectnessResult<Decimal> {
+        let allocated_cost = if closing_qty == prior_qty {
+            self.cost_open
+        } else {
+            proportion(self.cost_open, closing_qty, prior_qty)?
+        };
+
+        let pnl = self.pnl_from_cost(
+            last_px,
+            closing_qty,
+            allocated_cost,
+            prior_qty,
+            self.cost_open,
+        )?;
+        self.cost_open = sub(self.cost_open, allocated_cost)?;
+        self.cost_close = add_rounded(self.cost_close, mul_rounded(last_px, closing_qty)?)?;
+        self.qty_closed = add(self.qty_closed, closing_qty)?;
+        self.avg_px_close = Some(div(self.cost_close, self.qty_closed)?);
+        self.realized_return = self.calculate_return(
+            self.avg_px_open,
+            self.avg_px_close.expect("closing average is set"),
+        );
+
+        Ok(pnl)
     }
 
     fn accumulate_pnl(&mut self, change: Decimal) -> CorrectnessResult<()> {
@@ -1586,43 +1587,13 @@ impl Position {
         let mut commission_removed = AHashMap::<usize, Money>::new();
 
         for correction in self.latest_fill_voids() {
-            let mut remaining_qty = correction.voided_qty;
-            let mut remaining_commission = correction.commission_voided;
-
-            for (index, replay_event) in replay_events.iter().enumerate().rev() {
-                let Some(fill) =
-                    Self::voidable_replay_fill(&restatement_indexes, index, replay_event)
-                else {
-                    continue;
-                };
-
-                if fill.client_order_id != correction.event.client_order_id
-                    || fill.trade_id != correction.event.trade_id
-                {
-                    continue;
-                }
-
-                if !remaining_qty.is_zero() {
-                    let removed = remaining_qty.min(fill.last_qty);
-                    quantity_removed.insert(index, removed);
-                    remaining_qty = quantity_sub(remaining_qty, removed, remaining_qty.precision)?;
-                }
-
-                if let (Some(remaining), Some(commission)) = (remaining_commission, fill.commission)
-                {
-                    let magnitude = remaining.abs().min(commission.abs());
-
-                    let removed = if remaining.is_negative() {
-                        -magnitude
-                    } else {
-                        magnitude
-                    };
-
-                    commission_removed.insert(index, removed);
-                    let next = remaining - removed;
-                    remaining_commission = (!next.is_zero()).then_some(next);
-                }
-            }
+            Self::allocate_fill_void(
+                &replay_events,
+                correction,
+                &restatement_indexes,
+                &mut quantity_removed,
+                &mut commission_removed,
+            )?;
         }
 
         self.reset_derived_state();
@@ -1651,39 +1622,12 @@ impl Position {
                             (None, Some(_)) => None,
                         };
 
-                    if effective_qty.is_zero() {
-                        if let Some(commission) =
-                            effective_commission.filter(|commission| !commission.is_zero())
-                            && let Some(realized_pnl) =
-                                self.apply_surviving_fill_commission(fill, commission)?
-                        {
-                            closed_cycles_pnl =
-                                Some(closed_cycles_pnl.map_or(Ok(realized_pnl), |total| {
-                                    total
-                                        .checked_add(realized_pnl)
-                                        .ok_or_else(|| invalid("closed cycle PnL overflow"))
-                                })?);
-                        }
-                        continue;
-                    }
-
-                    // `apply_fill` clears realized PnL when it reopens from flat, so bank the
-                    // closing cycle's total before it goes
-                    if self.side == PositionSide::Flat
-                        && let Some(realized_pnl) = self.realized_pnl
-                    {
-                        closed_cycles_pnl =
-                            Some(closed_cycles_pnl.map_or(Ok(realized_pnl), |total| {
-                                total
-                                    .checked_add(realized_pnl)
-                                    .ok_or_else(|| invalid("closed cycle PnL overflow"))
-                            })?);
-                    }
-
-                    let mut effective = fill.clone();
-                    effective.last_qty = effective_qty;
-                    effective.commission = effective_commission;
-                    self.apply_fill(&effective, false)?;
+                    self.replay_fill(
+                        fill,
+                        effective_qty,
+                        effective_commission,
+                        &mut closed_cycles_pnl,
+                    )?;
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
                     self.apply_adjustment_state(*adjustment, false)?;
@@ -1696,6 +1640,101 @@ impl Position {
         }
 
         Ok(closed_cycles_pnl)
+    }
+
+    fn replay_fill(
+        &mut self,
+        fill: &OrderFilled,
+        effective_qty: Quantity,
+        effective_commission: Option<Money>,
+        closed_cycles_pnl: &mut Option<Money>,
+    ) -> CorrectnessResult<()> {
+        if effective_qty.is_zero() {
+            if let Some(commission) =
+                effective_commission.filter(|commission| !commission.is_zero())
+                && let Some(realized_pnl) =
+                    self.apply_surviving_fill_commission(fill, commission)?
+            {
+                *closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
+                    *closed_cycles_pnl,
+                    realized_pnl,
+                )?);
+            }
+
+            return Ok(());
+        }
+
+        // `apply_fill` clears realized PnL when it reopens from flat, so bank the
+        // closing cycle's total before it goes
+        if self.side == PositionSide::Flat
+            && let Some(realized_pnl) = self.realized_pnl
+        {
+            *closed_cycles_pnl = Some(Self::bank_closed_cycle_pnl(
+                *closed_cycles_pnl,
+                realized_pnl,
+            )?);
+        }
+
+        let mut effective = fill.clone();
+        effective.last_qty = effective_qty;
+        effective.commission = effective_commission;
+        self.apply_fill(&effective, false)
+    }
+
+    fn allocate_fill_void(
+        replay_events: &[PositionReplayEvent],
+        correction: &PositionFillVoid,
+        restatement_indexes: &AHashSet<usize>,
+        quantity_removed: &mut AHashMap<usize, Quantity>,
+        commission_removed: &mut AHashMap<usize, Money>,
+    ) -> CorrectnessResult<()> {
+        let mut remaining_qty = correction.voided_qty;
+        let mut remaining_commission = correction.commission_voided;
+
+        for (index, replay_event) in replay_events.iter().enumerate().rev() {
+            let Some(fill) = Self::voidable_replay_fill(restatement_indexes, index, replay_event)
+            else {
+                continue;
+            };
+
+            if fill.client_order_id != correction.event.client_order_id
+                || fill.trade_id != correction.event.trade_id
+            {
+                continue;
+            }
+
+            if !remaining_qty.is_zero() {
+                let removed = remaining_qty.min(fill.last_qty);
+                quantity_removed.insert(index, removed);
+                remaining_qty = quantity_sub(remaining_qty, removed, remaining_qty.precision)?;
+            }
+
+            if let (Some(remaining), Some(commission)) = (remaining_commission, fill.commission) {
+                let magnitude = remaining.abs().min(commission.abs());
+                let removed = if remaining.is_negative() {
+                    -magnitude
+                } else {
+                    magnitude
+                };
+
+                commission_removed.insert(index, removed);
+                let next = remaining - removed;
+                remaining_commission = (!next.is_zero()).then_some(next);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn bank_closed_cycle_pnl(
+        total: Option<Money>,
+        realized_pnl: Money,
+    ) -> CorrectnessResult<Money> {
+        total.map_or(Ok(realized_pnl), |total| {
+            total
+                .checked_add(realized_pnl)
+                .ok_or_else(|| invalid("closed cycle PnL overflow"))
+        })
     }
 
     fn apply_surviving_fill_commission(
@@ -1799,17 +1838,26 @@ impl Position {
     }
 
     fn reset_derived_state(&mut self) {
+        self.clear_derived_state();
+        self.peak_qty = Quantity::zero(self.size_precision);
+        self.avg_px_open = Decimal::ZERO;
+        self.closing_order_id = None;
+    }
+
+    fn clear_derived_state(&mut self) {
+        // Empty purge retains legacy peak quantity, opening average, and closing order metadata
         self.events.clear();
-        self.adjustments.clear();
         self.trade_ids.clear();
+        self.adjustments.clear();
         self.buy_qty = Quantity::zero(self.size_precision);
         self.sell_qty = Quantity::zero(self.size_precision);
         self.commissions.clear();
         self.signed_qty = Decimal::ZERO;
         self.quantity = Quantity::zero(self.size_precision);
-        self.peak_qty = Quantity::zero(self.size_precision);
         self.side = PositionSide::Flat;
-        self.closing_order_id = None;
+        self.avg_px_close = None;
+        self.realized_pnl = None;
+        self.realized_return = 0.0;
         self.ts_opened = UnixNanos::default();
         self.ts_last = UnixNanos::default();
         self.ts_closed = Some(UnixNanos::default());
@@ -1818,10 +1866,6 @@ impl Position {
         self.cost_close = Decimal::ZERO;
         self.qty_closed = Decimal::ZERO;
         self.realized_pnl_remainder = Decimal::ZERO;
-        self.avg_px_open = Decimal::ZERO;
-        self.avg_px_close = None;
-        self.realized_pnl = None;
-        self.realized_return = 0.0;
     }
 
     fn calculate_return(&self, open: Decimal, close: Decimal) -> f64 {
@@ -3851,6 +3895,37 @@ mod tests {
     }
 
     #[rstest]
+    #[case::commodity(InstrumentAny::Commodity(commodity_gold()), true)]
+    #[case::equity(InstrumentAny::Equity(equity_aapl()), false)]
+    fn test_negative_price_allowance_survives_snapshot_and_serialization(
+        #[case] instrument: InstrumentAny,
+        #[case] expected: bool,
+    ) {
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::new("P-PRICE-POLICY"))
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("10.00"))
+            .currency(Currency::USD())
+            .build();
+        let position = Position::new(&instrument, fill);
+        let snapshot = position.clone_without_events();
+        let mut serialized = serde_json::to_value(&position).unwrap();
+        let restored: Position = serde_json::from_value(serialized.clone()).unwrap();
+        let serialized_allowance = serialized
+            .as_object_mut()
+            .unwrap()
+            .remove("allows_negative_price");
+        let legacy: Position = serde_json::from_value(serialized).unwrap();
+
+        assert_eq!(position.allows_negative_price, Some(expected));
+        assert_eq!(snapshot.allows_negative_price, Some(expected));
+        assert_eq!(restored.allows_negative_price, Some(expected));
+        assert_eq!(serialized_allowance, Some(serde_json::json!(expected)));
+        assert_eq!(legacy.allows_negative_price, None);
+    }
+
+    #[rstest]
     #[case::open(false)]
     #[case::closed(true)]
     fn test_clone_without_events_preserves_current_state(
@@ -5863,6 +5938,25 @@ mod tests {
     }
 
     #[rstest]
+    #[case::positive(MONEY_RAW_MAX, 1)]
+    #[case::negative(-MONEY_RAW_MAX, -1)]
+    fn test_bank_closed_cycle_pnl_rejects_overflow(
+        #[case] total_raw: MoneyRaw,
+        #[case] change_raw: MoneyRaw,
+    ) {
+        let total = Money::from_raw(total_raw, Currency::USD());
+        let change = Money::from_raw(change_raw, Currency::USD());
+
+        let error = Position::bank_closed_cycle_pnl(Some(total), change).unwrap_err();
+
+        assert!(matches!(
+            error,
+            CorrectnessError::PredicateViolation { message }
+                if message == "closed cycle PnL overflow"
+        ));
+    }
+
+    #[rstest]
     fn test_full_fill_void_preserves_unvoided_commission(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let position_id = PositionId::from("P-FEE-VOID");
@@ -7294,7 +7388,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cache_purge_order_events() {
+    fn test_cache_purge_order_events(#[values(true, false)] retain_replay: bool) {
         let audusd_sim = audusd_sim();
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
 
@@ -7343,6 +7437,10 @@ mod tests {
         );
 
         position.apply(&fill2.into());
+        if !retain_replay {
+            position.replay_events.clear();
+        }
+
         position
             .purge_events_for_order(order1.client_order_id())
             .unwrap();
@@ -7351,6 +7449,56 @@ mod tests {
         assert_eq!(position.trade_ids.len(), 1);
         assert_eq!(position.events[0].client_order_id, order2.client_order_id());
         assert!(position.trade_ids.contains(&TradeId::new("2")));
+    }
+
+    #[rstest]
+    fn test_purge_all_fills_preserves_legacy_metadata(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PURGE"))
+            .trade_id(TradeId::from("T-OPEN"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(7))
+            .last_px(Price::from("1.23456"))
+            .currency(Currency::USD())
+            .position_id(PositionId::from("P-PURGE"))
+            .ts_event(UnixNanos::from(11))
+            .ts_init(UnixNanos::from(12))
+            .build();
+        let mut closing = opening.clone();
+        closing.trade_id = TradeId::from("T-CLOSE");
+        closing.event_id = uuid4();
+        closing.order_side = OrderSide::Sell;
+        closing.last_px = Price::from("1.34567");
+        closing.ts_event = UnixNanos::from(23);
+        let mut position = Position::new(&instrument, opening);
+        position.apply(&closing);
+
+        position
+            .purge_events_for_order(ClientOrderId::from("O-PURGE"))
+            .unwrap();
+
+        assert_eq!(position.peak_qty, Quantity::from(7));
+        assert_eq!(position.avg_px_open, dec!(1.23456));
+        assert_eq!(position.opening_order_id, ClientOrderId::from("O-PURGE"));
+        assert_eq!(
+            position.closing_order_id,
+            Some(ClientOrderId::from("O-PURGE"))
+        );
+        assert_eq!(position.entry, OrderSide::Buy);
+        assert_eq!(position.ts_init, UnixNanos::from(12));
+        assert_eq!(position.quantity, Quantity::zero(position.size_precision));
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.cost_close, Decimal::ZERO);
+        assert_eq!(position.qty_closed, Decimal::ZERO);
+        assert_eq!(position.avg_px_close, None);
+        assert_eq!(position.realized_pnl, None);
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
+        assert!(position.events.is_empty());
+        assert!(position.replay_events.is_empty());
     }
 
     #[rstest]

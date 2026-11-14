@@ -920,7 +920,7 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-- OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book.
+- OKX, Polymarket, Binance, Hyperliquid, Bybit, AX Exchange, and Coinbase keep a `BookSync` per book.
 - Derive keeps a `BookSync` per exact wire channel, shared by delta and depth consumers with matching arguments.
 - Betfair keeps a `BookSync` per market, since it images whole markets.
 - Lighter keeps a `BookRecoveryState` per book inside its handler-owned tracker.
@@ -1005,6 +1005,8 @@ snapshot parsing. The shared types describe the result of validation and monitor
   synced books from the subscription's clocks.
 - **AX Exchange**: accepts every L2 and L3 frame as a snapshot and keeps books across client reconnects,
   since its WebSocket client replays subscriptions on connect.
+- **Coinbase**: checks one connection-wide `sequence_num` per envelope, so a gap marks every subscribed
+  book. Replacement uses an unsubscribe/subscribe pair, since a duplicate subscribe sends no snapshot.
 - **Derive**: accepts full snapshots only when their timestamps advance, retaining that floor across
   reconnects. Advancing empty snapshots count as updates. Replacement uses an unsubscribe/subscribe pair on
   the existing socket. See [Derive order book recovery](../integrations/derive.md#order-book-recovery) for
@@ -1017,8 +1019,8 @@ snapshot parsing. The shared types describe the result of validation and monitor
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit): a replacement
-  resubscribes, and the venue stream delivers the snapshot.
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit,
+  Coinbase): a replacement resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 
@@ -1193,23 +1195,24 @@ returning an empty set.
 
 #### Single-order probes
 
-`generate_order_status_report` resolves a single order. The engine issues it after the open-order
-check retries without confirming a cached order, which requires that check to run in full-history
-mode (`open_check_open_only=false`). The command carries the queried `instrument_id` and
-`client_order_id`, plus `venue_order_id` when the order has one, so support a lookup that has no
-venue identifier yet. The engine discards a report whose identity does not match the query.
+`generate_order_status_report` resolves a single order. After the missing-order retry budget, the engine
+issues it in both open-only and full-history checks. Open-only missing checks skip orders owned by in-flight
+recovery. The command carries the queried `instrument_id` and `client_order_id`, plus `venue_order_id` when
+the order has one, so support a lookup that has no venue identifier yet. The engine discards a report whose
+identity does not match the query.
 
-Distinguish absence from failure in that probe, because the engine acts on the difference:
+Distinguish absence from failure in that probe:
 
-- `Ok(None)` states that the venue answered and has no such order. The engine treats that answer as proof. It
-  resolves an accepted, submitted, or partially filled order to a terminal state. Pending cancel and update
-  states stay unresolved.
-- An error states that the lookup did not answer, so the engine defers the missing-order resolution
-  to a later cycle.
+- `Ok(Some(report))` provides status and filled quantity to reconcile, in either mode. Companion fill reports
+  supply the executions. The engine also applies reports the adapter infers from absence.
+- `Ok(None)` states that the venue answered and has no such order. Only full-history checks use that answer
+  to resolve an accepted, submitted, or partially filled order to a terminal state. Pending cancel and update
+  states stay unresolved. Open-only checks keep the order open.
+- An error states that the lookup did not answer, so the engine defers resolution to a later check.
 
-A failed lookup returned as `Ok(None)` can therefore reject or cancel an order that is live at the
-venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
-implement this method before an open-order check runs in full-history mode.
+A failed lookup returned as `Ok(None)` can reject or cancel an order that is live at the venue in full-history
+mode. The trait default returns `Ok(None)` after logging that the handler is not implemented. Implement this
+method to support missing-order recovery; a working `query_order` handler alone does not provide it.
 
 #### Shared reconciliation changes
 

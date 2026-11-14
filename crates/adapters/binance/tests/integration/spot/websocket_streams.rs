@@ -134,12 +134,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         let params = value
                             .get("params")
                             .and_then(|v| v.as_array())
-                            .map(|arr| {
+                            .map_or_default(|arr| {
                                 arr.iter()
                                     .filter_map(|v| v.as_str().map(String::from))
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
 
                         // Add to subscribed streams
                         state.subscribed_streams.lock().await.extend(params);
@@ -171,12 +170,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         let params = value
                             .get("params")
                             .and_then(|v| v.as_array())
-                            .map(|arr| {
+                            .map_or_default(|arr| {
                                 arr.iter()
                                     .filter_map(|v| v.as_str().map(String::from))
                                     .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                            });
 
                         // Remove from subscribed streams
                         let mut streams = state.subscribed_streams.lock().await;

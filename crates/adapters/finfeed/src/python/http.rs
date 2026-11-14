@@ -77,7 +77,7 @@ impl PyFinFeedHttpClient {
         self.inner.attempts_remaining()
     }
 
-    /// Permanently cancels pending and future requests, including admission and retry waits.
+    /// Permanently cancels pending and future requests, including local admission and retry waits.
     ///
     /// Construct a new client to make further requests.
     fn cancel(&self) {

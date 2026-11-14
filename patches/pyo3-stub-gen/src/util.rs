@@ -11,26 +11,22 @@ pub fn all_builtin_types(any: &Bound<'_, PyAny>) -> bool {
     {
         return true;
     }
+
     if any.is_instance_of::<PyDict>() {
-        return any
-            .cast::<PyDict>()
-            .map(|dict| {
-                dict.into_iter()
-                    .all(|(k, v)| all_builtin_types(&k) && all_builtin_types(&v))
-            })
-            .unwrap_or(false);
+        return any.cast::<PyDict>().is_ok_and(|dict| {
+            dict.into_iter()
+                .all(|(k, v)| all_builtin_types(&k) && all_builtin_types(&v))
+        });
     }
     if any.is_instance_of::<PyList>() {
         return any
             .cast::<PyList>()
-            .map(|list| list.into_iter().all(|v| all_builtin_types(&v)))
-            .unwrap_or(false);
+            .is_ok_and(|list| list.into_iter().all(|v| all_builtin_types(&v)));
     }
     if any.is_instance_of::<PyTuple>() {
         return any
             .cast::<PyTuple>()
-            .map(|list| list.into_iter().all(|v| all_builtin_types(&v)))
-            .unwrap_or(false);
+            .is_ok_and(|list| list.into_iter().all(|v| all_builtin_types(&v)));
     }
     false
 }

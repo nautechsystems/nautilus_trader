@@ -1335,8 +1335,7 @@ fn json_diff(frame: &Value) -> Option<(String, WireDiff)> {
     let levels = |side: &str| {
         payload[side]
             .as_array()
-            .map(|rows| rows.iter().filter_map(json_level).collect())
-            .unwrap_or_default()
+            .map_or_default(|rows| rows.iter().filter_map(json_level).collect())
     };
 
     let diff = WireDiff {
@@ -1670,13 +1669,12 @@ impl Oracle {
             data[primary]
                 .as_array()
                 .or_else(|| data[secondary].as_array())
-                .map(|rows| {
+                .map_or_default(|rows| {
                     rows.iter()
                         .filter_map(json_level)
                         .filter(|(_, size)| !size.is_zero())
                         .collect::<BTreeMap<_, _>>()
                 })
-                .unwrap_or_default()
         };
 
         let view = View {

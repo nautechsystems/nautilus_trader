@@ -71,9 +71,11 @@ alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 bon = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
+flate2 = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
@@ -100,7 +102,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-execution = { workspace = true }
-nautilus-live = { workspace = true, features = ["test-support"] }
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",

@@ -787,8 +787,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack_delay_ms =
                             state.subscribe_ack_delay_ms.load(Ordering::Relaxed);
@@ -823,8 +822,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
                         if sink
@@ -1845,9 +1843,7 @@ async fn test_connect_disconnect_lifecycle() {
     assert!(channels.iter().any(|c| c == &"user_stats/12345"));
     assert!(channels.iter().any(|c| c == &"account_tx/12345"));
 
-    // Subscribe frames must carry the L2 auth token; the data-client tests
-    // pin the token shape via the REST `auth=` parameter, here the same
-    // contract reaches the venue via the WS `auth` field.
+    // The WebSocket auth field shares the REST Authorization token format
     for sub in &subs {
         let auth = sub["auth"].as_str().expect("auth on account subscribe");
         assert_eq!(
@@ -9141,7 +9137,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     client.connect().await.expect("connect");
     await_subscribe_count(&state, 4).await;
 
-    state.push_frame(&load_json("ws_account_all_positions_update.json"));
+    state.push_frame(&load_json("ws_account_all_positions_transaction_time.json"));
 
     wait_until_async(
         || {
@@ -9202,6 +9198,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     state.push_frame(&json!({
         "type": "subscribed/account_all_positions",
         "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
+        "transaction_time": 1,
         "positions": {},
         "shares": [],
         "last_funding_round": null,
@@ -9848,6 +9845,8 @@ async fn test_order_batches_chunk_commands(
     *state.account_type.lock().await = Some(1);
     let mut config = build_config(addr);
     config.sendtx_quota_per_min = Some(9);
+    // Keep REST confirmation probes outside the transaction quota test
+    config.rest_quota_per_min = Some(600_000);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.unwrap();
 
@@ -10518,9 +10517,7 @@ async fn assert_chunked_submit_events(
     assert_eq!(submitted, expected_ids);
     assert_eq!(
         denied,
-        invalid_submit
-            .map(|i| vec![orders[i].client_order_id()])
-            .unwrap_or_default()
+        invalid_submit.map_or_default(|i| vec![orders[i].client_order_id()])
     );
 }
 
@@ -10575,9 +10572,7 @@ async fn assert_chunked_modify_events(
     assert_eq!(updated, expected);
     assert_eq!(
         rejected,
-        invalid_modify
-            .map(|i| vec![modifies[i].client_order_id])
-            .unwrap_or_default()
+        invalid_modify.map_or_default(|i| vec![modifies[i].client_order_id])
     );
 }
 

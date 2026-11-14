@@ -155,7 +155,8 @@ EOF
       >> "${consumer_work_dir}/Cargo.toml"
   done < "$publish_plan_file"
 
-  printf 'fn main() {}\n' > "${consumer_work_dir}/src/main.rs"
+  printf 'use nautilus_blockchain as _;\nuse nautilus_cli as _;\n\nfn main() {}\n' \
+    > "${consumer_work_dir}/src/main.rs"
 }
 
 require_registry_package() {

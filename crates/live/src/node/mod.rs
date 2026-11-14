@@ -6749,8 +6749,8 @@ mod tests {
             result
                 .events
                 .iter()
-                .all(|event| matches!(event, OrderEventAny::Canceled(_))),
-            "batch-cancel children must time out as Canceled events",
+                .all(|event| matches!(event, OrderEventAny::CancelRejected(_))),
+            "batch-cancel children must time out as CancelRejected events",
         );
     }
 
@@ -8340,16 +8340,22 @@ mod tests {
         advance_clock(Duration::from_millis(101)).await;
         let exhausted = node.exec_manager.check_inflight_orders();
         assert!(exhausted.queries.is_empty());
-        assert!(
-            matches!(&exhausted.events[..], [OrderEventAny::Canceled(event)]
-            if event.client_order_id == client_order_id)
-        );
+        assert_command_timeout_event(&exhausted.events, client_order_id, policy, cancel);
         assert!(
             node.exec_manager
                 .take_submission_recovery_exhaustions()
                 .is_empty()
         );
         node.process_reconciliation_events(&exhausted.events);
+
+        let expected_status = match policy {
+            SubmissionRecoveryPolicy::ResolveLocally => OrderStatus::Canceled,
+            SubmissionRecoveryPolicy::RetainUnresolved if callback == "updated" => {
+                OrderStatus::Submitted
+            }
+            SubmissionRecoveryPolicy::RetainUnresolved => OrderStatus::Accepted,
+        };
+
         assert_eq!(
             node.kernel
                 .cache
@@ -8357,7 +8363,7 @@ mod tests {
                 .order(&client_order_id)
                 .unwrap()
                 .status(),
-            OrderStatus::Canceled
+            expected_status
         );
     }
 
@@ -11710,9 +11716,7 @@ mod tests {
         if repeated_report {
             assert!(second.events.is_empty());
         } else {
-            assert!(
-                matches!(&second.events[..], [OrderEventAny::Canceled(event)] if event.client_order_id == client_order_id)
-            );
+            assert_command_timeout_event(&second.events, client_order_id, policy, cancel);
         }
         assert!(
             node.exec_manager
@@ -11921,16 +11925,19 @@ mod tests {
         advance_clock(Duration::from_millis(101)).await;
         let exhausted = node.exec_manager.check_inflight_orders();
         assert!(exhausted.queries.is_empty());
-        assert!(
-            matches!(&exhausted.events[..], [OrderEventAny::Canceled(event)]
-                if event.client_order_id == client_order_id)
-        );
+        assert_command_timeout_event(&exhausted.events, client_order_id, policy, cancel);
         assert!(
             node.exec_manager
                 .take_submission_recovery_exhaustions()
                 .is_empty()
         );
         node.process_reconciliation_events(&exhausted.events);
+
+        let expected_status = match policy {
+            SubmissionRecoveryPolicy::ResolveLocally => OrderStatus::Canceled,
+            SubmissionRecoveryPolicy::RetainUnresolved => OrderStatus::Submitted,
+        };
+
         assert_eq!(
             node.kernel
                 .cache
@@ -11938,7 +11945,7 @@ mod tests {
                 .order(&client_order_id)
                 .unwrap()
                 .status(),
-            OrderStatus::Canceled,
+            expected_status,
         );
     }
 
@@ -12418,11 +12425,8 @@ mod tests {
         let exhausted = node.exec_manager.check_inflight_orders();
         assert!(exhausted.queries.is_empty());
 
-        if cancel.is_some() {
-            assert!(
-                matches!(&exhausted.events[..], [OrderEventAny::Canceled(event)]
-                if event.client_order_id == client_order_id)
-            );
+        if let Some(cancel) = cancel {
+            assert_command_timeout_event(&exhausted.events, client_order_id, policy, cancel);
         } else {
             assert!(exhausted.events.is_empty());
         }
@@ -12431,6 +12435,32 @@ mod tests {
                 .take_submission_recovery_exhaustions()
                 .is_empty()
         );
+    }
+
+    fn assert_command_timeout_event(
+        events: &[OrderEventAny],
+        client_order_id: ClientOrderId,
+        policy: SubmissionRecoveryPolicy,
+        cancel: bool,
+    ) {
+        let [event] = events else {
+            panic!("Expected one command timeout event, was {events:?}");
+        };
+
+        let is_expected = match (policy, cancel) {
+            (SubmissionRecoveryPolicy::ResolveLocally, _) => {
+                matches!(event, OrderEventAny::Canceled(_))
+            }
+            (SubmissionRecoveryPolicy::RetainUnresolved, true) => {
+                matches!(event, OrderEventAny::CancelRejected(_))
+            }
+            (SubmissionRecoveryPolicy::RetainUnresolved, false) => {
+                matches!(event, OrderEventAny::ModifyRejected(_))
+            }
+        };
+
+        assert!(is_expected, "Unexpected command timeout event {event:?}");
+        assert_eq!(event.client_order_id(), client_order_id);
     }
 
     #[rstest]

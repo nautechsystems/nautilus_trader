@@ -87,16 +87,8 @@ pub mod prefix_stripper {
                             let last_part = parts[parts.len() - 1];
 
                             // If it looks like a package.Type pattern, extract just the Type
-                            if first_part
-                                .chars()
-                                .next()
-                                .map(|c| c.is_lowercase())
-                                .unwrap_or(false)
-                                && last_part
-                                    .chars()
-                                    .next()
-                                    .map(|c| c.is_uppercase())
-                                    .unwrap_or(false)
+                            if first_part.chars().next().is_some_and(|c| c.is_lowercase())
+                                && last_part.chars().next().is_some_and(|c| c.is_uppercase())
                             {
                                 // Skip to the last part
                                 let prefix_len = ident.len() - last_part.len();

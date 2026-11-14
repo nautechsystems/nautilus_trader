@@ -151,8 +151,7 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map(DurationNanos::from_millis)
-            .unwrap_or_default();
+            .map_or_default(DurationNanos::from_millis);
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -1177,8 +1176,7 @@ impl Portfolio {
             .borrow()
             .portfolio_snapshots
             .get(account_id)
-            .map(|ring| ring.iter().cloned().collect())
-            .unwrap_or_default()
+            .map_or_default(|ring| ring.iter().cloned().collect())
     }
 
     /// Returns the first error from a cash, betting, or wallet account rejecting a fill's
@@ -1245,18 +1243,15 @@ impl Portfolio {
         let mut ids: Vec<InstrumentId> = match account_id {
             Some(account_id) => observations
                 .and_then(|observations| observations.get(&Some(*account_id)))
-                .map(|ids| ids.iter().copied().collect())
-                .unwrap_or_default(),
-            None => observations
-                .map(|observations| {
-                    observations
-                        .values()
-                        .flat_map(|ids| ids.iter().copied())
-                        .collect::<AHashSet<_>>()
-                        .into_iter()
-                        .collect()
-                })
-                .unwrap_or_default(),
+                .map_or_default(|ids| ids.iter().copied().collect()),
+            None => observations.map_or_default(|observations| {
+                observations
+                    .values()
+                    .flat_map(|ids| ids.iter().copied())
+                    .collect::<AHashSet<_>>()
+                    .into_iter()
+                    .collect()
+            }),
         };
         // Sort so the public Vec is deterministic even though the underlying
         // tracking set is AHash-backed.
@@ -1760,32 +1755,17 @@ impl Portfolio {
 
     #[must_use]
     pub fn is_net_long(&self, instrument_id: &InstrumentId) -> bool {
-        self.inner
-            .borrow()
-            .net_positions
-            .get(instrument_id)
-            .copied()
-            .map_or_else(|| false, |net_position| net_position > Decimal::ZERO)
+        self.net_position(instrument_id) > Decimal::ZERO
     }
 
     #[must_use]
     pub fn is_net_short(&self, instrument_id: &InstrumentId) -> bool {
-        self.inner
-            .borrow()
-            .net_positions
-            .get(instrument_id)
-            .copied()
-            .map_or_else(|| false, |net_position| net_position < Decimal::ZERO)
+        self.net_position(instrument_id) < Decimal::ZERO
     }
 
     #[must_use]
     pub fn is_net_flat(&self, instrument_id: &InstrumentId) -> bool {
-        self.inner
-            .borrow()
-            .net_positions
-            .get(instrument_id)
-            .copied()
-            .map_or_else(|| true, |net_position| net_position == Decimal::ZERO)
+        self.net_position(instrument_id) == Decimal::ZERO
     }
 
     #[must_use]
@@ -2974,227 +2954,90 @@ impl Portfolio {
 
         let mut total_pnl = Decimal::ZERO;
 
-        if is_netting && !snapshot_position_ids.is_empty() {
-            // NETTING OMS: Apply 3-case rule for position cycles
+        for position_id in &snapshot_position_ids {
+            let Some(mut sum_pnl) = self
+                .inner
+                .borrow()
+                .snapshot_sum_per_position
+                .get(position_id)
+                .copied()
+            else {
+                continue;
+            };
 
-            for position_id in &snapshot_position_ids {
+            // A closed position whose final cycle was snapshotted carries that cycle both in
+            // its last frame and in its own realized PnL, which the loop below adds; drop
+            // the frame here so the cycle lands once, matching fills as well as PnL since an
+            // earlier cycle can realize the same amount.
+            if is_netting {
                 let position = positions.iter().find(|p| p.id == *position_id);
-                let sum_pnl = self
-                    .inner
-                    .borrow()
-                    .snapshot_sum_per_position
-                    .get(position_id)
-                    .copied();
 
-                // A closed position whose final cycle was snapshotted carries that cycle both in
-                // its last frame and in its own realized PnL, which the loop below adds; drop
-                // the frame here so the cycle lands once, matching fills as well as PnL since an
-                // earlier cycle can realize the same amount.
-                let sum_pnl = if let Some(sum_pnl) = sum_pnl {
-                    let last_pnl = position.and_then(|position| {
-                        self.inner
-                            .borrow()
-                            .snapshot_last_per_position
-                            .get(position_id)
-                            .filter(|last| last.duplicates_closed_cycle(position))
-                            .map(|last| last.realized_pnl)
-                    });
+                let last_pnl = position.and_then(|position| {
+                    self.inner
+                        .borrow()
+                        .snapshot_last_per_position
+                        .get(position_id)
+                        .filter(|last| last.duplicates_closed_cycle(position))
+                        .map(|last| last.realized_pnl)
+                });
 
-                    Some(match last_pnl {
-                        Some(last_pnl) => match sum_pnl.checked_sub(last_pnl) {
-                            Some(remaining) => remaining,
-                            None => {
-                                log::error!(
-                                    "Cannot calculate realized PnL: snapshot adjustment exceeds Money bounds"
-                                );
-                                return None;
-                            }
-                        },
-                        None => sum_pnl,
-                    })
-                } else {
-                    None
-                };
-
-                if let Some(sum_pnl) = sum_pnl {
-                    if !pnl_currency_is_compatible(conversion_currency, currency, sum_pnl.currency)
-                    {
-                        return None;
-                    }
-
-                    let mut pnl = sum_pnl.as_decimal();
-
-                    if let Some(conversion_currency) = conversion_currency {
-                        let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument_id.venue,
-                            sum_pnl.currency,
-                            conversion_currency,
-                            allow_stale_xrate,
-                        ) {
-                            xrate
-                        } else {
-                            log::warn!(
-                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                sum_pnl.currency,
-                                conversion_currency
+                if let Some(last_pnl) = last_pnl {
+                    sum_pnl = match sum_pnl.checked_sub(last_pnl) {
+                        Some(remaining) => remaining,
+                        None => {
+                            log::error!(
+                                "Cannot calculate realized PnL: snapshot adjustment exceeds Money bounds"
                             );
-                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
                             return None;
-                        };
-
-                        pnl = self.checked_convert_realized_pnl(
-                            pnl,
-                            xrate,
-                            currency,
-                            *instrument_id,
-                        )?;
-                    }
-
-                    total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
+                        }
+                    };
                 }
             }
 
-            // Add realized PnL from current active positions
-            for position in positions {
-                if position.instrument_id != *instrument_id {
-                    continue;
-                }
-
-                if let Some(realized_pnl) = position.realized_pnl {
-                    if !pnl_currency_is_compatible(
-                        conversion_currency,
-                        currency,
-                        realized_pnl.currency,
-                    ) {
-                        return None;
-                    }
-
-                    let mut pnl = realized_pnl.as_decimal();
-
-                    if let Some(conversion_currency) = conversion_currency {
-                        let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument_id.venue,
-                            realized_pnl.currency,
-                            conversion_currency,
-                            allow_stale_xrate,
-                        ) {
-                            xrate
-                        } else {
-                            log::warn!(
-                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                realized_pnl.currency,
-                                conversion_currency
-                            );
-                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return None;
-                        };
-
-                        pnl = self.checked_convert_realized_pnl(
-                            pnl,
-                            xrate,
-                            currency,
-                            *instrument_id,
-                        )?;
-                    }
-
-                    total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
-                }
-            }
-        } else {
-            // HEDGING OMS or no snapshots: Simple aggregation
-            // Add snapshot PnLs (sum all)
-            for position_id in &snapshot_position_ids {
-                let sum_pnl = self
-                    .inner
-                    .borrow()
-                    .snapshot_sum_per_position
-                    .get(position_id)
-                    .copied();
-
-                if let Some(sum_pnl) = sum_pnl {
-                    if !pnl_currency_is_compatible(conversion_currency, currency, sum_pnl.currency)
-                    {
-                        return None;
-                    }
-
-                    let mut pnl = sum_pnl.as_decimal();
-
-                    if let Some(conversion_currency) = conversion_currency {
-                        let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument_id.venue,
-                            sum_pnl.currency,
-                            conversion_currency,
-                            allow_stale_xrate,
-                        ) {
-                            xrate
-                        } else {
-                            log::warn!(
-                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                sum_pnl.currency,
-                                conversion_currency
-                            );
-                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return None;
-                        };
-
-                        pnl = self.checked_convert_realized_pnl(
-                            pnl,
-                            xrate,
-                            currency,
-                            *instrument_id,
-                        )?;
-                    }
-
-                    total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
-                }
+            if !pnl_currency_is_compatible(conversion_currency, currency, sum_pnl.currency) {
+                return None;
             }
 
-            // Add realized PnL from current positions
-            for position in positions {
-                if position.instrument_id != *instrument_id {
-                    continue;
-                }
+            let pnl = if let Some(conversion_currency) = conversion_currency {
+                self.checked_convert_realized_pnl(
+                    sum_pnl,
+                    conversion_currency,
+                    *instrument_id,
+                    allow_stale_xrate,
+                )?
+            } else {
+                sum_pnl.as_decimal()
+            };
 
-                if let Some(realized_pnl) = position.realized_pnl {
-                    if !pnl_currency_is_compatible(
-                        conversion_currency,
-                        currency,
-                        realized_pnl.currency,
-                    ) {
-                        return None;
-                    }
+            total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
+        }
 
-                    let mut pnl = realized_pnl.as_decimal();
-
-                    if let Some(conversion_currency) = conversion_currency {
-                        let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument_id.venue,
-                            realized_pnl.currency,
-                            conversion_currency,
-                            allow_stale_xrate,
-                        ) {
-                            xrate
-                        } else {
-                            log::warn!(
-                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                realized_pnl.currency,
-                                conversion_currency
-                            );
-                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                            return None;
-                        };
-
-                        pnl = self.checked_convert_realized_pnl(
-                            pnl,
-                            xrate,
-                            currency,
-                            *instrument_id,
-                        )?;
-                    }
-
-                    total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
-                }
+        // Add realized PnL from current active positions
+        for position in positions {
+            if position.instrument_id != *instrument_id {
+                continue;
             }
+
+            let Some(realized_pnl) = position.realized_pnl else {
+                continue;
+            };
+
+            if !pnl_currency_is_compatible(conversion_currency, currency, realized_pnl.currency) {
+                return None;
+            }
+
+            let pnl = if let Some(conversion_currency) = conversion_currency {
+                self.checked_convert_realized_pnl(
+                    realized_pnl,
+                    conversion_currency,
+                    *instrument_id,
+                    allow_stale_xrate,
+                )?
+            } else {
+                realized_pnl.as_decimal()
+            };
+
+            total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
         }
 
         match Money::from_decimal(total_pnl, currency) {
@@ -3208,12 +3051,29 @@ impl Portfolio {
 
     fn checked_convert_realized_pnl(
         &self,
-        pnl: Decimal,
-        xrate: Decimal,
+        pnl: Money,
         currency: Currency,
         instrument_id: InstrumentId,
+        allow_stale_xrate: bool,
     ) -> Option<Decimal> {
-        let Some(converted) = pnl.checked_mul(xrate) else {
+        let xrate = if let Some(xrate) = self.calculate_xrate(
+            instrument_id.venue,
+            pnl.currency,
+            currency,
+            allow_stale_xrate,
+        ) {
+            xrate
+        } else {
+            log::warn!(
+                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                pnl.currency,
+                currency
+            );
+            self.inner.borrow_mut().pending_calcs.insert(instrument_id);
+            return None;
+        };
+
+        let Some(converted) = pnl.as_decimal().checked_mul(xrate) else {
             log::error!("Cannot calculate realized PnL: currency conversion overflow");
             self.inner.borrow_mut().pending_calcs.insert(instrument_id);
             return None;

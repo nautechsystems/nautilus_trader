@@ -316,10 +316,11 @@ impl DataSubscriptions {
                     || self.active_delta_subs.contains(&instrument_id)
                     || self.active_trade_subs.contains(&instrument_id)));
         let is_open = self.ws_open_tokens.contains(&token_id);
+        // Box wire operations after locking so queued reconciliation futures stay small.
         if wants_subscribe && !is_open {
             self.ws_open_tokens.insert(token_id);
 
-            if let Err(e) = self.ws_client.subscribe_market(vec![token_id_str]).await {
+            if let Err(e) = Box::pin(self.ws_client.subscribe_market(vec![token_id_str])).await {
                 log::error!("Failed to subscribe to market data: {e:?}");
                 // Roll back tracked WS state so a retry can take effect.
                 self.ws_open_tokens.remove(&token_id);
@@ -327,7 +328,7 @@ impl DataSubscriptions {
         } else if !wants_subscribe && is_open {
             self.ws_open_tokens.remove(&token_id);
 
-            if let Err(e) = self.ws_client.unsubscribe_market(vec![token_id_str]).await {
+            if let Err(e) = Box::pin(self.ws_client.unsubscribe_market(vec![token_id_str])).await {
                 log::error!("Failed to unsubscribe from market data: {e:?}");
             }
         }
@@ -554,6 +555,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
         watchlist
@@ -574,6 +576,7 @@ mod tests {
             .reconcile(inst, inst.symbol.as_str().to_string())
             .await;
 
+        assert!(std::mem::size_of_val(&subscriptions.reconcile(inst, String::new())) < 2048);
         assert!(subscriptions.ws_open_tokens.contains(&token_ustr()));
 
         match rx.try_recv().expect("expected SubscribeMarket command") {
@@ -722,6 +725,7 @@ mod tests {
                         },
                     )]),
                     paused: false,
+                    clob_retry: None,
                 },
             );
             targets.push((instrument_id, token_id));

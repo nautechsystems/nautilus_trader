@@ -140,6 +140,8 @@ class BybitExecutionClientConfig:
     def margin_mode(self) -> BybitMarginMode | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def load_ids(self) -> list[model.InstrumentId] | None: ...
     def __init__(
         self,
         product_types: typing.Sequence[BybitProductType] | None = None,
@@ -164,6 +166,7 @@ class BybitExecutionClientConfig:
         smp_type: str | None = None,
         transport_backend: network.TransportBackend | None = None,
         use_ws_execution_fast: bool | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
     ) -> None: ...
     @property
     def smp_type(self) -> str | None: ...

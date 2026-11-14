@@ -351,6 +351,7 @@ pub fn request(
     order: &OrderAny,
     params: Option<&Params>,
     shard: u32,
+    subaccount: u32,
 ) -> Result<CreateOrderRequest, OrderDeniedReason> {
     if order.order_type() != OrderType::Limit {
         return Err(OrderDeniedReason::UnsupportedOrderType {
@@ -425,7 +426,7 @@ pub fn request(
                 _ => VenueTimeInForce::GoodTillCanceled,
             },
             self_trade_prevention_type: stp,
-            subaccount: 0,
+            subaccount,
             exchange_index: shard,
             client_order_id: Some(order.client_order_id().to_string()),
             expiration_time,
@@ -596,7 +597,7 @@ pub(super) mod tests {
             .price(Price::from("0.600000"))
             .time_in_force(TimeInForce::Gtc)
             .build();
-        let request = request(&order, None, 3).unwrap();
+        let request = request(&order, None, 3, 0).unwrap();
 
         let transport = crate::config::KalshiDataClientConfig {
             api_key_id: Some("drop-test".into()),
@@ -835,7 +836,7 @@ pub(super) mod tests {
         }
 
         let order = builder.build();
-        let wire = serde_json::to_value(request(&order, None, 3).unwrap()).unwrap();
+        let wire = serde_json::to_value(request(&order, None, 3, 0).unwrap()).unwrap();
 
         let mut expected = serde_json::from_str::<serde_json::Value>(include_str!(
             "../../test_data/rest_requests.json"

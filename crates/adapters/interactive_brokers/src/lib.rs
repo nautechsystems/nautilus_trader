@@ -54,27 +54,14 @@
 #![deny(unsafe_code)]
 // Clippy: allow style lints that would require large refactors across the adapter
 #![allow(
-    clippy::collapsible_if,
-    clippy::if_not_else,
-    clippy::uninlined_format_args,
-    clippy::map_unwrap_or,
-    clippy::redundant_clone,
-    clippy::ignored_unit_patterns,
-    clippy::items_after_statements,
-    clippy::bool_to_int_with_if,
-    clippy::cloned_instead_of_copied,
     clippy::option_if_let_else,
     clippy::type_complexity,
     clippy::module_inception,
     clippy::result_large_err,
-    clippy::implicit_clone,
-    clippy::single_char_pattern,
     clippy::bind_instead_of_map,
-    clippy::explicit_iter_loop,
     clippy::too_many_arguments,
     clippy::missing_errors_doc,
-    clippy::doc_overindented_list_items,
-    clippy::needless_borrows_for_generic_args
+    clippy::doc_overindented_list_items
 )]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]

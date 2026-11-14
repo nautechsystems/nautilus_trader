@@ -1164,7 +1164,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         while size_remaining > Decimal::ZERO {
             let value_remaining = price_value * size_remaining;
 
-            if self.imbalance_value.is_zero()
+            let value_chunk = if self.imbalance_value.is_zero()
                 || self.imbalance_value.is_sign_positive() == side_is_buy
             {
                 let needed = self.step_value - self.imbalance_value.abs();
@@ -1176,72 +1176,68 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                         trade.ts_init,
                     );
 
-                    if self.imbalance_value.abs() >= self.step_value {
-                        self.core.build_now_and_send();
-                        self.imbalance_value = Decimal::ZERO;
-                    }
+                    self.build_if_complete();
                     break;
                 }
 
-                let mut value_chunk = needed;
-                let mut size_chunk = value_chunk / price_value;
-
-                // Clamp to minimum representable size to avoid zero-volume bars
-                if is_below_min_size_decimal(size_chunk, precision) {
-                    if is_below_min_size_decimal(size_remaining, precision) {
-                        break;
-                    }
-                    size_chunk = min_size_decimal(precision);
-                    value_chunk = price_value * size_chunk;
-                }
-
-                // Subtract the representable quantity actually applied, not the ideal
-                // fraction, so rounding does not leak volume from the accounting
-                let applied = quantity_from_decimal(size_chunk, precision);
-                self.core
-                    .builder
-                    .update(trade.price, applied, trade.ts_init);
-                self.imbalance_value += side_sign * value_chunk;
-                size_remaining -= applied.as_decimal();
-
-                if self.imbalance_value.abs() >= self.step_value {
-                    self.core.build_now_and_send();
-                    self.imbalance_value = Decimal::ZERO;
-                }
+                needed
             } else {
-                // Opposing side: first neutralize existing imbalance
-                let mut value_to_flatten = self.imbalance_value.abs().min(value_remaining);
-                let mut size_chunk = value_to_flatten / price_value;
+                self.imbalance_value.abs().min(value_remaining)
+            };
 
-                // Clamp to minimum representable size to avoid zero-volume bars
-                if is_below_min_size_decimal(size_chunk, precision) {
-                    if is_below_min_size_decimal(size_remaining, precision) {
-                        break;
-                    }
-                    size_chunk = min_size_decimal(precision);
-                    value_to_flatten = price_value * size_chunk;
-                }
+            let Some(size_applied) =
+                self.apply_chunk(trade, value_chunk, size_remaining, side_sign)
+            else {
+                break;
+            };
 
-                // Subtract the representable quantity actually applied, not the ideal
-                // fraction, so rounding does not leak volume from the accounting
-                let applied = quantity_from_decimal(size_chunk, precision);
-                self.core
-                    .builder
-                    .update(trade.price, applied, trade.ts_init);
-                self.imbalance_value += side_sign * value_to_flatten;
-
-                // Min-size clamp can overshoot past threshold
-                if self.imbalance_value.abs() >= self.step_value {
-                    self.core.build_now_and_send();
-                    self.imbalance_value = Decimal::ZERO;
-                }
-                size_remaining -= applied.as_decimal();
-            }
+            size_remaining -= size_applied;
         }
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
+impl ValueImbalanceBarAggregator {
+    fn apply_chunk(
+        &mut self,
+        trade: TradeTick,
+        mut value_chunk: Decimal,
+        size_remaining: Decimal,
+        side_sign: Decimal,
+    ) -> Option<Decimal> {
+        let precision = trade.size.precision;
+        let price_value = trade.price.as_decimal();
+        let mut size_chunk = value_chunk / price_value;
+
+        if is_below_min_size_decimal(size_chunk, precision) {
+            if is_below_min_size_decimal(size_remaining, precision) {
+                return None;
+            }
+
+            size_chunk = min_size_decimal(precision);
+            value_chunk = price_value * size_chunk;
+        }
+
+        // Account for ideal notional unless clamped, but conserve the representable volume
+        let applied = quantity_from_decimal(size_chunk, precision);
+        self.core
+            .builder
+            .update(trade.price, applied, trade.ts_init);
+        self.imbalance_value += side_sign * value_chunk;
+
+        self.build_if_complete();
+
+        Some(applied.as_decimal())
+    }
+
+    fn build_if_complete(&mut self) {
+        if self.imbalance_value.abs() >= self.step_value {
+            self.core.build_now_and_send();
+            self.imbalance_value = Decimal::ZERO;
+        }
     }
 }
 
@@ -1616,32 +1612,7 @@ impl TimeBarAggregator {
         &mut self,
         aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>,
     ) {
-        // Create callback that calls build_bar through the weak reference
-        let aggregator_weak = if let Some(rc) = aggregator_rc {
-            // Store weak reference for future use (e.g., in build_bar for month/year)
-            let weak = Rc::downgrade(&rc);
-            self.aggregator_weak = Some(Weak::clone(&weak));
-            weak
-        } else {
-            // Use existing weak reference (for historical mode where it was set earlier)
-            self.aggregator_weak
-                .as_ref()
-                .map(Weak::clone)
-                .expect("Aggregator weak reference must be set before calling start_timer()")
-        };
-
-        self.timer_active.set(false);
-        self.timer_active = Rc::new(Cell::new(true));
-        let active = Rc::clone(&self.timer_active);
-        let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
-            if !active.get() {
-                return;
-            }
-
-            if let Some(agg) = aggregator_weak.upgrade() {
-                Self::dispatch_timer(&agg, &event);
-            }
-        }));
+        let callback = self.create_timer_callback(aggregator_rc);
 
         let now = self.clock.borrow().utc_now();
         self.calendar_origin = Some(self.time_zone.to_datetime(now).date());
@@ -1709,6 +1680,35 @@ impl TimeBarAggregator {
             now,
             self.bar_build_delay
         );
+    }
+
+    fn create_timer_callback(
+        &mut self,
+        aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>,
+    ) -> TimeEventCallback {
+        let aggregator_weak = if let Some(rc) = aggregator_rc {
+            let weak = Rc::downgrade(&rc);
+            self.aggregator_weak = Some(Weak::clone(&weak));
+            weak
+        } else {
+            self.aggregator_weak
+                .as_ref()
+                .map(Weak::clone)
+                .expect("Aggregator weak reference must be set before calling start_timer()")
+        };
+
+        self.timer_active.set(false);
+        self.timer_active = Rc::new(Cell::new(true));
+        let active = Rc::clone(&self.timer_active);
+        TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
+            if !active.get() {
+                return;
+            }
+
+            if let Some(agg) = aggregator_weak.upgrade() {
+                Self::dispatch_timer(&agg, &event);
+            }
+        }))
     }
 
     pub(crate) fn set_timer_source(&mut self, source: BarAggregatorWeak) {
@@ -2858,6 +2858,48 @@ mod tests {
                 now
             )]
         );
+    }
+
+    #[rstest]
+    fn test_time_bar_timer_callback_does_not_retain_aggregator(equity_aapl: Equity) {
+        let bar_type = BarType::new(
+            equity_aapl.id,
+            BarSpecification::new(1, BarAggregation::Second, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            equity_aapl.price_precision,
+            equity_aapl.size_precision(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            |_bar: Bar| {},
+            false,
+            true,
+            BarIntervalType::LeftOpen,
+            None,
+            TimeZone::UTC,
+            0,
+            false,
+        );
+
+        let rc: Rc<RefCell<Box<dyn BarAggregator>>> = Rc::new(RefCell::new(Box::new(aggregator)));
+        let weak = Rc::downgrade(&rc);
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        drop(rc);
+
+        assert!(weak.upgrade().is_none());
+        let events = clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(1_000_000_000), true);
+        let callbacks = clock.borrow().match_handlers(events);
+        assert_eq!(callbacks.len(), 2);
+
+        for callback in callbacks {
+            callback.callback.call(callback.event);
+        }
     }
 
     #[rstest]
@@ -7056,6 +7098,72 @@ mod tests {
             .sum::<Decimal>()
             + aggregator.core.builder.volume.as_decimal();
         assert_eq!(emitted_plus_pending, input.as_decimal());
+    }
+
+    #[rstest]
+    #[case::partial("0.1", "0.6", Decimal::new(2, 1), vec![])]
+    #[case::neutral("0.2", "0.7", Decimal::ZERO, vec![])]
+    #[case::reversal("0.3", "0.8", Decimal::new(-3, 1), vec![])]
+    #[case::split("1.0", "0.2", Decimal::new(-6, 1), vec!["1.0", "0.3"])]
+    fn test_value_imbalance_opposing_trade_preserves_ideal_notional(
+        #[case] sell_size: &str,
+        #[case] pending: &str,
+        #[case] imbalance: Decimal,
+        #[case] emitted: Vec<&str>,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::ValueImbalance, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let mut aggregator = ValueImbalanceBarAggregator::new(bar_type, 2, 1, record);
+
+        let buy = TradeTick {
+            instrument_id,
+            price: Price::from("1.00"),
+            size: Quantity::from("0.5"),
+            aggressor_side: AggressorSide::Buy,
+            ..TradeTick::default()
+        };
+
+        let sell = TradeTick {
+            price: Price::from("3.00"),
+            size: Quantity::from(sell_size),
+            aggressor_side: AggressorSide::Sell,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(sell);
+        let expected: Vec<Bar> = emitted
+            .iter()
+            .enumerate()
+            .map(|(index, volume)| {
+                let open = if index == 0 { buy.price } else { sell.price };
+                let volume = Quantity::from(*volume);
+
+                Bar::new(
+                    bar_type,
+                    open,
+                    sell.price,
+                    open,
+                    sell.price,
+                    volume,
+                    sell.ts_init,
+                    sell.ts_init,
+                )
+            })
+            .collect();
+
+        assert_eq!(*handler.lock(), expected);
+        assert_eq!(aggregator.core.builder.volume, Quantity::from(pending));
+        assert_eq!(aggregator.imbalance_value, imbalance);
     }
 
     #[rstest]

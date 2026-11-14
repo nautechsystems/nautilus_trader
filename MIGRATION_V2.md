@@ -220,6 +220,7 @@ step.
 | `cache.trade_ticks`                  | `cache.trades`                 |
 | `cache.quote_tick_count`             | `cache.quote_count`            |
 | `cache.trade_tick_count`             | `cache.trade_count`            |
+| `CacheConfig.tick_capacity`          | `CacheConfig.data_capacity`    |
 
 ### Data subscription lists
 
@@ -626,6 +627,16 @@ outputs instead.
 - Instrument `activation_utc` and `expiration_utc` properties return UTC-aware `datetime.datetime`
   values. Use `activation_ns` and `expiration_ns` when exact nanosecond precision is required.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
+
+`OptionContract` and `CryptoOption` add optional `underlying_instrument_id` and `settlement_type` fields:
+
+- **Rust**: add both fields to struct literals and direct `build_checked` calls; use `None` when unknown.
+- **Defaults**: builders and Python constructors default both fields to `None`.
+- **Legacy data**: missing JSON and Arrow fields load as `None`. Parquet files without the columns remain readable.
+- **Consolidation**: Parquet files with and without these columns cannot be consolidated together.
+  Read the instruments and write them to a separate catalog with the current schema first.
+
+See [option contract metadata](docs/concepts/options.md#option-instrument-types).
 
 High-precision prices and quantities use exact scaled integers. Parse decimal text exactly; do not use v1
 display strings to check compatibility.
@@ -1160,6 +1171,12 @@ is unchanged.
 Postgres-backed deployments must run `nautilus database init` before starting a v2 node. The `order.avg_px`
 and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node fails at connect time
 while the old column types remain.
+
+The initialization also adds nullable `instrument.underlying_instrument_id` and
+`instrument.settlement_type` columns:
+
+- Existing rows keep `NULL`, which loads as `None`.
+- Cache startup rejects schemas missing either column.
 
 Existing databases whose `AGGRESSOR_SIDE` enum still contains `BUYER` and `SELLER` also need this one-time
 migration before ingesting v2 data:

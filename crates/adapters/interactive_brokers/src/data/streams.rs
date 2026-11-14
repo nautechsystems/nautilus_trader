@@ -710,11 +710,10 @@ impl HistoricalBarCompletion {
         }
 
         let mut completed = Vec::new();
-
-        if let Some(pending) = self.pending.take() {
-            if pending.ts_event < bar.ts_event {
-                completed.push(pending);
-            }
+        if let Some(pending) = self.pending.take()
+            && pending.ts_event < bar.ts_event
+        {
+            completed.push(pending);
         }
 
         if bar.ts_event <= now {
@@ -2010,7 +2009,7 @@ where
                         };
                         sequence += 1;
                         let size = Quantity::new(depth.size, size_precision);
-                        let order_key = (depth.position, depth.market_maker.clone());
+                        let order_key = (depth.position, depth.market_maker);
                         let order_id = *l2_order_ids.entry(order_key.clone()).or_insert_with(|| {
                             let order_id = next_l2_order_id;
                             next_l2_order_id += 1;
@@ -4187,7 +4186,7 @@ mod tests {
         let instrument_id = instrument_id();
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         assert!(matches!(
-            send_quote_tick(None, &sender.clone().into(), instrument_id),
+            send_quote_tick(None, &sender.into(), instrument_id),
             StreamAction::Continue
         ));
     }

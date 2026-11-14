@@ -484,6 +484,48 @@ size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resiz
 the order, single or batch. Kraken Futures does not document its answer to a
 total at or below the filled quantity.
 
+Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
+edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit
+`OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,
+`makerProtectionOrderLimitExceeded`, `tooManySmallOrders`, `outsidePriceCollar`,
+`wouldNotReducePosition`, `orderForEditNotFound`, `orderForEditNotAStop`, `editAlreadyHeld`,
+`marketIsCancelOnly`, and `tooManyOrders`, Kraken's open-order limit refusal and, until 12 November
+2026, its Maker Protection hold-cap refusal, held edits included. The adapter also rejects an edit
+on statuses from its send-order status set that the edit documentation does not list: `notFound`,
+`invalidOrderType`, `wouldCauseLiquidation`, `reduceOnlyWouldIncreasePosition`, and the client
+order ID statuses. The send-order documentation lists each of them except
+`reduceOnlyWouldIncreasePosition`. An error response whose code refuses the request also rejects
+the edit: `invalidArgument`, `requiredArgumentMissing`, `Json Parse Error`, `notFound`,
+`accountInactive`, `marketUnavailable`, `cancelOnly`, `authenticationError`, `nonceBelowThreshold`,
+or `nonceDuplicate`, since each edit is sent once under a fresh nonce. For `orderForEditNotFound`,
+the Maker Protection guide states that "the edit's target is not resting: it had genuinely left the
+book by the time a held edit released, or its placement is still held." The adapter rejects such an
+edit as it rejects a cancel answered `notFound`.
+
+A refusal does not establish that the order is still working. Kraken can refuse an edit by
+canceling the order, and the open-orders feed then closes it. If that update is missed, the order
+stays open locally until an open-order check or a restart reconciles it, since the Futures
+execution client does not reconcile on reconnect. Nor does a refusal establish that nothing
+applied: a refused reprice in a [split amendment](#split-amendments) leaves the size reduction
+already applied, which arrives as `OrderUpdated`.
+
+These outcomes stay unconfirmed, so the adapter logs a warning and emits no event:
+
+- `selfFill`: the Maker Protection guide documents that a self-matching edit that is not held
+  removes the order being amended.
+- `postWouldExecute`: the edit documentation says the edited order would be filled upon placement
+  and is canceled instead. A placement answered with it is still rejected.
+- `iocWouldNotExecute`: the edit documentation reports an edit applied as immediate-or-cancel with
+  its remainder removed, while the 22 October 2026 changelog says a held order is no longer
+  converted to immediate-or-cancel.
+- Any other status, such as one Kraken does not document.
+- Any other error code, including `apiLimitExceeded`, or none.
+
+If no private update resolves such an edit, the in-flight check cancels the order locally once its
+retries run out, about 30 seconds on the default settings, even if the order still rests at Kraken.
+This classification covers responses served with HTTP 200, the only status Kraken Futures documents.
+A response with an HTTP error status stays unconfirmed whatever its body.
+
 ### Position management
 
 | Feature          | Spot | Futures | Notes                                                |
@@ -527,6 +569,8 @@ The Phase 3 rollout added 51 markets at the same time. The hold applies to every
   placements are not held. Orders fired by triggers are held unless post-only.
 - **Self-trade prevention**: A released order cancels any resting order of the same account it would
   match, overriding the configured strategy. The resting order's cancel reason is `CANCELLED_BY_SELF_TRADE`.
+- **Held edits**: A second edit while an earlier edit of the order is held is refused with
+  `editAlreadyHeld`, and the order stays as it rests until the earlier edit releases.
 
 #### Split amendments
 
@@ -724,15 +768,20 @@ mass status at the next startup corrects it.
 A successful submit or edit response naming the order only by such an ID leaves the outcome ambiguous: the command is
 not rejected, and the streams or reconciliation resolve the order. The in-flight check's `query_order` needs a venue
 order ID, so if a submitted order's stream frames are lost too and no open check (`open_check_interval_secs`) reads it
-before the in-flight retries run out, the default `submission_recovery_policy` closes it locally, even while the venue
-holds it.
+before the in-flight retries run out, `SubmissionRecoveryPolicy::ResolveLocally` closes it locally, even while the venue
+holds it. The default `SubmissionRecoveryPolicy::RetainUnresolved` instead leaves it unresolved for later venue evidence.
+
+`query_order` reads open orders only, so it emits no report for an order the venue has closed. Under
+`RetainUnresolved`, a cancel or modify timeout restores the prior order status. When periodic open-order checks
+are enabled, bulk history in full-history mode or a targeted status query in open-only mode can recover the
+lost terminal update, subject to the configured lookback.
 
 #### Single-order lookups
 
-A single-order status lookup that finds no report tells reconciliation that the venue
-has no such order, and reconciliation resolves the order on that answer. The lookup
-gives that answer only from a read that rules the order out, and otherwise fails, so
-reconciliation defers the order:
+A single-order status lookup that finds no report tells reconciliation that the venue has no such order.
+Full-history reconciliation can resolve the order on that answer; open-only checks keep it open. The lookup
+gives that answer only from a read that rules the order out, and otherwise fails, so reconciliation defers
+the order:
 
 - A complete read rules out any order it could have returned. A held futures order
   shows only in the orders-status window, which the Futures lookup reads for a cached
@@ -750,8 +799,9 @@ reconciliation defers the order:
   back a continuation token reaches back to its oldest event. A spot closed-order read
   stopped at its page cap rules out none.
 
-An order a read cannot rule out is deferred again on every open-order check. On Futures each such lookup draws
-one order-history token.
+In full-history mode, an order a read cannot rule out is deferred again on every open-order check. In open-only
+mode, another targeted attempt requires a fresh missing-check budget. On Futures each such lookup draws one
+order-history token.
 
 #### Spot pagination limits
 
@@ -788,6 +838,9 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   relative price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
+- A take-profit-limit order whose trigger sits above a buy limit or below a sell limit cannot be a
+  `LimitIfTouched` order, so the row fails naming both prices. An open row fails the read; a closed
+  row is skipped and leaves the set incomplete.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
   fill price.
 
@@ -959,6 +1012,27 @@ than taking a row or reporting the order missing.
 The adapter returns open orders and, when `open_only=False`, historical closed and
 filled orders. Historical reads have the limits below.
 
+Kraken Futures has no time in force or post-only field: apart from a rejection reason, only an order's type states
+them. It documents the `ioc` and `post` types in the send-order response and the order history (`IoC` and `Post`), but
+not in the open-order read (`lmt`, `stop`, `take_profit`) or the order feed (`limit`, `take_profit`, `stop`), and the
+orders-status window states no time in force or post-only flag (its type is only `ORDER` or `TRIGGER_ORDER`). Reports
+take these values as follows:
+
+- A read with `open_only=False` takes an open order's time in force and post-only flag from the newest readable
+  history row of that order on the page, mapped as in [Order history and pricing](#order-history-and-pricing).
+- The HTTP client's `submit_order` reports from the open-order read when it lists the order, otherwise from the
+  send-order response's first order event, or from history when the response carries no event. If that first event
+  carries an `order`, `orderTrigger`, or `orderPriorExecution`, its type sets the time in force and post-only flag:
+  `ioc` is `IOC`, and `post` is post-only `GTC`. A snapshot report without such a payload keeps the snapshot's values.
+  A history report uses the mapping in [Order history and pricing](#order-history-and-pricing).
+- An open-only read, an open order with no readable row on the page, and an order feed delta for an order the adapter
+  does not track map an `ioc` or `post` type the same way, so every documented value reports as `GTC` and not
+  post-only.
+- The orders-status window reports `GTC` and not post-only.
+
+A resting post-only order adopted from a report that does not state it keeps `GTC` and not post-only: no later
+report changes an adopted order's time in force or post-only flag.
+
 #### Order history and pricing
 
 The adapter reads order lifecycle events from
@@ -970,8 +1044,9 @@ An order-history page costs one token, so a page that hands back a continuation 
 single-order status lookup can still report a cached order absent when it was placed after the page's oldest
 event by more than the clock skew allowance. See [Single-order lookups](#single-order-lookups).
 
-The history lists every lifecycle event. The read returns one report per order: the open-order snapshot if the
-venue still lists it. Otherwise, it returns the latest history state. A closed order is not reopened by an
+The history lists every lifecycle event. The read returns one report per order: the open-order snapshot, its time in
+force and post-only flag taken as described above, if the venue still lists it. Otherwise, it returns the latest
+history state. A closed order is not reopened by an
 open state stamped later, such as a refused edit logged after a cancel.
 
 The contract name is resolved as the venue spells it, exactly first and then case-insensitively. A spelling that
@@ -982,11 +1057,6 @@ assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
 The order type is the only place the history states a time in force. `IoC` and `HedgeImmediateOrCancel` rows are
 reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
 `GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
-
-The open-order read and order feed deltas for orders the adapter does not track report the `ioc` and `post` order
-types the same way, but Kraken documents neither there, and the orders-status window states no time in force or
-post-only flag. A resting post-only order the venue lists as a plain limit therefore reports as `GTC` and not
-post-only, and an order adopted from such a report keeps those values.
 
 The adapter skips unrepresentable rows with a warning:
 

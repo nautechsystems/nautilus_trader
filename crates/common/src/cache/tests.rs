@@ -31,15 +31,16 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
         greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
+        stubs::stub_custom_data,
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
-        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookType,
+        ContingencyType, CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType,
+        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
         PositionAdjustmentType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
@@ -58,7 +59,8 @@ use nautilus_model::{
         PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
+        CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
+        SyntheticInstrument, stubs::*,
     },
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{
@@ -77,6 +79,7 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
+use serde_json::json;
 use ustr::Ustr;
 
 use super::handle_persistence_result;
@@ -777,6 +780,1129 @@ fn test_calculate_unrealized_pnl_for_flat_position_returns_zero(
     assert_eq!(
         cache.calculate_unrealized_pnl(&position),
         Some(Money::zero(position.settlement_currency))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_for_flat_position_without_quotes_returns_zero(
+    cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL-FLAT-NOQ")),
+        Some(PositionId::new("P-PNL-FLAT-NOQ")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&instrument, fill.into());
+    position.side = PositionSide::Flat;
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::zero(position.settlement_currency))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_falls_back_to_mark_price(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL-MARK")),
+        Some(PositionId::new("P-PNL-MARK")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let mark_price = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("1.00050"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_mark_price(mark_price).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("50.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_falls_back_to_trade(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL-TRADE")),
+        Some(PositionId::new("P-PNL-TRADE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_trade(trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_falls_back_to_bar(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL-BAR")),
+        Some(PositionId::new("P-PNL-BAR")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00040"),
+        Price::from("0.99990"),
+        Price::from("1.00025"),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_bar(bar).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_source_precedence(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PREC")),
+        Some(PositionId::new("P-PREC")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00040"),
+        Price::from("0.99990"),
+        Price::from("1.00025"),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_bar(bar).unwrap();
+
+    // With only bar: 25.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-PREC"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_trade(trade).unwrap();
+
+    // Trade takes precedence over bar: 30.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("1.00050"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_mark_price(mark).unwrap();
+
+    // Mark takes precedence over trade and bar: 50.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("50.00 USD"))
+    );
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(quote).unwrap();
+
+    // Quote takes precedence over all other sources: 10.00 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("10.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_sentinel_prices(mut cache: Cache, audusd_sim: CurrencyPair) {
+    use nautilus_model::types::price::{ERROR_PRICE, PRICE_ERROR, PRICE_UNDEF};
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-SENT")),
+        Some(PositionId::new("P-SENT")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let valid_bar = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00040"),
+        Price::from("0.99990"),
+        Price::from("1.00025"),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_bar(valid_bar).unwrap();
+
+    let undef_bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Second, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let undef_bar = Bar::new(
+        undef_bar_type,
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Quantity::from(100_000),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_bar(undef_bar).unwrap();
+
+    // Undefined bar is skipped; falls back to the earlier valid bar
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Trade with PRICE_ERROR is skipped; still falls back to valid bar
+    let error_trade = TradeTick::new(
+        instrument.id(),
+        Price::from_raw(PRICE_ERROR, 0),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-ERR"),
+        UnixNanos::from(50),
+        UnixNanos::from(60),
+    );
+    cache.add_trade(error_trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Mark price with PRICE_UNDEF is skipped; still falls back to valid bar
+    let undef_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from_raw(PRICE_UNDEF, 0),
+        UnixNanos::from(70),
+        UnixNanos::from(80),
+    );
+    cache.add_mark_price(undef_mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Quote with PRICE_UNDEF is skipped; still falls back to valid bar
+    let undef_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Price::from_raw(PRICE_UNDEF, 0),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(90),
+        UnixNanos::from(100),
+    );
+    cache.add_quote(undef_quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+
+    // Quote with ERROR_PRICE is skipped without panic; still falls back to valid bar
+    let error_price_quote = QuoteTick::new(
+        instrument.id(),
+        ERROR_PRICE,
+        ERROR_PRICE,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(110),
+        UnixNanos::from(120),
+    );
+    cache.add_quote(error_price_quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_bar_selection_by_ts_init(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-TSINIT")),
+        Some(PositionId::new("P-TSINIT")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // 1-minute bar stamped at open: ts_event=3480, ts_init=3540, close=1.00010
+    let min_bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let min_bar = Bar::new(
+        min_bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00020"),
+        Price::from("0.99980"),
+        Price::from("1.00010"),
+        Quantity::from(100_000),
+        UnixNanos::from(3_480_000_000_000),
+        UnixNanos::from(3_540_000_000_000),
+    );
+    cache.add_bar(min_bar).unwrap();
+
+    // 1-hour bar stamped at open: ts_event=0, ts_init=3600, close=1.00050
+    let hour_bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
+        AggregationSource::Internal,
+    );
+    let hour_bar = Bar::new(
+        hour_bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00060"),
+        Price::from("0.99950"),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        UnixNanos::from(0),
+        UnixNanos::from(3_600_000_000_000),
+    );
+    cache.add_bar(hour_bar).unwrap();
+
+    // Even though min_bar has a larger ts_event (3480s > 0s), hour_bar has a larger ts_init (3600s > 3540s).
+    // Selection by ts_init must choose the 1-hour bar.
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("50.00 USD"))
+    );
+}
+
+#[rstest]
+#[case(OrderSide::Buy, PositionSide::Long, "10.00 USD")]
+#[case(OrderSide::Sell, PositionSide::Short, "-50.00 USD")]
+fn test_calculate_unrealized_pnl_bar_selection_equal_close_tie_break(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] side: OrderSide,
+    #[case] position_side: PositionSide,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(side)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-TIE")),
+        Some(PositionId::new("P-TIE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&instrument, fill.into());
+    position.side = position_side;
+
+    let bid_bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::Internal,
+    );
+    let ask_bar_type = BarType::new(
+        instrument.id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Ask),
+        AggregationSource::Internal,
+    );
+
+    let bid_bar = Bar::new(
+        bid_bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(100_000),
+        UnixNanos::from(60),
+        UnixNanos::from(60),
+    );
+    let ask_bar = Bar::new(
+        ask_bar_type,
+        Price::from("1.00050"),
+        Price::from("1.00060"),
+        Price::from("1.00040"),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        UnixNanos::from(60),
+        UnixNanos::from(60),
+    );
+
+    cache.add_bar(bid_bar).unwrap();
+    cache.add_bar(ask_bar).unwrap();
+
+    // For long: Bid bar (1.00010) ranks higher -> PnL = 10 USD
+    // For short: Ask bar (1.00050) ranks higher -> PnL = -50 USD
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_and_negative_quotes_without_cached_instrument(
+    mut cache: Cache,
+) {
+    let esz1 = futures_contract_es(None, None);
+    let instrument = InstrumentAny::FuturesContract(esz1);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-FUT-1")),
+        Some(PositionId::new("P-FUT-1")),
+        Some(Price::from("10.00")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // Without instrument cached: valid zero quote is accepted
+    let zero_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("0.01"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-10.00 USD"))
+    );
+
+    // Without instrument cached: valid negative quote is accepted
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-5.00"),
+        Price::from("-4.99"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-15.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_and_negative_quotes_with_cached_instrument(
+    mut cache: Cache,
+) {
+    let esz1 = futures_contract_es(None, None);
+    let instrument = InstrumentAny::FuturesContract(esz1);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-FUT-2")),
+        Some(PositionId::new("P-FUT-2")),
+        Some(Price::from("10.00")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // With future instrument cached: valid zero quote is accepted
+    let zero_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("0.01"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-10.00 USD"))
+    );
+
+    // With future instrument cached: valid negative quote is accepted
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-5.00"),
+        Price::from("-4.99"),
+        Quantity::from(10),
+        Quantity::from(10),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-15.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_rejects_negative_quote_when_instrument_forbids_negative_prices(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-NEG")),
+        Some(PositionId::new("P-AUDUSD-NEG")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let negative_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("-1.00000"),
+        Price::from("-0.99990"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(negative_quote).unwrap();
+    assert_eq!(cache.calculate_unrealized_pnl(&position), None);
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_zero_mark_for_inverse_position_without_cached_instrument(
+    mut cache: Cache,
+    btcusd_inverse_perp: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_inverse_perp);
+    // Deliberately do not add instrument to cache to test fallback without cached instrument
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-1")),
+        Some(PositionId::new("P-INV-1")),
+        Some(Price::from("50000.0")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // Zero mark price must be skipped for inverse position rather than masking the valid trade
+    let zero_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("0.0"),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_mark_price(zero_mark).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("50000.0"),
+        Quantity::from(100),
+        AggressorSide::Buy,
+        TradeId::new("TR-INV-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    // With entry 50000.0 and trade 50000.0, unrealized PnL is zero BTC
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("0.00000000 BTC"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_empty_quote_side_and_falls_back(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-EMPTY-SIDE")),
+        Some(PositionId::new("P-EMPTY-SIDE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    // Quote with zero price and zero size on the exit side (Bid for Long)
+    let empty_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00000"),
+        Price::from("1.00050"),
+        Quantity::from(0),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_quote(empty_bid_quote).unwrap();
+
+    // Mark price is valid fallback
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("1.00025"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("25.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_quote_for_inverse_option_without_cached_instrument(
+    mut cache: Cache,
+    mut crypto_option_btc_deribit: CryptoOption,
+) {
+    crypto_option_btc_deribit.is_inverse = true;
+    crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+    let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-OPT-1")),
+        Some(PositionId::new("P-INV-OPT-1")),
+        Some(Price::from("0.020")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // Without instrument cached: valid zero bid quote with positive size is accepted for inverse option
+    let zero_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.000"),
+        Price::from("0.005"),
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_bid_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-0.002 BTC"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_valid_zero_quote_for_inverse_option_with_cached_instrument(
+    mut cache: Cache,
+    mut crypto_option_btc_deribit: CryptoOption,
+) {
+    crypto_option_btc_deribit.is_inverse = true;
+    crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+    let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INV-OPT-2")),
+        Some(PositionId::new("P-INV-OPT-2")),
+        Some(Price::from("0.020")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    assert!(position.is_inverse);
+
+    // With inverse option cached: valid zero bid quote with positive size is accepted
+    let zero_bid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.000"),
+        Price::from("0.005"),
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    cache.add_quote(zero_bid_quote).unwrap();
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("-0.002 BTC"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_non_positive_mark_for_currency_pair(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[values(false, true)] cache_instrument: bool,
+    #[values("0.00000", "-1.00000")] mark_str: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    if cache_instrument {
+        cache.add_instrument(instrument.clone()).unwrap();
+    }
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-MARK")),
+        Some(PositionId::new("P-AUDUSD-MARK")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let invalid_mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from(mark_str),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_mark_price(invalid_mark).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-AUDUSD-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_skips_non_positive_quote_without_cached_instrument(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[values("0.00000", "-1.00000")] bid_str: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-AUDUSD-QUOTE")),
+        Some(PositionId::new("P-AUDUSD-QUOTE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    let invalid_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid_str),
+        Price::from("1.00050"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(10),
+        UnixNanos::from(20),
+    );
+    cache.add_quote(invalid_quote).unwrap();
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1.00030"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-AUDUSD-Q-VAL"),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    cache.add_trade(trade).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from("30.00 USD"))
+    );
+}
+
+#[rstest]
+#[case::commodity_zero(InstrumentAny::Commodity(commodity_gold()), "0.00", "-10.00 USD")]
+#[case::commodity_negative(InstrumentAny::Commodity(commodity_gold()), "-5.00", "-15.00 USD")]
+#[case::equity_zero(InstrumentAny::Equity(equity_aapl()), "0.00", "2.00 USD")]
+#[case::equity_negative(InstrumentAny::Equity(equity_aapl()), "-5.00", "2.00 USD")]
+fn test_calculate_unrealized_pnl_non_positive_spot_quotes(
+    mut cache: Cache,
+    #[case] instrument: InstrumentAny,
+    #[case] bid: &str,
+    #[case] expected_pnl: &str,
+    #[values(false, true)] cache_instrument: bool,
+) {
+    if cache_instrument {
+        cache.add_instrument(instrument.clone()).unwrap();
+    }
+
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-SPOT"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid),
+        Price::from("1.00"),
+        Quantity::from(10),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("12.00"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+#[case::empty(0, "2.00 USD")]
+#[case::populated(10, "-10.00 USD")]
+fn test_calculate_unrealized_pnl_zero_futures_quote_requires_size(
+    mut cache: Cache,
+    #[case] size: i64,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-ZERO-SIZE"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.00"),
+        Price::from("1.00"),
+        Quantity::from(size),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let mark = MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from("12.00"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_mark_price(mark).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+#[case("0.00", "-10.00 USD")]
+#[case("-5.00", "-15.00 USD")]
+fn test_calculate_unrealized_pnl_legacy_commodity_quote(
+    mut cache: Cache,
+    #[case] bid: &str,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::Commodity(commodity_gold());
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::new("P-LEGACY-COMMODITY"))
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("10.00"))
+        .currency(Currency::USD())
+        .build();
+    let position = Position::new(&instrument, fill);
+    let mut serialized = serde_json::to_value(position).unwrap();
+    serialized
+        .as_object_mut()
+        .unwrap()
+        .remove("allows_negative_price");
+    let position: Position = serde_json::from_value(serialized).unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid),
+        Price::from("1.00"),
+        Quantity::from(10),
+        Quantity::from(20),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    cache.add_quote(quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
     );
 }
 
@@ -1571,6 +2697,76 @@ fn test_check_integrity_detects_missing_or_stale_index_entries(
                 .insert(PositionId::from("P-INTEGRITY-STALE"));
         }
     }
+
+    assert!(!cache.check_integrity());
+}
+
+#[rstest]
+#[case::venue_accounts(|cache: &mut Cache| {
+    let account_id = AccountId::from("STALE-001");
+    let venue = account_id.get_issuer();
+    cache.index.venue_accounts.entry(venue).or_default().insert(account_id);
+})]
+#[case::venue_order_ids(|cache: &mut Cache| {
+    let client_order_id = ClientOrderId::from("O-STALE");
+    cache.index.venue_order_ids.insert(VenueOrderId::from("V-STALE"), client_order_id);
+})]
+#[case::client_order_ids(|cache: &mut Cache| {
+    let venue_order_id = VenueOrderId::from("V-STALE");
+    cache.index.client_order_ids.insert(ClientOrderId::from("O-STALE"), venue_order_id);
+})]
+#[case::order_position(|cache: &mut Cache| {
+    let position_id = PositionId::from("P-STALE");
+    cache.index.order_position.insert(ClientOrderId::from("O-STALE"), position_id);
+})]
+#[case::order_strategy(|cache: &mut Cache| {
+    let strategy_id = StrategyId::from("S-STALE");
+    cache.index.order_strategy.insert(ClientOrderId::from("O-STALE"), strategy_id);
+})]
+#[case::position_strategy(|cache: &mut Cache| {
+    let strategy_id = StrategyId::from("S-STALE");
+    cache.index.position_strategy.insert(PositionId::from("P-STALE"), strategy_id);
+})]
+#[case::position_orders(|cache: &mut Cache| {
+    cache.index.position_orders.entry(PositionId::from("P-STALE")).or_default();
+})]
+#[case::strategy_orders(|cache: &mut Cache| {
+    let strategy_orders = cache.index.strategy_orders.entry(StrategyId::from("S-STALE"));
+    strategy_orders.or_default().insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::strategy_positions(|cache: &mut Cache| {
+    let strategy_positions = cache.index.strategy_positions.entry(StrategyId::from("S-STALE"));
+    strategy_positions.or_default().insert(PositionId::from("P-STALE"));
+})]
+#[case::orders_emulated(|cache: &mut Cache| {
+    cache.index.orders_emulated.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_active_local(|cache: &mut Cache| {
+    cache.index.orders_active_local.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_inflight(|cache: &mut Cache| {
+    cache.index.orders_inflight.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_open(|cache: &mut Cache| {
+    cache.index.orders_open.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::orders_closed(|cache: &mut Cache| {
+    cache.index.orders_closed.insert(ClientOrderId::from("O-STALE"));
+})]
+#[case::positions_open(|cache: &mut Cache| {
+    cache.index.positions_open.insert(PositionId::from("P-STALE"));
+})]
+#[case::positions_closed(|cache: &mut Cache| {
+    cache.index.positions_closed.insert(PositionId::from("P-STALE"));
+})]
+#[case::exec_algorithms(|cache: &mut Cache| {
+    cache.index.exec_algorithms.insert(ExecAlgorithmId::from("STALE"));
+})]
+fn test_check_integrity_detects_stale_index_entry(
+    mut cache: Cache,
+    #[case] corrupt: fn(&mut Cache),
+) {
+    corrupt(&mut cache);
 
     assert!(!cache.check_integrity());
 }
@@ -6714,16 +7910,50 @@ fn test_price_when_empty(cache: Cache, audusd_sim: CurrencyPair, #[case] price_t
 }
 
 #[rstest]
-fn test_price_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+#[case(PriceType::Bid, "1.00001")]
+#[case(PriceType::Ask, "1.00003")]
+#[case(PriceType::Last, "1.00002")]
+#[case(PriceType::Mark, "1.00000")]
+fn test_price_when_some(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] price_type: PriceType,
+    #[case] expected: &str,
+) {
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.00001"),
+        Price::from("1.00003"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
+    let trade = TradeTick::new(
+        audusd_sim.id,
+        Price::from("1.00002"),
+        Quantity::from(100_000),
+        AggressorSide::Buy,
+        TradeId::new("TR-1"),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
     let mark_price = MarkPriceUpdate::new(
         audusd_sim.id,
         Price::from("1.00000"),
         UnixNanos::from(5),
         UnixNanos::from(10),
     );
+
+    cache.add_quote(quote).unwrap();
+    cache.add_trade(trade).unwrap();
     cache.add_mark_price(mark_price).unwrap();
-    let result = cache.price(&audusd_sim.id, PriceType::Mark);
-    assert_eq!(result, Some(mark_price.value));
+
+    let result = cache.price(&audusd_sim.id, price_type);
+
+    assert_eq!(result, Some(Price::from(expected)));
 }
 
 #[rstest]
@@ -7266,9 +8496,9 @@ fn test_bars_when_some(mut cache: Cache) {
     assert_eq!(result, Some(bars.into_iter().rev().collect()));
 }
 
-fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
+fn cache_with_data_capacity(data_capacity: usize, bar_capacity: usize) -> Cache {
     let config = CacheConfig::builder()
-        .tick_capacity(tick_capacity)
+        .data_capacity(data_capacity)
         .bar_capacity(bar_capacity)
         .build()
         .unwrap();
@@ -7386,7 +8616,7 @@ fn test_cache_api_market_data_history_introspection() {
 }
 
 #[rstest]
-fn test_add_quotes_enforces_tick_capacity() {
+fn test_add_quotes_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = QuoteTick::default().instrument_id;
     let quotes = (0..5).map(quote_tick_with_ts).collect::<Vec<_>>();
@@ -7437,7 +8667,7 @@ fn test_add_quotes_indexes_each_instrument() {
 }
 
 #[rstest]
-fn test_add_trades_enforces_tick_capacity() {
+fn test_add_trades_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = TradeTick::default().instrument_id;
     let trades = (0..5).map(trade_tick_with_ts).collect::<Vec<_>>();
@@ -7537,7 +8767,7 @@ fn test_add_bars_indexes_each_bar_type() {
 }
 
 #[rstest]
-fn test_add_mark_prices_enforces_tick_capacity() {
+fn test_add_mark_prices_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -7560,7 +8790,7 @@ fn test_add_mark_prices_enforces_tick_capacity() {
 }
 
 #[rstest]
-fn test_add_index_prices_enforces_tick_capacity() {
+fn test_add_index_prices_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -7583,7 +8813,7 @@ fn test_add_index_prices_enforces_tick_capacity() {
 }
 
 #[rstest]
-fn test_add_funding_rates_enforces_tick_capacity() {
+fn test_add_funding_rates_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
     let funding_rates = (0..5)
@@ -7681,7 +8911,7 @@ fn test_price_updates_at_index_most_recent_first(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_add_instrument_statuses_enforces_tick_capacity() {
+fn test_add_instrument_statuses_enforces_data_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -7704,10 +8934,10 @@ fn test_add_instrument_statuses_enforces_tick_capacity() {
 }
 
 #[rstest]
-#[should_panic(expected = "tick_capacity")]
-fn test_new_rejects_zero_tick_capacity() {
+#[should_panic(expected = "data_capacity")]
+fn test_new_rejects_zero_data_capacity() {
     let config = CacheConfig {
-        tick_capacity: 0,
+        data_capacity: 0,
         ..Default::default()
     };
 
@@ -7726,15 +8956,15 @@ fn test_new_rejects_zero_bar_capacity() {
 }
 
 #[rstest]
-#[case(0, 1, "tick_capacity")]
+#[case(0, 1, "data_capacity")]
 #[case(1, 0, "bar_capacity")]
 fn test_try_new_returns_invalid_capacity(
-    #[case] tick_capacity: usize,
+    #[case] data_capacity: usize,
     #[case] bar_capacity: usize,
     #[case] expected_field: &str,
 ) {
     let config = CacheConfig {
-        tick_capacity,
+        data_capacity,
         bar_capacity,
         ..Default::default()
     };
@@ -9802,10 +11032,13 @@ fn test_purge_instrument_refuses_when_orders_open() {
         OrderEventAny::Accepted(OrderAccepted::default()),
     );
     assert!(order.is_open());
+    let custom = stub_custom_data(1, 11, None, Some(instrument_id.to_string()));
+    cache.add_custom_data(custom.clone());
 
     cache.purge_instrument(instrument_id);
 
     assert!(cache.instrument(&instrument_id).is_some());
+    assert_eq!(cache.custom_data(&custom.data_type), Some(&custom));
     assert!(cache.check_integrity());
 }
 
@@ -16380,4 +17613,163 @@ fn test_token_currency_does_not_replace_cached_legacy_code() {
     assert_eq!(retained.iso4217, 0);
     assert_eq!(retained.name, "Legacy currency");
     assert_eq!(retained.currency_type, CurrencyType::Crypto);
+}
+
+#[rstest]
+#[case(1)]
+#[case(3)]
+fn test_custom_data_history_is_bounded_in_reverse_insertion_order(#[case] capacity: usize) {
+    let mut cache = cache_with_data_capacity(capacity, 2);
+    let data = [30, 10, 40, 20].map(|ts| stub_custom_data(ts, ts as i64, None, None));
+    let data_type = &data[0].data_type;
+    assert_eq!(cache.custom_data(data_type), None);
+    assert_eq!(cache.custom_data_at_index(data_type, 0), None);
+    assert_eq!(
+        cache.custom_data_history(data_type),
+        Vec::<CustomData>::new()
+    );
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    let expected: Vec<_> = data.iter().rev().take(capacity).cloned().collect();
+    assert_eq!(cache.custom_data_history(data_type), expected);
+    assert_eq!(cache.custom_data(data_type), Some(&data[3]));
+
+    for (index, item) in expected.iter().enumerate() {
+        assert_eq!(cache.custom_data_at_index(data_type, index), Some(item));
+    }
+
+    assert_eq!(cache.custom_data_at_index(data_type, capacity), None);
+    assert_eq!(cache.custom_data_at_index(data_type, usize::MAX), None);
+}
+
+#[rstest]
+fn test_custom_data_histories_are_isolated_by_topic() {
+    let mut cache = cache_with_data_capacity(1, 2);
+
+    let data = [
+        stub_custom_data(1, 11, None, None),
+        stub_custom_data(2, 22, None, Some("A.SIM".into())),
+        stub_custom_data(3, 33, None, Some("B.SIM".into())),
+        stub_custom_data(
+            4,
+            44,
+            Some(serde_json::from_value(json!({"source": "a"})).unwrap()),
+            None,
+        ),
+        stub_custom_data(
+            5,
+            55,
+            Some(serde_json::from_value(json!({"source": "b"})).unwrap()),
+            None,
+        ),
+    ];
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    let other_type = CustomData::new(
+        Arc::clone(&data[0].data),
+        DataType::new("Other", None, None),
+    );
+
+    cache.add_custom_data(other_type.clone());
+    for item in data.iter().chain(std::iter::once(&other_type)) {
+        let equivalent = item.data_type.topic().parse::<DataType>().unwrap();
+        assert_eq!(cache.custom_data(&equivalent), Some(item));
+        assert_eq!(cache.custom_data_history(&equivalent), vec![item.clone()]);
+    }
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_reset_clears_custom_data(#[case] drop_instruments_on_reset: bool) {
+    let config = CacheConfig {
+        drop_instruments_on_reset,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), None);
+    let data = stub_custom_data(1, 11, None, None);
+    cache.add_custom_data(data.clone());
+
+    cache.reset();
+
+    assert_eq!(cache.custom_data(&data.data_type), None);
+    assert_eq!(cache.custom_data_at_index(&data.data_type, 0), None);
+    assert_eq!(
+        cache.custom_data_history(&data.data_type),
+        Vec::<CustomData>::new()
+    );
+}
+
+#[rstest]
+fn test_purge_instrument_removes_only_its_custom_data(audusd_sim: CurrencyPair) {
+    let mut cache = cache();
+    let instrument_id = audusd_sim.id;
+    cache.add_instrument(audusd_sim.into()).unwrap();
+
+    let data = [
+        stub_custom_data(1, 11, None, Some(instrument_id.to_string())),
+        stub_custom_data(2, 22, None, Some("OTHER.SIM".into())),
+        stub_custom_data(3, 33, None, None),
+        stub_custom_data(4, 44, None, Some(format!("{instrument_id}-OTHER"))),
+        stub_custom_data(
+            5,
+            55,
+            Some(
+                serde_json::from_value(json!({"instrument_id": instrument_id.to_string()}))
+                    .unwrap(),
+            ),
+            None,
+        ),
+    ];
+
+    for item in &data {
+        cache.add_custom_data(item.clone());
+    }
+
+    cache.purge_instrument(instrument_id);
+
+    assert_eq!(cache.custom_data(&data[0].data_type), None);
+
+    for item in &data[1..] {
+        assert_eq!(cache.custom_data(&item.data_type), Some(item));
+    }
+}
+
+#[rstest]
+fn test_custom_data_reads_are_available_through_cache_facades() {
+    let cell = Rc::new(RefCell::new(cache_with_data_capacity(2, 1)));
+
+    let data = [
+        stub_custom_data(10, 11, None, None),
+        stub_custom_data(1, 22, None, None),
+    ];
+
+    for item in &data {
+        cell.borrow_mut().add_custom_data(item.clone());
+    }
+
+    let data_type = &data[0].data_type;
+    let api = CacheApi::new(&cell);
+    let snapshot = api.custom_data_history(data_type);
+    let latest = api.custom_data(data_type);
+    let previous = api.custom_data_at_index(data_type, 1);
+    let missing = api.custom_data_at_index(data_type, 2);
+    let view = super::CacheView::new(Rc::clone(&cell));
+    assert_eq!(view.borrow().custom_data(data_type), Some(&data[1]));
+
+    cell.borrow_mut().reset();
+
+    assert_eq!(snapshot, vec![data[1].clone(), data[0].clone()]);
+    assert_eq!(latest, Some(data[1].clone()));
+    assert_eq!(previous, Some(data[0].clone()));
+    assert_eq!(missing, None);
+    assert_eq!(api.custom_data(data_type), None);
+    assert_eq!(api.custom_data_history(data_type), Vec::<CustomData>::new());
 }

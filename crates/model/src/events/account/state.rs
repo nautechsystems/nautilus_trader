@@ -24,6 +24,9 @@ use crate::{
     types::{AccountBalance, Currency, MarginBalance, balance::WalletAccountBalances},
 };
 
+/// The `AccountState.info` key which marks a complete balance snapshot.
+pub const BALANCES_SNAPSHOT_COMPLETE_INFO_KEY: &str = "balances_snapshot_complete";
+
 /// Represents an event which includes information on the state of the account.
 ///
 /// The optional `info` bag carries venue-specific account data that does not map

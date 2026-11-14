@@ -62,6 +62,7 @@ pub(super) struct Mutation {
     pub(super) order: OrderAny,
     pub(super) definition: BinaryOption,
     pub(super) shard: u32,
+    pub(super) subaccount: u32,
     pub(super) http: KalshiHttpClient,
     pub(super) state: Arc<Mutex<PrivateState>>,
     pub(super) emitter: ExecutionEventEmitter,
@@ -306,7 +307,13 @@ impl Mutation {
     }
 
     async fn prepare(&self) -> anyhow::Result<(Prepared, Option<Decimal>)> {
-        let prepared = prepare(&self.command, &self.order, self.shard, &self.definition)?;
+        let prepared = prepare(
+            &self.command,
+            &self.order,
+            self.shard,
+            self.subaccount,
+            &self.definition,
+        )?;
         let mut hold = None;
         if let Prepared::Amend { target, request } = &prepared {
             hold = Some(submit::prepare(&self.http, target, &self.definition, request).await?);
@@ -337,7 +344,10 @@ impl Mutation {
                     expiration_time: None,
                 };
 
-                let ack = self.http.amend_order(venue_id.as_str(), &amendment).await?;
+                let ack = self
+                    .http
+                    .amend_order(venue_id.as_str(), self.subaccount, &amendment)
+                    .await?;
 
                 let remaining = match ack.remaining_count {
                     Field::Value(value) => Some(value),
@@ -347,7 +357,11 @@ impl Mutation {
                 Ok((ack.order_id, ack.client_order_id, ack.ts_ms, remaining))
             }
             Prepared::Decrease { request, .. } => {
-                let ack = self.http.decrease_order(venue_id.as_str(), request).await?;
+                let ack = self
+                    .http
+                    .decrease_order(venue_id.as_str(), self.subaccount, request)
+                    .await?;
+
                 if ack.remaining_count.0 < Decimal::ZERO
                     || ack.remaining_count.0.normalize().scale() > 2
                 {
@@ -365,7 +379,7 @@ impl Mutation {
             }
             Prepared::Cancel => {
                 let query = AccountQuery {
-                    subaccount: 0,
+                    subaccount: self.subaccount,
                     exchange_index: self.shard,
                 };
 
@@ -624,6 +638,7 @@ fn prepare(
     command: &Command,
     order: &OrderAny,
     shard: u32,
+    subaccount: u32,
     definition: &BinaryOption,
 ) -> anyhow::Result<Prepared> {
     anyhow::ensure!(
@@ -703,10 +718,11 @@ fn prepare(
 
     target.apply(OrderEventAny::Updated(event))?;
 
-    let create = submit::request(&target, None, shard).map_err(|reason| match reason {
-        OrderDeniedReason::ValidationFailed { detail } => anyhow::anyhow!(detail),
-        reason => anyhow::anyhow!(reason.to_string()),
-    })?;
+    let create =
+        submit::request(&target, None, shard, subaccount).map_err(|reason| match reason {
+            OrderDeniedReason::ValidationFailed { detail } => anyhow::anyhow!(detail),
+            reason => anyhow::anyhow!(reason.to_string()),
+        })?;
 
     Ok(Prepared::Amend {
         target: Box::new(target),
@@ -822,7 +838,7 @@ mod tests {
             _ => unreachable!(),
         }
 
-        let result = prepare(&Command::Modify(command), &order, 3, &definition);
+        let result = prepare(&Command::Modify(command), &order, 3, 0, &definition);
 
         if reason.is_empty() {
             let Ok(Prepared::Decrease {

@@ -65,7 +65,8 @@ By default, HTTPS uses system trust without a client certificate. Set `certs_dir
   fails without a matching pair.
 - **Server trust**: All HTTPS requests from that client use bundled web PKI roots plus other certificates
   in the directory instead of system trust. Use a dedicated directory with restricted write access,
-  because those additional certificates become trust anchors.
+  because those additional certificates become trust anchors. On Unix, a world-writable directory
+  logs a warning.
 - **Simulation**: Setting `certs_dir` fails client creation; client certificates are unsupported.
 
 ### Proxy routing
@@ -285,8 +286,9 @@ backends use `rustls` for `wss://` connections and set `TCP_NODELAY` on paths wh
 the TCP stream.
 
 :::warning
-A recognized SOCKS proxy URL logs a warning and **connects directly** because WebSocket SOCKS
-tunneling is not implemented. Malformed proxy URLs and other unsupported schemes return an error.
+Malformed proxy URLs and unsupported schemes return an error. This includes SOCKS, because
+WebSocket SOCKS tunneling is not implemented. The client **never connects directly** when
+`proxy_url` is set.
 :::
 
 ### Inbound size limits

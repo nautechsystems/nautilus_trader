@@ -271,7 +271,7 @@ def test_live_exec_engine_config_defaults() -> None:
     config = LiveExecutionEngineConfig()
 
     assert isinstance(config, LiveExecutionEngineConfig)
-    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RETAIN_UNRESOLVED
     assert config.snapshot_orders is False
     assert config.snapshot_positions is False
 
@@ -301,7 +301,7 @@ def test_live_exec_engine_config_open_check_lookback(
 @pytest.mark.parametrize(
     ("policy", "expected"),
     [
-        (None, SubmissionRecoveryPolicy.RESOLVE_LOCALLY),
+        (None, SubmissionRecoveryPolicy.RETAIN_UNRESOLVED),
         (
             SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
             SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
@@ -350,7 +350,7 @@ def test_live_exec_engine_config_preserves_positional_arguments() -> None:
     assert config.debug is True
     assert config.snapshot_orders is True
     assert config.snapshot_positions is True
-    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RETAIN_UNRESOLVED
 
 
 def test_live_exec_engine_config_readback() -> None:
@@ -487,7 +487,7 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value: object) ->
 )
 @pytest.mark.parametrize(
     "value",
-    [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
+    [0.0, 0.4e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
 )
 def test_live_exec_engine_config_rejects_invalid_intervals(field: object, value: object) -> None:
     """

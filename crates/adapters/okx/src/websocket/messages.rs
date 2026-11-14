@@ -228,6 +228,11 @@ impl Serialize for OKXSubscriptionArg {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("channel", &self.channel)?;
 
+        if self.channel == OKXWsChannel::Positions {
+            // Periodic snapshots would keep restarting the position reconciliation grace window
+            map.serialize_entry("extraParams", r#"{"updateInterval":"0"}"#)?;
+        }
+
         if let Some(inst_type) = &self.inst_type {
             map.serialize_entry("instType", inst_type)?;
         }
@@ -2639,6 +2644,35 @@ mod tests {
         assert_eq!(json["newCallbackSpread"], "25");
         assert_eq!(json["newActivePx"], "65000");
         assert!(json.get("callbackSpread").is_none());
+    }
+
+    #[rstest]
+    #[case::positions(
+        OKXWsChannel::Positions,
+        serde_json::json!({
+            "channel":"positions",
+            "instType":"SWAP",
+            "extraParams":serde_json::json!({"updateInterval":"0"}).to_string(),
+        }),
+    )]
+    #[case::orders(
+        OKXWsChannel::Orders,
+        serde_json::json!({"channel":"orders", "instType":"SWAP"}),
+    )]
+    fn test_subscription_arg_update_interval(
+        #[case] channel: OKXWsChannel,
+        #[case] expected: serde_json::Value,
+    ) {
+        let arg = OKXSubscriptionArg {
+            channel,
+            inst_type: Some(OKXInstrumentType::Swap),
+            inst_family: None,
+            inst_id: None,
+        };
+
+        let actual = serde_json::to_value(&arg).unwrap();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest]

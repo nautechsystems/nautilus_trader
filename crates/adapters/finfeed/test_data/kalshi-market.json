@@ -1,0 +1,16 @@
+{
+  "exchange_id": "KALSHI",
+  "market_id": "TEST-KALSHI-30_YES",
+  "outcome_name": "Yes",
+  "outcome_type": "Binary",
+  "status": "Open",
+  "price": 0,
+  "title": "Authored Kalshi Yes/No contract",
+  "description": "Authored FinFeed Kalshi definition with public metadata enrichment.",
+  "source_specific_data": {
+    "Ticker": "TEST-KALSHI-30",
+    "EventTicker": "TEST-KALSHI",
+    "TickSize": "0",
+    "NotionalValueDollars": "1.0000"
+  }
+}

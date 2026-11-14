@@ -295,8 +295,7 @@ impl StubInfoBuilder {
         let use_wildcard = info.items.is_none();
         let items = info
             .items
-            .map(|items| items.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_default();
+            .map_or_default(|items| items.iter().map(|s| s.to_string()).collect());
 
         self.get_module(Some(info.target_module))
             .module_re_exports

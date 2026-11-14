@@ -63,7 +63,8 @@ impl TradeId {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> Self {
+    #[pyo3(name = "_safe_constructor")]
+    fn py_safe_constructor() -> Self {
         Self::from("NULL")
     }
 

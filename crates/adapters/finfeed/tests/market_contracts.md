@@ -1,7 +1,7 @@
 # Prediction Market Field Contracts
 
 Use this reference before extending FinFeed instrument or data projections. Discovery does not establish
-instrument support: the adapter accepts only checked Polymarket Yes/No `BinaryOption` definitions.
+instrument support: the adapter accepts checked Polymarket and ordinary Kalshi Yes/No `BinaryOption` definitions.
 Execution and other FinFeed products are out of scope.
 
 ## Sources and fixtures
@@ -24,12 +24,17 @@ The FinFeed mapping uses price precision four, share precision six, and a share 
 It requires a fetched tick strictly inside `(0, 1)` and representable without rounding.
 Ordinary binary redemption rules do not establish authoritative settlement for a FinFeed record.
 
-The [definition parser](../src/http/parse.rs) rejects the other eight venues until their complete field
+Kalshi definitions supplement FinFeed with public Kalshi market/event metadata. The [private metadata parser](../src/http/kalshi.rs)
+validates USD 1 economics and exact price grids. Prices use six-decimal storage and sizes two decimals. `No` outcomes
+use the complementary price grid. Public `open_time` and `latest_expiration_time` supply lifecycle bounds;
+`close_time` remains separate. Public `price_ranges` supplies the grid; zero FinFeed `TickSize` is ignored.
+Unsupported economics and mismatched identities reject the definition.
+
+The [definition parser](../src/http/parse.rs) rejects the other seven venues until their complete field
 rules are verified. Their authored listing fixtures exercise that rejection and exact ID preservation.
 
 | Family              | Required field rules before native mapping                                                          | Boundary to preserve                                                              |
 | ------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Kalshi              | Currency, payout units, full per-market price grid, activation, cutoff, expiry, and early close.    | Zero `TickSize` cannot replace `price_ranges` or `price_level_structure`.         |
 | Myriad              | Network/token identity, share/payout units, increments, outcome IDs, date format, and trade clock.  | Token decimals do not establish share precision; paused status needs precedence.  |
 | Manifold            | MANA/CASH identity, payout/cancellation, answer IDs, classification, and positive share quantities. | A binary label cannot establish a multiple-choice answer mapping.                 |
 | Hyperliquid Outcome | Network, template tradability, outcome encoding, units, increments, and lifecycle.                  | Native asset encoding does not establish spot/perpetual defaults.                 |
@@ -55,7 +60,10 @@ and `MaxSpread` are [rewards metadata](../../polymarket/src/http/models.rs), not
 titles, and ambiguous dates cannot establish lifecycle timestamps without provider format and timezone
 rules. Metadata and activity are separate observations; neither supplies an atomic market snapshot.
 
-The parser requires normalized `Binary`, a Yes/No label, a matching ID suffix, a valid `ConditionId`,
+Kalshi IDs equal `<Ticker>_YES` or `<Ticker>_NO` for their source label. FinFeed `Ticker` and `EventTicker`
+must match public market `ticker`/`event_ticker` and event `event_ticker`.
+
+The Polymarket parser requires normalized `Binary`, a Yes/No label, a matching ID suffix, a valid `ConditionId`,
 and exactly two distinct numeric token IDs with distinct Yes/No labels. It rejects other binary labels,
 `MultipleChoice`, and `Numeric`. Wider support needs verified grouping, units, bounds, and payout rules.
 Native [events](https://docs.polymarket.com/concepts/markets-events) group independently resolvable
@@ -102,7 +110,8 @@ verified payout/finality semantics. No verified final payout vector, finality ti
 resolution reference supports a settlement event.
 
 Keep `EndDateIso` as the supported Polymarket simulation cutoff and unknown activation as zero.
-Do not transfer that fallback to other venues or infer settlement from cutoff, status, winner, or
+Kalshi uses public metadata lifecycle fields; its final settlement is still not inferred.
+Do not transfer the Polymarket fallback to other venues or infer settlement from cutoff, status, winner, or
 absence from active IDs. Wider support needs field-specific finality, cancellation, payout-unit,
 and revision rules.
 

@@ -111,7 +111,7 @@ impl KalshiDataClientConfig {
 impl KalshiExecutionClientConfig {
     /// Configuration for the Kalshi execution client.
     #[new]
-    #[pyo3(signature = (account_id = None, api_key_id = None, private_key = None, environment = None, base_url_http = None, base_url_ws = None, proxy_url = None, http_timeout_secs = None, ws_timeout_secs = None, exchange_index = None, transport_backend = None))]
+    #[pyo3(signature = (account_id = None, api_key_id = None, private_key = None, environment = None, base_url_http = None, base_url_ws = None, proxy_url = None, http_timeout_secs = None, ws_timeout_secs = None, exchange_index = None, transport_backend = None, subaccount = None))]
     #[expect(
         clippy::too_many_arguments,
         reason = "thin projection of the Rust config fields"
@@ -128,11 +128,13 @@ impl KalshiExecutionClientConfig {
         ws_timeout_secs: Option<u64>,
         exchange_index: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        subaccount: Option<u32>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
         let config = Self {
             account_id: account_id.unwrap_or(defaults.account_id),
+            subaccount: subaccount.unwrap_or(defaults.subaccount),
             api_key_id: api_key_id.map(SecretString::from),
             private_key: private_key.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
@@ -227,6 +229,7 @@ mod tests {
                     .set_item("account_id", AccountId::from("KALSHI-PYTHON"))
                     .unwrap();
                 kwargs.set_item("exchange_index", 3).unwrap();
+                kwargs.set_item("subaccount", 7).unwrap();
             }
 
             let config = class.call((), Some(&kwargs)).unwrap();
@@ -268,6 +271,7 @@ mod tests {
                     ws_timeout_secs: 19,
                     exchange_index: 3,
                     transport_backend: backend,
+                    subaccount: 7,
                 };
 
                 assert_eq!(actual, expected);

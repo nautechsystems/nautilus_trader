@@ -438,6 +438,37 @@ fn test_config_rejects_invalid_retry_delays(
 }
 
 #[rstest]
+#[case(None, true)]
+#[case(Some(1), true)]
+#[case(Some(5_000), true)]
+#[case(Some(9_999_999_999_999), true)]
+#[case(Some(0), false)]
+#[case(Some(10_000_000_000_000), false)]
+#[case(Some(u64::MAX), false)]
+fn test_exec_config_validates_order_request_ttl(
+    #[case] order_request_ttl_ms: Option<u64>,
+    #[case] is_valid: bool,
+) {
+    let config = OKXExecutionClientConfig {
+        order_request_ttl_ms,
+        ..Default::default()
+    };
+
+    let result = config.validate();
+
+    if is_valid {
+        assert_eq!(result, Ok(()));
+    } else {
+        let ConfigError::Range { field, .. } =
+            result.expect_err("out-of-range TTL must fail validation")
+        else {
+            panic!("Expected a range error")
+        };
+        assert_eq!(field, "order_request_ttl_ms");
+    }
+}
+
+#[rstest]
 #[case(None)]
 #[case(Some(vec![]))]
 fn test_config_requires_option_families(#[case] instrument_families: Option<Vec<String>>) {

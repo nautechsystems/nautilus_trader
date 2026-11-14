@@ -32,8 +32,25 @@ Orders routed to TWAP require these string-valued `exec_algorithm_params`:
 Both values must parse as positive numbers, and `horizon_secs` must be at least `interval_secs`.
 The algorithm submits the first slice immediately and the remaining slices at the configured interval.
 
+TWAP divides the order quantity across `floor(horizon_secs / interval_secs)` slices and rounds each
+slice down to the instrument size increment:
+
+- **Remainder**: TWAP submits any remainder as an extra final slice. A remainder below the
+  instrument minimum quantity joins the last regular slice instead.
+- **Whole order**: When a slice would be smaller than the size increment or the minimum quantity,
+  TWAP submits the whole order at once.
+
 TWAP denies the primary order before submission when the order type, instrument, or schedule is
-unsupported or invalid.
+unsupported or invalid. When TWAP slices the order, it also denies the order in these cases:
+
+- **Quantity**: The order quantity has more decimal places than the instrument size precision or
+  is off the size grid.
+- **Slice size**: A slice exceeds the instrument maximum quantity.
+- **Schedule capacity**: The interval count is too large to schedule.
+
+For quote-quantity orders, TWAP rounds each slice to the decimal places of the size increment
+instead of down to the increment. It skips the remainder merge and the size grid and maximum
+quantity denials, because those instrument limits apply to base quantities.
 
 ## Custom execution algorithms
 

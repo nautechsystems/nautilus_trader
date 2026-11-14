@@ -17,6 +17,11 @@ venue acceptance of order requests.
 responses. The rate-limit body follows the [official token-limit guide](https://docs.kalshi.com/getting_started/rate_limits),
 retrieved on 17 October 2026. The duplicate response is an adversarial test input, not a captured venue guarantee.
 
+The `subaccount_restricted` response uses the exact denial text documented in the
+[official subaccount guide](https://docs.kalshi.com/getting_started/subaccounts), retrieved on
+12 November 2026. Its JSON envelope is a synthetic input; the text identifies the restricted-key
+denial recognized by quota discovery.
+
 `history.json` combines the public market, event, and series definitions described in
 [instrument fixture provenance](instruments_provenance.md) with original synthetic trade, cutoff,
 and candle inputs based on the history field contracts below. Tests change timestamps, quantities, prices,

@@ -16,8 +16,6 @@
 #   ships as `2.0.0rcN`.
 # - pandas (`pip install pandas`), used by the reports at the end. The wheel
 #   declares no runtime dependencies.
-#
-# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %%
 from decimal import Decimal

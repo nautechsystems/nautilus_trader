@@ -401,7 +401,7 @@ async fn cancel_orders(chunk: &[Mutation], epoch: Option<(u64, u64)>) -> bool {
                     .venue_order_id()
                     .expect("prepared cancellation identity")
                     .to_string(),
-                subaccount: 0,
+                subaccount: child.subaccount,
                 exchange_index: child.shard,
                 market_ticker: Some(child.order.instrument_id().symbol.to_string()),
             })

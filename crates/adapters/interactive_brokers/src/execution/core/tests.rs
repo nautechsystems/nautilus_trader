@@ -748,7 +748,7 @@ fn single_submit_definitive_failure_rejects_and_removes_tracking() {
         account_id,
         UnixNanos::new(19),
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -1125,7 +1125,7 @@ fn order_notice_rejection_emits_terminal_event_after_informational_notices() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &rejection,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(43),
         account_id,
         None,
@@ -1191,7 +1191,7 @@ fn order_notice_sub_200_error_rejects_pre_acceptance_order() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(44),
         account_id,
         None,
@@ -1264,7 +1264,7 @@ fn order_notice_for_accepted_order_with_pending_modify_emits_modify_rejected() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(45),
         account_id,
         None,
@@ -1328,7 +1328,7 @@ fn order_notice_for_accepted_order_with_pending_cancel_emits_cancel_rejected() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(47),
         account_id,
         None,
@@ -1446,7 +1446,7 @@ fn resolve_failed_order_list_predecessors_cancels_and_clears_tracking() {
         &state.0,
         strategy_id,
         account_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -1506,7 +1506,7 @@ fn resolve_failed_order_list_predecessors_skips_failed_cancels() {
         &state.0,
         strategy_id,
         account_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -1845,6 +1845,35 @@ async fn open_order_refresh_emits_order_updated_only_on_change(
 }
 
 #[rstest]
+fn recovered_order_tracking_rejects_route_mapped_to_another_order() {
+    let order_id = 7503;
+    let instrument_id = equity_aapl().id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(ClientOrderId::from("O-TRACKED"), instrument_id),
+    );
+    let recovered = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-RECOVERED"))
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(2))
+        .submit(true)
+        .build();
+
+    let result = InteractiveBrokersExecutionClient::cache_recovered_order_tracking(
+        order_id, &recovered, &orders,
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "IB order ID 7503 is already mapped to client order O-TRACKED"
+    );
+}
+
+#[rstest]
 #[case::limit("LMT", Some(Price::from("101.00")), None, Some(101.0), Some(1.5), None)]
 #[case::stop("STP", None, Some(Price::from("95.00")), None, Some(95.0), None)]
 #[case::trailing("TRAIL", None, Some(Price::from("95.00")), None, Some(2.5), Some(95.0))]
@@ -2064,6 +2093,51 @@ async fn execution_data_records_own_fill_before_commission_report(
 }
 
 #[rstest]
+#[tokio::test]
+async fn execution_data_backfills_unset_tracked_perm_id() {
+    let order_id = 7402;
+    let client_order_id = ClientOrderId::from("O-PERM-BACKFILL");
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let instrument_provider = create_test_instrument_provider();
+    let (exec_sender, _exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let position_tracker = create_position_tracker();
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let mut exec_data = create_test_execution_data(order_id, "EXEC-PERM-1", 2.0, 100.0, "BOT");
+    exec_data.execution.perm_id = 8801;
+    InteractiveBrokersExecutionClient::handle_order_update(
+        &OrderUpdate::ExecutionData(exec_data),
+        &orders,
+        &instrument_provider,
+        &exec_sender.into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        orders.lock().unwrap().order(order_id).unwrap().perm_id,
+        8801
+    );
+}
+
+#[rstest]
 fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
     let state = SubmitTrackingState::new();
     let prior_id = 7201;
@@ -2111,7 +2185,7 @@ fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
         AccountId::from("IB-LIST-001"),
         UnixNanos::new(31),
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -2157,7 +2231,7 @@ fn list_submit_failure_denies_every_unsubmitted_tail_order() {
         &orders,
         DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED,
         strategy_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -2282,7 +2356,7 @@ fn unpreparable_order_is_denied_with_coded_reason(
         &cmd,
         &error,
         &orders,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -4016,7 +4090,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
         client_order_id,
         VenueOrderId::from(order_id.to_string()),
         &orders,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
     )
@@ -5075,6 +5149,27 @@ fn binding_notification_resolves_a_duplicate_order_route() {
         state.group_cancel_routes(parent_id, None),
         (vec![(101, 11), (202, 22)], vec![])
     );
+}
+
+#[rstest]
+fn open_order_data_backfills_unset_tracked_perm_id() {
+    let order_id = 7403;
+    let client_order_id = ClientOrderId::from("O-OPEN-PERM");
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, create_test_stock_instrument()),
+    );
+    let mut data = create_test_open_order(order_id, "Submitted", client_order_id.as_str());
+    data.order.perm_id = 8802;
+
+    let mut state = orders.lock().unwrap();
+    state
+        .observe_order_data(&data, AccountId::from("IB-001"), false)
+        .unwrap();
+
+    assert_eq!(state.order(order_id).unwrap().perm_id, 8802);
 }
 
 #[rstest]

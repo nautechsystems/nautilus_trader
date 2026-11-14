@@ -651,74 +651,72 @@ impl AccountsManager {
                 instrument.id()
             );
 
-            if !order.is_open() || (order.price().is_none() && order.trigger_price().is_none()) {
+            if !order.is_open() {
                 continue;
             }
+
+            let Some(price) = order.price().or_else(|| order.trigger_price()) else {
+                continue;
+            };
 
             if order.is_reduce_only() {
                 continue; // Does not contribute to margin
             }
 
-            let price = if order.price().is_some() {
-                order.price()
-            } else {
-                order.trigger_price()
-            };
-
             let margin_init = match instrument {
                 InstrumentAny::Betting(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::BinaryOption(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::Cfd(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::Commodity(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CryptoFuture(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CryptoFuturesSpread(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CryptoOption(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CryptoOptionSpread(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CryptoPerpetual(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::CurrencyPair(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::Equity(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::FuturesContract(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::FuturesSpread(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::IndexInstrument(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::OptionContract(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::OptionSpread(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::PerpetualContract(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
                 InstrumentAny::TokenizedAsset(i) => account
-                    .calculate_initial_margin(i, order.leaves_qty(), price?, None)
+                    .calculate_initial_margin(i, order.leaves_qty(), price, None)
                     .ok()?,
             };
 
@@ -809,25 +807,19 @@ impl AccountsManager {
             );
             assert!(order.is_open(), "Order is not open");
 
-            if order.price().is_none() && order.trigger_price().is_none() {
+            let Some(price) = order.price().or_else(|| order.trigger_price()) else {
                 continue;
-            }
+            };
 
             if order.is_reduce_only() {
                 continue;
             }
 
-            let price = if order.price().is_some() {
-                order.price()
-            } else {
-                order.trigger_price()
-            };
-
             let mut locked = match account.calculate_balance_locked(
                 instrument,
                 order.order_side(),
                 order.leaves_qty(),
-                price?,
+                price,
                 None,
             ) {
                 Ok(locked) => locked,
@@ -2095,7 +2087,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_orders_betting_account_uses_liability_for_locked_balance() {
+    #[case::limit(OrderType::Limit, "14.50 GBP", "985.50 GBP")]
+    #[case::trigger(OrderType::StopMarket, "17.00 GBP", "983.00 GBP")]
+    #[case::limit_before_trigger(OrderType::StopLimit, "14.50 GBP", "985.50 GBP")]
+    #[case::unpriced(OrderType::Market, "0.00 GBP", "1000.00 GBP")]
+    fn test_update_orders_betting_account_uses_liability_for_locked_balance(
+        #[case] order_type: OrderType,
+        #[case] expected_locked: &str,
+        #[case] expected_free: &str,
+    ) {
         let gbp = Currency::GBP();
         let account_state = AccountState::new(
             AccountId::new("BETTING-001"),
@@ -2125,18 +2125,20 @@ mod tests {
         let manager = AccountsManager::new(clock, cache);
         let instrument = betting();
 
-        let mut back_order = OrderTestBuilder::new(OrderType::Limit)
+        let mut back_order = OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("10"))
             .price(Price::from("1.25"))
+            .trigger_price(Price::from("1.50"))
             .build();
 
-        let mut lay_order = OrderTestBuilder::new(OrderType::Limit)
+        let mut lay_order = OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("12"))
             .price(Price::from("3.00"))
+            .trigger_price(Price::from("4.00"))
             .build();
 
         let submitted_back =
@@ -2180,11 +2182,11 @@ mod tests {
         if let AccountAny::Betting(betting_account) = updated_account {
             assert_eq!(
                 betting_account.balance_locked(Some(gbp)),
-                Some(Money::new(14.5, gbp))
+                Some(Money::from(expected_locked))
             );
             assert_eq!(
                 betting_account.balance_free(Some(gbp)),
-                Some(Money::new(985.5, gbp))
+                Some(Money::from(expected_free))
             );
             assert_eq!(state.account_type, AccountType::Betting);
         } else {
@@ -3913,7 +3915,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_margin_init_base_xrate_uses_ask_for_sell_order() {
+    #[case::limit(OrderType::Limit, Some("6.60 EUR"))]
+    #[case::trigger(OrderType::StopMarket, Some("9.90 EUR"))]
+    #[case::limit_before_trigger(OrderType::StopLimit, Some("6.60 EUR"))]
+    #[case::unpriced(OrderType::Market, None)]
+    fn test_update_margin_init_base_xrate_uses_ask_for_sell_order(
+        #[case] order_type: OrderType,
+        #[case] expected_margin: Option<&str>,
+    ) {
         let eur = Currency::EUR();
         let account_state = AccountState::new(
             AccountId::new("SIM-001"),
@@ -3938,11 +3947,12 @@ mod tests {
         let manager = AccountsManager::new(clock, cache);
 
         let instrument = audusd_sim();
-        let mut order = OrderTestBuilder::new(OrderType::Limit)
+        let mut order = OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
             .side(OrderSide::Sell)
             .quantity(Quantity::from("100"))
             .price(Price::from("2.00000"))
+            .trigger_price(Price::from("3.00000"))
             .build();
 
         let submitted = order_submitted_for(&order);
@@ -3963,8 +3973,8 @@ mod tests {
         match updated_account {
             AccountAny::Margin(margin) => {
                 assert_eq!(
-                    margin.initial_margin(instrument.id()),
-                    Money::new(6.60, eur)
+                    margin.margin(&instrument.id()).map(|margin| margin.initial),
+                    expected_margin.map(Money::from)
                 );
             }
             _ => panic!("Expected MarginAccount"),

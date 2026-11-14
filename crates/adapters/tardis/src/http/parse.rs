@@ -653,15 +653,13 @@ fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
 /// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
 /// Timestamps before UNIX epoch (negative values) default to 0.
 fn parse_datetime_to_unix_nanos(value: Option<Timestamp>) -> UnixNanos {
-    value
-        .map(|dt| match u64::try_from(dt.as_nanosecond()) {
-            Ok(nanos) => UnixNanos::from(nanos),
-            Err(_) => {
-                log::warn!("Timestamp {dt} is outside the UnixNanos range, defaulting to 0");
-                UnixNanos::default()
-            }
-        })
-        .unwrap_or_default()
+    value.map_or_default(|dt| match u64::try_from(dt.as_nanosecond()) {
+        Ok(nanos) => UnixNanos::from(nanos),
+        Err(_) => {
+            log::warn!("Timestamp {dt} is outside the UnixNanos range, defaulting to 0");
+            UnixNanos::default()
+        }
+    })
 }
 
 /// Parses the settlement currency for the given Tardis instrument definition.

@@ -42,7 +42,10 @@ use super::{
     quota::{Bucket, Charge, KalshiQuota},
 };
 use crate::{
-    common::credential::{KalshiCredential, credential_env_vars},
+    common::{
+        consts::MAX_SUBACCOUNT,
+        credential::{KalshiCredential, credential_env_vars},
+    },
     config::KalshiDataClientConfig,
 };
 
@@ -123,11 +126,14 @@ impl KalshiHttpClient {
     /// Fresh discovery or an active five-second fallback window returns without traffic.
     /// Failed discovery uses Basic read limits, one balance read per second, and a conservative
     /// 50-token read cost during the fallback window. Expiry uses those read budgets until refresh;
-    /// writes wait for discovery and remain disabled if it fails.
+    /// writes wait for discovery and remain disabled if it fails. A subaccount-restricted key uses
+    /// conservative Basic limits when the limits endpoint denies its scope; endpoint cost discovery
+    /// remains required.
     ///
     /// # Errors
     ///
-    /// Returns an error if either discovery request or its advertised limits/costs is invalid.
+    /// Returns an error if endpoint costs are unavailable or invalid, or limit discovery fails
+    /// without a recognized subaccount-restriction denial.
     pub async fn refresh_quota(&self) -> Result<(), KalshiHttpError> {
         let _guard = tokio::select! {
             biased;
@@ -139,7 +145,15 @@ impl KalshiHttpClient {
             return Ok(());
         }
 
-        let limits = self.get_account_limits().await;
+        let limits = match self.get_account_limits().await {
+            Ok(_) => Ok(()),
+            Err(e) if e.is_subaccount_restricted() => {
+                log::debug!("Kalshi restricted API key uses conservative Basic quota limits");
+                self.quota.set_basic_limits()
+            }
+            Err(e) => Err(e),
+        };
+
         let costs = self.get_endpoint_costs().await;
         if let Err(e) = limits.and(costs.map(|_| ())) {
             if !self.cancellation.is_cancelled() {
@@ -435,7 +449,7 @@ impl KalshiHttpClient {
         self.get(&["historical", "cutoff"], &(), false).await
     }
 
-    /// Fetches typed collateral for an explicit primary-account shard.
+    /// Fetches typed collateral for an explicit subaccount and exchange shard.
     ///
     /// # Errors
     ///
@@ -444,7 +458,7 @@ impl KalshiHttpClient {
         &self,
         query: &AccountQuery,
     ) -> Result<Balance, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["portfolio", "balance"], query, true).await
     }
 
@@ -457,7 +471,7 @@ impl KalshiHttpClient {
         &self,
         query: &PositionsQuery,
     ) -> Result<PositionsResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["portfolio", "positions"], query, true).await
     }
 
@@ -470,7 +484,7 @@ impl KalshiHttpClient {
         &self,
         query: &HistoricalPositionsQuery,
     ) -> Result<PositionsResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["historical", "positions"], query, true).await
     }
 
@@ -480,7 +494,7 @@ impl KalshiHttpClient {
     ///
     /// Returns an error if scope, authentication, encoding, transport, cancellation, status, or decoding fails.
     pub async fn get_fills(&self, query: &FillsQuery) -> Result<FillsResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["portfolio", "fills"], query, true).await
     }
 
@@ -493,7 +507,7 @@ impl KalshiHttpClient {
         &self,
         query: &HistoryQuery,
     ) -> Result<FillsResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["historical", "fills"], query, true).await
     }
 
@@ -503,7 +517,7 @@ impl KalshiHttpClient {
     ///
     /// Returns an error if scope, authentication, encoding, transport, cancellation, status, or decoding fails.
     pub async fn get_orders(&self, query: &OrdersQuery) -> Result<OrdersResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["portfolio", "orders"], query, true).await
     }
 
@@ -526,7 +540,7 @@ impl KalshiHttpClient {
         &self,
         query: &HistoryQuery,
     ) -> Result<OrdersResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["historical", "orders"], query, true).await
     }
 
@@ -539,7 +553,7 @@ impl KalshiHttpClient {
         &self,
         query: &SettlementsQuery,
     ) -> Result<SettlementsResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.get(&["portfolio", "settlements"], query, true).await
     }
 
@@ -676,13 +690,15 @@ impl KalshiHttpClient {
     pub async fn amend_order(
         &self,
         order_id: &str,
+        subaccount: u32,
         request: &AmendOrderRequest,
     ) -> Result<AmendOrderResponse, KalshiHttpError> {
+        validate_subaccount(subaccount)?;
         validate_order_values(&request.ticker, request.price, request.count)?;
         self.send(
             Method::POST,
             &["portfolio", "events", "orders", order_id, "amend"],
-            &[("subaccount", 0)],
+            &[("subaccount", subaccount)],
             Some(request),
             true,
         )
@@ -695,12 +711,15 @@ impl KalshiHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if selectors, values, authentication, encoding, transport, cancellation, status, or decoding fails.
+    /// Returns an error if scope, selectors, values, authentication, encoding, transport, cancellation, status, or decoding fails.
     pub async fn decrease_order(
         &self,
         order_id: &str,
+        subaccount: u32,
         request: &DecreaseOrderRequest,
     ) -> Result<DecreaseOrderResponse, KalshiHttpError> {
+        validate_subaccount(subaccount)?;
+
         match (request.reduce_by, request.reduce_to) {
             (Some(value), None)
                 if value.0 > rust_decimal::Decimal::ZERO && value.0.scale() <= 2 => {}
@@ -716,7 +735,7 @@ impl KalshiHttpClient {
         self.send(
             Method::POST,
             &["portfolio", "events", "orders", order_id, "decrease"],
-            &[("subaccount", 0)],
+            &[("subaccount", subaccount)],
             Some(request),
             true,
         )
@@ -744,7 +763,7 @@ impl KalshiHttpClient {
         query: &AccountQuery,
         ticker: Option<&str>,
     ) -> Result<CancelOrderResponse, KalshiHttpError> {
-        validate_primary(query.subaccount)?;
+        validate_subaccount(query.subaccount)?;
         self.send(
             Method::DELETE,
             &["portfolio", "events", "orders", order_id],
@@ -784,7 +803,7 @@ impl KalshiHttpClient {
         let mut identities = HashSet::new();
 
         for order in &request.orders {
-            validate_primary(order.subaccount)?;
+            validate_subaccount(order.subaccount)?;
             if order.order_id.is_empty() {
                 return Err(KalshiHttpError::Validation("empty order identity"));
             }
@@ -1581,11 +1600,9 @@ macro_rules! cursor_page {
 
 cursor_page!(MarketsResponse => markets: Market, EventsResponse => events: Event, TradesResponse => trades: Trade, FillsResponse => fills: Fill, OrdersResponse => orders: Order, SettlementsResponse => settlements: Settlement);
 
-fn validate_primary(subaccount: u32) -> Result<(), KalshiHttpError> {
-    if subaccount != 0 {
-        return Err(KalshiHttpError::Validation(
-            "only primary subaccount 0 is supported",
-        ));
+fn validate_subaccount(subaccount: u32) -> Result<(), KalshiHttpError> {
+    if subaccount > MAX_SUBACCOUNT {
+        return Err(KalshiHttpError::Validation("subaccount must be in [0, 63]"));
     }
 
     Ok(())
@@ -1623,14 +1640,14 @@ fn validate_order_values(
     Ok(())
 }
 
-/// Validates one primary-account V2 create request before it is encoded.
+/// Validates one V2 create request before it is encoded.
 ///
 /// # Errors
 ///
 /// Returns an error if the account, ticker, price, count, reduce-only flag, or expiration is
 /// unsupported.
 pub fn validate_create(request: &CreateOrderRequest) -> Result<(), KalshiHttpError> {
-    validate_primary(request.subaccount)?;
+    validate_subaccount(request.subaccount)?;
     validate_order_values(&request.ticker, request.price, request.count)?;
     if request.reduce_only == Some(true) && request.time_in_force != TimeInForce::ImmediateOrCancel
     {

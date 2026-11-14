@@ -393,9 +393,12 @@ requests with both bounds. They deduplicate the boundary second that IB's second
 re-delivers. When one second holds a full page and the window cannot retreat, the request stops with a warning
 instead of looping.
 
-A bar request whose segment fails returns an error rather than a series with a silent hole. Historical trade
-ticks with IB's zero size are skipped before constructing the positive-quantity Nautilus type. Other invalid
-conversions still fail the request.
+A bar request with a start time returns the bars closing within `[start, end]`. The adapter fetches it in one
+request, or for one-second bars in consecutive requests of at most `2000 S`, IB's limit for that bar size. IB's
+pacing rules refuse six or more requests for one contract within two seconds, so a one-second range over about
+10,000 seconds can fail. If a request fails, the historical client returns an error and the data client
+responds with no bars. Historical trade ticks with IB's zero size are skipped before constructing the
+positive-quantity Nautilus type. Other invalid conversions still fail the request.
 
 IB controls pacing, available history, supported bar sizes, and regular-trading-hours filtering.
 For continuous futures, IB rejects an explicit bar end time. The adapter omits it and requests one
@@ -602,6 +605,11 @@ IDs stored in records.
 Keep `futures_year_digits=1` until working orders are canceled and positions opened with one-digit IDs are
 closed. Rebuild cached trading state before switching to two-digit IDs.
 
+Simplified stock IDs keep IB's share-class space by default, such as `BRK B.XNYS`, which matches
+Databento's IDs. Set `share_class_space=False` on `InteractiveBrokersInstrumentProviderConfig` to retain
+existing hyphenated IDs such as `BRK-B.XNYS`. Rebuild instrument caches after changing it, since cached
+contracts keep the IDs they were loaded with.
+
 The symbology method controls symbol conversion. Venue selection is a separate step with this
 precedence:
 
@@ -641,6 +649,7 @@ instrument cannot be resolved.
 | ------------------------------- | ------------ | ------------------------------------------------------- |
 | `symbology_method`              | `SIMPLIFIED` | Select simplified or raw symbol conversion.             |
 | `futures_year_digits`           | `2`          | Use two-digit years, or `1` for existing futures IDs.   |
+| `share_class_space`             | `True`       | Keep share-class spaces (`BRK B`), or use `BRK-B`.      |
 | `load_ids`                      | Empty        | Load Nautilus instrument IDs at startup.                |
 | `load_contracts`                | Empty        | Load IB contract dictionaries at startup.               |
 | `min_expiry_days`               | `None`       | Minimum relative expiry for chain loading.              |

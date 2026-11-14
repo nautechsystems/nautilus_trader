@@ -26,6 +26,7 @@ pub mod settlement;
 pub mod stubs;
 
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell, RefMut},
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
@@ -54,8 +55,7 @@ use nautilus_common::{
     },
     msgbus::{
         self, MStr, MessagingSwitchboard, Pattern, TypedHandler, TypedIntoHandler, get_message_bus,
-        switchboard::{self},
-        typed_handler::ShareableMessageHandler,
+        switchboard, typed_handler::ShareableMessageHandler,
     },
     runner::{
         TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,
@@ -84,7 +84,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
-    orders::{Order, OrderAny, OrderError},
+    orders::{FILL_REPORT_ORDER_TAG, Order, OrderAny, OrderError},
     position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
@@ -92,6 +92,7 @@ use nautilus_model::{
 use position::CorrectedPosition;
 pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     client::ExecutionClientAdapter,
@@ -99,7 +100,8 @@ use crate::{
         check_position_reconciliation, fill_precedes_reconciled_position,
         fill_precedes_snapshot_reconciled_position, generate_external_order_status_events,
         generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
-        generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
+        generate_reconciliation_order_snapshot_events, preserve_order_amendment,
+        reconcile_fill_report as reconcile_fill,
     },
 };
 
@@ -1155,6 +1157,10 @@ impl ExecutionEngine {
         instrument: Option<&InstrumentAny>,
         is_snapshot: bool,
     ) {
+        let requires_authoritative_fills = self.requires_authoritative_fills(report, Some(order));
+        let current_report = preserve_order_amendment(order, report, requires_authoritative_fills);
+        let report = current_report.as_ref();
+
         if self.order_report_has_missing_fills(report, Some(order)) {
             if order.status() == OrderStatus::Submitted {
                 let ts_now = self.clock.borrow().timestamp_ns();
@@ -1196,6 +1202,14 @@ impl ExecutionEngine {
             return false;
         }
 
+        self.requires_authoritative_fills(report, order)
+    }
+
+    fn requires_authoritative_fills(
+        &self,
+        report: &OrderStatusReport,
+        order: Option<&OrderAny>,
+    ) -> bool {
         let client = order
             .and_then(|order| {
                 self.cache
@@ -1429,6 +1443,8 @@ impl ExecutionEngine {
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
 
+        let tags = Some(vec![Ustr::from(FILL_REPORT_ORDER_TAG)]);
+
         let initialized = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -1463,7 +1479,7 @@ impl ExecutionEngine {
             None, // exec_algorithm_id
             None, // exec_algorithm_params
             None, // exec_spawn_id
-            None, // tags
+            tags, // tags
         );
 
         self.materialize_external_order(
@@ -1571,10 +1587,11 @@ impl ExecutionEngine {
     /// if the fill is not a duplicate and won't cause an overfill. When `allow_overfills` is
     /// disabled and the execution client allows a reconciliation overfill, the engine raises
     /// the order quantity to the filled quantity plus this fill before applying it. An already
-    /// filled order is not raised again. When the order is not in cache, an external order is
+    /// filled order is not raised by this policy. When the order is not in cache, an external order is
     /// bootstrapped from the fill so that venue-initiated closures (e.g. Hyperliquid
     /// liquidations) that arrive without a companion order status report still update the
-    /// local position.
+    /// local position. The bootstrapped order's quantity can grow with each distinct fill,
+    /// even after it is filled.
     ///
     /// Replayed fills update their orders only when a cached synthetic correction already covers
     /// them. Standalone reports check all strategies for the instrument and account.
@@ -1665,7 +1682,8 @@ impl ExecutionEngine {
         report: &FillReport,
         ts_now: UnixNanos,
     ) -> Option<OrderAny> {
-        if self.config.allow_overfills
+        if order.is_fill_report_order()
+            || self.config.allow_overfills
             || order.status() == OrderStatus::Filled
             || order.trade_ids().iter().any(|id| **id == report.trade_id)
         {
@@ -1776,6 +1794,15 @@ impl ExecutionEngine {
             }
             return;
         };
+
+        let requires_authoritative_fills =
+            self.requires_authoritative_fills(report, order.as_ref());
+        let current_report = match order.as_ref() {
+            Some(order) => preserve_order_amendment(order, report, requires_authoritative_fills),
+            None => Cow::Borrowed(report),
+        };
+
+        let report = current_report.as_ref();
 
         // Bootstrap the external order with only OrderAccepted; defer fill events to
         // the per-fill loop so real fill metadata is preserved.
@@ -4267,6 +4294,10 @@ impl ExecutionEngine {
     }
 
     fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+        if order.is_fill_report_order() {
+            return Ok(());
+        }
+
         let potential_overfill = order.calculate_overfill(fill.last_qty);
 
         if potential_overfill.is_positive() {

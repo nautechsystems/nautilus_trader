@@ -27,7 +27,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
-    enums::OptionKind,
+    enums::{OptionKind, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::crypto_option::CryptoOption,
     types::{money::Money, price::Price, quantity::Quantity},
@@ -74,6 +74,8 @@ impl ArrowSchemaProvider for CryptoOption {
             json_string_field("info", true),
             Field::new("ts_event", timestamp_data_type(), false),
             Field::new("ts_init", timestamp_data_type(), false),
+            Field::new("underlying_instrument_id", DataType::Utf8, true),
+            Field::new("settlement_type", DataType::Utf8, true),
         ];
 
         Schema::new_with_metadata(fields, metadata_with_type_name("CryptoOption", metadata))
@@ -116,6 +118,8 @@ impl EncodeToRecordBatch for CryptoOption {
         let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
+        let mut underlying_instrument_id_builder = StringBuilder::new();
+        let mut settlement_type_builder = StringBuilder::new();
 
         for co in data.iter().map(Borrow::borrow) {
             id_builder.append_value(co.id.to_string());
@@ -197,6 +201,9 @@ impl EncodeToRecordBatch for CryptoOption {
 
             ts_event_builder.append_value(co.ts_event.as_u64());
             ts_init_builder.append_value(co.ts_init.as_u64());
+            underlying_instrument_id_builder
+                .append_option(co.underlying_instrument_id.map(|id| id.to_string()));
+            settlement_type_builder.append_option(co.settlement_type.map(|kind| kind.to_string()));
         }
 
         record_batch_with_timestamps(
@@ -230,6 +237,8 @@ impl EncodeToRecordBatch for CryptoOption {
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
+                Arc::new(underlying_instrument_id_builder.finish()),
+                Arc::new(settlement_type_builder.finish()),
             ],
         )
     }
@@ -329,6 +338,11 @@ pub fn decode_crypto_option_batch(
     let ts_init_values =
         extract_column_by_name::<UInt64Array>(record_batch, "ts_init", DataType::UInt64)?;
 
+    let underlying_instrument_id_values =
+        extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
+    let settlement_type_values =
+        extract_optional_string_column_by_name(record_batch, "settlement_type")?;
+
     let mut result = Vec::with_capacity(num_rows);
 
     for i in 0..num_rows {
@@ -354,6 +368,24 @@ pub fn decode_crypto_option_batch(
             i,
         )?;
         let is_inverse = is_inverse_values.value(i);
+        let underlying_instrument_id = underlying_instrument_id_values
+            .filter(|values| !values.is_null(i))
+            .map(|values| {
+                InstrumentId::from_str(values.value(i)).map_err(|e| {
+                    EncodingError::ParseError("underlying_instrument_id", format!("row {i}: {e}"))
+                })
+            })
+            .transpose()?;
+
+        let settlement_type = settlement_type_values
+            .filter(|values| !values.is_null(i))
+            .map(|values| {
+                SettlementType::from_str(values.value(i)).map_err(|e| {
+                    EncodingError::ParseError("settlement_type", format!("row {i}: {e}"))
+                })
+            })
+            .transpose()?;
+
         let option_kind = OptionKind::from_str(option_kind_values.value(i))
             .map_err(|e| EncodingError::ParseError("option_kind", format!("row {i}: {e}")))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
@@ -509,7 +541,6 @@ pub fn decode_crypto_option_batch(
         let ts_init = nautilus_core::UnixNanos::from(ts_init_values.value(i));
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
-
         let crypto_option = CryptoOption::builder()
             .instrument_id(id)
             .raw_symbol(raw_symbol)
@@ -518,6 +549,8 @@ pub fn decode_crypto_option_batch(
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(option_kind)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)

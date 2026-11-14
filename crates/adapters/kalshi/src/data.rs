@@ -793,11 +793,7 @@ impl DataClient for KalshiDataClient {
                     .map(|id| id.symbol.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let mut params = scoped
-                    .params
-                    .as_ref()
-                    .map(Params::to_shared_map)
-                    .unwrap_or_default();
+                let mut params = scoped.params.as_ref().map_or_default(Params::to_shared_map);
                 let tickers = Arc::new(tickers.into());
                 params.insert("tickers".into(), tickers);
                 let params = Params::from_shared(params);
@@ -1296,7 +1292,9 @@ mod tests {
         sync::{Barrier, atomic::AtomicUsize},
     };
 
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::UnixNanos;
+    use nautilus_model::enums::InstrumentCloseType;
     use rstest::rstest;
     use serde_json::Value;
 
@@ -1337,10 +1335,207 @@ mod tests {
         ));
     }
 
+    #[rstest]
+    #[case::late_final(true, false)]
+    #[case::bounded_non_final(false, false)]
+    #[case::cancel(false, true)]
+    #[tokio::test]
+    async fn settlement_notification_rechecks_rest_until_final_or_bounded_stop(
+        #[case] finalize: bool,
+        #[case] cancel: bool,
+    ) {
+        tokio::time::timeout(Duration::from_secs(12), async {
+            let peer = peer::Peer::new().await;
+            let values: Value =
+                serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+            let mut market = values["definitions"]["live"]["market"].clone();
+            market["status"] = "determined".into();
+            market["updated_time"] = "2026-10-17T03:30:00Z".into();
+            *peer.market.lock().unwrap() = Some(market.clone());
+            let id = parse_instrument_id("KXBTC15M-26OCT162345-45").unwrap();
+            let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+            let mut client = KalshiDataClient::new(
+                *KALSHI_CLIENT_ID,
+                peer.config.clone(),
+                vec![id],
+                sender.into(),
+            )
+            .unwrap();
+            client
+                .subscribe_instrument_close(SubscribeInstrumentClose::new(
+                    id,
+                    Some(*KALSHI_CLIENT_ID),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::from(1),
+                    None,
+                    None,
+                ))
+                .unwrap();
+
+            if cancel {
+                client
+                    .subscribe_quotes(SubscribeQuotes::new(
+                        id,
+                        Some(*KALSHI_CLIENT_ID),
+                        None,
+                        UUID4::new(),
+                        UnixNanos::from(2),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            }
+
+            client.connect().await.unwrap();
+            let baseline = peer.requests.load(Ordering::SeqCst);
+
+            let DataEvent::Data(Data::Instrument(instrument)) = events.recv().await.unwrap() else {
+                panic!("expected bootstrap definition");
+            };
+
+            assert_eq!(instrument.id(), id);
+            assert_eq!(client.session_tasks.len(), 1);
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+            peer.response_gate.add_permits(3);
+            assert!(events.try_recv().is_err());
+            let frames: Value =
+                serde_json::from_str(include_str!("../test_data/lifecycle.json")).unwrap();
+            let mut frame = frames["frames"][2].clone();
+            frame["type"] = "market_lifecycle_v2".into();
+            frame["sid"] = 1.into();
+            frame["seq"] = 1.into();
+            frame["msg"]["market_ticker"] = id.symbol.as_str().into();
+            frame["msg"]["event_type"] = "settled".into();
+            peer.actions.send(("raw".into(), frame)).unwrap();
+            peer.wait_requests(baseline + 3).await;
+            wait_until_async(
+                || async { client.session_tasks.len() == 2 },
+                Duration::from_secs(2),
+            )
+            .await;
+
+            if cancel {
+                peer.emit("ticker", id, false);
+                assert!(matches!(
+                    events.recv().await.unwrap(),
+                    DataEvent::Data(Data::Quote(_))
+                ));
+                peer.wait_requests(baseline + 4).await;
+                client.disconnect().await.unwrap();
+                assert!(client.session_tasks.all_finished());
+                assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 4);
+            } else if finalize {
+                market["status"] = "finalized".into();
+                market["updated_time"] = "2026-10-17T03:45:02.123456Z".into();
+                market["settlement_value_dollars"] = "0.67".into();
+                market["settlement_ts"] = "2026-10-17T03:45:01.987654Z".into();
+                *peer.market.lock().unwrap() = Some(market);
+                peer.response_gate
+                    .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+                let DataEvent::Data(Data::Instrument(instrument)) = events.recv().await.unwrap()
+                else {
+                    panic!("expected final definition");
+                };
+
+                let InstrumentAny::BinaryOption(final_definition) = *instrument else {
+                    panic!("expected binary option");
+                };
+
+                let DataEvent::Data(Data::InstrumentClose(close)) = events.recv().await.unwrap()
+                else {
+                    panic!("expected final close")
+                };
+
+                assert_eq!(
+                    final_definition.info.as_ref().unwrap()["market"]["status"],
+                    "finalized"
+                );
+                assert_eq!(close.instrument_id, id);
+                assert_eq!(close.close_price.as_decimal(), "0.67".parse().unwrap());
+                assert_eq!(close.ts_event.as_u64(), 1_792_208_701_987_654_000);
+                assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
+                wait_until_async(
+                    || async { client.session_tasks.len() == 1 },
+                    Duration::from_secs(2),
+                )
+                .await;
+                assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 6);
+                assert!(events.try_recv().is_err());
+                client.disconnect().await.unwrap();
+            } else {
+                peer.response_gate
+                    .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+                wait_until_async(
+                    || async { client.session_tasks.len() == 1 },
+                    Duration::from_secs(6),
+                )
+                .await;
+                assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 15);
+                assert!(events.try_recv().is_err());
+                client.disconnect().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn settlement_recheck_canceled_before_first_retry_never_dispatches() {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let peer = peer::Peer::new().await;
+            let id = parse_instrument_id("KXBTC15M-26OCT162345-45").unwrap();
+            let (sender, mut output) = tokio::sync::mpsc::unbounded_channel();
+            let mut client = KalshiDataClient::new(
+                *KALSHI_CLIENT_ID,
+                peer.config.clone(),
+                vec![id],
+                sender.into(),
+            )
+            .unwrap();
+            let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+
+            let session = Session {
+                provider: Arc::clone(&client.provider),
+                instruments: client.instruments.clone(),
+                context: Arc::clone(&client.context),
+                demand: Arc::clone(&client.demand),
+                lifecycle: Arc::clone(&client.lifecycle),
+                books: client.books.clone(),
+                tasks: client.session_tasks.spawner().unwrap(),
+                sender: client.sender.clone(),
+                connected: Arc::clone(&client.connected),
+                ws_client,
+                clock: client.clock,
+                refresh_interval: Duration::from_secs(60),
+            };
+
+            let context = Arc::clone(&client.context);
+
+            // Hold the retry before its first deadline can start on the shared runtime
+            {
+                let _held = context.lock().unwrap();
+                session.recheck_settlement(id).unwrap();
+                client.stop().unwrap();
+            }
+
+            client.disconnect().await.unwrap();
+
+            assert!(client.session_tasks.all_finished());
+            assert_eq!(peer.requests.load(Ordering::SeqCst), 0);
+            assert!(output.try_recv().is_err());
+        })
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn slow_periodic_refresh_yields_to_queued_market_data() {
         let peer = peer::Peer::new().await;
-        peer.delay_millis.store(10, Ordering::SeqCst);
+        peer.response_gate
+            .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
         let fixtures: Value =
             serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
         let market: Market =
@@ -1363,6 +1558,8 @@ mod tests {
 
         let tasks = TaskGroup::new();
 
+        let refresh_interval = Duration::from_millis(1);
+
         let session = Session {
             provider,
             lifecycle: Arc::default(),
@@ -1381,7 +1578,7 @@ mod tests {
             connected: Arc::new(AtomicBool::new(true)),
             ws_client,
             clock,
-            refresh_interval: Duration::from_millis(1),
+            refresh_interval,
         };
 
         let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -1397,9 +1594,10 @@ mod tests {
         let run = tokio::spawn(session); // tokio-import-ok
 
         let result = time::timeout(Duration::from_secs(1), async {
-            while peer.requests.load(Ordering::SeqCst) == 0 {
-                tokio::task::yield_now().await;
-            }
+            peer.wait_requests(1).await;
+            tokio::time::pause();
+            tokio::time::advance(refresh_interval * 2).await;
+            tokio::time::resume();
 
             let payloads: Value =
                 serde_json::from_str(include_str!("../test_data/market_data.json")).unwrap();
@@ -1415,6 +1613,9 @@ mod tests {
                     }),
                 })
                 .unwrap();
+
+            peer.response_gate
+                .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
 
             loop {
                 if let DataEvent::Data(Data::Trade(tick)) = output.recv().await.unwrap() {

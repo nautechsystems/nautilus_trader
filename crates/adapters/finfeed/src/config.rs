@@ -32,7 +32,7 @@ use crate::{http::client::FinFeedHttpConfig, instruments::FinFeedInstrumentSelec
 /// Python exposes nested Rust HTTP controls as flat constructor keywords:
 ///
 /// - `http`: `base_url_http`, `proxy_url`, `http_timeout_secs`, `max_concurrent_requests`,
-///   `attempt_budget`, and `min_request_interval_ms`.
+///   `attempt_budget`, `min_request_interval_ms`, and `kalshi_metadata_url`.
 /// - `http.retry`: `max_retries`, `retry_delay_initial_ms`, `retry_delay_max_ms`,
 ///   `retry_backoff_factor`, `retry_jitter_ms`, `retry_operation_timeout_ms`,
 ///   `retry_immediate_first`, and `retry_max_elapsed_ms`.
@@ -61,7 +61,7 @@ pub struct FinFeedDataClientConfig {
     /// REST transport, pacing, retry, and local attempt controls for each connection generation.
     #[builder(default = FinFeedHttpConfig::default())]
     pub http: FinFeedHttpConfig,
-    /// Exact Polymarket Yes/No outcomes loaded and published before readiness.
+    /// Exact Polymarket or Kalshi Yes/No outcomes loaded and published before readiness.
     #[builder(default = Vec::new())]
     pub instruments: Vec<FinFeedInstrumentSelection>,
     /// Delay after each instrument's poll on the same endpoint completes, in milliseconds, in `[100, 86400000]`.

@@ -27,8 +27,9 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, option_chain::OptionGreeks,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        option_chain::OptionGreeks,
     },
     enums::{AggregationSource, InstrumentClass, OmsType, OrderSide, PositionSide, PriceType},
     identifiers::{
@@ -1335,6 +1336,40 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
         self.cache().bars(bar_type)
+    }
+
+    /// Returns custom data for the `data_type` in reverse insertion order.
+    ///
+    /// See [`Cache::custom_data_history`] for ordering and missing-data behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn custom_data_history(&self, data_type: &DataType) -> Vec<CustomData> {
+        self.cache().custom_data_history(data_type)
+    }
+
+    /// Returns the most recently added custom data for the `data_type`, or `None` if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn custom_data(&self, data_type: &DataType) -> Option<CustomData> {
+        self.custom_data_at_index(data_type, 0)
+    }
+
+    /// Returns custom data at `index` for the `data_type`, or `None` if absent.
+    ///
+    /// See [`Cache::custom_data_at_index`] for ordering and out-of-range behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn custom_data_at_index(&self, data_type: &DataType, index: usize) -> Option<CustomData> {
+        self.cache().custom_data_at_index(data_type, index).cloned()
     }
 
     /// Returns an owned copy of the order book for the `instrument_id` (if found).

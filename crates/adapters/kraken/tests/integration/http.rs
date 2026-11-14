@@ -663,8 +663,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             p if p.starts_with("/api/history/v3/orders") => mock_futures_order_events().await,
             p if p.contains("/market/") && p.contains("/executions") => {
                 let params = Query::<HashMap<String, String>>::try_from_uri(req.uri())
-                    .map(|q| q.0)
-                    .unwrap_or_default();
+                    .map_or_default(|q| q.0);
                 *state.last_executions_query.lock().await = Some(params);
                 mock_futures_public_executions().await
             }

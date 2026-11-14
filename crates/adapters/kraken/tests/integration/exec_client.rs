@@ -127,6 +127,8 @@ enum OrderCommandResponse {
     StructuredReject,
     UnknownStatus,
     IocWouldNotExecute,
+    /// Answers with this JSON body.
+    Body(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -429,6 +431,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","sendStatus":{"status":"iocWouldNotExecute"}}"#
                         .to_string(),
                 ),
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/derivatives/api/v3/editorder" => {
@@ -451,6 +454,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","editStatus":{"status":"processing","order_id":"F-MODIFY"}}"#
                         .to_string(),
                 ),
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/derivatives/api/v3/cancelorder" => {
@@ -660,6 +664,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
                 }
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/0/private/AmendOrder" => {
@@ -678,6 +683,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{}}"#.to_string())
                 }
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/0/private/AddOrderBatch" => {
@@ -9992,6 +9998,125 @@ async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
     assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
 }
 
+/// A documented edit refusal, by edit status or by error code, emits `OrderModifyRejected` with the
+/// venue's status or code as its reason and the modify command as its causation.
+#[rstest]
+#[case::invalid_price(
+    r#"{"result":"success","editStatus":{"status":"invalidPrice","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "invalidPrice"
+)]
+#[case::order_for_edit_not_found(
+    r#"{"result":"success","editStatus":{"status":"orderForEditNotFound","orderEvents":[]}}"#,
+    "orderForEditNotFound"
+)]
+#[case::edit_already_held(
+    r#"{"result":"success","editStatus":{"status":"editAlreadyHeld","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "editAlreadyHeld"
+)]
+#[case::market_is_cancel_only(
+    r#"{"result":"success","editStatus":{"status":"marketIsCancelOnly","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "marketIsCancelOnly"
+)]
+#[case::cancel_only(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"cancelOnly"}"#,
+    "cancelOnly"
+)]
+#[case::invalid_argument(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"invalidArgument"}"#,
+    "invalidArgument"
+)]
+#[case::authentication_error(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"authenticationError"}"#,
+    "authenticationError"
+)]
+#[case::nonce_below_threshold(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceBelowThreshold"}"#,
+    "nonceBelowThreshold"
+)]
+#[case::nonce_duplicate(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceDuplicate"}"#,
+    "nonceDuplicate"
+)]
+#[tokio::test]
+async fn test_futures_refused_edit_emits_modify_rejected(
+    #[case] body: &'static str,
+    #[case] reason: &str,
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::Body(body),
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-refused-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    let command = modify_order_command(&order, VenueOrderId::from("F-MODIFY"));
+    let command_id = command.command_id;
+
+    client.modify_order(command).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(
+                event.reason.as_str(),
+                format!("modify-order error: {reason}"),
+                "{event:?}"
+            );
+            assert_eq!(event.causation_id, Some(command_id));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+/// An edit response that does not establish whether the venue applied the edit emits neither
+/// `OrderModifyRejected` nor `OrderModifyDenied`, so an order the venue removed is not restored.
+#[rstest]
+#[case::ioc_would_not_execute(
+    r#"{"result":"success","editStatus":{"status":"iocWouldNotExecute","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::self_fill(
+    r#"{"result":"success","editStatus":{"status":"selfFill","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::post_would_execute(
+    r#"{"result":"success","editStatus":{"status":"postWouldExecute","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::rate_limited(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"apiLimitExceeded"}"#
+)]
+#[tokio::test]
+async fn test_futures_unsettled_edit_does_not_emit_modify_rejected(#[case] body: &'static str) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::Body(body),
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-unsettled-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| match event {
+        OrderEventAny::ModifyRejected(event) => event.client_order_id == client_order_id,
+        OrderEventAny::ModifyDenied(event) => event.client_order_id == client_order_id,
+        _ => false,
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_spot_whole_batch_submit_failure_does_not_reject_children() {
@@ -10464,13 +10589,12 @@ async fn captured_batch_cancel_fields(state: &TestServerState) -> (Vec<String>, 
         value
             .get(key)
             .and_then(Value::as_array)
-            .map(|items| {
+            .map_or_default(|items| {
                 items
                     .iter()
                     .filter_map(|item| item.as_str().map(str::to_string))
                     .collect()
             })
-            .unwrap_or_default()
     };
 
     (read("orders"), read("cl_ord_ids"))

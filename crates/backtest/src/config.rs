@@ -564,6 +564,28 @@ impl<S: backtest_venue_config_builder::IsComplete> BacktestVenueConfigBuilder<S>
         config.validate()?;
         Ok(config)
     }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn build_simulated(
+        self,
+        starting_balances: Vec<Money>,
+        models: BehavioralModels,
+        modules: Vec<SimulationModuleHandle>,
+        use_message_queue: bool,
+    ) -> ConfigResult<SimulatedVenueConfig> {
+        // Runtime balances and models replace builder values; validate only the simulated
+        // config to preserve Python's validation errors and their timing.
+        let mut config = self.build_inner();
+        let leverages = config.leverages.take().unwrap_or_default();
+        build_simulated_venue(
+            &config,
+            starting_balances,
+            leverages,
+            models,
+            modules,
+            use_message_queue,
+        )
+    }
 }
 
 impl BacktestVenueConfig {
@@ -798,6 +820,109 @@ impl BacktestVenueConfig {
     pub fn liquidation_cancel_open_orders(&self) -> bool {
         self.liquidation_cancel_open_orders
     }
+
+    #[cfg(feature = "streaming")]
+    pub(crate) fn to_simulated(&self) -> anyhow::Result<SimulatedVenueConfig> {
+        let starting_balances: Vec<Money> = self
+            .starting_balances()
+            .iter()
+            .map(|s| s.parse::<Money>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("Invalid starting balance: {e}"))?;
+
+        let leverages = self.leverages().cloned().unwrap_or_default();
+        let fill_model = self.fill_model().cloned().unwrap_or_default().into();
+
+        let fee_model = self
+            .fee_model()
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BacktestVenueConfig for '{}' requires an explicit fee_model, including an explicit zero-fee model",
+                    self.name()
+                )
+            })?
+            .into();
+
+        let margin_model = self.margin_model().cloned().map(Into::into);
+
+        let latency_model = self.latency_model().cloned().map(Into::into);
+
+        let modules = self.modules().iter().cloned().map(Into::into).collect();
+
+        let models = BehavioralModels {
+            fill: fill_model,
+            fee: fee_model,
+            margin: margin_model,
+            latency: latency_model,
+        };
+
+        Ok(build_simulated_venue(
+            self,
+            starting_balances,
+            leverages,
+            models,
+            modules,
+            true,
+        )?)
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn build_simulated_venue(
+    config: &BacktestVenueConfig,
+    starting_balances: Vec<Money>,
+    leverages: AHashMap<InstrumentId, Decimal>,
+    models: BehavioralModels,
+    modules: Vec<SimulationModuleHandle>,
+    use_message_queue: bool,
+) -> ConfigResult<SimulatedVenueConfig> {
+    SimulatedVenueConfig::builder()
+        .venue(Venue::from(config.name().as_str()))
+        .oms_type(config.oms_type())
+        .account_type(config.account_type())
+        .book_type(config.book_type())
+        .starting_balances(starting_balances)
+        .maybe_base_currency(config.base_currency())
+        .maybe_default_leverage(config.default_leverage())
+        .leverages(leverages)
+        .fill_model(models.fill)
+        .fee_model(models.fee)
+        .maybe_margin_model(models.margin)
+        .maybe_latency_model(models.latency)
+        .modules(modules)
+        .routing(config.routing())
+        .reject_stop_orders(config.reject_stop_orders())
+        .support_gtd_orders(config.support_gtd_orders())
+        .support_contingent_orders(config.support_contingent_orders())
+        .use_position_ids(config.use_position_ids())
+        .use_random_ids(config.use_random_ids())
+        .use_reduce_only(config.use_reduce_only())
+        .use_message_queue(use_message_queue)
+        .use_market_order_acks(config.use_market_order_acks())
+        .bar_execution(config.bar_execution())
+        .bar_adaptive_high_low_ordering(config.bar_adaptive_high_low_ordering())
+        .trade_execution(config.trade_execution())
+        .liquidity_consumption(config.liquidity_consumption())
+        .allow_cash_borrowing(config.allow_cash_borrowing())
+        .frozen_account(config.frozen_account())
+        .queue_position(config.queue_position())
+        .order_priority_reset_policy(config.order_priority_reset_policy())
+        .oto_full_trigger(config.oto_trigger_mode() == OtoTriggerMode::Full)
+        .price_protection_points(config.price_protection_points())
+        .liquidation_enabled(config.liquidation_enabled())
+        .liquidation_trigger_ratio(config.liquidation_trigger_ratio())
+        .liquidation_cancel_open_orders(config.liquidation_cancel_open_orders())
+        .build()
+}
+
+#[cfg(feature = "streaming")]
+#[derive(Debug)]
+pub(crate) struct BehavioralModels {
+    pub(crate) fill: FillModelHandle,
+    pub(crate) fee: FeeModelHandle,
+    pub(crate) margin: Option<MarginModelHandle>,
+    pub(crate) latency: Option<LatencyModelHandle>,
 }
 
 /// Represents the data configuration for one specific backtest run.
@@ -1299,6 +1424,94 @@ mod tests {
                 .starting_balances(vec![Money::from("1_000_000 USD")])
                 .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         };
+    }
+
+    #[cfg(feature = "streaming")]
+    #[rstest]
+    fn test_venue_config_forwards_runtime_policy() {
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        let config = minimal_builder!()
+            .starting_balances(vec!["12_345 USD".to_string()])
+            .base_currency(Currency::USD())
+            .default_leverage(Decimal::new(25, 1))
+            .leverages(AHashMap::from_iter([(instrument_id, Decimal::new(35, 1))]))
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
+            .routing(true)
+            .reject_stop_orders(false)
+            .support_gtd_orders(false)
+            .support_contingent_orders(false)
+            .use_position_ids(false)
+            .use_random_ids(true)
+            .use_reduce_only(false)
+            .use_market_order_acks(true)
+            .bar_execution(false)
+            .bar_adaptive_high_low_ordering(true)
+            .trade_execution(false)
+            .liquidity_consumption(true)
+            .allow_cash_borrowing(true)
+            .frozen_account(true)
+            .queue_position(true)
+            .oto_trigger_mode(OtoTriggerMode::Full)
+            .price_protection_points(7)
+            .liquidation_enabled(true)
+            .liquidation_trigger_ratio(1.5)
+            .liquidation_cancel_open_orders(false)
+            .order_priority_reset_policy(OrderPriorityResetPolicy::AnyModify)
+            .build()
+            .unwrap();
+
+        let runtime = config.to_simulated().unwrap();
+
+        assert_eq!(runtime.venue, Venue::from("SIM"));
+        assert_eq!(runtime.oms_type, OmsType::Netting);
+        assert_eq!(runtime.account_type, AccountType::Margin);
+        assert_eq!(runtime.book_type, BookType::L1_MBP);
+        assert_eq!(runtime.starting_balances, vec![Money::from("12_345 USD")]);
+        assert_eq!(runtime.base_currency, Some(Currency::USD()));
+        assert_eq!(runtime.default_leverage, Some(Decimal::new(25, 1)));
+        assert_eq!(
+            runtime.leverages,
+            AHashMap::from_iter([(instrument_id, Decimal::new(35, 1))])
+        );
+        assert_eq!(
+            (
+                runtime.routing,
+                runtime.reject_stop_orders,
+                runtime.support_gtd_orders,
+                runtime.support_contingent_orders,
+                runtime.use_position_ids,
+                runtime.use_random_ids,
+                runtime.use_reduce_only,
+                runtime.use_message_queue,
+                runtime.use_market_order_acks
+            ),
+            (true, false, false, false, false, true, false, true, true),
+        );
+        assert_eq!(
+            (
+                runtime.bar_execution,
+                runtime.bar_adaptive_high_low_ordering,
+                runtime.trade_execution,
+                runtime.liquidity_consumption,
+                runtime.allow_cash_borrowing,
+                runtime.frozen_account,
+                runtime.queue_position,
+                runtime.oto_full_trigger,
+                runtime.defer_option_settlement
+            ),
+            (false, true, false, true, true, true, true, true, true),
+        );
+        assert_eq!(runtime.price_protection_points, 7);
+        assert!(runtime.liquidation_enabled);
+        assert_eq!(
+            runtime.liquidation_trigger_ratio.to_bits(),
+            1.5_f64.to_bits()
+        );
+        assert!(!runtime.liquidation_cancel_open_orders);
+        assert_eq!(
+            runtime.order_priority_reset_policy,
+            OrderPriorityResetPolicy::AnyModify
+        );
     }
 
     #[rstest]

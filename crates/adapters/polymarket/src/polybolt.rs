@@ -1986,17 +1986,13 @@ impl PolymarketPolyBoltFeed {
 
     fn matching_data_types(&self, channel: PolyBoltChannel, symbol_lower: &str) -> Vec<DataType> {
         let key = tracked_key(channel, symbol_lower);
-        self.inner
-            .subscriptions
-            .get(&key)
-            .map(|entry| {
-                entry
-                    .data_types
-                    .values()
-                    .map(|tracked| tracked.data_type.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.inner.subscriptions.get(&key).map_or_default(|entry| {
+            entry
+                .data_types
+                .values()
+                .map(|tracked| tracked.data_type.clone())
+                .collect()
+        })
     }
 
     fn has_channel_subscription(&self, channel: PolyBoltChannel) -> bool {
@@ -4899,6 +4895,44 @@ mod tests {
             state.payloads().await.is_empty(),
             "ensure-connected without retained subscriptions should not send wire frames",
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_spent_auth_budget_moves_to_a_fresh_connection() {
+        let state = TestServerState::default();
+        state
+            .unavailable_auth_remaining
+            .store(POLYBOLT_AUTH_FRAME_BUDGET as usize, Ordering::Relaxed);
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+
+        // Drive each retry directly; retry cadence is covered by the public client tests
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for _ in 0..POLYBOLT_AUTH_FRAME_BUDGET {
+                let error = feed.reconcile_once(false).await.unwrap_err();
+                assert!(
+                    error.downcast_ref::<ReconcileRetryable>().is_some(),
+                    "{error}"
+                );
+            }
+
+            feed.reconcile_once(false).await.unwrap();
+        })
+        .await
+        .expect("authentication budget recovery stalled");
+
+        wait_for_op(&state, "subscribe").await;
+
+        assert_eq!(*state.auth_counts.lock(), vec![8, 1]);
+        assert_eq!(state.connection_count().await, 2);
+        let expected_ops = std::iter::repeat_n("auth", 9)
+            .chain(["subscribe"])
+            .collect::<Vec<_>>();
+        assert_eq!(ops(&state.payloads().await), expected_ops);
+        assert!(feed.is_authenticated());
+        feed.disconnect().await.unwrap();
     }
 
     #[rstest]

@@ -40,7 +40,10 @@ use rstest::rstest;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
-use super::dst::{assert_request, bind_peer, read_request, start_peer};
+use super::dst::{
+    HttpPeer, POLL_SILENCE, assert_request, bind_peer, next_request, start_peer, start_peer_gated,
+    start_peer_waiting, wait_for_condition, wait_for_http_idle,
+};
 
 const EXCHANGES: &str = include_str!("../../test_data/exchanges.json");
 const MARKET: &str = include_str!("../../test_data/polymarket-market.json");
@@ -61,7 +64,7 @@ async fn shared_latest_poll_preserves_every_field_ties_duplicates_and_older_even
     ])
     .await;
     let (mut client, mut receiver) = connected(http.clone()).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
     let mut events = Vec::new();
     for _ in 0..6 {
         events.push(event(&mut receiver).await);
@@ -115,7 +118,7 @@ async fn unknown_trade_side_preserves_sibling_activity_and_subsequent_polls() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
     let mut events = Vec::new();
     for _ in 0..7 {
         events.push(event(&mut receiver).await);
@@ -227,7 +230,7 @@ async fn absent_and_malformed_records_do_not_consume_valid_identities() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
     let events = vec![
         event(&mut receiver).await,
         event(&mut receiver).await,
@@ -274,7 +277,7 @@ async fn retry_after_and_admission_spacing_apply_to_shared_poll() {
     http.min_request_interval_ms = 150;
     let minimum_spacing = Duration::from_millis(http.min_request_interval_ms);
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
         event(&mut receiver).await;
@@ -309,18 +312,43 @@ async fn retry_after_and_admission_spacing_apply_to_shared_poll() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn permanent_failure_suspends_until_reconnect_and_retains_intent(#[case] status: u16) {
-    let (peer, http) = start_peer(vec![
-        (200, "", EXCHANGES),
-        (200, "", MARKET),
-        (status, "", ABSENT),
-        (200, "", EXCHANGES),
-        (200, "", MARKET),
-        (200, "", ACTIVITY),
-    ])
+    let logs = capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
+    let (peer, http, mut observed) = start_peer_waiting(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (status, "", ABSENT),
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", ACTIVITY),
+        ],
+        |_| std::future::ready(()),
+        false,
+    )
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
-    time::sleep(Duration::from_millis(350)).await;
+    subscribe_shared(&mut client, &peer, 100).await;
+    let expected_error = format!(
+        "FinFeed Activity poll failed for {}: FinFeed HTTP status {status}",
+        id()
+    );
+    wait_for_condition(|| {
+        logs.lock().unwrap()[first_message..]
+            .iter()
+            .any(|(_, message)| message == &expected_error)
+    })
+    .await;
+
+    for expected in 0..3 {
+        assert_eq!(next_request(&mut observed).await, expected);
+    }
+
+    assert!(
+        time::timeout(Duration::from_millis(350), observed.recv())
+            .await
+            .is_err()
+    );
     assert!(receiver.try_recv().is_err());
     client.disconnect().await.unwrap();
     client.connect().await.unwrap();
@@ -366,7 +394,7 @@ async fn reconnect_uses_fresh_polls_and_suppresses_retained_duplicates() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
         event(&mut receiver).await;
@@ -404,17 +432,16 @@ async fn reconnect_uses_fresh_polls_and_suppresses_retained_duplicates() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn unsubscribe_or_disconnect_cancels_inflight_without_late_ticks(#[case] disconnect: bool) {
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, ACTIVITY, Duration::from_millis(300)),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![(200, "", EXCHANGES), (200, "", MARKET), (200, "", ACTIVITY)],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(next_request(&mut observed).await, expected);
     }
 
     if disconnect {
@@ -423,8 +450,8 @@ async fn unsubscribe_or_disconnect_cancels_inflight_without_late_ticks(#[case] d
         unsubscribe(&mut client, true, true);
     }
 
-    time::sleep(Duration::from_millis(400)).await;
-    client.disconnect().await.unwrap();
+    wait_for_http_idle(&client).await;
+    release.send(()).unwrap();
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
             .await
@@ -434,31 +461,36 @@ async fn unsubscribe_or_disconnect_cancels_inflight_without_late_ticks(#[case] d
         3
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn changing_one_type_cancels_old_shared_response_and_keeps_the_other() {
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, ACTIVITY, Duration::from_secs(2)),
-        (200, OLDER, Duration::ZERO),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", ACTIVITY),
+            (200, "", OLDER),
+        ],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..3 {
-        observed.recv().await.unwrap();
+        next_request(&mut observed).await;
     }
 
     unsubscribe(&mut client, true, false);
-    let (index, _) = time::timeout(Duration::from_secs(1), observed.recv())
+    let index = time::timeout(Duration::from_secs(5), observed.recv())
         .await
         .expect("fresh request must precede the cancelled response")
         .unwrap();
     let tick = event(&mut receiver).await;
+    release.send(()).unwrap();
     client.disconnect().await.unwrap();
     assert_eq!(index, 3);
     assert_eq!(tick, trade("trade-2", "0.21", "3.000003", 1));
@@ -490,7 +522,7 @@ async fn exhausted_retries_and_invalid_wire_data_recover_on_later_poll() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
     let events = vec![
         event(&mut receiver).await,
         event(&mut receiver).await,
@@ -521,6 +553,8 @@ async fn exhausted_retries_and_invalid_wire_data_recover_on_later_poll() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn account_attempt_budget_stops_wire_polls_without_erasing_intent() {
+    let logs = capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
     let (peer, mut http, mut observed) = timed_peer(vec![
         (200, EXCHANGES, Duration::ZERO),
         (200, MARKET, Duration::ZERO),
@@ -530,15 +564,26 @@ async fn account_attempt_budget_stops_wire_polls_without_erasing_intent() {
         (200, OLDER, Duration::ZERO),
     ])
     .await;
-    http.attempt_budget = 3;
+    // Include the canceled startup poll before testing the shared allowance
+    http.attempt_budget = 4;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
         event(&mut receiver).await;
     }
 
-    time::sleep(Duration::from_millis(350)).await;
+    let expected_error = format!(
+        "FinFeed Activity poll failed for {}: FinFeed local attempt budget exhausted",
+        id()
+    );
+    wait_for_condition(|| {
+        logs.lock().unwrap()[first_message..]
+            .iter()
+            .any(|(_, message)| message == &expected_error)
+    })
+    .await;
+
     assert_eq!(observed.try_recv().unwrap().0, 0);
     assert_eq!(observed.try_recv().unwrap().0, 1);
     assert_eq!(observed.try_recv().unwrap().0, 2);
@@ -577,23 +622,27 @@ async fn account_attempt_budget_stops_wire_polls_without_erasing_intent() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn unsubscribe_and_resubscribe_rejects_old_response() {
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, ACTIVITY, Duration::from_millis(200)),
-        (200, OLDER, Duration::ZERO),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", ACTIVITY),
+            (200, "", OLDER),
+        ],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..3 {
-        observed.recv().await.unwrap();
+        next_request(&mut observed).await;
     }
 
     unsubscribe(&mut client, true, true);
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
     let events = vec![event(&mut receiver).await, event(&mut receiver).await];
+    release.send(()).unwrap();
     client.disconnect().await.unwrap();
     assert_eq!(
         events,
@@ -665,18 +714,46 @@ async fn large_activity_batches_preserve_records_deduplication_and_cancellation(
     batch["quotes"] = Value::Array(quotes);
     batch["trades"] = Value::Array(trades);
     let response_delay = Duration::from_millis(150);
-    let (peer, mut http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES.to_owned(), Duration::ZERO),
-        (200, MARKET.to_owned(), Duration::ZERO),
-        (200, batch.to_string(), response_delay),
-        (200, batch.to_string(), response_delay),
-        (200, batch.to_string(), Duration::ZERO),
-        (200, OLDER.to_owned(), Duration::ZERO),
-        (200, ACTIVITY.to_owned(), Duration::from_millis(500)),
-    ])
+    let (arrived, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let (release_first, first) = tokio::sync::oneshot::channel();
+    let (release_last, last) = tokio::sync::oneshot::channel();
+    let mut first = Some(first);
+    let mut last = Some(last);
+
+    let (peer, mut http, _) = start_peer_waiting(
+        vec![
+            (200, "", EXCHANGES.to_owned()),
+            (200, "", MARKET.to_owned()),
+            (200, "", batch.to_string()),
+            (200, "", batch.to_string()),
+            (200, "", batch.to_string()),
+            (200, "", OLDER.to_owned()),
+            (200, "", ACTIVITY.to_owned()),
+        ],
+        move |index| {
+            arrived.send((index, time::Instant::now())).unwrap();
+            let release = if index == 2 && staggered {
+                first.take()
+            } else if index == 6 {
+                last.take()
+            } else {
+                None
+            };
+
+            async move {
+                if let Some(release) = release {
+                    release.await.unwrap();
+                } else if index == 2 || index == 3 {
+                    time::sleep(response_delay).await;
+                }
+            }
+        },
+        true,
+    )
     .await;
     http.max_concurrent_requests = 4;
-    http.attempt_budget = 7;
+
+    http.attempt_budget = if staggered { 7 } else { 8 };
     http.retry.max_retries = 0;
     http.min_request_interval_ms = 20;
     let minimum_spacing = Duration::from_millis(http.min_request_interval_ms);
@@ -718,8 +795,9 @@ async fn large_activity_batches_preserve_records_deduplication_and_cancellation(
         }
 
         subscribe(&mut client, false, true);
+        release_first.send(()).unwrap();
     } else {
-        subscribe(&mut client, true, true);
+        subscribe_shared(&mut client, &peer, limit).await;
     }
 
     let mut actual = Vec::new();
@@ -744,6 +822,7 @@ async fn large_activity_batches_preserve_records_deduplication_and_cancellation(
     let (indices, starts): (Vec<_>, Vec<_>) = arrivals.into_iter().unzip();
 
     client.disconnect().await.unwrap();
+    release_last.send(()).unwrap();
     let requests = time::timeout(Duration::from_secs(5), peer)
         .await
         .unwrap()
@@ -790,14 +869,17 @@ async fn saturation_diagnostics_follow_independent_list_limits(
     let mut short: Value = serde_json::from_str(ACTIVITY).unwrap();
     short["quotes"].as_array_mut().unwrap().truncate(2);
     short["trades"].as_array_mut().unwrap().truncate(2);
-    let (peer, http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES.to_owned(), Duration::ZERO),
-        (200, MARKET.to_owned(), Duration::ZERO),
-        (200, quotes.to_string(), Duration::ZERO),
-        (200, trades.to_string(), Duration::ZERO),
-        (200, short.to_string(), Duration::ZERO),
-        (200, ABSENT.to_owned(), Duration::from_millis(200)),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES.to_owned()),
+            (200, "", MARKET.to_owned()),
+            (200, "", quotes.to_string()),
+            (200, "", trades.to_string()),
+            (200, "", short.to_string()),
+            (200, "", ABSENT.to_owned()),
+        ],
+        5,
+    )
     .await;
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
@@ -817,16 +899,19 @@ async fn saturation_diagnostics_follow_independent_list_limits(
         FinFeedDataClient::new(ClientId::from("FINFEED"), config, sender.into()).unwrap();
     client.connect().await.unwrap();
     receiver.try_recv().unwrap();
-    subscribe(&mut client, quotes_subscribed, trades_subscribed);
+
+    if quotes_subscribed && trades_subscribed {
+        subscribe_shared(&mut client, &peer, 3).await;
+    } else {
+        subscribe(&mut client, quotes_subscribed, trades_subscribed);
+    }
 
     for _ in 0..6 {
-        time::timeout(Duration::from_secs(5), observed.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        next_request(&mut observed).await;
     }
 
     client.disconnect().await.unwrap();
+    release.send(()).unwrap();
     peer.await.unwrap();
     let messages = logs.lock().unwrap();
     let messages = &messages[first_message..];
@@ -924,20 +1009,23 @@ fn polling_configuration_is_bounded(
 async fn unrelated_scope_changes_keep_inflight_poll_and_do_not_poll_unsubscribed_market() {
     let second_id = "other_NO";
     let second = second_definition(second_id);
-    let (peer, mut http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES.to_owned(), Duration::ZERO),
-        (200, MARKET.to_owned(), Duration::ZERO),
-        (200, second, Duration::ZERO),
-        (200, ACTIVITY.to_owned(), Duration::from_millis(200)),
-    ])
+    let (peer, mut http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES.to_owned()),
+            (200, "", MARKET.to_owned()),
+            (200, "", second),
+            (200, "", ACTIVITY.to_owned()),
+        ],
+        3,
+    )
     .await;
     http.max_concurrent_requests = 4;
     let (mut client, mut receiver) =
         connected_selection(http, vec![MARKET_ID.into(), second_id.into()], 100).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
-        observed.recv().await.unwrap();
+        next_request(&mut observed).await;
     }
 
     let instrument_id = to_instrument_id("POLYMARKET", second_id).unwrap();
@@ -965,9 +1053,9 @@ async fn unrelated_scope_changes_keep_inflight_poll_and_do_not_poll_unsubscribed
                 None,
             ))
             .unwrap();
-        time::sleep(Duration::from_millis(10)).await;
     }
 
+    release.send(()).unwrap();
     let events = vec![
         event(&mut receiver).await,
         event(&mut receiver).await,
@@ -1005,7 +1093,7 @@ async fn reset_clears_intent_before_reconnect() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
         event(&mut receiver).await;
@@ -1017,8 +1105,7 @@ async fn reset_clears_intent_before_reconnect() {
         receiver.try_recv().unwrap(),
         DataEvent::Data(Data::Instrument(_))
     ));
-    time::sleep(Duration::from_millis(350)).await;
-    client.disconnect().await.unwrap();
+
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
             .await
@@ -1028,6 +1115,7 @@ async fn reset_clears_intent_before_reconnect() {
         5
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -1040,7 +1128,7 @@ async fn unsubscribe_cancels_retry_backoff_without_sending_retry() {
     ])
     .await;
     let (mut client, mut receiver) = connected(http).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for expected in 0..3 {
         assert_eq!(observed.recv().await.unwrap().0, expected);
@@ -1048,8 +1136,7 @@ async fn unsubscribe_cancels_retry_backoff_without_sending_retry() {
 
     wait_for_retry_backoff(&client).await;
     unsubscribe(&mut client, true, true);
-    time::sleep(Duration::from_millis(1_050)).await;
-    client.disconnect().await.unwrap();
+
     assert_eq!(
         time::timeout(Duration::from_secs(5), peer)
             .await
@@ -1059,19 +1146,11 @@ async fn unsubscribe_cancels_retry_backoff_without_sending_retry() {
         3
     );
     assert!(receiver.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 pub(super) async fn wait_for_retry_backoff(client: &FinFeedDataClient) {
-    time::timeout(Duration::from_secs(3), async {
-        // The observed 429 attempt releases its sole permit before waiting to retry
-        while !format!("{client:?}")
-            .contains("concurrency: Semaphore { ll_sem: Semaphore { permits: 1 } }")
-        {
-            time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .expect("FinFeed poll must enter retry backoff before unsubscribe");
+    wait_for_http_idle(client).await;
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -1271,7 +1350,7 @@ async fn partial_unsubscribe_between_polls_starts_fresh_remaining_scope_immediat
     .await;
     let (mut client, mut receiver) =
         connected_selection(http, vec![MARKET_ID.into()], 86_400_000).await;
-    subscribe(&mut client, true, true);
+    subscribe_shared(&mut client, &peer, 100).await;
 
     for _ in 0..4 {
         event(&mut receiver).await;
@@ -1462,6 +1541,22 @@ pub(super) fn subscribe(client: &mut FinFeedDataClient, quotes: bool, trades: bo
     }
 }
 
+pub(super) async fn subscribe_shared(client: &mut FinFeedDataClient, peer: &HttpPeer, limit: u32) {
+    let target = format!("/v1/activity/POLYMARKET/{MARKET_ID}/latest?limit={limit}");
+    let request = peer
+        .cancel_request(
+            client,
+            &target,
+            |client| subscribe(client, true, false),
+            |client| subscribe(client, false, true),
+        )
+        .await;
+    assert_eq!(
+        request.lines().next().unwrap(),
+        format!("GET {target} HTTP/1.1"),
+    );
+}
+
 pub(super) fn unsubscribe(client: &mut FinFeedDataClient, quotes: bool, trades: bool) {
     let client_id = Some(client.client_id());
     if quotes {
@@ -1570,7 +1665,7 @@ fn assert_latest(request: &str) {
 pub(super) async fn timed_peer(
     responses: Vec<(u16, impl Into<String> + Send + 'static, Duration)>,
 ) -> (
-    task::JoinHandle<Vec<String>>,
+    HttpPeer,
     FinFeedHttpConfig,
     tokio::sync::mpsc::UnboundedReceiver<(usize, time::Instant)>,
 ) {
@@ -1591,14 +1686,14 @@ pub(super) async fn timed_peer(
         ..Default::default()
     };
 
-    let peer = task::spawn(async move {
+    let peer = HttpPeer::spawn(move |mut cancellations| async move {
         let mut requests = Vec::new();
         let mut delayed = Vec::new();
 
         for (i, (status, body, delay)) in responses.into_iter().enumerate() {
             let body = body.into();
-            let (mut stream, _) = listener.accept().await.unwrap();
-            requests.push(read_request(&mut stream).await);
+            let (mut stream, request) = cancellations.accept(&listener).await;
+            requests.push(request);
             let _ = sender.send((i, time::Instant::now()));
 
             let headers = if status == 429 {
@@ -1625,7 +1720,7 @@ pub(super) async fn timed_peer(
         }
 
         assert!(
-            time::timeout(Duration::from_millis(1_200), listener.accept())
+            time::timeout(POLL_SILENCE, listener.accept())
                 .await
                 .is_err(),
             "unexpected overlapping or queued poll"

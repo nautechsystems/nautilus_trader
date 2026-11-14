@@ -10,7 +10,7 @@
 [FinFeedAPI Prediction Markets API](https://www.finfeedapi.com/products/prediction-markets-api?ref=nautilus).
 API Bricks provides FinFeedAPI and CoinAPI.
 
-The adapter provides authenticated REST access, checked Polymarket binary Yes/No instrument definitions,
+The adapter provides authenticated REST access, checked Polymarket and Kalshi binary Yes/No instrument definitions,
 historical data requests, and book, quote, trade, and closed-bar polling. It is implemented in Rust with
 optional Python bindings. Order execution is unsupported.
 Importing the Python package neither reads credentials nor connects.
@@ -29,7 +29,7 @@ The system spans research, simulation, and live execution, providing research-to
 
 | Capability                                                                         | Support                                                                  |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [Instruments](../../../docs/integrations/finfeed.md#supported-venues-and-outcomes) | Selected Polymarket Yes/No outcomes; independent FinFeed IDs             |
+| [Instruments](../../../docs/integrations/finfeed.md#supported-venues-and-outcomes) | Selected Polymarket/Kalshi Yes/No outcomes; separate FinFeed IDs         |
 | [REST access](../../../docs/integrations/finfeed.md#python-rest-access)            | Discovery, metadata, activity, books, and historical data                |
 | [Polling](../../../docs/integrations/finfeed.md#polling-subscriptions)             | Quotes, trades, replacement L2 books, and completed external `LAST` bars |
 | [History](../../../docs/integrations/finfeed.md#historical-data)                   | Trades, quotes, L2 books, and bars; book replay requires a snapshot      |
@@ -44,7 +44,13 @@ OHLCV volume permits only [bounded normalization](../../../docs/integrations/fin
 
 Fresh `Closed` or `Resolved` metadata ends polling and rejects new subscriptions for that outcome.
 Metadata has no periodic refresh, and no authoritative settlement or close event is inferred.
-The provider end date sets the simulated trading cutoff; it does not establish actual venue closure or settlement.
+Polymarket uses the source end date as its simulated trading cutoff. Kalshi uses public `latest_expiration_time`.
+
+Kalshi definitions fetch public market and event metadata without credentials. Public price grids,
+USD contract rules, and lifecycle fields supplement FinFeed metadata; all activity and book data stays on FinFeed.
+Public metadata requests share the configured pacing and retries but do not consume the FinFeed attempt allowance.
+Kalshi applies its own provider quota. See [Kalshi metadata and precision](../../../docs/integrations/finfeed.md#kalshi-metadata-and-precision)
+for definition rules and shared transport controls.
 
 Historical books, quotes, trades, and bars have bounded Rust and Python checks and live Polymarket
 [samples](tests/README.md#observed-historical-samples). Positive bar delivery after reconnect remains unverified. See the
@@ -71,7 +77,7 @@ Feature flags control code inclusion for Rust builds and Python bindings:
 
 ## Integrator attribution
 
-REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
+FinFeed REST requests send `X-Referrer: nautilus` for API Bricks usage attribution.
 The fixed header contains no credential or account data.
 
 See [attribution details](../../../docs/integrations/finfeed.md#integrator-attribution).

@@ -2585,10 +2585,7 @@ impl KrakenSpotHttpClient {
         )?;
 
         for (instrument_id, base, size_precision) in candidates {
-            let rows = rows_by_base
-                .get(&base)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let rows = rows_by_base.get(&base).map_or_default(Vec::as_slice);
             let total: Decimal = rows.iter().map(|(_, amount)| *amount).sum();
             let held = Quantity::from_decimal_dp(total, size_precision)?;
 

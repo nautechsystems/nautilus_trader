@@ -28,8 +28,8 @@ use nautilus_model::{
         OrderAccepted, OrderEvent, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
         OrderSubmitted, OrderUpdated,
         order::spec::{
-            OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-            OrderSubmittedSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec, OrderPendingCancelSpec,
+            OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -53,6 +53,7 @@ use nautilus_model::{
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 use uuid::Uuid;
 
 use super::{ids::*, orders::*, positions::*, types::*};
@@ -3792,6 +3793,201 @@ fn test_reconcile_order_report_already_in_sync(instrument: InstrumentAny) {
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
     assert!(result.is_none());
+}
+
+#[rstest]
+#[case::partially_filled(OrderStatus::PartiallyFilled, 50)]
+#[case::filled(OrderStatus::Filled, 100)]
+fn test_reconcile_order_report_ignores_accepted_after_fill(
+    instrument: InstrumentAny,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: u64,
+) {
+    let account_id = AccountId::from("SIM-001");
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-001")),
+        None,
+        None,
+        Some(Quantity::from(filled_qty)),
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    order.apply(fill).unwrap();
+
+    let report = create_test_order_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(filled_qty),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+
+    assert_eq!(order.status(), status);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_report_ignores_accepted_after_fill_during_pending_command(
+    instrument: InstrumentAny,
+    #[values(OrderStatus::PendingUpdate, OrderStatus::PendingCancel)] status: OrderStatus,
+) {
+    let account_id = AccountId::from("SIM-001");
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-001")),
+        None,
+        None,
+        Some(Quantity::from(50)),
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    order.apply(fill).unwrap();
+
+    let pending = match status {
+        OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(build_order_pending_update(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        OrderStatus::PendingCancel => OrderEventAny::PendingCancel(build_order_pending_cancel(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        other => panic!("unsupported pending status {other:?}"),
+    };
+
+    order.apply(pending).unwrap();
+
+    let report = create_test_order_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+
+    assert!(result.is_none());
+    assert_eq!(order.status(), status);
+    assert_eq!(order.filled_qty(), Quantity::from(50));
+}
+
+#[rstest]
+fn test_reconcile_order_report_ignores_accepted_after_terminal(
+    instrument: InstrumentAny,
+    #[values(OrderStatus::Rejected, OrderStatus::Canceled)] terminal_status: OrderStatus,
+) {
+    let account_id = AccountId::from("SIM-001");
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let terminal_event = match terminal_status {
+        OrderStatus::Rejected => OrderEventAny::Rejected(
+            OrderRejectedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(account_id)
+                .reason(Ustr::from("INFLIGHT_TIMEOUT"))
+                .ts_event(UnixNanos::from(1_000_000))
+                .ts_init(UnixNanos::from(1_000_000))
+                .reconciliation(true)
+                .build(),
+        ),
+        OrderStatus::Canceled => OrderEventAny::Canceled(
+            OrderCanceledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .ts_event(UnixNanos::from(1_000_000))
+                .ts_init(UnixNanos::from(1_000_000))
+                .reconciliation(true)
+                .maybe_venue_order_id(Some(venue_order_id))
+                .maybe_account_id(Some(account_id))
+                .reason(Ustr::from("INFLIGHT_TIMEOUT"))
+                .build(),
+        ),
+        other => panic!("unsupported terminal status {other:?}"),
+    };
+
+    order.apply(terminal_event).unwrap();
+
+    let mut report = create_test_order_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.ts_last = UnixNanos::from(2_000_000);
+    report.ts_init = UnixNanos::from(2_000_000);
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+
+    assert!(result.is_none());
+    assert_eq!(order.status(), terminal_status);
+    assert_eq!(order.ts_closed(), Some(UnixNanos::from(1_000_000)));
 }
 
 #[rstest]
