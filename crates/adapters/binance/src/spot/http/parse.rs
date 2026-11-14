@@ -2626,6 +2626,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_exchange_info_rejects_short_symbol_block() {
+        let header = create_header(
+            0,
+            EXCHANGE_INFO_TEMPLATE_ID,
+            SBE_SCHEMA_ID,
+            SBE_SCHEMA_VERSION,
+        );
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&header);
+
+        // Empty rate_limits group
+        buf.extend_from_slice(&create_group_header(11, 0));
+
+        // Empty exchange_filters group
+        buf.extend_from_slice(&create_group_header(0, 0));
+
+        // Symbols group: 1 symbol with block_length=18
+        buf.extend_from_slice(&create_group_header(18, 1));
+        buf.resize(buf.len() + 18, 0);
+
+        let error = decode_exchange_info(&buf).unwrap_err();
+
+        assert_eq!(
+            error,
+            SbeDecodeError::InvalidBlockLength {
+                expected: 19,
+                actual: 18,
+            }
+        );
+    }
+
+    #[rstest]
     fn test_decode_exchange_info_multiple_symbols(#[values(19, 22, 25)] block_length: u16) {
         let header = create_header(
             0,
