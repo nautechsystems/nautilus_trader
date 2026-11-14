@@ -1,0 +1,327 @@
+{
+  "channel": "level3",
+  "type": "snapshot",
+  "data": [
+    {
+      "symbol": "ETH/USD",
+      "timestamp": "2026-10-21T13:23:37.032024534Z",
+      "checksum": 2692479831,
+      "bids": [
+        {
+          "order_id": "OXB6VL-F5Z26-Y7WVIT",
+          "limit_price": 2478.75,
+          "order_qty": 0.00200000,
+          "timestamp": "2026-10-21T13:23:35.392727054Z"
+        },
+        {
+          "order_id": "OLUYG4-4CDJT-BAYFRW",
+          "limit_price": 2478.74,
+          "order_qty": 0.01600000,
+          "timestamp": "2026-10-21T13:23:05.844904152Z"
+        },
+        {
+          "order_id": "OOAKS6-BF75T-O2SFOH",
+          "limit_price": 2478.73,
+          "order_qty": 0.01300000,
+          "timestamp": "2026-10-21T13:22:46.246527796Z"
+        },
+        {
+          "order_id": "OBZM2C-YMAPE-MTBI77",
+          "limit_price": 2478.43,
+          "order_qty": 0.01900000,
+          "timestamp": "2026-10-21T13:23:05.895315034Z"
+        },
+        {
+          "order_id": "OTZTRE-3VGQC-HD3YVV",
+          "limit_price": 2478.41,
+          "order_qty": 0.01600000,
+          "timestamp": "2026-10-21T13:22:46.399804746Z"
+        },
+        {
+          "order_id": "OYXLUK-P7CPL-XEWQHU",
+          "limit_price": 2478.36,
+          "order_qty": 0.66451585,
+          "timestamp": "2026-10-21T13:23:36.682628100Z"
+        },
+        {
+          "order_id": "OGBRK3-MGAFL-MOTLCW",
+          "limit_price": 2478.30,
+          "order_qty": 0.37742522,
+          "timestamp": "2026-10-21T13:23:22.838263582Z"
+        },
+        {
+          "order_id": "OD2UUM-LSUXD-3NIZNH",
+          "limit_price": 2478.18,
+          "order_qty": 0.43870000,
+          "timestamp": "2026-10-21T13:17:01.106634846Z"
+        },
+        {
+          "order_id": "O6PBJC-PLX3U-6KXE5E",
+          "limit_price": 2478.10,
+          "order_qty": 0.01900000,
+          "timestamp": "2026-10-21T13:22:46.498977282Z"
+        },
+        {
+          "order_id": "OQ5RN3-APJGD-I2R7ZB",
+          "limit_price": 2478.08,
+          "order_qty": 3.89324817,
+          "timestamp": "2026-10-21T13:23:37.012762034Z"
+        },
+        {
+          "order_id": "O3DP4P-B4PU3-6RIDIR",
+          "limit_price": 2478.07,
+          "order_qty": 4.16882942,
+          "timestamp": "2026-10-21T13:23:37.012078898Z"
+        },
+        {
+          "order_id": "O3ET7D-HNGNQ-YH6GWZ",
+          "limit_price": 2478.06,
+          "order_qty": 0.80708296,
+          "timestamp": "2026-10-21T13:23:36.590794066Z"
+        },
+        {
+          "order_id": "ODSXLU-Q2OPF-RTWPEG",
+          "limit_price": 2478.04,
+          "order_qty": 8.06679507,
+          "timestamp": "2026-10-21T13:23:36.888245706Z"
+        },
+        {
+          "order_id": "OI2QIP-AUPKZ-CHFKAX",
+          "limit_price": 2477.93,
+          "order_qty": 0.43870000,
+          "timestamp": "2026-10-21T13:16:52.203140146Z"
+        },
+        {
+          "order_id": "O3BNZ4-XS6XA-A2SKWT",
+          "limit_price": 2477.93,
+          "order_qty": 0.00200000,
+          "timestamp": "2026-10-21T13:19:15.103039082Z"
+        },
+        {
+          "order_id": "O6IHTA-2LOEP-M7OPZW",
+          "limit_price": 2477.88,
+          "order_qty": 9.52598935,
+          "timestamp": "2026-10-21T13:23:36.843776796Z"
+        },
+        {
+          "order_id": "OCGU6Q-D3K63-47QNGF",
+          "limit_price": 2477.87,
+          "order_qty": 7.74691845,
+          "timestamp": "2026-10-21T13:23:36.677824870Z"
+        },
+        {
+          "order_id": "OYWXEH-UODUO-WXNHXC",
+          "limit_price": 2477.87,
+          "order_qty": 6.64515852,
+          "timestamp": "2026-10-21T13:23:36.842995252Z"
+        },
+        {
+          "order_id": "O5CNPI-6THZY-RM4KGK",
+          "limit_price": 2477.85,
+          "order_qty": 7.74412327,
+          "timestamp": "2026-10-21T13:23:36.631311550Z"
+        },
+        {
+          "order_id": "OZM6VO-OHWWO-ATD3VG",
+          "limit_price": 2477.84,
+          "order_qty": 9.17137300,
+          "timestamp": "2026-10-21T13:23:20.736925900Z"
+        },
+        {
+          "order_id": "OYEYTV-MQWCC-IU4F6U",
+          "limit_price": 2477.79,
+          "order_qty": 0.78955966,
+          "timestamp": "2026-10-21T13:23:36.856267724Z"
+        },
+        {
+          "order_id": "OOGFHO-5TDYY-GNTLJM",
+          "limit_price": 2477.74,
+          "order_qty": 0.05993189,
+          "timestamp": "2026-10-21T13:23:35.552831044Z"
+        }
+      ],
+      "asks": [
+        {
+          "order_id": "OFWTEM-GONLD-WJ2ASM",
+          "limit_price": 2478.76,
+          "order_qty": 1.71972069,
+          "timestamp": "2026-10-21T13:23:35.391564590Z"
+        },
+        {
+          "order_id": "OX3WTW-VLOVV-QVB5YX",
+          "limit_price": 2478.76,
+          "order_qty": 4.70422960,
+          "timestamp": "2026-10-21T13:23:35.393148144Z"
+        },
+        {
+          "order_id": "O6TZBM-QJJ65-4MKKEY",
+          "limit_price": 2478.76,
+          "order_qty": 1.61809986,
+          "timestamp": "2026-10-21T13:23:36.295584390Z"
+        },
+        {
+          "order_id": "O7SRKK-PNOE2-U6FSXT",
+          "limit_price": 2478.76,
+          "order_qty": 7.74412327,
+          "timestamp": "2026-10-21T13:23:36.590979540Z"
+        },
+        {
+          "order_id": "OQDO2V-BFC5V-TZ3Y44",
+          "limit_price": 2478.76,
+          "order_qty": 1.81572040,
+          "timestamp": "2026-10-21T13:23:36.651976406Z"
+        },
+        {
+          "order_id": "O5GAYC-TBJWV-TWJPSX",
+          "limit_price": 2478.78,
+          "order_qty": 0.60210343,
+          "timestamp": "2026-10-21T13:23:35.492346478Z"
+        },
+        {
+          "order_id": "OFCDOP-H6BXU-DHIJLI",
+          "limit_price": 2478.78,
+          "order_qty": 1.12758629,
+          "timestamp": "2026-10-21T13:23:36.295284138Z"
+        },
+        {
+          "order_id": "OO2WR6-T4P6V-VIIYPF",
+          "limit_price": 2478.80,
+          "order_qty": 4.03539037,
+          "timestamp": "2026-10-21T13:23:36.160144990Z"
+        },
+        {
+          "order_id": "OTLEUZ-LYXSG-GPWZLW",
+          "limit_price": 2478.81,
+          "order_qty": 2.01709691,
+          "timestamp": "2026-10-21T13:23:30.412503328Z"
+        },
+        {
+          "order_id": "OQGFFO-HOZJO-B7L36T",
+          "limit_price": 2478.85,
+          "order_qty": 0.11031040,
+          "timestamp": "2026-10-21T13:23:36.321214238Z"
+        },
+        {
+          "order_id": "O6QVXT-2NXPV-SC2FNG",
+          "limit_price": 2478.85,
+          "order_qty": 0.12102386,
+          "timestamp": "2026-10-21T13:23:36.591417354Z"
+        },
+        {
+          "order_id": "OAO2I7-CGAIJ-OFIENL",
+          "limit_price": 2478.87,
+          "order_qty": 0.12102288,
+          "timestamp": "2026-10-21T13:23:36.591611824Z"
+        },
+        {
+          "order_id": "OSSN2H-IDPHB-ZRNIBT",
+          "limit_price": 2478.96,
+          "order_qty": 0.80505143,
+          "timestamp": "2026-10-21T13:23:36.590348644Z"
+        },
+        {
+          "order_id": "OXEBJS-7WI4I-LKMETB",
+          "limit_price": 2478.97,
+          "order_qty": 6.64515852,
+          "timestamp": "2026-10-21T13:23:36.044026836Z"
+        },
+        {
+          "order_id": "OPBLM3-VJUYW-BGVUHD",
+          "limit_price": 2478.97,
+          "order_qty": 6.71207644,
+          "timestamp": "2026-10-21T13:23:36.370333916Z"
+        },
+        {
+          "order_id": "OTFB4C-K3KAX-CENEY2",
+          "limit_price": 2478.98,
+          "order_qty": 20.16959622,
+          "timestamp": "2026-10-21T13:23:34.976717216Z"
+        },
+        {
+          "order_id": "OYFU5G-V4GIX-LEJCF3",
+          "limit_price": 2479.00,
+          "order_qty": 0.50320196,
+          "timestamp": "2026-10-21T13:23:36.784102670Z"
+        },
+        {
+          "order_id": "OO3UYZ-K36WS-24L3QF",
+          "limit_price": 2479.06,
+          "order_qty": 0.43870000,
+          "timestamp": "2026-10-21T13:23:30.416555256Z"
+        },
+        {
+          "order_id": "OFNQ3P-FH2PZ-JZISC5",
+          "limit_price": 2479.07,
+          "order_qty": 0.01209838,
+          "timestamp": "2026-10-21T13:23:22.989143092Z"
+        },
+        {
+          "order_id": "ONAYB5-C4XDZ-K6G2AD",
+          "limit_price": 2479.07,
+          "order_qty": 1.86562363,
+          "timestamp": "2026-10-21T13:23:34.761296178Z"
+        },
+        {
+          "order_id": "OIL2EG-UGWSW-XC5ORS",
+          "limit_price": 2479.08,
+          "order_qty": 0.04033755,
+          "timestamp": "2026-10-21T13:23:36.587946282Z"
+        },
+        {
+          "order_id": "OZL5E5-WHMMT-7F34KW",
+          "limit_price": 2479.25,
+          "order_qty": 36.30941043,
+          "timestamp": "2026-10-21T13:23:36.531396430Z"
+        },
+        {
+          "order_id": "OOAF3I-TFCQV-VSXMCB",
+          "limit_price": 2479.26,
+          "order_qty": 0.56082927,
+          "timestamp": "2026-10-21T13:23:30.420006104Z"
+        },
+        {
+          "order_id": "O2HFLC-XGNZA-UQL7NS",
+          "limit_price": 2479.26,
+          "order_qty": 29.97413804,
+          "timestamp": "2026-10-21T13:23:35.004999232Z"
+        },
+        {
+          "order_id": "OGZXCB-7WKOB-KEPIGS",
+          "limit_price": 2479.29,
+          "order_qty": 6.64515852,
+          "timestamp": "2026-10-21T13:23:35.310734584Z"
+        },
+        {
+          "order_id": "OAENVI-HHYSB-OG3JFF",
+          "limit_price": 2479.30,
+          "order_qty": 100.83507354,
+          "timestamp": "2026-10-21T13:23:35.004087218Z"
+        },
+        {
+          "order_id": "OLXS6J-JXRNG-D32GOZ",
+          "limit_price": 2479.31,
+          "order_qty": 1.00000000,
+          "timestamp": "2026-10-21T13:23:36.622865194Z"
+        },
+        {
+          "order_id": "OFPSLO-3MILN-I7IOYJ",
+          "limit_price": 2479.33,
+          "order_qty": 0.75391353,
+          "timestamp": "2026-10-21T13:23:36.298776494Z"
+        },
+        {
+          "order_id": "OLBUV5-64FFR-CUPSD6",
+          "limit_price": 2479.33,
+          "order_qty": 3.74222419,
+          "timestamp": "2026-10-21T13:23:36.671754764Z"
+        },
+        {
+          "order_id": "OC6LDR-YNOLE-2EDHSZ",
+          "limit_price": 2479.34,
+          "order_qty": 0.79167741,
+          "timestamp": "2026-10-21T13:23:32.122056070Z"
+        }
+      ]
+    }
+  ]
+}
