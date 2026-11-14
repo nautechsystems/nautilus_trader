@@ -3808,6 +3808,40 @@ fn test_report_contract_resolution_uses_cached_bag_spread_id() {
     assert_eq!(resolved, instrument_id);
 }
 
+// A fresh node sees the BAG orders other nodes filled today, with its legs known from positions
+// but the spread never loaded; one such order must not fail every order report
+#[rstest]
+#[case::spread_not_cached(false, None)]
+#[case::spread_cached(true, Some(create_test_spread_instrument()))]
+fn test_order_report_instrument_resolution_skips_unresolved_bag(
+    #[case] spread_cached: bool,
+    #[case] expected: Option<InstrumentId>,
+) {
+    let (client, _, _) = create_test_execution_client();
+    client
+        .instrument_provider
+        .insert_test_contract_id_mapping(12345, create_test_leg_instrument());
+    client.instrument_provider.insert_test_contract_id_mapping(
+        67890,
+        InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART")),
+    );
+
+    if spread_cached {
+        client.instrument_provider.insert_test_instrument(
+            InstrumentAny::from(create_test_option_spread()),
+            54321,
+            1,
+        );
+    }
+    let mut order = create_test_completed_order(7001, NATIVE_CLIENT_ID);
+    order.contract = create_test_bag_execution_data(7001, "exec-spread-001").contract;
+    order.contract.contract_id = 28_812_380;
+
+    let resolved = report_context(&client).resolve_order_report_instrument_id(&order);
+
+    assert_eq!(resolved, expected);
+}
+
 #[tokio::test]
 async fn test_handle_spread_execution_emits_only_leg_fill_event() {
     let instrument_provider = create_test_instrument_provider();
