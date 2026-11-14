@@ -1,9 +1,9 @@
 # Backtest Engine Benchmarks
 
 This document records the native canonical benchmark, its dated optimization decisions, the
-v1.231.0 and v2 comparison, and the benchmark's CI role. Use the native sections to reproduce the
-workload or evaluate another optimization under equivalent controls. Use the version comparison to
-inspect the released Cython and Rust/PyO3 results and their raw evidence.
+v1.231.0 and v2 comparison, account-history retention measurements, and the benchmark's CI role.
+Use the native sections to reproduce a workload or evaluate an optimization under equivalent controls.
+Use the version comparison to inspect the released Cython and Rust/PyO3 results and their raw evidence.
 
 The latest native profile, collected on 2026-11-02 at commit
 `25217eea5d3b1ccad4c41c2765400c577541180f`, confirmed `BookLadder::replace_l1` as the largest
@@ -1112,6 +1112,136 @@ boundary remains dominated by `run()`.
 The wall-clock tables above remain the performance evidence. Together, the profiles identify
 position ownership and cloning as the first target for a separate optimization pass. No production
 behavior changed during this profiling pass.
+
+## Account history retention
+
+The 2026-11-14 comparison uses existing hourly account-event purging with a 60-minute lookback,
+without production changes. Orders, positions, and market data remain retained, so reducing
+account-event history does not produce the same reduction in total process memory.
+
+Production source is commit `b9e6f468f8dc35088a06742aadb1866e9c274328`, with the added
+`tests/account_retention.rs` workload, SHA-256
+`0298e4f3b2b7e5b73a5240db00b17a8b9bc3669f706884c0db367dd27d90d30a`. The measured executable has
+SHA-256 `34f46c756af0b430426ae8587153ca41230cc60e661cfcb550d84c76ec5a2b52`.
+
+### Workload and collection
+
+`tests/account_retention.rs` runs a margin account with 1,000,000 USDT, market buys at 100 USDT,
+market sells at 102 USDT, quantity 1, and a 0.1% fee on each fill. Day indices congruent to 1 modulo
+3 stay flat. Other days submit 100 or 1,000 round trips, beginning at 00:01 UTC at one fill per
+second. Each day also has opening and closing quotes. Every round trip earns exactly 1.798 USDT
+after 0.202 USDT commission.
+
+No latency model is configured, so simulated command latency is zero.
+
+Each row uses three fresh processes per configuration and collection mode. Configuration order
+alternates between full/purged, purged/full, and full/purged. All 72 processes produce the same
+financial fingerprint for their workload, covering balances, commissions, PnL, order and position
+counts, daily snapshots, return series, and backtest statistics. Full history remains the default;
+the comparison changes only the purge interval and lookback.
+
+- **Peak RSS**: Linux `VmHWM` after `BacktestEngine::run()`, including fixture construction, engine
+  setup, replay, and end-of-run analysis. Collection precedes test verification and teardown.
+- **Elapsed time**: `BacktestEngine::run()` only, including end-of-run analysis, in separate
+  processes that do not read RSS. Setup, test verification, and teardown stay outside this interval.
+- **Environment**: AMD Ryzen 9 7950X, Linux 6.8.0-149-generic, rustc 1.100.0
+  (`0ef1bc386`, 2026-11-09), standard precision, and `bench-lto` with fat LTO and one code generation
+  unit. Recorded controls: `powersave` governor and enabled ASLR. Collection runs without concurrent
+  builds. These are local configuration comparisons, not fixed-host throughput baselines.
+
+### Memory and retained events
+
+Values show median peak RSS with the observed [minimum, maximum] in MiB. Event counts are retained
+account events at the end of the run, not the largest count between purges.
+
+| Days | Round trips per active day | Fills  | Events: full/purged | Full RSS, MiB           | Purged RSS, MiB         |
+| ---- | -------------------------- | ------ | ------------------- | ----------------------- | ----------------------- |
+| 2    | 100                        | 200    | 201 / 1             | 14.72 [14.54, 14.92]    | 14.59 [14.57, 14.66]    |
+| 2    | 1,000                      | 2,000  | 2,001 / 1           | 32.91 [32.67, 33.04]    | 32.18 [32.05, 32.40]    |
+| 7    | 100                        | 1,000  | 1,001 / 1           | 24.02 [23.92, 24.09]    | 23.57 [23.45, 23.64]    |
+| 7    | 1,000                      | 10,000 | 10,001 / 1          | 92.34 [92.18, 92.48]    | 88.26 [88.23, 88.36]    |
+| 30   | 100                        | 4,000  | 4,001 / 1           | 48.26 [48.09, 48.31]    | 46.38 [46.36, 46.50]    |
+| 30   | 1,000                      | 40,000 | 40,001 / 1          | 325.35 [325.21, 325.46] | 307.75 [294.30, 308.53] |
+
+The largest case reduces median peak RSS by 17.59 MiB (5.4%). Its purged samples span 14.23 MiB,
+but every purged sample is below every full-history sample. The full and purged ranges overlap in
+the smallest case. These results do not establish a general memory reduction for other fill rates,
+lookbacks, data layouts, or allocators.
+
+### Separately collected elapsed time
+
+Values show median seconds with the observed [minimum, maximum]. These short local samples do
+not establish a throughput improvement.
+
+| Days | Round trips per active day | Full run, seconds          | Purged run, seconds        |
+| ---- | -------------------------- | -------------------------- | -------------------------- |
+| 2    | 100                        | 0.00589 [0.00585, 0.00597] | 0.00596 [0.00541, 0.00602] |
+| 2    | 1,000                      | 0.04859 [0.04781, 0.04951] | 0.04898 [0.04813, 0.04900] |
+| 7    | 100                        | 0.02625 [0.02570, 0.02655] | 0.02555 [0.02528, 0.02555] |
+| 7    | 1,000                      | 0.22728 [0.22529, 0.22829] | 0.22562 [0.22270, 0.22684] |
+| 30   | 100                        | 0.09392 [0.09223, 0.09466] | 0.09332 [0.09268, 0.09523] |
+| 30   | 1,000                      | 0.92866 [0.92790, 0.94389] | 0.90494 [0.89870, 0.90969] |
+
+### Retention and report contract
+
+The [account history retention guide](../../../docs/concepts/backtesting/accounts-and-margin.md#account-history-retention)
+defines the contract, including the limits of report-backed Python tearsheets.
+
+- **Rust tests**: Default retention and zero-, 60-, 1,440-, and 10,000-minute lookbacks at hourly
+  cadence preserve exact single- and multi-currency balances, account and position commissions,
+  per-position realized PnL, daily equity through flat periods, and return-source selection. Separate
+  full/purged cases verify overnight unrealized equity and daily returns. Standard and high-precision
+  tests pass. Rust statistics retain position-return fallback when snapshots cannot supply returns.
+- **Python report tests**: Every column of the retained rows matches the full-history report for
+  single- and multi-currency cash and margin accounts. Cutoff cases verify removal at or before the
+  cutoff, latest-event preservation, and full reports when the lookback covers the run.
+
+### Reproduce on Linux
+
+Run from the repository root. The ignored measurement test prints one JSON object per process.
+`peak_rss_kib` is populated only in memory mode, and `run_elapsed_secs` only in time mode. Compare
+the `fingerprint` field across configurations and modes for each duration and fill density.
+
+```bash
+(
+    set -e
+    retention_dir=$(mktemp -d)
+    CARGO_BUILD_JOBS=8 cargo test --locked --profile bench-lto -p nautilus-backtest \
+        --test account_retention --no-run --message-format=json > "$retention_dir/build.jsonl"
+    retention_binary=$(python3 - "$retention_dir/build.jsonl" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    for line in source:
+        item = json.loads(line)
+        if item.get("target", {}).get("name") == "account_retention" and item.get("executable"):
+            print(item["executable"])
+            break
+PY
+    )
+    for mode in time memory; do
+        for days in 2 7 30; do
+            for pairs in 100 1000; do
+                for round in 1 2 3; do
+                    order="full purged"
+                    if [ "$round" = 2 ]; then order="purged full"; fi
+                    for policy in $order; do
+                        (
+                            unset RETENTION_MEMORY RETENTION_LOOKBACK_MINS
+                            if [ "$mode" = memory ]; then export RETENTION_MEMORY=1; fi
+                            if [ "$policy" = purged ]; then export RETENTION_LOOKBACK_MINS=60; fi
+                            RETENTION_DAYS=$days RETENTION_PAIRS=$pairs "$retention_binary" \
+                                --ignored --exact measure_account_retention --nocapture
+                        ) > "$retention_dir/$mode-$days-$pairs-$round-$policy.log"
+                    done
+                done
+            done
+        done
+    done
+    printf 'Samples: %s\n' "$retention_dir"
+)
+```
 
 ## CI policy
 

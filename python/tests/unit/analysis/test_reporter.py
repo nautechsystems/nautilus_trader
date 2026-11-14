@@ -26,11 +26,15 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.model import AccountBalance
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import AccountState
 from nautilus_trader.model import AccountType
+from nautilus_trader.model import CashAccount
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import LiquiditySide
+from nautilus_trader.model import MarginAccount
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -305,6 +309,74 @@ def test_generate_account_report_structure() -> None:
     assert "type" not in report.columns
     assert "event_id" not in report.columns
     assert isinstance(report.index[0], pd.Timestamp)
+
+
+@pytest.mark.parametrize(
+    ("account_class", "account_type"),
+    [(CashAccount, AccountType.CASH), (MarginAccount, AccountType.MARGIN)],
+)
+@pytest.mark.parametrize("multi_currency", [False, True])
+@pytest.mark.parametrize(
+    ("lookback_secs", "retained"),
+    [(0, 1), (86_400, 1), (172_800, 2), (259_200, 3)],
+)
+def test_generate_account_report_preserves_retained_rows(
+    account_class: type,
+    account_type: AccountType,
+    multi_currency: bool,
+    lookback_secs: int,
+    retained: int,
+) -> None:
+    """
+    Test account report fidelity after history purging.
+    """
+    states = []
+
+    for day, usd_total in enumerate(("1000.00", "1050.25", "1010.75")):
+        balances = [
+            AccountBalance(
+                Money.from_str(f"{usd_total} USD"),
+                Money.from_str("10.00 USD"),
+                Money.from_str(f"{Decimal(usd_total) - 10} USD"),
+            ),
+        ]
+
+        if multi_currency:
+            balances.append(
+                AccountBalance(
+                    Money.from_str("200.50 EUR"),
+                    Money.from_str("20.25 EUR"),
+                    Money.from_str("180.25 EUR"),
+                ),
+            )
+        timestamp = (day + 1) * 86_400_000_000_000
+        states.append(
+            AccountState(
+                account_id=ACCOUNT_ID,
+                account_type=account_type,
+                balances=balances,
+                margins=[],
+                is_reported=True,
+                event_id=UUID4(),
+                ts_event=timestamp,
+                ts_init=timestamp + 1,
+                base_currency=None if multi_currency else Currency.from_str("USD"),
+            ),
+        )
+    account = account_class(states[0], calculate_account_state=True)
+    for state in states[1:]:
+        account.apply(state)
+    full = ReportProvider.generate_account_report(account)
+
+    account.purge_account_events(ts_now=3 * 86_400_000_000_000, lookback_secs=lookback_secs)
+    truncated = ReportProvider.generate_account_report(account)
+    currencies = 2 if multi_currency else 1
+    expected = full.iloc[-retained * currencies :]
+
+    assert account.event_count == retained
+    assert len(full) == 3 * currencies
+    assert full[full["currency"] == "USD"]["total"].tolist() == ["1000.00", "1050.25", "1010.75"]
+    pd.testing.assert_frame_equal(truncated, expected)
 
 
 # End-to-end parity test: real backtest with fills and closed positions

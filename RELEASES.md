@@ -113,6 +113,10 @@ Released on TBD (UTC).
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.4
 - Upgraded `ty` package (dev) to v0.0.98
 
+### Documentation Updates
+
+- Documented backtest account-history purging and its effect on balance reports
+
 ---
 
 # NautilusTrader 2.0.0rc9

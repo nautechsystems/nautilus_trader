@@ -88,6 +88,49 @@ venue = BacktestVenueConfig(
 )
 ```
 
+## Account history retention
+
+Backtests retain every account state event by default. To limit this history, configure the execution
+engine through `BacktestEngineConfig.exec_engine`:
+
+```python
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import ExecutionEngineConfig
+
+config = BacktestEngineConfig(
+    exec_engine=ExecutionEngineConfig(
+        purge_account_events_interval_mins=60,
+        purge_account_events_lookback_mins=1440,
+    ),
+)
+```
+
+At each purge, the account retains events newer than the lookback cutoff. Events exactly at the cutoff
+are removed. The account always retains at least its latest event. The purge interval controls when
+cleanup runs, so history can exceed the lookback between purges.
+
+:::warning
+Scheduled purge timers are [settlement points](execution-flow.md#latency-delayed-commands) that can release
+latency-delayed commands during gaps in market data. This can change fill times, fill prices, and subsequent
+financial results.
+:::
+
+- **Account state and Rust statistics**: Removing retained events leaves existing balances, stored
+  starting balances, commissions, and position PnL intact. Rust portfolio statistics use separate daily equity
+  snapshots, including flat days. See [return sources](../portfolio.md#returns-position-vs-portfolio)
+  for snapshot requirements and the position-return fallback.
+- **Account reports**: `generate_account_report` includes only retained account state events. Purging
+  truncates the report without reconstructing removed rows from equity snapshots. Leave purging
+  disabled when you need a full account balance report.
+- **Python tearsheets**: Starting-balance displays use the first retained report row. When tearsheets
+  fall back to account reports for returns, their series also depends on retained history. Keep full
+  account history when you need these views to cover the entire run.
+- **Memory**: Account-event purging does not remove orders, positions, loaded market data, or portfolio
+  snapshots. It limits one source of retained memory, not total backtest memory.
+
+See the [retention measurements](../../../crates/backtest/benches/BENCHMARKS.md#account-history-retention)
+for the workload, memory comparison, and reproduction commands.
+
 ## Margin models
 
 Margin accounts use `LeveragedMarginModel` by default. To reserve the instrument's fixed initial and
