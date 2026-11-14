@@ -61,8 +61,7 @@ impl<'a> DocPackageBuilder<'a> {
             .modules
             .values()
             .next()
-            .map(|m| m.default_module_name.clone())
-            .unwrap_or_default();
+            .map_or_default(|m| m.default_module_name.clone());
 
         Self {
             stub_info,
@@ -190,8 +189,7 @@ impl<'a> DocPackageBuilder<'a> {
                     .stub_info
                     .modules
                     .get(&submod_fqn)
-                    .map(|m| m.doc.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|m| m.doc.clone());
 
                 items.push(DocItem::Module(DocSubmodule {
                     name: submod_name.clone(),
@@ -236,10 +234,7 @@ impl<'a> DocPackageBuilder<'a> {
             .collect::<Result<_>>()?;
 
         // Use first def's doc (they should all have same doc)
-        let doc = sorted_defs
-            .first()
-            .map(|d| d.doc.to_string())
-            .unwrap_or_default();
+        let doc = sorted_defs.first().map_or_default(|d| d.doc.to_string());
 
         let deprecated = sorted_defs.first().and_then(|d| {
             d.deprecated.as_ref().map(|dep| DeprecatedInfo {
@@ -355,13 +350,9 @@ impl<'a> DocPackageBuilder<'a> {
                 name: method_name.to_string(),
                 doc: method_overloads
                     .first()
-                    .map(|m| m.doc.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|m| m.doc.to_string()),
                 signatures,
-                is_async: method_overloads
-                    .first()
-                    .map(|m| m.is_async)
-                    .unwrap_or(false),
+                is_async: method_overloads.first().is_some_and(|m| m.is_async),
                 deprecated,
             });
         }
