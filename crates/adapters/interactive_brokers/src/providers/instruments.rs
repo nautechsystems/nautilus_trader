@@ -1287,11 +1287,12 @@ impl InteractiveBrokersInstrumentProvider {
                 ratio
             );
 
-            // Load the individual leg instrument
+            // Load the individual leg instrument; a leg seeded from the cache has a contract
+            // but no contract details, so fetch it too
             self.fetch_contract_details(
                 client,
                 *leg_instrument_id,
-                force_instrument_update,
+                force_instrument_update || !self.contract_details.contains_key(leg_instrument_id),
                 filters.clone(),
             )
             .await
@@ -1576,10 +1577,37 @@ impl InteractiveBrokersInstrumentProvider {
             possible_exchanges_for_venue(instrument_id.venue.as_str())
         };
 
-        let mut details_vec = Vec::new();
+        // A contract held with its IB contract ID (seeded from the cache) is requested by that
+        // ID: symbology cannot rebuild every listed contract from its instrument ID (an option
+        // on a MIC venue). An explicit exchange filter still goes by symbology, as does a
+        // contract held under another ID (a continuous future holds its front month's).
+        let held_contract = self
+            .instrument_id_to_ib_contract(&instrument_id)
+            .filter(|contract| {
+                exchange.is_none()
+                    && contract.contract_id != 0
+                    && self
+                        .instrument_id_from_contract(contract, instrument_id.venue)
+                        .is_ok_and(|held_id| held_id == instrument_id)
+            });
+        let mut details_vec = match held_contract {
+            Some(contract) => request_contract_details(client, &contract)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::debug!(
+                        "Failed to fetch contract details for {instrument_id} by contract ID {}: {e}",
+                        contract.contract_id
+                    );
+                    Vec::new()
+                }),
+            None => Vec::new(),
+        };
         let mut last_error = None;
 
         for candidate_exchange in exchanges_to_try {
+            if !details_vec.is_empty() {
+                break;
+            }
             let contract = self
                 .symbology
                 .contract(instrument_id, Some(candidate_exchange.as_str()))
