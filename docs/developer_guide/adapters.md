@@ -920,7 +920,7 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-- OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book.
+- OKX, Polymarket, Binance, Hyperliquid, Bybit, AX Exchange, and Coinbase keep a `BookSync` per book.
 - Derive keeps a `BookSync` per exact wire channel, shared by delta and depth consumers with matching arguments.
 - Betfair keeps a `BookSync` per market, since it images whole markets.
 - Lighter keeps a `BookRecoveryState` per book inside its handler-owned tracker.
@@ -1005,6 +1005,8 @@ snapshot parsing. The shared types describe the result of validation and monitor
   synced books from the subscription's clocks.
 - **AX Exchange**: accepts every L2 and L3 frame as a snapshot and keeps books across client reconnects,
   since its WebSocket client replays subscriptions on connect.
+- **Coinbase**: checks one connection-wide `sequence_num` per envelope, so a gap marks every subscribed
+  book. Replacement uses an unsubscribe/subscribe pair, since a duplicate subscribe sends no snapshot.
 - **Derive**: accepts full snapshots only when their timestamps advance, retaining that floor across
   reconnects. Advancing empty snapshots count as updates. Replacement uses an unsubscribe/subscribe pair on
   the existing socket. See [Derive order book recovery](../integrations/derive.md#order-book-recovery) for
@@ -1017,8 +1019,8 @@ snapshot parsing. The shared types describe the result of validation and monitor
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit): a replacement
-  resubscribes, and the venue stream delivers the snapshot.
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit,
+  Coinbase): a replacement resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
 

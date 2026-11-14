@@ -67,6 +67,8 @@ pub mod http;
 pub mod provider;
 pub mod websocket;
 
+mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
 

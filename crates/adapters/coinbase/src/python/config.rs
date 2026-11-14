@@ -42,6 +42,7 @@ impl CoinbaseDataClientConfig {
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
         derivatives_poll_interval_secs = None,
+        book_snapshot_timeout_secs = None,
         transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -56,6 +57,7 @@ impl CoinbaseDataClientConfig {
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         derivatives_poll_interval_secs: Option<u64>,
+        book_snapshot_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
@@ -72,6 +74,8 @@ impl CoinbaseDataClientConfig {
                 .unwrap_or(defaults.update_instruments_interval_mins),
             derivatives_poll_interval_secs: derivatives_poll_interval_secs
                 .unwrap_or(defaults.derivatives_poll_interval_secs),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
