@@ -18,7 +18,9 @@
 use ahash::AHashMap;
 use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_execution::{
-    matching_engine::config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
+    matching_engine::config::{
+        OrderMatchingEngineConfig, OrderPriorityResetPolicy, PostOnlyModifyPolicy,
+    },
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
 };
 use nautilus_model::{
@@ -155,6 +157,9 @@ pub struct SandboxExecutionClientConfig {
     /// The queue-priority reset policy for successful modify commands.
     #[builder(default)]
     pub order_priority_reset_policy: OrderPriorityResetPolicy,
+    /// The policy for modify commands that make post-only limit orders marketable.
+    #[builder(default)]
+    pub post_only_modify_policy: PostOnlyModifyPolicy,
 }
 
 impl SandboxExecutionClientConfig {
@@ -195,6 +200,7 @@ impl SandboxExecutionClientConfig {
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
             .order_priority_reset_policy(self.order_priority_reset_policy)
+            .post_only_modify_policy(self.post_only_modify_policy)
             .oto_full_trigger(self.oto_full_trigger)
             .maybe_price_protection_points(price_protection)
             .build()
@@ -355,6 +361,7 @@ mod tests {
             config.order_priority_reset_policy,
             OrderPriorityResetPolicy::PriceChange
         );
+        assert_eq!(config.post_only_modify_policy, PostOnlyModifyPolicy::Reject);
         assert!(!config.liquidity_consumption);
         assert!(!config.bar_adaptive_high_low_ordering);
         assert!(!config.use_market_order_acks);
@@ -367,6 +374,7 @@ mod tests {
         let config = SandboxExecutionClientConfig {
             queue_position: true,
             order_priority_reset_policy: OrderPriorityResetPolicy::AnyModify,
+            post_only_modify_policy: PostOnlyModifyPolicy::Cancel,
             liquidity_consumption: true,
             bar_adaptive_high_low_ordering: true,
             use_market_order_acks: true,
@@ -380,6 +388,10 @@ mod tests {
         assert_eq!(
             engine_config.order_priority_reset_policy,
             OrderPriorityResetPolicy::AnyModify
+        );
+        assert_eq!(
+            engine_config.post_only_modify_policy,
+            PostOnlyModifyPolicy::Cancel
         );
         assert!(engine_config.liquidity_consumption);
         assert!(engine_config.bar_adaptive_high_low_ordering);

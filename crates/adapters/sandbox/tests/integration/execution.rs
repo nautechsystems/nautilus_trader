@@ -57,7 +57,7 @@ use nautilus_execution::python::{
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     models::{
         fee::{
             FeeModel, FeeModelAny, FeeModelHandle, MakerTakerFeeModel, ProbabilityPriceFeeModel,
@@ -174,6 +174,7 @@ fn create_config(
         oto_full_trigger: false,
         price_protection_points: 0,
         order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
+        post_only_modify_policy: PostOnlyModifyPolicy::Reject,
     }
 }
 
@@ -4339,6 +4340,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             oto_full_trigger: false,
             price_protection_points: 0,
             order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
+            post_only_modify_policy: PostOnlyModifyPolicy::Reject,
         };
         let core = ExecutionClientCore::new(
             trader_id,
@@ -6277,6 +6279,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         oto_full_trigger: false,
         price_protection_points: 0,
         order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
+        post_only_modify_policy: PostOnlyModifyPolicy::Reject,
     };
     let core = ExecutionClientCore::new(
         trader_id,

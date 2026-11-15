@@ -19,7 +19,11 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::{cache::Cache, clock::VirtualClock, messages::execution::ModifyOrder};
+use nautilus_common::{
+    cache::Cache,
+    clock::VirtualClock,
+    messages::execution::{CancelOrder, ModifyOrder},
+};
 use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
 #[cfg(feature = "high-precision")]
 use nautilus_model::orderbook::BookLevel;
@@ -54,11 +58,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use super::{
-    BarTickSizes, OrderFilled, OrderMatchingEngine, Position, PositionId, PostMatchOrderAction,
-    order_precision_valid, post_match_order_action,
+    BarTickSizes, ModifyOutcome, OrderFilled, OrderMatchingEngine, Position, PositionId,
+    PostMatchOrderAction, order_precision_valid, post_match_order_action,
 };
 use crate::{
-    matching_engine::config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
+    matching_engine::config::{
+        OrderMatchingEngineConfig, OrderPriorityResetPolicy, PostOnlyModifyPolicy,
+    },
     models::{
         fee::{FeeModel, FeeModelAny, FeeModelHandle, MakerTakerFeeModel},
         fill::{DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
@@ -3086,6 +3092,712 @@ fn test_cancel_removes_queue_position() {
 }
 
 #[rstest]
+#[case::buy_touch(OrderSide::Buy, "1499.00", "1501.00")]
+#[case::buy_cross(OrderSide::Buy, "1499.00", "1502.00")]
+#[case::sell_touch(OrderSide::Sell, "1501.00", "1499.00")]
+#[case::sell_cross(OrderSide::Sell, "1501.00", "1498.00")]
+fn test_post_only_modify_cancel(
+    #[case] side: OrderSide,
+    #[case] old_price: &str,
+    #[case] new_price: &str,
+    #[values(false, true)] queue_position: bool,
+    #[values(false, true)] partially_filled: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L3_MBO, false, false);
+
+    // A canceled order must not be reinserted or have its queue reset after any modify
+    engine.config.order_priority_reset_policy = OrderPriorityResetPolicy::AnyModify;
+    engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
+    engine.config.queue_position = queue_position;
+    let old_price = Price::from(old_price);
+    let new_price = Price::from(new_price);
+    let aggressor = if side == OrderSide::Buy {
+        AggressorSide::Sell
+    } else {
+        AggressorSide::Buy
+    };
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(side)
+        .price(old_price)
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+
+    if partially_filled {
+        engine.process_trade_tick(&TradeTick::new(
+            engine.instrument.id(),
+            old_price,
+            Quantity::from(if queue_position { "12.000" } else { "2.000" }),
+            aggressor,
+            TradeId::from("PARTIAL"),
+            2.into(),
+            2.into(),
+        ));
+    }
+
+    let original = engine.order_snapshot(id).unwrap();
+    assert_eq!(
+        original.filled_qty(),
+        Quantity::from(if partially_filled { "2.000" } else { "0.000" })
+    );
+    assert_eq!(engine.queue_ahead_total.contains_key(&id), queue_position);
+
+    if queue_position && !partially_filled {
+        assert!(!engine.queue_ahead_orders[&id].is_empty());
+    }
+
+    // Equal to the partial fill, this proposal would otherwise take the zero-leaves cancel path
+    let quantity = Quantity::from("2.000");
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(quantity),
+            Some(new_price),
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    let canceled = engine.order_snapshot(id).unwrap();
+    assert_eq!(canceled.status(), OrderStatus::Canceled);
+    assert_eq!(canceled.quantity(), original.quantity());
+    assert_eq!(canceled.price(), original.price());
+    assert_eq!(canceled.filled_qty(), original.filled_qty());
+    assert_eq!(canceled.liquidity_side(), original.liquidity_side());
+    assert_eq!(canceled.events().len(), original.events().len() + 1);
+    assert_eq!(
+        canceled.events()[..original.events().len()],
+        original.events()[..]
+    );
+    assert!(!engine.core.order_exists(id));
+    assert!(!engine.orders.cached_filled_qty.borrow().contains_key(&id));
+    assert!(!engine.queue_pending.contains_key(&id));
+    assert!(!engine.queue_ahead_total.contains_key(&id));
+    assert!(!engine.queue_ahead_orders.contains_key(&id));
+    assert!(!engine.queue_excess.contains_key(&id));
+    assert!(
+        engine
+            .queue_ids_by_price
+            .values()
+            .all(|ids| !ids.contains(&id))
+    );
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::Canceled(event)] if event.client_order_id == id
+    ));
+
+    for (index, price) in [old_price, new_price].into_iter().enumerate() {
+        let ts = UnixNanos::from(index as u64 + 4);
+        engine.process_trade_tick(&TradeTick::new(
+            engine.instrument.id(),
+            price,
+            Quantity::from("100.000"),
+            aggressor,
+            TradeId::from(format!("AFTER-CANCEL-{index}").as_str()),
+            ts,
+            ts,
+        ));
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(
+                    side.opposite(),
+                    price,
+                    Quantity::from("100.000"),
+                    index as u64 + 2,
+                ),
+                RecordFlag::F_LAST as u8,
+                index as u64 + 4,
+                ts,
+                ts,
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(events.borrow().len(), 1);
+    let after_market_data = engine.order_snapshot(id).unwrap();
+    assert_eq!(after_market_data.status(), OrderStatus::Canceled);
+    assert_eq!(after_market_data.filled_qty(), canceled.filled_qty());
+    assert_eq!(after_market_data.events(), canceled.events());
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "1499.00")]
+#[case::sell(OrderSide::Sell, "1501.00")]
+fn test_post_only_modify_cancel_rejects_unchanged_marketable_price(
+    #[case] side: OrderSide,
+    #[case] price: &str,
+    #[values(false, true)] explicit_price: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
+    engine.config.queue_position = true;
+    let price = Price::from(price);
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(side)
+        .price(price)
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+    events.borrow_mut().clear();
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            engine.instrument.id(),
+            BookAction::Add,
+            BookOrder::new(side.opposite(), price, Quantity::from("10.000"), 2),
+            RecordFlag::F_LAST as u8,
+            2,
+            2.into(),
+            2.into(),
+        ))
+        .unwrap();
+
+    assert!(engine.core.is_limit_matched(side, price));
+    assert!(events.borrow().is_empty());
+    assert_eq!(
+        engine.queue_ahead_total[&id],
+        (price.raw(), Quantity::from("10.000").raw())
+    );
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from("3.000")),
+            explicit_price.then_some(price),
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::ModifyRejected(event)] if event.client_order_id == id
+    ));
+    let unchanged = engine.order_snapshot(id).unwrap();
+    assert_eq!(unchanged.status(), OrderStatus::Accepted);
+    assert_eq!(unchanged.price(), Some(price));
+    assert_eq!(unchanged.quantity(), Quantity::from("5.000"));
+    assert_eq!(unchanged.filled_qty(), Quantity::from("0.000"));
+    assert!(engine.core.order_exists(id));
+    assert_eq!(
+        engine.queue_ahead_total[&id],
+        (price.raw(), Quantity::from("10.000").raw())
+    );
+}
+
+#[rstest]
+fn test_post_only_modify_cancel_cascades_to_ouo_sibling(#[values(false, true)] modify: bool) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
+    let ids = [
+        ClientOrderId::from("OUO-FIRST"),
+        ClientOrderId::from("OUO-SIBLING"),
+    ];
+    let mut orders: Vec<_> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(engine.instrument.id())
+                .client_order_id(*id)
+                .side(OrderSide::Buy)
+                .price(Price::from(if i == 0 { "1495.00" } else { "1496.00" }))
+                .quantity(Quantity::from("5.000"))
+                .post_only(true)
+                .contingency_type(ContingencyType::Ouo)
+                .linked_order_ids(vec![ids[1 - i]])
+                .submit(true)
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        engine
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    for order in &mut orders {
+        engine.process_order(order, AccountId::from("SIM-001"));
+    }
+
+    let order = engine.order_snapshot(ids[0]).unwrap();
+    events.borrow_mut().clear();
+
+    if modify {
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                ids[0],
+                order.venue_order_id(),
+                Some(Quantity::from("3.000")),
+                Some(Price::from("1501.00")),
+                None,
+                UUID4::new(),
+                2.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+    } else {
+        engine.process_cancel(
+            &CancelOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                ids[0],
+                order.venue_order_id(),
+                UUID4::new(),
+                2.into(),
+                None,
+                None,
+            ),
+            AccountId::from("SIM-001"),
+        );
+    }
+
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Canceled, ids[0]),
+            (OrderEventType::Canceled, ids[1]),
+        ]
+    );
+
+    for id in ids {
+        let canceled = engine.order_snapshot(id).unwrap();
+        assert_eq!(canceled.status(), OrderStatus::Canceled);
+        assert_eq!(canceled.quantity(), Quantity::from("5.000"));
+        assert_eq!(canceled.filled_qty(), Quantity::from("0.000"));
+        assert!(!engine.core.order_exists(id));
+    }
+}
+
+#[rstest]
+fn test_post_only_modify_policy_preserves_contingent_quantity_sync(
+    #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+    policy: PostOnlyModifyPolicy,
+    #[values(false, true)] touch_child: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.post_only_modify_policy = policy;
+    engine.config.queue_position = true;
+    let ids = [
+        ClientOrderId::from("OUO-FIRST"),
+        ClientOrderId::from("OUO-CHILD"),
+    ];
+    let child_price = Price::from("1499.00");
+    let mut orders: Vec<_> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(engine.instrument.id())
+                .client_order_id(*id)
+                .side(OrderSide::Buy)
+                .price(Price::from(if i == 0 { "1498.00" } else { "1499.00" }))
+                .quantity(Quantity::from("5.000"))
+                .post_only(true)
+                .contingency_type(ContingencyType::Ouo)
+                .linked_order_ids(vec![ids[1 - i]])
+                .submit(true)
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        engine
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    for order in &mut orders {
+        engine.process_order(order, AccountId::from("SIM-001"));
+    }
+
+    events.borrow_mut().clear();
+
+    if touch_child {
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(OrderSide::Sell, child_price, Quantity::from("10.000"), 2),
+                RecordFlag::F_LAST as u8,
+                2,
+                2.into(),
+                2.into(),
+            ))
+            .unwrap();
+    }
+
+    assert!(events.borrow().is_empty());
+    assert_eq!(
+        engine.core.is_limit_matched(OrderSide::Buy, child_price),
+        touch_child
+    );
+    let order = engine.order_snapshot(ids[0]).unwrap();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            ids[0],
+            order.venue_order_id(),
+            Some(Quantity::from("3.000")),
+            None,
+            None,
+            UUID4::new(),
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Updated, ids[0]),
+            (
+                if touch_child {
+                    OrderEventType::ModifyRejected
+                } else {
+                    OrderEventType::Updated
+                },
+                ids[1],
+            ),
+        ]
+    );
+    assert_eq!(
+        engine.order_snapshot(ids[0]).unwrap().quantity(),
+        Quantity::from("3.000")
+    );
+    let child = engine.order_snapshot(ids[1]).unwrap();
+    assert_eq!(child.status(), OrderStatus::Accepted);
+    assert_eq!(child.price(), Some(child_price));
+    assert_eq!(
+        child.quantity(),
+        Quantity::from(if touch_child { "5.000" } else { "3.000" })
+    );
+    assert_eq!(child.filled_qty(), Quantity::from("0.000"));
+    assert!(engine.core.order_exists(ids[0]));
+    assert!(engine.core.order_exists(ids[1]));
+    assert_eq!(
+        engine.queue_ahead_total[&ids[1]],
+        (child_price.raw(), Quantity::from("10.000").raw())
+    );
+}
+
+#[rstest]
+#[case::buy_touch(OrderSide::Buy, "1499.00", "1501.00")]
+#[case::buy_cross(OrderSide::Buy, "1499.00", "1502.00")]
+#[case::sell_touch(OrderSide::Sell, "1501.00", "1499.00")]
+#[case::sell_cross(OrderSide::Sell, "1501.00", "1498.00")]
+fn test_post_only_modify_default_rejects(
+    #[case] side: OrderSide,
+    #[case] old_price: &str,
+    #[case] new_price: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    let old_price = Price::from(old_price);
+    let new_price = Price::from(new_price);
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(side)
+        .price(old_price)
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+    let command_id = UUID4::new();
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from("3.000")),
+            Some(new_price),
+            None,
+            command_id,
+            2.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::ModifyRejected(event)]
+            if event.client_order_id == id
+                && event.causation_id == Some(command_id)
+                && event.reason.as_str() == format!(
+                    "POST_ONLY LIMIT {side} order with new limit px of {new_price} would have been a TAKER: bid=1499.00, ask=1501.00"
+                )
+    ));
+    assert!(engine.core.order_exists(id));
+    let original = engine.order_snapshot(id).unwrap();
+    assert_eq!(original.status(), OrderStatus::Accepted);
+    assert_eq!(original.price(), Some(old_price));
+    assert_eq!(original.quantity(), Quantity::from("5.000"));
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        old_price,
+        Quantity::from("5.000"),
+        if side == OrderSide::Buy {
+            AggressorSide::Sell
+        } else {
+            AggressorSide::Buy
+        },
+        TradeId::from("AFTER-REJECT"),
+        3.into(),
+        3.into(),
+    ));
+    assert_eq!(
+        engine.order_snapshot(id).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::ModifyRejected(_), OrderEventAny::Filled(fill)]
+            if fill.client_order_id == id && fill.last_px == old_price
+                && fill.last_qty == Quantity::from("5.000")
+                && fill.liquidity_side == LiquiditySide::Maker
+    ));
+}
+
+#[rstest]
+#[case::price_precision(
+    "1501.001",
+    "5.000",
+    "Invalid update price precision 3, expected 2 for ETHUSDT-PERP.BINANCE",
+    false
+)]
+#[case::size_precision(
+    "1501.00",
+    "5.0001",
+    "Invalid update quantity precision 4, expected 3 for ETHUSDT-PERP.BINANCE",
+    false
+)]
+#[case::price_increment(
+    "1501.01",
+    "5.000",
+    "Invalid update price 1501.01, not a multiple of ETHUSDT-PERP.BINANCE price increment 0.05",
+    false
+)]
+#[case::below_filled_quantity(
+    "1501.00",
+    "1.000",
+    "Cannot reduce order quantity 1.000 below filled quantity 2.000",
+    true
+)]
+fn test_post_only_modify_cancel_preserves_invalid_amendments(
+    #[case] new_price: &str,
+    #[case] quantity: &str,
+    #[case] reason: &str,
+    #[case] partially_filled: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
+    let InstrumentAny::CryptoPerpetual(instrument) = &mut engine.instrument else {
+        unreachable!()
+    };
+    instrument.price_increment = Price::from("0.05");
+    let price = Price::from("1499.00");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Buy)
+        .price(price)
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+    let filled_qty = Quantity::from(if partially_filled { "2.000" } else { "0.000" });
+
+    if partially_filled {
+        engine.process_trade_tick(&TradeTick::new(
+            engine.instrument.id(),
+            price,
+            filled_qty,
+            AggressorSide::Sell,
+            TradeId::from("PARTIAL"),
+            2.into(),
+            2.into(),
+        ));
+    }
+
+    assert_eq!(engine.order_snapshot(id).unwrap().filled_qty(), filled_qty);
+    let command_id = UUID4::new();
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from(quantity)),
+            Some(Price::from(new_price)),
+            None,
+            command_id,
+            3.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::ModifyRejected(event)]
+            if event.client_order_id == id && event.causation_id == Some(command_id)
+                && event.reason.as_str() == reason
+    ));
+    assert!(engine.core.order_exists(id));
+    let original = engine.order_snapshot(id).unwrap();
+    assert_eq!(
+        original.status(),
+        if partially_filled {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Accepted
+        }
+    );
+    assert_eq!(original.price(), Some(price));
+    assert_eq!(original.quantity(), Quantity::from("5.000"));
+    assert_eq!(original.filled_qty(), filled_qty);
+    let leaves_qty = Quantity::from("5.000").saturating_sub(filled_qty);
+    engine.process_trade_tick(&TradeTick::new(
+        engine.instrument.id(),
+        price,
+        leaves_qty,
+        AggressorSide::Sell,
+        TradeId::from("AFTER-REJECT"),
+        4.into(),
+        4.into(),
+    ));
+    assert_eq!(
+        engine.order_snapshot(id).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::ModifyRejected(_), OrderEventAny::Filled(fill)]
+            if fill.client_order_id == id && fill.last_px == price
+                && fill.last_qty == leaves_qty
+                && fill.liquidity_side == LiquiditySide::Maker
+    ));
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "1499.00")]
+#[case::sell(OrderSide::Sell, "1501.00")]
+fn test_post_only_modify_cancel_allows_non_marketable_amendments(
+    #[case] side: OrderSide,
+    #[case] price: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .side(side)
+        .price(Price::from(price))
+        .quantity(Quantity::from("5.000"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let id = order.client_order_id();
+    let new_price = Price::from("1500.00");
+    events.borrow_mut().clear();
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            order.venue_order_id(),
+            Some(Quantity::from("3.000")),
+            Some(new_price),
+            None,
+            UUID4::new(),
+            2.into(),
+            None,
+            None,
+        ),
+        AccountId::from("SIM-001"),
+    );
+
+    assert!(matches!(
+        events.borrow().as_slice(),
+        [OrderEventAny::Updated(event)]
+            if event.client_order_id == id && event.price == Some(new_price)
+                && event.quantity == Quantity::from("3.000")
+    ));
+    assert!(engine.core.order_exists(id));
+    let updated = engine.order_snapshot(id).unwrap();
+    assert_eq!(updated.status(), OrderStatus::Accepted);
+    assert_eq!(updated.price(), Some(new_price));
+    assert_eq!(updated.quantity(), Quantity::from("3.000"));
+}
+
+#[rstest]
 fn test_modify_reindexes_queue_position(
     #[values(
         OrderPriorityResetPolicy::PriceChange,
@@ -3392,6 +4104,7 @@ fn test_modify_order_priority_without_queue_tracking(
     let price = rejected.then_some(Price::from("1501.00"));
 
     if internal {
+        engine.config.post_only_modify_policy = PostOnlyModifyPolicy::Cancel;
         assert_eq!(
             engine.update_order(
                 &order,
@@ -3399,9 +4112,14 @@ fn test_modify_order_priority_without_queue_tracking(
                 price,
                 None,
                 Some(false),
-                None
+                None,
+                false,
             ),
-            !rejected
+            if rejected {
+                ModifyOutcome::Rejected
+            } else {
+                ModifyOutcome::Applied
+            }
         );
         engine.resync_core_entry(ids[0]);
     } else {
@@ -3481,14 +4199,18 @@ fn test_modify_order_priority_preserves_rejected_and_internal_queue(
     ));
 
     if internal {
-        assert!(engine.update_order(
-            &order,
-            Some(Quantity::from("3.000")),
-            None,
-            None,
-            Some(false),
-            None
-        ));
+        assert_eq!(
+            engine.update_order(
+                &order,
+                Some(Quantity::from("3.000")),
+                None,
+                None,
+                Some(false),
+                None,
+                false,
+            ),
+            ModifyOutcome::Applied
+        );
         engine.resync_core_entry(id);
     } else {
         engine.process_modify(

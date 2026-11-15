@@ -32,7 +32,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_execution::{
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     python::{
         fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
         latency::pyobject_to_latency_model_any,
@@ -169,6 +169,7 @@ impl PyBacktestEngine {
             liquidation_trigger_ratio = None,
             liquidation_cancel_open_orders = true,
             order_priority_reset_policy = OrderPriorityResetPolicy::PriceChange,
+            post_only_modify_policy = PostOnlyModifyPolicy::Reject,
         )
     )]
     #[expect(
@@ -213,6 +214,7 @@ impl PyBacktestEngine {
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
         order_priority_reset_policy: OrderPriorityResetPolicy,
+        post_only_modify_policy: PostOnlyModifyPolicy,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> =
             leverages.map_or_default(|m| m.into_iter().collect());
@@ -282,6 +284,7 @@ impl PyBacktestEngine {
             .frozen_account(frozen_account)
             .queue_position(queue_position)
             .order_priority_reset_policy(order_priority_reset_policy)
+            .post_only_modify_policy(post_only_modify_policy)
             .oto_trigger_mode(oto_trigger_mode)
             .price_protection_points(price_protection_points.unwrap_or_default())
             .liquidation_enabled(liquidation_enabled)
@@ -1686,7 +1689,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 #[cfg(test)]
 mod model_tests {
     use nautilus_execution::{
-        matching_engine::config::OrderPriorityResetPolicy,
+        matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
         models::fee::{FeeModelAny, MakerTakerFeeModel},
         python::{fee::PyFeeModel, fill::PyFillModel},
     };
@@ -1909,6 +1912,7 @@ mod model_tests {
                     None,
                     true,
                     OrderPriorityResetPolicy::PriceChange,
+                    PostOnlyModifyPolicy::Reject,
                 )
                 .unwrap();
 

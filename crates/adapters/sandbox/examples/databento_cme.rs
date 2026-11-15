@@ -31,7 +31,7 @@ use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
 use nautilus_databento::{data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory};
 use nautilus_execution::{
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     models::fee::{FeeModelAny, MakerTakerFeeModel},
 };
 use nautilus_live::node::LiveNode;
@@ -124,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         oto_full_trigger: false,
         price_protection_points: 0,
         order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
+        post_only_modify_policy: PostOnlyModifyPolicy::Reject,
     };
 
     let databento_factory = DatabentoDataClientFactory::new();

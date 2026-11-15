@@ -232,6 +232,23 @@ preserve priority.
 `PRICE_OR_QUANTITY_INCREASE` matches
 [Kraken spot's quantity-only amendment rules](https://docs.kraken.com/exchange/guides/general/amends#queue-priority).
 
+### Post-only modifications
+
+Pass a `PostOnlyModifyPolicy` from `nautilus_trader.execution` as `post_only_modify_policy` on
+`BacktestVenueConfig`, `SandboxExecutionClientConfig`, or `BacktestEngine.add_venue()`.
+The default, `REJECT`, rejects a modification that makes a post-only limit order marketable and retains
+the working order.
+
+`CANCEL` mirrors
+[Binance USD-M GTX amendment behavior](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Modify-Order):
+a valid price change to a buy limit at or above the best ask, or a sell limit at or below the best bid,
+cancels the remaining order without a taker fill.
+Completed fills are preserved, and the order is removed from matching and queue tracking.
+Invalid amendments are still rejected with the original order preserved.
+The engine validates price and size precision and tick size on modify, not venue lot-size filters.
+This policy applies only to modify commands for plain limit orders; automatic contingent-order updates
+and stop orders retain their existing behavior.
+
 ### L1 queue tracking
 
 With `BookType.L1_MBP`, trade ticks reduce quantity ahead while quotes provide price-move and

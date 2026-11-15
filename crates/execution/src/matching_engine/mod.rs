@@ -81,7 +81,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use self::{
-    config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
+    config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     ids_generator::IdsGenerator,
     inflight::InflightOrders,
     orders::{MatchingOrders, OtoCommand},
@@ -4012,17 +4012,19 @@ impl OrderMatchingEngine {
             }
         };
 
-        let update_success = self.update_order(
+        let outcome = self.update_order(
             &order,
             command.quantity,
             command.price,
             command.trigger_price,
             None,
             Some(command.command_id),
+            true,
         );
 
-        if !update_success {
-            return;
+        match outcome {
+            ModifyOutcome::Applied => {}
+            ModifyOutcome::Rejected | ModifyOutcome::Canceled => return,
         }
 
         if !self.core.order_exists(command.client_order_id) {
@@ -7043,9 +7045,19 @@ impl OrderMatchingEngine {
         quantity: Quantity,
         price: Price,
         causation_id: Option<UUID4>,
+        is_modify_command: bool,
     ) -> ModifyOutcome {
         if self.core.is_limit_matched(order.order_side(), price) {
             if order.is_post_only() {
+                if is_modify_command
+                    && order.order_type() == OrderType::Limit
+                    && Some(price) != order.price()
+                    && self.config.post_only_modify_policy == PostOnlyModifyPolicy::Cancel
+                {
+                    self.cancel_order(order, None);
+                    return ModifyOutcome::Canceled;
+                }
+
                 self.generate_order_modify_rejected(
                     order.trader_id(),
                     order.strategy_id(),
@@ -7145,7 +7157,7 @@ impl OrderMatchingEngine {
     ) -> ModifyOutcome {
         if order.is_triggered().is_some_and(|t| t) {
             if self.core.is_limit_matched(order.order_side(), price) {
-                return self.update_limit_order(order, quantity, price, causation_id);
+                return self.update_limit_order(order, quantity, price, causation_id, false);
             }
         } else {
             // Update stop price
@@ -7255,7 +7267,7 @@ impl OrderMatchingEngine {
     ) -> ModifyOutcome {
         if order.is_triggered().is_some_and(|t| t) {
             if self.core.is_limit_matched(order.order_side(), price) {
-                return self.update_limit_order(order, quantity, price, causation_id);
+                return self.update_limit_order(order, quantity, price, causation_id, false);
             }
         } else {
             // Update trigger price
@@ -7532,6 +7544,7 @@ impl OrderMatchingEngine {
         self.purge_cached_filled_qty_if_closed(order.client_order_id());
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn update_order(
         &mut self,
         order: &OrderAny,
@@ -7540,9 +7553,10 @@ impl OrderMatchingEngine {
         trigger_price: Option<Price>,
         update_contingencies: Option<bool>,
         causation_id: Option<UUID4>,
-    ) -> bool {
+        is_modify_command: bool,
+    ) -> ModifyOutcome {
         if self.inflight_orders.contains(order.client_order_id()) {
-            return false;
+            return ModifyOutcome::Rejected;
         }
 
         let update_contingencies = update_contingencies.unwrap_or(true);
@@ -7565,7 +7579,7 @@ impl OrderMatchingEngine {
                 order.account_id(),
                 causation_id,
             );
-            return false;
+            return ModifyOutcome::Rejected;
         }
 
         // Validate only the prices this update changes: internal quantity syncs pass back current
@@ -7590,7 +7604,7 @@ impl OrderMatchingEngine {
                 order.account_id(),
                 causation_id,
             );
-            return false;
+            return ModifyOutcome::Rejected;
         }
 
         // Use cached_filled_qty since PassiveOrderAny in core is not updated with fills
@@ -7609,13 +7623,13 @@ impl OrderMatchingEngine {
                 order.account_id(),
                 causation_id,
             );
-            return false;
+            return ModifyOutcome::Rejected;
         }
 
         let outcome = match order {
             OrderAny::Limit(_) | OrderAny::MarketToLimit(_) => {
                 let price = price.unwrap_or(order.price().unwrap());
-                self.update_limit_order(order, quantity, price, causation_id)
+                self.update_limit_order(order, quantity, price, causation_id, is_modify_command)
             }
             OrderAny::StopMarket(_) => {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
@@ -7697,8 +7711,9 @@ impl OrderMatchingEngine {
             }
         };
 
-        if outcome == ModifyOutcome::Rejected {
-            return false;
+        match outcome {
+            ModifyOutcome::Applied => {}
+            ModifyOutcome::Rejected | ModifyOutcome::Canceled => return outcome,
         }
 
         if self.config.support_contingent_orders
@@ -7713,10 +7728,9 @@ impl OrderMatchingEngine {
         if new_leaves_qty.is_zero() {
             // Pass false since we already handled contingents above
             self.cancel_order(order, Some(false));
-            return true;
         }
 
-        true
+        ModifyOutcome::Applied
     }
 
     fn update_price_rejection(&self, field: &str, price: Price) -> Option<String> {
@@ -8021,6 +8035,7 @@ impl OrderMatchingEngine {
                 trigger_price,
                 Some(false),
                 None,
+                false,
             );
         } else {
             self.generate_order_updated(order, quantity, price, trigger_price, None, None);
@@ -8846,6 +8861,7 @@ struct ConsumptionJournal {
 enum ModifyOutcome {
     Applied,
     Rejected,
+    Canceled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

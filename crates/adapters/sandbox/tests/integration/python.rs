@@ -21,7 +21,7 @@ use nautilus_common::{
     cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
 };
 use nautilus_execution::{
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     models::fee::{FeeModelAny, MakerTakerFeeModel},
 };
 use nautilus_model::{
@@ -139,6 +139,7 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
                 fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
                 queue_position: true,
                 order_priority_reset_policy: OrderPriorityResetPolicy::AnyModify,
+                post_only_modify_policy: PostOnlyModifyPolicy::Cancel,
                 liquidity_consumption: true,
                 bar_adaptive_high_low_ordering: true,
                 use_market_order_acks: true,
@@ -176,6 +177,10 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
             sandbox_config.order_priority_reset_policy,
             OrderPriorityResetPolicy::AnyModify
         );
+        assert_eq!(
+            sandbox_config.post_only_modify_policy,
+            PostOnlyModifyPolicy::Cancel
+        );
         assert!(sandbox_config.liquidity_consumption);
         assert!(sandbox_config.bar_adaptive_high_low_ordering);
         assert!(sandbox_config.use_market_order_acks);
@@ -185,6 +190,10 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
         assert_eq!(
             engine_config.order_priority_reset_policy,
             OrderPriorityResetPolicy::AnyModify
+        );
+        assert_eq!(
+            engine_config.post_only_modify_policy,
+            PostOnlyModifyPolicy::Cancel
         );
         assert!(engine_config.liquidity_consumption);
         assert!(engine_config.bar_adaptive_high_low_ordering);
@@ -252,13 +261,15 @@ fn test_sandbox_config_positional_signature_binds_queue_position() {
 }
 
 #[rstest]
-fn test_sandbox_config_order_priority_reset_policy_keyword(
+fn test_sandbox_config_modify_policies_keyword(
     #[values(
         OrderPriorityResetPolicy::PriceChange,
         OrderPriorityResetPolicy::PriceOrQuantityIncrease,
         OrderPriorityResetPolicy::AnyModify
     )]
     policy: OrderPriorityResetPolicy,
+    #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+    post_only_modify_policy: PostOnlyModifyPolicy,
 ) {
     Python::initialize();
     Python::attach(|py| {
@@ -269,6 +280,9 @@ fn test_sandbox_config_order_priority_reset_policy_keyword(
             .unwrap();
         kwargs
             .set_item("order_priority_reset_policy", policy)
+            .unwrap();
+        kwargs
+            .set_item("post_only_modify_policy", post_only_modify_policy)
             .unwrap();
         let config = py
             .get_type::<SandboxExecutionClientConfig>()
@@ -282,12 +296,25 @@ fn test_sandbox_config_order_priority_reset_policy_keyword(
                 .unwrap(),
             policy
         );
+        assert_eq!(
+            config
+                .getattr("post_only_modify_policy")
+                .unwrap()
+                .extract::<PostOnlyModifyPolicy>()
+                .unwrap(),
+            post_only_modify_policy
+        );
         let config = config.extract::<SandboxExecutionClientConfig>().unwrap();
         assert_eq!(
             config
                 .to_matching_engine_config()
                 .order_priority_reset_policy,
             policy
+        );
+        assert_eq!(config.post_only_modify_policy, post_only_modify_policy);
+        assert_eq!(
+            config.to_matching_engine_config().post_only_modify_policy,
+            post_only_modify_policy
         );
     });
 }

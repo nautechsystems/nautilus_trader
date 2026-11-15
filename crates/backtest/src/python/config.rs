@@ -28,7 +28,7 @@ use nautilus_core::{
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     python::{
         fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
         fill::{fill_model_any_to_pyobject, pyobject_to_fill_model_any},
@@ -326,6 +326,7 @@ impl BacktestVenueConfig {
         liquidation_trigger_ratio = None,
         liquidation_cancel_open_orders = None,
         order_priority_reset_policy = None,
+        post_only_modify_policy = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -369,6 +370,7 @@ impl BacktestVenueConfig {
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: Option<bool>,
         order_priority_reset_policy: Option<OrderPriorityResetPolicy>,
+        post_only_modify_policy: Option<PostOnlyModifyPolicy>,
     ) -> pyo3::PyResult<Self> {
         let oms_type = enum_from_python(oms_type)?;
         let account_type = enum_from_python(account_type)?;
@@ -424,6 +426,7 @@ impl BacktestVenueConfig {
             .maybe_allow_cash_borrowing(allow_cash_borrowing)
             .maybe_queue_position(queue_position)
             .maybe_order_priority_reset_policy(order_priority_reset_policy)
+            .maybe_post_only_modify_policy(post_only_modify_policy)
             .maybe_oto_trigger_mode(oto_trigger_mode)
             .maybe_base_currency(base_currency)
             .maybe_default_leverage(default_leverage)
@@ -559,6 +562,12 @@ impl BacktestVenueConfig {
     #[pyo3(name = "order_priority_reset_policy")]
     fn py_order_priority_reset_policy(&self) -> OrderPriorityResetPolicy {
         self.order_priority_reset_policy()
+    }
+
+    #[getter]
+    #[pyo3(name = "post_only_modify_policy")]
+    fn py_post_only_modify_policy(&self) -> PostOnlyModifyPolicy {
+        self.post_only_modify_policy()
     }
 
     #[getter]

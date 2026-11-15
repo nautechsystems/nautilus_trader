@@ -314,6 +314,8 @@ class BacktestVenueConfig:
     @property
     def order_priority_reset_policy(self) -> execution.OrderPriorityResetPolicy: ...
     @property
+    def post_only_modify_policy(self) -> execution.PostOnlyModifyPolicy: ...
+    @property
     def queue_position(self) -> bool: ...
     @property
     def oto_trigger_mode(self) -> model.OtoTriggerMode: ...
@@ -377,6 +379,7 @@ class BacktestVenueConfig:
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool | None = None,
         order_priority_reset_policy: execution.OrderPriorityResetPolicy | None = None,
+        post_only_modify_policy: execution.PostOnlyModifyPolicy | None = None,
     ) -> BacktestVenueConfig: ...
 
 @typing.final
@@ -482,6 +485,7 @@ class BacktestEngine:
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool = True,
         order_priority_reset_policy: execution.OrderPriorityResetPolicy = execution.OrderPriorityResetPolicy.PRICE_CHANGE,
+        post_only_modify_policy: execution.PostOnlyModifyPolicy = execution.PostOnlyModifyPolicy.REJECT,
     ) -> None: ...
     def change_fill_model(self, venue: model.Venue, fill_model: typing.Any) -> None: ...
     def add_data(

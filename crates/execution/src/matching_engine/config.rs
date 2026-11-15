@@ -57,6 +57,9 @@ pub struct OrderMatchingEngineConfig {
     /// The queue-priority reset policy for successful modify commands.
     #[builder(default)]
     pub order_priority_reset_policy: OrderPriorityResetPolicy,
+    /// The policy for modify commands that make post-only limit orders marketable.
+    #[builder(default)]
+    pub post_only_modify_policy: PostOnlyModifyPolicy,
 }
 
 impl Default for OrderMatchingEngineConfig {
@@ -106,6 +109,45 @@ impl OrderPriorityResetPolicy {
     }
 }
 
+/// Determines how a modify command that makes a post-only order marketable is handled.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.execution",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.execution")
+)]
+pub enum PostOnlyModifyPolicy {
+    /// Reject the modification and retain the working order.
+    #[default]
+    Reject = 0,
+    /// Cancel the remaining order without a fill, as Binance USD-M does for GTX orders.
+    Cancel = 1,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PostOnlyModifyPolicy {
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "PyO3 protocol methods borrow their receivers"
+    )]
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -131,6 +173,7 @@ mod tests {
             config.order_priority_reset_policy,
             OrderPriorityResetPolicy::PriceChange
         );
+        assert_eq!(config.post_only_modify_policy, PostOnlyModifyPolicy::Reject);
         assert!(!config.oto_full_trigger);
         assert!(!config.defer_option_settlement);
         assert_eq!(config.price_protection_points, None);
@@ -151,6 +194,21 @@ mod tests {
         assert_eq!(serde_json::to_value(policy).unwrap(), value);
         assert_eq!(
             serde_json::from_value::<OrderPriorityResetPolicy>(value).unwrap(),
+            policy
+        );
+    }
+
+    #[rstest]
+    #[case(PostOnlyModifyPolicy::Reject, "REJECT")]
+    #[case(PostOnlyModifyPolicy::Cancel, "CANCEL")]
+    fn test_post_only_modify_policy_serde(
+        #[case] policy: PostOnlyModifyPolicy,
+        #[case] name: &str,
+    ) {
+        let value = serde_json::Value::String(name.to_owned());
+        assert_eq!(serde_json::to_value(policy).unwrap(), value);
+        assert_eq!(
+            serde_json::from_value::<PostOnlyModifyPolicy>(value).unwrap(),
             policy
         );
     }

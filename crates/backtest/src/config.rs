@@ -29,7 +29,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    matching_engine::config::OrderPriorityResetPolicy,
+    matching_engine::config::{OrderPriorityResetPolicy, PostOnlyModifyPolicy},
     models::{
         fee::{FeeModelAny, FeeModelHandle},
         fill::{FillModelAny, FillModelHandle},
@@ -367,6 +367,9 @@ pub struct SimulatedVenueConfig {
     /// The queue-priority reset policy for successful modify commands.
     #[builder(default)]
     pub order_priority_reset_policy: OrderPriorityResetPolicy,
+    /// The policy for modify commands that make post-only limit orders marketable.
+    #[builder(default)]
+    pub post_only_modify_policy: PostOnlyModifyPolicy,
 }
 
 impl<S: simulated_venue_config_builder::IsComplete> SimulatedVenueConfigBuilder<S> {
@@ -551,6 +554,8 @@ pub struct BacktestVenueConfig {
     liquidation_cancel_open_orders: bool,
     #[builder(default)]
     order_priority_reset_policy: OrderPriorityResetPolicy,
+    #[builder(default)]
+    post_only_modify_policy: PostOnlyModifyPolicy,
 }
 
 impl<S: backtest_venue_config_builder::IsComplete> BacktestVenueConfigBuilder<S> {
@@ -752,6 +757,11 @@ impl BacktestVenueConfig {
     }
 
     #[must_use]
+    pub fn post_only_modify_policy(&self) -> PostOnlyModifyPolicy {
+        self.post_only_modify_policy
+    }
+
+    #[must_use]
     pub fn queue_position(&self) -> bool {
         self.queue_position
     }
@@ -908,6 +918,7 @@ fn build_simulated_venue(
         .frozen_account(config.frozen_account())
         .queue_position(config.queue_position())
         .order_priority_reset_policy(config.order_priority_reset_policy())
+        .post_only_modify_policy(config.post_only_modify_policy())
         .oto_full_trigger(config.oto_trigger_mode() == OtoTriggerMode::Full)
         .price_protection_points(config.price_protection_points())
         .liquidation_enabled(config.liquidation_enabled())
@@ -1457,6 +1468,7 @@ mod tests {
             .liquidation_trigger_ratio(1.5)
             .liquidation_cancel_open_orders(false)
             .order_priority_reset_policy(OrderPriorityResetPolicy::AnyModify)
+            .post_only_modify_policy(PostOnlyModifyPolicy::Cancel)
             .build()
             .unwrap();
 
@@ -1512,6 +1524,10 @@ mod tests {
             runtime.order_priority_reset_policy,
             OrderPriorityResetPolicy::AnyModify
         );
+        assert_eq!(
+            runtime.post_only_modify_policy,
+            PostOnlyModifyPolicy::Cancel
+        );
     }
 
     #[rstest]
@@ -1521,19 +1537,24 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
-    fn test_order_priority_reset_policy_python_keyword(
+    fn test_modify_policies_python_keyword(
         #[values(
             OrderPriorityResetPolicy::PriceChange,
             OrderPriorityResetPolicy::PriceOrQuantityIncrease,
             OrderPriorityResetPolicy::AnyModify
         )]
         policy: OrderPriorityResetPolicy,
+        #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+        post_only_modify_policy: PostOnlyModifyPolicy,
     ) {
         Python::initialize();
         Python::attach(|py| {
             let kwargs = PyDict::new(py);
             kwargs
                 .set_item("order_priority_reset_policy", policy)
+                .unwrap();
+            kwargs
+                .set_item("post_only_modify_policy", post_only_modify_policy)
                 .unwrap();
             let config = py
                 .get_type::<BacktestVenueConfig>()
@@ -1550,17 +1571,30 @@ mod tests {
                     .unwrap(),
                 policy
             );
+            assert_eq!(
+                config
+                    .getattr("post_only_modify_policy")
+                    .unwrap()
+                    .extract::<PostOnlyModifyPolicy>()
+                    .unwrap(),
+                post_only_modify_policy
+            );
             let config = config.extract::<BacktestVenueConfig>().unwrap();
             assert_eq!(config.order_priority_reset_policy(), policy);
+            assert_eq!(config.post_only_modify_policy(), post_only_modify_policy);
         });
     }
 
     #[rstest]
-    fn test_order_priority_reset_policy_defaults_and_builder() {
+    fn test_modify_policies_defaults_and_builder() {
         let defaults = minimal_builder!().build().unwrap();
         assert_eq!(
             defaults.order_priority_reset_policy(),
             OrderPriorityResetPolicy::PriceChange
+        );
+        assert_eq!(
+            defaults.post_only_modify_policy(),
+            PostOnlyModifyPolicy::Reject
         );
         assert_eq!(
             minimal_simulated_builder!()
@@ -1569,13 +1603,25 @@ mod tests {
                 .order_priority_reset_policy,
             OrderPriorityResetPolicy::PriceChange
         );
+        assert_eq!(
+            minimal_simulated_builder!()
+                .build()
+                .unwrap()
+                .post_only_modify_policy,
+            PostOnlyModifyPolicy::Reject
+        );
         let config = minimal_builder!()
             .order_priority_reset_policy(OrderPriorityResetPolicy::AnyModify)
+            .post_only_modify_policy(PostOnlyModifyPolicy::Cancel)
             .build()
             .unwrap();
         assert_eq!(
             config.order_priority_reset_policy(),
             OrderPriorityResetPolicy::AnyModify
+        );
+        assert_eq!(
+            config.post_only_modify_policy(),
+            PostOnlyModifyPolicy::Cancel
         );
     }
 

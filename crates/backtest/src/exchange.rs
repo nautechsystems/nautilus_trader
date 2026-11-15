@@ -40,7 +40,7 @@ use nautilus_execution::{
     matching::RestingOrder,
     matching_engine::{
         OrderMatchingEngine,
-        config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
+        config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy, PostOnlyModifyPolicy},
         inflight::InflightOrders,
         orders::{MatchingOrders, OtoCommand},
     },
@@ -199,6 +199,7 @@ pub struct SimulatedExchange {
     frozen_account: bool,
     queue_position: bool,
     order_priority_reset_policy: OrderPriorityResetPolicy,
+    post_only_modify_policy: PostOnlyModifyPolicy,
     oto_full_trigger: bool,
     defer_option_settlement: bool,
     price_protection_points: u32,
@@ -292,6 +293,7 @@ impl SimulatedExchange {
             frozen_account: config.frozen_account,
             queue_position: config.queue_position,
             order_priority_reset_policy: config.order_priority_reset_policy,
+            post_only_modify_policy: config.post_only_modify_policy,
             oto_full_trigger: config.oto_full_trigger,
             defer_option_settlement: config.defer_option_settlement,
             price_protection_points: config.price_protection_points,
@@ -514,6 +516,7 @@ impl SimulatedExchange {
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
             .order_priority_reset_policy(self.order_priority_reset_policy)
+            .post_only_modify_policy(self.post_only_modify_policy)
             .oto_full_trigger(self.oto_full_trigger)
             .defer_option_settlement(self.defer_option_settlement)
             .maybe_price_protection_points(price_protection)
@@ -2836,13 +2839,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_modify_order_priority_config_reaches_matching_engine(
+    fn test_modify_policies_reach_matching_engine(
         #[values(
             OrderPriorityResetPolicy::PriceChange,
             OrderPriorityResetPolicy::PriceOrQuantityIncrease,
             OrderPriorityResetPolicy::AnyModify
         )]
         policy: OrderPriorityResetPolicy,
+        #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+        post_only_modify_policy: PostOnlyModifyPolicy,
     ) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
@@ -2854,12 +2859,17 @@ mod tests {
             .starting_balances(vec![Money::from("1_000 USD")])
             .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .order_priority_reset_policy(policy)
+            .post_only_modify_policy(post_only_modify_policy)
             .build()
             .unwrap();
         let mut exchange = SimulatedExchange::new(config, cache.clone(), clock).unwrap();
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         exchange.add_instrument(instrument.clone()).unwrap();
         let engine = exchange.matching_engines.get_mut(&instrument.id()).unwrap();
+        assert_eq!(
+            engine.config.post_only_modify_policy,
+            post_only_modify_policy
+        );
         engine.set_event_handler(Rc::new(move |event| {
             cache.borrow_mut().update_order(&event).unwrap();
         }));

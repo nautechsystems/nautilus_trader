@@ -2648,7 +2648,9 @@ mod tests {
         nautilus_actor,
     };
     #[cfg(feature = "streaming")]
-    use nautilus_execution::matching_engine::config::OrderPriorityResetPolicy;
+    use nautilus_execution::matching_engine::config::{
+        OrderPriorityResetPolicy, PostOnlyModifyPolicy,
+    };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
         models::{
@@ -4935,7 +4937,7 @@ mod tests {
 
     #[cfg(feature = "streaming")]
     #[rstest]
-    fn test_node_forwards_order_priority_reset_policy(
+    fn test_node_forwards_modify_policies(
         crypto_perpetual_ethusdt: CryptoPerpetual,
         #[values(
             OrderPriorityResetPolicy::PriceChange,
@@ -4943,6 +4945,8 @@ mod tests {
             OrderPriorityResetPolicy::AnyModify
         )]
         policy: OrderPriorityResetPolicy,
+        #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+        post_only_modify_policy: PostOnlyModifyPolicy,
     ) {
         let venue = BacktestVenueConfig::builder()
             .name("BINANCE")
@@ -4958,6 +4962,7 @@ mod tests {
             .queue_position(true)
             .price_protection_points(7)
             .order_priority_reset_policy(policy)
+            .post_only_modify_policy(post_only_modify_policy)
             .build()
             .unwrap();
         let config = BacktestRunConfig::builder()
@@ -4976,6 +4981,10 @@ mod tests {
 
         assert_eq!(matching_engine.config.order_priority_reset_policy, policy);
         assert_eq!(
+            matching_engine.config.post_only_modify_policy,
+            post_only_modify_policy
+        );
+        assert_eq!(
             (
                 matching_engine.config.reject_stop_orders,
                 matching_engine.config.support_gtd_orders,
@@ -4990,7 +4999,7 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
-    fn test_python_add_venue_forwards_order_priority_reset_policy(
+    fn test_python_add_venue_forwards_modify_policies(
         crypto_perpetual_ethusdt: CryptoPerpetual,
         #[values(
             OrderPriorityResetPolicy::PriceChange,
@@ -4998,6 +5007,8 @@ mod tests {
             OrderPriorityResetPolicy::AnyModify
         )]
         policy: OrderPriorityResetPolicy,
+        #[values(PostOnlyModifyPolicy::Reject, PostOnlyModifyPolicy::Cancel)]
+        post_only_modify_policy: PostOnlyModifyPolicy,
     ) {
         Python::initialize();
         Python::attach(|py| {
@@ -5013,6 +5024,9 @@ mod tests {
             kwargs.set_item("fee_model", fee_model).unwrap();
             kwargs
                 .set_item("order_priority_reset_policy", policy)
+                .unwrap();
+            kwargs
+                .set_item("post_only_modify_policy", post_only_modify_policy)
                 .unwrap();
 
             for key in ["reject_stop_orders", "support_gtd_orders"] {
@@ -5052,6 +5066,10 @@ mod tests {
             let matching_engine = exchange.get_matching_engine(&instrument.id()).unwrap();
 
             assert_eq!(matching_engine.config.order_priority_reset_policy, policy);
+            assert_eq!(
+                matching_engine.config.post_only_modify_policy,
+                post_only_modify_policy
+            );
             assert_eq!(
                 (
                     matching_engine.config.reject_stop_orders,
