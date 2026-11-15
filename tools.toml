@@ -17,10 +17,10 @@ version = "nightly-2026-08-23"
 rustc-version = "1.100.0"
 
 [pypi-attestations]
-version = "0.0.30"
+version = "0.0.31"
 
 [socket-cli]
-version = "1.11.1"
+version = "1.15.0"
 
 [tokei]
 version = "15.0.0"

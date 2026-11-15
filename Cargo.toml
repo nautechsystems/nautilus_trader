@@ -188,7 +188,7 @@ hyper-util = { version = "0.1.21", default-features = false, features = [
 implied-vol = { version = "2.1.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 itchy = "0.3"
-jiff = { version = "0.2.39", default-features = false, features = [
+jiff = { version = "0.2.43", default-features = false, features = [
   "perf-inline",
   "serde",
   "std",
@@ -289,8 +289,8 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "3.0.9", features = ["full"] }
-sysinfo = { version = "0.40.1", default-features = false, features = [
+syn = { version = "3.0.10", features = ["full"] }
+sysinfo = { version = "0.40.3", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.22.0", default-features = false, features = ["std"] }
@@ -311,7 +311,7 @@ tokio-tungstenite = { version = "0.30.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["io"] }
-toml = { version = "1.1.8", default-features = false, features = [
+toml = { version = "1.2.1", default-features = false, features = [
   "parse",
   "serde",
 ] }
@@ -329,7 +329,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.29.2", features = ["v4", "serde"] }
-webpki-roots = "1.0.11"
+webpki-roots = "1.0.12"
 zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------

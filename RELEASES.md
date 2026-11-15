@@ -94,24 +94,34 @@ Released on TBD (UTC).
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
 - Upgraded Rust (MSRV) to 1.100.0
+- Upgraded `cargo-audit` tool to v0.23.0
+- Upgraded `cargo-binstall` tool to v1.27.0
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
 - Upgraded `flamegraph` tool to v0.6.15
+- Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.10
+- Upgraded `pypi-attestations` tool to v0.0.31
+- Upgraded `Socket CLI` tool to v1.15.0
 - Upgraded `uv` tool to v0.13.7
-- Upgraded `typos` pre-commit hook to v1.52.0
+- Upgraded `markdownlint-cli2` pre-commit hook to v0.24.1
+- Upgraded `typos` pre-commit hook to v1.52.2
 - Upgraded `uv` pre-commit hook to v0.13.7
 - Upgraded `zizmor` pre-commit hook to v1.32.0
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `flate2` crate to v1.1.11
-- Upgraded `jiff` crate to v0.2.39
+- Upgraded `jiff` crate to v0.2.43
 - Upgraded `redb` crate to v4.5.0
 - Upgraded `smallvec` crate to v1.16.5
 - Upgraded `sockudo-ws` crate to v3.1.1
+- Upgraded `syn` crate to v3.0.10
+- Upgraded `sysinfo` crate to v0.40.3
+- Upgraded `toml` crate to v1.2.1
 - Upgraded `uuid` crate to v1.29.2
+- Upgraded `webpki-roots` crate to v1.0.12
 - Upgraded `maturin` package (dev) to v1.16.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.4
-- Upgraded `ty` package (dev) to v0.0.98
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.5
+- Upgraded `ty` package (dev) to v0.0.99
 
 ### Documentation Updates
 
