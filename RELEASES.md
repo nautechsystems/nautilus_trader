@@ -76,6 +76,7 @@ Released on TBD (UTC).
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
+- Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
 
 ### Internal Improvements
 

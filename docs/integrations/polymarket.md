@@ -294,6 +294,8 @@ Locks release through either path:
 - Fills first applied from terminal REST evidence, including confirmed fill reports: this evidence is
   admitted only after confirmation.
 - Reconciled fills more than 15 seconds older than the snapshot, or received before any snapshot.
+- Fills that reconciliation infers from an order or position report: their generated trade IDs never match a
+  venue confirmation.
 
 #### Refresh timing
 
@@ -321,6 +323,8 @@ Timing effects include:
   unsettled spend remains open.
 - **REST confirmations**: A confirmation inside the drain window can report terminal REST BUY spend as free
   until a later refresh.
+- **Inferred fills**: Spend from an inferred BUY fill that the venue total still includes shows as free until
+  the total drains.
 - **Queued fills**: A refresh applied before a queued fill is processed can leave it locked after the
   total has already drained.
 
