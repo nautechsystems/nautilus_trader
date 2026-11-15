@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added mark price, last trade, and bar close fallbacks for unrealized PnL without quotes (#5535), thanks @viliamgonda
 - Added `ParquetDataCatalog::builder()` to open catalogs with named, optional settings
+- Added `Vpin` for volume-synchronized probability of informed trading (#5680), thanks @Mattbusel
 - Added Binance Portfolio Margin balance and account response models
 - Added Binance USD-M opt-in raw trades via `use_usdm_raw_trades` (#5643), thanks @aaurix
 - Added Binance FX underlying support for TradFi perpetuals (#5708), thanks @shuggg999
