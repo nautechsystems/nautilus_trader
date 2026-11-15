@@ -3207,6 +3207,9 @@ impl KrakenSpotHttpClient {
     /// Uses the AmendOrder endpoint which modifies the order in-place,
     /// keeping the same order ID and queue position.
     ///
+    /// Returns the supplied `venue_order_id` as `Some`, or `None` when amending
+    /// by `client_order_id` alone.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -3699,6 +3702,7 @@ mod tests {
         time::Duration,
     };
 
+    use axum::{Router, http::header, routing::post};
     use nautilus_model::instruments::CurrencyPair;
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
@@ -4765,25 +4769,30 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::venue_id(None, Some(VenueOrderId::from("V-ORDER-001")))]
+    #[case::client_id(Some(ClientOrderId::new("C-ORDER-001")), None)]
     #[tokio::test]
-    async fn test_modify_order_with_venue_id_returns_some_venue_id() {
-        use axum::{Router, response::IntoResponse, routing::post};
-
+    async fn test_modify_order_returns_supplied_venue_id(
+        #[case] client_order_id: Option<ClientOrderId>,
+        #[case] venue_order_id: Option<VenueOrderId>,
+    ) {
         let app = Router::new().route(
             "/0/private/AmendOrder",
             post(|| async {
                 (
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    r#"{"error":[],"result":{"amend_id":"AMEND-12345"}}"#,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    include_str!("../../../test_data/http_amend_order_spot.json"),
                 )
-                    .into_response()
             }),
         );
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
+
         let client = KrakenSpotHttpClient::with_credentials(
             "test".to_string(),
             "c2VjcmV0".to_string(),
@@ -4798,13 +4807,12 @@ mod tests {
         )
         .unwrap();
         let instrument_id = cache_test_spot_instrument(&client);
-        let venue_order_id = VenueOrderId::from("V-ORDER-001");
 
         let result = client
             .modify_order(
                 instrument_id,
-                None,
-                Some(venue_order_id),
+                client_order_id,
+                venue_order_id,
                 Some(Quantity::from("0.02")),
                 Some(Price::from("51000.0")),
                 None,
@@ -4812,59 +4820,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result, Some(venue_order_id));
+        assert_eq!(result, venue_order_id);
     }
 
-    #[tokio::test]
-    async fn test_modify_order_with_client_id_returns_ok_none() {
-        use axum::{Router, response::IntoResponse, routing::post};
-
-        let app = Router::new().route(
-            "/0/private/AmendOrder",
-            post(|| async {
-                (
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    r#"{"error":[],"result":{"amend_id":"AMEND-67890"}}"#,
-                )
-                    .into_response()
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        let client = KrakenSpotHttpClient::with_credentials(
-            "test".to_string(),
-            "c2VjcmV0".to_string(),
-            KrakenEnvironment::Live,
-            Some(format!("http://{addr}")),
-            10,
-            None,
-            None,
-            None,
-            None,
-            10,
-        )
-        .unwrap();
-        let instrument_id = cache_test_spot_instrument(&client);
-        let client_order_id = ClientOrderId::new("C-ORDER-001");
-
-        let result = client
-            .modify_order(
-                instrument_id,
-                Some(client_order_id),
-                None,
-                Some(Quantity::from("0.02")),
-                Some(Price::from("51000.0")),
-                None,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(result, None);
-    }
-
+    #[rstest]
     #[tokio::test]
     async fn test_modify_order_without_ids_fails() {
         let client = KrakenSpotHttpClient::default();
