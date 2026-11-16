@@ -272,6 +272,7 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
         return;
     }
 
+    let terminal_conditions = closed_condition_ids.lock();
     let loaded = instruments.load();
     let Some(instrument) = loaded.get(&instrument_id) else {
         return;
@@ -282,7 +283,6 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
         return;
     };
 
-    let terminal_conditions = closed_condition_ids.lock();
     if terminal_conditions.contains(&condition_id) && !watchlist.read().contains_key(&condition_id)
     {
         return;
@@ -374,16 +374,23 @@ pub(crate) fn collect_resolve_watch_selection(
 pub(crate) fn pause_resolve_watch_entries(
     watchlist: &Arc<ResolveWatchlist>,
     condition_ids: &[String],
+    now_ns: UnixNanos,
+    max_wait_secs: u64,
 ) {
     if condition_ids.is_empty() {
         return;
     }
 
+    let max_wait = DurationNanos::try_from_secs(max_wait_secs).unwrap_or(DurationNanos::MAX);
+
     {
         let mut entries = watchlist.write();
         for condition_id in condition_ids {
             if let Some(entry) = entries.get_mut(condition_id) {
-                entry.paused = true;
+                // The deadline may have advanced since this condition was selected for pausing
+                if now_ns >= entry.expiration_ns.saturating_add(max_wait) {
+                    entry.paused = true;
+                }
             }
         }
     }
@@ -766,7 +773,9 @@ mod tests {
     }
 
     #[rstest]
-    fn serialized_position_update_waits_for_resolution_owner_lock() {
+    fn serialized_position_update_waits_for_owner_and_metadata_publication(
+        #[values(false, true)] metadata_writer: bool,
+    ) {
         let owner_lock = Arc::new(Mutex::new(()));
         let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let watchlist = Arc::new(ResolveWatchlist::default());
@@ -785,14 +794,16 @@ mod tests {
         let event = stub_position_opened_event(instrument.id());
         let owner_lock_for_thread = owner_lock.clone();
         let watchlist_for_thread = watchlist.clone();
-        let instruments_for_thread = instruments;
+        let instruments_for_thread = instruments.clone();
+        let closed_for_thread = closed_condition_ids.clone();
         let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
-        let guard = owner_lock.lock();
+        let guard = (!metadata_writer).then(|| owner_lock.lock());
+        let terminal_guard = metadata_writer.then(|| closed_condition_ids.lock());
 
         let update_thread = std::thread::spawn(move || {
             update_resolve_watchlist_from_position_event_serialized(
                 &owner_lock_for_thread,
-                &closed_condition_ids,
+                &closed_for_thread,
                 &watchlist_for_thread,
                 &instruments_for_thread,
                 &event,
@@ -804,15 +815,27 @@ mod tests {
             done_rx
                 .recv_timeout(std::time::Duration::from_millis(50))
                 .is_err(),
-            "position update should wait for the resolution owner lock",
+            "position update should wait for owner and metadata publication locks",
         );
+        let expiration = if metadata_writer { 100 } else { 1_000_000_000 };
+        if metadata_writer {
+            let InstrumentAny::BinaryOption(mut binary) = instrument else {
+                unreachable!()
+            };
+            binary.expiration_ns = UnixNanos::from(expiration);
+            instruments.insert(binary.id, InstrumentAny::BinaryOption(binary));
+        }
+        drop(terminal_guard);
         drop(guard);
         done_rx
             .recv_timeout(std::time::Duration::from_secs(1))
             .expect("position update should complete after lock release");
         update_thread.join().expect("position update thread");
 
-        assert!(watchlist.read().contains_key(&"0xCOND-BTC".to_string()));
+        assert_eq!(
+            watchlist.read()["0xCOND-BTC"].expiration_ns,
+            UnixNanos::from(expiration)
+        );
     }
 
     #[rstest]
@@ -904,7 +927,9 @@ mod tests {
     }
 
     #[rstest]
-    fn resolve_watch_selection_deduplicates_shared_condition_ids_and_pauses_timed_out_entries() {
+    fn resolve_watch_selection_deduplicates_shared_condition_ids_and_pauses_timed_out_entries(
+        #[values(false, true)] deadline_extended: bool,
+    ) {
         let now_ns = UnixNanos::from(2_000_000_000_000);
         let mut watchlist = ahash::AHashMap::new();
 
@@ -961,6 +986,20 @@ mod tests {
         );
         assert!(selection.condition_ids.is_empty());
         assert_eq!(selection.pause_condition_ids, vec!["0xCOND-A".to_string()]);
+
+        let watchlist = Arc::new(ResolveWatchlist::new(watchlist));
+
+        if deadline_extended {
+            watchlist.write().get_mut("0xCOND-A").unwrap().expiration_ns =
+                UnixNanos::from(u64::MAX);
+        }
+        pause_resolve_watch_entries(
+            &watchlist,
+            &selection.pause_condition_ids,
+            timed_out_now,
+            1800,
+        );
+        assert_eq!(watchlist.read()["0xCOND-A"].paused, !deadline_extended);
     }
 
     #[rstest]

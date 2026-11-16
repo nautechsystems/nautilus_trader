@@ -31,10 +31,7 @@ use crate::{
 /// the filter to be useful. Methods are called on each `load_all()` cycle,
 /// enabling dynamic re-evaluation (e.g., time-based slug generation).
 pub trait InstrumentFilter: Debug + Send + Sync {
-    /// Market slugs for fetching via `GET /markets?slug=`.
-    ///
-    /// When this filter also supplies query parameters, these slugs are optional retained
-    /// metadata. Rolling-query definitions take precedence before acceptance.
+    /// Market slugs for concurrent per-slug fetching via `GET /markets?slug=`.
     fn market_slugs(&self) -> Option<Vec<String>> {
         None
     }

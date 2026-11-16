@@ -177,10 +177,16 @@ impl ResolveContext {
 pub(crate) async fn pause_and_reconcile_resolve_watch_entries(
     ctx: &ResolveContext,
     condition_ids: &[String],
+    max_wait_secs: u64,
 ) {
     let mut targets = {
         let _guard = ctx.apply_mutex.lock();
-        super::watchlist::pause_resolve_watch_entries(&ctx.watchlist, condition_ids);
+        super::watchlist::pause_resolve_watch_entries(
+            &ctx.watchlist,
+            condition_ids,
+            ctx.clock.get_time_ns(),
+            max_wait_secs,
+        );
 
         // Include already paused entries so interrupted cleanup converges after reconnect
         ctx.watchlist
@@ -582,9 +588,13 @@ pub(crate) async fn admit_data_resolution_instrument(
         }
         let resolution = ctx.deferred_resolutions.get_cloned(&instrument.id());
         if resolution.is_none() {
+            // Read the accepted definition under the same lock as metadata cache publication
+            let _terminal_guard = ctx.subscriptions.lock_closed_conditions();
+            let instruments = ctx.instruments.load();
+            let current = instruments.get(&instrument.id()).unwrap_or(instrument);
             super::watchlist::upsert_data_resolve_watch_entry_from_instrument(
                 &ctx.watchlist,
-                instrument,
+                current,
             );
         }
         resolution

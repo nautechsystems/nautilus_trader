@@ -18,17 +18,12 @@ use std::time::Duration;
 use ahash::AHashSet;
 use dashmap::DashMap;
 use nautilus_common::{
-    cache::CacheView,
     live::dst::time::Instant,
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::AtomicMap;
 use nautilus_live::task::TaskGroupGuard;
-use nautilus_model::{
-    events::{OrderEventAny, PositionEvent},
-    identifiers::{InstrumentId, PositionId},
-    orders::Order,
-};
+use nautilus_model::events::PositionEvent;
 use parking_lot::Mutex;
 
 use super::{
@@ -37,7 +32,6 @@ use super::{
     instruments::{InstrumentUpdateState, refresh_expired_market_closure},
 };
 use crate::{
-    common::consts::POLYMARKET_VENUE,
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -50,61 +44,6 @@ use crate::{
 const TASK_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl PolymarketDataClient {
-    fn ensure_order_event_subscription(&mut self) {
-        if self.order_event_handler.is_some() {
-            return;
-        }
-        let Some(cache) = self.cache.clone() else {
-            return;
-        };
-        let instruments = self.subscriptions.exposure_instruments.clone();
-        let handler = TypedHandler::from(move |event: &OrderEventAny| {
-            sync_exposure_instrument(&cache, &instruments, event.instrument_id());
-        });
-        msgbus::subscribe_order_events("events.order.*".into(), handler.clone(), Some(10));
-        self.order_event_handler = Some(handler);
-    }
-
-    fn clear_order_event_subscription(&mut self) {
-        if let Some(handler) = self.order_event_handler.take() {
-            msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
-        }
-    }
-
-    fn seed_exposure_instruments(&self) {
-        let Some(cache) = &self.cache else {
-            return;
-        };
-        let loaded = cache.borrow();
-        let ids = loaded
-            .orders_open_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
-            .iter()
-            .map(|order| order.instrument_id())
-            .chain(
-                loaded
-                    .orders_active_local_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
-                    .iter()
-                    .map(|order| order.instrument_id()),
-            )
-            .chain(
-                loaded
-                    .orders_inflight_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
-                    .iter()
-                    .map(|order| order.instrument_id()),
-            )
-            .chain(
-                loaded
-                    .positions_open_refs(Some(&POLYMARKET_VENUE), None, None, None, None)
-                    .iter()
-                    .map(|position| position.instrument_id),
-            )
-            .collect::<AHashSet<_>>();
-        self.subscriptions.exposure_instruments.clear();
-        for id in ids {
-            sync_exposure_instrument(cache, &self.subscriptions.exposure_instruments, id);
-        }
-    }
-
     fn ensure_position_event_subscription(&mut self) {
         if self.position_event_handler.is_some() {
             return;
@@ -114,13 +53,8 @@ impl PolymarketDataClient {
         let instruments = self.instruments.clone();
         let owner_lock = self.resolve_watch_apply_mutex.clone();
         let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
-        let cache = self.cache.clone();
-        let exposure_instruments = self.subscriptions.exposure_instruments.clone();
 
         let handler = TypedHandler::from(move |event: &PositionEvent| {
-            if let Some(cache) = &cache {
-                sync_exposure_instrument(cache, &exposure_instruments, event.instrument_id());
-            }
             update_resolve_watchlist_from_position_event_serialized(
                 &owner_lock,
                 &closed_condition_ids,
@@ -343,7 +277,7 @@ impl PolymarketDataClient {
 
                         tokio::select! {
                             () = pause_and_reconcile_resolve_watch_entries(
-                                &resolve_ctx, &selection.pause_condition_ids,
+                                &resolve_ctx, &selection.pause_condition_ids, max_wait_secs,
                             ) => {}
                             () = cancellation.cancelled() => break,
                         }
@@ -430,7 +364,6 @@ impl PolymarketDataClient {
     pub(super) fn start_client(&mut self) {
         log::info!("Starting Polymarket data client: {}", self.client_id);
         self.ensure_position_event_subscription();
-        self.ensure_order_event_subscription();
     }
 
     pub(super) fn stop_client(&mut self) {
@@ -441,7 +374,6 @@ impl PolymarketDataClient {
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.clear_position_event_subscription();
-        self.clear_order_event_subscription();
     }
 
     pub(super) fn reset_client(&mut self) {
@@ -457,12 +389,12 @@ impl PolymarketDataClient {
         // the previous generation. Callers must rebuild instrument/data
         // subscriptions after connect().
         self.clear_position_event_subscription();
-        self.clear_order_event_subscription();
 
-        let old_instrument_update_state = self.instrument_update_state.clone();
-        let mut update_guard = old_instrument_update_state.lock();
+        // Refresh holds the owner lock through metadata publication
         let owner_lock = self.resolve_watch_apply_mutex.clone();
         let _owner_guard = owner_lock.lock();
+        let old_instrument_update_state = self.instrument_update_state.clone();
+        let mut update_guard = old_instrument_update_state.lock();
         let old_closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
         let _generation_guard = old_closed_condition_ids.lock();
 
@@ -520,8 +452,6 @@ impl PolymarketDataClient {
             polybolt_feed.begin_shutdown();
         });
         self.ensure_position_event_subscription();
-        self.ensure_order_event_subscription();
-        self.seed_exposure_instruments();
         register_polymarket_custom_data();
 
         log::info!("Connecting Polymarket data client");
@@ -613,7 +543,6 @@ impl PolymarketDataClient {
             self.shutdown_errors.push(e.to_string());
         }
         self.clear_position_event_subscription();
-        self.clear_order_event_subscription();
 
         let drained = self.tasks.is_empty()
             && self.ws_client.connection_count() == 0
@@ -652,53 +581,6 @@ impl PolymarketDataClient {
     }
 }
 
-fn sync_exposure_instrument(
-    cache: &CacheView,
-    instruments: &DashMap<InstrumentId, Vec<PositionId>>,
-    instrument_id: InstrumentId,
-) {
-    if instrument_id.venue != *POLYMARKET_VENUE {
-        return;
-    }
-    let cache = cache.borrow();
-    let positions = cache
-        .positions_open_refs(
-            Some(&POLYMARKET_VENUE),
-            Some(&instrument_id),
-            None,
-            None,
-            None,
-        )
-        .iter()
-        .map(|position| position.id)
-        .collect::<Vec<_>>();
-
-    if cache.has_orders_open(
-        Some(&POLYMARKET_VENUE),
-        Some(&instrument_id),
-        None,
-        None,
-        None,
-    ) || cache.has_orders_inflight(
-        Some(&POLYMARKET_VENUE),
-        Some(&instrument_id),
-        None,
-        None,
-        None,
-    ) || cache.has_orders_active_local(
-        Some(&POLYMARKET_VENUE),
-        Some(&instrument_id),
-        None,
-        None,
-        None,
-    ) || !positions.is_empty()
-    {
-        instruments.insert(instrument_id, positions);
-    } else {
-        instruments.remove(&instrument_id);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -734,15 +616,10 @@ mod tests {
     };
     use nautilus_model::{
         data::{DataType, QuoteTick},
-        enums::{BookType, OmsType, OrderSide, OrderType},
-        events::{PositionClosed, PositionOpened},
-        identifiers::{
-            AccountId, ClientId, InstrumentId, PositionId, Symbol, TradeId, TraderId, VenueOrderId,
-        },
+        enums::BookType,
+        identifiers::{ClientId, InstrumentId, PositionId, Symbol, TraderId},
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orderbook::OrderBook,
-        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::Position,
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::{
@@ -955,99 +832,6 @@ mod tests {
         make_client_for_reset_test_with_proxy(None)
     }
 
-    #[rstest]
-    fn metadata_retention_follows_cached_orders_and_positions() {
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut client = make_client_for_reset_test().with_cache(cache.clone().into());
-        let condition_id = format!("0x{:064x}", 1);
-        let instrument = seed_instrument(
-            &client,
-            &format!("{condition_id}-1"),
-            &condition_id,
-            UnixNanos::from(u64::MAX),
-        );
-        client.instruments.remove(&instrument.id());
-        let mut order = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument.id())
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from("10"))
-            .price(Price::from("0.50"))
-            .build();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let venue_order_id = VenueOrderId::from("V-001");
-        cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-            .unwrap();
-        client.seed_exposure_instruments();
-        assert!(
-            client
-                .subscriptions
-                .exposure_instruments
-                .contains_key(&instrument.id())
-        );
-        order = cache
-            .borrow_mut()
-            .update_order(&TestOrderEventStubs::submitted(&order, account_id))
-            .unwrap();
-        client.start_client();
-        client.seed_exposure_instruments();
-        let retained = &client.subscriptions.exposure_instruments;
-        assert!(retained.contains_key(&instrument.id()));
-        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
-        order = cache.borrow_mut().update_order(&accepted).unwrap();
-        msgbus::publish_order_event("events.order.TEST".into(), &accepted);
-        let filled = TestOrderEventStubs::filled(
-            &order,
-            &instrument,
-            None,
-            None,
-            Some(Price::from("0.50")),
-            None,
-            None,
-            None,
-            None,
-            Some(account_id),
-        );
-        cache.borrow_mut().update_order(&filled).unwrap();
-        msgbus::publish_order_event("events.order.TEST".into(), &filled);
-        assert!(retained.is_empty());
-        let OrderEventAny::Filled(fill) = filled else {
-            panic!("expected fill")
-        };
-        let mut position = Position::new(&instrument, fill.clone());
-        cache
-            .borrow_mut()
-            .add_position(&position, OmsType::Netting)
-            .unwrap();
-        msgbus::publish_position_event(
-            "events.position.TEST".into(),
-            &PositionEvent::PositionOpened(PositionOpened::create(
-                &position,
-                &fill,
-                UUID4::new(),
-                UnixNanos::default(),
-            )),
-        );
-        assert!(retained.contains_key(&instrument.id()));
-        let mut closing = fill;
-        closing.order_side = OrderSide::Sell;
-        closing.trade_id = TradeId::from("CLOSE");
-        position.apply(&closing);
-        cache.borrow_mut().update_position(&position).unwrap();
-        msgbus::publish_position_event(
-            "events.position.TEST".into(),
-            &PositionEvent::PositionClosed(PositionClosed::create(
-                &position,
-                &closing,
-                UUID4::new(),
-                UnixNanos::default(),
-            )),
-        );
-        assert!(client.subscriptions.retained_instrument_ids().is_empty());
-        client.stop_client();
-    }
-
     fn make_client_for_reset_test_with_proxy(proxy_url: Option<ProxyUrl>) -> PolymarketDataClient {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
@@ -1195,7 +979,12 @@ mod tests {
         binary.info = Some(info);
 
         let inst = InstrumentAny::BinaryOption(binary);
-        cache_instrument_unchecked(&client.instruments, &client.subscriptions.token_meta, &inst);
+        cache_instrument_unchecked(
+            &client.instruments,
+            &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
+            &inst,
+        );
         inst
     }
 
@@ -1320,6 +1109,37 @@ mod tests {
         assert!(!client.subscriptions.book_sync.book_gated(instrument_id));
         assert!(client.subscriptions.pending_auto_loads.lock().is_empty());
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    fn reset_waiting_for_owner_does_not_block_metadata() {
+        let mut client = make_client_for_reset_test();
+        let update_state = client.instrument_update_state.clone();
+        let owner_lock = client.resolve_watch_apply_mutex.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+
+        let busy_owner = std::thread::spawn(move || {
+            let _guard = owner_lock.lock();
+            started_tx.send(()).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(1);
+
+            while std::time::Instant::now() < deadline {
+                if update_state.is_locked() {
+                    return true;
+                }
+                std::thread::yield_now();
+            }
+            false
+        });
+
+        started_rx.recv().unwrap();
+        let old_update_state = client.instrument_update_state.clone();
+        client.reset_client();
+        assert!(
+            !busy_owner.join().unwrap(),
+            "Reset blocked the owner's metadata publication"
+        );
+        assert!(old_update_state.lock().retired);
     }
 
     #[rstest]
@@ -2156,16 +1976,22 @@ mod tests {
         // The live boundary refuses re-application, so no production path recreates this
         let republished = apply_live_instrument(
             &client.subscriptions.closed_condition_ids,
-            &client.instrument_update_state,
+            &mut client.instrument_update_state.lock(),
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &inst,
             |_| {},
         );
         assert!(!republished);
 
         // Retirement is one-shot: a later sweep must not walk the whole terminal set again
-        cache_instrument_unchecked(&client.instruments, &client.subscriptions.token_meta, &inst);
+        cache_instrument_unchecked(
+            &client.instruments,
+            &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
+            &inst,
+        );
 
         // The second marker enters a later snapshot, proving the first sweep finished
         for suffix in ["LATER1", "LATER2"] {

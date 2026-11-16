@@ -29,7 +29,7 @@ use nautilus_model::{data::CustomData, instruments::Instrument};
 
 use super::{
     PolymarketDataClient,
-    instruments::{apply_live_instrument_locked, cache_instruments_unchecked},
+    instruments::{apply_live_instrument, cache_instruments_unchecked},
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -112,6 +112,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
                 pause_and_reconcile_resolve_watch_entries(
                     &resolve_ctx,
                     &selection.pause_condition_ids,
+                    max_wait_secs,
                 )
                 .await;
                 summary.timed_out_watchlist = selection.timed_out_watchlist;
@@ -190,6 +191,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let instruments_cache = client.instruments.clone();
     let instrument_update_state = client.instrument_update_state.clone();
     let token_meta = client.subscriptions.token_meta.clone();
+    let watchlist = client.subscriptions.watchlist.clone();
     let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let request_id = request.request_id;
     let client_id = request.client_id.unwrap_or(client.client_id);
@@ -199,15 +201,19 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let params = request.params;
     let clock = client.clock;
     let future = async move {
+        let request_epoch = instrument_update_state.lock().metadata_epoch();
         let instruments = if instrument_config.should_load_all() || instrument_config.has_load_ids()
         {
-            crate::providers::fetch_configured_instruments(&http, &instrument_config, &filters)
+            crate::providers::fetch_configured_with_closed(&http, &instrument_config, &filters)
                 .await
+                .map(|(instruments, _, unfiltered_ids)| (instruments, unfiltered_ids))
         } else {
-            crate::providers::fetch_instruments(&http, &filters).await
+            crate::providers::fetch_instruments(&http, &filters)
+                .await
+                .map(|instruments| (instruments, Default::default()))
         };
 
-        let instruments = match instruments {
+        let (instruments, unfiltered_ids) = match instruments {
             Ok(instruments) => instruments,
             Err(e) => {
                 log::error!("Failed to fetch Polymarket instruments: {e}");
@@ -216,11 +222,19 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         };
 
         let mut update_state = instrument_update_state.lock();
+        let mut event_metadata = Default::default();
         let mut effective_instruments = Vec::with_capacity(instruments.len());
         let now_ns = clock.get_time_ns();
 
         for instrument in instruments {
-            let instrument = match update_state.compose_instrument(&instrument) {
+            let instrument = update_state
+                .newer_cached(&instrument, &instruments_cache, Some(request_epoch))
+                .unwrap_or(instrument);
+            let instrument = match update_state.compose_instrument(
+                &instrument,
+                &instruments_cache,
+                &mut event_metadata,
+            ) {
                 Ok(instrument) => instrument,
                 Err(e) => {
                     log::error!(
@@ -231,6 +245,12 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 }
             };
 
+            if !unfiltered_ids.contains(&instrument.id())
+                && !filters.iter().all(|filter| filter.accept(&instrument))
+            {
+                continue;
+            }
+
             effective_instruments.push(instrument);
         }
 
@@ -239,25 +259,19 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         } else {
             let terminal_conditions = closed_condition_ids.lock();
 
-            let live: Vec<_> =
-                effective_instruments
-                    .iter()
-                    .filter(|instrument| {
-                        !crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                            instrument, now_ns,
-                        ) && !extract_condition_id(&instrument.id())
-                            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
-                            && !instruments_cache.get_cloned(&instrument.id()).is_some_and(
-                                |cached| super::instruments::stale_metadata(instrument, &cached),
-                            )
-                    })
-                    .cloned()
-                    .collect();
+            let live: Vec<_> = effective_instruments
+                .iter()
+                .filter(|instrument| {
+                    !crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                        instrument, now_ns,
+                    ) && !extract_condition_id(&instrument.id())
+                        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+                })
+                .cloned()
+                .collect();
 
-            cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
-            for instrument in &live {
-                update_state.record_metadata(instrument.id());
-            }
+            update_state.record_metadata(&live, &instruments_cache);
+            cache_instruments_unchecked(&instruments_cache, &token_meta, &watchlist, &live);
             live.len()
         };
 
@@ -299,6 +313,7 @@ pub(super) fn request_instrument(
     let instruments_cache = client.instruments.clone();
     let instrument_update_state = client.instrument_update_state.clone();
     let token_meta = client.subscriptions.token_meta.clone();
+    let watchlist = client.subscriptions.watchlist.clone();
     let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let client_id = request.client_id.unwrap_or(client.client_id);
     let request_id = request.request_id;
@@ -307,6 +322,7 @@ pub(super) fn request_instrument(
     let params = request.params;
     let clock = client.clock;
     let future = async move {
+        let request_epoch = instrument_update_state.lock().metadata_epoch();
         let condition_id = match extract_condition_id(&instrument_id) {
             Ok(cid) => cid,
             Err(e) => {
@@ -330,7 +346,14 @@ pub(super) fn request_instrument(
 
         if let Some(inst) = instrument {
             let mut update_state = instrument_update_state.lock();
-            let inst = match update_state.compose_instrument(&inst) {
+            let inst = update_state
+                .newer_cached(&inst, &instruments_cache, Some(request_epoch))
+                .unwrap_or(inst);
+            let inst = match update_state.compose_instrument(
+                &inst,
+                &instruments_cache,
+                &mut Default::default(),
+            ) {
                 Ok(instrument) => instrument,
                 Err(e) => {
                     log::error!("Failed to apply live tick to instrument {instrument_id}: {e}");
@@ -345,21 +368,22 @@ pub(super) fn request_instrument(
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
-            } else if apply_live_instrument_locked(
-                &closed_condition_ids,
-                &update_state,
-                &instruments_cache,
-                &token_meta,
-                &inst,
-                |instrument| {
-                    // Publish onto the data bus so other clients (e.g. the exec
-                    // client's token map) can update from the same fetch.
-                    if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
-                        log::warn!("Failed to publish instrument {instrument_id}: {e}");
-                    }
-                },
-            ) {
-                update_state.record_metadata(instrument_id);
+            } else {
+                apply_live_instrument(
+                    &closed_condition_ids,
+                    &mut update_state,
+                    &instruments_cache,
+                    &token_meta,
+                    &watchlist,
+                    &inst,
+                    |instrument| {
+                        // Publish onto the data bus so other clients (e.g. the exec
+                        // client's token map) can update from the same fetch.
+                        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+                            log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                        }
+                    },
+                );
             }
 
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(

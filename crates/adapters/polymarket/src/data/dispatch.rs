@@ -77,9 +77,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
     effective_deltas::apply_snapshot_and_diff,
-    instruments::{
-        InstrumentUpdateState, TokenMeta, apply_live_instrument, apply_live_instrument_locked,
-    },
+    instruments::{InstrumentUpdateState, TokenMeta, apply_live_instrument},
     spawn_task,
 };
 use crate::{
@@ -791,11 +789,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
 
-            if !apply_live_instrument_locked(
+            if !apply_live_instrument(
                 &ctx.subscriptions.closed_condition_ids,
-                &update_state,
+                &mut update_state,
                 &ctx.instruments,
                 &ctx.subscriptions.token_meta,
+                &ctx.subscriptions.watchlist,
                 &rebuilt,
                 |instrument| {
                     if let Err(e) = ctx
@@ -853,6 +852,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let gamma_client = ctx.gamma_client.clone();
             let filters = ctx.filters.clone();
             let token_meta = ctx.subscriptions.token_meta.clone();
+            let watchlist = ctx.subscriptions.watchlist.clone();
             let instruments = ctx.instruments.clone();
             let instrument_update_state = ctx.instrument_update_state.clone();
             let closed_condition_ids = ctx.subscriptions.closed_condition_ids.clone();
@@ -884,6 +884,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     }
                 };
 
+                let request_epoch = instrument_update_state.lock().metadata_epoch();
                 let result = if let Some(condition_id) = fetch_condition_id {
                     let mut attempt = 0usize;
 
@@ -978,12 +979,20 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 continue;
                             }
 
+                            let mut update_state = instrument_update_state.lock();
+                            if update_state
+                                .newer_cached(&inst, &instruments, Some(request_epoch))
+                                .is_some()
+                            {
+                                continue;
+                            }
                             let instrument_id = inst.id();
                             apply_live_instrument(
                                 &closed_condition_ids,
-                                &instrument_update_state,
+                                &mut update_state,
                                 &instruments,
                                 &token_meta,
+                                &watchlist,
                                 &inst,
                                 |instrument| {
                                     if let Err(e) =
@@ -1704,7 +1713,7 @@ mod tests {
             enums::PolymarketOrderSide,
         },
         config::PolymarketDataClientConfig,
-        filters::{market_closed, set_market_closed},
+        filters::{PredicateFilter, TagFilter, market_closed, set_market_closed},
         http::{clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient},
         resolve::{
             PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
@@ -2008,7 +2017,12 @@ mod tests {
         size_increment: Quantity,
     ) -> InstrumentAny {
         let inst = stub_instrument(raw_symbol, price_increment, size_increment);
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &inst);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &inst,
+        );
         inst
     }
 
@@ -2081,7 +2095,12 @@ mod tests {
             binary.info = Some(Params::new(info));
         }
 
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &inst);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &inst,
+        );
         inst
     }
 
@@ -2796,6 +2815,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
         client.subscriptions.active_delta_subs.insert(instrument_id);
@@ -2832,6 +2852,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
         client.subscriptions.active_quote_subs.insert(instrument_id);
@@ -2958,8 +2979,10 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn instrument_request_composes_live_tick_into_event_and_response() {
-        let market = gamma_market_recheck_fixture_value();
+    async fn instrument_request_composes_live_tick_into_event_and_response(
+        #[values(false, true)] stale_response: bool,
+    ) {
+        let (market, cached) = instrument_request_revision_fixture(stale_response, false);
         let state = ScriptedAutoLoadServerState::new(
             vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
             vec![],
@@ -2967,6 +2990,17 @@ mod tests {
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
         let instrument_id = fixture_yes_instrument_id();
+
+        for instrument in cached {
+            client
+                .instruments
+                .insert(instrument.id(), instrument.clone());
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                &instrument,
+                PositionId::from("P-1"),
+            );
+        }
         client.instrument_update_state.lock().record_live_tick(
             Ustr::from(TEST_TOKEN_ID_YES),
             "0.005".parse().expect("tick size"),
@@ -3008,26 +3042,71 @@ mod tests {
             DataEvent::Response(DataResponse::Instrument(response)) => Some(&response.data),
             _ => None,
         });
+        let expected = "2099-12-01T00:00:00Z".parse::<UnixNanos>().unwrap();
 
         for instrument in [published, response] {
             let instrument = instrument.expect("composed instrument");
             assert_eq!(instrument.price_precision(), 4);
             assert_eq!(instrument.price_increment(), Price::from("0.005"));
             assert_eq!(instrument.price_increment().precision, 4);
+            assert_eq!(instrument.expiration_ns(), Some(expected));
         }
+        assert_eq!(
+            client.resolve_poll_watchlist.read()[TEST_CONDITION_ID].expiration_ns,
+            expected
+        );
     }
 
     #[rstest]
+    #[case::newer_response(false, false, false)]
+    #[case::older_response(true, false, false)]
+    #[case::filtered_cached_revision(true, true, false)]
+    #[case::explicit_scope(true, true, true)]
     #[tokio::test]
-    async fn instruments_request_composes_live_tick_into_response_and_cache() {
-        let market = gamma_market_recheck_fixture_value();
+    async fn instruments_request_composes_live_tick_into_response_and_cache(
+        #[case] stale_response: bool,
+        #[case] apply_filter: bool,
+        #[case] explicit_scope: bool,
+    ) {
+        let (market, cached) = instrument_request_revision_fixture(stale_response, apply_filter);
         let state = ScriptedAutoLoadServerState::new(
-            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![
+                ScriptedAutoLoadReply::ok(serde_json::json!([market]));
+                1 + usize::from(explicit_scope)
+            ],
             vec![],
         );
         let addr = start_scripted_auto_load_test_server(state).await;
-        let (client, mut data_rx) = create_test_client(addr);
+        let (mut client, mut data_rx) = create_test_client(addr);
         let instrument_id = fixture_yes_instrument_id();
+
+        if apply_filter {
+            let config =
+                explicit_scope.then(|| crate::config::PolymarketInstrumentProviderConfig {
+                    load_ids: Some(vec![instrument_id]),
+                    ..Default::default()
+                });
+            client.provider = crate::providers::PolymarketInstrumentProvider::with_filters(
+                client.provider.http_client().clone(),
+                config,
+                vec![
+                    Arc::new(TagFilter::from_tag_id(84)),
+                    Arc::new(PredicateFilter::not_expired(client.clock.get_time_ns())),
+                ],
+            )
+            .unwrap();
+        }
+
+        for instrument in cached {
+            client
+                .instruments
+                .insert(instrument.id(), instrument.clone());
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                &instrument,
+                PositionId::from("P-1"),
+            );
+        }
         client.instrument_update_state.lock().record_live_tick(
             Ustr::from(TEST_TOKEN_ID_YES),
             "0.005".parse().expect("tick size"),
@@ -3062,6 +3141,11 @@ mod tests {
         .await
         .expect("timed out waiting for instruments response");
 
+        if apply_filter && !explicit_scope {
+            assert!(response.data.is_empty());
+            return;
+        }
+
         let response_instrument = response
             .data
             .iter()
@@ -3071,12 +3155,53 @@ mod tests {
             .instruments
             .get_cloned(&instrument_id)
             .expect("Yes instrument in cache");
+        let expected = if apply_filter {
+            "2020-01-01T00:00:00Z"
+        } else {
+            "2099-12-01T00:00:00Z"
+        }
+        .parse::<UnixNanos>()
+        .unwrap();
 
         for instrument in [response_instrument, &cached_instrument] {
             assert_eq!(instrument.price_precision(), 4);
             assert_eq!(instrument.price_increment(), Price::from("0.005"));
             assert_eq!(instrument.price_increment().precision, 4);
+            assert_eq!(instrument.expiration_ns(), Some(expected));
         }
+        assert_eq!(
+            client.resolve_poll_watchlist.read()[TEST_CONDITION_ID].expiration_ns,
+            expected
+        );
+    }
+
+    fn instrument_request_revision_fixture(
+        stale_response: bool,
+        expired_current: bool,
+    ) -> (serde_json::Value, Vec<InstrumentAny>) {
+        let mut current = gamma_market_recheck_fixture_value();
+        current["updatedAt"] = "2026-01-02T00:00:00Z".into();
+        current["endDate"] = "2099-12-01T00:00:00Z".into();
+        let mut older = current.clone();
+        older["updatedAt"] = "2026-01-01T00:00:00Z".into();
+        older["endDate"] = "2020-01-01T00:00:00Z".into();
+
+        if expired_current {
+            std::mem::swap(&mut current["endDate"], &mut older["endDate"]);
+        }
+
+        let (response, cached) = if stale_response {
+            (older, current)
+        } else {
+            (current, older)
+        };
+        let mut market: crate::http::models::GammaMarket =
+            serde_json::from_value(cached.clone()).unwrap();
+        market.raw = cached.to_string();
+        (
+            response,
+            crate::http::gamma::parse_markets_with_transient(&[market], UnixNanos::default()).0,
+        )
     }
 
     #[rstest]
@@ -4178,7 +4303,13 @@ mod tests {
         };
 
         binary.id = InstrumentId::from(format!("{}-{}.POLYMARKET", trade.market, trade.asset_id));
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &instrument);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &instrument,
+        );
+
         if subscribed {
             ctx.subscriptions.active_trade_subs.insert(instrument.id());
         }
@@ -4248,7 +4379,12 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&format!("http://{addr}"));
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &instrument);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &instrument,
+        );
         ctx.subscriptions
             .active_instrument_close_subs
             .insert(instrument.id());
@@ -5111,7 +5247,12 @@ mod tests {
             .subscriptions
             .ws_open_tokens
             .insert(Ustr::from(inst_no.raw_symbol().as_str()));
-        pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
+        pause_resolve_watch_entries(
+            &client.resolve_poll_watchlist,
+            &["0xCOND-REQ".to_string()],
+            client.clock.get_time_ns(),
+            0,
+        );
 
         let request = RequestCustomData::new(
             ClientId::from("POLYMARKET"),
@@ -5352,6 +5493,7 @@ mod tests {
             cache_instrument_unchecked(
                 &ctx.instruments,
                 &ctx.subscriptions.token_meta,
+                &ctx.subscriptions.watchlist,
                 &instrument,
             );
             upsert_resolve_watch_entry_from_instrument(
@@ -5820,7 +5962,12 @@ mod tests {
             &inst_no,
             PositionId::new("P-2"),
         );
-        pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
+        pause_resolve_watch_entries(
+            &client.resolve_poll_watchlist,
+            &["0xCOND-REQ".to_string()],
+            client.clock.get_time_ns(),
+            0,
+        );
 
         let params = Params::new(
             [(
@@ -5916,6 +6063,7 @@ mod tests {
             cache_instrument_unchecked(
                 &ws_ctx.instruments,
                 &ws_ctx.subscriptions.token_meta,
+                &ws_ctx.subscriptions.watchlist,
                 instrument,
             );
         }
@@ -6296,6 +6444,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &sibling,
         );
         client
@@ -6456,6 +6605,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
 
@@ -6550,6 +6700,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
         client
@@ -7283,6 +7434,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &sibling,
         );
         upsert_resolve_watch_entry_from_instrument(
@@ -7537,6 +7689,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
         subscribe_test_resolution(&mut client, instrument.id());
@@ -7563,9 +7716,10 @@ mod tests {
         client.reset_client();
         let applied = apply_live_instrument(
             &old_ctx.subscriptions.closed_condition_ids,
-            &old_ctx.instrument_update_state,
+            &mut old_ctx.instrument_update_state.lock(),
             &old_ctx.instruments,
             &old_ctx.subscriptions.token_meta,
+            &old_ctx.subscriptions.watchlist,
             &instrument,
             |_| published = true,
         );
@@ -7755,6 +7909,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &new_instrument,
         );
         client.subscriptions.active_quote_subs.insert(instrument_id);
@@ -8194,6 +8349,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
 
@@ -8486,6 +8642,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
         client
@@ -8580,7 +8737,12 @@ mod tests {
         market["outcomes"] = serde_json::json!(to_string(&outcomes).unwrap());
         let replacement = instrument_from_gamma_fixture(market);
         let (ctx, mut data_rx) = make_ws_ctx();
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &original);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &original,
+        );
         ctx.subscriptions
             .active_instrument_status_subs
             .insert(original.id());
@@ -8634,13 +8796,15 @@ mod tests {
         let update_state = ctx.instrument_update_state.clone();
         let token_meta = ctx.subscriptions.token_meta.clone();
         let data_sender = ctx.data_sender.clone();
+        let watchlist = ctx.subscriptions.watchlist.clone();
 
         let refresh = spawn(move || {
             apply_live_instrument(
                 &closed,
-                &update_state,
+                &mut update_state.lock(),
                 &instruments,
                 &token_meta,
+                &watchlist,
                 &replacement,
                 |instrument| {
                     data_sender
@@ -8722,6 +8886,7 @@ mod tests {
             cache_instrument_unchecked(
                 &client.instruments,
                 &client.subscriptions.token_meta,
+                &client.subscriptions.watchlist,
                 &instrument,
             );
             client
@@ -8834,7 +8999,12 @@ mod tests {
         )
         .unwrap();
 
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &instrument);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &instrument,
+        );
         ctx.subscriptions
             .active_instrument_close_subs
             .insert(instrument.id());
@@ -8892,8 +9062,14 @@ mod tests {
         *state.gamma_response.lock().await = Some(serde_json::json!([market]));
         let addr = start_mock_server(state).await;
         let (ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&format!("http://{addr}"));
+
         for instrument in &instruments {
-            cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, instrument);
+            cache_instrument_unchecked(
+                &ctx.instruments,
+                &ctx.subscriptions.token_meta,
+                &ctx.subscriptions.watchlist,
+                instrument,
+            );
             ctx.subscriptions
                 .active_instrument_close_subs
                 .insert(instrument.id());
@@ -9008,6 +9184,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &sibling,
         );
         upsert_resolve_watch_entry_from_instrument(
@@ -9138,6 +9315,7 @@ mod tests {
             cache_instrument_unchecked(
                 &client.instruments,
                 &client.subscriptions.token_meta,
+                &client.subscriptions.watchlist,
                 &instrument,
             );
         }
@@ -10014,6 +10192,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
 
@@ -11459,6 +11638,7 @@ mod tests {
             cache_instrument_unchecked(
                 &client.instruments,
                 &client.subscriptions.token_meta,
+                &client.subscriptions.watchlist,
                 instrument,
             );
             upsert_resolve_watch_entry_from_instrument(
@@ -11788,6 +11968,7 @@ mod tests {
         cache_instrument_unchecked(
             &client.instruments,
             &client.subscriptions.token_meta,
+            &client.subscriptions.watchlist,
             &instrument,
         );
 
@@ -12034,7 +12215,12 @@ mod tests {
             ("market_version".into(), serde_json::json!("v1")),
             ("condition_id".into(), serde_json::json!("0xCOND-BTC")),
         ])));
-        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &instrument);
+        cache_instrument_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
+            &instrument,
+        );
         instrument
     }
 
@@ -13114,9 +13300,10 @@ mod tests {
         let apply_gamma = || {
             apply_live_instrument(
                 &ctx.subscriptions.closed_condition_ids,
-                &ctx.instrument_update_state,
+                &mut ctx.instrument_update_state.lock(),
                 &ctx.instruments,
                 &ctx.subscriptions.token_meta,
+                &ctx.subscriptions.watchlist,
                 &gamma_instrument,
                 |instrument| {
                     ctx.data_sender
@@ -13233,9 +13420,10 @@ mod tests {
             stub_instrument(asset_id, Price::from("0.01"), Quantity::from("0.01"));
         assert!(apply_live_instrument(
             &ctx.subscriptions.closed_condition_ids,
-            &ctx.instrument_update_state,
+            &mut ctx.instrument_update_state.lock(),
             &ctx.instruments,
             &ctx.subscriptions.token_meta,
+            &ctx.subscriptions.watchlist,
             &gamma_instrument,
             |instrument| {
                 ctx.data_sender
