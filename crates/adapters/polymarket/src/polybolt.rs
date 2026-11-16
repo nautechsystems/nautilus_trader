@@ -5056,8 +5056,45 @@ mod tests {
         )
         .await;
 
-        let received = std::time::Instant::now();
+        // Fence subscription writes at the server before comparing the final snapshot ledger
+        let wire_guard = feed.inner.wire_mutex.lock().await;
         let elapsed = started.elapsed();
+        let mut received = std::time::Instant::now();
+        feed.current_ws()
+            .unwrap()
+            .send_text(json!({"op": "test_barrier"}).to_string(), None)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                while !rx.is_empty() {
+                    observations.push(price_observation(&next_custom(&mut rx)));
+                    received = std::time::Instant::now();
+                }
+
+                if state
+                    .payloads()
+                    .await
+                    .iter()
+                    .any(|p| p["op"] == "test_barrier")
+                {
+                    frames = state.sent_frames.lock().clone();
+                    let mut expected = frame_observations(&frames);
+                    expected.sort();
+                    observations.sort();
+                    if observations == expected {
+                        break;
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        drop(wire_guard);
+
         feed.disconnect().await.unwrap();
         assert!(rx.try_recv().is_err());
         let payloads = state.payloads().await;
