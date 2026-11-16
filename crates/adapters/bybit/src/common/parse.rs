@@ -197,9 +197,9 @@ use nautilus_model::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
-        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce,
-        TriggerType,
+        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, ExerciseStyle,
+        LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag,
+        SettlementType, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{
@@ -894,6 +894,9 @@ pub fn parse_option_instrument(
         .maybe_min_quantity(min_quantity)
         .maybe_max_price(max_price)
         .maybe_min_price(min_price)
+        // Fixed by the Bybit contract specification; the payload carries neither
+        .exercise_style(ExerciseStyle::European)
+        .settlement_type(SettlementType::Cash)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -2733,6 +2736,8 @@ mod tests {
                 assert_eq!(option.settlement_currency.code, "USDC");
                 assert!(!option.is_inverse);
                 assert_eq!(option.option_kind, OptionKind::Put);
+                assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
+                assert_eq!(option.settlement_type, Some(SettlementType::Cash));
                 assert_eq!(option.price_precision, 1);
                 assert_eq!(option.price_increment, Price::from_str("0.1").unwrap());
                 assert_eq!(option.size_precision, 0);

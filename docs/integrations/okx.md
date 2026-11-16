@@ -1179,6 +1179,9 @@ cryptocurrency.
 For full API details see the
 [OKX Options Trading documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
 
+Option instruments carry `exercise_style` `EUROPEAN` and `settlement_type` `CASH`. OKX definitions have
+neither field; the values follow the [OKX options specification](https://www.okx.com/help/i-okx-options-introduction).
+
 ### Supported order types
 
 Only limit-style orders are supported. OKX does not allow market orders for options.

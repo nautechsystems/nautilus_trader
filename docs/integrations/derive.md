@@ -350,6 +350,9 @@ Derive can fill taker orders below `minimum_amount`, while orders that would res
 can be rejected with `11012: Invalid amount`. **Derive decides whether a sub-minimum order is valid.**
 :::
 
+Option instruments carry `exercise_style` `EUROPEAN` and `settlement_type` `CASH`. Derive definitions have
+neither field; the values follow the [Derive product specification](https://docs.derive.xyz/supported-products).
+
 Instrument loading treats venue error `12001` as an empty result for the affected product type. Thus, a
 missing perp, option, or spot listing for a currency does not block its other products. Rows that fail to
 parse into domain instruments are logged and skipped while valid rows continue to load. Malformed response

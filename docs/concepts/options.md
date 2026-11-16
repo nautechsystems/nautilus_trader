@@ -40,14 +40,21 @@ See [Exercise style and settlement type](#exercise-style-and-settlement-type) fo
 Adapters set these fields as follows:
 
 - **Interactive Brokers**: fills the underlying ID when the provider has already resolved that contract
-  to an instrument; unresolved IDs remain `None`.
-- **Deribit**: leaves the underlying ID and settlement type `None`. Its option definitions supply no exact
-  underlying instrument ID, and its
+  to an instrument; unresolved IDs remain `None`. The exercise style and settlement type remain `None`.
+- **Deribit**: sets the exercise style to `EUROPEAN` and leaves the underlying ID and settlement type
+  `None`. Its option definitions supply no exact underlying instrument ID, and its
   [inverse](https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options) and
   [linear](https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options) options settle
   through futures in two steps, which a single settlement type does not represent.
+- **Derive**, **OKX**, and **Bybit**: set the exercise style to `EUROPEAN` and the settlement type to `CASH`.
+- **Tardis**: sets both fields from the
+  [source exchange](../integrations/tardis.md#option-exercise-style-and-settlement-type).
 - **Databento**: sets the exercise style and settlement type from each
   [option definition](../integrations/databento.md#option-exercise-style-and-settlement-type).
+
+Deribit, Derive, OKX, Bybit, and Tardis instrument definitions carry neither field, so these adapters apply
+each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules and leaves both fields
+`None` for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
 preserve them; missing fields in older JSON and Arrow records load as `None`. Equality and hashing use

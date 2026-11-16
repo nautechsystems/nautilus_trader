@@ -733,6 +733,10 @@ and NVDA, settled in USDT or USDC.
 The adapter uses the `CryptoOption` instrument type and the `-OPTION` symbol
 suffix. See the [symbology section](#symbology) for the full symbol format.
 
+Option instruments carry `exercise_style` `EUROPEAN` and `settlement_type` `CASH`. Bybit definitions have
+neither field; the values follow the
+[Bybit options specification](https://www.bybit.com/en/help-center/article/Introduction-to-Bybit-Options).
+
 With `OPTION` in `product_types`, the adapter loads options for every listed base coin,
 including BTC, ETH, and SOL, on mainnet, testnet, and demo. Instrument refreshes and
 status updates cover the same base coins.

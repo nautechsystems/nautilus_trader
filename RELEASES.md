@@ -10,14 +10,19 @@ Released on TBD (UTC).
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
+- Added Bybit option `exercise_style` and `settlement_type` from the venue contract specification
 - Added Binance Portfolio Margin balance and account response models
 - Added Databento option `exercise_style` and `settlement_type` from CFI codes, with fixed root rules for OPRA
+- Added Deribit option `exercise_style` from the venue contract specification
+- Added Derive option `exercise_style` and `settlement_type` from the venue contract specification
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
 - Added optional Lighter account transaction timestamps to WebSocket wire models
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
+- Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
+- Added Tardis option `exercise_style` and `settlement_type` by source exchange
 
 ### Breaking Changes
 
