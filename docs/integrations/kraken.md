@@ -339,6 +339,15 @@ Kraken exposes Spot per-order book data via the WebSocket v2
 and true incremental events (`add`, `modify`, `delete`). The adapter hashes each
 venue order ID into the `u64` `BookOrder.order_id` field used by NautilusTrader.
 
+The adapter queues orders at each price level by order timestamp, using arrival order to break ties.
+When an order joins ahead of resting orders, the adapter can emit synthetic `Delete` and `Add` deltas
+for the affected suffix to preserve downstream queue order.
+
+:::warning
+With `queue_position=True`, backtest and sandbox execution treat these synthetic deletes as order
+cancellations. The re-adds do not restore the removed quantity ahead, so simulated orders can fill too early.
+:::
+
 ### Prerequisites
 
 L3 subscriptions require Spot API credentials with `WebSocket interface - On`
