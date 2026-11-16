@@ -1,7 +1,8 @@
 # Backtest Engine Benchmarks
 
 This document records the native canonical benchmark, its dated optimization decisions, the
-v1.231.0 and v2 comparison, account-history retention measurements, and the benchmark's CI role.
+v1.231.0 and v2 comparison, account-history retention measurements, HEDGING position-update
+measurements, and the benchmark's CI role.
 Use the native sections to reproduce a workload or evaluate an optimization under equivalent controls.
 Use the version comparison to inspect the released Cython and Rust/PyO3 results and their raw evidence.
 
@@ -1241,6 +1242,115 @@ PY
     done
     printf 'Samples: %s\n' "$retention_dir"
 )
+```
+
+## HEDGING position updates
+
+The 2026-11-16 round measures `Portfolio::update_position` as HEDGING positions accumulate on one
+instrument. It retains cached sort keys in `Cache` position queries that return more than 32
+positions.
+
+### Workload and collection
+
+The `portfolio/update_position` matrix in
+[`crates/portfolio/benches/portfolio.rs`](../../portfolio/benches/portfolio.rs) holds 10, 100, or
+1,000 positions on one instrument in one margin account, either all open or all closed. In each
+cycle, one probe position opens, reduces, and closes. Each case times only the `update_position`
+call for one event kind. Cache updates, the probe purge, and the account-event purge stay outside
+the timed interval. Before timing, each position set checks exact net position, unrealized and
+realized PnL, maintenance margin, balance, and last account state over two probe cycles.
+
+- **Environment**: AMD Ryzen 9 7950X, Linux 6.8.0-149-generic, rustc 1.100.0
+  (`0ef1bc386`, 2026-11-09), standard precision, the default empty `nautilus-portfolio` feature
+  set, and `bench-lto`. Recorded controls: `powersave` governor, per-process ASLR disablement, and
+  an unpinned benchmark thread, without concurrent builds. These are local comparisons, not
+  fixed-host baselines.
+- **Sampling**: Three sessions per executable in the order baseline, candidate, candidate,
+  baseline, baseline, candidate. Each session uses an isolated Criterion home, a 1-second warm-up,
+  a 3-second measurement target, and 30 samples. Tables report the median of the three session
+  medians. Spread is `(maximum - minimum) / median`.
+- **Noise band**: Queries that return 32 or fewer positions run unchanged code. Rows with that
+  shape differed between the two executables by -4.4% to +3.0%, so a change inside that range is
+  no measurable change.
+
+| Item                | Baseline                                                           | Candidate                                                          |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision | `12982032fb970cabc085f00169c720792c3edecf` plus the benchmark      | Baseline plus the retained patch                                   |
+| Executable SHA-256  | `725c94b1fb433ebd235a471ab47be8558b226679a54c59cb8969d918a64ef9ac` | `b9d281ad4d66e32fc4e6c39e32d797e196c1093a10d3d4e62905ae2371b7bccc` |
+| ELF build ID        | `2229d135806e92deba9f37e158cd7c60010c8784`                         | `7cc8a9d71b02b08b5eee6888a2ae770dd58444ec`                         |
+
+### Profile
+
+A one-millisecond `gprofng` profile of the baseline `change/open_positions/1000` case captured
+2.033 seconds of CPU samples. The profile also samples fixture construction, the open and close
+probe events, and the purges, so the shares locate work and do not isolate the timed event.
+
+- **Open positions**: Of all samples, `update_position` accounted for 87.1% inclusive,
+  `Cache::get_positions_for_ids` for 54.0%, its sort by `PositionId` for 49.6%, and
+  `query_positions_in_bucket` for 13.4%.
+- **Closed positions**: In the `change/closed_positions/1000` case, `calculate_realized_pnl`
+  accounted for 87.5% of all samples inclusive and `get_positions_for_ids` for 63.2%.
+
+In this benchmark, each probe event runs four sorted position queries for the instrument: three
+over open positions for net position, unrealized PnL, and margin, and one over all positions for
+realized PnL. The sort read each position's ID again on every comparison.
+
+### Retained change
+
+`Cache::get_positions_for_ids` sorts with cached keys when a query returns more than 32 positions,
+as `get_orders_for_ids` does. The returned order does not change.
+
+Lower is better. Rows show the `change` event; `open` and `close` rows moved within 0.6
+percentage points of them. Session spread was at most 1.0% in every row.
+
+| Positions | Count | Baseline median | Candidate median | Change  |
+| --------- | ----: | --------------: | ---------------: | ------: |
+| Open      |    10 |        4.795 us |         4.757 us |  -0.80% |
+| Open      |   100 |       37.586 us |        35.047 us |  -6.76% |
+| Open      | 1,000 |      474.889 us |       377.791 us | -20.45% |
+| Closed    |    10 |        2.237 us |         2.228 us |  -0.42% |
+| Closed    |   100 |        8.533 us |         7.818 us |  -8.37% |
+| Closed    | 1,000 |       98.050 us |        73.378 us | -25.16% |
+
+The 10-position rows are inside the noise band. The 100-position and 1,000-position rows clear it.
+
+Supporting checks used the same production patch and alternating session orders:
+
+- **Cutoff**: A scratch matrix at 33, 48, and 64 positions measured the candidate 1.7% to 4.7%
+  faster in all 18 rows. No regression appeared just above 32 positions.
+- **Other callers**: The existing portfolio query benchmarks at 100 positions measured the
+  candidate 1.0% to 7.1% faster.
+- **Canonical timing**: Preloaded `run()` measured -1.33% for bar EMA cross and +0.28% for replay
+  only, neither separated from its baseline range. Scheduled market orders first read +3.19% over
+  three sessions per executable. Six further sessions per executable measured +0.78% with
+  overlapping ranges, so the first read did not reproduce. The canonical workloads use NETTING, so
+  their position queries stay at or below 32 entries.
+- **Canonical correctness**: The canonical correctness test passed with every fingerprint
+  unchanged.
+- **HEDGING end to end**: A scratch patch, not retained, set the engine `position_history` venue
+  to HEDGING so that each of 250 or 1,000 market orders opens a position. Preloaded `run()`
+  improved from 25.074 ms to 22.689 ms (-9.51%) and from 413.235 ms to 339.749 ms (-17.78%), with
+  spreads at or below 0.37%. Both executables exported byte-identical canonical results.
+
+### Next lead
+
+A profile of the candidate on the same cases attributes 43.8% (open) and 54.5% (closed) of samples
+to `get_positions_for_ids`, and 17.5% and 21.3% to `query_positions_in_bucket`. The four sorted
+queries per event remain, and three of them return the same open positions. Profile the committed
+baseline again before selecting a candidate for them.
+
+### Reproduce
+
+Check the exact outcomes, then run one session of the matrix:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo bench --locked -p nautilus-portfolio \
+    --bench portfolio -- update_position --test
+
+CARGO_BUILD_JOBS=16 setarch "$(uname -m)" -R \
+    cargo bench --locked -p nautilus-portfolio --profile bench-lto \
+    --bench portfolio -- update_position \
+    --warm-up-time 1 --measurement-time 3 --sample-size 30 --noplot
 ```
 
 ## CI policy

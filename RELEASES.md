@@ -92,8 +92,10 @@ Released on TBD (UTC).
 - Refined position replay and accounting, order fill-void validation, and order status report construction
 - Refined `Cache` purge index cleanup and integrity checks
 - Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
+- Improved portfolio position-event benchmark coverage
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
+- Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-audit` tool to v0.23.0
 - Upgraded `cargo-binstall` tool to v1.27.0

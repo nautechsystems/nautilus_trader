@@ -5000,6 +5000,8 @@ impl Cache {
         position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<PositionRef<'_>> {
+        const UNCACHED_SORT_MAX_LEN: usize = 32;
+
         let mut positions = Vec::new();
 
         for position_id in position_ids {
@@ -5016,7 +5018,13 @@ impl Cache {
 
         // Sort so callers receive a deterministic Vec across runs; the
         // underlying position_ids set is AHash-backed.
-        positions.sort_by_key(|p| p.id);
+        let key = |position: &PositionRef<'_>| position.id;
+        if positions.len() <= UNCACHED_SORT_MAX_LEN {
+            positions.sort_by_key(key);
+        } else {
+            positions.sort_by_cached_key(key);
+        }
+
         positions
     }
 
