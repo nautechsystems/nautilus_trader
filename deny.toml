@@ -52,22 +52,10 @@ ignore = [
   # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
-  # Native builds exclude Alloy's browser-WASM-only wasmtimer dependency.
-  # Remove when wasmtimer replaces pin-utils.
-  { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained, via Alloy's browser-WASM-only wasmtimer; excluded from native builds" },
-
   # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
-
-  # Arrow IPC and Parquet require zstd 0.13.3 / zstd-safe 7.3.0 but use private
-  # bulk-only contexts with only std enabled. Other streaming consumers use fixed
-  # versions. Recheck these exceptions when either parent's calls or features
-  # change; remove them when both parents permit fixed versions.
-  { id = "RUSTSEC-2026-0391", reason = "zstd borrowed streaming contexts are not used by Arrow IPC or Parquet" },
-  { id = "RUSTSEC-2026-0398", reason = "zstd-safe seekable feature is disabled" },
-  { id = "RUSTSEC-2026-0403", reason = "zstd-safe streaming decompression is not used by Arrow IPC or Parquet; bulk API is unaffected" },
 
   # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
@@ -244,8 +232,8 @@ skip = [
   { crate = "windows-sys:<0.61" },
 
   # Arrow and Parquet retain zstd 0.13 while compression-codecs and Databento use 0.14
-  { crate = "zstd:=0.13.3" },
-  { crate = "zstd-safe:=7.3.0" },
+  { crate = "zstd:=0.13.5" },
+  { crate = "zstd-safe:=7.4.1" },
 ]
 
 skip-tree = []

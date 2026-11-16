@@ -157,8 +157,7 @@ gradually, so one client sees both versions mid-rollout. 3:4 and 3:5 share ident
 (only an added `symbolStatus` enum value), and unknown enum values decode to their null variant, so
 enforcing an exact version would only hard-fail instrument loading for no gain.
 
-The decoders assume block layouts are stable within a schema id. `decode_exchange_info` verifies the
-symbol block length and fails loudly on a mismatch, but the market-data decoders (`decode_depth`,
+`decode_exchange_info` skips appended symbol fields. The market-data decoders (`decode_depth`,
 `decode_trades`) read groups at a fixed offset rather than advancing to the runtime `block_length`.
 A future version that appends fixed-block fields to those messages needs the affected decoder
 updated to skip the added bytes; regenerate the codecs whenever you need to decode new fields.

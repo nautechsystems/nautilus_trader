@@ -815,6 +815,9 @@ impl SocketClientInner {
                             break;
                         }
 
+                        // Writing past a non-empty buffer would reorder commands
+                        let must_buffer = mode.is_reconnect() || !reconnect_buffer.is_empty();
+
                         match msg {
                             WriterCommand::Update(new_writer, tx) => {
                                 let sent = Self::replace_writer(
@@ -848,9 +851,7 @@ impl SocketClientInner {
                                     );
                                 }
                             }
-                            WriterCommand::Send(data)
-                                if mode.is_reconnect() || !reconnect_buffer.is_empty() =>
-                            {
+                            WriterCommand::Send(data) if must_buffer => {
                                 log::debug!(
                                     "Buffering message until reconnect drain completes ({} bytes)",
                                     data.len()
@@ -862,9 +863,9 @@ impl SocketClientInner {
                                     permit,
                                 );
                             }
-                            WriterCommand::SendOrReplay { key, data } if mode.is_reconnect() => {
+                            WriterCommand::SendOrReplay { key, data } if must_buffer => {
                                 log::debug!(
-                                    "Buffering replayable message while reconnecting ({} bytes)",
+                                    "Buffering replayable message until reconnect drain completes ({} bytes)",
                                     data.len()
                                 );
                                 Self::buffer_reconnect_write(
@@ -3578,6 +3579,62 @@ mod rust_tests {
         state_notify.notify_waiters();
         drop(writer_tx);
         write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_send_or_replay_after_reconnect_supersedes_buffered_command() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
+        let writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+
+        let (writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        writer_tx
+            .send(WriterCommand::SendOrReplay {
+                key: 1,
+                data: Bytes::from_static(b"subscription-old"),
+            })
+            .unwrap();
+
+        yield_now().await;
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        writer_tx
+            .send(WriterCommand::SendOrReplay {
+                key: 1,
+                data: Bytes::from_static(b"subscription-new"),
+            })
+            .unwrap();
+
+        tokio::time::advance(Duration::from_millis(
+            CONNECTION_STATE_CHECK_INTERVAL_MS * 2,
+        ))
+        .await;
+        yield_now().await;
+
+        let actual = recorded.lock().clone();
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(actual, b"subscription-new\r\n");
     }
 
     #[rstest]

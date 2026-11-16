@@ -294,6 +294,8 @@ Locks release through either path:
 - Fills first applied from terminal REST evidence, including confirmed fill reports: this evidence is
   admitted only after confirmation.
 - Reconciled fills more than 15 seconds older than the snapshot, or received before any snapshot.
+- Fills that reconciliation infers from an order or position report: their generated trade IDs never match a
+  venue confirmation.
 
 #### Refresh timing
 
@@ -321,6 +323,8 @@ Timing effects include:
   unsettled spend remains open.
 - **REST confirmations**: A confirmation inside the drain window can report terminal REST BUY spend as free
   until a later refresh.
+- **Inferred fills**: Spend from an inferred BUY fill that the venue total still includes shows as free until
+  the total drains.
 - **Queued fills**: A refresh applied before a queued fill is processed can leave it locked after the
   total has already drained.
 
@@ -2285,11 +2289,11 @@ orders, or directly on the confirming taker trade for atomic FOK orders. It emit
 `OrderUpdated` which lowers the order quantity to the cumulative venue fill. It does not emit a
 fill and does not change positions, balances, or commissions.
 
-IOC maps to venue FAK. Once a taker trade confirms, every positive difference between
-`original_size` and `size_matched` is an unfilled remainder which the venue has killed. The adapter
-therefore emits `OrderCanceled` after the real fills instead of normalizing quantity or leaving the
-order partially filled. REST reports apply the same rule when a `MATCHED` FAK has
-`size_matched < original_size`.
+IOC maps to venue FAK. Once a taker trade confirms, every positive difference between the
+submitted share quantity and the cumulative filled quantity is an unfilled remainder which the venue
+has killed. The adapter therefore emits `OrderCanceled` after the real fills instead of normalizing
+quantity or leaving the order partially filled. REST reports apply the same rule when a `MATCHED`
+FAK has `size_matched < original_size`; REST reports both fields in shares.
 
 When a confirmed trade arrives before the submit response, the same handling runs after buffered
 fills drain. A buffered `Canceled`, `Expired`, or `Rejected` report takes precedence.
@@ -2309,15 +2313,22 @@ configurable per-strategy. It lives in `nautilus_polymarket::common::consts`.
 
 ### Order message size denomination
 
-The user channel reports `original_size` on an `order` message as the signed `makerAmount`. For a
-market order type (`FAK` or `FOK`) BUY that amount is the pUSD budget rather than a share count, so
-a BUY of 100 shares at 0.01 reports `1`. The adapter divides by the order price when it must express
-that venue amount as shares in an order status report. Locally submitted quote-sized limit BUYs use
-the share quantity derived during signing as their authoritative fill-tracker quantity.
+The unit of `original_size` on a user-channel `order` message depends on the order:
 
-A SELL signs shares as its maker amount and needs no conversion. Resting types (`GTC` and `GTD`)
-pass through unchanged: their denomination is unconfirmed, and converting a share-denominated size
-would misreport every externally-managed resting order.
+- **Market order type (`FAK` or `FOK`) BUY**: The signed `makerAmount`, which is the pUSD budget
+  rather than a share count, so a BUY of 100 shares at 0.01 reports `1`. The adapter divides by the
+  order price when it must express that venue amount as shares in an order status report.
+- **Resting type (`GTC` or `GTD`) BUY**: Shares, so a BUY of 5 shares at 0.10 reports `5`. The size
+  passes through unchanged: converting a share-denominated size would misreport every
+  externally-managed resting order.
+- **SELL**: Shares. A SELL signs shares as its maker amount and needs no conversion.
+
+The venue reports a filled `FAK` or `FOK` order through `trade` messages, without an `order`
+message. This includes a partial `FAK` fill and a match after a venue delay. A `FOK` BUY that the
+venue accepts and then kills unfilled produces a `CANCELLATION` `order` message.
+
+Locally submitted quote-sized limit BUYs use the share quantity derived during signing as their
+authoritative fill-tracker quantity.
 
 ### Exec tester close residuals
 

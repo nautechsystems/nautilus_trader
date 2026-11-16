@@ -235,6 +235,9 @@ impl BybitWebSocketClient {
 
     /// Sets the timeout for waiting on (re)authentication before failing an
     /// authenticated operation. Defaults to `AUTH_WAIT_TIMEOUT` (5s).
+    ///
+    /// An authentication request that gets no venue reply within this timeout fails, and the
+    /// client discards the messages it holds for replay after a reconnect.
     pub fn set_auth_wait_timeout(&mut self, timeout: Duration) {
         self.auth_wait_timeout = timeout;
     }
@@ -547,6 +550,7 @@ impl BybitWebSocketClient {
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
         let auth_tracker_for_handler = auth_tracker.clone();
+        let auth_timeout = self.auth_wait_timeout;
         let rate_limiter = self.rate_limiter.clone();
         let recv_window_ms = Arc::clone(&self.recv_window_ms);
         let mut rollback = ConnectRollback::new(self);
@@ -557,6 +561,7 @@ impl BybitWebSocketClient {
                 cmd_rx,
                 raw_rx,
                 auth_tracker_for_handler,
+                auth_timeout,
                 subscriptions.clone(),
                 rate_limiter,
                 recv_window_ms,
@@ -2273,7 +2278,9 @@ fn orderbook_topic(instrument_id: InstrumentId, depth: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_common::testing::wait_until_async;
+    use nautilus_network::websocket::auth::AuthState;
     use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
@@ -2362,6 +2369,59 @@ mod tests {
 
         assert!(!cancellation_token.is_cancelled());
         assert!(!client.task_handle.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reauthentication_without_reply_fails_authentication() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (reauth_tx, reauth_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let mut first = tokio_tungstenite::accept_async(first).await.unwrap();
+            first.next().await.unwrap().unwrap();
+            first
+                .send(tokio_tungstenite::tungstenite::Message::text(
+                    load_test_json("ws_auth_success.json"),
+                ))
+                .await
+                .unwrap();
+            drop(first);
+            let (replacement, _) = listener.accept().await.unwrap();
+            let mut replacement = tokio_tungstenite::accept_async(replacement).await.unwrap();
+            // The venue never replies to re-authentication
+            reauth_tx
+                .send(replacement.next().await.unwrap().unwrap())
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut client = BybitWebSocketClient::new_private(
+            BybitEnvironment::Testnet,
+            Some("test_api_key".to_string()),
+            Some("test_api_secret".to_string()),
+            Some(format!("ws://{addr}")),
+            20,
+            TransportBackend::default(),
+            None,
+        );
+        client.set_auth_wait_timeout(Duration::from_millis(200));
+        client.connect().await.unwrap();
+        let reauth = tokio::time::timeout(Duration::from_secs(10), reauth_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        let payload: Value = serde_json::from_str(reauth.to_text().unwrap()).unwrap();
+        wait_until_async(
+            || async { client.auth_tracker.auth_state() == AuthState::Failed },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        assert_eq!(payload["op"], "auth");
+        client.close().await.unwrap();
+        server.abort();
     }
 
     // An unconnected client rejects every command, so success proves nothing was sent

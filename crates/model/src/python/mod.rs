@@ -204,6 +204,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::ContingencyType>()?;
     m.add_class::<crate::enums::ContinuousFutureAdjustmentType>()?;
     m.add_class::<crate::enums::CurrencyType>()?;
+    m.add_class::<crate::enums::ExerciseStyle>()?;
     m.add_class::<crate::enums::GreeksConvention>()?;
     m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::InstrumentCloseType>()?;
@@ -221,6 +222,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::PositionSide>()?;
     m.add_class::<crate::enums::PriceType>()?;
     m.add_class::<crate::enums::RecordFlag>()?;
+    m.add_class::<crate::enums::SettlementType>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
     m.add_class::<crate::enums::TradingState>()?;
     m.add_class::<crate::enums::TrailingOffsetType>()?;

@@ -2065,23 +2065,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             }
 
-            let Some(venue_order_id) = venue_order_id else {
-                log::debug!("No order status report found for {client_order_id}");
-                return Ok(());
+            let result = if let Some(venue_order_id) = venue_order_id {
+                let oid: u64 = match venue_order_id.as_str().parse() {
+                    Ok(oid) => oid,
+                    Err(e) => {
+                        log::warn!("Failed to parse venue order ID {venue_order_id}: {e}");
+                        return Ok(());
+                    }
+                };
+
+                http_client
+                    .request_order_status_report(&account_address, oid)
+                    .await
+            } else {
+                // An order closed before its acceptance arrived is only found by cloid
+                http_client
+                    .request_order_status_report_by_cloid(&account_address, &client_order_id)
+                    .await
             };
 
-            let oid: u64 = match venue_order_id.as_str().parse() {
-                Ok(oid) => oid,
-                Err(e) => {
-                    log::warn!("Failed to parse venue order ID {venue_order_id}: {e}");
-                    return Ok(());
-                }
-            };
-
-            match http_client
-                .request_order_status_report(&account_address, oid)
-                .await
-            {
+            match result {
                 Ok(Some(mut report)) => {
                     if is_inflight_modify_old_leg_cancel(
                         &dispatch_state,
@@ -2101,6 +2104,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 &account_address,
                                 &report,
                                 &context,
+                                venue_order_id,
                                 &dispatch_state,
                                 &emitter,
                             )
@@ -2108,15 +2112,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         }
 
                         attach_known_client_order_id(&mut report, client_order_id);
-                        log::debug!("Queried order status for oid {oid}");
+                        log::debug!(
+                            "Queried order status for {client_order_id} with oid {}",
+                            report.venue_order_id
+                        );
                         emitter.send_order_status_report(report);
                     }
                 }
                 Ok(None) => {
-                    log::debug!("No order status report found for oid {oid}");
+                    log::debug!("No order status report found for {client_order_id}");
                 }
                 Err(e) => {
-                    log::warn!("Failed to query order status for oid {oid}: {e}");
+                    log::warn!("Failed to query order status for {client_order_id}: {e}");
                 }
             }
 
@@ -2516,34 +2523,36 @@ impl HyperliquidReportClient {
             }
         }
 
-        let oid = if let Some(venue_order_id) = cmd.venue_order_id {
-            venue_order_id
-                .as_str()
-                .parse::<u64>()
-                .context("failed to parse venue_order_id as oid")?
-        } else if let Some(oid) = cached_oid {
-            oid
-        } else {
-            if let Some(e) = cloid_lookup_error {
-                return Err(
-                    e.context("cloid lookup failed and no venue_order_id fallback available")
-                );
-            }
-
-            log::debug!("No order status report found for {:?}", cmd.client_order_id);
-            return Ok(CollectedOrderReport::NotFound);
+        let oid = match cmd.venue_order_id {
+            Some(venue_order_id) => Some(
+                venue_order_id
+                    .as_str()
+                    .parse::<u64>()
+                    .context("failed to parse venue_order_id as oid")?,
+            ),
+            None => cached_oid,
         };
 
-        let mut report = self
-            .http_client
-            .request_order_status_report(account_address, oid)
-            .await
-            .context("failed to generate order status report")?;
+        let result = match (oid, &cmd.client_order_id) {
+            (Some(oid), _) => {
+                self.http_client
+                    .request_order_status_report(account_address, oid)
+                    .await
+            }
+            // An order closed before its acceptance arrived is only found by cloid
+            (None, Some(client_order_id)) => {
+                self.http_client
+                    .request_order_status_report_by_cloid(account_address, client_order_id)
+                    .await
+            }
+            (None, None) => Ok(None),
+        };
 
+        let mut report = result.context("failed to generate order status report")?;
         if report.is_none()
             && let Some(e) = cloid_lookup_error
         {
-            return Err(e.context("cloid lookup failed and oid fallback found no order"));
+            return Err(e.context("cloid lookup failed and status lookup found no order"));
         }
 
         if let Some(report) = &mut report
@@ -2556,10 +2565,15 @@ impl HyperliquidReportClient {
             clamp_reduce_only_report_to_fills(&self.http_client, account_address, report).await;
         }
 
-        if report.is_some() {
-            log::debug!("Generated order status report for oid {oid}");
-        } else {
+        if let Some(report) = &report {
+            log::debug!(
+                "Generated order status report for oid {}",
+                report.venue_order_id
+            );
+        } else if let Some(oid) = oid {
             log::debug!("No order status report found for oid {oid}");
+        } else {
+            log::debug!("No order status report found for {:?}", cmd.client_order_id);
         }
 
         Ok(report.map_or(CollectedOrderReport::NotFound, CollectedOrderReport::Oid))
@@ -3595,17 +3609,22 @@ fn query_order_recovery_context(
     venue_order_id: Option<VenueOrderId>,
     dispatch_state: &WsDispatchState,
 ) -> Option<OrderContext> {
+    // A submitted order has no venue order ID until its acceptance arrives
+    let is_tracked_leg = match venue_order_id {
+        Some(_) => order.is_open() && order.venue_order_ids().len() == 1,
+        None => order.status() == OrderStatus::Submitted && order.venue_order_ids().is_empty(),
+    };
+
     if order.order_type() != OrderType::Limit
         || order.is_quote_quantity()
         || order.is_reduce_only()
         || order.is_contingency()
         || order.linked_order_ids().is_some()
         || order.parent_order_id().is_some()
-        || !order.is_open()
+        || !is_tracked_leg
         || order.is_pending_update()
         || !order.filled_qty().is_zero()
         || !order.trade_ids().is_empty()
-        || order.venue_order_ids().len() != 1
         || order.venue_order_id() != venue_order_id
         || order
             .events()
@@ -3632,6 +3651,7 @@ async fn recover_query_order_fills(
     account_address: &str,
     report: &OrderStatusReport,
     context: &OrderContext,
+    venue_order_id: Option<VenueOrderId>,
     dispatch_state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
 ) {
@@ -3651,7 +3671,7 @@ async fn recover_query_order_fills(
         || report
             .client_order_id
             .is_some_and(|id| id != client_order_id && id.as_str() != cloid_hex)
-        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+        || is_binding_changed(dispatch_state, &client_order_id, venue_order_id, report)
     {
         return;
     }
@@ -3668,7 +3688,7 @@ async fn recover_query_order_fills(
 
     // Admission does not own a leg across HTTP awaits; only unchanged bindings may recover
     if dispatch_state.lookup_context(&client_order_id) != Some(*context)
-        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+        || is_binding_changed(dispatch_state, &client_order_id, venue_order_id, report)
         || dispatch_state.has_pending_modify(&client_order_id)
     {
         log::warn!(
@@ -3679,6 +3699,19 @@ async fn recover_query_order_fills(
 
     for fill in fills {
         emitter.send_fill_report(fill);
+    }
+}
+
+// Only a query that started without a venue order ID may still be unbound
+fn is_binding_changed(
+    dispatch_state: &WsDispatchState,
+    client_order_id: &ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    report: &OrderStatusReport,
+) -> bool {
+    match dispatch_state.cached_venue_order_id(client_order_id) {
+        Some(bound) => bound != report.venue_order_id,
+        None => venue_order_id.is_some(),
     }
 }
 

@@ -1898,6 +1898,7 @@ mod tests {
         msgbus::{publish_order_event, publish_position_event, switchboard},
     };
     use nautilus_core::{UUID4, UnixNanos, nanos::DurationNanos};
+    use nautilus_execution::reconciliation::create_inferred_reconciliation_trade_id;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::{
@@ -1912,8 +1913,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
-            TradeId, TraderId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            Symbol, TradeId, TraderId, VenueOrderId,
         },
         instruments::stubs::binary_option,
         orders::{
@@ -3606,6 +3607,111 @@ mod tests {
                 Money::from("100 pUSD"),
                 Money::from("0 pUSD"),
                 Money::from("100 pUSD")
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::inferred(true, true, "0 pUSD", "100 pUSD")]
+    #[case::reconciled_venue_trade(true, false, "5.125 pUSD", "94.875 pUSD")]
+    #[case::live_trade_with_inferred_id_format(false, true, "5.125 pUSD", "94.875 pUSD")]
+    fn buy_fill_locks_unless_inferred_by_reconciliation(
+        #[case] reconciliation: bool,
+        #[case] inferred_id_format: bool,
+        #[case] locked: &str,
+        #[case] free: &str,
+    ) {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xSTARTUP_BUY", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let client_order_id = ClientOrderId::from("O-STARTUP");
+        let venue_order_id = VenueOrderId::from("V-STARTUP");
+        let last_qty = Quantity::from("10");
+        let last_px = Price::from("0.5000");
+        let ts_startup = UnixNanos::from(20_500_000_000_u64);
+
+        let trade_id = if inferred_id_format {
+            create_inferred_reconciliation_trade_id(
+                client.core.account_id,
+                instrument.id(),
+                client_order_id,
+                Some(venue_order_id),
+                OrderSide::Buy,
+                OrderType::Market,
+                last_qty,
+                last_qty,
+                last_px,
+                PositionId::from(format!("{}-EXTERNAL", instrument.id()).as_str()),
+                ts_startup,
+            )
+        } else {
+            TradeId::from("VENUE-TRADE")
+        };
+
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
+        client
+            .collateral_locks
+            .lock()
+            .apply_refresh(
+                ticket,
+                Money::from("100 pUSD"),
+                UnixNanos::from(20_000_000_000_u64),
+            )
+            .unwrap();
+        let filled = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TESTER-001"))
+                .strategy_id(StrategyId::from("S-001"))
+                .instrument_id(instrument.id())
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(client.core.account_id)
+                .trade_id(trade_id)
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Market)
+                .last_qty(last_qty)
+                .last_px(last_px)
+                .currency(Currency::pUSD())
+                .commission(Money::from("0.125 pUSD"))
+                .ts_event(ts_startup)
+                .reconciliation(reconciliation)
+                .build(),
+        );
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
+            &filled,
+        );
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
+        let after_fill = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(
+                ticket,
+                Money::from("100 pUSD"),
+                UnixNanos::from(21_000_000_000_u64),
+            )
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        assert_eq!(
+            after_fill,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from(locked),
+                Money::from(free)
             )
         );
     }

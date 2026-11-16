@@ -21,6 +21,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use dashmap::DashMap;
@@ -138,6 +139,8 @@ pub(super) struct BybitWsFeedHandler {
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     auth_tracker: AuthTracker,
+    auth_timeout: Duration,
+    auth_deadline: Option<tokio::time::Instant>,
     subscriptions: SubscriptionState,
     rate_limiter: BybitRateLimiter,
     recv_window_ms: Arc<AtomicU64>,
@@ -148,11 +151,16 @@ pub(super) struct BybitWsFeedHandler {
 
 impl BybitWsFeedHandler {
     /// Creates a new [`BybitWsFeedHandler`] instance.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "handler owns the channels and shared session state"
+    )]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         auth_tracker: AuthTracker,
+        auth_timeout: Duration,
         subscriptions: SubscriptionState,
         rate_limiter: BybitRateLimiter,
         recv_window_ms: Arc<AtomicU64>,
@@ -163,6 +171,8 @@ impl BybitWsFeedHandler {
             cmd_rx,
             raw_rx,
             auth_tracker,
+            auth_timeout,
+            auth_deadline: None,
             subscriptions,
             rate_limiter,
             recv_window_ms,
@@ -382,6 +392,7 @@ impl BybitWsFeedHandler {
                             if let Err(e) = self.send_secret_with_retry(payload, epoch).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
+                            self.auth_deadline = Some(tokio::time::Instant::now() + self.auth_timeout);
                         }
                         HandlerCommand::Subscribe { topics } => {
                             for topic in topics {
@@ -440,6 +451,18 @@ impl BybitWsFeedHandler {
                     }
                 }
 
+                // An unresolved attempt would hold authentication-gated replay indefinitely
+                () = tokio::time::sleep_until(
+                    self.auth_deadline.unwrap_or_else(tokio::time::Instant::now),
+                ), if self.auth_deadline.is_some() => {
+                    self.auth_deadline = None;
+                    log::error!(
+                        "WebSocket authentication timed out: timeout={:?}",
+                        self.auth_timeout
+                    );
+                    self.auth_tracker.fail("Authentication timed out");
+                }
+
                 () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                     if self.signal.load(Ordering::Relaxed) {
                         log::debug!("Stop signal received during idle period");
@@ -482,6 +505,7 @@ impl BybitWsFeedHandler {
                             self.handle_subscription_ack(sub_msg);
                         }
                         BybitWsFrame::Auth(auth_response) => {
+                            self.auth_deadline = None;
                             let is_success = auth_response.success.unwrap_or(false)
                                 || (auth_response.ret_code == Some(0));
 
@@ -503,6 +527,17 @@ impl BybitWsFeedHandler {
                             // ErrorResponse when success=false. Route them through
                             // the subscription state machine when the op field is
                             // present, otherwise forward as a generic error.
+                            // A rejected authentication also arrives as ErrorResponse.
+                            if resp.op == Some(BybitWsOperation::Auth) {
+                                self.auth_deadline = None;
+                                let error_msg = resp
+                                    .ret_msg
+                                    .as_deref()
+                                    .unwrap_or("Authentication rejected");
+                                self.auth_tracker.fail(error_msg);
+                                log::error!("WebSocket authentication failed: error={error_msg}");
+                            }
+
                             if let Some(op) = &resp.op {
                                 if *op == BybitWsOperation::Subscribe
                                     || *op == BybitWsOperation::Unsubscribe
@@ -555,6 +590,7 @@ impl BybitWsFeedHandler {
                             return Some(BybitWsMessage::AccountPosition(msg));
                         }
                         BybitWsFrame::Reconnected => {
+                            self.auth_deadline = None;
                             self.auth_tracker.invalidate();
                             return Some(BybitWsMessage::Reconnected);
                         }
@@ -762,12 +798,10 @@ fn is_already_subscribed_error(error_msg: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
     use nautilus_core::string::secret::REDACTED;
-    use nautilus_network::websocket::{WebSocketConfig, channel_message_handler};
+    use nautilus_network::websocket::{WebSocketConfig, auth::AuthState, channel_message_handler};
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -788,6 +822,7 @@ mod tests {
             cmd_rx,
             raw_rx,
             auth_tracker,
+            Duration::from_secs(5),
             subscriptions,
             BybitRateLimiter::for_websocket(
                 "wss://bybit-handler-test.invalid",
@@ -893,6 +928,151 @@ mod tests {
             .unwrap();
         handler.inner.as_ref().unwrap().disconnect().await;
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_authentication_timeout_discards_replay_buffer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (received_tx, received_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let _first = tokio_tungstenite::accept_async(first).await.unwrap();
+            let (replacement, _) = listener.accept().await.unwrap();
+            let mut replacement = tokio_tungstenite::accept_async(replacement).await.unwrap();
+            assert_eq!(
+                replacement.next().await.unwrap().unwrap(),
+                Message::text("authenticate")
+            );
+            // The venue never replies to authentication
+            received_tx
+                .send(replacement.next().await.unwrap().unwrap())
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let auth_timeout = Duration::from_millis(200);
+        let mut handler = create_test_handler();
+        handler.auth_timeout = auth_timeout;
+        let tracker = handler.auth_tracker.clone();
+        let (message_handler, raw_rx) = channel_message_handler();
+        handler.raw_rx = raw_rx;
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{address}"))
+            .writer_capacity(1)
+            .reconnect_delay_initial_ms(1)
+            .reconnect_delay_max_ms(1)
+            .reconnect_jitter_ms(0)
+            .build()
+            .unwrap();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .unwrap();
+        client.set_auth_tracker(tracker.clone(), true);
+
+        // Enqueue and request reconnect without yielding so the writer retains this message
+        client.send_text("held".to_string(), None).await.unwrap();
+        assert!(client.request_reconnect());
+        wait_until_async(
+            || async { client.is_active() && client.connection_epoch() == 1 },
+            Duration::from_secs(5),
+        )
+        .await;
+        handler.inner = Some(client);
+        // Consume the reconnect notification first, as it cancels a started timeout
+        handler.next().await;
+        let pending = tracker.begin();
+        cmd_tx
+            .send(HandlerCommand::Authenticate {
+                payload: SecretString::from("authenticate".to_string()),
+            })
+            .unwrap();
+
+        let started = tokio::time::Instant::now();
+        tokio::select! {
+            message = handler.next() => panic!("unexpected handler message: {message:?}"),
+            () = wait_until_async(
+                || async { tracker.auth_state() == AuthState::Failed },
+                Duration::from_secs(5),
+            ) => {}
+        }
+        let elapsed = started.elapsed();
+        let client = handler.inner.as_ref().unwrap();
+        // The discarded message released the only writer permit
+        wait_until_async(
+            || async { client.send_text("released".to_string(), None).await.is_ok() },
+            Duration::from_secs(5),
+        )
+        .await;
+        let received = tokio::time::timeout(Duration::from_secs(5), received_rx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(elapsed >= auth_timeout);
+        assert_eq!(
+            pending.await,
+            Ok(Err("Authentication timed out".to_string()))
+        );
+        assert_eq!(received, Message::text("released"));
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::auth_reply(
+        load_test_json("ws_auth_success.json"),
+        AuthState::Authenticated,
+        Ok(Ok(()))
+    )]
+    #[case::auth_rejection(
+        load_test_json("ws_auth_failure.json"),
+        AuthState::Failed,
+        Ok(Err("Invalid apikey".to_string()))
+    )]
+    #[case::reconnected(
+        nautilus_network::RECONNECTED.to_string(),
+        AuthState::Unauthenticated,
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn test_authentication_timeout_cancelled(
+        #[case] frame: String,
+        #[case] expected_state: AuthState,
+        #[case] expected_result: Result<
+            Result<(), String>,
+            tokio::sync::oneshot::error::TryRecvError,
+        >,
+    ) {
+        let mut handler = create_test_handler();
+        let tracker = handler.auth_tracker.clone();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        let mut pending = tracker.begin();
+        cmd_tx
+            .send(HandlerCommand::Authenticate {
+                payload: SecretString::from("authenticate".to_string()),
+            })
+            .unwrap();
+
+        // Process the command before the frame so the frame cancels a started timeout
+        let started = tokio::time::timeout(handler.auth_timeout / 2, handler.next()).await;
+        raw_tx.send(Message::Text(frame.into())).unwrap();
+        handler.next().await;
+        let idle = tokio::time::timeout(handler.auth_timeout * 2, handler.next()).await;
+
+        assert!(started.is_err());
+        assert!(idle.is_err());
+        assert_eq!(tracker.auth_state(), expected_state);
+        assert_eq!(pending.try_recv(), expected_result);
     }
 
     async fn connect_book_handler() -> (

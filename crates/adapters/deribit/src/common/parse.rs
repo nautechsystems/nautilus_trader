@@ -1280,6 +1280,8 @@ mod tests {
         );
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
         assert_eq!(option.underlying.code, "BTC");
+        assert_eq!(option.underlying_instrument_id, None);
+        assert_eq!(option.settlement_type, None);
         assert_eq!(option.quote_currency.code, "BTC");
         assert_eq!(option.settlement_currency.code, "BTC");
         assert!(option.is_inverse);

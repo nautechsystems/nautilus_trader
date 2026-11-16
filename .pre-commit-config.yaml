@@ -98,7 +98,7 @@ repos:
         files: (^|/)Dockerfile[^/]*$
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.52.0
+    rev: v1.52.2
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
@@ -488,7 +488,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.4
+    rev: v0.17.5
     hooks:
       - id: ruff
         name: ruff
@@ -558,7 +558,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.24.0
+    rev: v0.24.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

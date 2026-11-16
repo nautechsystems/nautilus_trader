@@ -18,7 +18,10 @@ use std::ffi::c_char;
 use databento::dbn;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{AggressorSide, AssetClass, BookAction, InstrumentClass, OptionKind, OrderSide},
+    enums::{
+        AggressorSide, AssetClass, BookAction, ExerciseStyle, InstrumentClass, OptionKind,
+        OrderSide, SettlementType,
+    },
     identifiers::{InstrumentId, Symbol},
     types::{
         Currency, Price, Quantity,
@@ -138,6 +141,32 @@ pub fn parse_cfi_iso10926(value: &str) -> (Option<AssetClass>, Option<Instrument
     }
 
     (asset_class, instrument_class)
+}
+
+// ISO 10962 call and put codes carry the exercise style third and the delivery method fifth
+pub(super) fn parse_cfi_option_terms(
+    value: &str,
+) -> (Option<ExerciseStyle>, Option<SettlementType>) {
+    let code = value.as_bytes();
+
+    if !matches!(code, [b'O', b'C' | b'P', ..]) {
+        return (None, None);
+    }
+
+    let exercise_style = match code.get(2) {
+        Some(b'A') => Some(ExerciseStyle::American),
+        Some(b'E') => Some(ExerciseStyle::European),
+        Some(b'B') => Some(ExerciseStyle::Bermudan),
+        _ => None,
+    };
+
+    let settlement_type = match code.get(4) {
+        Some(b'C') => Some(SettlementType::Cash),
+        Some(b'P') => Some(SettlementType::Physical),
+        _ => None,
+    };
+
+    (exercise_style, settlement_type)
 }
 
 pub(super) fn decode_underlying(underlying_str: &str, symbol: &Symbol) -> Ustr {

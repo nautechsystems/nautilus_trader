@@ -104,6 +104,28 @@ pub(crate) fn optional_price_value(
         .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
 }
 
+pub(crate) fn optional_parsed_value<T>(
+    values: Option<&StringArray>,
+    field: &'static str,
+    row: usize,
+) -> Result<Option<T>, EncodingError>
+where
+    T: FromStr,
+    T::Err: fmt::Display,
+{
+    let Some(column) = values else {
+        return Ok(None);
+    };
+
+    if column.is_null(row) {
+        return Ok(None);
+    }
+
+    T::from_str(column.value(row))
+        .map(Some)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
 // Errors on empty/whitespace codes so corrupted rows surface as ParseError,
 // instead of silently registering as a fallback currency. Known codes resolve
 // from CURRENCY_MAP with original metadata; unknown non-empty codes fall back
@@ -1435,6 +1457,20 @@ mod tests {
         RecordBatch::try_new(Arc::new(new_schema), columns).unwrap()
     }
 
+    fn string_column_value<'a>(
+        record_batch: &'a RecordBatch,
+        column_name: &str,
+    ) -> Option<&'a str> {
+        let values = record_batch
+            .column_by_name(column_name)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+
+        (!values.is_null(0)).then(|| values.value(0))
+    }
+
     fn batch_with_null_string_column(record_batch: &RecordBatch, column_name: &str) -> RecordBatch {
         let schema = record_batch.schema();
         let column_index = schema.index_of(column_name).unwrap();
@@ -1891,6 +1927,95 @@ mod tests {
     fn test_roundtrip_index_instrument() {
         use nautilus_model::instruments::stubs::index_instrument_spx;
         roundtrip_case(&InstrumentAny::IndexInstrument(index_instrument_spx()));
+    }
+
+    #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_option_terms_round_trip(#[case] instrument: InstrumentAny) {
+        let (underlying_id, kind) = match &instrument {
+            InstrumentAny::OptionContract(_) => ("AAPL.NASDAQ", "CALL"),
+            InstrumentAny::CryptoOption(_) => ("BTCUSDT.BINANCE", "PUT"),
+            _ => unreachable!("option fixtures only"),
+        };
+
+        for (known, style, settlement) in [
+            (true, Some("AMERICAN"), Some("CASH")),
+            (true, Some("EUROPEAN"), Some("PHYSICAL")),
+            (false, Some("BERMUDAN"), Some("CASH")),
+            (true, Some("EUROPEAN"), None),
+            (true, None, Some("PHYSICAL")),
+            (false, None, None),
+        ] {
+            let mut encoded = serde_json::to_value(&instrument).unwrap();
+            let fields = encoded
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap();
+            fields["underlying_instrument_id"] =
+                serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["exercise_style"] = serde_json::to_value(style).unwrap();
+            fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
+            let instrument: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
+            let metadata = instrument.metadata();
+            let batch =
+                InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+            let restored = decode_instrument_any_batch(&metadata, &batch).unwrap();
+            assert_eq!(serde_json::to_value(&restored[0]).unwrap(), encoded);
+            assert_eq!(string_column_value(&batch, "option_kind"), Some(kind));
+            assert_eq!(string_column_value(&batch, "exercise_style"), style);
+
+            let legacy = batch_without_column(&batch, "underlying_instrument_id");
+            let legacy = batch_without_column(&legacy, "exercise_style");
+            let legacy = batch_without_column(&legacy, "settlement_type");
+            let decoded = decode_instrument_any_batch(&metadata, &legacy).unwrap();
+            let restored = serde_json::to_value(&decoded[0]).unwrap();
+            let fields = restored.as_object().unwrap().values().next().unwrap();
+            assert_eq!(fields["underlying_instrument_id"], serde_json::Value::Null);
+            assert_eq!(fields["exercise_style"], serde_json::Value::Null);
+            assert_eq!(fields["settlement_type"], serde_json::Value::Null);
+        }
+    }
+
+    #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_invalid_option_terms_return_field_error(
+        #[case] instrument: InstrumentAny,
+        #[values("underlying_instrument_id", "exercise_style", "settlement_type")]
+        field: &'static str,
+    ) {
+        let metadata = instrument.metadata();
+        let batch = InstrumentAny::encode_batch(&metadata, &[instrument]).unwrap();
+        let schema = batch.schema();
+        let index = schema.index_of(field).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[index] = Arc::new(StringArray::from(vec!["INVALID"]));
+        let invalid = RecordBatch::try_new(schema, columns).unwrap();
+        let error = decode_instrument_any_batch(&metadata, &invalid).unwrap_err();
+
+        let EncodingError::ParseError(actual_field, detail) = error else {
+            panic!("expected field parse error, was {error:?}");
+        };
+
+        assert_eq!(actual_field, field);
+        assert!(detail.starts_with("row 0: "));
     }
 
     #[rstest]

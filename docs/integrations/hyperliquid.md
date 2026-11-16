@@ -419,10 +419,28 @@ truncated history from creating positions, but can leave a cached position open 
 when flat positions are omitted from the reports. See
 [bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety).
 
+#### Single-order lookups
+
+`QueryOrder` and `GenerateOrderStatusReport` look up one order in this sequence:
+
+1. If the command carries a client order ID, search `frontendOpenOrders` for its CLOID. A match is
+   the live order, including a replacement under a new venue order ID.
+1. Look up the supplied or cached venue order ID, falling back to `orderStatus` when the order is
+   no longer open.
+1. Without a venue order ID, query `orderStatus` by CLOID. This finds an order that closed before
+   its acceptance arrived, such as a filled IOC order.
+
+- **No match**: An empty open-order response alone does not establish absence. `unknownOid` means
+  the status lookup found no order. `QueryOrder` emits no report; `GenerateOrderStatusReport`
+  returns no report unless its CLOID search failed.
+- **Errors**: `QueryOrder` logs lookup failures. `GenerateOrderStatusReport` returns status-lookup
+  errors, and returns a failed CLOID search as an error when the status lookup finds no order, so
+  reconciliation does not treat a failed lookup as an absent order.
+
 #### Reduce-only fill quantity
 
 Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a position
-smaller than the order. During startup mass status or a single-order lookup by venue order ID, the adapter
+smaller than the order. During startup mass status or a single-order `orderStatus` lookup, the adapter
 clamps such an order to its total fills. Thus, it closes `Filled` at a quantity smaller than the submitted
 size. The clamp applies only when the `userFills` history is complete and under its 2,000-record limit.
 Otherwise the adapter keeps the venue's quantity, and reconciliation can infer the missing fill.
@@ -444,8 +462,8 @@ cached perpetual instruments:
   a venue row cannot be decoded, resolved to an instrument, or converted into a report. Fill and
   historical-order report requests fail the same way.
 - If a targeted HTTP order-status lookup matches an unusable venue row, it returns an error instead of
-  reporting the order as missing. The `GenerateOrderStatusReport` command does the same once no venue order ID
-  fallback remains.
+  reporting the order as missing. The `GenerateOrderStatusReport` command does the same when its `orderStatus`
+  fallback finds no order.
 
 #### Inferred-fill commissions
 
@@ -1090,6 +1108,23 @@ All triggers evaluate the [mark price](https://hyperliquid.gitbook.io/hyperliqui
 Standalone triggers rest at the venue until triggered, regardless of `reduce_only`.
 The adapter always submits grouped (bracket) TP/SL children as reduce-only.
 
+### Bracket orders
+
+The adapter treats an order list as a bracket when its first order is an `OTO` entry that is not
+reduce-only and every other order is a reduce-only `OCO` or `OUO` child of that entry. It submits
+the entry alone and holds the TP/SL children locally until the entry's first fill.
+
+- **Before the first fill**: The children stay `INITIALIZED` and have no venue order, so venue
+  open orders and status reports do not include them.
+- **First entry fill**: The adapter submits the children in one batch.
+- **Entry closed without a fill**: A canceled, rejected, or expired entry emits `OrderCanceled`
+  for each held child.
+- **Cancel of a held child**: The adapter emits `OrderCanceled` without a venue request.
+- **Restart**: The adapter restores held children from cached order lists when it connects, and
+  submits those whose entry already has a fill.
+- **In-flight checks**: A live node tracks each held child as an unacknowledged submission. When
+  its retries run out, it logs a `Submission recovery exhausted` warning and leaves the child unchanged.
+
 ### Market-order pricing
 
 Market orders use IOC limits priced from the best ask for buys or best bid for sells, plus a slippage buffer.
@@ -1678,8 +1713,9 @@ Recovery requires all of these conditions:
 
 - The order is a cached ordinary limit order sized in base currency and tracked by this client
   since submission, without reduce-only behavior or contingent relationships.
-- At query start, it has one venue order ID, no modification history or pending modify, and no
-  applied fills.
+- At query start, it has no modification history, no pending modify, and no applied fills.
+- At query start, it is open with one venue order ID, or submitted with none because its acceptance
+  never arrived.
 - The venue reports the same order as `Filled`, with quantity and filled quantity equal to its
   cached quantity.
 
@@ -1691,7 +1727,8 @@ price, or fee. Identical records count once; conflicting records for one trade I
 Complete coverage permits recovery even at the 2,000-fill response cap.
 
 The adapter emits validated fills in chronological order, then the ordinary status report. It discards them
-if the binding or order terms change during the history read, or a modify is pending afterward.
+if the order binds to a different venue order ID than the report's, its terms change during the history read,
+or a modify is pending afterward.
 Engine deduplication handles live fills arriving during the request.
 
 Unavailable history, incomplete coverage, or any row that cannot be decoded, resolved to an instrument, or
@@ -2032,28 +2069,29 @@ Partial metadata loads retain their existing best-effort behavior.
 
 ### Execution client configuration options
 
-| Option                          | Default   | Description                                                                                                                                |
-| ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `account_id`                    | `Venue`   | Nautilus account ID; defaults to `HYPERLIQUID-001`.                                                                                        |
-| `private_key`                   | `None`    | EVM key; reads `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                                  |
-| `vault_address`                 | `None`    | Vault address; reads `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` when omitted.                                                      |
-| `account_address`               | `None`    | Master address for agent wallets; reads `HYPERLIQUID_ACCOUNT_ADDRESS` when omitted.                                                        |
-| `environment`                   | `None`    | `MAINNET` or `TESTNET`; `None` resolves to `MAINNET`.                                                                                      |
-| `base_url_ws`                   | `None`    | WebSocket URL override.                                                                                                                    |
-| `base_url_http`                 | `None`    | HTTP info URL override.                                                                                                                    |
-| `base_url_exchange`             | `None`    | Exchange API URL override.                                                                                                                 |
-| `max_retries`                   | `3`       | Read-only `/info` retries after the initial attempt; `0` disables retries.                                                                 |
-| `retry_delay_initial_ms`        | `100`     | Initial full-jitter backoff bound in milliseconds for `/info` retries.                                                                     |
-| `retry_delay_max_ms`            | `5,000`   | Maximum `/info` backoff bound in milliseconds; valid `Retry-After` can exceed it.                                                          |
-| `http_timeout_secs`             | `60`      | REST timeout in seconds.                                                                                                                   |
-| `ws_post_timeout_secs`          | `10`      | WebSocket trading request timeout in seconds.                                                                                              |
-| `normalize_prices`              | `True`    | Normalize order prices to 5 significant figures before submission.                                                                         |
-| `include_builder_attribution`   | `True`    | Zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                          |
-| `market_order_slippage_bps`     | `50`      | MARKET and stop-trigger slippage in bps; overridable in `SubmitOrder.params`.                                                              |
-| `outcome_settlement_poll_secs`  | `0`       | Rust-only HIP-4 `outcomeMeta` polling interval in seconds; disabled as venue fills cover settlement.                                       |
-| `scheduled_cancel_timeout_secs` | `None`    | Account-wide timeout in seconds, at least 15; refreshes every third of the timeout. See [Scheduled cancellation](#scheduled-cancellation). |
-| `proxy_url`                     | `None`    | Optional HTTP and WebSocket proxy.                                                                                                         |
-| `transport_backend`             | `Sockudo` | WebSocket transport backend.                                                                                                               |
+| Option                          | Default           | Description                                                                                                                                |
+| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `product_types`                 | All               | Execution products: `PERP`, `SPOT`, `OUTCOME`; Python accepts `None` for all. See [Execution product scope](#execution-product-scope).     |
+| `account_id`                    | `HYPERLIQUID-001` | Nautilus account ID.                                                                                                                       |
+| `private_key`                   | `None`            | EVM key; reads `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                                  |
+| `vault_address`                 | `None`            | Vault address; reads `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` when omitted.                                                      |
+| `account_address`               | `None`            | Master address for agent wallets; reads `HYPERLIQUID_ACCOUNT_ADDRESS` when omitted.                                                        |
+| `environment`                   | `None`            | `MAINNET` or `TESTNET`; `None` resolves to `MAINNET`.                                                                                      |
+| `base_url_ws`                   | `None`            | WebSocket URL override.                                                                                                                    |
+| `base_url_http`                 | `None`            | HTTP info URL override.                                                                                                                    |
+| `base_url_exchange`             | `None`            | Exchange API URL override.                                                                                                                 |
+| `max_retries`                   | `3`               | Read-only `/info` retries after the initial attempt; `0` disables retries.                                                                 |
+| `retry_delay_initial_ms`        | `100`             | Initial full-jitter backoff bound in milliseconds for `/info` retries.                                                                     |
+| `retry_delay_max_ms`            | `5,000`           | Maximum `/info` backoff bound in milliseconds; valid `Retry-After` can exceed it.                                                          |
+| `http_timeout_secs`             | `60`              | REST timeout in seconds.                                                                                                                   |
+| `ws_post_timeout_secs`          | `10`              | WebSocket trading request timeout in seconds.                                                                                              |
+| `normalize_prices`              | `True`            | Normalize order prices to 5 significant figures before submission.                                                                         |
+| `include_builder_attribution`   | `True`            | Zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                          |
+| `market_order_slippage_bps`     | `50`              | MARKET and stop-trigger slippage in bps; overridable in `SubmitOrder.params`.                                                              |
+| `outcome_settlement_poll_secs`  | `0`               | Rust-only HIP-4 `outcomeMeta` polling interval in seconds; disabled as venue fills cover settlement.                                       |
+| `scheduled_cancel_timeout_secs` | `None`            | Account-wide timeout in seconds, at least 15; refreshes every third of the timeout. See [Scheduled cancellation](#scheduled-cancellation). |
+| `proxy_url`                     | `None`            | Optional HTTP and WebSocket proxy.                                                                                                         |
+| `transport_backend`             | `Sockudo`         | WebSocket transport backend.                                                                                                               |
 
 :::note
 Only `outcome_settlement_poll_secs` is Rust-only; Python always uses its default.

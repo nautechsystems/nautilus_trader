@@ -613,6 +613,28 @@ to the appropriate Nautilus `Instrument` type.
 | Index                      | `I`  | Not yet available        |
 | Bond                       | `B`  | Not yet available        |
 
+### Option exercise style and settlement type
+
+The decoder sets `exercise_style` and `settlement_type` on each `OptionContract` from the CFI code
+(ISO 10962) in the definition. A field stays `None` when the code leaves that attribute undefined.
+
+`OPRA.PILLAR` definitions carry no CFI code. For this dataset, the decoder applies US listing
+convention by option root:
+
+- **Cash-settled, European-style**: a fixed list of index, currency, and index binary option roots,
+  such as `SPX`, `SPXW`, `XSP`, `VIX`, `NDX`, `RUT`, and `DJX`.
+- **Cash-settled, American-style**: `OEX` and `XAU`.
+- **Ambiguous roots**: both fields stay `None`. A five-letter root that starts with `K` can be a binary
+  option on a company metric or an equity option such as `KELYA`, and the definition does not tell them
+  apart. A root with a digit before a letter, such as `B1SPY`, is treated the same way.
+- **Any other root**: American-style and physically settled, the convention for equity and ETF options.
+
+:::warning
+The OPRA root lists are fixed in the adapter. A cash-settled root that the adapter does not list, such as
+one listed after the adapter release, decodes as American-style and physically settled unless it is an
+ambiguous root.
+:::
+
 ### Option expiration correction
 
 OPRA option definitions (dataset `OPRA.PILLAR`) carry the expiration with date-level precision: the

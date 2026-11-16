@@ -264,10 +264,7 @@ fn arrow_metadata_row(
     metadata: &HashMap<String, String>,
     fields: &arrow::datatypes::Fields,
 ) -> anyhow::Result<StagedArrowMetadataRow> {
-    let schema_metadata = metadata
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let schema_metadata = metadata.iter().collect::<BTreeMap<_, _>>();
 
     let field_metadata = fields
         .iter()
@@ -289,7 +286,7 @@ fn arrow_metadata_row(
         "schema_metadata": schema_metadata,
         "field_metadata": field_metadata,
     }))?;
-    let metadata_id = staged_metadata_id(&canonical_metadata_json(metadata)?);
+    let metadata_id = staged_metadata_id(&serde_json::to_string(&schema_metadata)?);
 
     Ok(StagedArrowMetadataRow {
         metadata_id,

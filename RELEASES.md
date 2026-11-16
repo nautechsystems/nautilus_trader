@@ -5,10 +5,13 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added per-`DataType` custom data histories to `Cache`, populated by the `DataEngine`, thanks @faysou
+- Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
+- Added `ExerciseStyle` and optional `exercise_style` to `OptionContract` and `CryptoOption`
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
 - Added Binance Portfolio Margin balance and account response models
+- Added Databento option `exercise_style` and `settlement_type` from CFI codes, with fixed root rules for OPRA
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
@@ -20,6 +23,8 @@ Released on TBD (UTC).
 
 - Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
+- Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
+- Changed PostgreSQL option storage to add underlying, exercise, and settlement columns; run `nautilus database init`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
@@ -33,6 +38,7 @@ Released on TBD (UTC).
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
+- Changed Bybit `use_ws_execution_fast` to reject the Option product type; use the standard stream
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
@@ -57,11 +63,17 @@ Released on TBD (UTC).
 - Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
 - Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
+- Fixed socket client sending a superseded replayable command after its replacement on reconnect
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
+- Fixed Bybit fast-execution fills recording zero commission when it cannot be derived; they are now skipped
+- Fixed Bybit fast-execution Linear commissions rounding below the venue fee
+- Fixed Bybit fast-execution fee rates loading after the private stream connects
+- Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
+- Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
@@ -71,6 +83,7 @@ Released on TBD (UTC).
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
+- Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
 
 ### Internal Improvements
 
@@ -86,27 +99,44 @@ Released on TBD (UTC).
 - Refined position replay and accounting, order fill-void validation, and order status report construction
 - Refined `Cache` purge index cleanup and integrity checks
 - Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
+- Improved portfolio position-event benchmark coverage
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
+- Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
 - Upgraded Rust (MSRV) to 1.100.0
+- Upgraded `cargo-audit` tool to v0.23.0
+- Upgraded `cargo-binstall` tool to v1.27.0
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-nextest` tool to v0.9.151
 - Upgraded `flamegraph` tool to v0.6.15
+- Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.10
+- Upgraded `pypi-attestations` tool to v0.0.31
+- Upgraded `Socket CLI` tool to v1.15.0
 - Upgraded `uv` tool to v0.13.7
-- Upgraded `typos` pre-commit hook to v1.52.0
+- Upgraded `markdownlint-cli2` pre-commit hook to v0.24.1
+- Upgraded `typos` pre-commit hook to v1.52.2
 - Upgraded `uv` pre-commit hook to v0.13.7
 - Upgraded `zizmor` pre-commit hook to v1.32.0
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `flate2` crate to v1.1.11
-- Upgraded `jiff` crate to v0.2.39
+- Upgraded `jiff` crate to v0.2.43
 - Upgraded `redb` crate to v4.5.0
 - Upgraded `smallvec` crate to v1.16.5
 - Upgraded `sockudo-ws` crate to v3.1.1
+- Upgraded `syn` crate to v3.0.10
+- Upgraded `sysinfo` crate to v0.40.3
+- Upgraded `toml` crate to v1.2.1
 - Upgraded `uuid` crate to v1.29.2
+- Upgraded `webpki-roots` crate to v1.0.12
 - Upgraded `maturin` package (dev) to v1.16.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.4
-- Upgraded `ty` package (dev) to v0.0.98
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.5
+- Upgraded `ty` package (dev) to v0.0.99
+
+### Documentation Updates
+
+- Documented backtest account-history purging and its effect on balance reports
+- Documented Polymarket order message size units for resting and market order types
 
 ---
 

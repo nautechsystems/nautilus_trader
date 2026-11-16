@@ -6101,13 +6101,22 @@ fn test_orders_filtered_results_and_borrows(
 }
 
 #[rstest]
-fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_sim: CurrencyPair) {
+#[case(3)]
+#[case(64)]
+fn test_cache_positions_returned_sorted_by_position_id(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] count: usize,
+) {
     // Mirror of test_cache_orders_returned_sorted_by_client_order_id for the
     // positions path; get_positions_for_ids now sorts by PositionId so the
     // own-book replay and reconciliation flows see a stable sequence.
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let expected: Vec<_> = (0..count)
+        .map(|i| PositionId::new(format!("POS-{i:03}")))
+        .collect();
 
-    for raw in ["POS-303", "POS-101", "POS-202"] {
+    for position_id in expected.iter().rev() {
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
@@ -6117,7 +6126,7 @@ fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_
             &order,
             &instrument,
             None,
-            Some(PositionId::new(raw)),
+            Some(*position_id),
             None,
             None,
             None,
@@ -6139,14 +6148,7 @@ fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_
         .map(|p| p.id)
         .collect();
 
-    assert_eq!(
-        returned,
-        vec![
-            PositionId::new("POS-101"),
-            PositionId::new("POS-202"),
-            PositionId::new("POS-303"),
-        ],
-    );
+    assert_eq!(returned, expected);
 }
 
 #[rstest]

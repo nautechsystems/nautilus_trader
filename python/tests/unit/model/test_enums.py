@@ -23,6 +23,7 @@ from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ContingencyType
+from nautilus_trader.model import ExerciseStyle
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
@@ -32,6 +33,7 @@ from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
 from nautilus_trader.model import PositionSide
+from nautilus_trader.model import SettlementType
 from nautilus_trader.model import TradingState
 from nautilus_trader.model import TrailingOffsetType
 from nautilus_trader.model import TriggerType
@@ -132,6 +134,11 @@ def test_side_enums_accept_domain_tokens(
     [
         (ContingencyType, [ContingencyType.OCO, ContingencyType.OTO, ContingencyType.OUO]),
         (
+            ExerciseStyle,
+            [ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+        ),
+        (SettlementType, [SettlementType.CASH, SettlementType.PHYSICAL]),
+        (
             TrailingOffsetType,
             [
                 TrailingOffsetType.PRICE,
@@ -190,7 +197,12 @@ def test_optional_domain_enums_retain_none_compatibility(
 @pytest.mark.parametrize(
     ("enum_type", "member", "name"),
     [
+        (ExerciseStyle, ExerciseStyle.AMERICAN, "AMERICAN"),
+        (ExerciseStyle, ExerciseStyle.EUROPEAN, "EUROPEAN"),
+        (ExerciseStyle, ExerciseStyle.BERMUDAN, "BERMUDAN"),
         (InstrumentClass, InstrumentClass.SPOT, "SPOT"),
+        (SettlementType, SettlementType.CASH, "CASH"),
+        (SettlementType, SettlementType.PHYSICAL, "PHYSICAL"),
         (MarketStatus, MarketStatus.OPEN, "OPEN"),
         (OmsType, OmsType.NETTING, "NETTING"),
         (OtoTriggerMode, OtoTriggerMode.FULL, "FULL"),
@@ -201,6 +213,7 @@ def test_model_enums_from_str(enum_type: object, member: object, name: object) -
     """
     Test model enums from str.
     """
+    assert enum_type(name) == member
     assert enum_type.from_str(name) == member
     assert member.name == name
     assert isinstance(hash(member), int)
@@ -280,7 +293,10 @@ def test_aggressor_side_has_no_alias_members() -> None:
         _ = AggressorSide.SELLER
 
 
-@pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType])
+@pytest.mark.parametrize(
+    "enum_type",
+    [BookType, ExerciseStyle, OrderSide, OrderType, SettlementType],
+)
 def test_workflow_enums_reject_malformed_values(enum_type: object) -> None:
     """
     Test workflow enums reject malformed values.

@@ -28,8 +28,8 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDelta},
     enums::{
-        AggressorSide, AssetClass, BookAction, InstrumentClass, MarketStatusAction, OptionKind,
-        OrderSide,
+        AggressorSide, AssetClass, BookAction, ExerciseStyle, InstrumentClass, MarketStatusAction,
+        OptionKind, OrderSide, SettlementType,
     },
     identifiers::{InstrumentId, TradeId},
     instruments::InstrumentAny,
@@ -47,7 +47,7 @@ use super::{
         BAR_CLOSE_ADJUSTMENT_1D, BAR_CLOSE_ADJUSTMENT_1H, BAR_CLOSE_ADJUSTMENT_1M,
         BAR_CLOSE_ADJUSTMENT_1S, derive_cmbp_trade_id, is_trade_msg,
     },
-    primitives::parse_currency_or_usd_default,
+    primitives::{parse_cfi_option_terms, parse_currency_or_usd_default},
     *,
 };
 use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
@@ -274,6 +274,27 @@ fn test_parse_cfi_iso10926(
     #[case] expected: (Option<AssetClass>, Option<InstrumentClass>),
 ) {
     let result = parse_cfi_iso10926(input);
+    assert_eq!(result, expected);
+}
+
+#[rstest]
+#[case("OCAFPS", (Some(ExerciseStyle::American), Some(SettlementType::Physical)))]
+#[case("OPEICS", (Some(ExerciseStyle::European), Some(SettlementType::Cash)))]
+#[case("OCBSCS", (Some(ExerciseStyle::Bermudan), Some(SettlementType::Cash)))]
+#[case("OPAXPS", (Some(ExerciseStyle::American), Some(SettlementType::Physical)))]
+#[case("OCEFNS", (Some(ExerciseStyle::European), None))]
+#[case("OCXFCS", (None, Some(SettlementType::Cash)))]
+#[case("OPA", (Some(ExerciseStyle::American), None))]
+#[case("OCXXXX", (None, None))]
+#[case("OC", (None, None))]
+#[case("OMEFCS", (None, None))]
+#[case("FFIXSX", (None, None))]
+#[case("", (None, None))]
+fn test_parse_cfi_option_terms(
+    #[case] input: &str,
+    #[case] expected: (Option<ExerciseStyle>, Option<SettlementType>),
+) {
+    let result = parse_cfi_option_terms(input);
     assert_eq!(result, expected);
 }
 
@@ -1335,6 +1356,8 @@ fn test_decode_definition_msg_option_contract(
     assert_eq!(call.underlying, underlying);
     assert_eq!(call.currency, Currency::from("USD"));
     assert_eq!(call.multiplier, quantity(50));
+    assert_eq!(call.exercise_style, Some(ExerciseStyle::American));
+    assert_eq!(call.settlement_type, Some(SettlementType::Physical));
     // GLBX expirations carry an accurate intraday time (2026-09-18 13:30 UTC) and must not be
     // touched by the OPRA expiry correction.
     assert_eq!(
@@ -1515,6 +1538,26 @@ fn test_decode_opra_option_contract_falls_back_when_contract_multiplier_missing(
 }
 
 #[rstest]
+#[case(i32::MAX, i64::MAX)]
+#[case(0, 0)]
+fn test_decode_opra_option_contract_uses_standard_multiplier_when_both_missing(
+    #[case] contract_multiplier: i32,
+    #[case] unit_of_measure_qty: i64,
+) {
+    let msg = option_definition_msg(22, "XCBO", contract_multiplier, unit_of_measure_qty);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(100));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
 fn test_decode_opra_option_contract_rejects_negative_contract_multiplier() {
     let msg = option_definition_msg(22, "XCBO", -1, 1_000_000_000);
 
@@ -1523,6 +1566,89 @@ fn test_decode_opra_option_contract_rejects_negative_contract_multiplier() {
         .expect_err("negative contract_multiplier should fail")
         .to_string();
     assert!(error.contains("Invalid negative `contract_multiplier`"));
+}
+
+#[rstest]
+#[case("SPX.XCBO", Some(ExerciseStyle::European), Some(SettlementType::Cash))]
+#[case("XDE.XPHL", Some(ExerciseStyle::European), Some(SettlementType::Cash))]
+#[case("OEX.XCBO", Some(ExerciseStyle::American), Some(SettlementType::Cash))]
+#[case("XAU.XPHL", Some(ExerciseStyle::American), Some(SettlementType::Cash))]
+#[case(
+    "AAPL.XCBO",
+    Some(ExerciseStyle::American),
+    Some(SettlementType::Physical)
+)]
+#[case(
+    "AAPL1.XCBO",
+    Some(ExerciseStyle::American),
+    Some(SettlementType::Physical)
+)]
+#[case(
+    "KHYB.XCBO",
+    Some(ExerciseStyle::American),
+    Some(SettlementType::Physical)
+)]
+#[case(
+    "KNDI1.XCBO",
+    Some(ExerciseStyle::American),
+    Some(SettlementType::Physical)
+)]
+#[case("KAAPL.XCBO", None, None)]
+#[case("B1SPY.XCBO", None, None)]
+fn test_decode_opra_option_contract_uses_listing_convention_terms(
+    #[case] instrument_id: InstrumentId,
+    #[case] exercise_style: Option<ExerciseStyle>,
+    #[case] settlement_type: Option<SettlementType>,
+) {
+    let mut msg = option_definition_msg(22, "XCBO", 100, 1_000_000_000);
+    msg.cfi = cstr::<7>("");
+
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+
+    assert_eq!(option.option_kind, OptionKind::Call);
+    assert_eq!(option.exercise_style, exercise_style);
+    assert_eq!(option.settlement_type, settlement_type);
+}
+
+#[rstest]
+fn test_decode_opra_option_contract_prefers_cfi_terms() {
+    let mut msg = option_definition_msg(22, "XCBO", 100, 1_000_000_000);
+    msg.cfi = cstr::<7>("OCESCS");
+
+    let instrument_id = InstrumentId::from("AAPL.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+
+    assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
+    assert_eq!(option.settlement_type, Some(SettlementType::Cash));
+}
+
+#[rstest]
+fn test_decode_option_contract_leaves_undefined_cfi_terms_unset() {
+    let msg = option_definition_msg(1, "XCME", 0, 50_000_000_000);
+
+    let instrument_id = InstrumentId::from("ESZ6 C5000.GLBX");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+
+    assert_eq!(option.exercise_style, None);
+    assert_eq!(option.settlement_type, None);
 }
 
 fn option_definition_msg(

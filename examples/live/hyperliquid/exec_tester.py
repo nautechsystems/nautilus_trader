@@ -35,6 +35,7 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
@@ -67,6 +68,9 @@ def main() -> None:
     node = (
         LiveNode.builder("HYPERLIQUID-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_reconciliation(reconciliation=True)
+        .with_exec_engine_config(
+            LiveExecutionEngineConfig(reconciliation_lookback_mins=24 * 60),
+        )
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,

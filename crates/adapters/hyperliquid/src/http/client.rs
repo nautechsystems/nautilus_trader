@@ -554,6 +554,16 @@ impl HyperliquidRawHttpClient {
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
+    pub(crate) async fn info_order_status_by_cloid(
+        &self,
+        user: &str,
+        cloid: Cloid,
+    ) -> Result<HyperliquidOrderStatus> {
+        let request = InfoRequest::order_status_by_cloid(user, cloid);
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
     /// Get all open orders for a user.
     pub async fn info_open_orders(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::open_orders(user);
@@ -2868,6 +2878,44 @@ impl HyperliquidHttpClient {
             None => return Ok(None),
         };
 
+        self.order_status_report_from_entry(entry, account_id, ts_init)
+            .map(Some)
+    }
+
+    // Queries `orderStatus`, which also returns closed orders, unlike the open-order search
+    pub(crate) async fn request_order_status_report_by_cloid(
+        &self,
+        user: &str,
+        client_order_id: &ClientOrderId,
+    ) -> Result<Option<OrderStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+
+        let ts_init = self.clock.get_time_ns();
+
+        let cloid = self
+            .cached_client_order_id_cloid(client_order_id)
+            .unwrap_or_else(|| Cloid::from_client_order_id(*client_order_id));
+
+        let response = self.inner.info_order_status_by_cloid(user, cloid).await?;
+        let entry = match response.into_order() {
+            Some(e) => e,
+            None => return Ok(None),
+        };
+
+        let mut report = self.order_status_report_from_entry(entry, account_id, ts_init)?;
+        report.client_order_id = Some(*client_order_id);
+        Ok(Some(report))
+    }
+
+    fn order_status_report_from_entry(
+        &self,
+        entry: HyperliquidOrderStatusEntry,
+        account_id: AccountId,
+        ts_init: UnixNanos,
+    ) -> Result<OrderStatusReport> {
+        let oid = entry.order.oid;
         let product_type = self.product_type_for_venue_coin(&entry.order.coin);
         if !self.allows_product(product_type) {
             return Err(Error::bad_request("Order outside execution product scope"));
@@ -2928,7 +2976,7 @@ impl HyperliquidHttpClient {
             report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
         }
 
-        Ok(Some(report))
+        Ok(report)
     }
 
     /// Request a single order status report by client order ID.

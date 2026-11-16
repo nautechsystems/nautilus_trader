@@ -36,6 +36,7 @@ from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import Equity
+from nautilus_trader.model import ExerciseStyle
 from nautilus_trader.model import FuturesContract
 from nautilus_trader.model import FuturesSpread
 from nautilus_trader.model import IndexInstrument
@@ -47,6 +48,7 @@ from nautilus_trader.model import OptionSpread
 from nautilus_trader.model import PerpetualContract
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import SettlementType
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import TokenizedAsset
@@ -518,10 +520,22 @@ def test_option_contract_construction() -> None:
     assert oc.price_precision == 2
 
 
-def test_option_contract_to_dict_and_from_dict_roundtrip() -> None:
+@pytest.mark.parametrize("known", [False, True])
+@pytest.mark.parametrize(
+    "style",
+    [None, ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+)
+@pytest.mark.parametrize("settlement", [None, SettlementType.CASH, SettlementType.PHYSICAL])
+def test_option_contract_to_dict_and_from_dict_roundtrip(
+    known: bool,
+    style: ExerciseStyle | None,
+    settlement: SettlementType | None,
+) -> None:
     """
     Test option contract to dict and from dict roundtrip.
     """
+    underlying_id = InstrumentId.from_str("AAPL.NASDAQ") if known else None
+
     oc = OptionContract(
         instrument_id=InstrumentId(Symbol("AAPL231215P00145000"), Venue("OPRA")),
         raw_symbol=Symbol("AAPL231215P00145000"),
@@ -539,6 +553,15 @@ def test_option_contract_to_dict_and_from_dict_roundtrip() -> None:
         expiration_ns=1702598400000000000,
         ts_event=0,
         ts_init=0,
+        underlying_instrument_id=underlying_id,
+        exercise_style=style,
+        settlement_type=settlement,
+    )
+
+    assert (oc.underlying_instrument_id, oc.exercise_style, oc.settlement_type) == (
+        underlying_id,
+        style,
+        settlement,
     )
 
     d = oc.to_dict()
@@ -547,6 +570,22 @@ def test_option_contract_to_dict_and_from_dict_roundtrip() -> None:
     assert restored.id == oc.id
     assert restored.option_kind == oc.option_kind
     assert restored.strike_price == oc.strike_price
+
+    assert restored.underlying_instrument_id == oc.underlying_instrument_id
+    assert (d["option_kind"], d["exercise_style"]) == ("PUT", style.name if style else None)
+    assert restored.settlement_type == oc.settlement_type
+    assert restored.to_dict() == d
+    assert hash(restored) == hash(oc)
+
+    d.pop("underlying_instrument_id")
+    d.pop("exercise_style")
+    d.pop("settlement_type")
+    legacy = OptionContract.from_dict(d)
+    assert legacy.underlying_instrument_id is None
+    assert legacy.exercise_style is None
+    assert legacy.settlement_type is None
+    assert legacy == oc
+    assert hash(legacy) == hash(oc)
 
 
 def test_binary_option_construction() -> None:
@@ -1020,10 +1059,22 @@ def test_crypto_option_construction() -> None:
     assert co.size_precision == 1
 
 
-def test_crypto_option_to_dict_and_from_dict_roundtrip() -> None:
+@pytest.mark.parametrize("known", [False, True])
+@pytest.mark.parametrize(
+    "style",
+    [None, ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+)
+@pytest.mark.parametrize("settlement", [None, SettlementType.CASH, SettlementType.PHYSICAL])
+def test_crypto_option_to_dict_and_from_dict_roundtrip(
+    known: bool,
+    style: ExerciseStyle | None,
+    settlement: SettlementType | None,
+) -> None:
     """
     Test crypto option to dict and from dict roundtrip.
     """
+    underlying_id = InstrumentId.from_str("BTCUSDT.BINANCE") if known else None
+
     co = CryptoOption(
         instrument_id=InstrumentId(Symbol("BTC-20240329-50000-C"), Venue("DERIBIT")),
         raw_symbol=Symbol("BTC-20240329-50000-C"),
@@ -1041,6 +1092,15 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip() -> None:
         size_increment=Quantity.from_str("0.1"),
         ts_event=0,
         ts_init=0,
+        underlying_instrument_id=underlying_id,
+        exercise_style=style,
+        settlement_type=settlement,
+    )
+
+    assert (co.underlying_instrument_id, co.exercise_style, co.settlement_type) == (
+        underlying_id,
+        style,
+        settlement,
     )
 
     d = co.to_dict()
@@ -1050,6 +1110,22 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip() -> None:
     assert restored.option_kind == co.option_kind
     assert restored.strike_price == co.strike_price
     assert restored.is_inverse == co.is_inverse
+
+    assert restored.underlying_instrument_id == co.underlying_instrument_id
+    assert (d["option_kind"], d["exercise_style"]) == ("CALL", style.name if style else None)
+    assert restored.settlement_type == co.settlement_type
+    assert restored.to_dict() == d
+    assert hash(restored) == hash(co)
+
+    d.pop("underlying_instrument_id")
+    d.pop("exercise_style")
+    d.pop("settlement_type")
+    legacy = CryptoOption.from_dict(d)
+    assert legacy.underlying_instrument_id is None
+    assert legacy.exercise_style is None
+    assert legacy.settlement_type is None
+    assert legacy == co
+    assert hash(legacy) == hash(co)
 
 
 def test_instruments_equal_by_id() -> None:

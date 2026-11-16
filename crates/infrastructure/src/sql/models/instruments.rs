@@ -115,7 +115,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "CRYPTO_OPTION" {
             Ok(Self(InstrumentAny::CryptoOption(
-                CryptoOptionRow::from_row(row).unwrap().0,
+                CryptoOptionRow::from_row(row)?.0,
             )))
         } else if kind == "CRYPTO_OPTION_SPREAD" {
             Ok(Self(InstrumentAny::CryptoOptionSpread(
@@ -143,7 +143,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "OPTION_CONTRACT" {
             Ok(Self(InstrumentAny::OptionContract(
-                OptionContractRow::from_row(row).unwrap().0,
+                OptionContractRow::from_row(row)?.0,
             )))
         } else if kind == "COMMODITY" {
             Ok(Self(InstrumentAny::Commodity(
@@ -598,6 +598,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
+        let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let exercise_style = read_optional_parsed(row, "exercise_style")?;
+        let settlement_type = read_optional_parsed(row, "settlement_type")?;
+
         let inst = CryptoOption::builder()
             .instrument_id(id)
             .raw_symbol(raw_symbol)
@@ -606,6 +610,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(option_kind)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
+            .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)
@@ -1049,6 +1056,10 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
+        let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let exercise_style = read_optional_parsed(row, "exercise_style")?;
+        let settlement_type = read_optional_parsed(row, "settlement_type")?;
+
         let inst = OptionContract::builder()
             .instrument_id(id)
             .raw_symbol(raw_symbol)
@@ -1056,6 +1067,9 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
             .maybe_exchange(exchange)
             .underlying(underlying)
             .option_kind(option_kind)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
+            .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .currency(currency)
             .activation_ns(activation_ns)
@@ -1721,4 +1735,19 @@ fn read_optional_quantity(row: &PgRow, column: &str) -> Option<Quantity> {
     row.try_get::<Option<String>, _>(column)
         .ok()
         .and_then(|res| res.map(|res| Quantity::from(res.as_str())))
+}
+
+fn read_optional_parsed<T>(row: &PgRow, column: &str) -> Result<Option<T>, sqlx::Error>
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    row.try_get::<Option<String>, _>(column)?
+        .map(|value| {
+            value.parse::<T>().map_err(|e| sqlx::Error::ColumnDecode {
+                index: column.to_string(),
+                source: Box::new(e),
+            })
+        })
+        .transpose()
 }
