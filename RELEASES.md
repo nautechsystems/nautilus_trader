@@ -127,6 +127,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Documented backtest account-history purging and its effect on balance reports
+- Documented Polymarket order message size units for resting and market order types
 
 ---
 
