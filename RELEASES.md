@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added optional Lighter account transaction timestamps to WebSocket wire models
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 - Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
+- Added OKX `use_spot_position_reports` option to report net spot wallet balances as positions
 - Added Tardis option `exercise_style` and `settlement_type` by source exchange
 
 ### Breaking Changes
@@ -56,6 +57,9 @@ Released on TBD (UTC).
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
 - Changed `LighterMarketConfig` literals; wrap `funding_fee_discounts_enabled` in `Some` and add `rfq_enabled`
 - Changed Lighter `fresh_k` to return `anyhow::Result<Scalar>`; propagate signing nonce errors
+- Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
+- Removed `OKXHttpClient::request_spot_margin_position_reports` and `parse_spot_margin_position_from_balance`
+- Changed `OKXExecutionClientConfig` literals; add `use_spot_position_reports` and `spot_positions_quote_currency`
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Security

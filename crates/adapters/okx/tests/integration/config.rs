@@ -198,6 +198,23 @@ fn test_exec_config_toml_empty_uses_defaults() {
     assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
     assert_eq!(config.max_reconciliation_history_pages, None);
     assert_eq!(config.transport_backend, expected.transport_backend);
+    assert!(!config.use_spot_position_reports);
+    assert_eq!(config.spot_positions_quote_currency, "USDT");
+}
+
+#[rstest]
+fn test_exec_config_toml_spot_position_reports() {
+    let config: OKXExecutionClientConfig = toml::from_str(
+        "
+use_spot_position_reports = true
+spot_positions_quote_currency = \"USDC\"
+",
+    )
+    .unwrap();
+
+    assert!(config.use_spot_position_reports);
+    assert_eq!(config.spot_positions_quote_currency, "USDC");
+    assert_eq!(config.validate(), Ok(()));
 }
 
 #[rstest]
@@ -595,4 +612,51 @@ fn test_execution_config_rejects_mmp_only_mass_cancel() {
             "MMP-only family cancellation does not cancel ordinary orders"
         ))
     );
+}
+
+#[rstest]
+#[case::use_spot_margin(true, vec![OKXInstrumentType::Spot])]
+#[case::margin_instrument_type(false, vec![OKXInstrumentType::Margin])]
+fn test_execution_config_accepts_spot_position_reports_with_spot_margin(
+    #[case] use_spot_margin: bool,
+    #[case] instrument_types: Vec<OKXInstrumentType>,
+) {
+    let config = OKXExecutionClientConfig {
+        use_spot_position_reports: true,
+        use_spot_margin,
+        instrument_types,
+        ..Default::default()
+    };
+
+    assert_eq!(config.validate(), Ok(()));
+}
+
+#[rstest]
+#[case::empty("", true, false)]
+#[case::whitespace("  ", true, false)]
+#[case::padded(" USDT", true, false)]
+#[case::lowercase("usdt", true, false)]
+#[case::uppercase("USDC", true, true)]
+#[case::disabled("", false, true)]
+fn test_execution_config_validates_spot_positions_quote_currency(
+    #[case] quote_currency: &str,
+    #[case] use_spot_position_reports: bool,
+    #[case] valid: bool,
+) {
+    let config = OKXExecutionClientConfig {
+        use_spot_position_reports,
+        spot_positions_quote_currency: quote_currency.to_string(),
+        ..Default::default()
+    };
+
+    let expected = if valid {
+        Ok(())
+    } else {
+        Err(ConfigError::invalid_value(
+            "spot_positions_quote_currency",
+            "must be an uppercase currency code such as USDT",
+        ))
+    };
+
+    assert_eq!(config.validate(), expected);
 }

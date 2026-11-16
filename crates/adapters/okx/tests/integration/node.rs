@@ -45,14 +45,15 @@ use nautilus_live::{
     node::{LiveNode, NodeState},
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, PositionSide},
     events::OrderEventAny,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
-    instruments::Instrument,
-    orders::{Order, OrderTestBuilder},
+    instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
     reports::OrderStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
@@ -131,6 +132,7 @@ enum QueryOn {
 #[derive(Debug)]
 struct VenueState {
     submit_code: Option<&'static str>,
+    balance_response: tokio::sync::Mutex<Option<Value>>,
     order_response: tokio::sync::Mutex<Option<Value>>,
     fill_response: tokio::sync::Mutex<Vec<Value>>,
     hold_history: tokio::sync::Mutex<bool>,
@@ -227,6 +229,7 @@ async fn start_venue(code: Option<&'static str>) -> (SocketAddr, Arc<VenueState>
     let (updates, _) = tokio::sync::broadcast::channel(16);
     let state = Arc::new(VenueState {
         submit_code: code,
+        balance_response: tokio::sync::Mutex::new(None),
         order_response: tokio::sync::Mutex::new(None),
         fill_response: tokio::sync::Mutex::new(Vec::new()),
         hold_history: tokio::sync::Mutex::new(false),
@@ -250,7 +253,11 @@ async fn start_venue(code: Option<&'static str>) -> (SocketAddr, Arc<VenueState>
         )
         .route(
             "/api/v5/account/balance",
-            get(|| async {
+            get(|State(state): State<Arc<VenueState>>| async move {
+                if let Some(balance) = state.balance_response.lock().await.clone() {
+                    return Json(balance);
+                }
+
                 let mut balance: Value = serde_json::from_str(include_str!(
                     "../../test_data/http_get_account_balance.json"
                 ))
@@ -350,47 +357,7 @@ fn build_node_with_config(
     query_on: Option<QueryOn>,
     exec_engine: LiveExecutionEngineConfig,
 ) -> LiveNode {
-    let mut node = LiveNodeBuilder::from_config(LiveNodeConfig {
-        environment: Environment::Live,
-        trader_id: TraderId::from("TESTER-001"),
-        exec_engine,
-        delay_post_stop: Duration::from_millis(20),
-        ..Default::default()
-    })
-    .unwrap()
-    .with_name("OKXSubmissionRecovery")
-    .add_exec_client(
-        None,
-        Box::new(OKXExecutionClientFactory),
-        Box::new(OKXExecutionClientConfig {
-            api_key: Some("test-key".into()),
-            api_secret: Some("test-secret".into()),
-            api_passphrase: Some("test-passphrase".into()),
-            instrument_types: vec![OKXInstrumentType::Spot],
-            environment: OKXEnvironment::Demo,
-            region: OKXRegion::Eea,
-            base_url_http: Some(format!("http://{addr}")),
-            base_url_ws_private: Some(format!("ws://{addr}/ws/private")),
-            base_url_ws_business: Some(format!("ws://{addr}/ws/business")),
-            max_retries: 0,
-            max_reconciliation_history_pages: Some(0),
-            ..Default::default()
-        }),
-    )
-    .unwrap()
-    .build()
-    .unwrap();
-    let instruments: OKXResponse<OKXInstrument> =
-        serde_json::from_value(spot_instruments()).unwrap();
-    let instrument = parse_instrument_any(&instruments.data[0], None, None, UnixNanos::default())
-        .unwrap()
-        .unwrap();
-    assert_eq!(instrument.id(), InstrumentId::from(INSTRUMENT_ID));
-    node.kernel()
-        .cache
-        .borrow_mut()
-        .add_instrument(instrument)
-        .unwrap();
+    let mut node = build_okx_node(addr, exec_engine, |_| {}).unwrap();
     node.add_strategy(SubmitOnStart {
         core: StrategyCore::new(StrategyConfig {
             strategy_id: Some(StrategyId::from("RECOVERY-001")),
@@ -400,7 +367,58 @@ fn build_node_with_config(
         query_on,
     })
     .unwrap();
+
     node
+}
+
+fn build_okx_node(
+    addr: SocketAddr,
+    exec_engine: LiveExecutionEngineConfig,
+    configure: impl FnOnce(&mut OKXExecutionClientConfig),
+) -> anyhow::Result<LiveNode> {
+    let mut config = OKXExecutionClientConfig {
+        api_key: Some("test-key".into()),
+        api_secret: Some("test-secret".into()),
+        api_passphrase: Some("test-passphrase".into()),
+        instrument_types: vec![OKXInstrumentType::Spot],
+        environment: OKXEnvironment::Demo,
+        region: OKXRegion::Eea,
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws_private: Some(format!("ws://{addr}/ws/private")),
+        base_url_ws_business: Some(format!("ws://{addr}/ws/business")),
+        max_retries: 0,
+        max_reconciliation_history_pages: Some(0),
+        ..Default::default()
+    };
+
+    configure(&mut config);
+
+    let node = LiveNodeBuilder::from_config(LiveNodeConfig {
+        environment: Environment::Live,
+        trader_id: TraderId::from("TESTER-001"),
+        exec_engine,
+        delay_post_stop: Duration::from_millis(20),
+        ..Default::default()
+    })?
+    .with_name("OKXSubmissionRecovery")
+    .add_exec_client(None, Box::new(OKXExecutionClientFactory), Box::new(config))?
+    .build()?;
+
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add_instrument(spot_instrument())?;
+    Ok(node)
+}
+
+fn spot_instrument() -> InstrumentAny {
+    let instruments: OKXResponse<OKXInstrument> =
+        serde_json::from_value(spot_instruments()).unwrap();
+    let instrument = parse_instrument_any(&instruments.data[0], None, None, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(instrument.id(), InstrumentId::from(INSTRUMENT_ID));
+    instrument
 }
 
 fn venue_update(filled: bool, submitted_ms: u64) -> Value {
@@ -1314,6 +1332,172 @@ async fn reconciliation_preserves_amendment_during_fill_collection() {
         cache.positions_open(None, None, None, None, None)[0].quantity,
         Quantity::from("0.00100000")
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn spot_position_reports_reject_default_hedging_oms() {
+    let (addr, _venue) = start_venue(None).await;
+
+    let error = build_okx_node(addr, LiveExecutionEngineConfig::default(), |config| {
+        config.use_spot_position_reports = true;
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "`use_spot_position_reports` requires a NETTING OMS, was HEDGING; set `oms_type` to NETTING"
+    );
+}
+
+#[rstest]
+#[case::cash("0.0008", "", OrderSide::Buy, PositionSide::Long)]
+#[case::borrowed_long("0.0008", "0.0004", OrderSide::Buy, PositionSide::Long)]
+#[case::borrowed_short("-0.0008", "0.0008", OrderSide::Sell, PositionSide::Short)]
+#[tokio::test]
+async fn startup_spot_position_report_reconciles_netting_position(
+    #[case] cash_bal: &str,
+    #[case] liab: &str,
+    #[case] order_side: OrderSide,
+    #[case] position_side: PositionSide,
+) {
+    let (addr, venue) = start_venue(None).await;
+    *venue.balance_response.lock().await = Some(crate::common::balance_response(&[
+        ("BTC", cash_bal, liab),
+        ("USD", "100000", ""),
+    ]));
+
+    let mut node = build_okx_node(
+        addr,
+        LiveExecutionEngineConfig {
+            reconciliation_startup_delay_secs: 0.0,
+            ..Default::default()
+        },
+        |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.use_spot_position_reports = true;
+            config.use_spot_margin = !liab.is_empty();
+            config.spot_positions_quote_currency = "USD".to_string();
+        },
+    )
+    .unwrap();
+
+    let position_id = PositionId::from("BTC-USD.OKX-EXTERNAL");
+    add_external_position(&node, position_id, order_side);
+    let handle = node.handle();
+    let driver = async {
+        wait_until_async(|| async { handle.state().is_running() }, DEADLINE).await;
+        handle.stop();
+    };
+
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(15), async {
+        tokio::join!(node.run(), driver)
+    })
+    .await
+    .unwrap();
+
+    result.unwrap();
+
+    let cache = node.kernel().cache.borrow();
+
+    let positions: Vec<_> = cache
+        .positions(None, None, None, None, None)
+        .iter()
+        .map(|position| {
+            (
+                position.id,
+                position.strategy_id,
+                position.side,
+                position.quantity,
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        positions,
+        vec![(
+            position_id,
+            StrategyId::external(),
+            position_side,
+            Quantity::from("0.00080000"),
+        )]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn startup_spot_position_report_rejects_reversal_without_entry_price() {
+    let (addr, venue) = start_venue(None).await;
+    *venue.balance_response.lock().await = Some(crate::common::balance_response(&[
+        ("BTC", "-0.0008", "0.0008"),
+        ("USD", "100000", ""),
+    ]));
+
+    let mut node = build_okx_node(
+        addr,
+        LiveExecutionEngineConfig {
+            reconciliation_startup_delay_secs: 0.0,
+            ..Default::default()
+        },
+        |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.use_spot_position_reports = true;
+            config.use_spot_margin = true;
+            config.spot_positions_quote_currency = "USD".to_string();
+        },
+    )
+    .unwrap();
+
+    let position_id = PositionId::from("BTC-USD.OKX-EXTERNAL");
+    add_external_position(&node, position_id, OrderSide::Buy);
+
+    let error = tokio::time::timeout(Duration::from_secs(15), node.run())
+        .await
+        .unwrap()
+        .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .starts_with("Unresolved positions during startup reconciliation for OKX:"),
+        "{error}"
+    );
+    assert!(error.to_string().contains("BTC-USD.OKX"), "{error}");
+    let cache = node.kernel().cache.borrow();
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].id, position_id);
+    assert_eq!(positions[0].side, PositionSide::Flat);
+    assert_eq!(positions[0].quantity, Quantity::from("0.00000000"));
+}
+
+fn add_external_position(node: &LiveNode, position_id: PositionId, order_side: OrderSide) {
+    let instrument = spot_instrument();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::external())
+        .instrument_id(instrument.id())
+        .side(order_side)
+        .quantity(Quantity::from("0.00200000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-OPEN")),
+        Some(position_id),
+        Some(Price::from("50000.0")),
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::from("OKX-001")),
+    );
+    let position = Position::new(&instrument, fill.into());
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
 }
 
 fn fill_detail(qty: &str, fee: &str, fee_ccy: &str, trade_id: &str, ts: u64) -> Value {
