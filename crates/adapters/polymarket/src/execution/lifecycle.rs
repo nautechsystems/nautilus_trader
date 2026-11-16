@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::HashMap,
     hash::Hash,
     sync::{
         Arc,
@@ -27,6 +28,7 @@ use anyhow::Context;
 use nautilus_common::{
     live::runner::get_exec_event_sender,
     msgbus::{self, TypedHandler},
+    providers::InstrumentProvider,
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::{ExecutionClientCore, execution::context::OrderContext, task::TaskGroupGuard};
@@ -46,7 +48,6 @@ use ustr::Ustr;
 use super::PolymarketExecutionClient;
 use crate::{
     common::enums::PolymarketOrderStatus,
-    config::PolymarketInstrumentProviderConfig,
     execution::{
         collateral::CollateralLocks,
         context::OrderContextRegistry,
@@ -63,7 +64,7 @@ use crate::{
         models::PolymarketTradeReport,
         query::GetTradesParams,
     },
-    providers::fetch_configured_instruments,
+    providers::PolymarketInstrumentProvider,
     websocket::{
         dispatch::{
             WsDispatchContext, WsDispatchState, apply_rest_trade_evidence,
@@ -813,12 +814,14 @@ impl PolymarketExecutionClient {
             RetryConfig::default(),
             self.config.validated_proxy_url()?,
         )?;
-        let config = PolymarketInstrumentProviderConfig {
-            load_ids: Some(required.clone()),
-            ..Default::default()
-        };
-        let mut instruments =
-            Box::pin(fetch_configured_instruments(&gamma_client, &config, &[])).await?;
+        let mut provider = PolymarketInstrumentProvider::new(gamma_client, None)?;
+
+        for closed in [false, true] {
+            let filters = HashMap::from([("closed".to_string(), closed.to_string())]);
+            provider.load_ids(&required, Some(&filters)).await?;
+        }
+
+        let mut instruments: Vec<_> = provider.store().get_all().values().cloned().collect();
         instruments.retain(|instrument| {
             required
                 .iter()

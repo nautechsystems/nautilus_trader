@@ -2976,7 +2976,9 @@ users can redeem CTF and V2 positions with [Position operations](#position-opera
   automatic polling, and manual requests. Successful resolution emits each admitted owner's event
   types once, removes those owners and the condition's watch, and releases its WebSocket subscriptions.
   Existing pending data intents retain their outcome until admission or cancellation. New subscriptions
-  cannot re-enroll the resolved condition. Automatic delivery never bypasses instrument-filter admission.
+  cannot re-enroll the resolved condition. Automatic delivery for pending data subscriptions requires
+  instrument-filter admission. Wallet positions with cached instruments enter the watchlist independently
+  of discovery filters.
 
 #### Timeout, reconnect, and reset
 
@@ -3363,7 +3365,7 @@ is in scope.
 For unmapped open orders and positions inside either scope, the adapter checks the market protocol on
 CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
 exclusions. It skips rows for unsupported markets with a warning. Mass status collection loads missing
-supported `v1` or `v2` instruments by condition ID from Gamma for the same wallet records used to build
+supported `v1` or `v2` instruments by condition ID from open and closed Gamma markets for the same records used to build
 reports, independently of discovery filters. The execution engine caches those definitions without
 publishing instrument events or subscribing to market data. Missing metadata or a failed lookup still
 fails reconciliation. Disabling reconciliation does not add wallet queries during connection.

@@ -839,6 +839,12 @@ async fn handle_gamma_markets_keyset(
         .clone()
         .unwrap_or_else(|| json!([]));
 
+    let closed = query.get("closed").is_some_and(|value| value == "true");
+    markets
+        .as_array_mut()
+        .unwrap()
+        .retain(|market| market["closed"].as_bool().unwrap_or(false) == closed);
+
     if let Some(end_date_min) = query.get("end_date_min") {
         markets.as_array_mut().unwrap().retain(|market| {
             market["endDate"]

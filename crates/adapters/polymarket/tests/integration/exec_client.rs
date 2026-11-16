@@ -5551,7 +5551,7 @@ async fn test_generate_mass_status_loads_wallet_instruments(#[case] metadata_ava
     let result = client.generate_mass_status(None).await;
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 1);
     let queries = state.gamma_queries.lock().await;
-    assert_eq!(queries.len(), 1);
+    assert_eq!(queries.len(), if metadata_available { 1 } else { 2 });
     assert_eq!(queries[0]["condition_ids"], condition);
 
     if !metadata_available {

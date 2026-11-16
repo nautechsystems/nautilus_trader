@@ -209,19 +209,21 @@ fn build_node_with_execution_config(
 #[case::winner(Some((r#"["1","0"]"#, "1")))]
 #[case::loser(Some((r#"["0","1"]"#, "0")))]
 #[tokio::test]
-async fn startup_mass_status_loads_position_in_past_end_open_market(
+async fn startup_mass_status_loads_position_in_past_end_market(
     #[case] resolution: Option<(&str, &str)>,
+    #[values(false, true)] closed: bool,
 ) {
-    check_wallet_position_lifecycle(resolution).await;
+    check_wallet_position_lifecycle(closed, resolution).await;
 }
 
 #[expect(
     clippy::await_holding_refcell_ref,
     reason = "the node is stopped before the standalone report request"
 )]
-async fn check_wallet_position_lifecycle(resolution: Option<(&str, &str)>) {
+async fn check_wallet_position_lifecycle(closed: bool, resolution: Option<(&str, &str)>) {
     let state = TestServerState::default();
-    let market = load_json("gamma_market_past_end_date_open.json");
+    let mut market = load_json("gamma_market_past_end_date_open.json");
+    market["closed"] = json!(closed);
     let condition_id = market["conditionId"].as_str().unwrap();
     let tokens: Vec<String> =
         serde_json::from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
@@ -358,10 +360,11 @@ async fn check_wallet_position_lifecycle(resolution: Option<(&str, &str)>) {
     );
     assert!(instruments.get_messages().is_empty());
     let queries = state.gamma_queries.lock().await;
+
     if resolution.is_some() {
         assert!(queries.len() >= 3);
     } else {
-        assert_eq!(queries.len(), 2);
+        assert_eq!(queries.len(), if closed { 3 } else { 2 });
     }
     assert_eq!(queries[0]["end_date_min"], "2100-01-01T00:00:00Z");
     assert_eq!(queries[1]["condition_ids"], condition_id);
