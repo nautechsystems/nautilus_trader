@@ -34,6 +34,19 @@ pub(crate) fn integrity_error(error: impl Display) -> anyhow::Error {
     IntegrityError(format!("{error:#}")).into()
 }
 
+#[cfg(feature = "redis")]
+pub(crate) fn redis_read_error(error: impl Into<anyhow::Error>) -> anyhow::Error {
+    let error = error.into();
+    if let Some(backend) = error.downcast_ref::<redis::RedisError>()
+        && backend.code() != Some("WRONGTYPE")
+        && backend.kind() != redis::ErrorKind::UnexpectedReturnType
+    {
+        return error;
+    }
+
+    integrity_error(error)
+}
+
 pub(crate) fn contract_conflict(code: &str) -> anyhow::Error {
     integrity_error(format!(
         "Token contract is already persisted as {code}; restore existing definitions before converting tokens"
@@ -65,4 +78,32 @@ pub(crate) fn currency_references(instrument: &dyn Instrument) -> Vec<String> {
     references.sort_unstable();
     references.dedup();
     references
+}
+
+#[cfg(all(test, feature = "redis"))]
+mod tests {
+    use redis::{ErrorKind, RedisError, make_extension_error};
+    use rstest::rstest;
+
+    use super::{IntegrityError, redis_read_error};
+
+    #[rstest]
+    fn test_redis_history_read_preserves_error_category() {
+        let transport = RedisError::from(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+        let wrong_type = make_extension_error(
+            "WRONGTYPE".to_string(),
+            Some("invalid history type".to_string()),
+        );
+        let invalid_value =
+            RedisError::from((ErrorKind::UnexpectedReturnType, "invalid history value"));
+
+        let transport = redis_read_error(transport);
+        let wrong_type = redis_read_error(wrong_type);
+        let invalid_value = redis_read_error(invalid_value);
+
+        assert!(transport.is::<RedisError>());
+        assert!(!transport.is::<IntegrityError>());
+        assert!(wrong_type.is::<IntegrityError>());
+        assert!(invalid_value.is::<IntegrityError>());
+    }
 }

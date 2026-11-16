@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Checked outcome definitions, using verified Polymarket conventions where FinFeed lacks fields.
+//! Checked outcome definitions from FinFeed, Polymarket conventions, and public Kalshi metadata.
 
 use indexmap::IndexMap;
 use jiff::Timestamp;
@@ -27,9 +27,11 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use strum::{AsRefStr, EnumString};
 
 use super::{
     error::Error,
+    kalshi::{Event as KalshiEvent, Market as KalshiMarket, parse_definition},
     models::{Market, MarketStatus, OutcomeType},
 };
 use crate::common::{consts::FINFEED, symbol::to_instrument_id};
@@ -43,6 +45,7 @@ const SIZE_PRECISION: u8 = 6;
 /// Polymarket uses pUSD and six-decimal shares, matching the native adapter's conventions.
 /// Unavailable activation uses its zero timestamp convention. `EndDateIso` sets the simulated
 /// trading cutoff; it does not prove actual venue closure or authoritative settlement.
+/// `FinFeedDataLoader` fetches the public metadata needed for Kalshi definitions.
 /// Other venue families fail until their required field rules are verified.
 ///
 /// # Errors
@@ -53,34 +56,8 @@ const SIZE_PRECISION: u8 = 6;
 /// - The tick is outside `(0, 1)` or the provider price is outside `[0, 1]`.
 /// - A price requires rounding or expiry is outside the supported timestamp range.
 pub fn parse_instrument(market: &Market, ts_init: UnixNanos) -> Result<BinaryOption, Error> {
-    let exchange_id = market
-        .exchange_id
-        .as_deref()
-        .ok_or_else(|| definition_error(market, "exchange_id", "is missing"))?;
-    let market_id = market
-        .market_id
-        .as_deref()
-        .ok_or_else(|| definition_error(market, "market_id", "is missing"))?;
-    let instrument_id = to_instrument_id(exchange_id, market_id)?;
-
-    if market
-        .exchange
-        .as_ref()
-        .and_then(|exchange| exchange.exchange_id.as_deref())
-        .is_some_and(|nested| nested != exchange_id)
-    {
-        return Err(definition_error(
-            market,
-            "exchange_id",
-            "conflicts with nested exchange",
-        ));
-    }
-
-    if market.outcome_type != OutcomeType::Binary {
-        return Err(definition_error(market, "outcome_type", "is unsupported"));
-    }
-
-    if exchange_id != "POLYMARKET" {
+    let instrument_id = checked_identity(market)?;
+    if market.exchange_id.as_deref() != Some("POLYMARKET") {
         return Err(definition_error(
             market,
             "source_specific_data",
@@ -109,19 +86,7 @@ fn parse_polymarket(
         .as_deref()
         .filter(|title| !title.trim().is_empty())
         .ok_or_else(|| definition_error(market, "title", "is missing or empty"))?;
-    let outcome = market
-        .outcome_name
-        .as_deref()
-        .filter(|outcome| matches!(*outcome, "Yes" | "No"))
-        .ok_or_else(|| definition_error(market, "outcome_name", "must be Yes or No"))?;
-    let suffix = if outcome == "Yes" { "_YES" } else { "_NO" };
-    if !instrument_id.symbol.as_str().ends_with(suffix) {
-        return Err(definition_error(
-            market,
-            "outcome_name",
-            "conflicts with the provider outcome ID suffix",
-        ));
-    }
+    let outcome = binary_outcome(market, instrument_id)?;
     let condition_id = source_string(market, "ConditionId")?;
     if condition_id.len() != 66
         || !condition_id.starts_with("0x")
@@ -227,7 +192,7 @@ fn parse_polymarket(
         .size_precision(SIZE_PRECISION)
         .price_increment(price_increment)
         .size_increment(size_increment)
-        .outcome(outcome.into())
+        .outcome(outcome.as_ref().into())
         .description(description.as_str().into())
         .info(info)
         .ts_event(ts_init)
@@ -236,13 +201,181 @@ fn parse_polymarket(
         .map_err(|_| definition_error(market, "instrument", "failed checked construction"))
 }
 
+pub(crate) fn parse_kalshi(
+    market: &Market,
+    native: &KalshiMarket,
+    event: &KalshiEvent,
+    ts_init: UnixNanos,
+) -> Result<BinaryOption, Error> {
+    let (ticker, event_ticker) = kalshi_identity(market)?;
+    if native.ticker != ticker
+        || native.event_ticker != event_ticker
+        || event.event_ticker != event_ticker
+    {
+        return Err(definition_error(
+            market,
+            "identity",
+            "conflicts with public Kalshi metadata",
+        ));
+    }
+
+    let id = to_instrument_id("KALSHI", market.market_id.as_deref().unwrap_or_default())?;
+    let outcome = binary_outcome(market, id)?;
+
+    let mut instrument = parse_definition(native, event, id, outcome == BinaryOutcome::No, ts_init)
+        .map_err(|_| {
+            definition_error(
+                market,
+                "Kalshi metadata",
+                "does not define a supported ordinary binary contract",
+            )
+        })?;
+
+    if market.price < Decimal::ZERO
+        || market.price > Decimal::ONE
+        || !Price::from_decimal_dp(market.price, instrument.price_precision)
+            .is_ok_and(|price| price.as_decimal() == market.price)
+    {
+        return Err(definition_error(
+            market,
+            "price",
+            "is outside the supported exact payout interval",
+        ));
+    }
+
+    instrument.outcome = Some(outcome.as_ref().into());
+    let title = market
+        .title
+        .as_deref()
+        .filter(|title| !title.trim().is_empty())
+        .ok_or_else(|| definition_error(market, "title", "is missing or empty"))?;
+    instrument.description = Some(market.description.as_deref().unwrap_or(title).into());
+    let status = if matches!(market.status, MarketStatus::Closed | MarketStatus::Resolved) {
+        market.status
+    } else {
+        match native.status.as_str() {
+            "closed" | "determined" | "disputed" | "amended" => MarketStatus::Closed,
+            "finalized" => MarketStatus::Resolved,
+            _ => market.status,
+        }
+    };
+
+    let native_info = instrument
+        .info
+        .take()
+        .expect("Kalshi definition retains metadata");
+    let mut info = (*native_info).clone();
+    info.insert("provider".into(), FINFEED.into());
+    info.insert("exchange_id".into(), "KALSHI".into());
+    info.insert("market_id".into(), id.symbol.as_str().into());
+    info.insert("title".into(), title.into());
+    info.insert("status".into(), json!(status));
+    info.insert("finfeed_status".into(), json!(market.status));
+    info.insert("outcome_type".into(), json!(market.outcome_type));
+    info.insert("metadata_source".into(), "KALSHI".into());
+    info.insert("activation_source".into(), "Kalshi.open_time".into());
+    info.insert(
+        "expiration_source".into(),
+        "Kalshi.latest_expiration_time".into(),
+    );
+    info.insert("close_time".into(), json!(native.close_time));
+    instrument.info = Some(Params::new(info));
+    Ok(instrument)
+}
+
+pub(crate) fn kalshi_identity(market: &Market) -> Result<(String, String), Error> {
+    if market.exchange_id.as_deref() != Some("KALSHI") || market.outcome_type != OutcomeType::Binary
+    {
+        return Err(definition_error(
+            market,
+            "outcome_type",
+            "is not a Kalshi binary contract",
+        ));
+    }
+
+    let id = checked_identity(market)?;
+    let outcome = binary_outcome(market, id)?;
+    let ticker = source_string(market, "Ticker")?;
+    let event = source_string(market, "EventTicker")?;
+
+    if id.symbol.as_str() != format!("{ticker}_{}", outcome.as_ref().to_uppercase()) {
+        return Err(definition_error(
+            market,
+            "Ticker",
+            "conflicts with the provider outcome ID",
+        ));
+    }
+
+    Ok((ticker, event))
+}
+
+fn checked_identity(market: &Market) -> Result<InstrumentId, Error> {
+    let exchange_id = market
+        .exchange_id
+        .as_deref()
+        .ok_or_else(|| definition_error(market, "exchange_id", "is missing"))?;
+    let market_id = market
+        .market_id
+        .as_deref()
+        .ok_or_else(|| definition_error(market, "market_id", "is missing"))?;
+    let instrument_id = to_instrument_id(exchange_id, market_id)?;
+
+    if market
+        .exchange
+        .as_ref()
+        .and_then(|exchange| exchange.exchange_id.as_deref())
+        .is_some_and(|nested| nested != exchange_id)
+    {
+        return Err(definition_error(
+            market,
+            "exchange_id",
+            "conflicts with nested exchange",
+        ));
+    }
+
+    if market.outcome_type != OutcomeType::Binary {
+        return Err(definition_error(market, "outcome_type", "is unsupported"));
+    }
+
+    Ok(instrument_id)
+}
+
+fn binary_outcome(market: &Market, instrument_id: InstrumentId) -> Result<BinaryOutcome, Error> {
+    let outcome = market
+        .outcome_name
+        .as_deref()
+        .and_then(|outcome| outcome.parse::<BinaryOutcome>().ok())
+        .ok_or_else(|| definition_error(market, "outcome_name", "must be Yes or No"))?;
+
+    let suffix = match outcome {
+        BinaryOutcome::Yes => "_YES",
+        BinaryOutcome::No => "_NO",
+    };
+
+    if !instrument_id.symbol.as_str().ends_with(suffix) {
+        return Err(definition_error(
+            market,
+            "outcome_name",
+            "conflicts with the provider outcome ID suffix",
+        ));
+    }
+
+    Ok(outcome)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr, EnumString)]
+enum BinaryOutcome {
+    Yes,
+    No,
+}
+
 #[derive(Deserialize)]
 struct OutcomeToken {
     token_id: String,
     outcome: String,
 }
 
-fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
+fn outcome_token(market: &Market, outcome: BinaryOutcome) -> Result<String, Error> {
     let value = source_string(market, "Tokens")?;
     let mut tokens: Vec<OutcomeToken> = serde_json::from_str(&value)
         .map_err(|_| definition_error(market, "Tokens", "is not a valid token array"))?;
@@ -254,12 +387,14 @@ fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
         ));
     }
 
+    let outcomes =
+        [&tokens[0].outcome, &tokens[1].outcome].map(|label| label.parse::<BinaryOutcome>().ok());
+
     if tokens[0].token_id == tokens[1].token_id
-        || tokens[0].outcome == tokens[1].outcome
+        || outcomes[0] == outcomes[1]
+        || outcomes.iter().any(Option::is_none)
         || tokens.iter().any(|token| {
-            !matches!(token.outcome.as_str(), "Yes" | "No")
-                || token.token_id.is_empty()
-                || !token.token_id.bytes().all(|byte| byte.is_ascii_digit())
+            token.token_id.is_empty() || !token.token_id.bytes().all(|byte| byte.is_ascii_digit())
         })
     {
         return Err(definition_error(
@@ -268,7 +403,8 @@ fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
             "contains ambiguous or invalid identities",
         ));
     }
-    let index = usize::from(tokens[0].outcome != outcome);
+
+    let index = usize::from(outcomes[0] != Some(outcome));
     Ok(tokens.swap_remove(index).token_id)
 }
 
@@ -548,6 +684,7 @@ mod tests {
     #[case("duplicate-token")]
     #[case("duplicate-outcome")]
     #[case("unsupported-outcome")]
+    #[case("lowercase-outcome")]
     #[case("empty-token")]
     fn ambiguous_tokens_are_rejected(#[case] change: &str) {
         let mut value: Value = serde_json::from_str(MARKET).unwrap();
@@ -559,6 +696,7 @@ mod tests {
             "duplicate-token" => tokens[1]["token_id"] = tokens[0]["token_id"].clone(),
             "duplicate-outcome" => tokens[1]["outcome"] = tokens[0]["outcome"].clone(),
             "unsupported-outcome" => tokens[1]["outcome"] = "Maybe".into(),
+            "lowercase-outcome" => tokens[1]["outcome"] = "yes".into(),
             "empty-token" => tokens[1]["token_id"] = "".into(),
             _ => unreachable!(),
         }
@@ -573,6 +711,35 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[rstest]
+    #[case("yes")]
+    #[case("no")]
+    #[case("YES")]
+    #[case("NO")]
+    #[case("Maybe")]
+    #[case("")]
+    #[case(" Yes")]
+    fn native_outcomes_require_exact_binary_labels(#[case] label: &str) {
+        let mut market: Market = serde_json::from_str(MARKET).unwrap();
+        market.outcome_name = Some(label.to_owned());
+        let error = parse_instrument(&market, UnixNanos::default()).unwrap_err();
+
+        let Error::Definition {
+            exchange_id,
+            market_id,
+            field,
+            reason,
+        } = error
+        else {
+            panic!("expected invalid outcome definition");
+        };
+
+        assert_eq!(exchange_id, "POLYMARKET");
+        assert_eq!(Some(market_id), market.market_id);
+        assert_eq!(field, "outcome_name");
+        assert_eq!(reason, "must be Yes or No");
     }
 
     #[rstest]

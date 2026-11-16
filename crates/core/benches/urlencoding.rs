@@ -84,6 +84,17 @@ fn bench_decode_utf8(c: &mut Criterion) {
     });
 }
 
+fn bench_decode_malformed(c: &mut Criterion) {
+    let input = "prefix%GGmiddle%20valid%%25suffix%2";
+    assert_eq!(
+        urlencoding::decode(input).unwrap(),
+        "prefix%GGmiddle valid%%suffix%2"
+    );
+    c.bench_function("urlencoding::decode (malformed and valid escapes)", |b| {
+        b.iter(|| urlencoding::decode(black_box(input)));
+    });
+}
+
 fn bench_roundtrip_iso_timestamp(c: &mut Criterion) {
     c.bench_function("urlencoding roundtrip (ISO timestamp)", |b| {
         b.iter(|| {
@@ -104,6 +115,7 @@ criterion_group!(
     bench_decode_no_percent,
     bench_decode_json_payload,
     bench_decode_utf8,
+    bench_decode_malformed,
     bench_roundtrip_iso_timestamp,
 );
 criterion_main!(benches);

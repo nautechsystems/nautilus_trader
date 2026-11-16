@@ -195,7 +195,6 @@ def test_floor_with_ten_ones_inputs() -> None:
     # Arrange
     floor = 0.00005
     floored_atr = AverageTrueRange(10, value_floor=floor)
-
     for _i in range(20):
         floored_atr.update_raw(1.00000, 1.00000, 1.00000)
 

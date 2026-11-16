@@ -66,7 +66,7 @@ pub struct OrderCanceled {
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
     pub account_id: Option<AccountId>,
-    /// The cancellation reason supplied by the venue.
+    /// The reason associated with the cancellation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<Ustr>,
     /// The causation ID associated with the event.

@@ -1515,6 +1515,26 @@ fn test_decode_opra_option_contract_falls_back_when_contract_multiplier_missing(
 }
 
 #[rstest]
+#[case(i32::MAX, i64::MAX)]
+#[case(0, 0)]
+fn test_decode_opra_option_contract_uses_standard_multiplier_when_both_missing(
+    #[case] contract_multiplier: i32,
+    #[case] unit_of_measure_qty: i64,
+) {
+    let msg = option_definition_msg(22, "XCBO", contract_multiplier, unit_of_measure_qty);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(100));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
 fn test_decode_opra_option_contract_rejects_negative_contract_multiplier() {
     let msg = option_definition_msg(22, "XCBO", -1, 1_000_000_000);
 
@@ -1915,13 +1935,13 @@ fn test_decode_cbbo_1s_msg() {
 #[rstest]
 fn test_decode_mbp10_msg_with_all_levels() {
     let mut msg = dbn::Mbp10Msg::default();
-    for i in 0..10 {
-        msg.levels[i].bid_px = 100_000_000_000 - i as i64 * 10_000_000;
-        msg.levels[i].ask_px = 100_010_000_000 + i as i64 * 10_000_000;
-        msg.levels[i].bid_sz = 10 + i as u32;
-        msg.levels[i].ask_sz = 10 + i as u32;
-        msg.levels[i].bid_ct = 1 + i as u32;
-        msg.levels[i].ask_ct = 1 + i as u32;
+    for (i, level) in msg.levels.iter_mut().enumerate() {
+        level.bid_px = 100_000_000_000 - i as i64 * 10_000_000;
+        level.ask_px = 100_010_000_000 + i as i64 * 10_000_000;
+        level.bid_sz = 10 + i as u32;
+        level.ask_sz = 10 + i as u32;
+        level.bid_ct = 1 + i as u32;
+        level.ask_ct = 1 + i as u32;
     }
     msg.ts_recv = 1_609_160_400_000_704_060;
 
@@ -1939,13 +1959,13 @@ fn test_decode_mbp10_msg_with_all_levels() {
 #[rstest]
 fn test_decode_mbp10_msg_with_undefined_levels() {
     let mut msg = dbn::Mbp10Msg::default();
-    for i in 0..10 {
-        msg.levels[i].bid_px = 100_000_000_000 - i as i64 * 10_000_000;
-        msg.levels[i].ask_px = 100_010_000_000 + i as i64 * 10_000_000;
-        msg.levels[i].bid_sz = 10 + i as u32;
-        msg.levels[i].ask_sz = 10 + i as u32;
-        msg.levels[i].bid_ct = 1 + i as u32;
-        msg.levels[i].ask_ct = 1 + i as u32;
+    for (i, level) in msg.levels.iter_mut().enumerate() {
+        level.bid_px = 100_000_000_000 - i as i64 * 10_000_000;
+        level.ask_px = 100_010_000_000 + i as i64 * 10_000_000;
+        level.bid_sz = 10 + i as u32;
+        level.ask_sz = 10 + i as u32;
+        level.bid_ct = 1 + i as u32;
+        level.ask_ct = 1 + i as u32;
     }
     // Levels 5 (bid) and 7 (ask) are undefined per Databento sentinel.
     msg.levels[5].bid_px = i64::MAX;

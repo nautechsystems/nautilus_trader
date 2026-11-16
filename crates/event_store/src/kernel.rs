@@ -347,6 +347,9 @@ impl EventStoreSession {
     /// The execution engine installs this callback while the run is open. The callback
     /// records the cache-owned snapshot reference against the writer's durable
     /// high-watermark after flushing earlier captured entries.
+    ///
+    /// This records the anchor, not its snapshot blob. Recovery also requires the referenced blob
+    /// to be available; a successful cache write does not confirm durable blob storage.
     #[must_use]
     pub fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
         let writer = Arc::clone(self.writer.as_ref()?);
@@ -751,11 +754,8 @@ impl Drop for EventStoreLifecycle {
         if self.session.is_none() {
             return;
         }
-        let ts = self
-            .clock
-            .try_borrow()
-            .map(|c| c.timestamp_ns())
-            .unwrap_or_default();
+
+        let ts = self.clock.try_borrow().map_or_default(|c| c.timestamp_ns());
         self.seal(ts);
     }
 }

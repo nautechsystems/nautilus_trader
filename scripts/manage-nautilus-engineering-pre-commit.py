@@ -68,6 +68,7 @@ def _run_git(root: Path, *args: str) -> bytes:
         capture_output=True,
         check=False,
     )
+
     if process.returncode != 0:
         detail = process.stderr.decode("utf-8", errors="replace").strip()
         raise _ManagedSectionError(detail or f"git {' '.join(args)} failed")
@@ -83,6 +84,7 @@ def _validate_path(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise _ManagedSectionError(f"{label} must be a non-empty string")
     path = pathlib.PurePosixPath(value)
+
     if (
         path.is_absolute()
         or str(path) != value
@@ -91,6 +93,7 @@ def _validate_path(value: object, label: str) -> str:
         raise _ManagedSectionError(
             f"{label} must be a normalized repository-relative path: {value}",
         )
+
     if any(part.casefold() == ".git" for part in path.parts):
         raise _ManagedSectionError(f"{label} contains a reserved path component: {value}")
     return value
@@ -120,8 +123,10 @@ def _decode_file(content: bytes, relative: str) -> str:
         text = content.decode("utf-8")
     except UnicodeDecodeError as e:
         raise _ManagedSectionError(f"file is not UTF-8: {relative}") from e
+
     if "\r" in text:
         raise _ManagedSectionError(f"file must use LF line endings: {relative}")
+
     if not text.endswith("\n"):
         raise _ManagedSectionError(f"file must end with a newline: {relative}")
     return text
@@ -140,13 +145,16 @@ def _load_fragments(root: Path, lock_path: str, *, staged: bool) -> list[_Fragme
 
     fragments: list[_Fragment] = []
     artifacts: set[str] = set()
+
     for entry in files:
         if not isinstance(entry, dict):
             raise _ManagedSectionError("sync lock contains an invalid file entry")
         artifact = entry.get("artifact")
         path = _validate_path(entry.get("path"), "locked path")
+
         if not isinstance(artifact, str):
             raise _ManagedSectionError("sync lock contains an invalid artifact id")
+
         if artifact in artifacts:
             raise _ManagedSectionError(f"sync lock repeats artifact: {artifact}")
         artifacts.add(artifact)
@@ -176,6 +184,7 @@ def _render_section(
     end_marker: str = END_MARKER,
 ) -> list[str]:
     lines = [begin_marker]
+
     for index, fragment in enumerate(fragments):
         if index:
             lines.append("")
@@ -193,6 +202,7 @@ def _section_bounds(
     ends = [index for index, line in enumerate(lines) if line == end_marker]
     if not begins and not ends:
         return None
+
     if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
         raise _ManagedSectionError("pre-commit config has invalid managed-section markers")
     return begins[0], ends[0]
@@ -219,7 +229,6 @@ def _managed_sections(lines: list[str]) -> tuple[str, dict[str, tuple[int, int]]
     legacy = _section_bounds(lines, BEGIN_MARKER, END_MARKER)
     sync = _section_bounds(lines, SYNC_BEGIN_MARKER, SYNC_END_MARKER)
     hooks = _section_bounds(lines, HOOKS_BEGIN_MARKER, HOOKS_END_MARKER)
-
     if legacy is not None:
         if sync is not None or hooks is not None:
             raise _ManagedSectionError("pre-commit config mixes managed-section layouts")
@@ -229,6 +238,7 @@ def _managed_sections(lines: list[str]) -> tuple[str, dict[str, tuple[int, int]]
         raise _ManagedSectionError(
             "split managed sections require both sync and hooks marker pairs",
         )
+
     if sync is None or hooks is None:
         return "none", {}
 
@@ -267,6 +277,7 @@ def _find_lines(lines: list[str], target: list[str]) -> int | None:
 
 def _remove_unmanaged_fragments(lines: list[str], fragments: list[_Fragment]) -> list[str]:
     updated = list(lines)
+
     for fragment in fragments:
         target = _indent_fragment(fragment)
         while (index := _find_lines(updated, target)) is not None:
@@ -281,6 +292,7 @@ def _fragment_identities(fragment: _Fragment) -> list[str]:
     identities: list[str] = []
     local = False
     repositories = 0
+
     for line in lines:
         if line.startswith("- repo:"):
             repositories += 1
@@ -289,10 +301,12 @@ def _fragment_identities(fragment: _Fragment) -> list[str]:
                 identities.append(line)
         elif local and line.startswith("- id:"):
             identities.append(line)
+
     if repositories == 0:
         raise _ManagedSectionError(
             f"pre-commit fragment has no repository entry: {fragment.path}",
         )
+
     if not identities:
         raise _ManagedSectionError(
             f"pre-commit fragment has no repository or hook identity: {fragment.path}",
@@ -312,6 +326,7 @@ def _unmanaged_conflicts(lines: list[str], fragments: list[_Fragment]) -> list[s
 def _config_lines(content: str) -> list[str]:
     if "\r" in content:
         raise _ManagedSectionError("pre-commit config must use LF line endings")
+
     if not content.endswith("\n"):
         raise _ManagedSectionError("pre-commit config must end with a newline")
     return content[:-1].split("\n")
@@ -354,7 +369,6 @@ def _render_config(content: str, fragments: list[_Fragment]) -> str:
             f"pre-commit definitions conflict with the managed section: {', '.join(conflicts)}",
         )
     repos_start = _repos_bounds(lines)[0]
-
     if layout == "split":
         split_sections = _managed_sections(lines)[1]
         _delete_section(lines, split_sections["sync"])
@@ -389,10 +403,12 @@ def _check_config(content: str, fragments: list[_Fragment]) -> None:
         expected = {"legacy": _render_section(fragments)}
     else:
         sync, hooks = _split_fragments(fragments)
+
         expected = {
             "sync": _render_section(sync, SYNC_BEGIN_MARKER, SYNC_END_MARKER),
             "hooks": _render_section(hooks, HOOKS_BEGIN_MARKER, HOOKS_END_MARKER),
         }
+
         if sections["sync"][0] != _repos_bounds(lines)[0] + 1:
             raise _ManagedSectionError(SECTION_DIFF_ERROR)
 
@@ -436,6 +452,7 @@ def _main() -> int:
             _read_file(root, config_path, staged=staged),
             config_path,
         )
+
         if args.command == "render":
             rendered = _render_config(config, fragments)
             path = root.joinpath(*pathlib.PurePosixPath(config_path).parts)

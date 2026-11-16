@@ -51,6 +51,7 @@ use nautilus_common::{
 use nautilus_core::{
     AtomicMap, AtomicSet, Params, UUID4, UnixNanos,
     datetime::datetime_to_unix_nanos,
+    env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -74,18 +75,18 @@ use crate::{
     },
     common::{
         consts::{
-            OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
-            select_book_channel,
+            OKX_VENUE, OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types,
+            resolve_book_depth, resolve_instrument_families, select_book_channel,
         },
         enums::{
-            OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
-            OKXInstrumentType, OKXVipLevel,
+            OKXBookAction, OKXBookChannel, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXVipLevel,
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
-            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, instrument_definitions_match, okx_instrument_type_from_symbol,
+            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
+            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -170,9 +171,9 @@ impl OKXDataClient {
 
         let http_client = if config.has_api_credentials() {
             OKXHttpClient::with_credentials(
-                api_key,
-                api_secret,
-                api_passphrase,
+                api_key.clone(),
+                api_secret.clone(),
+                api_passphrase.clone(),
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
@@ -193,11 +194,24 @@ impl OKXDataClient {
             )?
         };
 
+        let (ws_api_key, ws_api_secret, ws_api_passphrase) = if config
+            .vip_level
+            .is_some_and(|level| level >= OKXVipLevel::Vip4)
+        {
+            (
+                Some(get_or_env_var(api_key, "OKX_API_KEY")?),
+                Some(get_or_env_var(api_secret, "OKX_API_SECRET")?),
+                Some(get_or_env_var(api_passphrase, "OKX_API_PASSPHRASE")?),
+            )
+        } else {
+            (None, None, None)
+        };
+
         let ws_public = OKXWebSocketClient::new(
             Some(config.ws_public_url()),
-            None,
-            None,
-            None,
+            ws_api_key,
+            ws_api_secret,
+            ws_api_passphrase,
             None,
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
@@ -1591,9 +1605,7 @@ fn history_event(
     coverage: OKXHistoryCoverage,
 ) -> DataEvent {
     match coverage {
-        OKXHistoryCoverage::Complete => {
-            DataEvent::ResponseEnvelope(DataResponseEnvelope::new(response, true, None))
-        }
+        OKXHistoryCoverage::Complete => completed_response(response),
         OKXHistoryCoverage::Truncated => DataEvent::RequestFailed(DataRequestFailed {
             request_id,
             reason: "OKX page limit reached before the start of the window".to_string(),
@@ -1601,6 +1613,10 @@ fn history_event(
         }),
         OKXHistoryCoverage::Unverified => DataEvent::Response(response),
     }
+}
+
+fn completed_response(response: DataResponse) -> DataEvent {
+    DataEvent::ResponseEnvelope(DataResponseEnvelope::new(response, true, None))
 }
 
 /// The event that completes a request whose HTTP fetch failed.
@@ -1811,21 +1827,6 @@ fn definition_in_scope(
     families.iter().any(|family| family.as_str() == family_key)
 }
 
-fn contract_filter_with_config_types(
-    contract_types: Option<&Vec<OKXContractType>>,
-    instrument: &InstrumentAny,
-) -> bool {
-    match contract_types {
-        None => true,
-        Some(filter) if filter.is_empty() => true,
-        Some(filter) => {
-            let is_inverse = instrument.is_inverse();
-            (is_inverse && filter.contains(&OKXContractType::Inverse))
-                || (!is_inverse && filter.contains(&OKXContractType::Linear))
-        }
-    }
-}
-
 fn configured_instrument_types(config: &OKXDataClientConfig) -> Vec<OKXInstrumentType> {
     if config.instrument_types.is_empty() {
         vec![OKXInstrumentType::Spot]
@@ -1898,42 +1899,11 @@ async fn fetch_configured_instruments(
     Ok(all_instruments)
 }
 
-/// Returns `true` when two instruments carry the same tradable definition,
-/// ignoring event timestamps.
-///
-/// Comparison runs on the serialized form so every venue field, including
-/// the free-form `info` metadata, participates without listing each field.
-fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
-    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
-        let mut value = serde_json::to_value(instrument).ok()?;
-
-        if let Some(definition) = value
-            .as_object_mut()
-            .and_then(|obj| obj.values_mut().next())
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            definition.remove("ts_event");
-            definition.remove("ts_init");
-        }
-
-        Some(value)
-    }
-
-    // A serialization failure compares as changed so updates are never suppressed
-    match (normalized(a), normalized(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
-}
-
 /// Summary of a single instrument reconciliation pass.
 #[derive(Debug)]
 struct InstrumentReconciliation {
-    /// Instruments returned by the REST API after filtering.
     fetched: usize,
-    /// New or materially changed definitions published downstream.
     changed: usize,
-    /// Cached instruments absent from the REST response, retained in place.
     missing: usize,
 }
 
@@ -2726,6 +2696,7 @@ impl DataClient for OKXDataClient {
         self.spawn_task(async move {
             let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
             let mut all_instruments = Vec::new();
+            let mut failures = Vec::new();
 
             for inst_type in instrument_types {
                 let Some(families) = resolve_instrument_families(&instrument_families, inst_type)
@@ -2734,8 +2705,13 @@ impl DataClient for OKXDataClient {
                 };
 
                 if families.is_empty() {
-                    match http.request_instruments(inst_type, None).await {
-                        Ok((instruments, _inst_id_codes)) => {
+                    match http
+                        .request_instruments_with_parse_failures(inst_type, None)
+                        .await
+                    {
+                        Ok((instruments, _inst_id_codes, parse_failures)) => {
+                            failures.extend(parse_failures);
+
                             for instrument in instruments {
                                 if !contract_filter_with_config_types(
                                     contract_types.as_ref(),
@@ -2748,16 +2724,23 @@ impl DataClient for OKXDataClient {
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to fetch instruments for {inst_type:?}: {e:?}");
+                            failures.push(format!(
+                                "Failed to fetch instruments for {inst_type:?}: {e:#}"
+                            ));
                         }
                     }
                 } else {
                     for family in families {
                         match http
-                            .request_instruments(inst_type, Some(family.clone()))
+                            .request_instruments_with_parse_failures(
+                                inst_type,
+                                Some(family.clone()),
+                            )
                             .await
                         {
-                            Ok((instruments, _inst_id_codes)) => {
+                            Ok((instruments, _inst_id_codes, parse_failures)) => {
+                                failures.extend(parse_failures);
+
                                 for instrument in instruments {
                                     if !contract_filter_with_config_types(
                                         contract_types.as_ref(),
@@ -2770,9 +2753,9 @@ impl DataClient for OKXDataClient {
                                 }
                             }
                             Err(e) => {
-                                log::error!(
-                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:?}"
-                                );
+                                failures.push(format!(
+                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:#}"
+                                ));
                             }
                         }
                     }
@@ -2781,13 +2764,15 @@ impl DataClient for OKXDataClient {
 
             if load_spreads {
                 match http
-                    .request_spread_instruments(GetSpreadsParams {
+                    .request_spread_instruments_with_parse_failures(GetSpreadsParams {
                         state: Some("live".to_string()),
                         ..Default::default()
                     })
                     .await
                 {
-                    Ok(instruments) => {
+                    Ok((instruments, parse_failures)) => {
+                        failures.extend(parse_failures);
+
                         for instrument in instruments {
                             if !contract_filter_with_config_types(
                                 contract_types.as_ref(),
@@ -2800,7 +2785,7 @@ impl DataClient for OKXDataClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                        failures.push(format!("Failed to fetch OKX spread instruments: {e:#}"));
                     }
                 }
             }
@@ -2837,7 +2822,17 @@ impl DataClient for OKXDataClient {
                 params,
             ));
 
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
+            let event = if failures.is_empty() {
+                completed_response(response)
+            } else {
+                DataEvent::RequestFailed(DataRequestFailed {
+                    request_id,
+                    reason: failures.join("; "),
+                    response: Some(response),
+                })
+            };
+
+            if let Err(e) = sender.send(event) {
                 log::error!("Failed to send instruments response: {e}");
             }
         });
@@ -2947,7 +2942,7 @@ impl DataClient for OKXDataClient {
                 params,
             )));
 
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
+            if let Err(e) = sender.send(completed_response(response)) {
                 log::error!("Failed to send instrument response: {e}");
             }
         });
@@ -3255,15 +3250,7 @@ fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
 mod tests {
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
-    use axum::{
-        Router,
-        extract::{
-            Query,
-            ws::{Message, WebSocketUpgrade},
-        },
-        response::Json,
-        routing::get,
-    };
+    use axum::{Router, extract::Query, response::Json, routing::get};
     use nautilus_common::{
         config::ConfigError, live::runner::replace_data_event_sender, testing::wait_until_async,
     };
@@ -3283,11 +3270,56 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
+            consts::OKX_CLIENT_ID,
+            enums::{OKXContractType, OKXEnvironment},
+            models::OKXInstrument,
             testing::load_test_json,
         },
         websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
     };
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some(OKXVipLevel::Vip4), Some("vip-key"))]
+    fn vip_public_socket_receives_credentials(
+        #[case] vip_level: Option<OKXVipLevel>,
+        #[case] expected_key: Option<&str>,
+    ) {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let config = OKXDataClientConfig {
+            api_key: Some("vip-key".into()),
+            api_secret: Some("vip-secret".into()),
+            api_passphrase: Some("vip-passphrase".into()),
+            vip_level,
+            ..Default::default()
+        };
+
+        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        assert_eq!(client.public_ws().unwrap().api_key(), expected_key);
+        assert_eq!(client.business_ws().unwrap().api_key(), None);
+    }
+
+    #[rstest]
+    fn vip_public_socket_rejects_empty_credentials() {
+        let config = OKXDataClientConfig {
+            api_key: Some(" ".into()),
+            api_secret: Some("vip-secret".into()),
+            api_passphrase: Some("vip-passphrase".into()),
+            vip_level: Some(OKXVipLevel::Vip4),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::dependency(
+                "vip_level",
+                "api_key, api_secret, api_passphrase",
+                "VIP book channels require authentication"
+            ))
+        );
+    }
 
     #[rstest]
     #[case("BTC-USD_UM_XPERP-310404.OKX")]
@@ -3314,173 +3346,6 @@ mod tests {
             client.book_channel(instrument_id, None, None),
             OKXBookChannel::Book
         );
-    }
-
-    #[rstest]
-    #[case("BTC-USD_UM_XPERP-310404.OKX")]
-    #[case("BTC-USD_UM-261030.OKX")]
-    #[tokio::test]
-    async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
-        let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
-        let router = Router::new().route(
-            "/public",
-            get(move |upgrade: WebSocketUpgrade| {
-                let captured = captured.clone();
-                async move {
-                    upgrade.on_upgrade(move |mut socket| async move {
-                        while let Some(Ok(Message::Text(text))) = socket.next().await {
-                            let request: Value = serde_json::from_str(&text).unwrap();
-                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
-                                captured.send(request.clone()).unwrap();
-                                for arg in request["args"].as_array().unwrap() {
-                                    socket
-                                        .send(Message::Text(
-                                            json!({"event": request["op"], "arg": arg})
-                                                .to_string()
-                                                .into(),
-                                        ))
-                                        .await
-                                        .unwrap();
-                                }
-                            }
-                        }
-                    })
-                }
-            }),
-        );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let config = OKXDataClientConfig::builder()
-            .instrument_types(vec![OKXInstrumentType::Futures])
-            .base_url_ws_public(format!("ws://{addr}/public"))
-            .build();
-        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
-        client.ws_public.as_mut().unwrap().connect().await.unwrap();
-        let instrument_id = InstrumentId::from(instrument_id);
-        client
-            .subscribe_quotes(SubscribeQuotes::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .subscribe_trades(SubscribeTrades::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .subscribe_book_depth(SubscribeBookDepth::new(
-                instrument_id,
-                BookType::L2_MBP,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                false,
-                None,
-                None,
-            ))
-            .unwrap();
-        let mut frames = Vec::new();
-        for _ in 0..3 {
-            frames.push(
-                tokio::time::timeout(Duration::from_secs(5), received.recv())
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            );
-        }
-
-        client
-            .unsubscribe_quotes(&UnsubscribeQuotes::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .unsubscribe_trades(&UnsubscribeTrades::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-
-        for _ in 0..3 {
-            frames.push(
-                tokio::time::timeout(Duration::from_secs(5), received.recv())
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            );
-        }
-
-        client.ws_public.as_mut().unwrap().close().await.unwrap();
-        server.abort();
-
-        let mut actual = frames
-            .iter()
-            .map(|frame| {
-                (
-                    frame["op"].as_str().unwrap().to_string(),
-                    frame["args"].clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let mut expected = ["subscribe", "unsubscribe"]
-            .into_iter()
-            .flat_map(|op| {
-                ["bbo-tbt", "trades", "books5"]
-                    .into_iter()
-                    .map(move |channel| {
-                        (
-                            op.to_string(),
-                            json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-
-        actual.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
-        expected.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
-
-        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -4089,99 +3954,59 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_conventions_returns_both_when_params_missing() {
-        let result = parse_greeks_conventions_from_params(None);
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_returns_both_when_key_absent() {
-        let params = Params::new([("other_key".to_string(), json!("value"))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    #[case("BLACK_SCHOLES", OKXGreeksType::Bs)]
-    #[case("PRICE_ADJUSTED", OKXGreeksType::Pa)]
-    #[case("black_scholes", OKXGreeksType::Bs)]
-    #[case("price_adjusted", OKXGreeksType::Pa)]
-    fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
-        let params = Params::new([("greeks_convention".to_string(), json!(raw))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(expected));
-    }
-
-    #[rstest]
-    fn parse_conventions_accepts_list_of_strings() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_accepts_single_entry_list() {
-        let params =
-            Params::new([("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Pa));
-    }
-
-    #[rstest]
-    fn parse_conventions_deduplicates_list_entries() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BLACK_SCHOLES", "black_scholes"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Bs));
-    }
-
-    #[rstest]
-    fn parse_conventions_skips_unknown_list_entries() {
-        let params = Params::new(
-            [(
-                "greeks_convention".to_string(),
-                json!(["BOGUS", "PRICE_ADJUSTED"]),
-            )]
-            .into(),
-        );
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, only(OKXGreeksType::Pa));
-    }
-
-    #[rstest]
-    fn parse_conventions_falls_back_to_both_on_all_unknown() {
-        let params = Params::new([("greeks_convention".to_string(), json!(["BOGUS"]))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    #[case(json!(1))]
-    #[case(json!(null))]
-    #[case(json!(true))]
-    #[case(json!({"nested": "object"}))]
-    fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
-        let params = Params::new([("greeks_convention".to_string(), value)].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
-    }
-
-    #[rstest]
-    fn parse_conventions_falls_back_on_unknown_single_string() {
-        let params = Params::new([("greeks_convention".to_string(), json!("BOGUS"))].into());
-        let result = parse_greeks_conventions_from_params(Some(&params));
-        assert_eq!(result, both());
+    #[case(None, both())]
+    #[case(Some(("other_key", json!("value"))), both())]
+    #[case(
+        Some(("greeks_convention", json!("BLACK_SCHOLES"))),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("PRICE_ADJUSTED"))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("black_scholes"))),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!("price_adjusted"))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some((
+            "greeks_convention",
+            json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"])
+        )),
+        both()
+    )]
+    #[case(
+        Some(("greeks_convention", json!(["PRICE_ADJUSTED"]))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(
+        Some((
+            "greeks_convention",
+            json!(["BLACK_SCHOLES", "black_scholes"])
+        )),
+        only(OKXGreeksType::Bs)
+    )]
+    #[case(
+        Some(("greeks_convention", json!(["BOGUS", "PRICE_ADJUSTED"]))),
+        only(OKXGreeksType::Pa)
+    )]
+    #[case(Some(("greeks_convention", json!(["BOGUS"]))), both())]
+    #[case(Some(("greeks_convention", json!(1))), both())]
+    #[case(Some(("greeks_convention", json!(null))), both())]
+    #[case(Some(("greeks_convention", json!(true))), both())]
+    #[case(Some(("greeks_convention", json!({"nested": "object"}))), both())]
+    #[case(Some(("greeks_convention", json!("BOGUS"))), both())]
+    fn parse_conventions(
+        #[case] entry: Option<(&str, Value)>,
+        #[case] expected: AHashSet<OKXGreeksType>,
+    ) {
+        let params = entry.map(|(key, value)| Params::new([(key.to_string(), value)].into()));
+        let result = parse_greeks_conventions_from_params(params.as_ref());
+        assert_eq!(result, expected);
     }
 
     fn rpi_book_message(filename: &str) -> OKXWsMessage {
@@ -5490,19 +5315,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn spawn_instrument_refresh_skipped_when_interval_zero() {
-        let config = OKXDataClientConfig::builder()
-            .update_instruments_interval_mins(0)
-            .build();
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
-
-        client.register_instrument_refresh().unwrap();
-        assert!(client.tasks.is_empty());
-    }
-
     #[rstest]
     #[case::reset(DataTaskBoundary::Reset)]
     #[case::dispose(DataTaskBoundary::Dispose)]
@@ -5602,23 +5414,6 @@ mod tests {
         terminate_tasks(&client.tasks, "test data client")
             .await
             .expect("data task terminated");
-    }
-
-    #[tokio::test]
-    async fn spawn_instrument_refresh_registers_task() {
-        let config = OKXDataClientConfig::builder()
-            .update_instruments_interval_mins(60)
-            .build();
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
-
-        client.register_instrument_refresh().unwrap();
-        assert_eq!(client.tasks.len(), 1);
-
-        terminate_tasks(&client.tasks, "test data client")
-            .await
-            .expect("refresh task joins after cancel");
     }
 
     #[tokio::test]

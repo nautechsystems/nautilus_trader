@@ -223,6 +223,7 @@ class DatabentoInstrumentIdExample(IbV2OrderStrategy):
         """
         if self._live_trades_subscribed:
             self.unsubscribe_trades(self.instrument_id, client_id=ib_client_id())
+
         if self._startup_requested and env_bool("IB_V2_ENABLE_LIVE_BARS"):
             self.unsubscribe_bars(self.bar_type, client_id=ib_client_id())
         super().on_stop()
@@ -253,6 +254,7 @@ def main() -> None:
     node.add_strategy(DatabentoInstrumentIdExample())
 
     print(f"Built Databento-ID node for {INSTRUMENT_ID}.", flush=True)
+
     if env_bool("IB_V2_RUN_NODE"):
         schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 30))
         node.run()

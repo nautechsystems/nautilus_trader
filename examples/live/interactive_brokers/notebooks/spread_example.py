@@ -124,8 +124,10 @@ class SpreadOrderExample(IbV2OrderStrategy):
         On order filled.
         """
         print(f"{self.strategy_id}: order filled: {event}", flush=True)
+
         if not env_bool("IB_V2_SPREAD_FLATTEN_ON_FILL") or self._flatten_submitted:
             return
+
         if event.instrument_id != self.instrument_id:
             return
 
@@ -167,6 +169,7 @@ def main() -> None:
     node.add_strategy(SpreadOrderExample())
 
     print(f"Built spread node for {SPREAD_ID}.", flush=True)
+
     if env_bool("IB_V2_RUN_NODE"):
         schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 20))
         node.run()

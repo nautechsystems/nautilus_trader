@@ -18,7 +18,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
-    Fields, Ident, ItemStruct, LitStr, Token, Type, parse::Parser, parse_quote, parse2,
+    Field, Fields, Ident, ItemStruct, LitStr, Token, Type, parse::Parser, parse_quote, parse2,
     punctuated::Punctuated,
 };
 
@@ -188,6 +188,7 @@ fn py_getter_body(ident: &Ident, ty: &Type, serde: bool) -> Option<TokenStream> 
 struct CustomDataOptions {
     pyo3: bool,
     no_display: bool,
+    export_fields: bool,
     stub_module: Option<LitStr>,
 }
 
@@ -205,8 +206,9 @@ fn parse_options(attr: &TokenStream) -> Result<CustomDataOptions, syn::Error> {
         match (name.as_str(), option.value) {
             ("pyo3", None) => options.pyo3 = true,
             ("no_display", None) => options.no_display = true,
+            ("export_fields", None) => options.export_fields = true,
             ("stub_module", Some(module)) => options.stub_module = Some(module),
-            ("pyo3" | "no_display", Some(_)) => {
+            ("pyo3" | "no_display" | "export_fields", Some(_)) => {
                 return Err(syn::Error::new_spanned(
                     option.ident,
                     "option does not accept a value",
@@ -221,7 +223,7 @@ fn parse_options(attr: &TokenStream) -> Result<CustomDataOptions, syn::Error> {
             _ => {
                 return Err(syn::Error::new_spanned(
                     option.ident,
-                    "expected `pyo3`, `no_display`, or `stub_module`; unknown option",
+                    "expected `pyo3`, `no_display`, `export_fields`, or `stub_module`; unknown option",
                 ));
             }
         }
@@ -573,12 +575,14 @@ pub(crate) fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenS
         Err(e) => return e.to_compile_error(),
     };
 
-    if !field_specs.iter().any(|field| field.ident == "ts_event")
-        || !field_specs.iter().any(|field| field.ident == "ts_init")
-    {
+    if !matches!(
+        field_specs.as_slice(),
+        [.., ts_event, ts_init] if ts_event.ident == "ts_event" && ts_init.ident == "ts_init"
+    ) {
         return syn::Error::new_spanned(
             input,
-            "#[custom_data] requires fields ts_event and ts_init (e.g. nautilus_core::UnixNanos)",
+            "#[custom_data] requires ts_event and ts_init as the last two fields, in that order \
+             (e.g. nautilus_core::UnixNanos)",
         )
         .to_compile_error();
     }
@@ -618,6 +622,10 @@ pub(crate) fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenS
         .attrs
         .iter()
         .filter(|attr| !attr_has_ident(attr, "custom_data") && !attr_has_ident(attr, "derive"));
+    let fields_macro = options
+        .export_fields
+        .then(|| gen_fields_macro(name, fields));
+
     let fields = fields.iter().cloned().map(|mut field| {
         field
             .attrs
@@ -650,6 +658,24 @@ pub(crate) fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenS
         #repr_impl
         #model_impls
         #pymethods
+        #fields_macro
+    }
+}
+
+pub(crate) fn fields_macro_ident(name: &Ident) -> Ident {
+    Ident::new(&format!("custom_data_fields_{name}"), name.span())
+}
+
+fn gen_fields_macro(name: &Ident, fields: &Punctuated<Field, Token![,]>) -> TokenStream {
+    let fields_macro = fields_macro_ident(name);
+    quote! {
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! #fields_macro {
+            ([$($callback:tt)*] $($args:tt)*) => {
+                $($callback)*! { $($args)*; struct #name { #fields } }
+            };
+        }
     }
 }
 
@@ -702,12 +728,109 @@ mod tests {
     }
 
     #[rstest]
+    #[case::empty(quote! {})]
+    #[case::missing_ts_init(quote! { pub ts_event: nautilus_core::UnixNanos, })]
+    #[case::missing_ts_event(quote! { pub ts_init: nautilus_core::UnixNanos, })]
+    #[case::timestamps_first(quote! {
+        pub ts_event: nautilus_core::UnixNanos,
+        pub ts_init: nautilus_core::UnixNanos,
+        pub value: f64,
+    })]
+    #[case::timestamps_swapped(quote! {
+        pub value: f64,
+        pub ts_init: nautilus_core::UnixNanos,
+        pub ts_event: nautilus_core::UnixNanos,
+    })]
+    #[case::timestamps_separated(quote! {
+        pub ts_event: nautilus_core::UnixNanos,
+        pub value: f64,
+        pub ts_init: nautilus_core::UnixNanos,
+    })]
+    #[case::field_after_timestamps(quote! {
+        pub value: f64,
+        pub ts_event: nautilus_core::UnixNanos,
+        pub ts_init: nautilus_core::UnixNanos,
+        pub active: bool,
+    })]
+    fn timestamps_must_be_last_two_fields(
+        #[case] fields: TokenStream,
+        #[values(quote! {}, quote! { pyo3 }, quote! { export_fields }, quote! { pyo3, export_fields })]
+        options: TokenStream,
+    ) {
+        let expanded =
+            expand_custom_data(options, quote! { pub struct TestData { #fields } }).to_string();
+
+        assert_eq!(
+            expanded,
+            quote! {
+                ::core::compile_error! {
+                    "#[custom_data] requires ts_event and ts_init as the last two fields, in that order (e.g. nautilus_core::UnixNanos)"
+                }
+            }
+            .to_string(),
+        );
+    }
+
+    #[rstest]
+    fn timestamps_only_are_valid(
+        #[values(quote! {}, quote! { pyo3 }, quote! { export_fields }, quote! { pyo3, export_fields })]
+        options: TokenStream,
+    ) {
+        let expanded = expand_custom_data(
+            options,
+            quote! {
+                pub struct TestData {
+                    pub ts_event: nautilus_core::UnixNanos,
+                    pub ts_init: nautilus_core::UnixNanos,
+                }
+            },
+        )
+        .to_string();
+
+        assert!(!expanded.contains("compile_error"));
+        assert!(expanded.contains("CustomDataTrait"));
+    }
+
+    #[rstest]
     fn no_arrow_option_is_rejected() {
         let error = parse_options(&quote! { no_arrow }).unwrap_err();
 
         assert_eq!(
             error.to_string(),
-            "expected `pyo3`, `no_display`, or `stub_module`; unknown option",
+            "expected `pyo3`, `no_display`, `export_fields`, or `stub_module`; unknown option",
         );
+    }
+
+    #[rstest]
+    #[case::disabled(quote! {}, false)]
+    #[case::enabled(quote! { export_fields }, true)]
+    #[case::pyo3(quote! { pyo3, export_fields }, true)]
+    fn field_export_is_optional(#[case] options: TokenStream, #[case] exported: bool) {
+        let expanded = expand_custom_data(
+            options,
+            quote! {
+                pub struct ModelData {
+                    #[custom_data_field(serde)]
+                    pub labels: Vec<(String, u64)>,
+                    pub ts_event: nautilus_core::UnixNanos,
+                    pub ts_init: nautilus_core::UnixNanos,
+                }
+            },
+        )
+        .to_string();
+
+        assert_eq!(
+            expanded.contains("macro_rules ! custom_data_fields_ModelData"),
+            exported
+        );
+        assert_eq!(expanded.contains("custom_data_field (serde)"), exported);
+        assert!(!expanded.contains("nautilus_serialization"));
+    }
+
+    #[rstest]
+    fn field_export_rejects_a_value() {
+        let error = parse_options(&quote! { export_fields = "yes" }).unwrap_err();
+
+        assert_eq!(error.to_string(), "option does not accept a value");
     }
 }

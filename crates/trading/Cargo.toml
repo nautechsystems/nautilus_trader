@@ -74,6 +74,8 @@ pyo3-stub-gen = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }
 
+async-trait = { workspace = true }
+bytes = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde_json = { workspace = true }

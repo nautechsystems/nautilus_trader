@@ -21,13 +21,10 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `adapters` (default): Enables all adapter Python bindings except Betfair, CoinAPI, and blockchain.
+- `adapters` (default): Enables all adapter Python bindings except blockchain.
 - `arrow`: Enables Apache Arrow support in dependent crates.
-- `betfair`: Enables the Betfair adapter and its Python bindings.
-- `coinapi`: Enables the CoinAPI adapter and its Python bindings.
 - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 - `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
-- `finfeed`: Enables the FinFeed adapter and its Python bindings.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
 - `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client) support for the blockchain adapter.
 - `mimalloc`: Sets [mimalloc](https://crates.io/crates/mimalloc) as Rust's global allocator.

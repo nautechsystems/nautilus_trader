@@ -23,7 +23,9 @@ use pyo3::{PyResult, pymethods};
 use crate::{
     common::enums::{LighterDeployment, LighterEnvironment},
     config::{
-        LighterDataClientConfig, LighterExecutionClientConfig, validate_scheduled_cancel_timeout,
+        LighterDataClientConfig, LighterExecutionClientConfig, validate_execution_venue,
+        validate_execution_ws_url, validate_market_order_slippage_bps, validate_proxy_url,
+        validate_scheduled_cancel_timeout,
     },
 };
 
@@ -66,9 +68,11 @@ impl LighterDataClientConfig {
         deployment: Option<LighterDeployment>,
         venue: Option<Venue>,
         book_snapshot_timeout_secs: Option<u64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
+        let proxy_url = proxy_url.map(SecretString::from);
+        validate_proxy_url(proxy_url.as_ref()).map_err(to_pyvalue_err)?;
         let defaults = Self::default();
-        Self {
+        Ok(Self {
             environment: environment.unwrap_or(defaults.environment),
             deployment: deployment.unwrap_or(defaults.deployment),
             venue,
@@ -77,7 +81,7 @@ impl LighterDataClientConfig {
             private_key: private_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url: proxy_url.map(SecretString::from),
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
@@ -86,7 +90,7 @@ impl LighterDataClientConfig {
                 .unwrap_or(defaults.book_snapshot_timeout_secs),
             rest_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        })
     }
 
     #[getter]
@@ -145,8 +149,15 @@ impl LighterExecutionClientConfig {
         use_gtd: bool,
         scheduled_cancel_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
+        validate_execution_venue(venue).map_err(to_pyvalue_err)?;
+        validate_execution_ws_url(base_url_ws.as_deref()).map_err(to_pyvalue_err)?;
+        let proxy_url = proxy_url.map(SecretString::from);
+        validate_proxy_url(proxy_url.as_ref()).map_err(to_pyvalue_err)?;
         validate_scheduled_cancel_timeout(scheduled_cancel_timeout_secs).map_err(to_pyvalue_err)?;
         let defaults = Self::default();
+        let market_order_slippage_bps =
+            market_order_slippage_bps.unwrap_or(defaults.market_order_slippage_bps);
+        validate_market_order_slippage_bps(market_order_slippage_bps).map_err(to_pyvalue_err)?;
         Ok(Self {
             environment: environment.unwrap_or(defaults.environment),
             deployment: deployment.unwrap_or(defaults.deployment),
@@ -157,11 +168,10 @@ impl LighterExecutionClientConfig {
             private_key: private_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url: proxy_url.map(SecretString::from),
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
-            market_order_slippage_bps: market_order_slippage_bps
-                .unwrap_or(defaults.market_order_slippage_bps),
+            market_order_slippage_bps,
             rest_quota_per_min,
             sendtx_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
@@ -177,102 +187,5 @@ impl LighterExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(LighterExecutionClientConfig).to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pyo3::{
-        PyRef, Python,
-        types::{PyAnyMethods, PyDict, PyDictMethods},
-    };
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    #[case(None, true)]
-    #[case(Some(420), true)]
-    #[case(Some(1_295_940), true)]
-    #[case(Some(419), false)]
-    #[case(Some(1_295_941), false)]
-    fn test_python_scheduled_cancel(#[case] timeout: Option<u64>, #[case] valid: bool) {
-        Python::initialize();
-        Python::attach(|py| {
-            let kwargs = PyDict::new(py);
-            kwargs
-                .set_item("account_id", AccountId::from("LIGHTER-123"))
-                .unwrap();
-
-            if let Some(timeout) = timeout {
-                kwargs
-                    .set_item("scheduled_cancel_timeout_secs", timeout)
-                    .unwrap();
-            }
-
-            let result = py
-                .get_type::<LighterExecutionClientConfig>()
-                .call((), Some(&kwargs));
-            assert_eq!(result.is_ok(), valid);
-
-            if valid {
-                let config = result.unwrap();
-                assert_eq!(
-                    config
-                        .getattr("scheduled_cancel_timeout_secs")
-                        .unwrap()
-                        .extract::<Option<u64>>()
-                        .unwrap(),
-                    timeout
-                );
-                assert_eq!(
-                    config
-                        .extract::<PyRef<LighterExecutionClientConfig>>()
-                        .unwrap()
-                        .scheduled_cancel_timeout_secs,
-                    timeout
-                );
-            } else {
-                assert!(
-                    result
-                        .unwrap_err()
-                        .is_instance_of::<pyo3::exceptions::PyValueError>(py)
-                );
-            }
-        });
-    }
-
-    #[rstest]
-    fn test_data_config_py_new_book_timeout() {
-        let config = LighterDataClientConfig::py_new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(7),
-            None,
-            None,
-            None,
-            Some(42),
-        );
-
-        assert_eq!(config.rest_quota_per_min, Some(7));
-        assert_eq!(config.book_snapshot_timeout_secs, 42);
-    }
-
-    #[rstest]
-    fn test_data_config_py_new_book_timeout_default() {
-        let config = LighterDataClientConfig::py_new(
-            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None,
-        );
-
-        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 }

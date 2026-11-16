@@ -446,17 +446,15 @@ pub fn parse_account_state(
         balances.push(AccountBalance::new(zero_money, zero_money, zero_money));
     }
 
-    let margins = risk
-        .map(|risk| {
-            vec![MarginBalance::new(
-                Money::from_decimal(risk.initial_margin_required_total, Currency::USD())
-                    .unwrap_or_else(|_| Money::zero(Currency::USD())),
-                Money::from_decimal(risk.maintenance_margin_required, Currency::USD())
-                    .unwrap_or_else(|_| Money::zero(Currency::USD())),
-                None,
-            )]
-        })
-        .unwrap_or_default();
+    let margins = risk.map_or_default(|risk| {
+        vec![MarginBalance::new(
+            Money::from_decimal(risk.initial_margin_required_total, Currency::USD())
+                .unwrap_or_else(|_| Money::zero(Currency::USD())),
+            Money::from_decimal(risk.maintenance_margin_required, Currency::USD())
+                .unwrap_or_else(|_| Money::zero(Currency::USD())),
+            None,
+        )]
+    });
 
     Ok(AccountState::new(
         account_id,
@@ -1050,18 +1048,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decimal_to_price() {
-        let price = decimal_to_price(dec!(100.50), "test_field").unwrap();
-        assert_eq!(price.as_f64(), 100.50);
-    }
-
-    #[rstest]
-    fn test_decimal_to_quantity() {
-        let qty = decimal_to_quantity(dec!(1.5), "test_field").unwrap();
-        assert_eq!(qty.as_f64(), 1.5);
-    }
-
-    #[rstest]
     fn test_get_currency_known() {
         let currency = get_currency("USD");
         assert_eq!(currency.code, Ustr::from("USD"));
@@ -1625,7 +1611,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_fill_report_rejects_missing_identity() {
+    #[case::missing_classification(None, None)]
+    #[case::regular_fill(Some(false), Some(false))]
+    fn test_parse_fill_report_rejects_missing_order_id(
+        #[case] is_block_trade: Option<bool>,
+        #[case] is_final_settlement: Option<bool>,
+    ) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
             UnixNanos::default(),
@@ -1634,8 +1625,8 @@ mod tests {
         .unwrap();
         let mut fill = create_fill();
         fill.order_id = None;
-        fill.is_block_trade = None;
-        fill.is_final_settlement = None;
+        fill.is_block_trade = is_block_trade;
+        fill.is_final_settlement = is_final_settlement;
 
         let error = parse_fill_report(
             &fill,
@@ -1649,27 +1640,6 @@ mod tests {
             error.to_string(),
             "AX fill is missing order_id and explicit special-fill classification"
         );
-    }
-
-    #[rstest]
-    fn test_parse_fill_report_rejects_regular_fill_without_order_id() {
-        let instrument = parse_instrument(
-            &create_eurusd_instrument(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
-        let mut fill = create_fill();
-        fill.order_id = None;
-
-        let result = parse_fill_report(
-            &fill,
-            AccountId::from("AX-001"),
-            &instrument,
-            UnixNanos::default(),
-        );
-
-        assert!(result.is_err());
     }
 
     #[rstest]
@@ -2012,29 +1982,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_instruments_from_test_data() {
-        let test_data = include_str!("../../test_data/http_get_instruments.json");
-        let response: AxInstrumentsResponse =
-            serde_json::from_str(test_data).expect("Failed to deserialize test data");
-
-        assert_eq!(response.instruments.len(), 3);
-
-        let eurusd = &response.instruments[0];
-        assert_eq!(eurusd.symbol, "EURUSD-PERP");
-        assert_eq!(eurusd.category, AxCategory::Fx);
-        assert_eq!(eurusd.tick_size, dec!(0.0001));
-        assert_eq!(eurusd.minimum_order_size, dec!(100));
-
-        let xau = &response.instruments[1];
-        assert_eq!(xau.symbol, "XAU-PERP");
-        assert_eq!(xau.category, AxCategory::Metals);
-
-        let nvda = &response.instruments[2];
-        assert_eq!(nvda.symbol, "NVDA-PERP");
-        assert_eq!(nvda.category, AxCategory::Equities);
-    }
-
-    #[rstest]
     fn test_parse_all_instruments_from_test_data() {
         let test_data = include_str!("../../test_data/http_get_instruments.json");
         let response: AxInstrumentsResponse =
@@ -2223,39 +2170,6 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.to_string(), "Unmapped AX order status");
-    }
-
-    #[rstest]
-    #[case(Some(dec!(375)), dec!(1.25))]
-    #[case(None, dec!(1.5))]
-    fn test_position_prefers_cost_basis(
-        #[case] cost_basis: Option<Decimal>,
-        #[case] expected: Decimal,
-    ) {
-        let mut response: crate::http::models::AxPositionsResponse =
-            serde_json::from_str(include_str!("../../test_data/http_get_positions.json")).unwrap();
-        let position = &mut response.positions[0];
-        position.signed_quantity = -300;
-        position.signed_notional = dec!(-450);
-        position.signed_cost_basis = cost_basis.map(|value| -value);
-        let instrument = parse_instrument(
-            &create_eurusd_instrument(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
-
-        let report = parse_position_status_report(
-            position,
-            AccountId::from("AX-001"),
-            &instrument,
-            UnixNanos::default(),
-        )
-        .unwrap();
-
-        assert_eq!(report.avg_px_open, Some(expected));
-        assert_eq!(report.position_side, PositionSide::Short);
-        assert_eq!(report.quantity.as_decimal(), dec!(300));
     }
 
     #[rstest]

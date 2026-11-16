@@ -15,30 +15,43 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Polymarket](https://polymarket.com) prediction market.
 //!
-//! The `nautilus-polymarket` crate provides integration with the Polymarket CLOB API for
-//! trading binary outcome contracts on the Polymarket prediction market.
+//! The `nautilus-polymarket` crate provides market data and order execution for binary outcome contracts
+//! through the Polymarket CLOB APIs. It includes market discovery, authenticated HTTP and WebSocket
+//! clients, order signing, and execution reconciliation, plus Deposit Wallet position operations
+//! through the Relayer API.
+//!
+//! The official Polymarket API reference can be found at <https://docs.polymarket.com/>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
+//! - `allowances`: Enables the `polymarket-set-allowances` binary.
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! Orders signed by the adapter carry the fixed NautilusTrader builder code with zero builder fees.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/polymarket/#builder-code-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/polymarket/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/polymarket/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

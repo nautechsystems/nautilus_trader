@@ -19,13 +19,14 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_architect_ax::{
-    common::consts::AX_VENUE,
+    common::{consts::AX_VENUE, parse::create_architect_trade_id},
     websocket::{
         data::parse::{
             parse_book_l1_quote, parse_book_l2_deltas, parse_book_l3_deltas, parse_candle_bar,
             parse_trade_tick,
         },
-        messages::{AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade},
+        messages::{AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdMessage, AxMdTrade},
+        parse::parse_md_message,
     },
 };
 use nautilus_core::nanos::UnixNanos;
@@ -117,6 +118,21 @@ fn bench_parse_trade_tick(c: &mut Criterion) {
     c.bench_function("parse_trade_tick", |b| {
         b.iter(|| parse_trade_tick(black_box(&trade), black_box(&instrument), ts_init).unwrap());
     });
+
+    let compact: String = json.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    let expected = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
+
+    let parse = || {
+        let AxMdMessage::Trade(trade) = parse_md_message(black_box(&compact)).unwrap() else {
+            panic!("Expected trade message");
+        };
+
+        parse_trade_tick(&trade, black_box(&instrument), ts_init).unwrap()
+    };
+
+    assert_eq!(parse(), expected);
+
+    c.bench_function("decode_and_parse_trade_tick", |b| b.iter(parse));
 }
 
 fn bench_parse_candle_bar(c: &mut Criterion) {
@@ -162,6 +178,25 @@ fn bench_parse_candle_bar(c: &mut Criterion) {
     });
 }
 
+fn bench_trade_id(c: &mut Criterion) {
+    let trade: AxMdTrade =
+        serde_json::from_str(include_str!("../test_data/ws_md_trade_captured.json")).unwrap();
+    let instrument = create_eurusd_instrument();
+    let tick = parse_trade_tick(&trade, &instrument, UnixNanos::default()).unwrap();
+
+    c.bench_function("trade_id", |b| {
+        b.iter(|| {
+            create_architect_trade_id(
+                black_box(tick.ts_event),
+                black_box(tick.price),
+                black_box(tick.size),
+                black_box(tick.aggressor_side),
+            )
+            .unwrap()
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_book_l1_quote,
@@ -169,5 +204,6 @@ criterion_group!(
     bench_parse_book_l3_deltas,
     bench_parse_trade_tick,
     bench_parse_candle_bar,
+    bench_trade_id,
 );
 criterion_main!(benches);

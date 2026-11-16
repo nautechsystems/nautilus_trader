@@ -63,13 +63,10 @@ use nautilus_system::get_global_pyo3_registry;
 #[cfg(feature = "examples")]
 use nautilus_testkit::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 #[cfg(feature = "examples")]
-use nautilus_trading::examples::{
-    actors::{BookImbalanceActor, BookImbalanceActorConfig},
-    strategies::{
-        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
-        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
-        HurstVpinDirectionalConfig,
-    },
+use nautilus_trading::examples::strategies::{
+    CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+    EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+    HurstVpinDirectionalConfig, OrderBookImbalance, OrderBookImbalanceConfig,
 };
 use nautilus_trading::{
     ImportableControllerConfig, ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
@@ -2147,7 +2144,6 @@ type BuiltinStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) ->
 #[cfg(feature = "examples")]
 fn builtin_actor_register(type_name: &str) -> Option<BuiltinActorRegister> {
     match type_name {
-        "BookImbalanceActor" => Some(register_book_imbalance_actor),
         "DataTester" => Some(register_data_tester),
         _ => None,
     }
@@ -2162,6 +2158,7 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
         "ExecTester" => Some(register_exec_tester),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        "OrderBookImbalance" => Some(register_orderbook_imbalance),
         _ => None,
     }
 }
@@ -2210,9 +2207,9 @@ fn register_hurst_vpin_directional(node: &mut LiveNode, config: &Bound<'_, PyAny
 }
 
 #[cfg(feature = "examples")]
-fn register_book_imbalance_actor(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
-    let config = config.extract::<BookImbalanceActorConfig>()?;
-    node.add_actor(BookImbalanceActor::from_config(config))
+fn register_orderbook_imbalance(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<OrderBookImbalanceConfig>()?;
+    node.add_strategy(OrderBookImbalance::from_config(config).map_err(to_pyvalue_err)?)
         .map_err(to_pyruntime_err)
 }
 
@@ -4245,13 +4242,13 @@ class ClaimsStrategy(Strategy):
     #[case("ExecTester")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
+    #[case("OrderBookImbalance")]
     fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
         assert!(super::builtin_strategy_register(type_name).is_some());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
-    #[case("BookImbalanceActor")]
     #[case("DataTester")]
     fn test_builtin_actor_register_accepts_supported_names(#[case] type_name: &str) {
         assert!(super::builtin_actor_register(type_name).is_some());

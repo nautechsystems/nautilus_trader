@@ -73,6 +73,7 @@ def _normalize(source: str) -> str:  # noqa: C901
                     references.extend(_values(step, "uses"))
 
     offsets = set()
+
     for reference in references:
         if isinstance(reference, ScalarNode) and reference.value.startswith("$/"):
             offset = reference.start_mark.index + (reference.style in {"'", '"'})

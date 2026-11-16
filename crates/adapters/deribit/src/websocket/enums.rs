@@ -408,7 +408,7 @@ impl From<DeribitBookAction> for BookAction {
 
 /// Deribit order book message type.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, EnumString, Serialize, Deserialize,
+    Clone, Copy, Debug, Display, PartialEq, Eq, Hash, AsRefStr, EnumString, Serialize, Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum DeribitBookMsgType {

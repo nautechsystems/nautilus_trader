@@ -19,12 +19,14 @@
 //! without generating model, Serde, constructor, display, or core PyO3 behavior. Apply it above
 //! `#[nautilus_model::custom_data]`, or use it alone with manual model trait implementations.
 //! `#[arrow_custom_data(pyo3)]` additionally generates `PyArrow` `RecordBatch` methods.
+//! The internal `arrow_custom_data_remote!` form generates the Arrow traits from fields exported
+//! by a model crate, without redefining its type.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Fields, GenericArgument, Ident, ItemStruct, LitStr, PathArguments, Token, Type, parse::Parser,
-    parse2, punctuated::Punctuated,
+    Fields, GenericArgument, Ident, ItemStruct, LitStr, Path, PathArguments, Token, Type,
+    parse::Parser, parse2, punctuated::Punctuated,
 };
 
 use crate::support::{CustomDataOption, FieldSpec, parse_field_options, type_for_macro, type_path};
@@ -72,17 +74,12 @@ struct ArrowFieldDescriptor {
     data_type: TokenStream,
     array_type: TokenStream,
     nullable: bool,
-    value_type: Type,
 }
 
 impl ArrowFieldDescriptor {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "field type classification is one exhaustive macro input mapping"
-    )]
     fn new(field: &FieldSpec) -> Result<Self, syn::Error> {
         if field.options.serde {
-            return Ok(Self::with_utf8(ArrowFieldKind::Json, false, &field.ty));
+            return Ok(Self::with_utf8(ArrowFieldKind::Json, false));
         }
 
         let unsupported = || {
@@ -104,7 +101,6 @@ impl ArrowFieldDescriptor {
                 data_type: quote! { arrow::datatypes::DataType::Binary },
                 array_type: quote! { arrow::array::BinaryArray },
                 nullable: false,
-                value_type: value_type.clone(),
             }),
             ("Vec", "f64") if !nullable => Ok(Self {
                 kind: ArrowFieldKind::FloatList,
@@ -119,83 +115,54 @@ impl ArrowFieldDescriptor {
                 },
                 array_type: quote! { arrow::array::ListArray },
                 nullable: false,
-                value_type: value_type.clone(),
             }),
             _ if outer == inner => match outer.as_str() {
-                "InstrumentId" | "AccountId" | "Currency" | "BarType" => Ok(Self::with_utf8(
-                    ArrowFieldKind::Identifier,
-                    nullable,
-                    value_type,
-                )),
-                "Params" => Ok(Self::with_utf8(
-                    ArrowFieldKind::Params,
-                    nullable,
-                    value_type,
-                )),
-                "String" => Ok(Self::with_utf8(
-                    ArrowFieldKind::String,
-                    nullable,
-                    value_type,
-                )),
-                "Price" => Ok(Self::with_decimal(
-                    ArrowFieldKind::Price,
-                    nullable,
-                    value_type,
-                )),
-                "Quantity" => Ok(Self::with_decimal(
-                    ArrowFieldKind::Quantity,
-                    nullable,
-                    value_type,
-                )),
-                "Decimal" => Ok(Self::with_decimal(
-                    ArrowFieldKind::Decimal,
-                    nullable,
-                    value_type,
-                )),
+                "InstrumentId" | "AccountId" | "Currency" | "BarType" => {
+                    Ok(Self::with_utf8(ArrowFieldKind::Identifier, nullable))
+                }
+                "Params" => Ok(Self::with_utf8(ArrowFieldKind::Params, nullable)),
+                "String" => Ok(Self::with_utf8(ArrowFieldKind::String, nullable)),
+                "Price" => Ok(Self::with_decimal(ArrowFieldKind::Price, nullable)),
+                "Quantity" => Ok(Self::with_decimal(ArrowFieldKind::Quantity, nullable)),
+                "Decimal" => Ok(Self::with_decimal(ArrowFieldKind::Decimal, nullable)),
                 "Money" => Ok(Self {
                     kind: ArrowFieldKind::Money,
                     data_type: quote! { nautilus_serialization::arrow::money_data_type() },
                     array_type: quote! { arrow::array::StructArray },
                     nullable,
-                    value_type: value_type.clone(),
                 }),
-                "UnixNanos" => Ok(Self::with_timestamp(nullable, value_type)),
-                "u64" => Ok(Self::with_uint64(ArrowFieldKind::U64, nullable, value_type)),
-                "u32" => Ok(Self::with_uint64(ArrowFieldKind::U32, nullable, value_type)),
+                "UnixNanos" => Ok(Self::with_timestamp(nullable)),
+                "u64" => Ok(Self::with_uint64(ArrowFieldKind::U64, nullable)),
+                "u32" => Ok(Self::with_uint64(ArrowFieldKind::U32, nullable)),
                 "f64" => Ok(Self::with_primitive(
                     ArrowFieldKind::F64,
                     quote! { arrow::datatypes::DataType::Float64 },
                     quote! { arrow::array::Float64Array },
                     nullable,
-                    value_type,
                 )),
                 "f32" => Ok(Self::with_primitive(
                     ArrowFieldKind::F32,
                     quote! { arrow::datatypes::DataType::Float32 },
                     quote! { arrow::array::Float32Array },
                     nullable,
-                    value_type,
                 )),
                 "bool" => Ok(Self::with_primitive(
                     ArrowFieldKind::Bool,
                     quote! { arrow::datatypes::DataType::Boolean },
                     quote! { arrow::array::BooleanArray },
                     nullable,
-                    value_type,
                 )),
                 "i64" => Ok(Self::with_primitive(
                     ArrowFieldKind::I64,
                     quote! { arrow::datatypes::DataType::Int64 },
                     quote! { arrow::array::Int64Array },
                     nullable,
-                    value_type,
                 )),
                 "i32" => Ok(Self::with_primitive(
                     ArrowFieldKind::I32,
                     quote! { arrow::datatypes::DataType::Int32 },
                     quote! { arrow::array::Int32Array },
                     nullable,
-                    value_type,
                 )),
                 "u8" | "u16" | "i8" | "i16" | "usize" | "isize" | "char" => Err(unsupported()),
                 _ if field.options.native_enum => Ok(Self {
@@ -207,7 +174,6 @@ impl ArrowFieldDescriptor {
                         arrow::array::DictionaryArray<arrow::datatypes::Int8Type>
                     },
                     nullable,
-                    value_type: value_type.clone(),
                 }),
                 _ => Err(unsupported()),
             },
@@ -220,48 +186,43 @@ impl ArrowFieldDescriptor {
         data_type: TokenStream,
         array_type: TokenStream,
         nullable: bool,
-        value_type: &Type,
     ) -> Self {
         Self {
             kind,
             data_type,
             array_type,
             nullable,
-            value_type: value_type.clone(),
         }
     }
 
-    fn with_utf8(kind: ArrowFieldKind, nullable: bool, value_type: &Type) -> Self {
+    fn with_utf8(kind: ArrowFieldKind, nullable: bool) -> Self {
         Self {
             kind,
             data_type: quote! { arrow::datatypes::DataType::Utf8 },
             array_type: quote! { arrow::array::StringArray },
             nullable,
-            value_type: value_type.clone(),
         }
     }
 
-    fn with_uint64(kind: ArrowFieldKind, nullable: bool, value_type: &Type) -> Self {
+    fn with_uint64(kind: ArrowFieldKind, nullable: bool) -> Self {
         Self {
             kind,
             data_type: quote! { arrow::datatypes::DataType::UInt64 },
             array_type: quote! { arrow::array::UInt64Array },
             nullable,
-            value_type: value_type.clone(),
         }
     }
 
-    fn with_timestamp(nullable: bool, value_type: &Type) -> Self {
+    fn with_timestamp(nullable: bool) -> Self {
         Self {
             kind: ArrowFieldKind::UnixNanos,
             data_type: quote! { nautilus_serialization::arrow::timestamp_data_type() },
             array_type: quote! { arrow::array::TimestampNanosecondArray },
             nullable,
-            value_type: value_type.clone(),
         }
     }
 
-    fn with_decimal(kind: ArrowFieldKind, nullable: bool, value_type: &Type) -> Self {
+    fn with_decimal(kind: ArrowFieldKind, nullable: bool) -> Self {
         Self {
             kind,
             data_type: quote! {
@@ -272,7 +233,6 @@ impl ArrowFieldDescriptor {
             },
             array_type: quote! { arrow::array::Decimal128Array },
             nullable,
-            value_type: value_type.clone(),
         }
     }
 
@@ -297,7 +257,12 @@ impl ArrowFieldDescriptor {
             | ArrowFieldKind::Identifier
             | ArrowFieldKind::Params
             | ArrowFieldKind::String => {
-                quote! { let mut builder = arrow::array::StringBuilder::new(); }
+                let state = (self.kind == ArrowFieldKind::Identifier)
+                    .then(|| quote! { let mut last_identifier = None; });
+                quote! {
+                    let mut builder = arrow::array::StringBuilder::with_capacity(#len, #len.min(1024));
+                    #state
+                }
             }
             ArrowFieldKind::Enum => quote! {
                 let mut builder =
@@ -459,16 +424,32 @@ impl ArrowFieldDescriptor {
                 builder.append(true);
             },
             ArrowFieldKind::Identifier => {
+                let append = quote! {
+                    match &last_identifier {
+                        Some((last_value, text)) if PartialEq::eq(value, last_value) => {
+                            builder.append_value(text);
+                        }
+                        _ => {
+                            let text = value.to_string();
+                            builder.append_value(&text);
+                            last_identifier = Some((Clone::clone(value), text));
+                        }
+                    }
+                };
+
                 if nullable {
                     quote! {
                         if let Some(value) = &item.#name {
-                            builder.append_value(value.to_string());
+                            #append
                         } else {
                             builder.append_null();
                         }
                     }
                 } else {
-                    quote! { builder.append_value(item.#name.to_string()); }
+                    quote! {
+                        let value = &item.#name;
+                        #append
+                    }
                 }
             }
             ArrowFieldKind::Params => {
@@ -573,7 +554,7 @@ impl ArrowFieldDescriptor {
         clippy::too_many_lines,
         reason = "decode code generation is one exhaustive Arrow field mapping"
     )]
-    fn decode(&self, name: &Ident, ty: &Type, column: &Ident) -> TokenStream {
+    fn decode(&self, name: &Ident, column: &Ident) -> TokenStream {
         let precision = quote! {{
             let key = concat!(stringify!(#name), "_precision");
             metadata
@@ -590,10 +571,11 @@ impl ArrowFieldDescriptor {
                     )
                 })?
         }};
-        let value_type = &self.value_type;
+
+        // Infer field types so remote models need no matching imports in the serialization crate
         let decoded = match self.kind {
-            ArrowFieldKind::Json => quote! {
-                serde_json::from_str::<#ty>(#column.value(i)).map_err(|e| {
+            ArrowFieldKind::Json | ArrowFieldKind::Params => quote! {
+                serde_json::from_str(#column.value(i)).map_err(|e| {
                     nautilus_serialization::arrow::EncodingError::ParseError(
                         stringify!(#name),
                         format!("row {i}: {e}"),
@@ -657,25 +639,31 @@ impl ArrowFieldDescriptor {
                         .collect::<Result<Vec<f64>, nautilus_serialization::arrow::EncodingError>>()?
                 }
             },
-            ArrowFieldKind::Identifier => quote! {
-                std::str::FromStr::from_str(#column.value(i)).map_err(|e| {
-                    nautilus_serialization::arrow::EncodingError::ParseError(
-                        stringify!(#name),
-                        format!("expected valid identifier/type, was '{e}'"),
-                    )
-                })?
-            },
-            ArrowFieldKind::Params => quote! {
-                serde_json::from_str::<#value_type>(#column.value(i)).map_err(|e| {
-                    nautilus_serialization::arrow::EncodingError::ParseError(
-                        stringify!(#name),
-                        format!("row {i}: {e}"),
-                    )
-                })?
-            },
+            ArrowFieldKind::Identifier => {
+                let last = Self::last_identifier(column);
+                quote! {
+                    {
+                        let text = #column.value(i);
+                        match &#last {
+                            Some((last_text, value)) if *last_text == text => Clone::clone(value),
+                            _ => {
+                                let value = std::str::FromStr::from_str(text)
+                                    .map_err(|e| {
+                                        nautilus_serialization::arrow::EncodingError::ParseError(
+                                            stringify!(#name),
+                                            format!("expected valid identifier/type, was '{e}'"),
+                                        )
+                                    })?;
+                                #last = Some((text, Clone::clone(&value)));
+                                value
+                            }
+                        }
+                    }
+                }
+            }
             ArrowFieldKind::String => quote! { #column.value(i).to_string() },
             ArrowFieldKind::Enum => quote! {
-                <#value_type as std::str::FromStr>::from_str(#column.value(i)).map_err(|e| {
+                std::str::FromStr::from_str(#column.value(i)).map_err(|e| {
                     nautilus_serialization::arrow::EncodingError::ParseError(
                         stringify!(#name),
                         format!("row {i}: {e}"),
@@ -720,6 +708,20 @@ impl ArrowFieldDescriptor {
                 Some(#decoded)
             }
         }
+    }
+
+    fn last_identifier(column: &Ident) -> Ident {
+        format_ident!("{column}_last")
+    }
+
+    fn decode_state(&self, column: &Ident) -> Option<TokenStream> {
+        if self.kind != ArrowFieldKind::Identifier {
+            return None;
+        }
+
+        let last = Self::last_identifier(column);
+        // The value type comes from the field, which a remote type may name by a path not in scope
+        Some(quote! { let mut #last: Option<(&str, _)> = None; })
     }
 
     fn finish(&self, name: &Ident) -> TokenStream {
@@ -892,7 +894,7 @@ fn parse_options(attr: &TokenStream) -> Result<ArrowCustomDataOptions, syn::Erro
 }
 
 struct ExpansionContext<'a> {
-    name: &'a Ident,
+    name: &'a Path,
     name_str: &'a str,
     generics: &'a syn::Generics,
     field_list: &'a [FieldSpec],
@@ -1043,9 +1045,8 @@ fn gen_decode_batch_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
         .enumerate()
         .map(|(idx, (f, descriptor))| {
             let ident = &f.ident;
-            let ty = &f.ty;
             let col_name = format_ident!("col_{}", idx);
-            let rhs = descriptor.decode(ident, ty, &col_name);
+            let rhs = descriptor.decode(ident, &col_name);
             quote! { #ident: #rhs }
         })
         .collect();
@@ -1086,6 +1087,12 @@ fn gen_decode_batch_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
             }
         })
         .collect();
+
+    let decode_states: Vec<TokenStream> = descriptors
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, descriptor)| descriptor.decode_state(&format_ident!("col_{}", idx)))
+        .collect();
     quote! {
         impl #generics nautilus_serialization::arrow::DecodeDataFromRecordBatch for #name #generics {
             fn decode_data_batch(
@@ -1093,13 +1100,23 @@ fn gen_decode_batch_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
                 record_batch: arrow::record_batch::RecordBatch,
             ) -> std::result::Result<Vec<nautilus_model::data::Data>, nautilus_serialization::arrow::EncodingError> {
                 #(#decode_extracts)*
+                #(#decode_states)*
                 let num_rows = record_batch.num_rows();
-                let mut results = Vec::with_capacity(num_rows);
+                let mut results: Vec<nautilus_model::data::Data> = Vec::with_capacity(num_rows);
                 for i in 0..num_rows {
                     let row = Self {
                         #(#decode_row_fields),*
                     };
-                    results.push(nautilus_model::data::Data::Custom(nautilus_model::data::CustomData::from_arc(std::sync::Arc::new(row))));
+                    let data_type = if let Some(nautilus_model::data::Data::Custom(first)) = results.first() {
+                        first.data_type.clone()
+                    } else {
+                        nautilus_model::data::DataType::new(
+                            nautilus_model::data::CustomDataTrait::type_name(&row), None, None,
+                        )
+                    };
+                    results.push(nautilus_model::data::Data::Custom(
+                        nautilus_model::data::CustomData::new(std::sync::Arc::new(row), data_type),
+                    ));
                 }
                 Ok(results)
             }
@@ -1219,6 +1236,53 @@ pub(crate) fn expand_arrow_custom_data(attr: TokenStream, item: TokenStream) -> 
         Ok(input) => input,
         Err(e) => return e.to_compile_error(),
     };
+
+    let target = Path::from(input.ident.clone());
+    expand_struct(&options, input, &target, true)
+}
+
+pub(crate) fn expand_arrow_custom_data_remote(input: TokenStream) -> TokenStream {
+    match parse2::<RemoteInput>(input) {
+        Ok(RemoteInput::Path(target)) => {
+            let krate = &target.segments.first().expect("paths have a segment").ident;
+            let type_name = &target.segments.last().expect("paths have a segment").ident;
+            let fields_macro = crate::model::fields_macro_ident(type_name);
+            quote! {
+                #krate::#fields_macro! {
+                    [nautilus_serialization::arrow_custom_data_remote] #target
+                }
+            }
+        }
+        Ok(RemoteInput::Struct(target, item)) => {
+            expand_struct(&ArrowCustomDataOptions::default(), *item, &target, false)
+        }
+        Err(e) => e.to_compile_error(),
+    }
+}
+
+enum RemoteInput {
+    Path(Path),
+    Struct(Path, Box<ItemStruct>),
+}
+
+impl syn::parse::Parse for RemoteInput {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let target: Path = input.parse()?;
+        if input.is_empty() {
+            return Ok(Self::Path(target));
+        }
+
+        input.parse::<Token![;]>()?;
+        Ok(Self::Struct(target, Box::new(input.parse()?)))
+    }
+}
+
+fn expand_struct(
+    options: &ArrowCustomDataOptions,
+    input: ItemStruct,
+    target: &Path,
+    emit_item: bool,
+) -> TokenStream {
     let fields = match &input.fields {
         Fields::Named(fields) => &fields.named,
         _ => {
@@ -1256,34 +1320,40 @@ pub(crate) fn expand_arrow_custom_data(attr: TokenStream, item: TokenStream) -> 
     let name = &input.ident;
     let name_str = name.to_string();
     let ctx = ExpansionContext {
-        name,
+        name: target,
         name_str: &name_str,
         generics: &input.generics,
         field_list: &field_list,
         descriptors: &descriptors,
-        options: &options,
+        options,
     };
     let custom_data_serialize = gen_custom_data_serialize_impl(&ctx);
     let arrow_schema = gen_arrow_schema_impl(&ctx);
     let encode_batch = gen_encode_batch_impl(&ctx);
     let decode_batch = gen_decode_batch_impl(&ctx);
     let pymethods = gen_arrow_pymethods_impl(&ctx);
-    let has_model_macro = input.attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "custom_data")
-    });
-    let mut output_item = input.clone();
-    if !has_model_macro && let Fields::Named(fields) = &mut output_item.fields {
-        for field in &mut fields.named {
-            field.attrs.retain(|attr| {
-                attr.path()
-                    .get_ident()
-                    .is_none_or(|ident| ident != "custom_data_field")
-            });
+
+    let output_item = emit_item.then(|| {
+        let has_model_macro = input.attrs.iter().any(|attr| {
+            attr.path()
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "custom_data")
+        });
+
+        let mut output_item = input;
+        if !has_model_macro && let Fields::Named(fields) = &mut output_item.fields {
+            for field in &mut fields.named {
+                field.attrs.retain(|attr| {
+                    attr.path()
+                        .get_ident()
+                        .is_none_or(|ident| ident != "custom_data_field")
+                });
+            }
         }
-    }
+
+        output_item
+    });
 
     quote! {
         #output_item
@@ -1408,5 +1478,60 @@ mod tests {
         assert!(!expanded.contains("compile_error"));
         assert!(expanded.contains("enum_dictionary_data_type"));
         assert!(!expanded.contains("custom_data_field"));
+    }
+
+    #[rstest]
+    fn remote_path_requests_exported_fields() {
+        let expanded = expand_arrow_custom_data_remote(quote! { model_crate::data::ModelData });
+        let expected = quote! {
+            model_crate::custom_data_fields_ModelData! {
+                [nautilus_serialization::arrow_custom_data_remote] model_crate::data::ModelData
+            }
+        };
+
+        assert_eq!(expanded.to_string(), expected.to_string());
+    }
+
+    #[rstest]
+    fn remote_fields_generate_traits_without_redefining_type() {
+        let expanded = expand_arrow_custom_data_remote(quote! {
+            model_crate::data::ModelData;
+            struct ModelData {
+                #[custom_data_field(serde)]
+                pub labels: Vec<ModelLabel>,
+                #[custom_data_field(native_enum)]
+                pub state: ModelState,
+                pub ts_event: nautilus_core::UnixNanos,
+                pub ts_init: nautilus_core::UnixNanos,
+            }
+        })
+        .to_string();
+
+        assert!(!expanded.contains("compile_error"));
+        assert!(!expanded.contains("struct ModelData"));
+        assert!(!expanded.contains("ModelLabel"));
+        assert!(!expanded.contains("ModelState"));
+        assert!(expanded.contains("ArrowSchemaProvider for model_crate :: data :: ModelData"));
+        assert!(expanded.contains("EncodeToRecordBatch for model_crate :: data :: ModelData"));
+        assert!(
+            expanded.contains("DecodeDataFromRecordBatch for model_crate :: data :: ModelData")
+        );
+        assert!(expanded.contains("CustomDataSerialize for model_crate :: data :: ModelData"));
+        assert!(expanded.contains("json_string_field"));
+        assert!(expanded.contains("enum_dictionary_data_type"));
+        assert!(!expanded.contains("pymethods"));
+    }
+
+    #[rstest]
+    fn remote_rejects_trailing_tokens() {
+        let expanded = expand_arrow_custom_data_remote(quote! {
+            model_crate::data::ModelData unexpected
+        })
+        .to_string();
+
+        assert_eq!(
+            expanded,
+            quote! { ::core::compile_error! { "expected `;`" } }.to_string()
+        );
     }
 }

@@ -18,7 +18,7 @@
 use ahash::AHashMap;
 use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_execution::{
-    matching_engine::config::OrderMatchingEngineConfig,
+    matching_engine::config::{OrderMatchingEngineConfig, OrderPriorityResetPolicy},
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
 };
 use nautilus_model::{
@@ -152,6 +152,9 @@ pub struct SandboxExecutionClientConfig {
     /// A value of `0` disables protection.
     #[builder(default)]
     pub price_protection_points: u32,
+    /// The queue-priority reset policy for successful modify commands.
+    #[builder(default)]
+    pub order_priority_reset_policy: OrderPriorityResetPolicy,
 }
 
 impl SandboxExecutionClientConfig {
@@ -191,6 +194,7 @@ impl SandboxExecutionClientConfig {
             .use_reduce_only(self.use_reduce_only)
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
+            .order_priority_reset_policy(self.order_priority_reset_policy)
             .oto_full_trigger(self.oto_full_trigger)
             .maybe_price_protection_points(price_protection)
             .build()
@@ -347,6 +351,10 @@ mod tests {
         assert_eq!(config.trade_execution, expected.trade_execution);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
         assert!(!config.queue_position);
+        assert_eq!(
+            config.order_priority_reset_policy,
+            OrderPriorityResetPolicy::PriceChange
+        );
         assert!(!config.liquidity_consumption);
         assert!(!config.bar_adaptive_high_low_ordering);
         assert!(!config.use_market_order_acks);
@@ -358,6 +366,7 @@ mod tests {
     fn test_to_matching_engine_config_forwards_matching_knobs() {
         let config = SandboxExecutionClientConfig {
             queue_position: true,
+            order_priority_reset_policy: OrderPriorityResetPolicy::AnyModify,
             liquidity_consumption: true,
             bar_adaptive_high_low_ordering: true,
             use_market_order_acks: true,
@@ -368,6 +377,10 @@ mod tests {
         let engine_config = config.to_matching_engine_config();
 
         assert!(engine_config.queue_position);
+        assert_eq!(
+            engine_config.order_priority_reset_policy,
+            OrderPriorityResetPolicy::AnyModify
+        );
         assert!(engine_config.liquidity_consumption);
         assert!(engine_config.bar_adaptive_high_low_ordering);
         assert!(engine_config.use_market_order_acks);

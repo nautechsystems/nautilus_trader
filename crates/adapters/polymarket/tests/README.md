@@ -64,8 +64,44 @@ The node tests boot and stop a real `LiveNode`, use a strategy to submit through
 the `ExecutionManager` consume adapter events. The scenarios cover acceptance, rejection,
 cancellation, fill-driven position creation, and fill voiding with position removal.
 
-Reconciliation is disabled in these tests so the smoke boundary stays focused on node assembly and
-the order-event run loop. The seam tests cover reconciliation separately.
+Lifecycle smoke scenarios disable reconciliation to focus on node assembly and the order-event
+run loop. The seam tests cover reconciliation separately; the benchmark below enables periodic checks.
+
+## Continuous reconciliation benchmark
+
+`integration/node/reconciliation_bench.rs` measures trade-tick delivery through a real `LiveNode`
+while periodic open-order checks use the Polymarket client. It compares the retained inline API
+with worker collection and core acceptance in the same binary. A test-only client wrapper selects
+that path; production code and configuration have no benchmark controls.
+
+The local venue runs on the worker runtime and returns pages of 64 orders. Cases use 64 or 1,024
+accepted, unfilled orders on one instrument, one warm-up check, and 30 measured checks. Each case delivers 15,000
+trade ticks at fixed 100-microsecond deadlines. The no-reconciliation case measures the delivery
+floor. Smoke cases run both collection paths with 65 orders to check pagination.
+
+Run the local comparison serially in separate nextest processes:
+
+```bash
+CARGO_BUILD_JOBS=4 NEXTEST_TEST_THREADS=1 NAUTILUS_WORKER_THREADS=2 \
+CARGO_PROFILE_BENCH_DEBUG=0 cargo nextest run --cargo-profile bench --profile ci \
+  -p nautilus-polymarket --test integration \
+  -E 'test(node::reconciliation_bench::reconciliation_latency)' \
+  --run-ignored ignored-only --stress-count 3 --success-output immediate
+```
+
+Each `POLYMARKET_RECONCILIATION_BENCH` JSON record reports delivery latency, scheduled latency,
+producer lateness, report-cycle latency, and exact work counts. Delivery p99 measures enqueue to
+trade callback; producer lateness distinguishes publisher scheduling from core delays. The scenario
+checks report fields, page and report counts, and final cached order values. The record includes
+the number of checks completed during tick delivery and a temporary JSON path containing the raw
+latency samples.
+
+This measures steady open-order reconciliation, including local HTTP, decoding, pagination,
+preparation, acceptance, and execution-manager processing. It does not measure fill recovery,
+position checks, or venue latency. Interleave inline and worker runs and retain the raw records;
+shared-host wall-clock noise can make a comparison inconclusive. Use the repository's
+[benchmarking policy](../../../../BENCHMARKING.md) before publishing a baseline; the command above
+uses the optimized non-LTO profile for a local comparison.
 
 ## Mock venue and fixtures
 

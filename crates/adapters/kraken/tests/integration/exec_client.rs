@@ -127,6 +127,8 @@ enum OrderCommandResponse {
     StructuredReject,
     UnknownStatus,
     IocWouldNotExecute,
+    /// Answers with this JSON body.
+    Body(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -429,6 +431,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","sendStatus":{"status":"iocWouldNotExecute"}}"#
                         .to_string(),
                 ),
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/derivatives/api/v3/editorder" => {
@@ -451,6 +454,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","editStatus":{"status":"processing","order_id":"F-MODIFY"}}"#
                         .to_string(),
                 ),
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/derivatives/api/v3/cancelorder" => {
@@ -660,6 +664,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
                 }
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/0/private/AmendOrder" => {
@@ -678,6 +683,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{}}"#.to_string())
                 }
+                OrderCommandResponse::Body(body) => json_response(body.to_string()),
             }
         }
         "/0/private/AddOrderBatch" => {
@@ -3541,6 +3547,61 @@ async fn test_spot_mass_status_skips_an_unparsable_closed_order_as_incomplete() 
     assert!(!mass_status.reports_complete());
 }
 
+/// A spot open order whose venue order ID the model cannot hold fails the read like any other open
+/// order it cannot parse: dropped, it reads to reconciliation as an order the venue does not have.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_fails_on_an_open_order_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(spot_open_order_json(OrderSide::Buy, "open").replace("OOPEN-BBBBB-BBBBBB", ""));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Invalid order_id '' in Kraken spot order"),
+        "{error:#}"
+    );
+}
+
+/// A spot closed order with an invalid order ID is skipped and leaves the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_skips_a_closed_row_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await = Some(EMPTY_SPOT_OPEN_ORDERS.to_string());
+    *state.closed_orders_json.lock().await = Some(spot_closed_sell_json(""));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.order_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_skips_a_fill_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_json(&["XBTUSDT"]).replace("O26VBY-ISGAE-JP5TLU", ""));
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
 /// What a single-order lookup answers for an order its read did not return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LookupAnswer {
@@ -3711,7 +3772,7 @@ enum FuturesLookupRead {
     TokenPageWithoutEvents,
     /// The order's own event on a page with a continuation token.
     OrderOnTokenPage,
-    /// A history row of a kind the documentation does not list, which names no order.
+    /// A history row of a kind the documentation does not list, which rules out no order.
     UndocumentedRow,
     /// A history row whose direction the venue could not decode, of this order.
     UndecodableRowOf(&'static str),
@@ -3723,14 +3784,19 @@ enum FuturesLookupRead {
     UnresolvedOpenOrder,
     /// A history row of this order that cannot be parsed, its quantity negative.
     UnparsableRowOf(&'static str),
+    /// A history row of this order whose payload does not decode.
+    UnreadableRowOf(&'static str),
+    /// A history row of this order whose payload does not decode, newer than a readable row of
+    /// the order, which then does not answer for it.
+    UnreadableRowOver(&'static str),
 }
 
 /// The futures lookup answers that the venue has no such order only from a read that rules the
 /// order out. A history page handed back with a continuation token holds the newest events, so it
 /// rules out an order placed after its oldest event by more than the clock skew allowance, and a
 /// page with no events rules out none. A skipped row, one the client cannot resolve or parse
-/// included, rules out every other order with a venue order ID, and a row naming no order rules out
-/// none. An order the cut-short read returns is reported.
+/// included, rules out every other order with a venue order ID, and a row naming no order, or any
+/// row of an undocumented kind, rules out none. An order the cut-short read returns is reported.
 #[rstest]
 #[case::complete_read(FuturesLookupRead::Complete, "V-LOOKUP-1", LookupAnswer::Absent)]
 #[case::token_page_reaching_past_the_order(
@@ -3810,6 +3876,21 @@ enum FuturesLookupRead {
 )]
 #[case::unparsable_row_of_the_order(
     FuturesLookupRead::UnparsableRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Deferred
+)]
+#[case::unreadable_row_of_another_order(
+    FuturesLookupRead::UnreadableRowOf("V-OTHER-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Absent
+)]
+#[case::unreadable_row_of_the_order(
+    FuturesLookupRead::UnreadableRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Deferred
+)]
+#[case::unreadable_row_over_the_order(
+    FuturesLookupRead::UnreadableRowOver("V-LOOKUP-1"),
     "V-LOOKUP-1",
     LookupAnswer::Deferred
 )]
@@ -3910,6 +3991,37 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
                 Some(futures_open_orders_json("V-UNRESOLVED", "PF_NOSUCHUSD"));
             futures_order_history_json(&[])
         }
+        FuturesLookupRead::UnreadableRowOf(order_uid) => {
+            futures_order_history_json(&[futures_history_element(
+                "OrderCancelled",
+                "e-unreadable",
+                order_uid,
+                "PI_XBTUSD",
+                "oops",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            )])
+        }
+        FuturesLookupRead::UnreadableRowOver(order_uid) => futures_order_history_json(&[
+            futures_history_element(
+                "OrderCancelled",
+                "e-unreadable",
+                order_uid,
+                "PI_XBTUSD",
+                "oops",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS + 1_000,
+            ),
+            futures_history_element(
+                "OrderPlaced",
+                "e-readable",
+                order_uid,
+                "PI_XBTUSD",
+                "1000",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            ),
+        ]),
         FuturesLookupRead::UnresolvedRowOf(order_uid) => {
             futures_order_history_json(&[futures_history_element(
                 "OrderCancelled",
@@ -4121,6 +4233,74 @@ async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
             assert!(format!("{error:#}").contains(message), "{error:#}");
         }
     }
+}
+
+/// A futures open order whose venue order ID the model cannot hold fails the read like any other
+/// open order it cannot parse.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_on_an_open_order_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(futures_open_orders_json("", "PI_XBTUSD"));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Invalid order_id '' in Kraken futures open order"),
+        "{error:#}"
+    );
+}
+
+/// An unsized trigger with an invalid venue order ID is skipped like any other, and the
+/// unidentified row leaves the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_skips_an_unsized_trigger_with_an_invalid_order_id() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(
+        load_test_data("http_futures_open_orders_unsized_trigger.json").replace("V-TRIGGER", ""),
+    );
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.order_reports().is_empty());
+    assert!(!mass_status.reports_complete());
+}
+
+/// A futures fill with an invalid venue order ID is skipped and leaves the set incomplete, and its
+/// sibling on the page still reports.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_skips_a_fill_with_an_invalid_order_id_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        ("f-invalid", "", "5", "27000.0"),
+        ("f-sibling", "V-SIBLING", "5", "27000.0"),
+    ]));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let fill_reports = mass_status.fill_reports();
+    assert_eq!(fill_reports.len(), 1);
+    let sibling_reports = &fill_reports[&VenueOrderId::from("V-SIBLING")];
+    assert_eq!(sibling_reports.len(), 1);
+    assert_eq!(
+        sibling_reports[0].venue_order_id,
+        VenueOrderId::from("V-SIBLING")
+    );
+    assert_eq!(sibling_reports[0].trade_id, TradeId::from("f-sibling"));
+    assert!(!mass_status.reports_complete());
 }
 
 /// What a futures read makes of an unsized trigger.
@@ -5267,6 +5447,158 @@ async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument
     );
     assert!(snapshot.fill_reports().values().all(Vec::is_empty));
     assert!(!snapshot.reports_complete());
+}
+
+/// An uncached order the read withholds for an unreadable newest row takes its page fills with it,
+/// since with no order the engine would only count them against a synthetic opening; a cached
+/// order keeps them, since the engine reconciles them against it, and so does an order the
+/// unreadable row is too old to withhold. A sibling keeps its report and fills either way, and the
+/// set is incomplete.
+#[rstest]
+#[case::uncached(false, 1680877245500, false, false)]
+#[case::cached(true, 1680877245500, false, true)]
+#[case::uncached_reported_from_a_newer_state(false, 1680877244000, true, true)]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_read_withholds(
+    #[case] order_cached: bool,
+    #[case] unreadable_ms: i64,
+    #[case] expected_report: bool,
+    #[case] expected_fills_kept: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    if order_cached {
+        let placed = UnixNanos::from(FUTURES_LOOKUP_ORDER_MS as u64 * 1_000_000);
+        let order = add_futures_limit_order_created_at(
+            &cache,
+            ClientOrderId::new("futures-withheld-1"),
+            test_instrument_id(),
+            OrderSide::Buy,
+            test_strategy_id(),
+            placed,
+        );
+        accept_cached_order_at(&cache, &order, "V-WITHHELD", placed);
+    }
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderCancelled",
+            "e3",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            unreadable_ms,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e2",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-SIBLING",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-withheld", "V-WITHHELD", "buy", "500", "49000.0"),
+        ("f-sibling", "V-SIBLING", "buy", "500", "49000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-SIBLING"))
+    );
+    assert_eq!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD")),
+        expected_report
+    );
+    assert!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-SIBLING"))
+    );
+    assert_eq!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD")),
+        expected_fills_kept
+    );
+    assert!(!snapshot.reports_complete());
+}
+
+/// A fill of a withheld order that echoes a cached order stays although the cache does not index
+/// the venue order yet, since the engine applies it to that order by its client order ID.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_order() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_futures_limit_order_created_at(
+        &cache,
+        ClientOrderId::new(LONG_CLIENT_ORDER_ID),
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+        UnixNanos::default(),
+    );
+    mark_cached_order_submitted(&cache, &order);
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderCancelled",
+            "e2",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            1680877245500,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(recent_fills_body(&[(
+        "f-withheld",
+        "V-WITHHELD",
+        LONG_CLIENT_ORDER_ID,
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD"))
+    );
+    assert!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD"))
+    );
 }
 
 /// A round trip whose fills are all on the page nets to zero on the flat instrument and is kept.
@@ -7141,6 +7473,31 @@ async fn test_mass_status_captures_collection_start(#[case] spot: bool) {
     assert!(snapshot.ts_init <= request_ts);
 }
 
+/// A held order's status row with an invalid venue order ID fails the lookup rather than reading
+/// the order as absent, and that fails the read that needs the window.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_on_an_orders_status_row_with_an_invalid_order_id() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-001");
+    *state.orders_status_response.lock().await =
+        Some(ORDERS_STATUS_PART_FILLED_CANCEL.replace("V-HELD-001", ""));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("Invalid order_id '' in Kraken futures order status"),
+        "{message}"
+    );
+    assert!(
+        message.contains("treating the lookup as failed"),
+        "{message}"
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_futures_mass_status_converges_part_filled_hold_from_orders_status() {
@@ -8096,11 +8453,29 @@ async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
     false,
     Err("several venue orders")
 )]
+#[case::rows_of_two_venue_orders_one_withheld(
+    false,
+    LookupRow::TwoHistoryRowsOneWithheld,
+    false,
+    Err("several venue orders")
+)]
 #[case::full_id_row_of_another_venue_order(
     true,
     LookupRow::OnlyAnotherWithTheId,
     false,
     Err("carries its client order ID")
+)]
+#[case::full_id_row_of_another_venue_order_withheld(
+    true,
+    LookupRow::WithheldAnotherWithTheId,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::full_id_row_withheld_without_venue_order_id(
+    false,
+    LookupRow::WithheldAnotherWithTheId,
+    false,
+    Err("does not rule it out")
 )]
 #[case::full_id_window_row_of_another_venue_order(
     true,
@@ -8277,6 +8652,18 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
         )
         .replace(r#""clientId":"""#, &format!(r#""clientId":"{client_id}""#))
     };
+    // Newer than `history_row`, with a quantity that does not decode
+    let unreadable_row = |order_uid: &str| {
+        futures_history_element(
+            "OrderCancelled",
+            &format!("e-unreadable-{order_uid}"),
+            order_uid,
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            1_700_000_001_000,
+        )
+    };
 
     match row {
         LookupRow::HistoryOfAnother(echoed) => {
@@ -8298,6 +8685,19 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
             *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
                 history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
                 history_row("V-OTHER-2", SHORTENED_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::WithheldAnotherWithTheId => {
+            *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+                unreadable_row("V-OTHER-1"),
+                history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::TwoHistoryRowsOneWithheld => {
+            *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+                unreadable_row("V-OTHER-2"),
+                history_row("V-OTHER-2", SHORTENED_CLIENT_ORDER_ID),
+                history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
             ]));
         }
         LookupRow::WindowOnAnotherInstrument => {
@@ -8702,6 +9102,10 @@ enum LookupRow {
     HistoryOfAnother(&'static str),
     /// Only a history row of `V-OTHER-1` echoing the full ID, the order's own row absent.
     OnlyAnotherWithTheId,
+    /// As `OnlyAnotherWithTheId`, with an unreadable newer row withholding `V-OTHER-1`.
+    WithheldAnotherWithTheId,
+    /// As `TwoHistoryRows`, with an unreadable newer row withholding `V-OTHER-2`.
+    TwoHistoryRowsOneWithheld,
     /// History rows of `V-OTHER-1` and `V-OTHER-2`, echoing the full and the shortened ID.
     TwoHistoryRows,
     /// A window entry of `V-OTHER-1` echoing the full ID on another instrument.
@@ -9594,6 +9998,125 @@ async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
     assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
 }
 
+/// A documented edit refusal, by edit status or by error code, emits `OrderModifyRejected` with the
+/// venue's status or code as its reason and the modify command as its causation.
+#[rstest]
+#[case::invalid_price(
+    r#"{"result":"success","editStatus":{"status":"invalidPrice","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "invalidPrice"
+)]
+#[case::order_for_edit_not_found(
+    r#"{"result":"success","editStatus":{"status":"orderForEditNotFound","orderEvents":[]}}"#,
+    "orderForEditNotFound"
+)]
+#[case::edit_already_held(
+    r#"{"result":"success","editStatus":{"status":"editAlreadyHeld","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "editAlreadyHeld"
+)]
+#[case::market_is_cancel_only(
+    r#"{"result":"success","editStatus":{"status":"marketIsCancelOnly","orderId":"F-MODIFY","orderEvents":[]}}"#,
+    "marketIsCancelOnly"
+)]
+#[case::cancel_only(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"cancelOnly"}"#,
+    "cancelOnly"
+)]
+#[case::invalid_argument(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"invalidArgument"}"#,
+    "invalidArgument"
+)]
+#[case::authentication_error(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"authenticationError"}"#,
+    "authenticationError"
+)]
+#[case::nonce_below_threshold(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceBelowThreshold"}"#,
+    "nonceBelowThreshold"
+)]
+#[case::nonce_duplicate(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"nonceDuplicate"}"#,
+    "nonceDuplicate"
+)]
+#[tokio::test]
+async fn test_futures_refused_edit_emits_modify_rejected(
+    #[case] body: &'static str,
+    #[case] reason: &str,
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::Body(body),
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-refused-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    let command = modify_order_command(&order, VenueOrderId::from("F-MODIFY"));
+    let command_id = command.command_id;
+
+    client.modify_order(command).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(
+                event.reason.as_str(),
+                format!("modify-order error: {reason}"),
+                "{event:?}"
+            );
+            assert_eq!(event.causation_id, Some(command_id));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+/// An edit response that does not establish whether the venue applied the edit emits neither
+/// `OrderModifyRejected` nor `OrderModifyDenied`, so an order the venue removed is not restored.
+#[rstest]
+#[case::ioc_would_not_execute(
+    r#"{"result":"success","editStatus":{"status":"iocWouldNotExecute","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::self_fill(
+    r#"{"result":"success","editStatus":{"status":"selfFill","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::post_would_execute(
+    r#"{"result":"success","editStatus":{"status":"postWouldExecute","orderId":"F-MODIFY","orderEvents":[]}}"#
+)]
+#[case::rate_limited(
+    r#"{"result":"error","serverTime":"2020-08-27T17:03:33.196Z","error":"apiLimitExceeded"}"#
+)]
+#[tokio::test]
+async fn test_futures_unsettled_edit_does_not_emit_modify_rejected(#[case] body: &'static str) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::Body(body),
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-unsettled-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| match event {
+        OrderEventAny::ModifyRejected(event) => event.client_order_id == client_order_id,
+        OrderEventAny::ModifyDenied(event) => event.client_order_id == client_order_id,
+        _ => false,
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_spot_whole_batch_submit_failure_does_not_reject_children() {
@@ -10066,13 +10589,12 @@ async fn captured_batch_cancel_fields(state: &TestServerState) -> (Vec<String>, 
         value
             .get(key)
             .and_then(Value::as_array)
-            .map(|items| {
+            .map_or_default(|items| {
                 items
                     .iter()
                     .filter_map(|item| item.as_str().map(str::to_string))
                     .collect()
             })
-            .unwrap_or_default()
     };
 
     (read("orders"), read("cl_ord_ids"))

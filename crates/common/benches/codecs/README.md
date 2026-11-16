@@ -5,6 +5,8 @@ It checks field parity before measuring encode, decode, and normal MessageBus ex
 republishing through a bounded in-memory test backing. It measures local costs; it does not measure a
 network transport or a separate receiver process. Separate Redis transport and Python callback benchmarks
 are described below.
+The account-state case uses a test endpoint that republishes to its subscribed topic; it excludes
+Portfolio processing.
 
 From the repository root, build with the benchmark profile and the Python interpreter for your environment:
 
@@ -52,6 +54,12 @@ costs are included in latency. Collect allocation counts separately with an allo
 Set `NAUTILUS_BENCH_CASE` to one case name and `NAUTILUS_BENCH_FORMAT` to `json` or `msgpack`
 to select a workload. Named data cases include `request_join`, `historical_trades`, `instrument_reply`,
 `catalog_reply`, and `custom_batch`. Read exact case names from the output's `case` field.
+
+Set `NAUTILUS_BENCH_ISO8601=true` to measure ISO timestamp output; it defaults to `false`.
+The mode applies to codec calls and external publication and appears in the JSON output.
+ISO mode requires decoders that accept timestamp strings. ISO MessagePack encodes bytes as arrays
+and non-finite floats as null. Field-parity assertions still run before measurement.
+
 Additional case families are:
 
 | Family              | Case pattern                                                |
@@ -150,6 +158,7 @@ and the current decoder's canonical reencoding. Set `NAUTILUS_BENCH_REPLAY_DIR` 
 check those fields and exact reencoded bytes. Capture and replay under the same feature combination:
 `serde_json/preserve_order` changes map ordering. Original incoming bytes can have a different key order
 from canonical reencoding through `serde_json::Value`.
+ISO fixtures use `.iso8601.json` filenames; capture and replay with the same timestamp mode.
 
 ### Allocation counts
 

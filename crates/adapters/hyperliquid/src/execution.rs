@@ -175,7 +175,12 @@ impl HyperliquidExecutionClient {
     }
 
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
-        validate_order_for_hyperliquid(order)
+        validate_order_for_hyperliquid(order)?;
+        anyhow::ensure!(
+            self.http_client.allows_instrument(order.instrument_id()),
+            "Order outside execution product scope"
+        );
+        Ok(())
     }
 
     fn order_request(
@@ -183,7 +188,7 @@ impl HyperliquidExecutionClient {
         order: &OrderAny,
         slippage_bps: u32,
     ) -> anyhow::Result<HyperliquidExchangePlaceOrderRequest> {
-        validate_order_for_hyperliquid(order)?;
+        self.validate_order_submission(order)?;
 
         let symbol = order.instrument_id().symbol.inner();
         let asset = self
@@ -428,6 +433,7 @@ impl HyperliquidExecutionClient {
         )
         .context("failed to create Hyperliquid HTTP client")?;
 
+        http_client.set_product_types(config.product_types.clone())?;
         http_client.set_account_id(core.account_id);
         http_client.set_account_address(account_address)?;
         http_client.set_normalize_prices(config.normalize_prices);
@@ -714,6 +720,14 @@ impl HyperliquidExecutionClient {
     }
 
     fn start_outcome_settlement_poll(&self) -> anyhow::Result<()> {
+        if !self
+            .config
+            .product_types
+            .contains(&HyperliquidProductType::Outcome)
+        {
+            return Ok(());
+        }
+
         let poll_secs = self.config.outcome_settlement_poll_secs;
         if poll_secs == 0 {
             log::debug!("Outcome settlement polling disabled by config");
@@ -850,6 +864,10 @@ impl HyperliquidExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for HyperliquidExecutionClient {
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        self.http_client.allows_instrument(instrument_id)
+    }
+
     fn is_connected(&self) -> bool {
         self.core.is_connected()
     }
@@ -1331,6 +1349,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
             }
         };
 
+        if !self.http_client.allows_instrument(cmd.instrument_id)
+            || !self.http_client.allows_instrument(order.instrument_id())
+        {
+            emit_modify_failure(
+                &self.emitter,
+                &cmd,
+                venue_order_id,
+                CommandFailure::not_sent("Order outside execution product scope"),
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
         let http_client = self.http_client.clone();
         let symbol = cmd.instrument_id.symbol.inner();
         let should_normalize = self.config.normalize_prices;
@@ -1612,17 +1643,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         log::debug!("Cancelling order: {cmd}");
 
-        if let Some(order) = self
-            .staged_brackets
-            .lock()
-            .cancel_child(&cmd.client_order_id)
-        {
-            self.emitter
-                .emit_order_canceled(&order, None, self.clock.get_time_ns());
-            return Ok(());
-        }
-
-        let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let client_order_id = cmd.client_order_id;
@@ -1630,7 +1650,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
         let symbol = cmd.instrument_id.symbol.inner();
-        let ws_client = self.ws_client.clone();
         let fast = can_fast_cancel_order(
             self.core
                 .cache()
@@ -1649,6 +1668,28 @@ impl ExecutionClient for HyperliquidExecutionClient {
             fast: fast.is_some(),
         };
 
+        if !self.http_client.allows_instrument(instrument_id) {
+            emit_cancel_failure(
+                &emitter,
+                &entry,
+                CommandFailure::not_sent("Order outside execution product scope"),
+                clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
+        if let Some(order) = self
+            .staged_brackets
+            .lock()
+            .cancel_child(&cmd.client_order_id)
+        {
+            self.emitter
+                .emit_order_canceled(&order, None, self.clock.get_time_ns());
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let rejected_entry = entry.clone();
 
         if !self.spawn_task("cancel_order", async move {
@@ -1755,11 +1796,23 @@ impl ExecutionClient for HyperliquidExecutionClient {
             })
             .collect();
 
-        let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let ws_client = self.ws_client.clone();
 
+        if !self.http_client.allows_instrument(instrument_id) {
+            for entry in &entries {
+                emit_cancel_failure(
+                    &emitter,
+                    entry,
+                    CommandFailure::not_sent("Order outside execution product scope"),
+                    clock.get_time_ns(),
+                );
+            }
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let rejected_entries = entries.clone();
 
         if !self.spawn_task("cancel_all_orders", async move {
@@ -1856,6 +1909,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
+                if !http_client.allows_instrument(entry.instrument_id) {
+                    emit_cancel_failure(
+                        &emitter,
+                        entry,
+                        CommandFailure::not_sent("Order outside execution product scope"),
+                        clock.get_time_ns(),
+                    );
+                    continue;
+                }
+
                 let asset = match http_client.get_asset_index_for_symbol(entry.symbol) {
                     Some(a) => a,
                     None => {
@@ -1944,6 +2007,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: {cmd}");
 
+        anyhow::ensure!(
+            self.http_client.allows_instrument(cmd.instrument_id),
+            "Order outside execution product scope"
+        );
+
         let client_order_id = cmd.client_order_id;
         let venue_order_id = match cmd.venue_order_id {
             Some(voi) => Some(voi),
@@ -1997,23 +2065,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             }
 
-            let Some(venue_order_id) = venue_order_id else {
-                log::debug!("No order status report found for {client_order_id}");
-                return Ok(());
+            let result = if let Some(venue_order_id) = venue_order_id {
+                let oid: u64 = match venue_order_id.as_str().parse() {
+                    Ok(oid) => oid,
+                    Err(e) => {
+                        log::warn!("Failed to parse venue order ID {venue_order_id}: {e}");
+                        return Ok(());
+                    }
+                };
+
+                http_client
+                    .request_order_status_report(&account_address, oid)
+                    .await
+            } else {
+                // An order closed before its acceptance arrived is only found by cloid
+                http_client
+                    .request_order_status_report_by_cloid(&account_address, &client_order_id)
+                    .await
             };
 
-            let oid: u64 = match venue_order_id.as_str().parse() {
-                Ok(oid) => oid,
-                Err(e) => {
-                    log::warn!("Failed to parse venue order ID {venue_order_id}: {e}");
-                    return Ok(());
-                }
-            };
-
-            match http_client
-                .request_order_status_report(&account_address, oid)
-                .await
-            {
+            match result {
                 Ok(Some(mut report)) => {
                     if is_inflight_modify_old_leg_cancel(
                         &dispatch_state,
@@ -2033,6 +2104,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 &account_address,
                                 &report,
                                 &context,
+                                venue_order_id,
                                 &dispatch_state,
                                 &emitter,
                             )
@@ -2040,15 +2112,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         }
 
                         attach_known_client_order_id(&mut report, client_order_id);
-                        log::debug!("Queried order status for oid {oid}");
+                        log::debug!(
+                            "Queried order status for {client_order_id} with oid {}",
+                            report.venue_order_id
+                        );
                         emitter.send_order_status_report(report);
                     }
                 }
                 Ok(None) => {
-                    log::debug!("No order status report found for oid {oid}");
+                    log::debug!("No order status report found for {client_order_id}");
                 }
                 Err(e) => {
-                    log::warn!("Failed to query order status for oid {oid}: {e}");
+                    log::warn!("Failed to query order status for {client_order_id}: {e}");
                 }
             }
 
@@ -2407,6 +2482,12 @@ impl HyperliquidReportClient {
         cmd: &GenerateOrderStatusReport,
         cached_oid: Option<u64>,
     ) -> anyhow::Result<CollectedOrderReport> {
+        anyhow::ensure!(
+            cmd.instrument_id
+                .is_none_or(|id| self.http_client.allows_instrument(id)),
+            "Instrument outside execution product scope"
+        );
+
         let account_address = &self.account_address;
 
         if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
@@ -2442,29 +2523,37 @@ impl HyperliquidReportClient {
             }
         }
 
-        let oid = if let Some(venue_order_id) = cmd.venue_order_id {
-            venue_order_id
-                .as_str()
-                .parse::<u64>()
-                .context("failed to parse venue_order_id as oid")?
-        } else if let Some(oid) = cached_oid {
-            oid
-        } else {
-            if let Some(e) = cloid_lookup_error {
-                return Err(
-                    e.context("cloid lookup failed and no venue_order_id fallback available")
-                );
-            }
-
-            log::debug!("No order status report found for {:?}", cmd.client_order_id);
-            return Ok(CollectedOrderReport::NotFound);
+        let oid = match cmd.venue_order_id {
+            Some(venue_order_id) => Some(
+                venue_order_id
+                    .as_str()
+                    .parse::<u64>()
+                    .context("failed to parse venue_order_id as oid")?,
+            ),
+            None => cached_oid,
         };
 
-        let mut report = self
-            .http_client
-            .request_order_status_report(account_address, oid)
-            .await
-            .context("failed to generate order status report")?;
+        let result = match (oid, &cmd.client_order_id) {
+            (Some(oid), _) => {
+                self.http_client
+                    .request_order_status_report(account_address, oid)
+                    .await
+            }
+            // An order closed before its acceptance arrived is only found by cloid
+            (None, Some(client_order_id)) => {
+                self.http_client
+                    .request_order_status_report_by_cloid(account_address, client_order_id)
+                    .await
+            }
+            (None, None) => Ok(None),
+        };
+
+        let mut report = result.context("failed to generate order status report")?;
+        if report.is_none()
+            && let Some(e) = cloid_lookup_error
+        {
+            return Err(e.context("cloid lookup failed and status lookup found no order"));
+        }
 
         if let Some(report) = &mut report
             && let Some(client_order_id) = cmd.client_order_id
@@ -2476,10 +2565,15 @@ impl HyperliquidReportClient {
             clamp_reduce_only_report_to_fills(&self.http_client, account_address, report).await;
         }
 
-        if report.is_some() {
-            log::debug!("Generated order status report for oid {oid}");
-        } else {
+        if let Some(report) = &report {
+            log::debug!(
+                "Generated order status report for oid {}",
+                report.venue_order_id
+            );
+        } else if let Some(oid) = oid {
             log::debug!("No order status report found for oid {oid}");
+        } else {
+            log::debug!("No order status report found for {:?}", cmd.client_order_id);
         }
 
         Ok(report.map_or(CollectedOrderReport::NotFound, CollectedOrderReport::Oid))
@@ -2801,6 +2895,15 @@ impl HyperliquidExecutionClient {
                     Some(msg) => match msg {
                         NautilusWsMessage::ExecutionReports(reports) => {
                             for report in reports {
+                                let instrument_id = match &report {
+                                    ExecutionReport::Fill(report) => report.instrument_id,
+                                    ExecutionReport::Order(report) => report.instrument_id,
+                                };
+
+                                if !http_client.allows_instrument(instrument_id) {
+                                    continue;
+                                }
+
                                 ts_last_report = ts_last_report.max(ts_venue(&report));
 
                                 let staged_parent_fill = match &report {
@@ -3039,8 +3142,9 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Trades(_)
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
+                        | NautilusWsMessage::CompactBook { .. }
                         | NautilusWsMessage::Depth(_)
-                        | NautilusWsMessage::BookInvalid(_)
+                        | NautilusWsMessage::BookInvalid { .. }
                         | NautilusWsMessage::Candle(_)
                         | NautilusWsMessage::MarkPrice(_)
                         | NautilusWsMessage::IndexPrice(_)
@@ -3479,8 +3583,7 @@ impl StagedBracketState {
     fn cancel_for_parent(&mut self, parent_id: &ClientOrderId) -> Vec<OrderAny> {
         self.children_by_parent
             .remove(parent_id)
-            .map(|children| children.into_iter().map(|child| child.order).collect())
-            .unwrap_or_default()
+            .map_or_default(|children| children.into_iter().map(|child| child.order).collect())
     }
 
     fn take_active_sibling(
@@ -3506,17 +3609,22 @@ fn query_order_recovery_context(
     venue_order_id: Option<VenueOrderId>,
     dispatch_state: &WsDispatchState,
 ) -> Option<OrderContext> {
+    // A submitted order has no venue order ID until its acceptance arrives
+    let is_tracked_leg = match venue_order_id {
+        Some(_) => order.is_open() && order.venue_order_ids().len() == 1,
+        None => order.status() == OrderStatus::Submitted && order.venue_order_ids().is_empty(),
+    };
+
     if order.order_type() != OrderType::Limit
         || order.is_quote_quantity()
         || order.is_reduce_only()
         || order.is_contingency()
         || order.linked_order_ids().is_some()
         || order.parent_order_id().is_some()
-        || !order.is_open()
+        || !is_tracked_leg
         || order.is_pending_update()
         || !order.filled_qty().is_zero()
         || !order.trade_ids().is_empty()
-        || order.venue_order_ids().len() != 1
         || order.venue_order_id() != venue_order_id
         || order
             .events()
@@ -3543,6 +3651,7 @@ async fn recover_query_order_fills(
     account_address: &str,
     report: &OrderStatusReport,
     context: &OrderContext,
+    venue_order_id: Option<VenueOrderId>,
     dispatch_state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
 ) {
@@ -3562,7 +3671,7 @@ async fn recover_query_order_fills(
         || report
             .client_order_id
             .is_some_and(|id| id != client_order_id && id.as_str() != cloid_hex)
-        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+        || is_binding_changed(dispatch_state, &client_order_id, venue_order_id, report)
     {
         return;
     }
@@ -3579,7 +3688,7 @@ async fn recover_query_order_fills(
 
     // Admission does not own a leg across HTTP awaits; only unchanged bindings may recover
     if dispatch_state.lookup_context(&client_order_id) != Some(*context)
-        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+        || is_binding_changed(dispatch_state, &client_order_id, venue_order_id, report)
         || dispatch_state.has_pending_modify(&client_order_id)
     {
         log::warn!(
@@ -3590,6 +3699,19 @@ async fn recover_query_order_fills(
 
     for fill in fills {
         emitter.send_fill_report(fill);
+    }
+}
+
+// Only a query that started without a venue order ID may still be unbound
+fn is_binding_changed(
+    dispatch_state: &WsDispatchState,
+    client_order_id: &ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    report: &OrderStatusReport,
+) -> bool {
+    match dispatch_state.cached_venue_order_id(client_order_id) {
+        Some(bound) => bound != report.venue_order_id,
+        None => venue_order_id.is_some(),
     }
 }
 
@@ -3604,7 +3726,8 @@ async fn collect_query_order_fills(
         anyhow::bail!("fill history account does not match the execution account");
     }
 
-    let fills = http_client.info_user_fills(account_address).await?;
+    let mut fills = http_client.info_user_fills(account_address).await?;
+    fills.retain(|fill| http_client.allows_venue_coin(&fill.coin));
     let oid = report.venue_order_id.as_str().parse::<u64>()?;
 
     if let Some(fill) = fills
@@ -3631,6 +3754,7 @@ async fn collect_query_order_fills(
     }
 
     let mut sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
+
     if !sweep.complete {
         anyhow::bail!("fill history could not be fully resolved or parsed");
     }
@@ -4956,7 +5080,7 @@ mod tests {
     use crate::{
         common::{
             consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
-            enums::HyperliquidEnvironment,
+            enums::{HyperliquidEnvironment, HyperliquidProductType},
             parse::make_fill_trade_id,
             testing::load_test_data,
         },
@@ -8255,7 +8379,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reconnect_reports_from_history_returns_missed_events_oldest_first() {
+    #[case::all(false, false)]
+    #[case::spot_only(true, false)]
+    #[case::spot_tracked_order(true, true)]
+    fn test_reconnect_reports_from_history_returns_missed_events_oldest_first(
+        #[case] spot_only: bool,
+        #[case] tracked: bool,
+    ) {
         let mut http_client = make_http_client();
         http_client.set_account_id(AccountId::from("HYPERLIQUID-001"));
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
@@ -8295,6 +8425,16 @@ mod tests {
             btc_order_entry(7007, "canceled", start_ms + 50, external_cloid),
         ];
 
+        if spot_only {
+            http_client
+                .set_product_types(vec![HyperliquidProductType::Spot])
+                .unwrap();
+        }
+
+        if tracked {
+            dispatch_state.register_context(test_context(filled_id));
+        }
+
         let reports = reconnect_reports_from_history(
             fills,
             orders,
@@ -8304,6 +8444,11 @@ mod tests {
             &dispatch_state,
         )
         .unwrap();
+
+        if spot_only {
+            assert!(reports.is_empty());
+            return;
+        }
 
         let summary: Vec<_> = reports
             .iter()
@@ -8392,6 +8537,40 @@ mod tests {
                     None,
                 ),
             ],
+        );
+    }
+
+    #[rstest]
+    fn test_execution_product_scope_reconnect_recovers_spot_reports() {
+        let mut http_client = make_http_client();
+        http_client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+        http_client
+            .set_product_types(vec![HyperliquidProductType::Spot])
+            .unwrap();
+        let ws_client = make_ws_client();
+        let dispatch_state = WsDispatchState::new();
+        let cloid = "0x0000000000000000000000000000000a";
+        let ts = 1_700_000_000_000;
+        let mut fill = btc_user_fill(101, "0xabc", ts, cloid);
+        fill.coin = Ustr::from("vntls:TOKEN");
+        let mut order = btc_order_entry(101, "canceled", ts + 1, cloid);
+        order.order.coin = fill.coin;
+        let reports = reconnect_reports_from_history(
+            vec![fill],
+            vec![order],
+            UnixNanos::from(ts * 1_000_000),
+            &ws_client,
+            &http_client,
+            &dispatch_state,
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 2);
+        assert!(
+            matches!(&reports[0], ExecutionReport::Fill(report) if report.instrument_id.symbol.as_str().ends_with("-SPOT"))
+        );
+        assert!(
+            matches!(&reports[1], ExecutionReport::Order(report) if report.instrument_id.symbol.as_str().ends_with("-SPOT"))
         );
     }
 

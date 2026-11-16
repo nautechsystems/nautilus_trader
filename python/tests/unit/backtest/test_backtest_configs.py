@@ -88,6 +88,7 @@ def test_engine_config_with_params() -> None:
     """
     instance_id = UUID4()
     logging = LoggerConfig(print_config=True)
+
     config = BacktestEngineConfig(
         load_state=True,
         save_state=True,
@@ -97,6 +98,7 @@ def test_engine_config_with_params() -> None:
         logging=logging,
         instance_id=instance_id,
     )
+
     assert config.load_state is True
     assert config.save_state is True
     assert config.shutdown_on_error is True
@@ -183,12 +185,14 @@ def test_engine_config_accepts_streaming_and_catalog_configs(
     Test engine config retains streaming and catalog configs.
     """
     promotion_catalog = DataCatalogConfig(path="bucket/output", fs_protocol="s3")
+
     streaming = StreamingConfig(
         writer_path="/data/stream",
         catalog=promotion_catalog,
         flush_interval_ms=250,
         replace_existing=True,
     )
+
     catalog = DataCatalogConfig(path="/data/input", name="history")
 
     config = config_type(streaming=streaming, catalogs=[catalog])
@@ -446,6 +450,7 @@ def test_venue_config_required_params() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     assert config.name == "SIM"
     assert config.oms_type == OmsType.HEDGING
     assert config.account_type == AccountType.MARGIN
@@ -480,9 +485,11 @@ def test_venue_config_optional_params() -> None:
     fill_model = BestPriceFillModel(prob_fill_on_limit=0.9, prob_slippage=0.1)
     margin_model = StandardMarginModel()
     latency_model = StaticLatencyModel(base_latency_nanos=1_000)
+
     module = FXRolloverInterestModule(
         records=[InterestRateRecord(location="USD", time="17:00", value=Decimal("0.01"))],
     )
+
     config = BacktestVenueConfig(
         name="BINANCE",
         oms_type=OmsType.NETTING,
@@ -514,6 +521,7 @@ def test_venue_config_optional_params() -> None:
         modules=[module],
         price_protection_points=7,
     )
+
     assert config.name == "BINANCE"
     assert config.routing is True
     assert config.frozen_account is True
@@ -596,6 +604,7 @@ def test_venue_config_defaults() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     assert config.bar_execution is True
     assert config.trade_execution is True
 
@@ -659,6 +668,7 @@ def test_venue_config_accepts_custom_fee_model_through_run_config_clone() -> Non
             return Money.from_str("1.23 USD")
 
     fee_model = CustomFeeModel()
+
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -667,6 +677,7 @@ def test_venue_config_accepts_custom_fee_model_through_run_config_clone() -> Non
         starting_balances=["1_000_000 USD"],
         fee_model=fee_model,
     )
+
     run_config = BacktestRunConfig(venues=[venue], data=[])
 
     assert venue.fee_model is fee_model
@@ -684,6 +695,7 @@ def test_venue_config_repr() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     assert "BacktestVenueConfig" in repr(config)
 
 
@@ -692,11 +704,13 @@ def test_data_config_minimal() -> None:
     Test data config minimal.
     """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
+
     config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=instrument_id,
     )
+
     assert config.data_type == NautilusDataType.QuoteTick
     assert config.catalog.path == "/data/catalog"
     assert config.instrument_id == instrument_id
@@ -754,11 +768,13 @@ def test_data_config_with_instrument_id() -> None:
     Test data config with instrument id.
     """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
+
     config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=instrument_id,
     )
+
     assert config.instrument_id == instrument_id
 
 
@@ -769,6 +785,7 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     client_id = ClientId("CATALOG")
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+
     config = BacktestDataConfig(
         data_type=NautilusDataType.Bar,
         catalog=DataCatalogConfig(
@@ -935,6 +952,7 @@ def test_data_config_repr() -> None:
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     assert "BacktestDataConfig" in repr(config)
 
 
@@ -968,11 +986,13 @@ def test_run_config_auto_id() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     assert len(config.id) > 0
 
@@ -988,11 +1008,13 @@ def test_run_config_explicit_id() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data], id="my-run-001")
     assert config.id == "my-run-001"
 
@@ -1008,11 +1030,13 @@ def test_run_config_with_engine() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     engine = BacktestEngineConfig(bypass_logging=True)
     config = BacktestRunConfig(venues=[venue], data=[data], engine=engine)
     assert len(config.id) > 0
@@ -1032,11 +1056,13 @@ def test_run_config_options_are_readable() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[data],
@@ -1064,6 +1090,7 @@ def test_run_config_accepts_compatible_timestamp_inputs() -> None:
         account_type="MARGIN",
         starting_balances=["1_000_000 USD"],
     )
+
     config = BacktestRunConfig(
         venues=[venue],
         data=[],
@@ -1086,11 +1113,13 @@ def test_run_config_repr() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     config = BacktestRunConfig(venues=[venue], data=[data])
     assert "BacktestRunConfig" in repr(config)
 
@@ -1106,10 +1135,12 @@ def test_run_config_chunk_size_zero_rejected() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
+
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
         catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
+
     with pytest.raises(ValueError, match="chunk_size"):
         BacktestRunConfig(venues=[venue], data=[data], chunk_size=0)

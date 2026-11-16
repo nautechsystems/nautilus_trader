@@ -28,8 +28,9 @@ use std::{
 use bytes::Bytes;
 use http::{
     HeaderValue, Request, Response,
-    header::{AUTHORIZATION, COOKIE, PROXY_AUTHORIZATION, REFERER, WWW_AUTHENTICATE},
+    header::{ACCEPT, ACCEPT_ENCODING, HeaderName, PROXY_AUTHORIZATION, REFERER, USER_AGENT},
 };
+use http_body::Body;
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper_rustls::HttpsConnector;
@@ -110,6 +111,8 @@ impl Client {
             policy: redirects,
             count: 0,
             previous: None,
+            cross_origin: false,
+            has_body: false,
         };
 
         FollowRedirect::with_policy(self.clone(), policy)
@@ -169,6 +172,8 @@ struct Redirects {
     policy: HttpRedirectPolicy,
     count: usize,
     previous: Option<Url>,
+    cross_origin: bool,
+    has_body: bool,
 }
 
 impl Policy<Full<Bytes>, HttpClientError> for Redirects {
@@ -187,32 +192,51 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
             ));
         }
 
+        if attempt.previous().scheme_str() == Some("https")
+            && attempt.location().scheme_str() == Some("http")
+        {
+            return Err(HttpClientError::Error(
+                "redirect downgrades HTTPS to HTTP".into(),
+            ));
+        }
+
+        let (Ok(previous), Ok(next)) = (
+            Url::parse(&attempt.previous().to_string()),
+            Url::parse(&attempt.location().to_string()),
+        ) else {
+            return Err(HttpClientError::Error("invalid redirect URL".into()));
+        };
+
+        let cross_origin = previous.origin() != next.origin();
+
+        // Venue credentials travel in custom headers and signed bodies, so no body crosses origins
+        if cross_origin && self.has_body {
+            return Err(HttpClientError::Error(
+                "cross-origin redirect of a request with a body".into(),
+            ));
+        }
+
         self.count += 1;
-        self.previous = Url::parse(&attempt.previous().to_string()).ok();
+        self.previous = Some(previous);
+        self.cross_origin = cross_origin;
         Ok(Action::Follow)
     }
 
     fn on_request(&mut self, request: &mut Request<Full<Bytes>>) {
+        self.has_body = !request.body().is_end_stream();
+
         let Some(previous) = &self.previous else {
             return;
         };
 
-        let Ok(next) = Url::parse(&request.uri().to_string()) else {
-            return;
-        };
-
-        if previous.origin() != next.origin() {
-            for name in [
-                AUTHORIZATION,
-                COOKIE,
-                PROXY_AUTHORIZATION,
-                REFERER,
-                WWW_AUTHENTICATE,
-            ] {
-                request.headers_mut().remove(name);
-            }
-
-            request.headers_mut().remove("cookie2");
+        if self.cross_origin {
+            let headers = request.headers_mut();
+            let retained: Vec<_> = CROSS_ORIGIN_HEADERS
+                .into_iter()
+                .filter_map(|name| headers.remove(&name).map(|value| (name, value)))
+                .collect();
+            headers.clear();
+            headers.extend(retained);
             return;
         }
 
@@ -229,6 +253,8 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
         Some(body.clone())
     }
 }
+
+const CROSS_ORIGIN_HEADERS: [HeaderName; 3] = [ACCEPT, ACCEPT_ENCODING, USER_AGENT];
 
 // Each `Verifier::new` reloads the platform roots, which on Linux reads the CA bundle from disk,
 // so concurrent first builds share one load under the lock, and a failed load is not cached.
@@ -270,27 +296,42 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::upgrade("http://example.com", "https://example.com")]
-    #[case::downgrade("https://example.com", "http://example.com")]
-    #[case::host("https://source.example", "https://destination.example")]
-    fn redirect_removes_referer_across_origins(#[case] previous: &str, #[case] next: &str) {
-        let previous = format!("{previous}/start?signature=SECRET");
-        let previous = Url::parse(&previous).unwrap();
-
+    fn cross_origin_redirect_retains_only_allowed_headers() {
         let mut policy = Redirects {
             policy: HttpRedirectPolicy::Follow,
             count: 1,
-            previous: Some(previous),
+            previous: Some(Url::parse("https://source.example/start?signature=SECRET").unwrap()),
+            cross_origin: true,
+            has_body: false,
         };
 
         let mut request = Request::builder()
-            .uri(format!("{next}/next"))
+            .uri("https://destination.example/next")
+            .header(ACCEPT, "application/json")
+            .header(ACCEPT_ENCODING, "gzip")
+            .header(USER_AGENT, "client-41")
             .header(REFERER, "https://private.example/signed?token=PRIOR_SECRET")
+            .header("authorization", "Bearer private-27")
+            .header("cookie", "session=private-91")
+            .header("x-venue-apikey", "private-53")
+            .header("x-venue-signature", "private-67")
             .body(Full::new(Bytes::new()))
             .unwrap();
 
         policy.on_request(&mut request);
 
-        assert_eq!(request.headers().get(REFERER), None);
+        let headers: Vec<_> = request
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.to_str().unwrap()))
+            .collect();
+        assert_eq!(
+            headers,
+            vec![
+                ("accept", "application/json"),
+                ("accept-encoding", "gzip"),
+                ("user-agent", "client-41"),
+            ]
+        );
     }
 }

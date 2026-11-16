@@ -43,10 +43,12 @@ def test_python_custom_data_query_applies_where_clause(tmp_path: Path) -> None:
     catalog = ParquetDataCatalog(str(catalog_path))
     instrument_id = InstrumentId.from_str("RUST.WHERE")
     data_type = DataType("RustTestCustomData", None, str(instrument_id))
+
     original = [
         RustTestCustomData(instrument_id, 1.23, True, 1, 1),
         RustTestCustomData(instrument_id, 4.56, False, 2, 2),
     ]
+
     catalog.write_custom_data([CustomData(data_type, item) for item in original])
 
     result = catalog.query(

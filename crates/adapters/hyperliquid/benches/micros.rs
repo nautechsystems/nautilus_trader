@@ -384,6 +384,41 @@ fn bench_event_accepted_construct(c: &mut Criterion) {
     });
 }
 
+fn bench_execution_product_scope(c: &mut Criterion) {
+    use nautilus_model::identifiers::InstrumentId;
+
+    use crate::{HyperliquidHttpClient, common::enums::HyperliquidProductType};
+
+    let mut client = HyperliquidHttpClient::default();
+    client
+        .set_product_types(vec![
+            HyperliquidProductType::Perp,
+            HyperliquidProductType::Outcome,
+        ])
+        .unwrap();
+    let perp = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let spot = InstrumentId::from("BTC-USDC-SPOT.HYPERLIQUID");
+    let mut group = c.benchmark_group("execution_product_scope");
+    group.bench_function("allows_perp", |b| {
+        b.iter(|| black_box(black_box(&client).allows_instrument(black_box(perp))));
+    });
+    group.bench_function("denies_spot", |b| {
+        b.iter(|| black_box(black_box(&client).allows_instrument(black_box(spot))));
+    });
+    group.bench_function("http_client_clone", |b| {
+        b.iter(|| black_box(black_box(&client).clone()));
+    });
+    client
+        .set_account_address(Some(
+            "0x1111111111111111111111111111111111111111".to_string(),
+        ))
+        .unwrap();
+    group.bench_function("http_client_clone_with_account", |b| {
+        b.iter(|| black_box(black_box(&client).clone()));
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_decode_trade,
@@ -403,5 +438,6 @@ criterion_group!(
     bench_event_filled_construct,
     bench_dispatch_reused_fill,
     bench_event_accepted_construct,
+    bench_execution_product_scope,
 );
 criterion_main!(benches);

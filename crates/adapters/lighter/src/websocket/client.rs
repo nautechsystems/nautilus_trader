@@ -1553,7 +1553,7 @@ mod tests {
         let debug = format!("{client:?}");
         assert!(debug.contains(&format!("url: {origin:?}")));
         assert!(!debug.contains("SYN-"));
-        assert_eq!(client.url.expose(), url);
+        assert_eq!(client.url(), url);
     }
 
     #[rstest]
@@ -1632,26 +1632,11 @@ mod tests {
         assert!(!debug.contains("auth-token"));
     }
 
-    #[rstest]
-    fn market_index_for_returns_registered_index() {
-        let registry = registry_with(7, "ETH", LighterProductType::Perp);
-        let client = LighterWebSocketClient::new(
-            Some("wss://example/test".to_string()),
-            LighterEnvironment::Testnet,
-            Arc::clone(&registry),
-            TransportBackend::default(),
-            30,
-            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
-            None,
-        );
-        let id = registry.instrument_id(7).expect("registered");
-        assert_eq!(client.market_index_for(&id).unwrap(), 7);
-    }
-
-    #[rstest]
-    fn market_index_for_unregistered_returns_error() {
+    #[tokio::test]
+    async fn subscribe_trades_unregistered_instrument_returns_error() {
         let registry = Arc::new(MarketRegistry::new());
-        let client = LighterWebSocketClient::new(
+
+        let ws_client = LighterWebSocketClient::new(
             Some("wss://example/test".to_string()),
             LighterEnvironment::Testnet,
             registry,
@@ -1661,7 +1646,17 @@ mod tests {
             None,
         );
         let id = InstrumentId::new(Symbol::from_str_unchecked("UNKNOWN-PERP"), *LIGHTER_VENUE);
-        assert!(client.market_index_for(&id).is_err());
+
+        let error = ws_client.subscribe_trades(id).await.unwrap_err();
+
+        let LighterWsError::Client(message) = error else {
+            panic!("expected unregistered-instrument client error, was {error:?}");
+        };
+
+        assert_eq!(
+            message,
+            format!("no Lighter market_index registered for instrument: {id}")
+        );
     }
 
     #[rstest]
@@ -1678,8 +1673,14 @@ mod tests {
         );
         let id = registry.instrument_id(0).expect("registered");
         let instrument = stub_instrument(id);
-        client.cache_instrument(0, instrument);
-        assert!(client.instruments_cache().contains_key(&0));
+        client.cache_instrument(0, instrument.clone());
+        assert_eq!(
+            client
+                .instruments_cache()
+                .get(&0)
+                .map(|entry| entry.value().clone()),
+            Some(instrument),
+        );
     }
 
     #[tokio::test]

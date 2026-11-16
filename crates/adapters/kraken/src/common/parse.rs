@@ -41,8 +41,9 @@ use crate::{
     common::{
         consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
-            KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
-            KrakenOrderType, KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
+            KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
+            KrakenInstrumentType, KrakenOrderSide, KrakenOrderType, KrakenPositionSide,
+            KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -729,6 +730,19 @@ fn insert_price_scale(
     }
 }
 
+/// Parses a venue order ID received from Kraken, naming `payload` in the error.
+///
+/// # Errors
+///
+/// Returns an error if `order_id` is empty, blank, or not ASCII.
+pub(crate) fn parse_venue_order_id(
+    order_id: &str,
+    payload: impl Display,
+) -> anyhow::Result<VenueOrderId> {
+    VenueOrderId::new_checked(order_id)
+        .with_context(|| format!("Invalid order_id '{order_id}' in Kraken {payload}"))
+}
+
 /// Parses a Kraken spot order into a Nautilus OrderStatusReport.
 ///
 /// # Errors
@@ -736,6 +750,8 @@ fn insert_price_scale(
 /// Returns an error if:
 /// - Order ID, quantities, or prices cannot be parsed.
 /// - Order status mapping fails.
+/// - A row mapped to `LimitIfTouched` has its trigger above a buy limit or below a sell
+///   limit.
 pub fn parse_order_status_report(
     order_id: &str,
     order: &SpotOrder,
@@ -744,7 +760,7 @@ pub fn parse_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(order_id);
+    let venue_order_id = parse_venue_order_id(order_id, "spot order")?;
 
     let order_side = OrderSide::from(order.descr.order_side).into();
     let order_type = order.descr.ordertype.into();
@@ -826,6 +842,24 @@ pub fn parse_order_status_report(
         | KrakenOrderType::TrailingStop
         | KrakenOrderType::TrailingStopLimit => stop_price,
     };
+
+    // A LimitIfTouched row with its trigger on the wrong side of its limit states an order
+    // Nautilus cannot represent, so fail it with both prices instead of an anonymous drop.
+    if order_type == OrderType::LimitIfTouched
+        && let (Some(limit), Some(trigger)) = (price, trigger_price)
+    {
+        let (side, relation, violates) = match order.descr.order_side {
+            KrakenOrderSide::Buy => ("Buy", "above", trigger > limit),
+            KrakenOrderSide::Sell => ("Sell", "below", trigger < limit),
+        };
+
+        if violates {
+            let kraken_type = order.descr.ordertype;
+            anyhow::bail!(
+                "{side} {kraken_type} with trigger price {trigger} {relation} limit price {limit} cannot be represented as LimitIfTouched"
+            );
+        }
+    }
 
     let expire_time = if has_expiration {
         order
@@ -930,7 +964,7 @@ fn compute_avg_px(order: &SpotOrder) -> Option<Decimal> {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Trade ID, quantities, or prices cannot be parsed.
+/// - Order ID, quantities, or prices cannot be parsed.
 pub fn parse_fill_report(
     trade_id: &str,
     trade: &SpotTrade,
@@ -939,7 +973,7 @@ pub fn parse_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&trade.ordertxid);
+    let venue_order_id = parse_venue_order_id(&trade.ordertxid, "spot trade")?;
     let trade_id_obj = TradeId::new(trade_id);
 
     let order_side = trade.trade_type.into();
@@ -987,6 +1021,25 @@ pub fn parse_fill_report(
     })
 }
 
+/// Returns the time in force and post-only flag the adapter reports for a Kraken futures order
+/// type: `ioc` is `IOC`, `post` is post-only `GTC`, and every other type is reported as `GTC` and
+/// not post-only.
+pub(crate) fn parse_futures_order_type_time_in_force(
+    order_type: KrakenFuturesOrderType,
+) -> (TimeInForce, bool) {
+    match order_type {
+        KrakenFuturesOrderType::Ioc => (TimeInForce::Ioc, false),
+        KrakenFuturesOrderType::Post => (TimeInForce::Gtc, true),
+        KrakenFuturesOrderType::Limit
+        | KrakenFuturesOrderType::Market
+        | KrakenFuturesOrderType::Stop
+        | KrakenFuturesOrderType::StopLower
+        | KrakenFuturesOrderType::TakeProfit
+        | KrakenFuturesOrderType::StopLoss
+        | KrakenFuturesOrderType::Unknown => (TimeInForce::Gtc, false),
+    }
+}
+
 /// Parses a Kraken futures open order into a Nautilus OrderStatusReport.
 ///
 /// # Errors
@@ -1000,7 +1053,7 @@ pub fn parse_futures_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&order.order_id);
+    let venue_order_id = parse_venue_order_id(&order.order_id, "futures open order")?;
 
     let order_side = OrderSide::from(order.side).into();
     let order_type: OrderType = order.order_type.into();
@@ -1010,6 +1063,7 @@ pub fn parse_futures_order_status_report(
         order_type
     };
     let order_status = order.status.into();
+    let (time_in_force, post_only) = parse_futures_order_type_time_in_force(order.order_type);
 
     let quantity_value = order
         .unfilled_size
@@ -1042,7 +1096,7 @@ pub fn parse_futures_order_status_report(
         venue_order_id,
         order_side,
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -1065,7 +1119,7 @@ pub fn parse_futures_order_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only,
         reduce_only: order.reduce_only.unwrap_or(false),
         cancel_reason: None,
         ts_triggered: None,
@@ -1085,7 +1139,7 @@ pub fn parse_futures_order_event_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&event.order_id);
+    let venue_order_id = parse_venue_order_id(&event.order_id, "futures order event")?;
 
     let order_side = OrderSide::from(event.side).into();
     let order_type: OrderType = event.order_type.into();
@@ -1123,7 +1177,7 @@ pub fn parse_futures_order_event_status_report(
         venue_order_id,
         order_side,
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force: event.time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -1146,7 +1200,7 @@ pub fn parse_futures_order_event_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only: event.post_only,
         reduce_only: event.reduce_only,
         cancel_reason: None,
         ts_triggered: None,
@@ -1179,7 +1233,7 @@ pub fn parse_futures_order_status_details_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let venue_order_id = VenueOrderId::new(&details.order.order_id);
+    let venue_order_id = parse_venue_order_id(&details.order.order_id, "futures order status")?;
 
     let order_side = OrderSide::from(details.order.side).into();
 
@@ -1310,7 +1364,7 @@ fn parse_futures_order_event_status(
 ///
 /// # Errors
 ///
-/// Returns an error if fill ID, quantities, or prices cannot be parsed.
+/// Returns an error if order ID, quantities, or prices cannot be parsed.
 pub fn parse_futures_fill_report(
     fill: &FuturesFill,
     instrument: &InstrumentAny,
@@ -1318,7 +1372,7 @@ pub fn parse_futures_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&fill.order_id);
+    let venue_order_id = parse_venue_order_id(&fill.order_id, "futures fill")?;
     let trade_id = TradeId::new(&fill.fill_id);
 
     let order_side = fill.side.into();
@@ -1513,12 +1567,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            KrakenFuturesOrderEventType, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
-            KrakenOrderSide,
-        },
+        common::enums::{KrakenFuturesOrderEventType, KrakenFuturesOrderStatus, KrakenOrderSide},
         http::{
-            futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
+            futures::models::{
+                FuturesFillsResponse, FuturesOpenOrder, FuturesOpenOrdersResponse,
+                FuturesOrderEvent, FuturesOrdersStatusResponse,
+            },
             models::{
                 AssetPairsResponse, KrakenResponse, SpotClosedOrdersResult, SpotOpenOrdersResult,
             },
@@ -2063,9 +2117,9 @@ mod tests {
         usdc_eur_instrument(),
         &[
             ("OCAP09-STLMT-000009", Some("0.4464"), Some("1.3394"), None),
-            ("OCAP10-TPLMT-000010", Some("0.4455"), Some("0.4465"), None),
+            // The two take-profit-limit rows violate the LimitIfTouched relation, so the
+            // rejection tests below assert them instead of this priced table.
             ("OCAP11-STLMT-000011", Some("0.4464"), Some("0.8929"), None),
-            ("OCAP12-TPLMT-000012", Some("0.4464"), Some("0.8929"), None),
             ("OCAP13-TRLMT-000013", Some("0.4465"), Some("0.8930"), None),
         ]
     )]
@@ -2181,6 +2235,98 @@ mod tests {
         assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
     }
 
+    /// A buy take-profit-limit with its trigger above its limit cannot be a LimitIfTouched, so
+    /// the row fails naming both prices instead of reaching reconciliation, where the manager
+    /// would drop it without naming the order. Both inputs are captured rows, one triggered and
+    /// one canceled untriggered.
+    #[rstest]
+    #[case::triggered(
+        "OCAP12-TPLMT-000012",
+        "Buy take-profit-limit with trigger price 0.8929 above limit price 0.4464 cannot be represented as LimitIfTouched"
+    )]
+    #[case::untriggered(
+        "OCAP10-TPLMT-000010",
+        "Buy take-profit-limit with trigger price 0.4465 above limit price 0.4455 cannot be represented as LimitIfTouched"
+    )]
+    fn test_parse_order_status_report_rejects_a_take_profit_limit_buy_with_trigger_above_limit(
+        #[case] order_id: &str,
+        #[case] expected: &str,
+    ) {
+        let order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+
+        let error = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    /// The sell mirror: a take-profit-limit with its trigger below its limit likewise violates
+    /// the LimitIfTouched relation. The input is synthetic: a captured triggered row with its
+    /// side flipped and its trigger and limit exchanged.
+    #[rstest]
+    fn test_parse_order_status_report_rejects_a_take_profit_limit_sell_with_trigger_below_limit() {
+        let order_id = "OCAP12-TPLMT-000012";
+        let mut order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.order_side = KrakenOrderSide::Sell;
+        order.descr.price = "0.4464".to_string();
+        order.descr.price2 = "0.8929".to_string();
+        order.stopprice = Some("0.44640000".to_string());
+        order.limitprice = Some("0.89290000".to_string());
+
+        let error = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Sell take-profit-limit with trigger price 0.4464 below limit price 0.8929 cannot be represented as LimitIfTouched"
+        );
+    }
+
+    /// A sell take-profit-limit with its trigger at its limit satisfies the LimitIfTouched
+    /// relation, so the row parses. The input is synthetic: a captured triggered row with its
+    /// side flipped and both prices at the captured limit.
+    #[rstest]
+    fn test_parse_order_status_report_prices_a_take_profit_limit_sell_with_trigger_at_limit() {
+        let order_id = "OCAP12-TPLMT-000012";
+        let mut order = spot_order_rows("http_closed_orders_conditional_triggered.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.order_side = KrakenOrderSide::Sell;
+        order.descr.price = "0.4464".to_string();
+        order.descr.price2 = "0.4464".to_string();
+        order.stopprice = Some("0.44640000".to_string());
+        order.limitprice = Some("0.44640000".to_string());
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::LimitIfTouched);
+        assert_eq!(report.price, Some(Price::from("0.4464")));
+        assert_eq!(report.trigger_price, Some(Price::from("0.4464")));
+    }
+
     /// The rows of a spot OpenOrders, ClosedOrders or QueryOrders response in `test_data`.
     fn spot_order_rows(filename: &str) -> IndexMap<String, SpotOrder> {
         let json = load_test_json(filename);
@@ -2292,6 +2438,173 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_venue_order_id_returns_a_valid_id() {
+        assert_eq!(
+            parse_venue_order_id("OABCDE-12345-FGHIJ", "spot order").unwrap(),
+            VenueOrderId::new("OABCDE-12345-FGHIJ")
+        );
+    }
+
+    /// An order ID the model cannot hold is an error, whichever way it is invalid: the panicking
+    /// constructor would abort a release build. The error names the payload the caller gives.
+    #[rstest]
+    #[case::empty("")]
+    #[case::whitespace("   ")]
+    #[case::non_ascii("\u{e9}")]
+    fn test_parse_venue_order_id_fails_on_an_invalid_id(#[case] order_id: &str) {
+        let fill_id = "F-1";
+
+        let error =
+            parse_venue_order_id(order_id, format_args!("futures fill {fill_id}")).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid order_id '{order_id}' in Kraken futures fill F-1")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_fails_on_an_invalid_order_id() {
+        let order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove("OCAP08-LIMIT-000008")
+            .unwrap();
+
+        let error = parse_order_status_report(
+            "",
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken spot order"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_fails_on_an_invalid_order_id() {
+        let json = load_test_json("http_trades_history.json");
+        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut trades: IndexMap<String, SpotTrade> =
+            serde_json::from_value(wrapper["result"]["trades"].clone()).unwrap();
+        let (trade_id, trade) = trades.first_mut().unwrap();
+        trade.ordertxid = String::new();
+
+        let error = parse_fill_report(
+            trade_id,
+            trade,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken spot trade"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_status_report_fails_on_an_invalid_order_id() {
+        let json = load_test_json("http_futures_open_orders.json");
+        let mut response: FuturesOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let mut order = response.open_orders.swap_remove(0);
+        order.order_id = String::new();
+
+        let error = parse_futures_order_status_report(
+            &order,
+            &create_mock_perp(),
+            AccountId::new("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken futures open order"
+        );
+    }
+
+    /// The history decoder validates its uid; the post-submit send events reach this parser with
+    /// an ID nothing has checked.
+    #[rstest]
+    fn test_parse_futures_order_event_status_report_fails_on_an_invalid_order_id() {
+        let event = FuturesOrderEvent {
+            order_id: String::new(),
+            cli_ord_id: None,
+            order_type: KrakenFuturesOrderType::Limit,
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Sell,
+            quantity: dec!(200),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(39500)),
+            stop_price: None,
+            timestamp: "2023-11-14T22:13:20.000Z".to_string(),
+            last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
+            reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
+        };
+
+        let error = parse_futures_order_event_status_report(
+            &event,
+            None,
+            &create_mock_perp(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken futures order event"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_status_details_report_fails_on_an_invalid_order_id() {
+        let json = load_test_json("http_futures_orders_status.json");
+        let mut response: FuturesOrdersStatusResponse = serde_json::from_str(&json).unwrap();
+        let mut details = response.orders.swap_remove(0);
+        details.order.order_id = String::new();
+
+        let error = parse_futures_order_status_details_report(
+            &details,
+            &create_mock_perp(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken futures order status"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_futures_fill_report_fails_on_an_invalid_order_id() {
+        let json = load_test_json("http_futures_fills.json");
+        let mut response: FuturesFillsResponse = serde_json::from_str(&json).unwrap();
+        let mut fill = response.fills.swap_remove(0);
+        fill.order_id = String::new();
+
+        let error =
+            parse_futures_fill_report(&fill, &create_mock_perp(), AccountId::new("KRAKEN-001"), TS)
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid order_id '' in Kraken futures fill"
+        );
+    }
+
+    #[rstest]
     fn test_parse_futures_order_status_report_market_if_touched() {
         let order = FuturesOpenOrder {
             order_id: "tp-001".to_string(),
@@ -2323,6 +2636,54 @@ mod tests {
         assert!(report.price.is_none());
         assert!(report.reduce_only);
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    }
+
+    /// The `ioc` and `post` types reach the report as `IOC` and post-only `GTC`, and any other type
+    /// stays `GTC` and not post-only.
+    #[rstest]
+    #[case::limit(KrakenFuturesOrderType::Limit, TimeInForce::Gtc, false)]
+    #[case::ioc(KrakenFuturesOrderType::Ioc, TimeInForce::Ioc, false)]
+    #[case::post(KrakenFuturesOrderType::Post, TimeInForce::Gtc, true)]
+    #[case::stop(KrakenFuturesOrderType::StopLower, TimeInForce::Gtc, false)]
+    #[case::take_profit(KrakenFuturesOrderType::TakeProfit, TimeInForce::Gtc, false)]
+    #[case::market(KrakenFuturesOrderType::Market, TimeInForce::Gtc, false)]
+    #[case::stp(KrakenFuturesOrderType::Stop, TimeInForce::Gtc, false)]
+    #[case::stop_loss(KrakenFuturesOrderType::StopLoss, TimeInForce::Gtc, false)]
+    #[case::unknown(KrakenFuturesOrderType::Unknown, TimeInForce::Gtc, false)]
+    fn test_parse_futures_order_status_report_time_in_force(
+        #[case] order_type: KrakenFuturesOrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] post_only: bool,
+    ) {
+        let order = FuturesOpenOrder {
+            order_id: "tif-001".to_string(),
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Buy,
+            order_type,
+            limit_price: Some(dec!(36000)),
+            stop_price: None,
+            unfilled_size: Some(dec!(500)),
+            received_time: "2023-11-14T22:13:20.000Z".to_string(),
+            status: KrakenFuturesOrderStatus::Untouched,
+            filled_size: Decimal::ZERO,
+            reduce_only: Some(false),
+            last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
+            trigger_signal: None,
+            cli_ord_id: None,
+            cli_ord_id_snake_case: None,
+        };
+
+        let report = parse_futures_order_status_report(
+            &order,
+            &create_mock_perp(),
+            AccountId::new("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, time_in_force);
+        assert_eq!(report.post_only, post_only);
     }
 
     #[rstest]
@@ -2372,6 +2733,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2406,6 +2769,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2442,6 +2807,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2474,6 +2841,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2505,6 +2874,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2536,6 +2907,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");

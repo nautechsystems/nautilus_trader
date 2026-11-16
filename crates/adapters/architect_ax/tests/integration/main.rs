@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_architect_ax as adapter;
+
 mod common;
 
 mod data_client;
-mod exec_client;
 mod http;
 mod websocket;

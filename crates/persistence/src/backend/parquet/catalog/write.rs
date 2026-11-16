@@ -149,6 +149,7 @@ impl ParquetDataCatalog {
         let (start_ts, end_ts) = record_batch_ts_init_range(batches)?;
         let record_prefix = record_path_prefix(record_type);
         let directory = self.make_path(record_prefix.as_ref(), identifier)?;
+        self.recover_consolidation(&self.to_object_path(&directory)?)?;
         let filename = timestamps_to_filename(UnixNanos::from(start_ts), UnixNanos::from(end_ts));
         let path = PathBuf::from(directory.clone()).join(&filename);
         let object_path = self.to_object_path(&path.to_string_lossy())?;
@@ -545,6 +546,7 @@ impl ParquetDataCatalog {
         data_description: Option<&str>,
         replay_identity: Option<&str>,
     ) -> anyhow::Result<PathBuf> {
+        self.recover_consolidation(&self.to_object_path(directory)?)?;
         let filename = catalog_filename(start_ts, end_ts, replay_identity);
 
         let path = PathBuf::from(directory).join(&filename);

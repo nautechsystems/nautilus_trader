@@ -197,9 +197,7 @@ impl ContinuousFutureRequest {
     }
 
     pub(super) fn child_params(&self, parent_params: Option<&Params>, parent_id: UUID4) -> Params {
-        let mut child_params = parent_params
-            .map(|params| IndexMap::clone(params))
-            .unwrap_or_default();
+        let mut child_params = parent_params.map_or_default(|params| IndexMap::clone(params));
         child_params.shift_remove(CONTINUOUS_FUTURE_TRANSITIONS);
         child_params.shift_remove(CONTINUOUS_FUTURE_ADJUSTMENT_MODE);
         child_params.shift_remove(LAST_POST_INSTRUMENT_ID);

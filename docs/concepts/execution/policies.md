@@ -16,7 +16,7 @@ transitions, see [Orders](../orders/index.md#order-state-flow).
 | Command outcome         | Adapters distinguish definitive local failures, definitive venue results, and unknown outcomes. | A transport result does not necessarily prove what the venue did.                               |
 | Command delivery        | The contract retries a state-changing command only when repeating the same request is safe.     | Not all adapters follow that contract, and delivery is not exactly once.                        |
 | Event application       | Order identity and transition checks reject invalid events. Fills reject a repeated `trade_id`. | No blanket exactly-once guarantee applies across all event types or across lost retained state. |
-| Persistence before send | The cache enqueues the order and resolved execution-client origin before calling the client.    | The built-in cache backends do not wait for durable storage before the client can send.         |
+| Persistence before send | The cache attempts to enqueue the order and resolved origin before calling the client.          | Persistence failures are logged; sending does not wait for durable storage.                     |
 | Bounded recovery        | Reconciliation recovers reported order state without applying unsupported fill economics.       | Partial history does not prove historical position economics, realized PnL, or average price.   |
 | Terminal policy         | Reconciliation may resolve missing or timed-out orders after configured retries.                | A policy resolution is not a venue-confirmed rejection or cancellation.                         |
 
@@ -182,15 +182,15 @@ For a submission handled by the built-in execution engine:
 1. The order exists in the cache with its `ClientOrderId` and `OrderInitialized` event before the
    final execution-client call.
 1. The engine selects and validates the execution client.
-1. The cache enqueues the resolved order-to-client origin for persistence, then updates the
+1. The cache attempts to enqueue the resolved order-to-client origin for persistence, then updates the
    in-memory origin index.
 1. The engine calls the selected `ExecutionClient`.
 1. The cache backend processes its queued writes independently of venue transport and
    acknowledgement.
 
-The enqueue steps fail before the client call when the cache backend cannot accept them. Successful
-enqueue does not mean the backing store has committed the order or origin. The built-in Redis and
-PostgreSQL cache backends process these writes asynchronously.
+Enqueue failures are logged without blocking the client call. Successful enqueue does not mean the
+backing store has committed the order or origin. The built-in Redis and PostgreSQL cache backends process
+these writes asynchronously. See the [cache persistence failure policy](../cache.md#persistence-failure-policy).
 
 The final step is only the call into the adapter's `ExecutionClient`. The adapter owns the later
 wire send and maps venue responses or stream updates to order events. Neither a successful client
@@ -266,18 +266,27 @@ reconcile retained orders:
 | ----------------------------------------------------------------- | ----------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Explicit venue status report                                      | Any transition allowed by the model | `OrderRejected`/`OrderCanceled` | `reconciliation=true`. A rejection keeps the reported reason, or `UNKNOWN` when absent. A cancellation keeps any reported reason. |
 | In-flight retry exhaustion                                        | `SUBMITTED`                         | `OrderRejected`                 | `reconciliation=true`, reason `INFLIGHT_TIMEOUT`.                                                                                 |
-| In-flight retry exhaustion                                        | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`, `reason=None`.                                                                                             |
+| In-flight retry exhaustion under `ResolveLocally`                 | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`, reason `INFLIGHT_TIMEOUT`.                                                                                 |
 | Full-history order stays missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                                                               |
 | Full-history order stays missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`, `reason=None`.                                                                                             |
 
-The `submission_recovery_policy` setting defaults to `SubmissionRecoveryPolicy::ResolveLocally`. With
-`SubmissionRecoveryPolicy::RetainUnresolved`, orders that have never been accepted keep their unacknowledged
-state after recovery exhaustion, including a pending cancel or update. The Polymarket client requires this
-behavior regardless of the configured policy.
+The `submission_recovery_policy` setting defaults to `SubmissionRecoveryPolicy::RetainUnresolved`. Orders that
+have never been accepted keep their unacknowledged state after recovery exhaustion, including a pending cancel
+or update. Select `SubmissionRecoveryPolicy::ResolveLocally` to close these orders through the local resolution
+rules above. The Polymarket client requires retention even when local resolution is selected.
 
 For these retained orders, automatic per-order recovery queries stop, but later venue events and
-reports can still resolve the order. Already accepted orders continue to use the local resolution
-rules above.
+reports can still resolve the order.
+
+`RetainUnresolved` also keeps an already accepted order open when a pending cancel or update exhausts
+its in-flight retries. The order receives `OrderCancelRejected` or `OrderModifyRejected` with
+`reconciliation=true` and reason `INFLIGHT_TIMEOUT`, and returns to its status before the command.
+These rejections do not prove that the venue refused the command; later venue events and reports can
+still close or amend the order. Client-required retention does not change this rule. Already accepted
+orders continue to use the missing-order rules above.
+
+Under `RetainUnresolved`, no order closes on a timeout alone. The remaining local resolutions are the
+missing-order rows, which need the venue's full history and a targeted query to omit the order.
 
 :::warning[Local terminal state is not venue confirmation]
 The first row is backed by an explicit venue status. The remaining rows restore a terminal local
@@ -285,11 +294,11 @@ state after an operator-configured retry policy expires. They do not prove that 
 the submit or canceled the working order.
 :::
 
-`OrderCanceled.reason` can carry a venue-reported cancellation reason, but the two synthetic
-reconciliation paths leave it unset. When no reason is present, the event alone cannot distinguish
-a venue-reported cancellation from those synthetic paths. Consumers that require that distinction
-must preserve the associated reconciliation inputs and operational logs. The optional event store
-captures raw venue reports when enabled, but no `OrderCanceled` field carries the policy reason.
+`OrderCanceled.reason` can carry a venue-reported cancellation reason or `INFLIGHT_TIMEOUT`. The
+full-history missing-order cancellation leaves it unset, so the event alone cannot distinguish that local
+resolution from a venue-reported cancellation. Consumers that require the distinction must preserve the
+associated reconciliation inputs and operational logs. The optional event store captures raw venue reports
+when enabled, but no `OrderCanceled` field identifies the missing-order policy.
 
 See [Runtime checks](reconciliation.md#runtime-checks) for query coordination, recent-order
 protection, and missing-order behavior.

@@ -100,6 +100,7 @@ def test_equality() -> None:
         ts_event=1,
         ts_init=2,
     )
+
     update2 = MarkPriceUpdate(
         instrument_id=BTCUSDT_BINANCE,
         value=Price.from_str("100000.00"),
@@ -155,12 +156,14 @@ def test_setstate_rejects_invalid_state_without_mutation(
         ts_event=1,
         ts_init=2,
     )
+
     other = MarkPriceUpdate(
         instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
         value=Price.from_str("3500.000"),
         ts_event=5,
         ts_init=6,
     )
+
     original_state = update.__getstate__()
     state = list(other.__getstate__())
     state[index] = value

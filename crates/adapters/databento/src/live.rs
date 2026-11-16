@@ -67,7 +67,7 @@ use crate::{
     decode::{decode_instrument_def_msg, decode_record},
     symbology::{
         check_consistent_symbology, dataset_uses_futures_symbology, infer_symbology_type,
-        raw_symbol, resolve_futures_instrument_id,
+        nautilus_symbol, raw_symbol, resolve_futures_instrument_id,
     },
     types::PublisherId,
 };
@@ -102,6 +102,7 @@ pub enum DatabentoMessage {
 )]
 pub struct DatabentoLiveClient {
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     credential: Credential,
     pub dataset: String,
     is_running: bool,
@@ -150,6 +151,7 @@ impl DatabentoLiveClient {
 
         Ok(Self {
             futures_year_digits: FuturesYearDigits::default(),
+            share_class_space: true,
             credential: Credential::new(key),
             dataset,
             cmd_tx,
@@ -168,6 +170,13 @@ impl DatabentoLiveClient {
     #[must_use]
     pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
         self.futures_year_digits = futures_year_digits;
+        self
+    }
+
+    /// Spells a share class with a space in instrument IDs (`BRK.B` -> `BRK B`).
+    #[must_use]
+    pub fn with_share_class_space(mut self, share_class_space: bool) -> Self {
+        self.share_class_space = share_class_space;
         self
     }
 
@@ -209,7 +218,14 @@ impl DatabentoLiveClient {
 
         let symbols: Vec<String> = instrument_ids
             .iter()
-            .map(|id| raw_symbol(id.symbol.as_str(), &self.dataset, self.futures_year_digits))
+            .map(|id| {
+                raw_symbol(
+                    id.symbol.as_str(),
+                    &self.dataset,
+                    self.futures_year_digits,
+                    self.share_class_space,
+                )
+            })
             .collect();
         let first_symbol = symbols
             .first()
@@ -246,6 +262,7 @@ impl DatabentoLiveClient {
                         instrument_id.symbol.as_str(),
                         &self.dataset,
                         self.futures_year_digits,
+                        self.share_class_space,
                     );
                     self.send_command(HandlerCommand::SetPricePrecision(
                         Symbol::from(raw.as_str()),
@@ -296,7 +313,8 @@ impl DatabentoLiveClient {
             self.bars_timestamp_on_close,
             self.reconnect_timeout_mins,
         )
-        .with_futures_year_digits(self.futures_year_digits);
+        .with_futures_year_digits(self.futures_year_digits)
+        .with_share_class_space(self.share_class_space);
 
         self.send_command(HandlerCommand::Start)?;
         self.is_running = true;
@@ -375,6 +393,7 @@ impl std::error::Error for CommandSendError {}
 /// failure mode instead of arbitrary queue limits or delayed market data.
 pub struct DatabentoFeedHandler {
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
     credential: Credential,
     dataset: String,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -413,6 +432,13 @@ impl DatabentoFeedHandler {
         self
     }
 
+    /// Spells a share class with a space in instrument IDs (`BRK.B` -> `BRK B`).
+    #[must_use]
+    pub fn with_share_class_space(mut self, share_class_space: bool) -> Self {
+        self.share_class_space = share_class_space;
+        self
+    }
+
     /// Creates a new [`DatabentoFeedHandler`] instance.
     ///
     /// # Panics
@@ -445,6 +471,7 @@ impl DatabentoFeedHandler {
 
         Self {
             futures_year_digits: FuturesYearDigits::default(),
+            share_class_space: true,
             credential,
             dataset,
             cmd_rx: rx,
@@ -859,6 +886,7 @@ impl DatabentoFeedHandler {
                     &self.symbol_venue_map,
                     &mut instrument_id_map,
                     ts_init,
+                    self.share_class_space,
                 )?;
                 self.send_msg(DatabentoMessage::Status(data));
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
@@ -873,6 +901,7 @@ impl DatabentoFeedHandler {
                     &subscription_price_precision_map,
                     &self.price_precision_overrides,
                     ts_init,
+                    self.share_class_space,
                 )
                 .map_or_else(
                     |e| log::error!("Error decoding imbalance: {e}"),
@@ -890,6 +919,7 @@ impl DatabentoFeedHandler {
                     &subscription_price_precision_map,
                     &self.price_precision_overrides,
                     ts_init,
+                    self.share_class_space,
                 )?;
 
                 if let Some(data) = maybe_data {
@@ -909,6 +939,7 @@ impl DatabentoFeedHandler {
                     ts_init,
                     &initialized_books,
                     self.bars_timestamp_on_close,
+                    self.share_class_space,
                 );
                 let (mut data1, data2) = match res {
                     Ok(decoded) => decoded,
@@ -1007,6 +1038,7 @@ impl DatabentoFeedHandler {
                 instrument_id_map,
                 msg.hd.instrument_id,
                 exchange,
+                self.share_class_space,
             )?;
         }
 
@@ -1016,6 +1048,7 @@ impl DatabentoFeedHandler {
             &self.publisher_venue_map,
             &self.symbol_venue_map,
             instrument_id_map,
+            self.share_class_space,
         )?;
         let mut instrument_id = resolve_futures_instrument_id(
             record,
@@ -1072,6 +1105,7 @@ impl DatabentoFeedHandler {
             &self.publisher_venue_map,
             &self.symbol_venue_map,
             instrument_id_map,
+            self.share_class_space,
         )?;
         let mut instrument_id = resolve_futures_instrument_id(
             record,
@@ -1162,8 +1196,7 @@ fn parse_ack_message(message: &str) -> String {
     message
         .strip_circumfix("Subscription request ", " data succeeded")
         .and_then(|rest| rest.split_once(" for "))
-        .map(|(_, schema)| schema.trim().to_string())
-        .unwrap_or_default()
+        .map_or_default(|(_, schema)| schema.trim().to_string())
 }
 
 /// Handles symbol mapping messages and updates the instrument ID map.
@@ -1240,11 +1273,12 @@ fn update_instrument_id_map_with_exchange(
     instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     raw_instrument_id: u32,
     exchange: &str,
+    share_class_space: bool,
 ) -> anyhow::Result<InstrumentId> {
     let raw_symbol = symbol_map.get(raw_instrument_id).ok_or_else(|| {
         anyhow::anyhow!("Cannot resolve raw_symbol for instrument_id {raw_instrument_id}")
     })?;
-    let symbol = Symbol::from(raw_symbol.as_str());
+    let symbol = nautilus_symbol(raw_symbol, share_class_space);
     let venue = Venue::from_code(exchange)
         .map_err(|e| anyhow::anyhow!("Invalid venue code '{exchange}': {e}"))?;
     let instrument_id = InstrumentId::new(symbol, venue);
@@ -1265,6 +1299,7 @@ fn update_instrument_id_map(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
+    share_class_space: bool,
 ) -> anyhow::Result<InstrumentId> {
     let header = record.header();
 
@@ -1280,7 +1315,7 @@ fn update_instrument_id_map(
         )
     })?;
 
-    let symbol = Symbol::from_str_unchecked(raw_symbol);
+    let symbol = nautilus_symbol(raw_symbol, share_class_space);
 
     let publisher_id = header.publisher_id;
     let venue = if let Some(venue) = symbol_venue_map.get_cloned(&symbol) {
@@ -1308,6 +1343,7 @@ impl CachedInstrumentId {
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 fn handle_status_msg(
     msg: &dbn::StatusMsg,
     record: &dbn::RecordRef,
@@ -1316,6 +1352,7 @@ fn handle_status_msg(
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     ts_init: UnixNanos,
+    share_class_space: bool,
 ) -> anyhow::Result<InstrumentStatus> {
     let instrument_id = update_instrument_id_map(
         record,
@@ -1323,6 +1360,7 @@ fn handle_status_msg(
         publisher_venue_map,
         symbol_venue_map,
         instrument_id_map,
+        share_class_space,
     )?;
 
     decode_status_msg(msg, instrument_id, Some(ts_init))
@@ -1340,6 +1378,7 @@ fn handle_imbalance_msg(
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
+    share_class_space: bool,
 ) -> anyhow::Result<DatabentoImbalance> {
     let instrument_id = update_instrument_id_map(
         record,
@@ -1347,6 +1386,7 @@ fn handle_imbalance_msg(
         publisher_venue_map,
         symbol_venue_map,
         instrument_id_map,
+        share_class_space,
     )?;
 
     let price_precision = resolve_price_precision(
@@ -1372,6 +1412,7 @@ fn handle_statistics_msg(
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
+    share_class_space: bool,
 ) -> anyhow::Result<Option<DatabentoStatistics>> {
     // Precheck before symbol resolution so unmodeled types skip cleanly
     if !is_supported_stat_type(msg.stat_type) {
@@ -1385,6 +1426,7 @@ fn handle_statistics_msg(
         publisher_venue_map,
         symbol_venue_map,
         instrument_id_map,
+        share_class_space,
     )?;
 
     let price_precision = resolve_price_precision(
@@ -1411,6 +1453,7 @@ fn handle_record(
     ts_init: UnixNanos,
     initialized_books: &HashSet<InstrumentId>,
     bars_timestamp_on_close: bool,
+    share_class_space: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let instrument_id = update_instrument_id_map(
         &record,
@@ -1418,6 +1461,7 @@ fn handle_record(
         publisher_venue_map,
         symbol_venue_map,
         instrument_id_map,
+        share_class_space,
     )?;
 
     let price_precision = resolve_price_precision(
@@ -2338,6 +2382,51 @@ mod tests {
     }
 
     #[rstest]
+    #[case(true, "BRK B.EQUS")]
+    #[case(false, "BRK.B.EQUS")]
+    fn test_handle_record_spells_share_class_with_space(
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        let handler = create_test_handler(None);
+        let mut publisher_venue_map = IndexMap::new();
+        publisher_venue_map.insert(1, Venue::from("EQUS"));
+        let mut mapping = dbn::PitSymbolMap::new();
+        mapping.inner_mut().insert(42, "BRK.B".to_string());
+        let mut msg = dbn::TradeMsg::default();
+        msg.hd.publisher_id = 1;
+        msg.hd.instrument_id = 42;
+        msg.hd.ts_event = 1_766_102_400_000_000_000;
+        msg.ts_recv = msg.hd.ts_event;
+        msg.price = 480_250_000_000;
+        msg.size = 10;
+        msg.side = b'A' as std::ffi::c_char;
+        let record = dbn::RecordRef::from(&msg);
+        let mut ids = AHashMap::new();
+
+        let (data, _) = handle_record(
+            record,
+            &mapping,
+            &publisher_venue_map,
+            &handler.symbol_venue_map,
+            &mut ids,
+            &AHashMap::new(),
+            &AHashMap::new(),
+            &AHashMap::new(),
+            1_766_102_400_000_000_001.into(),
+            &HashSet::new(),
+            true,
+            share_class_space,
+        )
+        .unwrap();
+
+        let Some(Data::Trade(trade)) = data else {
+            panic!("expected trade");
+        };
+        assert_eq!(trade.instrument_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
     fn test_futures_precision_override_uses_native_symbol() {
         let mut handler = create_test_handler(None);
         handler.publisher_venue_map.insert(1, Venue::from("GLBX"));
@@ -2369,6 +2458,7 @@ mod tests {
             1_766_102_400_000_000_001.into(),
             &HashSet::new(),
             true,
+            false,
         )
         .unwrap();
 

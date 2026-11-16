@@ -17,5 +17,8 @@
 
 pub mod dockerized;
 
+#[cfg(any(test, feature = "gateway"))]
+mod startup;
+
 #[cfg(feature = "gateway")]
 pub use dockerized::{ContainerStatus, DockerizedIBGateway};

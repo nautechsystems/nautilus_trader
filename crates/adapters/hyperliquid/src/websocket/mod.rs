@@ -25,6 +25,7 @@ pub mod post;
 pub(crate) mod book;
 pub(crate) mod trades;
 
+mod l2;
 mod rate_limits;
 
 pub(crate) const DATA_STREAMS_ENDPOINT: &str = "hyperliquid-data-streams";

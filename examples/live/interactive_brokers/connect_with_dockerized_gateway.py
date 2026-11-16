@@ -52,6 +52,7 @@ def main() -> None:
             read_only_api=not env_bool("IB_V2_ENABLE_EXECUTION"),
             timeout=env_int("IB_V2_DOCKER_TIMEOUT", 300),
         )
+
         gateway = ib.DockerizedIBGateway(config)
         gateway.safe_start_blocking(config.timeout)
         host = gateway.host

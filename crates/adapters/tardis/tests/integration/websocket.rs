@@ -15,7 +15,12 @@
 
 //! Integration tests for Tardis Machine WebSocket client using mock servers.
 
-use std::{net::SocketAddr, path::Path, process::Command, sync::Arc};
+use std::{
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+    sync::Arc,
+};
 
 use axum::{
     Router,
@@ -49,14 +54,11 @@ const OPTION_SUMMARY_FIXTURE: &str = include_str!("../../test_data/option_summar
 #[rstest]
 #[ignore = "Requires Node.js and TARDIS_NODE_MODULE pointing to an installed tardis-dev package"]
 fn test_deribit_snapshot_queued_updates_with_tardis_node() {
-    let package = std::env::var("TARDIS_NODE_MODULE").expect("TARDIS_NODE_MODULE must be set");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new("node")
-        .arg(root.join("tests/integration/normalize_deribit.mjs"))
-        .arg(package)
-        .arg(root.join("test_data/deribit_queued_book_updates.json"))
-        .output()
-        .expect("Node.js must be installed");
+    let output = run_tardis_node_script(
+        "normalize_deribit.mjs",
+        &[root.join("test_data/deribit_queued_book_updates.json")],
+    );
     assert!(
         output.status.success(),
         "{}",
@@ -98,6 +100,28 @@ fn test_deribit_snapshot_queued_updates_with_tardis_node() {
         vec![(dec!(102), dec!(5))],
     );
     assert_eq!(batches, 2);
+}
+
+#[rstest]
+#[ignore = "Requires Node.js and TARDIS_NODE_MODULE pointing to an installed tardis-dev package"]
+fn test_okx_public_websocket_uses_port_443_with_tardis_node() {
+    let output = run_tardis_node_script("okx_public_websocket_url.mjs", &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run_tardis_node_script(script: &str, args: &[PathBuf]) -> Output {
+    let package = std::env::var("TARDIS_NODE_MODULE").expect("TARDIS_NODE_MODULE must be set");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    Command::new("node")
+        .arg(root.join("tests/integration").join(script))
+        .arg(package)
+        .args(args)
+        .output()
+        .expect("Node.js must be installed")
 }
 
 async fn start_mock_ws_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {

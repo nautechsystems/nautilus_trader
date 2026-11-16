@@ -169,6 +169,28 @@ pub enum CoinbaseWsMessage {
     },
 }
 
+impl CoinbaseWsMessage {
+    /// Returns the envelope `sequence_num`.
+    ///
+    /// Coinbase numbers every envelope on a connection with one counter, across all channels and
+    /// products, so a skipped value means an envelope was lost without saying which.
+    #[must_use]
+    pub fn sequence_num(&self) -> u64 {
+        match self {
+            Self::L2Data { sequence_num, .. }
+            | Self::MarketTrades { sequence_num, .. }
+            | Self::Ticker { sequence_num, .. }
+            | Self::TickerBatch { sequence_num, .. }
+            | Self::Candles { sequence_num, .. }
+            | Self::User { sequence_num, .. }
+            | Self::Heartbeats { sequence_num, .. }
+            | Self::FuturesBalanceSummary { sequence_num, .. }
+            | Self::Status { sequence_num, .. }
+            | Self::Subscriptions { sequence_num, .. } => *sequence_num,
+        }
+    }
+}
+
 /// L2 data event containing book updates.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsL2DataEvent {

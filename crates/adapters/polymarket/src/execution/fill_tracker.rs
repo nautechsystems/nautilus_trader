@@ -522,8 +522,7 @@ impl OrderFillTrackerMap {
             .lock()
             .pending_fills
             .get(venue_order_id)
-            .map(|fills| fills.iter().map(|fill| fill.report.clone()).collect())
-            .unwrap_or_default()
+            .map_or_default(|fills| fills.iter().map(|fill| fill.report.clone()).collect())
     }
 
     /// Returns true if an order report is currently buffered for the order.

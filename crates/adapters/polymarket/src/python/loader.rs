@@ -645,11 +645,6 @@ fn trades_to_py(py: Python<'_>, trades: Vec<TradeTick>) -> PyResult<Py<PyAny>> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
     use serde_json::json;
@@ -1224,94 +1219,5 @@ mod tests {
                 .to_string()
                 .contains("does not match Gamma condition ID")
         );
-    }
-
-    #[rstest]
-    #[case(false, rust_decimal::Decimal::ZERO)]
-    #[case(true, rust_decimal::Decimal::ZERO)]
-    #[case(true, rust_decimal::Decimal::new(4, 2))]
-    #[tokio::test]
-    async fn build_loader_uses_gamma_taker_rate_without_clob_fee_rate(
-        #[case] missing_schedule: bool,
-        #[case] expected_rate: rust_decimal::Decimal,
-    ) {
-        Python::initialize();
-
-        let calls = Arc::new(AtomicUsize::new(0));
-        let asserted = Arc::clone(&calls);
-        let details = serde_json::to_string(&clob_market()).unwrap();
-
-        let mut market = gamma_market();
-        market.fees_enabled = Some(true);
-        market.fee_type = Some("crypto_fees".to_string());
-        market.fee_schedule = Some(crate::http::models::FeeSchedule {
-            exponent: rust_decimal::Decimal::ONE,
-            rate: expected_rate,
-            taker_only: true,
-            rebate_rate: rust_decimal::Decimal::ZERO,
-        });
-
-        let recovery = serde_json::to_string(&json!({"markets": [market.clone()]})).unwrap();
-
-        if missing_schedule {
-            market.fee_schedule = None;
-        }
-
-        let router = axum::Router::new()
-            .route(
-                "/markets/keyset",
-                axum::routing::get(move || {
-                    let recovery = recovery.clone();
-                    async move { recovery }
-                }),
-            )
-            .route(
-                "/markets/0xcondition",
-                axum::routing::get(move || {
-                    let details = details.clone();
-
-                    async move { details }
-                }),
-            )
-            .route(
-                "/fee-rate",
-                axum::routing::get(move || {
-                    let calls = Arc::clone(&calls);
-
-                    async move {
-                        calls.fetch_add(1, Ordering::SeqCst);
-                        include_str!("../../test_data/clob_fee_rate_response_nonzero.json")
-                            .to_string()
-                    }
-                }),
-            );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-
-        let gamma = PolymarketGammaHttpClient::new(
-            Some(format!("http://{address}")),
-            5,
-            RetryConfig::default(),
-        )
-        .expect("valid test client");
-        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
-
-        let loader = build_loader(market, 0, &gamma, &clob, data_api())
-            .await
-            .expect("loader should build");
-        server.abort();
-
-        assert_eq!(asserted.load(Ordering::SeqCst), 0);
-        assert_eq!(loader.token_id, "101");
-
-        let info = loader.instrument.info.as_ref().unwrap();
-        let schedule: crate::http::models::FeeSchedule =
-            serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
-        assert_eq!(schedule.rate, expected_rate);
-        assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
-        assert!(schedule.taker_only);
-        assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
     }
 }

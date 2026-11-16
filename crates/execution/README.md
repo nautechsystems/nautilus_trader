@@ -15,7 +15,7 @@ execution venue integration, and advanced order type emulation:
 - **Execution engine**: Central orchestration of order routing and position management.
 - **Order matching engine**: High-fidelity market simulation for backtesting and paper trading.
 - **Order emulator**: Advanced order types not natively supported by venues (trailing stops, contingent orders).
-- **Execution clients**: Abstract interfaces for connecting to trading venues and brokers.
+- **Execution clients**: Abstract interfaces for connecting to trading venues and execution providers.
 - **Order manager**: Local order lifecycle management and state tracking.
 - **Matching core**: Low-level order book and price-time priority matching algorithms.
 - **Fee and fill models**: Configurable execution cost simulation and realistic fill behavior.

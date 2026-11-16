@@ -46,6 +46,7 @@ def test_data_engine_config_with_overrides() -> None:
     Test data engine config with overrides.
     """
     client_id = ClientId("DATA-001")
+
     config = DataEngineConfig(
         time_bars_build_with_no_updates=False,
         time_bars_timestamp_on_close=False,
@@ -59,6 +60,7 @@ def test_data_engine_config_with_overrides() -> None:
         external_clients=[client_id],
         debug=True,
     )
+
     assert config.time_bars_build_with_no_updates is False
     assert config.time_bars_timestamp_on_close is False
     assert config.time_bars_skip_first_non_full_bar is True

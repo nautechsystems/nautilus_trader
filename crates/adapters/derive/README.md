@@ -21,17 +21,23 @@ Order quantities must use base units. The adapter denies quote-denominated quant
 submission, including conditional orders and every leg of an affected order list. Public payload
 converters also reject quote-denominated quantities.
 
+The official Derive API reference can be found at <https://docs.derive.xyz/>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/derive.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -42,6 +48,13 @@ This crate provides feature flags to control source code inclusion during compil
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `simulation`: Enables deterministic simulation with `cfg(madsim)`.
 
+## Integrator attribution
+
+Signed order, replace, and trigger-order payloads set `referral_code` to `nautilus`,
+with no additional trading cost.
+
+See [attribution details](../../../docs/integrations/derive.md#referral-code-attribution).
+
 ## Fuzzing
 
 Coverage-guided fuzz targets for Derive wire models, parsers, signing payloads, and nonce sequencing
@@ -50,8 +63,10 @@ nightly toolchain.
 
 ## Documentation
 
-See the [Derive integration guide](https://nautilustrader.io/docs/nightly/integrations/derive/)
-and [crate docs](https://docs.rs/nautilus-derive) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-derive)
+- [Integration guide](../../../docs/integrations/derive.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/derive/)
 
 ## License
 

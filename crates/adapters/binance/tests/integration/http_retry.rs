@@ -706,7 +706,6 @@ async fn test_http_command_identity_reads_fail_fast(
     let results = tokio::time::timeout(Duration::from_millis(250), client.identity_commands())
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(2100)).await;
     server.abort();
     let blocked = "Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown";
     let first_cause = if preblocked {
@@ -1014,7 +1013,6 @@ async fn test_http_known_cooldown_blocks_write_paths(
     let blocked = tokio::time::timeout(Duration::from_millis(250), client.blocked_writes())
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(1100)).await;
     server.abort();
 
     assert!(first.is_err());

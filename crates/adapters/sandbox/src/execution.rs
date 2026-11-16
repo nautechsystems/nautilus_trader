@@ -175,8 +175,7 @@ impl SandboxExecutionClient {
         let fill_model = config
             .fill_model
             .clone()
-            .map(FillModelHandle::from)
-            .unwrap_or_default();
+            .map_or_default(FillModelHandle::from);
 
         let inner = Rc::new_cyclic(|weak: &std::rc::Weak<RefCell<SandboxInner>>| {
             RefCell::new(SandboxInner {

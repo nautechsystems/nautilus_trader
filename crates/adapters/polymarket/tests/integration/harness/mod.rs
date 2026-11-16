@@ -15,6 +15,9 @@
 
 //! Engine-wired seam harness for Polymarket live execution tests.
 
+pub(crate) mod polybolt;
+pub(crate) mod proxy;
+
 use std::{
     ops::{Deref, DerefMut},
     time::Duration,

@@ -885,8 +885,7 @@ jobs:
   security-gate-nightly:
     name: security-gate-nightly
     runs-on: ubuntu-latest
-    outputs:
-      result: ${{ steps.result.outputs.result }}
+    environment: r2-nightly
     needs:
       - build
       - build-python314
@@ -910,13 +909,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check security gate override
+        id: override
+        env:
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+        run: bash scripts/ci/check-security-gate-override.bash
+
       - name: Install cargo-audit
+        if: steps.override.outputs.override_active != 'true'
         uses: $/.github/actions/cargo-tool-install
         with:
           tool-name: cargo-audit
 
       - name: Run cargo-audit
         id: cargo-audit
+        if: steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: |
           status=0
@@ -925,10 +932,12 @@ jobs:
           exit "$status"
 
       - name: Install osv-scanner
+        if: steps.override.outputs.override_active != 'true'
         run: bash scripts/install-osv-scanner.sh
 
       - name: Run osv-scanner
         id: osv-scan
+        if: steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: |
           "$HOME/.cargo/bin/osv-scanner" scan source \
@@ -941,23 +950,24 @@ jobs:
 
       - name: Check OSV severity
         id: osv-severity
-        if: steps.osv-scan.outcome == 'failure'
+        if: steps.osv-scan.outcome == 'failure' && steps.override.outputs.override_active != 'true'
         continue-on-error: true
         run: bash scripts/ci/osv-severity-gate.sh osv-results.json
 
-      - name: Record security gate result
-        id: result
+      - name: Require successful security gate
         if: always()
         env:
+          OVERRIDE_ACTIVE: ${{ steps.override.outputs.override_active }}
           CARGO_AUDIT_OUTCOME: ${{ steps.cargo-audit.outcome }}
           OSV_SCAN_OUTCOME: ${{ steps.osv-scan.outcome }}
           OSV_SEVERITY_OUTCOME: ${{ steps.osv-severity.outcome }}
         run: |
-          if [ "$CARGO_AUDIT_OUTCOME" = "success" ] &&
-            { [ "$OSV_SCAN_OUTCOME" = "success" ] || [ "$OSV_SEVERITY_OUTCOME" = "success" ]; }; then
-            echo "result=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=failure" >> "$GITHUB_OUTPUT"
+          if [ "$OVERRIDE_ACTIVE" = "true" ]; then
+            echo "Security audits skipped by override"
+          elif [ "$CARGO_AUDIT_OUTCOME" != "success" ] ||
+            { [ "$OSV_SCAN_OUTCOME" != "success" ] && [ "$OSV_SEVERITY_OUTCOME" != "success" ]; }; then
+            echo "::error::Nightly security gate failed"
+            exit 1
           fi
 
   publish:
@@ -986,9 +996,7 @@ jobs:
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
       needs.rust-tests-linux-x86.result == 'success' &&
-      (needs.security-audit.result == 'success' ||
-       (needs.plan.outputs.publish_development == 'true' &&
-        needs.security-audit.result == 'failure')) &&
+      needs.security-audit.result == 'success' &&
       github.event_name == 'push' &&
       needs.plan.outputs.publish_r2 == 'true' &&
       (needs.plan.outputs.wheel_matrix != 'nightly' ||
@@ -1023,22 +1031,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Require successful nightly security gate
-        if: needs.plan.outputs.wheel_matrix == 'nightly'
-        env:
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
-          SECURITY_GATE_RESULT: ${{ needs.security-gate-nightly.outputs.result }}
-          SECURITY_GATE_SHA: ${{ github.sha }}
-        run: bash scripts/ci/check-security-gate-result.bash
-
-      - name: Require successful security audit
-        if: needs.security-audit.result != 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
-        run: bash scripts/ci/check-security-audit-result.sh
 
       - name: Set up Python
         # https://github.com/actions/setup-python

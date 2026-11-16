@@ -150,8 +150,12 @@ processes sharing a store must use matching `defi` feature settings.
 
 - **Restore order**: Redis and Postgres persist full token definitions and each instrument's required
   currencies. Recovery restores definitions before decoding dependent instruments.
-- **Writes**: Redis and Postgres confirm instrument writes before the cache accepts or publishes them.
-  Persistent identity checks also cover legacy updates when the instrument is not loaded in memory.
+- **Writes**: Redis and Postgres attempt persistent currency identity checks before the cache accepts
+  instruments, including legacy updates when the instrument is not loaded in memory. Detected integrity
+  conflicts reject the operation. If an ordinary persistence failure prevents confirmation, including
+  exhausted concurrent-write retries, the cache logs the error and accepts valid in-memory changes without
+  persistent confirmation.
+  See the [cache persistence failure policy](../concepts/cache.md#persistence-failure-policy).
 - **Hard failures**: Missing definitions, inconsistent recorded currency dependencies, or conflicts
   in identity, precision, type, or ISO code fail the load. During startup, they fail cache recovery.
 - **Metadata changes**: Name or symbol changes for a registered contract warn and retain the first

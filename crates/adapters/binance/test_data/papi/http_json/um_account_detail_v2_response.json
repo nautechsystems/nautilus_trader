@@ -1,0 +1,26 @@
+{
+  "assets": [
+    {
+      "asset": "USDT",
+      "crossWalletBalance": "600.25",
+      "crossUnPnl": "2.25",
+      "maintMargin": "6.5",
+      "initialMargin": "7.5",
+      "positionInitialMargin": "5.5",
+      "openOrderInitialMargin": "2",
+      "updateTime": 1700000003000
+    }
+  ],
+  "positions": [
+    {
+      "symbol": "ETHUSDT",
+      "initialMargin": "7.5",
+      "maintMargin": "6.5",
+      "unrealizedProfit": "2.25",
+      "positionSide": "LONG",
+      "positionAmt": "1.5",
+      "updateTime": 1700000003001,
+      "notional": "7500.25"
+    }
+  ]
+}

@@ -45,7 +45,7 @@ use super::{
 use crate::{
     common::{
         bar::BinanceBar,
-        enums::{BinanceKlineInterval, BinanceWsEventType},
+        enums::{BinanceFuturesTradeType, BinanceKlineInterval, BinanceWsEventType},
         parse::{
             parse_millis, parse_millis_or_init, parse_required_price_at_precision,
             parse_required_quantity_at_precision,
@@ -93,16 +93,34 @@ pub fn parse_agg_trade(
     ))
 }
 
-/// Parses a trade message into a `TradeTick`.
+/// Parses a raw trade message into a `TradeTick`.
+///
+/// Returns `None` for insurance fund, ADL, and `NA` messages, which the aggregate trade
+/// stream does not include. `NA` messages carry zero price and quantity.
 ///
 /// # Errors
 ///
-/// Returns an error if parsing fails.
+/// Returns an error if:
+/// - The trade type is unknown.
+/// - The price or quantity cannot be parsed, or the quantity is not positive.
 pub fn parse_trade(
     msg: &BinanceFuturesTradeMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> BinanceWsResult<TradeTick> {
+) -> BinanceWsResult<Option<TradeTick>> {
+    match msg.trade_type {
+        BinanceFuturesTradeType::Market | BinanceFuturesTradeType::Rpi => {}
+        BinanceFuturesTradeType::InsuranceFund
+        | BinanceFuturesTradeType::Adl
+        | BinanceFuturesTradeType::Na => return Ok(None),
+        BinanceFuturesTradeType::Unknown => {
+            return Err(BinanceWsError::ParseError(format!(
+                "unknown trade type for {} trade {}",
+                msg.symbol, msg.trade_id
+            )));
+        }
+    }
+
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -121,7 +139,7 @@ pub fn parse_trade(
     let ts_event = parse_millis_or_init(msg.trade_time, "Futures trade time", ts_init);
     let trade_id = TradeId::new(msg.trade_id.to_string());
 
-    Ok(TradeTick::new(
+    TradeTick::new_checked(
         instrument_id,
         price,
         size,
@@ -129,7 +147,9 @@ pub fn parse_trade(
         trade_id,
         ts_event,
         ts_init,
-    ))
+    )
+    .map(Some)
+    .map_err(|e| BinanceWsError::ParseError(e.to_string()))
 }
 
 /// Parses a book ticker message into a `QuoteTick`.
@@ -647,17 +667,76 @@ mod tests {
     fn test_parse_trade() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_794_270_806_238_000_000u64);
 
-        let trade = parse_trade(&msg, &instrument, ts_init).unwrap();
+        let trade = parse_trade(&msg, &instrument, ts_init).unwrap().unwrap();
 
         assert_eq!(trade.instrument_id, instrument.id());
-        assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
-        assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
+        assert_eq!(trade.price, Price::new(75047.30, PRICE_PRECISION));
+        assert_eq!(trade.size, Quantity::new(0.201, SIZE_PRECISION));
         assert_eq!(trade.aggressor_side, AggressorSide::Sell);
-        assert_eq!(trade.trade_id, TradeId::new("5933014"));
-        assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
+        assert_eq!(trade.trade_id, TradeId::new("8251028467"));
+        assert_eq!(
+            trade.ts_event,
+            UnixNanos::from(1_794_270_806_233_000_000u64)
+        );
         assert_eq!(trade.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_trade_skips_na_message() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream_na.json");
+
+        let trade = parse_trade(&msg, &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(msg.trade_type, BinanceFuturesTradeType::Na);
+        assert_eq!(msg.price, "0");
+        assert_eq!(msg.quantity, "0");
+        assert_eq!(trade, None);
+    }
+
+    #[rstest]
+    #[case::rpi(BinanceFuturesTradeType::Rpi, Some(TradeId::new("8251028467")))]
+    #[case::insurance_fund(BinanceFuturesTradeType::InsuranceFund, None)]
+    #[case::adl(BinanceFuturesTradeType::Adl, None)]
+    fn test_parse_trade_emits_order_book_trades_only(
+        #[case] trade_type: BinanceFuturesTradeType,
+        #[case] expected_trade_id: Option<TradeId>,
+    ) {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
+        msg.trade_type = trade_type;
+
+        let trade = parse_trade(&msg, &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(trade.map(|trade| trade.trade_id), expected_trade_id);
+    }
+
+    #[rstest]
+    fn test_parse_trade_rejects_unknown_trade_type() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
+        msg.trade_type = BinanceFuturesTradeType::Unknown;
+
+        let result = parse_trade(&msg, &instrument, UnixNanos::from(1));
+
+        assert!(matches!(
+            result,
+            Err(BinanceWsError::ParseError(ref message))
+                if message == "unknown trade type for BTCUSDT trade 8251028467"
+        ));
+    }
+
+    #[rstest]
+    fn test_parse_trade_rejects_market_trade_without_quantity() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
+        msg.quantity = "0".to_string();
+
+        let result = parse_trade(&msg, &instrument, UnixNanos::from(1));
+
+        assert!(matches!(result, Err(BinanceWsError::ParseError(_))));
     }
 
     #[rstest]
@@ -829,7 +908,7 @@ mod tests {
         depth.asks[0][1] = "0.000".to_string();
 
         let agg = parse_agg_trade(&agg, &instrument, ts_init).unwrap();
-        let trade = parse_trade(&trade, &instrument, ts_init).unwrap();
+        let trade = parse_trade(&trade, &instrument, ts_init).unwrap().unwrap();
         let book = parse_book_ticker(&book, &instrument, ts_init).unwrap();
         let depth = parse_depth_update(&depth, &instrument, ts_init).unwrap();
 

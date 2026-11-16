@@ -41,6 +41,8 @@ class CoinbaseDataClientConfig:
     @property
     def derivatives_poll_interval_secs(self) -> int: ...
     @property
+    def book_snapshot_timeout_secs(self) -> int: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -54,6 +56,7 @@ class CoinbaseDataClientConfig:
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         derivatives_poll_interval_secs: int | None = None,
+        book_snapshot_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property

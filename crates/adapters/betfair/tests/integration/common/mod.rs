@@ -343,11 +343,14 @@ async fn handle_keep_alive(State(state): State<MockState>) -> Response {
         .lock()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
+
     let status = state
         .keep_alive_status_override
         .lock()
-        .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
-        .unwrap_or(StatusCode::OK);
+        .map_or(StatusCode::OK, |status| {
+            StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+        });
+
     wait_identity_response_gate(&state, "keepAlive").await;
     (
         status,

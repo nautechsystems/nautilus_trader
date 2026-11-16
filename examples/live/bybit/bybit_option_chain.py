@@ -124,6 +124,7 @@ class OptionChainTester(DataActor):
         for inst in instruments:
             if str(inst.id.venue) != BYBIT:
                 continue
+
             if not hasattr(inst, "option_kind"):
                 continue
             expiry = getattr(inst, "expiration_ns", None)
@@ -159,6 +160,7 @@ class OptionChainTester(DataActor):
             settlement,
             nearest_expiry,
         )
+
         self._series_id = series_id
 
         log_msg = f"Subscribing to option chain: {series_id}"

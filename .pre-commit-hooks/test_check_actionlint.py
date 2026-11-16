@@ -103,6 +103,7 @@ def _test_workflows() -> None:
             "      - uses: $/.github/actions/local\n"
             "        with:\n          required-value: action-value\n"
         )
+
         cases = [
             (valid, ""),
             (valid.replace("          required-value: action-value\n", ""), "required-value"),
@@ -117,6 +118,7 @@ def _test_workflows() -> None:
             ),
             (valid + "      - run: echo $unquoted\n", "SC2086"),
         ]
+
         temporary = root / "temporary"
         temporary.mkdir()
         environment = dict(

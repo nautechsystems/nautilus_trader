@@ -132,6 +132,7 @@ def _load_contract_details_cache(
         "contract_details": [SPY_CACHE_ENTRY],
         "instruments": [],
     }
+
     path = tmp_path / "_contract_cache_test.json"
     path.write_text(json.dumps(cache), encoding="utf-8")
 

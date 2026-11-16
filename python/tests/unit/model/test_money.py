@@ -31,6 +31,7 @@ from nautilus_trader.model import Money
 USD = Currency.from_str("USD")
 AUD = Currency.from_str("AUD")
 USDT = Currency.from_str("USDT")
+
 TST9 = Currency(
     code="TST9",
     precision=9,
@@ -38,6 +39,7 @@ TST9 = Currency(
     name="Test 9dp",
     currency_type=CurrencyType.CRYPTO,
 )
+
 TST18 = Currency(
     code="TST18",
     precision=18,

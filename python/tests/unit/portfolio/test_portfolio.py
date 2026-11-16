@@ -260,7 +260,6 @@ def test_registered_statistic_survives_repeated_statistics_queries() -> None:
     engine.portfolio.register_statistic(CategorySentinel())
 
     engine.run()
-
     for _ in range(3):
         statistics = engine.portfolio.statistics()
         assert statistics.general["Category Sentinel"] == 33.0

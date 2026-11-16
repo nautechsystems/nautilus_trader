@@ -23,7 +23,6 @@ pub mod models;
 pub mod parse;
 pub mod status;
 pub mod symbol;
-pub mod types;
 pub mod urls;
 
 pub(crate) mod rate_limit;

@@ -48,6 +48,32 @@ Feature: Startup reconciliation
         | short | start      | -5.000     |
         | short | run        | -5.000     |
 
+  Rule: A late report after restart must not count a recovered execution twice
+    A startup position snapshot can already include an execution whose Filled
+    order report arrives later. Even after the node is running, recovering that
+    order must leave the recovered position and portfolio exposure unchanged.
+
+    @netting @recovery @late_report
+    Scenario Outline: Receive an earlier execution report after recovering a <side> position at restart
+      Given the execution client uses NETTING accounting
+      And the venue reports a <side> position of 5.000 ETH
+      And the position report has no venue position ID
+      And its average opening price is 2500.25 USDT
+      And the execution in the delayed Filled order report is already included in the position snapshot
+      When the live node restarts and receives the delayed Filled order report after entering Running
+      Then startup succeeds
+      And the strategy observes a <side> position of 5.000 ETH at 2500.25 USDT when it starts
+      And the portfolio exposes <signed_qty> ETH when the strategy starts
+      And the delayed order is FILLED for 5.000 ETH at 2500.25 USDT
+      And the recovered position and portfolio exposure stay unchanged after the delayed report
+      And exactly one position is cached
+      And the actor and strategy each start once
+
+      Examples:
+        | side  | signed_qty |
+        | long  | 5.000      |
+        | short | -5.000     |
+
   Rule: Included position reports must be reconciled before actors and strategies start
 
     @recovery
@@ -157,6 +183,50 @@ Feature: Startup reconciliation
       Then startup succeeds
       And the actor and strategy each start once
       And the venue receives no startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
+  Rule: An explicit flat position report and a missing report have different meanings
+    An explicit flat report closes retained exposure before trading starts
+    when the retaining strategy claims external orders for the instrument.
+    Without position reports or executions, startup preserves retained exposure.
+
+    @retained_position @explicit_flat
+    Scenario Outline: Close retained exposure from an explicit flat report using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the strategy claims external orders for the retained position's instrument
+      And the venue reports an explicit flat position and no orders or fills
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the retained position is flat with 0.000 ETH when the strategy starts
+      And the portfolio exposes 0 ETH when the strategy starts
+      And exactly one position is cached
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
+    @retained_position @missing_report
+    Scenario Outline: Preserve retained exposure when no position report arrives using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the strategy claims external orders for the retained position's instrument
+      And the venue reports no orders, fills, or positions
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the retained position is long with 1.000 ETH when the strategy starts
+      And the retained position remains long 1.000 ETH with realized profit of -0.60 USDT and total fees of 0.60 USDT when the strategy starts
+      And the portfolio exposes 1.000 ETH when the strategy starts
+      And exactly one position is cached
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
 
       Examples:
         | entrypoint |

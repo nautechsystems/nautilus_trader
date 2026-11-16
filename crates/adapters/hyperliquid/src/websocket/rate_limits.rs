@@ -239,6 +239,7 @@ fn subscription_user(subscription: &SubscriptionRequest) -> Option<&str> {
         | SubscriptionRequest::AllDexsAssetCtxs
         | SubscriptionRequest::Candle { .. }
         | SubscriptionRequest::L2Book { .. }
+        | SubscriptionRequest::L2 { .. }
         | SubscriptionRequest::Trades { .. }
         | SubscriptionRequest::ActiveAssetCtx { .. }
         | SubscriptionRequest::ActiveSpotAssetCtx { .. }

@@ -198,7 +198,10 @@ impl DataEngine {
                 aggregator.borrow_mut().set_is_running(keep_running);
             }
 
-            if !state.update_subscriptions
+            let stop_after_request = self.bar_aggregators_pending_stop.contains(&key)
+                && !self.has_pending_shared_bar_aggregation(bar_type);
+
+            if (!state.update_subscriptions || stop_after_request)
                 && let Err(e) = self.stop_bar_aggregator(bar_type, aggregator_request_id)
             {
                 log::error!("Error stopping request bar aggregator for {bar_type}: {e}");
@@ -398,11 +401,24 @@ impl DataEngine {
             },
         );
 
-        if self
-            .bar_aggregators
-            .contains_key(&bar_aggregator_key(bar_type, None))
-        {
-            match self.stop_bar_aggregator(bar_type, None) {
+        let key = bar_aggregator_key(bar_type, None);
+
+        // History retains this instance after its live-source ownership was released
+        if self.bar_aggregators_pending_stop.contains(&key) {
+            return;
+        }
+
+        if self.bar_aggregators.contains_key(&key) {
+            let result = if self.has_pending_shared_bar_aggregation(bar_type) {
+                // Release live data without canceling an accepted historical aggregation
+                self.unsubscribe_bar_aggregator_handlers(&key);
+                self.bar_aggregators_pending_stop.insert(key);
+                Ok(())
+            } else {
+                self.stop_bar_aggregator(bar_type, None)
+            };
+
+            match result {
                 Ok(()) => {
                     self.subscriptions_bar_aggregation
                         .remove(&bar_type.standard());
@@ -412,6 +428,10 @@ impl DataEngine {
             }
         }
 
+        self.release_composite_bar_source(&command);
+    }
+
+    fn release_composite_bar_source(&mut self, command: &UnsubscribeBars) {
         // After stopping a composite, release its source through `unsubscribe_bars`, which frees
         // the client feed recorded in the source's retained command.
         if command
@@ -439,6 +459,16 @@ impl DataEngine {
                 ));
             }
         }
+    }
+
+    fn has_pending_shared_bar_aggregation(&self, bar_type: BarType) -> bool {
+        self.request_bar_aggregations.values().any(|state| {
+            state.update_subscriptions
+                && state
+                    .bar_types
+                    .iter()
+                    .any(|requested| requested.standard() == bar_type.standard())
+        })
     }
 
     fn create_bar_aggregator(
@@ -640,6 +670,7 @@ impl DataEngine {
         }
 
         self.start_bar_aggregator(bar_type, None, skip_first_non_full_bar, time_zone)?;
+        self.bar_aggregators_pending_stop.remove(&key);
         let source = self.subscribe_bar_aggregator(cmd);
         self.subscriptions_bar_aggregation.insert(
             bar_type.standard(),
@@ -660,8 +691,6 @@ impl DataEngine {
         time_zone: Option<TimeZone>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
-        let bar_type_std = bar_type.standard();
-
         self.create_bar_aggregator_for_key(
             bar_type,
             request_id,
@@ -673,78 +702,19 @@ impl DataEngine {
             .get(&key)
             .map(Rc::clone)
             .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?;
+        // A deferred aggregator is still replaying its request in historical mode, so live data
+        // is held back and replayed once the request completes
         let defer_subscription_activation = request_id.is_none()
             && aggregator.borrow().is_running()
             && !self.bar_aggregator_handlers.contains_key(&key);
 
         if !self.bar_aggregator_handlers.contains_key(&key) {
-            // Subscribe to underlying data topics
-            let mut subscriptions = Vec::new();
-
-            // A deferred aggregator is still replaying its request in historical mode, so live data
-            // is held back and replayed once the request completes
-            let defer = defer_subscription_activation;
-            let warmup;
-
-            if bar_type.is_composite() {
-                let topic = switchboard::get_bars_topic(bar_type.composite());
-                let buffer = defer.then(WarmupBuffer::new);
-                let handler = TypedHandler::new(
-                    BarBarHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
-                );
-                warmup = buffer.map(BarAggregatorWarmup::Bar);
-                msgbus::subscribe_bars(topic.into(), handler.clone(), None);
-                subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
-            } else if bar_type.spec().price_type == PriceType::Last {
-                let topic = switchboard::get_trades_topic(bar_type.instrument_id());
-                let buffer = defer.then(WarmupBuffer::new);
-                let handler = TypedHandler::new(
-                    BarTradeHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
-                );
-                warmup = buffer.map(BarAggregatorWarmup::Trade);
-                msgbus::subscribe_trades(
-                    topic.into(),
-                    handler.clone(),
-                    Some(BAR_AGGREGATOR_PRIORITY),
-                );
-                subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
-            } else {
-                // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
-                if matches!(
-                    bar_type.spec().aggregation,
-                    BarAggregation::TickImbalance
-                        | BarAggregation::VolumeImbalance
-                        | BarAggregation::ValueImbalance
-                        | BarAggregation::TickRuns
-                        | BarAggregation::VolumeRuns
-                        | BarAggregation::ValueRuns
-                ) {
-                    log::warn!(
-                        "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
-                         data with `aggressor_side`, but `price_type` is not LAST so it will receive \
-                         quote data: bars will not emit correctly",
-                    );
-                }
-
-                let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
-                let buffer = defer.then(WarmupBuffer::new);
-                let handler = TypedHandler::new(
-                    BarQuoteHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
-                );
-                warmup = buffer.map(BarAggregatorWarmup::Quote);
-                msgbus::subscribe_quotes(
-                    topic.into(),
-                    handler.clone(),
-                    Some(BAR_AGGREGATOR_PRIORITY),
-                );
-                subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
-            }
-
-            self.bar_aggregator_handlers.insert(key, subscriptions);
-
-            if let Some(warmup) = warmup {
-                self.bar_aggregator_warmups.insert(key, warmup);
-            }
+            self.subscribe_bar_aggregator_handlers(
+                key,
+                bar_type,
+                &aggregator,
+                defer_subscription_activation,
+            );
         }
 
         if defer_subscription_activation {
@@ -756,6 +726,77 @@ impl DataEngine {
         aggregator.borrow_mut().set_is_running(true);
 
         Ok(())
+    }
+
+    fn subscribe_bar_aggregator_handlers(
+        &mut self,
+        key: BarAggregatorKey,
+        bar_type: BarType,
+        aggregator: &Rc<RefCell<Box<dyn BarAggregator>>>,
+        defer: bool,
+    ) {
+        // Subscribe to underlying data topics
+        let mut subscriptions = Vec::new();
+
+        let bar_type_std = bar_type.standard();
+        let warmup;
+
+        if bar_type.is_composite() {
+            let topic = switchboard::get_bars_topic(bar_type.composite());
+            let buffer = defer.then(WarmupBuffer::new);
+
+            let handler = TypedHandler::new(
+                BarBarHandler::new(aggregator, bar_type_std).with_warmup(buffer.clone()),
+            );
+
+            warmup = buffer.map(BarAggregatorWarmup::Bar);
+            msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+            subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
+        } else if bar_type.spec().price_type == PriceType::Last {
+            let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+            let buffer = defer.then(WarmupBuffer::new);
+
+            let handler = TypedHandler::new(
+                BarTradeHandler::new(aggregator, bar_type_std).with_warmup(buffer.clone()),
+            );
+
+            warmup = buffer.map(BarAggregatorWarmup::Trade);
+            msgbus::subscribe_trades(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
+            subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
+        } else {
+            // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
+            if matches!(
+                bar_type.spec().aggregation,
+                BarAggregation::TickImbalance
+                    | BarAggregation::VolumeImbalance
+                    | BarAggregation::ValueImbalance
+                    | BarAggregation::TickRuns
+                    | BarAggregation::VolumeRuns
+                    | BarAggregation::ValueRuns
+            ) {
+                log::warn!(
+                    "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
+                     data with `aggressor_side`, but `price_type` is not LAST so it will receive \
+                     quote data: bars will not emit correctly",
+                );
+            }
+
+            let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+            let buffer = defer.then(WarmupBuffer::new);
+
+            let handler = TypedHandler::new(
+                BarQuoteHandler::new(aggregator, bar_type_std).with_warmup(buffer.clone()),
+            );
+
+            warmup = buffer.map(BarAggregatorWarmup::Quote);
+            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
+            subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
+        }
+
+        self.bar_aggregator_handlers.insert(key, subscriptions);
+        if let Some(warmup) = warmup {
+            self.bar_aggregator_warmups.insert(key, warmup);
+        }
     }
 
     fn subscribe_bar_aggregator(&mut self, cmd: &SubscribeBars) -> Option<SubscribeCommand> {
@@ -965,6 +1006,17 @@ impl DataEngine {
         }
     }
 
+    pub(super) fn clear_bar_aggregators(&mut self) {
+        let keys: Vec<BarAggregatorKey> = self.bar_aggregators.keys().copied().collect();
+        for (bar_type, request_id) in keys {
+            if let Err(e) = self.stop_bar_aggregator(bar_type, request_id) {
+                log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
+            }
+        }
+
+        self.subscriptions_bar_aggregation.clear();
+    }
+
     pub(super) fn stop_bar_aggregator(
         &mut self,
         bar_type: BarType,
@@ -977,10 +1029,17 @@ impl DataEngine {
         })?;
 
         aggregator.borrow_mut().stop();
-        self.bar_aggregator_warmups.remove(&key);
+        self.bar_aggregators_pending_stop.remove(&key);
+        self.unsubscribe_bar_aggregator_handlers(&key);
+
+        Ok(())
+    }
+
+    fn unsubscribe_bar_aggregator_handlers(&mut self, key: &BarAggregatorKey) {
+        self.bar_aggregator_warmups.remove(key);
 
         // Unsubscribe any registered message handlers
-        if let Some(subs) = self.bar_aggregator_handlers.remove(&key) {
+        if let Some(subs) = self.bar_aggregator_handlers.remove(key) {
             for sub in subs {
                 match sub {
                     BarAggregatorSubscription::Bar { topic, handler } => {
@@ -995,8 +1054,6 @@ impl DataEngine {
                 }
             }
         }
-
-        Ok(())
     }
 }
 

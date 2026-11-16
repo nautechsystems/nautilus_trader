@@ -122,9 +122,13 @@ or native cost currency.
 
 Longs contribute their notional and shorts its negation. Flat positions are skipped.
 
-An account-scoped `equity()` query returns `{}` for an unknown account. For a known account, it
-raises `RuntimeError` if exact snapshot valuation fails instead of presenting the failure as empty
-equity.
+Equity and mark-value failures depend on scope:
+
+- `equity(account_id=...)` returns `{}` for an unknown account. For a known account, it raises
+  `RuntimeError` if exact snapshot valuation fails.
+- `equity(venue, ...)` and `mark_values(venue, ...)` return `{}` and log an error if a per-currency
+  total exceeds `Money` bounds.
+- `build_snapshot()` returns `None` if exact PnL or equity valuation fails, including `Money` overflow.
 
 ### Equity formula
 

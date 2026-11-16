@@ -78,6 +78,10 @@ pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "request deadline elapsed";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HttpRedirectPolicy {
     /// Follow up to ten redirects.
+    ///
+    /// A redirect to another origin keeps only the `Accept`, `Accept-Encoding`, and `User-Agent`
+    /// request headers. The request fails when a redirect goes from HTTPS to HTTP, or when a
+    /// request with a body is redirected to another origin.
     #[default]
     Follow,
     /// Reject every redirect response.
@@ -115,6 +119,7 @@ impl HttpClient {
     ///
     /// Returns an error if:
     /// - Shared rate limiters are combined with quota configuration.
+    /// - The timeout exceeds the monotonic clock range.
     /// - The proxy URL is malformed.
     /// - `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` is set to a value other than `true` or `false`.
     /// - The certificate directory does not contain a matching client certificate and private key.
@@ -203,6 +208,8 @@ impl HttpClient {
         max_decompressed_bytes: usize,
         certs_dir: Option<&str>,
     ) -> Result<Self, HttpClientError> {
+        let timeout = timeout_secs.map(Duration::from_secs);
+        request_deadline(timeout)?;
         install_cryptographic_provider();
 
         let mut header_map = HeaderMap::new();
@@ -211,10 +218,11 @@ impl HttpClient {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
 
-            let header_value = HeaderValue::from_str(&value).map_err(|e| {
+            let mut header_value = HeaderValue::from_str(&value).map_err(|e| {
                 HttpClientError::Error(format!("Invalid header value for '{key}': {e}"))
             })?;
 
+            header_value.set_sensitive(true);
             header_map.insert(header_name, header_value);
         }
 
@@ -256,7 +264,7 @@ impl HttpClient {
             #[cfg(not(all(feature = "simulation", madsim)))]
             client,
             headers: header_map,
-            timeout: timeout_secs.map(Duration::from_secs),
+            timeout,
             redact_url,
             #[cfg(not(all(feature = "simulation", madsim)))]
             redirect_policy,
@@ -277,7 +285,8 @@ impl HttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if unable to send request or times out.
+    /// Returns an error if the timeout exceeds the monotonic clock range, the request cannot be sent,
+    /// or it times out.
     ///
     /// # Examples
     ///
@@ -725,7 +734,7 @@ impl InnerHttpClient {
             header_map.insert(http::header::ACCEPT, HeaderValue::from_static("*/*"));
         }
 
-        let body = body.map(RequestBody::into_bytes).unwrap_or_default();
+        let body = body.map_or_default(RequestBody::into_bytes);
         let body_len = body.len();
         let query_len = url.query().map_or(0, str::len);
         let mut request = http::Request::new(Full::new(body));
@@ -743,7 +752,7 @@ impl InnerHttpClient {
         let origin = (!self.redact_url).then(|| url.origin().ascii_serialization());
 
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
-        let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
+        let deadline = request_deadline(duration)?;
 
         let operation = async {
             #[cfg(all(feature = "simulation", madsim))]
@@ -856,6 +865,20 @@ impl InnerHttpClient {
 enum RequestBody {
     Plain(Vec<u8>),
     Secret(SecretString),
+}
+
+fn request_deadline(
+    timeout: Option<Duration>,
+) -> Result<Option<crate::dst::time::Instant>, HttpClientError> {
+    timeout
+        .map(|duration| {
+            crate::dst::time::Instant::now()
+                .checked_add(duration)
+                .ok_or_else(|| {
+                    HttpClientError::Error("HTTP request timeout exceeds clock range".into())
+                })
+        })
+        .transpose()
 }
 
 async fn decode_content_encoding(
@@ -1126,6 +1149,24 @@ mod tests {
 
     use super::*;
     use crate::logging::tests::capture_logs;
+
+    #[rstest]
+    fn test_debug_redacts_custom_default_headers() {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .headers(HashMap::from([(
+                "kalshi-access-key".into(),
+                "HEADER_DEBUG_SECRET".into(),
+            )]))
+            .build()
+            .unwrap();
+        let header = &client.client.headers["kalshi-access-key"];
+        let debug = format!("{client:?}");
+
+        assert_eq!(header.to_str().unwrap(), "HEADER_DEBUG_SECRET");
+        assert!(header.is_sensitive());
+        assert!(!debug.contains("HEADER_DEBUG_SECRET"), "{debug}");
+    }
 
     #[rstest]
     #[case("ftp://127.0.0.1:1/resource")]
@@ -1862,6 +1903,41 @@ mod tests {
         let result = HttpClient::builder().build();
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_http_client_rejects_timeout_overflow() {
+        let result = HttpClient::builder().timeout_secs(u64::MAX).build();
+
+        assert!(matches!(
+            result,
+            Err(HttpClientError::Error(message)) if message == "HTTP request timeout exceeds clock range"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_http_request_rejects_timeout_override_overflow() {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .timeout_secs(1)
+            .build()
+            .unwrap();
+        let result = client
+            .request(
+                Method::GET,
+                "http://127.0.0.1:1/".to_string(),
+                None,
+                None,
+                None,
+                Some(u64::MAX),
+                None,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(HttpClientError::Error(message)) if message == "HTTP request timeout exceeds clock range"
+        ));
     }
 
     #[rstest]

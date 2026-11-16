@@ -37,6 +37,7 @@ from tests.unit.test_component_ownership import OwnershipStrategy
 pytest.importorskip("pytest_memray")
 
 _RUNS = 16
+
 _NODE_CONFIG = LiveNodeConfig(
     trader_id=TraderId("MEMRAY-001"),
     environment=Environment.SANDBOX,
@@ -49,6 +50,7 @@ _NODE_CONFIG = LiveNodeConfig(
     delay_post_stop_secs=0,
     timeout_shutdown_secs=0,
 )
+
 _ACTOR_CONFIG = ImportableActorConfig(
     actor_path="tests.unit.common.actor:TestActor",
     config_path="tests.unit.common.actor:TestActorConfig",

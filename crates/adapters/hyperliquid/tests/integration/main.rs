@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod builder_fee;
 mod catalog;
 mod dispatch;
 mod exec_client;

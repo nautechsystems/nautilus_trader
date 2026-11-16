@@ -10,8 +10,7 @@
 [Binance](https://www.binance.com) cryptocurrency exchange.
 
 The `nautilus-binance` crate provides client bindings (HTTP & WebSocket) and data models
-for the official **Binance API**. Live data and execution
-clients are available for:
+for the official **Binance API**. Live data and execution clients are available for:
 
 - Spot markets, including Binance US (api.binance.com)
 - USD-M Futures (fapi.binance.com)
@@ -21,15 +20,21 @@ The crate also includes shared enums, endpoint constants, URL routing, and crede
 plumbing for adjacent Binance surfaces such as Margin and European Options. Those
 surfaces do not have live data or execution clients in this crate.
 
+The official Binance API reference can be found at <https://developers.binance.com/en/docs/>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 
-## Authentication
+## Configuration
+
+See the [integration guide](../../../docs/integrations/binance.md) for client settings,
+credentials, and connection setup.
+
+### Authentication
 
 This crate requires **Ed25519 API keys** for all authenticated endpoints (REST and WebSocket API).
 Ed25519 is recommended by Binance for its superior performance and security. HMAC and RSA keys
@@ -54,7 +59,7 @@ export BINANCE_API_SECRET="$(cat binance_ed25519_private.pem)"
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `arrow`: Enables Apache Arrow data support.
 - `examples`: Enables the crate's example binaries.
@@ -64,9 +69,20 @@ This crate provides feature flags to control source code inclusion during compil
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
+## Integrator attribution
+
+Spot and Futures execution clients and HTTP clients that build orders from Nautilus types encode
+supported client order IDs with NautilusTrader's Link and Trade integration prefix. Raw HTTP and
+WebSocket API trading clients preserve caller-supplied IDs.
+
+See [attribution details](../../../docs/integrations/binance.md#link--trade).
+
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-binance) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-binance)
+- [Integration guide](../../../docs/integrations/binance.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/binance/)
 
 ## License
 

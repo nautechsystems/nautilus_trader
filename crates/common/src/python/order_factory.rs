@@ -722,7 +722,9 @@ impl PyOrderFactory {
         sl_exec_algorithm_id=None,
         sl_exec_algorithm_params=None,
         sl_tags=None,
-        sl_client_order_id=None
+        sl_client_order_id=None,
+        tp_reduce_only=true,
+        sl_reduce_only=true
     ))]
     fn py_bracket(
         &mut self,
@@ -769,6 +771,8 @@ impl PyOrderFactory {
         sl_exec_algorithm_params: Option<IndexMap<String, String>>,
         sl_tags: Option<Vec<String>>,
         sl_client_order_id: Option<ClientOrderId>,
+        tp_reduce_only: bool,
+        sl_reduce_only: bool,
     ) -> PyResult<Py<PyList>> {
         let orders = py_orders_from_factory(|| {
             self.0
@@ -803,6 +807,7 @@ impl PyOrderFactory {
                 .maybe_tp_limit_offset(tp_limit_offset)
                 .tp_time_in_force(tp_time_in_force)
                 .tp_post_only(tp_post_only)
+                .tp_reduce_only(tp_reduce_only)
                 .maybe_tp_exec_algorithm_id(tp_exec_algorithm_id)
                 .maybe_tp_exec_algorithm_params(tp_exec_algorithm_params.map(str_indexmap_to_ustr))
                 .maybe_tp_tags(tp_tags.map(strings_to_ustrs))
@@ -814,6 +819,7 @@ impl PyOrderFactory {
                 .maybe_sl_trailing_offset(sl_trailing_offset)
                 .sl_trailing_offset_type(sl_trailing_offset_type)
                 .sl_time_in_force(sl_time_in_force)
+                .sl_reduce_only(sl_reduce_only)
                 .maybe_sl_exec_algorithm_id(sl_exec_algorithm_id)
                 .maybe_sl_exec_algorithm_params(sl_exec_algorithm_params.map(str_indexmap_to_ustr))
                 .maybe_sl_tags(sl_tags.map(strings_to_ustrs))

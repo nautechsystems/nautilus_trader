@@ -2113,8 +2113,7 @@ impl FeedHandler {
             return Vec::new();
         };
 
-        // The position frame carries no top-level event timestamp, so stamp
-        // ts_event with the wall-clock time the handler observed the frame.
+        // Account transaction times stay on raw frames; reports use arrival time
         let ts_event = ts_init;
 
         let mut reports = Vec::new();
@@ -3438,6 +3437,80 @@ mod tests {
     }
 
     #[rstest]
+    #[case::positions(include_str!("../../test_data/ws_account_all_positions_transaction_time.json"), true)]
+    #[case::assets(include_str!("../../test_data/ws_account_all_assets_transaction_time.json"), false)]
+    fn account_transaction_time_preserves_raw_frames_and_receive_order(
+        #[case] fixture: &str,
+        #[case] positions: bool,
+    ) {
+        let mut handler = make_handler_with_account();
+        let mut raw_handler = make_handler_with_account();
+        raw_handler.exec_account = None;
+        let stats: LighterWsFrame = serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
+        handler.handle_frame(stats, UnixNanos::from(10));
+
+        for (index, (transaction_time, amount)) in [
+            (200, "1.5000"),
+            (200, "2.5000"),
+            (100, "3.5000"),
+            (100, "3.5000"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut value: serde_json::Value = serde_json::from_str(fixture).unwrap();
+            value["transaction_time"] = json!(transaction_time);
+            if positions {
+                value["positions"]["0"]["position"] = json!(amount);
+            } else {
+                value["assets"]["3"]["balance"] = json!(amount);
+            }
+
+            let frame: LighterWsFrame = serde_json::from_value(value).unwrap();
+            let ts_init = UnixNanos::from(11 + index as u64);
+            let raw = raw_handler.handle_frame(frame.clone(), ts_init);
+            let messages = strip_account_marker(handler.handle_frame(frame, ts_init));
+
+            assert_eq!(raw.len(), 1);
+
+            let NautilusWsMessage::Raw(value) = &raw[0] else {
+                panic!("expected raw account frame");
+            };
+
+            assert_eq!(value["transaction_time"], json!(transaction_time));
+            assert_eq!(messages.len(), 1);
+
+            match &messages[0] {
+                NautilusWsMessage::PositionUpdate {
+                    reports,
+                    closed_market_ids,
+                    skipped_market_ids,
+                } => {
+                    assert!(positions);
+                    assert_eq!(reports.len(), 1);
+                    assert_eq!(reports[0].quantity, Quantity::from(amount));
+                    assert_eq!(reports[0].ts_last, ts_init);
+                    assert_eq!(reports[0].ts_init, ts_init);
+                    assert!(closed_market_ids.is_empty());
+                    assert!(skipped_market_ids.is_empty());
+                }
+                NautilusWsMessage::AccountState(state) => {
+                    assert!(!positions);
+                    assert_eq!(state.balances.len(), 1);
+                    assert_eq!(
+                        state.balances[0].total.as_decimal(),
+                        Decimal::from_str_exact(amount).unwrap() + Decimal::from(40),
+                    );
+                    assert_eq!(state.ts_event, UnixNanos::from(1_781_161_199_648_000_000));
+                    assert_eq!(state.ts_init, ts_init);
+                    assert_eq!(state.info, None);
+                }
+                other => panic!("expected account state or position update, was {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
     fn handle_frame_routes_account_positions_to_update_without_readiness_marker() {
         let mut handler = make_handler_with_account();
         let frame: super::LighterWsFrame =
@@ -3920,12 +3993,7 @@ mod tests {
 
     #[rstest]
     fn handle_frame_routes_account_assets_and_user_stats_to_unified_state() {
-        // Fixture is the captured production no-position payload (10 USDC
-        // on spot, 40 USDC pledged as perp collateral, no resting orders).
-        // Lighter runs unified margin: both legs are deployable equity, so
-        // total = balance + margin_balance, locked = locked_balance only,
-        // and MarginBalance.initial = 0 because user_stats.collateral ==
-        // available_balance (no margin in use).
+        // The snapshot holds 50 USDC in total and reports 40 USDC available
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
@@ -3944,11 +4012,9 @@ mod tests {
                 assert_eq!(state.base_currency, None);
                 assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
-                // balance 10 + margin_balance 40 = 50 total; locked = 0
-                // (no resting spot orders); free = 50 (all deployable).
                 assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("40.000000 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 assert_eq!(state.margins[0].currency, usdc);
                 assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
@@ -3969,9 +4035,8 @@ mod tests {
         // The 5 mUSDC haircut on margin_balance is the entry fee. The
         // 0.827055 USDC gap between collateral and available_balance is
         // the initial margin pledged to the open position. AccountBalance
-        // is unchanged in shape; perp-margin-in-use lives on
-        // MarginBalance, not in `locked`. Maintenance is zero because
-        // Lighter doesn't publish a maintenance value on user_stats.
+        // also includes funds outside the venue's reported availability.
+        // Maintenance is zero because user_stats does not publish it.
         let mut handler = make_handler_with_account();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_WITH_POSITION).unwrap();
@@ -3992,8 +4057,8 @@ mod tests {
                 // the trailing digit to 8 decimals, matching the
                 // production log).
                 assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
-                assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("10.82705556 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("39.16831400 USDC"));
                 assert_eq!(state.margins.len(), 1);
                 // initial = collateral 39.995369 - available 39.168314 = 0.827055
                 assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));

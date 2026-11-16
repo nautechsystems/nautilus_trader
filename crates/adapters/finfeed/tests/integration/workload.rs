@@ -16,6 +16,11 @@
 //! Attempt budgets, bootstrap deadlines, and polling costs across collection sizes.
 
 use std::{collections::BTreeMap, time::Duration};
+#[cfg(all(feature = "simulation", madsim))]
+use std::{
+    future::{Future, poll_fn},
+    task::Poll,
+};
 
 #[cfg(all(feature = "simulation", madsim))]
 use nautilus_common::messages::DataEvent;
@@ -24,7 +29,9 @@ use nautilus_common::{clients::DataClient, messages::data::*};
 use nautilus_core::string::secret::SecretString;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_finfeed::{
-    common::symbol::to_instrument_id, data::FinFeedDataClient, http::client::FinFeedHttpConfig,
+    common::symbol::{from_instrument_id, to_instrument_id},
+    data::FinFeedDataClient,
+    http::client::FinFeedHttpConfig,
 };
 #[cfg(all(feature = "simulation", madsim))]
 use nautilus_finfeed::{
@@ -33,7 +40,7 @@ use nautilus_finfeed::{
 use nautilus_model::{data::BarType, enums::BookType, identifiers::InstrumentId};
 #[cfg(all(feature = "simulation", madsim))]
 use nautilus_model::{data::Data, identifiers::ClientId, instruments::Instrument};
-use nautilus_network::dst::{task, time};
+use nautilus_network::dst::time;
 #[cfg(all(feature = "simulation", madsim))]
 use nautilus_network::retry::RetryError;
 use rstest::rstest;
@@ -41,7 +48,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
 use super::{
-    dst::{bind_peer, read_request},
+    dst::{HttpPeer, bind_peer},
     polling::connected_selection,
 };
 
@@ -89,15 +96,16 @@ async fn day_long_allowance_exhaustion_and_cancellation(#[case] cancel: bool) {
     }
 
     if cancel {
-        let pending = task::spawn({
-            let client = std::sync::Arc::clone(&client);
-            async move { client.get_exchanges().await }
-        });
+        let mut pending = Box::pin(client.get_exchanges());
+        poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
 
-        time::sleep(Duration::from_secs(1)).await;
         client.cancel();
         assert!(matches!(
-            pending.await.unwrap(),
+            pending.await,
             Err(Error::Retry(RetryError::Canceled))
         ));
         assert_eq!(client.attempts_remaining(), 1);
@@ -344,10 +352,11 @@ async fn polling_workload_shares_feeds_and_bounds_fanout(#[case] markets: usize)
     let attempts = 1 + 8 * markets;
     let (observed, mut requests) = tokio::sync::mpsc::unbounded_channel();
 
-    let peer = task::spawn(async move {
+    let peer = HttpPeer::spawn(move |mut cancellations| async move {
+        let mut recorded = Vec::new();
+
         for _ in 0..attempts {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let request = read_request(&mut stream).await;
+            let (mut stream, request) = cancellations.accept(&listener).await;
             let target = request.split_whitespace().nth(1).unwrap();
             let started = time::Instant::now();
             let body = response(target);
@@ -363,13 +372,17 @@ async fn polling_workload_shares_feeds_and_bounds_fanout(#[case] markets: usize)
                 .unwrap();
             stream.flush().await.unwrap();
             observed.send((target.to_owned(), started)).unwrap();
+            recorded.push(request);
         }
+
+        recorded
     });
 
     let http = FinFeedHttpConfig {
         base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
-        attempt_budget: attempts as u64,
+        // Each market cancels its first activity and book request during setup
+        attempt_budget: (attempts + 2 * markets) as u64,
         ..Default::default()
     };
 
@@ -379,7 +392,12 @@ async fn polling_workload_shares_feeds_and_bounds_fanout(#[case] markets: usize)
     let started = time::Instant::now();
     let (mut client, _receiver) = connected_selection(http, ids.clone(), 5_000).await;
     for market in &ids {
-        subscribe(&mut client, to_instrument_id("POLYMARKET", market).unwrap());
+        subscribe(
+            &mut client,
+            to_instrument_id("POLYMARKET", market).unwrap(),
+            &peer,
+        )
+        .await;
     }
 
     time::timeout(Duration::from_secs(30), peer)
@@ -425,63 +443,102 @@ async fn polling_workload_shares_feeds_and_bounds_fanout(#[case] markets: usize)
         }
     }
 
+    let setup_calls = 2 * markets;
+    let managed_calls = actual + setup_calls;
     println!(
-        "markets={markets}, managed_calls={actual}, elapsed={elapsed:?}, shared_spacing_ms=1, endpoint_interval_ms=5000"
+        "markets={markets}, managed_calls={managed_calls}, canceled_setup_calls={setup_calls}, elapsed={elapsed:?}, shared_spacing_ms=1, endpoint_interval_ms=5000"
     );
 }
 
-fn subscribe(client: &mut FinFeedDataClient, id: InstrumentId) {
+async fn subscribe(client: &mut FinFeedDataClient, id: InstrumentId, peer: &HttpPeer) {
     let client_id = Some(client.client_id());
-    client
-        .subscribe_quotes(SubscribeQuotes::new(
-            id,
-            client_id,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        ))
-        .unwrap();
-    client
-        .subscribe_trades(SubscribeTrades::new(
-            id,
-            client_id,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        ))
-        .unwrap();
-    client
-        .subscribe_book_deltas(SubscribeBookDeltas::new(
-            id,
-            BookType::L2_MBP,
-            client_id,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            false,
-            None,
-            None,
-        ))
-        .unwrap();
-    client
-        .subscribe_book_depth(SubscribeBookDepth::new(
-            id,
-            BookType::L2_MBP,
-            client_id,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            false,
-            None,
-            None,
-        ))
-        .unwrap();
+    let (_, market) = from_instrument_id(id).unwrap();
+
+    let target = format!("/v1/activity/POLYMARKET/{market}/latest?limit=100");
+
+    let request = peer
+        .cancel_request(
+            client,
+            &target,
+            |client| {
+                client
+                    .subscribe_quotes(SubscribeQuotes::new(
+                        id,
+                        client_id,
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            },
+            |client| {
+                client
+                    .subscribe_trades(SubscribeTrades::new(
+                        id,
+                        client_id,
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            },
+        )
+        .await;
+
+    assert_eq!(
+        request.lines().next().unwrap(),
+        format!("GET {target} HTTP/1.1")
+    );
+
+    let target = format!("/v1/orderbook/POLYMARKET/{market}/current");
+
+    let request = peer
+        .cancel_request(
+            client,
+            &target,
+            |client| {
+                client
+                    .subscribe_book_deltas(SubscribeBookDeltas::new(
+                        id,
+                        BookType::L2_MBP,
+                        client_id,
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        false,
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            },
+            |client| {
+                client
+                    .subscribe_book_depth(SubscribeBookDepth::new(
+                        id,
+                        BookType::L2_MBP,
+                        client_id,
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        false,
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            },
+        )
+        .await;
+
+    assert_eq!(
+        request.lines().next().unwrap(),
+        format!("GET {target} HTTP/1.1")
+    );
     let bar_type = BarType::from(format!("{id}-1-MINUTE-LAST-EXTERNAL"));
     client
         .subscribe_bars(SubscribeBars::new(

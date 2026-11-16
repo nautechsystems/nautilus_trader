@@ -8,21 +8,28 @@
 
 [NautilusTrader](https://nautilustrader.io) blockchain adapter for DeFi data ingestion.
 
-The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
-DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events. It enables you to
-power analytics pipelines and trading strategies with real-time and historical on-chain data.
+The `nautilus-blockchain` crate loads DEX pools and token definitions and ingests real-time and
+historical on-chain data for analytics and trading strategies. It connects RPC and optional
+HyperSync sources to NautilusTrader for block, swap, and liquidity-event processing.
+
+Official API references: [Ethereum JSON-RPC](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+and [Envio HyperSync](https://docs.envio.dev/docs/HyperSync/overview).
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/blockchain.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `extension-module`: Builds as a Python extension module.
 - `hypersync`: Enables the [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
@@ -92,7 +99,10 @@ The turmoil tests simulate various network conditions (reconnections, partitions
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-blockchain) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-blockchain)
+- [Integration guide](../../../docs/integrations/blockchain.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/blockchain/)
 
 ## License
 

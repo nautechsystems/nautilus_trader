@@ -310,6 +310,46 @@ fn test_spot_execution_dedup_skips_duplicate_trade_id() {
     ));
 }
 
+/// An execution frame whose venue order ID the model cannot hold emits nothing, tracked or not,
+/// with or without a fill, and a tracked order stays tracked for a later frame or reconciliation.
+#[rstest]
+#[case::status_tracked(KrakenExecType::New, Some("uuid-invalid-spot"), None)]
+#[case::status_external(KrakenExecType::New, None, None)]
+#[case::fill_tracked(
+    KrakenExecType::Trade,
+    Some("uuid-invalid-spot"),
+    Some("trade-invalid")
+)]
+#[case::fill_external(KrakenExecType::Trade, None, Some("trade-invalid"))]
+fn test_spot_execution_drops_an_invalid_venue_order_id(
+    #[case] exec_type: KrakenExecType,
+    #[case] cl_ord_id: Option<&str>,
+    #[case] exec_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-invalid-spot");
+    state.register_identity(
+        cid,
+        make_identity(SPOT_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let exec = make_spot_execution(exec_type, cl_ord_id, "", exec_id);
+    dispatch::spot::execution(
+        &exec,
+        &state,
+        &emitter,
+        &instruments_with(make_spot_pair()),
+        &empty_string_map(),
+        &empty_decimal_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.lookup_identity(&cid).is_some());
+}
+
 #[rstest]
 fn test_spot_execution_new_external_emits_status_report() {
     let (emitter, mut rx) = test_emitter();

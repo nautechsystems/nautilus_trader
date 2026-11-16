@@ -36,6 +36,7 @@ use nautilus_live::{
     runner::AsyncRunner,
 };
 use nautilus_model::{
+    custom_data,
     data::{
         Bar, BarType, BookOrder, NautilusDataType, NautilusRecordType, OrderBookDelta,
         OrderBookDeltas, QuoteTick, TradeTick,
@@ -560,4 +561,42 @@ async fn test_livenode_streaming_stop_returns_recorded_write_error() {
              supported catalog scale is 16"
         ),
     );
+}
+
+#[custom_data]
+struct RunnerCustomData {
+    value: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+}
+
+#[rstest]
+fn test_exec_event_data_publishes_on_custom_data_topic() {
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+    use nautilus_common::msgbus::{MessageBus, typed_handler::ShareableMessageHandler};
+    use nautilus_model::data::CustomData;
+
+    // Ensure clean msgbus for this test
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let data = RunnerCustomData::new(42, UnixNanos::from(1_000), UnixNanos::from(1_000));
+    let custom = CustomData::from_arc(Arc::new(data));
+    let topic = switchboard::get_custom_topic(&custom.data_type);
+    assert_eq!(topic.as_ref(), "data.RunnerCustomData");
+
+    let received: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));
+    let sink = received.clone();
+
+    let handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
+        if let Some(inner) = data.data.as_any().downcast_ref::<RunnerCustomData>() {
+            sink.borrow_mut().push(inner.value);
+        }
+    });
+
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    AsyncRunner::handle_exec_event(ExecutionEvent::Data(custom));
+
+    assert_eq!(*received.borrow(), vec![42]);
 }

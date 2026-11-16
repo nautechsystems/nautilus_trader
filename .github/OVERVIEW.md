@@ -135,8 +135,9 @@ Store endpoint variables as single-line, space-delimited values. The pinned Hard
 does not enforce newline-delimited values correctly in `block` mode.
 
 Jobs that declare a GitHub Environment can override the repository or organization egress policy
-with an environment-scoped variable. Security audit jobs read repository and organization variables
-directly and do not use deployment environments or environment secrets.
+with an environment-scoped variable. The development override check uses `r2-develop`, and the
+nightly security gate uses `r2-nightly`. The Zizmor and supply-chain jobs read repository and
+organization variables directly and do not use deployment environments or environment secrets.
 
 Fork pull requests and their called security audit jobs in `build.yml` use `audit` mode because they
 cannot read the endpoint variables. Other workflows retain the configured policy and default to
@@ -144,11 +145,11 @@ cannot read the endpoint variables. Other workflows retain the configured policy
 
 ### Security gate override
 
-The `SECURITY_GATE_OVERRIDE` environment-scoped configuration variable permits a reviewed security
-gate failure for one commit. Configure it on both `r2-develop` and `r2-nightly`, set it to `disabled`
-during normal operation, and remove any repository-scoped variable with the same name. Only
-repository admins can configure environment variables, while users with write access can configure
-repository variables.
+The `SECURITY_GATE_OVERRIDE` environment-scoped configuration variable skips security audits for
+one reviewed commit on development or nightly pushes. Configure it on both `r2-develop` and
+`r2-nightly`, set it to `disabled` during normal operation, and remove any repository-scoped
+variable with the same name. Only repository admins can configure environment variables, while
+users with write access can configure repository variables.
 
 An active value uses `<UTC expiry>@<full commit SHA>`, for example:
 
@@ -157,21 +158,26 @@ An active value uses `<UTC expiry>@<full commit SHA>`, for example:
 ```
 
 The expiry must use the exact `YYYY-MM-DDTHH:MM:SSZ` format and be no more than two hours in the
-future. The SHA must match the publication commit. Missing, malformed, expired, overlong, or
-mismatched values fail closed. Cancelled, skipped, and other incomplete gate results cannot be
-overridden.
+future when the gate checks it. The SHA must match the build commit. Missing, malformed, expired,
+overlong, or mismatched values leave the audits enabled. An accepted override emits a warning and
+skips the development audit jobs or nightly scan steps. The audit gate passes, so these findings
+do not make the overall build red. Failures or cancellation in other required jobs still block
+publication.
 
 Security audits run as part of `build.yml`. The Zizmor and supply-chain jobs remain path-scoped for
 ordinary pull requests and branch pushes, while `test-ci` and `test-pre-commit` force both jobs. The
 development publication and stable release tag gate depend directly on the same build's audit
-result. Nightly builds do not repeat the full audit; the nightly security gate completes its scans
-before publication. Scheduled and manual audits run independently, so the repository is still
-audited when no build runs. The override does not suppress pull request, scheduled, manual, or
-stable release audits.
+result. Nightly builds do not repeat the full audit; the nightly security gate runs its scans
+before publication unless an override is active. Scheduled and manual audits run independently,
+so the repository is still audited when no build runs. The override does not suppress pull request,
+scheduled, manual, or stable release audits.
+
+A successful overridden development build is eligible for automatic promotion to `nightly`.
+Nightly publication still requires its own security scans or a valid override on `r2-nightly`.
 
 To approve a blocked development or nightly publication:
 
 1. Review the failed audit and confirm that publishing the affected commit is acceptable.
 1. Set `SECURITY_GATE_OVERRIDE` on the matching `r2-develop` or `r2-nightly` environment.
-1. Re-run the failed build jobs for the same commit.
+1. Re-run all build jobs for the same commit so the audit plan reads the override again.
 1. Reset the environment variable to `disabled` after the publication completes.

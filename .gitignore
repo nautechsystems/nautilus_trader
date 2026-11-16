@@ -102,7 +102,6 @@ env/
 !scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-workspace-test-coverage.sh
 !scripts/ci/check-github-action-shas.sh
-!scripts/ci/check-security-audit-result.sh
 !scripts/ci/docker-pull-retry.sh
 !scripts/ci/free-disk-space.sh
 !scripts/ci/install-cargo-nextest.sh

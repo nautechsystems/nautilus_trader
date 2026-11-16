@@ -85,6 +85,7 @@ class GeneralDataActor(DataActor):
         On start.
         """
         cls = type(self)
+
         if cls.write_on_start:
             self.cache.add(cls.key, cls.token)
         else:
@@ -256,6 +257,7 @@ def test_redis_cache_backing_round_trips_actor_and_strategy_state() -> None:
     strategy_saved = {"strategy-token": token}
     StateRoundTripActor.set_saved_state(actor_saved)
     StateRoundTripStrategy.set_saved_state(strategy_saved)
+
     actor_config = ImportableActorConfig(
         actor_path="tests.integration.test_live_node_cache:StateRoundTripActor",
         config_path="nautilus_trader.common:DataActorConfig",

@@ -75,12 +75,14 @@ def amend_requests() -> Iterator[tuple[BybitHttpClient, list[dict[str, object]]]
     server = ThreadingHTTPServer(("127.0.0.1", 0), AmendRequestHandler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
+
     client = BybitHttpClient(
         api_key="test_key",
         api_secret="test_secret",
         base_url=f"http://127.0.0.1:{server.server_port}",
         max_retries=0,
     )
+
     try:
         yield client, requests
     finally:
@@ -115,9 +117,11 @@ async def test_modify_order_forwards_optional_trigger_price(
     if quantity is not None:
         kwargs["quantity"] = Quantity.from_str(quantity)
         expected["qty"] = quantity
+
     if price is not None:
         kwargs["price"] = Price.from_str(price)
         expected["price"] = price
+
     if trigger_price is not None:
         kwargs["trigger_price"] = Price.from_str(trigger_price)
         expected["triggerPrice"] = trigger_price

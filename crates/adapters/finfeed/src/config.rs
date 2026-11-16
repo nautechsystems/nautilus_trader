@@ -32,7 +32,7 @@ use crate::{http::client::FinFeedHttpConfig, instruments::FinFeedInstrumentSelec
 /// Python exposes nested Rust HTTP controls as flat constructor keywords:
 ///
 /// - `http`: `base_url_http`, `proxy_url`, `http_timeout_secs`, `max_concurrent_requests`,
-///   `attempt_budget`, and `min_request_interval_ms`.
+///   `attempt_budget`, `min_request_interval_ms`, and `kalshi_metadata_url`.
 /// - `http.retry`: `max_retries`, `retry_delay_initial_ms`, `retry_delay_max_ms`,
 ///   `retry_backoff_factor`, `retry_jitter_ms`, `retry_operation_timeout_ms`,
 ///   `retry_immediate_first`, and `retry_max_elapsed_ms`.
@@ -61,7 +61,7 @@ pub struct FinFeedDataClientConfig {
     /// REST transport, pacing, retry, and local attempt controls for each connection generation.
     #[builder(default = FinFeedHttpConfig::default())]
     pub http: FinFeedHttpConfig,
-    /// Exact Polymarket Yes/No outcomes loaded and published before readiness.
+    /// Exact Polymarket or Kalshi Yes/No outcomes loaded and published before readiness.
     #[builder(default = Vec::new())]
     pub instruments: Vec<FinFeedInstrumentSelection>,
     /// Delay after each instrument's poll on the same endpoint completes, in milliseconds, in `[100, 86400000]`.
@@ -97,13 +97,18 @@ mod tests {
 
     #[rstest]
     fn builder_and_serde_defaults_match() {
-        let expected = serde_json::to_value(FinFeedDataClientConfig::default()).unwrap();
+        let config = FinFeedDataClientConfig::default();
+        let expected = serde_json::to_value(&config).unwrap();
+        let empty = serde_json::Value::Object(serde_json::Map::new());
+        let decoded: FinFeedDataClientConfig = serde_json::from_value(empty).unwrap();
+
+        assert_eq!(config.http.timeout_secs, 300);
+        assert_eq!(config.http.retry.operation_timeout_ms, Some(330_000));
+        assert_eq!(config.http.retry.max_elapsed_ms, Some(600_000));
         assert_eq!(
             serde_json::to_value(FinFeedDataClientConfig::builder().build()).unwrap(),
             expected
         );
-        let empty = serde_json::Value::Object(serde_json::Map::new());
-        let decoded: FinFeedDataClientConfig = serde_json::from_value(empty).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
     }
 
@@ -120,9 +125,9 @@ mod tests {
                 "max_delay_ms": 10000,
                 "backoff_factor": 2.0,
                 "jitter_ms": 0,
-                "operation_timeout_ms": 30000,
+                "operation_timeout_ms": 330000,
                 "immediate_first": false,
-                "max_elapsed_ms": 120000,
+                "max_elapsed_ms": 600000,
             })
         );
     }

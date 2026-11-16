@@ -16,7 +16,7 @@
 //! Streaming HTTP responses with the request's original deadline and connection ownership.
 
 use bytes::Bytes;
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
@@ -42,6 +42,12 @@ impl HttpResponseStream {
     #[must_use]
     pub fn status(&self) -> StatusCode {
         self.response.status()
+    }
+
+    /// Returns the response headers without consuming the body.
+    #[must_use]
+    pub fn headers(&self) -> &HeaderMap {
+        self.response.headers()
     }
 
     /// Reads the next body chunk, or returns `None` at the end of the body.

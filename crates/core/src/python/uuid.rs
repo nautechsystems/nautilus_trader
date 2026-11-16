@@ -95,11 +95,12 @@ impl UUID4 {
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
     #[staticmethod]
+    #[pyo3(name = "_safe_constructor")]
     #[expect(
         clippy::unnecessary_wraps,
         reason = "Python FFI requires Result return type"
     )]
-    fn _safe_constructor() -> PyResult<Self> {
+    fn py_safe_constructor() -> PyResult<Self> {
         Ok(Self::new()) // Safe default
     }
 
@@ -162,6 +163,21 @@ mod tests {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
             Python::initialize();
+        });
+    }
+
+    #[rstest]
+    fn test_reduce_reconstructs_uuid() {
+        ensure_python_initialized();
+        Python::attach(|py| {
+            let source = UUID4::from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757").unwrap();
+            let reduced = source.__reduce__(py).unwrap();
+            let (constructor, args, state): (Py<PyAny>, Py<PyTuple>, Py<PyAny>) =
+                reduced.extract(py).unwrap();
+            let restored = constructor.call1(py, args).unwrap();
+            restored.call_method1(py, "__setstate__", (state,)).unwrap();
+
+            assert_eq!(restored.extract::<UUID4>(py).unwrap(), source);
         });
     }
 

@@ -31,6 +31,7 @@ use pyo3::prelude::*;
 pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::engine::config::ExecutionEngineConfig>()?;
     m.add_class::<crate::order_emulator::config::OrderEmulatorConfig>()?;
+    m.add_class::<crate::matching_engine::config::OrderPriorityResetPolicy>()?;
     m.add_class::<fee::PyFeeModel>()?;
     m.add_class::<crate::models::fee::FixedFeeModel>()?;
     m.add_class::<crate::models::fee::MakerTakerFeeModel>()?;
@@ -53,4 +54,47 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<latency::PyLatencyModel>()?;
     m.add_class::<crate::models::latency::StaticLatencyModel>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyModule};
+    use rstest::rstest;
+
+    use super::execution;
+    use crate::matching_engine::config::OrderPriorityResetPolicy;
+
+    #[rstest]
+    #[case("PRICE_CHANGE", OrderPriorityResetPolicy::PriceChange)]
+    #[case(
+        "PRICE_OR_QUANTITY_INCREASE",
+        OrderPriorityResetPolicy::PriceOrQuantityIncrease
+    )]
+    #[case("ANY_MODIFY", OrderPriorityResetPolicy::AnyModify)]
+    fn test_order_priority_reset_policy_python_export(
+        #[case] name: &str,
+        #[case] expected: OrderPriorityResetPolicy,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::new(py, "execution").unwrap();
+            execution(py, &module).unwrap();
+            let policy = module.getattr("OrderPriorityResetPolicy").unwrap();
+            let member = policy.getattr(name).unwrap();
+            assert_eq!(
+                policy
+                    .getattr("__module__")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "nautilus_trader.execution"
+            );
+            assert_eq!(
+                member.extract::<OrderPriorityResetPolicy>().unwrap(),
+                expected
+            );
+            assert!(member.eq(expected as isize).unwrap());
+            assert_eq!(member.hash().unwrap(), expected as isize);
+        });
+    }
 }

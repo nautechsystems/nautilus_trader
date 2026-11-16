@@ -63,6 +63,7 @@ class ReplayLatency(LatencyModel):
         Record the insertion context and return or raise the configured result.
         """
         self.calls.append((command, ts_now))
+
         if isinstance(self.insert, Exception):
             raise self.insert
         return self.insert
@@ -189,6 +190,7 @@ def test_python_latency_configuration_preserves_instance() -> None:
     Check that configuration clones retain the supplied Python instance.
     """
     model = ReplayLatency()
+
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.NETTING,
@@ -197,7 +199,9 @@ def test_python_latency_configuration_preserves_instance() -> None:
         starting_balances=["1_000_000 USD"],
         latency_model=model,
     )
+
     run = BacktestRunConfig(venues=[venue], data=[])
+
     sandbox = SandboxExecutionClientConfig(
         venue=Venue("SIM"),
         starting_balances=[Money.from_str("1_000_000 USD")],

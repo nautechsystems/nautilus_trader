@@ -667,8 +667,7 @@ impl WsDispatchState {
     pub fn drain_buffered_fills(&self, client_order_id: &ClientOrderId) -> Vec<FillReport> {
         self.buffered_fills
             .remove(client_order_id)
-            .map(|(_, v)| v)
-            .unwrap_or_default()
+            .map_or_default(|(_, v)| v)
     }
 
     /// Number of buffered fills for the cid.

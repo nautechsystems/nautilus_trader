@@ -23,7 +23,7 @@
 //! The tunnel accepts only a `2xx` response and bounds response headers before parsing. It returns
 //! a stream positioned for the WebSocket handshake rather than performing that handshake itself.
 //!
-//! SOCKS URLs are recognized but not tunneled: the client logs a warning and connects directly.
+//! SOCKS URLs are rejected: the client returns an error and never connects directly.
 //! Both transport backends tunnel through the same [`ProxiedStream`], which implements the IO
 //! traits over every tunnel shape so each backend runs its own handshake over the finished stream.
 
@@ -211,59 +211,6 @@ impl WsTarget {
     }
 }
 
-/// Outcome of parsing a proxy URL prior to opening a tunnel.
-///
-/// SOCKS schemes are recognized but not implemented for the WebSocket path
-/// yet. They are surfaced as [`ProxyKind::Unsupported`] so callers can log
-/// a warning and fall back to a direct connection, preserving compatibility
-/// with REST configs that already pointed at a SOCKS proxy.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProxyKind {
-    /// HTTP / HTTPS forward proxy reachable via `CONNECT` tunneling.
-    Http(ProxyTarget),
-    /// Recognized scheme without a working tunnel (currently SOCKS).
-    Unsupported {
-        /// Original URL scheme (e.g. `socks5`).
-        scheme: String,
-    },
-}
-
-impl ProxyKind {
-    /// Parses a proxy URL into a [`ProxyKind`]. Returns
-    /// [`TransportError::InvalidUrl`] for malformed input or non-proxy
-    /// schemes (`ftp://`, `ws://`, etc.).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if [`ProxyTarget::parse`] fails.
-    pub fn parse(url: &str) -> Result<Self, TransportError> {
-        let parsed = Url::parse(url)
-            .map_err(|e| TransportError::InvalidUrl(format!("invalid proxy URL: {e}")))?;
-
-        match parsed.scheme() {
-            "http" | "https" => ProxyTarget::parse(url).map(ProxyKind::Http),
-            scheme @ ("socks5" | "socks5h" | "socks4" | "socks4a") => {
-                // Reject malformed inputs like `socks5:host:port` that parse as
-                // scheme + opaque path with no authority: surfacing them as
-                // Unsupported would silently fall back to a direct connection
-                // and hide the typo.
-                if parsed.host_str().is_none_or(str::is_empty) {
-                    return Err(TransportError::InvalidUrl(format!(
-                        "proxy URL is missing a host (did you mean {scheme}://...)?"
-                    )));
-                }
-
-                Ok(Self::Unsupported {
-                    scheme: scheme.to_string(),
-                })
-            }
-            other => Err(TransportError::InvalidUrl(format!(
-                "unsupported proxy scheme '{other}'; expected http:// or https://"
-            ))),
-        }
-    }
-}
-
 /// Parsed components of a forward proxy URL.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ProxyTarget {
@@ -291,11 +238,7 @@ impl Debug for ProxyTarget {
 }
 
 impl ProxyTarget {
-    /// Parses a proxy URL into the components needed to establish the tunnel.
-    ///
-    /// Only `http://` and `https://` schemes are accepted here. Use
-    /// [`ProxyKind::parse`] when callers need to distinguish recognized but
-    /// unsupported schemes (currently SOCKS) from malformed input.
+    /// Parses an HTTP or HTTPS proxy URL into the components needed to establish the tunnel.
     ///
     /// # Errors
     ///
@@ -714,33 +657,8 @@ mod tests {
     }
 
     #[rstest]
-    fn proxy_kind_classifies_http() {
-        let kind = ProxyKind::parse("http://127.0.0.1:9999").unwrap();
-        assert!(matches!(kind, ProxyKind::Http(_)));
-    }
-
-    #[rstest]
-    fn proxy_kind_classifies_socks_as_unsupported() {
-        let kind = ProxyKind::parse("socks5://127.0.0.1:1080").unwrap();
-
-        let ProxyKind::Unsupported { scheme } = kind else {
-            panic!("expected Unsupported");
-        };
-
-        assert_eq!(scheme, "socks5");
-    }
-
-    #[rstest]
-    fn proxy_kind_rejects_garbage() {
-        assert!(ProxyKind::parse("ftp://x").is_err());
-        assert!(ProxyKind::parse("").is_err());
-    }
-
-    #[rstest]
-    fn proxy_kind_rejects_socks_without_authority() {
-        // `socks5:host:port` (no `//`) parses as scheme + opaque path; surface
-        // as a real error instead of a silent direct-fallback.
-        let err = ProxyKind::parse("socks5:127.0.0.1:1080").unwrap_err();
+    fn proxy_target_rejects_socks_without_authority() {
+        let err = ProxyTarget::parse("socks5:127.0.0.1:1080").unwrap_err();
         assert!(matches!(err, TransportError::InvalidUrl(_)));
     }
 

@@ -45,7 +45,6 @@ def test_logger_methods_and_name() -> None:
     assert logger.name == "TestLogger"
 
     logger.trace("trace", LogColor.GREEN)
-
     for method_name, color in [
         ("debug", LogColor.GREEN),
         ("info", LogColor.GREEN),
@@ -63,7 +62,6 @@ def test_logger_methods_accept_omitted_color() -> None:
     Test logger methods accept omitted color.
     """
     logger = Logger("TestLogger")
-
     for method_name in ["trace", "debug", "info", "warning", "error", "exception"]:
         getattr(logger, method_name)(method_name)
 

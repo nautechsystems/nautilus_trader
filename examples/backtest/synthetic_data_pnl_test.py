@@ -41,6 +41,7 @@ def create_6E_instrument(venue: Venue) -> FuturesContract:
     Create 6e instrument.
     """
     symbol = Symbol("6E")
+
     return FuturesContract(
         # Core identification parameters for the Euro FX futures contract
         instrument_id=InstrumentId(symbol, venue),  # 6E is CME's code for EUR/USD futures
@@ -224,6 +225,7 @@ if __name__ == "__main__":
             ts_event=timestamp_base + (i * 60_000_000_000),  # +1 minute
             ts_init=timestamp_base + (i * 60_000_000_000),
         )
+
         bars.append(bar)
     # Add all created bars
     engine.add_data(bars)
@@ -233,6 +235,7 @@ if __name__ == "__main__":
         instrument_id=instrument.id,
         bar_type=bar_type,
     )
+
     strategy = MinimalStrategy(config=config)
     engine.add_strategy(strategy)
 

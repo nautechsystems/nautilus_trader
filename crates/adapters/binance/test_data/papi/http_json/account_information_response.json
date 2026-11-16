@@ -1,0 +1,12 @@
+{
+  "uniMMR": "0.123456789012345678",
+  "accountEquity": "1000.000000000000000001",
+  "actualEquity": "1250.25",
+  "accountInitialMargin": "200.5",
+  "accountMaintMargin": "150.25",
+  "accountStatus": "MARGIN_CALL",
+  "virtualMaxWithdrawAmount": "300.75",
+  "totalAvailableBalance": "",
+  "totalMarginOpenLoss": "0",
+  "updateTime": 1700000001000
+}

@@ -151,7 +151,7 @@ impl TardisMachineClient {
 
             for inst in instruments {
                 let key = inst.as_tardis_instrument_key();
-                instrument_map.insert(key, Arc::new(inst.clone()));
+                instrument_map.insert(key, Arc::new(inst));
             }
             instrument_map
         };
@@ -259,7 +259,7 @@ impl TardisMachineClient {
 
         for inst in instruments {
             let key = inst.as_tardis_instrument_key();
-            instrument_map.insert(key, Arc::new(inst.clone()));
+            instrument_map.insert(key, Arc::new(inst));
         }
 
         let base_url = self.base_url.clone();
@@ -337,7 +337,7 @@ where
                         .and_then(|map| determine_instrument_info(&msg, map))
                 });
 
-                if let Some(info) = info.clone() {
+                if let Some(info) = info {
                     let data = parse_tardis_ws_message_data(
                         msg.clone(),
                         &info,

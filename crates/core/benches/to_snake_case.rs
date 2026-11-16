@@ -42,6 +42,14 @@ fn bench_already_snake(c: &mut Criterion) {
     });
 }
 
+fn bench_separators(c: &mut Criterion) {
+    let input = "__Order__Book__";
+    assert_eq!(to_snake_case(input), "order_book");
+    c.bench_function("to_snake_case (leading and repeated separators)", |b| {
+        b.iter(|| to_snake_case(black_box(input)));
+    });
+}
+
 fn bench_type_path(c: &mut Criterion) {
     c.bench_function("to_snake_case (type path)", |b| {
         b.iter(|| to_snake_case(black_box("nautilus_model::data::bar::Bar"))); // nautilus-import-ok
@@ -101,6 +109,7 @@ criterion_group!(
     bench_camel_case,
     bench_acronyms,
     bench_already_snake,
+    bench_separators,
     bench_type_path,
     bench_screaming_snake,
     bench_mixed_digits,

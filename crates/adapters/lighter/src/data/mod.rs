@@ -66,12 +66,11 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{
         consts::DISCONNECT_TIMEOUT,
-        credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
         symbol::MarketRegistry,
     },
-    config::LighterDataClientConfig,
+    config::{LighterDataClientConfig, validate_proxy_url},
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
         parse::parse_l2_order_book_snapshot,
@@ -101,7 +100,6 @@ pub struct LighterDataClient {
     clock: &'static AtomicTime,
     client_id: ClientId,
     config: LighterDataClientConfig,
-    credential: Option<Credential>,
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     registry: Arc<MarketRegistry>,
@@ -126,34 +124,14 @@ impl LighterDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client fails to initialize.
+    /// Returns an error if the proxy URL is invalid or the HTTP client fails to initialize.
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
+        validate_proxy_url(config.proxy_url.as_ref())?;
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let venue = config.resolved_venue();
         let settlement_currency = config.settlement_currency();
         let socket_factory = SocketControlFactory::new(client_id, Some(venue));
-
-        let credential = if config.has_credentials() {
-            // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
-            // config value falls back to the env var rather than overriding it.
-            let private_key = config
-                .private_key
-                .as_ref()
-                .map(|value| value.expose_secret())
-                .filter(|s| !s.trim().is_empty())
-                .map(str::to_string);
-            Credential::resolve_for_deployment(
-                private_key,
-                config.account_index,
-                config.api_key_index,
-                config.deployment,
-                config.environment,
-            )
-            .context("failed to resolve Lighter data credentials")?
-        } else {
-            None
-        };
 
         let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
             venue,
@@ -184,7 +162,6 @@ impl LighterDataClient {
             clock,
             client_id,
             config,
-            credential,
             http_client,
             ws_client,
             registry,
@@ -209,10 +186,12 @@ impl LighterDataClient {
         self.config.resolved_venue()
     }
 
-    /// Returns `true` when the data client holds resolved Lighter credentials.
+    /// Returns `true` when all credential fields are present in config or the selected environment.
+    ///
+    /// This checks presence without validating credentials. Public data requests do not use them.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
-        self.credential.is_some()
+        self.config.has_credentials()
     }
 
     fn create_ws_client(
@@ -3103,6 +3082,24 @@ mod tests {
             replacement.flags,
         );
         assert_eq!(generations.get(&instrument_id).map(|value| *value), Some(8));
+    }
+
+    #[rstest]
+    fn data_constructor_rejects_proxy_without_scheme() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let config = LighterDataClientConfig {
+            proxy_url: Some("127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            LighterDataClient::new(ClientId::from("LIGHTER"), config)
+                .unwrap_err()
+                .to_string(),
+            "Lighter proxy_url must be an absolute http:// or https:// URL with a host"
+        );
     }
 
     fn create_data_client_for_test() -> LighterDataClient {

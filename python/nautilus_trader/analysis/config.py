@@ -275,18 +275,23 @@ class GridLayout:
         """
         if self.rows <= 0:
             raise ValueError(f"rows must be positive, was {self.rows}")
+
         if self.cols <= 0:
             raise ValueError(f"cols must be positive, was {self.cols}")
+
         if len(self.heights) != self.rows:
             raise ValueError(
                 f"heights must have one entry per row ({self.rows}), was {len(self.heights)}",
             )
+
         if any(height <= 0 for height in self.heights):
             raise ValueError(f"heights must all be positive, was {self.heights}")
+
         if not 0.0 <= self.vertical_spacing < 1.0:
             raise ValueError(
                 f"vertical_spacing must be in [0.0, 1.0), was {self.vertical_spacing}",
             )
+
         if not 0.0 <= self.horizontal_spacing < 1.0:
             raise ValueError(
                 f"horizontal_spacing must be in [0.0, 1.0), was {self.horizontal_spacing}",

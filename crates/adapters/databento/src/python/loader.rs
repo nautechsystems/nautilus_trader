@@ -66,10 +66,11 @@ impl DatabentoDataLoader {
     ///
     /// <https://databento.com/docs/schemas-and-data-formats>
     #[new]
-    #[pyo3(signature = (publishers_filepath=None, futures_year_digits=None))]
+    #[pyo3(signature = (publishers_filepath=None, futures_year_digits=None, share_class_space=true))]
     fn py_new(
         publishers_filepath: Option<PathBuf>,
         futures_year_digits: Option<u8>,
+        share_class_space: bool,
     ) -> PyResult<Self> {
         let futures_year_digits = futures_year_digits
             .map(FuturesYearDigits::try_from)
@@ -78,7 +79,11 @@ impl DatabentoDataLoader {
             .unwrap_or_default();
 
         Self::new(publishers_filepath)
-            .map(|loader| loader.with_futures_year_digits(futures_year_digits))
+            .map(|loader| {
+                loader
+                    .with_futures_year_digits(futures_year_digits)
+                    .with_share_class_space(share_class_space)
+            })
             .map_err(to_pyvalue_err)
     }
 

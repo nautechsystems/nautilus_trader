@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, B256, Bytes, U256};
-use nautilus_model::defi::{Block, DexType, rpc::RpcLog};
+use nautilus_model::defi::{Block, DexType, PoolIdentifier, rpc::RpcLog};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -35,6 +35,11 @@ pub enum BlockchainMessage {
     FlashEvent(FlashEvent),
     FeeProtocolUpdateEvent(FeeProtocolUpdateEvent),
     FeeProtocolCollectEvent(FeeProtocolCollectEvent),
+    PoolLogRemoved {
+        pool_identifier: PoolIdentifier,
+        transaction_hash: String,
+        log_index: u32,
+    },
 }
 
 /// Represents the types of events that can be subscribed to via the blockchain RPC interface.

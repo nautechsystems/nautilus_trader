@@ -15,6 +15,8 @@
 
 //! Full-`LiveNode` smoke tests for the Polymarket execution adapter.
 
+mod reconciliation_bench;
+
 use std::{
     net::SocketAddr,
     sync::{

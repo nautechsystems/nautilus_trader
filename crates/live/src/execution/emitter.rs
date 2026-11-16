@@ -39,6 +39,7 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
+    data::CustomData,
     enums::{AccountType, LiquiditySide},
     events::{
         AccountState, OrderAcceptedBatch, OrderCancelDenied, OrderCancelRejected,
@@ -598,6 +599,13 @@ impl ExecutionEventEmitter {
     /// Emits an account state event.
     pub fn send_account_state(&self, state: AccountState) {
         if let Err(e) = self.try_send_account_state(state) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Emits custom data for publication on the message bus.
+    pub fn send_custom_data(&self, data: CustomData) {
+        if let Err(e) = self.try_send(ExecutionEvent::Data(data), "custom data") {
             log::warn!("{e}");
         }
     }

@@ -96,6 +96,7 @@ def test_command_refusal_emission_preserves_arguments(execution_client, event, c
     if event.endswith("rejected"):
         arguments["venue_order_id"] = VenueOrderId("VENUE-29")
         expected.append(arguments["venue_order_id"])
+
     if correlation != "omitted":
         arguments["causation_id"] = cause
 
@@ -333,6 +334,7 @@ def test_base_factory_requires_an_implementation(factory, execution_client, data
     An unimplemented factory cannot produce a registered client.
     """
     client = execution_client if factory is ExecutionClientFactory else data_client
+
     kwargs = {
         "name": "SIM",
         "config": client.config,

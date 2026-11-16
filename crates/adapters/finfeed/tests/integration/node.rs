@@ -238,7 +238,22 @@ async fn bounded_live_data_tester_publishes_quotes_and_book_and_stops() {
     observed.unwrap();
     let quotes = cache.borrow().quotes(&instrument_id).unwrap();
     let book = cache.borrow().order_book(&instrument_id).unwrap().clone();
-    time::sleep(Duration::from_millis(350)).await;
+    let mut observations = tokio::time::interval(Duration::from_millis(10));
+    assert!(
+        time::timeout(Duration::from_millis(350), async {
+            loop {
+                observations.tick().await;
+                let cache = cache.borrow();
+                if cache.quotes(&instrument_id).unwrap() != quotes
+                    || cache.order_book(&instrument_id).unwrap() != &book
+                {
+                    break;
+                }
+            }
+        })
+        .await
+        .is_err()
+    );
     let now = get_atomic_clock_realtime().get_time_ns();
 
     assert_eq!(handle.state(), NodeState::Stopped);

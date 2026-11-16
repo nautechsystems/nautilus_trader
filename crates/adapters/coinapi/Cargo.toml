@@ -34,6 +34,7 @@ python = [
   "nautilus-network/python",
   "nautilus-system/python",
   "pyo3",
+  "dep:pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
 simulation = [
@@ -89,6 +90,7 @@ ustr = { workspace = true }
 
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -104,6 +106,7 @@ futures-util = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite = { workspace = true }
 
 [[bench]]

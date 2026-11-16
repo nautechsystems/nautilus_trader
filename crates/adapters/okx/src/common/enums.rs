@@ -142,7 +142,7 @@ pub enum OKXOrderType {
     OptimalLimitIoc, // Market order with immediate-or-cancel order
     Mmp,             // Market Maker Protection (only applicable to Option in Portfolio Margin mode)
     MmpAndPostOnly, // Market Maker Protection and Post-only order(only applicable to Option in Portfolio Margin mode)
-    OpFok,          // Fill-or-Kill for options (only applicable to Option)
+    OpFok,          // Simple options FOK reported by OKX
     Trigger,        // Conditional/algo order (stop orders, etc.)
     /// Forward-compatible fallback for order types OKX adds later.
     #[serde(other)]

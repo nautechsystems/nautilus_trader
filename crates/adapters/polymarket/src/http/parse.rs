@@ -821,10 +821,7 @@ mod tests {
         let mut market = load_gamma_market("gamma_market_protocol_v2.json");
         market.version = Some(version.into());
         if version == "v1" {
-            market.clob_token_ids = ids
-                .as_ref()
-                .map(|ids| to_string(ids).unwrap())
-                .unwrap_or_default();
+            market.clob_token_ids = ids.as_ref().map_or_default(|ids| to_string(ids).unwrap());
         } else {
             market.position_ids = ids.map(|ids| ids.into_iter().map(str::to_string).collect());
         }

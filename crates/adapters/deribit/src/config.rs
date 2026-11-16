@@ -19,6 +19,7 @@ use nautilus_common::config::{ConfigError, ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -112,6 +113,14 @@ pub struct DeribitDataClientConfig {
     /// `None` or empty adds none. Set the same value on the execution client. That client uses
     /// the value as the reconciliation scope.
     pub load_ids: Option<Vec<InstrumentId>>,
+    /// Maximum wait for an initial, post-reconnect, or recovery book snapshot, in seconds.
+    /// A zero value disables snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
+    /// Maximum receive age of accepted book frames before recovery, in seconds.
+    /// A zero value disables stale book recovery.
+    #[builder(default = 120)]
+    pub book_stale_threshold_secs: u64,
 }
 
 #[cfg(feature = "python")]
@@ -130,6 +139,8 @@ nautilus_core::impl_pyo3_config_getters!(DeribitDataClientConfig {
     auto_load_missing_instruments: bool,
     transport_backend: TransportBackend,
     load_ids: Option<Vec<InstrumentId>>,
+    book_snapshot_timeout_secs: u64,
+    book_stale_threshold_secs: u64,
 });
 
 impl Default for DeribitDataClientConfig {
@@ -402,6 +413,23 @@ mod tests {
         assert_eq!(config.environment, DeribitEnvironment::Mainnet);
         assert_eq!(config.product_types.len(), 1);
         assert_eq!(config.http_timeout_secs, 60);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
+        assert_eq!(config.book_stale_threshold_secs, 120);
+    }
+
+    #[rstest]
+    fn test_book_timers_deserialize_with_defaults() {
+        let mut value = serde_json::to_value(DeribitDataClientConfig::default())
+            .expect("default config serializes");
+        let object = value.as_object_mut().expect("config is an object");
+        object.remove("book_snapshot_timeout_secs");
+        object.remove("book_stale_threshold_secs");
+
+        let config: DeribitDataClientConfig =
+            serde_json::from_value(value).expect("legacy config deserializes");
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
+        assert_eq!(config.book_stale_threshold_secs, 120);
     }
 
     #[rstest]

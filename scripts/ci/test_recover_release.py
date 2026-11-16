@@ -338,6 +338,7 @@ def _fixture(root: Path) -> None:
     )
     (root / "python/pyproject.toml").write_text('[project]\nversion = "1.2.3"\n')
     (root / "crate").write_bytes(b"published crate\n")
+
     for py in ("cp313", "cp314", "cp315"):
         for platform in (
             "manylinux_2_34_x86_64",
@@ -380,6 +381,7 @@ def _invoke(
         "REKOR_CHECK_ATTEMPTS": "1",
         **extra,
     }
+
     result = subprocess.run(
         [
             bash,
@@ -441,6 +443,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
     (root / "assets").mkdir()
     (root / "remote").mkdir()
     (root / "source-artifacts/wheel").mkdir(parents=True)
+
     source = {
         "id": 123,
         "head_sha": SOURCE_SHA,
@@ -448,6 +451,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
         "status": "completed",
         "repository": {"full_name": REPOSITORY},
     }
+
     source_path = root / "source/source-run.json"
     source_path.write_text(json.dumps(source))
     name = "nautilus_trader-2.0.0rc8-cp313-cp313-win_amd64.whl"
@@ -455,6 +459,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
     original.write_bytes(b"original wheel content")
     (root / "assets" / name).write_bytes(original.read_bytes())
     (root / "remote" / name).write_bytes(original.read_bytes())
+
     env = {
         "GITHUB_REPOSITORY": REPOSITORY,
         "GITHUB_WORKFLOW_REF": f"{REPOSITORY}/.github/workflows/build.yml@refs/heads/master",
@@ -466,6 +471,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
         "TAG_NAME": "v2.0.0rc8",
         "PYPI_RECOVERY_RUN_ID": "456",
     }
+
     with patch.dict(os.environ, env):
         RECOVERY["_prepare"](root)
         predicate = json.loads((root / "recovery-predicate.json").read_text())
@@ -514,6 +520,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
                 },
             ),
         )
+
         run = {
             "repository": {"full_name": REPOSITORY},
             "head_repository": {"full_name": REPOSITORY},
@@ -557,6 +564,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
             RECOVERY["_verify"](package, source_path)
             source["run_attempt"] = 2
             source_path.write_text(json.dumps(source))
+
             for key, value in (("sha", "2" * 40), ("run", 124), ("attempt", 999)):
                 saved = predicate["source"][key]
                 predicate["source"][key] = value
@@ -576,6 +584,7 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
             bundle.write_text(original_bundle)
             with patch.dict(os.environ, {"PYPI_RECOVERY_RUN_ID": "789"}):
                 _expect_failure(RECOVERY["_verify"], package, source_path)
+
             for key, value in (
                 ("head_sha", SOURCE_SHA),
                 ("event", "push"),
@@ -645,6 +654,7 @@ def _check_download(root: Path) -> None:
     (root / "assets").mkdir()
     (root / "assets/wheel.whl.sigstore").write_text("original bundle")
     run = {"run_attempt": 3, "head_sha": RECOVERY_SHA}
+
     metadata = {
         "total_count": 1,
         "artifacts": [
@@ -758,6 +768,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
     (pipeline_root / "scripts/ci").mkdir(parents=True)
     diagnostics = pipeline_root / "diagnostics"
     diagnostics.mkdir()
+
     for step in pipelines:
         assert "\n        shell: bash\n" in step
         script = textwrap.dedent(step.split("\n        run: |\n", 1)[1])
@@ -866,14 +877,17 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         {"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
         for p in sorted((publication_recovery / "original").iterdir())
     ]
+
     statement = {
         "predicateType": "https://nautilustrader.io/attestations/release-recovery/v1",
         "predicate": predicate,
     }
+
     envelope = {
         "payload": base64.b64encode(json.dumps(statement).encode()).decode(),
         "signatures": ["signature"],
     }
+
     for package in (publication_recovery / "original").iterdir():
         shutil.copyfile(package, publication_recovery / "remote" / package.name)
         (publication_recovery / "publication" / (package.name + ".sigstore")).write_text(
@@ -923,6 +937,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         assert next(
             (root / "diagnostics").glob("recovery.*/exit-status"),
         ).read_text().strip() == str(expected)
+
         if name == "registry":
             evidence = list((root / "diagnostics").glob("recovery.*/verification/registries.*"))
             assert len(evidence) == 1
@@ -977,6 +992,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
     (normal_notes / "state.json").write_text(json.dumps(data))
     asset_dir = normal_notes / "normal-assets"
     shutil.copytree(normal_notes / "remote", asset_dir)
+
     env = {
         **os.environ,
         "PATH": str(normal_notes / "bin") + os.pathsep + os.environ["PATH"],
@@ -986,6 +1002,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         "TAG_NAME": "v1.2.3",
         "ALLOW_CLOBBER": "1",
     }
+
     subprocess.run(
         [
             bash,

@@ -393,9 +393,12 @@ requests with both bounds. They deduplicate the boundary second that IB's second
 re-delivers. When one second holds a full page and the window cannot retreat, the request stops with a warning
 instead of looping.
 
-A bar request whose segment fails returns an error rather than a series with a silent hole. Historical trade
-ticks with IB's zero size are skipped before constructing the positive-quantity Nautilus type. Other invalid
-conversions still fail the request.
+A bar request with a start time returns the bars closing within `[start, end]`. The adapter fetches it in one
+request, or for one-second bars in consecutive requests of at most `2000 S`, IB's limit for that bar size. IB's
+pacing rules refuse six or more requests for one contract within two seconds, so a one-second range over about
+10,000 seconds can fail. If a request fails, the historical client returns an error and the data client
+responds with no bars. Historical trade ticks with IB's zero size are skipped before constructing the
+positive-quantity Nautilus type. Other invalid conversions still fail the request.
 
 IB controls pacing, available history, supported bar sizes, and regular-trading-hours filtering.
 For continuous futures, IB rejects an explicit bar end time. The adapter omits it and requests one
@@ -422,11 +425,12 @@ The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in fo
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
 
-The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
-order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
-IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
-transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+The adapter rejects post-only and reduce-only orders. Quote quantity is valid only for inverse
+instruments, and only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash
+quantity on any other order type with error 10244). Trailing orders support price offsets and
+basis-point offsets, which IB receives as a trailing percent. These checks, and any order the
+adapter cannot resolve or transform for IB, emit coded `OrderDenied` reasons before the adapter
+sends an order to IB.
 
 ### Commands and order attributes
 
@@ -439,6 +443,16 @@ transform for IB, emit coded `OrderDenied` reasons before the adapter sends an o
 | Cancel all orders | Yes     | Scoped through the execution client.                         |
 | Query order       | Yes     | Checks open orders, then executions before inferring cancel. |
 | Mass status       | Yes     | Orders, fills, and positions.                                |
+
+Brackets from `OrderFactory::bracket()` make the take-profit and stop-loss legs reduce-only by
+default, so the adapter denies the whole order list. Set `tp_reduce_only` and `sl_reduce_only` to
+`false` to submit the bracket to IB.
+
+:::warning
+Exits that are not reduce-only give up the reduce-only guarantee. IB does not cancel bracket exits
+when another order closes the position, so a later exit fill opens a position in the opposite
+direction. Cancel the remaining exits before closing the position separately.
+:::
 
 Pass `params={"exchange": "IEX"}` to submit, submit-list, or modify commands to override the
 cached contract exchange for that command. An omitted or empty value retains the cached exchange.
@@ -591,6 +605,11 @@ IDs stored in records.
 Keep `futures_year_digits=1` until working orders are canceled and positions opened with one-digit IDs are
 closed. Rebuild cached trading state before switching to two-digit IDs.
 
+Simplified stock IDs keep IB's share-class space by default, such as `BRK B.XNYS`, which matches
+Databento's IDs. Set `share_class_space=False` on `InteractiveBrokersInstrumentProviderConfig` to retain
+existing hyphenated IDs such as `BRK-B.XNYS`. Rebuild instrument caches after changing it, since cached
+contracts keep the IDs they were loaded with.
+
 The symbology method controls symbol conversion. Venue selection is a separate step with this
 precedence:
 
@@ -630,6 +649,7 @@ instrument cannot be resolved.
 | ------------------------------- | ------------ | ------------------------------------------------------- |
 | `symbology_method`              | `SIMPLIFIED` | Select simplified or raw symbol conversion.             |
 | `futures_year_digits`           | `2`          | Use two-digit years, or `1` for existing futures IDs.   |
+| `share_class_space`             | `True`       | Keep share-class spaces (`BRK B`), or use `BRK-B`.      |
 | `load_ids`                      | Empty        | Load Nautilus instrument IDs at startup.                |
 | `load_contracts`                | Empty        | Load IB contract dictionaries at startup.               |
 | `min_expiry_days`               | `None`       | Minimum relative expiry for chain loading.              |
@@ -821,8 +841,9 @@ not restart a subscription.
 | `vnc_port`        | `None`                             | Expose VNC on a port from `5900` through `5999`; `None` disables it. |
 
 `DockerizedIBGateway` exposes asynchronous and blocking `start`, `safe_start`, and `stop` methods,
-plus `container_status`. The safe start variants reuse a ready container and replace an unhealthy
-one.
+plus `container_status`. The safe start variants reuse a ready container, wait for a starting one to
+log in, and replace an unhealthy one. A running container that never logs in is not replaced: the
+call fails at the timeout, and `stop` removes it.
 
 ## Python enum reference
 

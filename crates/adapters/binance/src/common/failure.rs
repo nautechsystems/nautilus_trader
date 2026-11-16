@@ -27,7 +27,7 @@ use nautilus_live::execution::failure::CommandFailure;
 
 use crate::{
     common::error::{is_ambiguous_venue_code, is_retryable_http_status, is_retryable_venue_code},
-    futures::http::error::BinanceFuturesHttpError,
+    futures::http::{error::BinanceFuturesHttpError, models::BatchOrderError},
     spot::http::error::BinanceSpotHttpError,
 };
 
@@ -121,6 +121,17 @@ pub(crate) fn classify_futures_http_failure(error: &BinanceFuturesHttpError) -> 
         | BinanceFuturesHttpError::Canceled(_)
         | BinanceFuturesHttpError::RetryBudgetExceeded(_)
         | BinanceFuturesHttpError::UnexpectedStatus { .. } => CommandFailure::Ambiguous(reason),
+    }
+}
+
+pub(crate) fn classify_futures_batch_failure(
+    error: &BatchOrderError,
+    reason: String,
+) -> CommandFailure {
+    if error.not_sent {
+        CommandFailure::NotSent(reason)
+    } else {
+        classify_venue_failure(Some(error.code), None, reason)
     }
 }
 

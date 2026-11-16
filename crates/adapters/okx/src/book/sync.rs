@@ -998,6 +998,24 @@ mod tests {
     }
 
     #[rstest]
+    fn sequence_suppresses_unsubscribed_instrument_without_tracking() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let outcome = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            true,
+            &[(Some(-1), 100)],
+            Instant::now(),
+        );
+
+        assert_eq!(outcome, BookSequenceOutcome::Suppress);
+        assert!(!is_tracked(&tracker, instrument_id));
+    }
+
+    #[rstest]
     fn sequence_accepts_snapshot_and_linked_update_with_skipped_sequence_ids() {
         let book_channels = AtomicMap::new();
         let tracker = BookSyncTracker::default();

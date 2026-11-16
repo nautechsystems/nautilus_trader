@@ -15,7 +15,6 @@
 
 //! Common test utilities for Architect adapter integration tests.
 
-pub(crate) mod execution;
 pub(crate) mod server;
 
-use nautilus_architect_ax as adapter;
+use super::adapter;

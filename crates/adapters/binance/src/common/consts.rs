@@ -33,12 +33,12 @@ pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::fr
 pub static BINANCE_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(BINANCE)));
 
-/// Binance Link and Trade broker ID for Spot.
+/// Binance Link and Trade integration ID for Spot.
 ///
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
 
-/// Binance Link and Trade broker ID for Futures.
+/// Binance Link and Trade integration ID for Futures.
 ///
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "aHRE4BCj";
@@ -63,6 +63,15 @@ pub const BINANCE_WS_HEARTBEAT_SECS: u64 = 20;
 
 /// Binance European Options API base URL (live exchange).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
+
+/// Binance Portfolio Margin API base URL (live exchange).
+///
+/// The Portfolio Margin General Info page documents only this production host; no PAPI testnet or
+/// demo host exists. Testnet and demo environments must be rejected rather than redirected here
+/// or to a standard Futures host.
+///
+/// <https://developers.binance.com/docs/derivatives/portfolio-margin/general-info>
+pub const BINANCE_PAPI_HTTP_URL: &str = "https://papi.binance.com";
 
 /// Binance European Options API base URL (testnet/demo).
 pub const BINANCE_OPTIONS_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
@@ -179,6 +188,9 @@ pub const BINANCE_EAPI_PATH: &str = "/eapi/v1";
 /// Binance SAPI version path for wallet, margin, and other account management endpoints.
 pub const BINANCE_SAPI_PATH: &str = "/sapi/v1";
 
+/// Binance Portfolio Margin API version path.
+pub const BINANCE_PAPI_PATH: &str = "/papi/v1";
+
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
 pub struct BinanceRateLimitQuota {
@@ -292,6 +304,25 @@ pub const BINANCE_EAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
         interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 200,
+    },
+];
+
+/// Portfolio Margin REST limits (default IP weights and account order counts).
+///
+/// References:
+/// - <https://developers.binance.com/docs/derivatives/portfolio-margin/general-info>
+pub const BINANCE_PAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
+    BinanceRateLimitQuota {
+        rate_limit_type: BinanceRateLimitType::RequestWeight,
+        interval: BinanceRateLimitInterval::Minute,
+        interval_num: 1,
+        limit: 6_000,
+    },
+    BinanceRateLimitQuota {
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Minute,
+        interval_num: 1,
+        limit: 1_200,
     },
 ];
 

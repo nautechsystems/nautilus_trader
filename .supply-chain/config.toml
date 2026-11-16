@@ -82,6 +82,9 @@ audit-as-crates-io = false
 [policy.nautilus-execution]
 audit-as-crates-io = false
 
+[policy.nautilus-finfeed]
+audit-as-crates-io = false
+
 [policy.nautilus-hyperliquid]
 audit-as-crates-io = false
 
@@ -92,6 +95,9 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.nautilus-interactive-brokers]
+audit-as-crates-io = false
+
+[policy.nautilus-kalshi]
 audit-as-crates-io = false
 
 [policy.nautilus-kraken]
@@ -1017,18 +1023,6 @@ criteria = "safe-to-deploy"
 version = "0.58.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.defmt]]
-version = "1.1.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.defmt-macros]]
-version = "1.1.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.defmt-parser]]
-version = "1.0.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.der-parser]]
 version = "10.0.0"
 criteria = "safe-to-run"
@@ -1217,32 +1211,8 @@ criteria = "safe-to-deploy"
 version = "2.0.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.futures]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-channel]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-executor]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
 [[exemptions.futures-intrusive]]
 version = "0.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-io]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-macro]]
-version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-sink]]
-version = "0.3.33"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-task]]

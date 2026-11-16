@@ -73,10 +73,13 @@ def _make_fill(
 ) -> object:
     if instrument is None:
         instrument = AUDUSD_SIM
+
     if currency is None:
         currency = instrument.quote_currency
+
     if event_id is None:
         event_id = UUID4()
+
     return OrderFilled(
         trader_id=TraderId("TESTER-001"),
         strategy_id=StrategyId("S-001"),

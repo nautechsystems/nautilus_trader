@@ -71,6 +71,7 @@ def parse_greeks(path: Path) -> pd.DataFrame:
 
     if not path.exists():
         return pd.DataFrame()
+
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = GREEKS.search(line)
@@ -79,6 +80,7 @@ def parse_greeks(path: Path) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     if df.empty:
         return df
+
     for c in ["delta", "gamma", "vega", "theta", "rho", "mark_iv", "bid_iv", "ask_iv", "u", "oi"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["strike"] = df["inst"].str.extract(r"-(\d+)-[CP]-")[0].astype(float)
@@ -120,7 +122,6 @@ def parse_chain(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
             row["ts"] = current_ts
             row["series"] = current_series
             row["atm"] = current_atm
-
             for k in [
                 "k",
                 "cb",
@@ -328,6 +329,7 @@ def main() -> None:
         f"greeks_rows={len(greeks)} chain_summaries={len(summaries)} "
         f"chain_strike_rows={len(strikes)}",
     )
+
     panels = {
         "panel_a_delta_vs_strike.png": panel_a_delta_vs_strike(greeks),
         "panel_b_iv_smile.png": panel_b_iv_smile(strikes),

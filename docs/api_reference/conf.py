@@ -87,6 +87,7 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
+
 myst_url_schemes = ("mailto", "http", "https")
 suppress_warnings = ["myst.domains"]
 

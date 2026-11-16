@@ -15,17 +15,19 @@
 
 //! Configuration structures for the Derive adapter.
 
-use nautilus_common::config::{ConfigResult, check_unique_values};
+use nautilus_common::config::{ConfigError, ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
-        consts::{HTTP_MAX_RETRIES, HTTP_RETRY_DELAY_INITIAL_MS, HTTP_RETRY_DELAY_MAX_MS},
+        consts::{
+            DERIVE_VENUE, HTTP_MAX_RETRIES, HTTP_RETRY_DELAY_INITIAL_MS, HTTP_RETRY_DELAY_MAX_MS,
+        },
         enums::DeriveEnvironment,
         urls,
     },
@@ -244,6 +246,10 @@ pub struct DeriveExecutionClientConfig {
     /// 15 minutes. False leaves the wallet setting unchanged. Shutdown never disables the setting.
     #[builder(default)]
     pub cancel_on_disconnect: bool,
+    /// Instruments included in reconciliation. `None` or empty includes every instrument.
+    /// Bulk-load their currencies through data-client `currencies` and set `reconciliation_instrument_ids`
+    /// to the same set so omitted positions are not treated as flat.
+    pub load_ids: Option<Vec<InstrumentId>>,
 }
 
 #[cfg(feature = "python")]
@@ -267,6 +273,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     max_matching_requests_per_second: Option<u32>,
     max_per_instrument_matching_requests_per_second: Option<u32>,
     cancel_on_disconnect: bool,
+    load_ids: Option<Vec<InstrumentId>>,
 });
 
 impl Default for DeriveExecutionClientConfig {
@@ -306,7 +313,10 @@ impl DeriveExecutionClientConfig {
     /// Returns an error if:
     /// - `max_fee_per_contract` is missing or not greater than zero.
     /// - Cancel-on-disconnect uses a signature expiry greater than 15 minutes.
+    /// - `load_ids` repeats an instrument or includes another venue.
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.validate_load_ids()?;
+
         let Some(max_fee_per_contract) = self.max_fee_per_contract else {
             anyhow::bail!("max_fee_per_contract is required");
         };
@@ -319,6 +329,22 @@ impl DeriveExecutionClientConfig {
             anyhow::bail!(
                 "cancel_on_disconnect requires signature_expiry_secs at most 900 seconds"
             );
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_load_ids(&self) -> ConfigResult<()> {
+        if let Some(ids) = &self.load_ids {
+            check_unique_values("load_ids", ids)?;
+            for id in ids {
+                if id.venue != *DERIVE_VENUE {
+                    return Err(ConfigError::invalid_value(
+                        "load_ids",
+                        format!("{id} is not a DERIVE instrument"),
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -350,6 +376,39 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::unset(None)]
+    #[case::empty(Some(vec![]))]
+    #[case::explicit(Some(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("BTC-PERP.DERIVE")]))]
+    fn test_load_ids_configuration_roundtrip(#[case] load_ids: Option<Vec<InstrumentId>>) {
+        let config = DeriveExecutionClientConfig {
+            max_fee_per_contract: Some(Decimal::ONE),
+            load_ids: load_ids.clone(),
+            ..Default::default()
+        };
+
+        config.validate().unwrap();
+        let encoded = serde_json::to_string(&config).unwrap();
+        let decoded: DeriveExecutionClientConfig = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.load_ids, load_ids);
+    }
+
+    #[rstest]
+    #[case::duplicate(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("ETH-PERP.DERIVE")], "duplicate load_ids")]
+    #[case::other_venue(vec![InstrumentId::from("ETH-PERP.BINANCE")], "invalid load_ids: ETH-PERP.BINANCE is not a DERIVE instrument")]
+    fn test_load_ids_reject_invalid_selection(
+        #[case] load_ids: Vec<InstrumentId>,
+        #[case] expected: &str,
+    ) {
+        let config = DeriveExecutionClientConfig {
+            max_fee_per_contract: Some(Decimal::ONE),
+            load_ids: Some(load_ids),
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate().unwrap_err().to_string(), expected);
+    }
 
     #[rstest]
     fn test_config_builders_accept_plain_strings() {

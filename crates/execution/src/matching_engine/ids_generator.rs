@@ -542,10 +542,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_venue_position_id_random_uses_uuid4_seam() {
-        // Pin that the use_random_ids branch routes through the UUID4 seam
-        // (RFC 4122 v4) rather than a raw uuid::Uuid::new_v4 call. The seam
-        // already swaps to madsim::rand::thread_rng() under cfg(madsim).
+    fn test_generate_venue_position_id_random_has_rfc4122_v4_shape() {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut generator = IdsGenerator::new(

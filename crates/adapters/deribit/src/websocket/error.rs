@@ -58,12 +58,7 @@ pub enum DeribitWsError {
     ParsingError(String),
     /// Error returned by Deribit API (JSON-RPC error response).
     #[error("Deribit error {code}: {message}")]
-    DeribitError {
-        /// The error code from Deribit.
-        code: i64,
-        /// The error message from Deribit.
-        message: String,
-    },
+    DeribitError { code: i64, message: String },
     /// WebSocket transport error from tungstenite.
     #[error("Tungstenite error: {0}")]
     TungsteniteError(String),

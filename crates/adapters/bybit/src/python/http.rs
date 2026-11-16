@@ -1172,14 +1172,14 @@ impl BybitHttpClient {
         })
     }
 
-    /// Request multiple order status reports.
-    ///
-    /// Orders for instruments not currently loaded in cache will be skipped.
+    /// Requests multiple order status reports.
     ///
     /// When `open_only` is true the realtime endpoint is queried for currently
     /// open orders and again for recently closed orders, so terminal reports
-    /// are included. The closed pass fetches the most recent page only and is
-    /// not constrained by `start` or `end`.
+    /// are included. The closed pass fetches the most recent page only.
+    ///
+    /// Terminal orders are filtered by `updatedTime` against `start` and `end`.
+    /// Open orders are returned regardless of age.
     ///
     /// # Errors
     ///
@@ -1187,6 +1187,7 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    /// - A returned order has no symbol, has no cached instrument, or cannot be parsed.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
     #[expect(clippy::too_many_arguments)]
@@ -1230,7 +1231,7 @@ impl BybitHttpClient {
 
     /// Fetches execution history (fills) for the account and returns a list of `FillReport`s.
     ///
-    /// Funding executions and executions for instruments not currently loaded in cache are skipped.
+    /// Funding executions are skipped.
     ///
     /// # Errors
     ///
@@ -1238,7 +1239,7 @@ impl BybitHttpClient {
     /// - The request fails.
     /// - The instrument ID is invalid.
     /// - Pagination cannot advance.
-    /// - A fill for a cached instrument cannot be parsed.
+    /// - A returned fill has no symbol, has no cached instrument, or cannot be parsed.
     ///
     /// # References
     ///
@@ -1278,7 +1279,7 @@ impl BybitHttpClient {
     /// Fetches position information for the account and returns a list of `PositionStatusReport`s.
     ///
     /// Derivative position reports fail as a set if any row cannot be resolved or parsed.
-    /// When SPOT position reports are enabled, an uncached instrument yields no report.
+    /// When SPOT position reports are enabled, the requested instrument must be cached.
     ///
     /// # Errors
     ///
@@ -1287,7 +1288,7 @@ impl BybitHttpClient {
     /// - The instrument ID is invalid.
     /// - Pagination cannot advance.
     /// - A derivative position row has no symbol.
-    /// - A derivative position's instrument is not cached.
+    /// - A derivative position's instrument, or the requested SPOT instrument, is not cached.
     /// - A derivative position row cannot be parsed.
     /// - SPOT position reports are enabled and no instrument is specified, because wallet balances
     ///   carry no pair identity.

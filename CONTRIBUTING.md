@@ -56,11 +56,42 @@ Local validation remains required under the
 [local check requirements](#run-local-checks-and-follow-repository-rules), and summaries of results
 remain optional. Maintainers may request specific evidence when they need it to assess a change.
 
+## Commercial conflicts
+
+NautilusTrader provides a free and open-source framework to help quant traders and firms research,
+develop, and deploy trading strategies and systems. The project builds its own commercial offerings
+around the engine. The contribution process is not intended to support the development or promotion
+of competing commercial products.
+
+Before contributing, disclose any ownership, employment, sponsorship, or other commercial
+relationship with a product that may compete with the project's offerings. Maintainers assess
+competition against both announced offerings and products we are planning or developing, across local
+and cloud deployments.
+
+Maintainers may decline or close issues and pull requests where a contributor's commercial activities
+conflict with the project's commercial direction. They may also ask the contributor to pause
+contributions.
+
+Maintainers apply this policy consistently to comparable situations to avoid implying support for
+or endorsement of competing products through ongoing collaboration. This policy governs participation
+in the contribution process and does not change the project's [license](LICENSE).
+
 ## Use of AI
 
 If you use AI tools, you remain responsible for every submission. Read and follow the
 [AI Policy](AI_POLICY.md), which explains the requirements for human direction, review,
 communication, and attribution.
+
+## Limit open issues and pull requests
+
+**Keep at most one open issue and one open pull request in this repository at a time, unless a
+maintainer explicitly agrees to or requests more.** This keeps maintainer time from becoming
+concentrated on one contributor's work. Maintainers may close additional issues or pull requests.
+
+**Do not comment across many issues or pull requests.** Comment only where you have relevant,
+verified information to add. Even useful comments, spread widely, can concentrate maintainer time
+on one contributor's activity. Ping maintainers only when the work is blocked on their input, and
+allow at least a week before pinging again.
 
 ## Start with an issue
 

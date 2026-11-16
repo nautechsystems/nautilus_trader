@@ -95,6 +95,13 @@ independent ops), so there is no `modify` row.
 | `exec_pipeline/submit_limit_neg_risk` | 48.8 µs | 20.5 k/s   |
 | `exec_pipeline/cancel`                | 254 ns  | 3.93 M/s   |
 
+## Continuous reconciliation
+
+The [local reconciliation scenario](../tests/README.md#continuous-reconciliation-benchmark) measures
+market-data delivery while a real `LiveNode` runs periodic Polymarket report requests against a local
+paginated venue. It compares inline and worker collection, checks equal work, and reports report-cycle
+latency separately. It is an ignored integration benchmark because it measures concurrent wall-clock work.
+
 ## Crypto path (`signing.rs`)
 
 Decomposes the exec-pipeline signature cost into its components and

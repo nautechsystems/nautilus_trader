@@ -62,15 +62,18 @@ def _prepare(work: Path) -> None:  # noqa: C901
     recovery_sha = os.environ["RELEASE_RECOVERY_SHA"]
     if not re.fullmatch(r"[0-9a-f]{40}", recovery_sha):
         raise ValueError("Invalid recovery commit")
+
     if (
         os.environ["GITHUB_WORKFLOW_REF"]
         != f"{repository}/.github/workflows/build.yml@refs/heads/master"
     ):
         raise ValueError("Publication recovery must run from build.yml on master")
+
     if os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch":
         raise ValueError("Publication recovery must be manually dispatched")
 
     originals = {}
+
     for path in (work / "source-artifacts").rglob("*"):
         if _distribution(path):
             digest = _digest(path)
@@ -80,6 +83,7 @@ def _prepare(work: Path) -> None:  # noqa: C901
     packages = work / "distributions"
     packages.mkdir()
     inventory = []
+
     for path in sorted((work / "assets").iterdir()):
         if not _distribution(path):
             continue
@@ -91,8 +95,10 @@ def _prepare(work: Path) -> None:  # noqa: C901
             raise ValueError(f"Missing or mismatched draft release asset: {path.name}")
         shutil.copyfile(path, packages / path.name)
         inventory.append({"name": path.name, "sha256": digest})
+
     if not inventory:
         raise ValueError("No original distributions available")
+
     predicate = {
         "repository": repository,
         "tag": os.environ["TAG_NAME"],
@@ -108,6 +114,7 @@ def _prepare(work: Path) -> None:  # noqa: C901
         },
         "artifacts": inventory,
     }
+
     predicate_path = work / "recovery-predicate.json"
     predicate_path.write_text(json.dumps(predicate, sort_keys=True) + "\n", encoding="utf-8")
     _output("work-dir", str(work))
@@ -122,6 +129,7 @@ def _stage(work: Path) -> None:  # noqa: C901
     repository = predicate["repository"]
     source = _github_json(f"repos/{repository}/actions/runs/{predicate['source']['run']}")
     tag = _github_json(f"repos/{repository}/commits/{predicate['tag']}")
+
     if not (
         source["status"] == "completed"
         and source["head_sha"] == predicate["source"]["sha"]
@@ -135,6 +143,7 @@ def _stage(work: Path) -> None:  # noqa: C901
         capture_output=True,
         text=True,
     )
+
     if json.loads(release.stdout)["isDraft"] is not True:
         raise ValueError("Publication recovery requires a draft release")
     version = predicate["tag"][1:]
@@ -149,6 +158,7 @@ def _stage(work: Path) -> None:  # noqa: C901
         remote = []
     expected = {item["name"]: item["sha256"] for item in predicate["artifacts"]}
     published = {}
+
     for item in remote:
         name = item["filename"]
         digest = item["digests"]["sha256"]
@@ -159,10 +169,12 @@ def _stage(work: Path) -> None:  # noqa: C901
     destination.mkdir(parents=True, exist_ok=True)
     if any(destination.iterdir()):
         raise ValueError("Publication staging directory must be empty")
+
     for name, digest in expected.items():
         path = work / "distributions" / name
         if _digest(path) != digest:
             raise ValueError(f"Distribution changed before publication: {name}")
+
         if name not in published:
             attestation = path.with_name(name + ".publish.attestation")
             if not attestation.is_file() or attestation.stat().st_size == 0:
@@ -181,12 +193,14 @@ def _download(work: Path, run_id: int) -> None:
     metadata = _github_json(
         f"repos/{repository}/actions/runs/{run_id}/artifacts?per_page={PAGE_SIZE}",
     )
+
     if metadata["total_count"] > PAGE_SIZE:
         raise ValueError("Unexpected publication recovery artifact inventory")
     matches = [item for item in metadata["artifacts"] if item["name"] == name]
     if len(matches) != 1 or matches[0]["expired"]:
         raise ValueError("Missing or expired publication recovery attestations")
     artifact = matches[0]
+
     if (
         artifact["workflow_run"]["id"] != run_id
         or artifact["workflow_run"]["head_sha"] != run["head_sha"]
@@ -208,9 +222,11 @@ def _download(work: Path, run_id: int) -> None:
         ],
         check=True,
     )
+
     for path in destination.rglob("*"):
         if not path.is_file():
             continue
+
         if path.is_symlink() or not path.name.endswith((".sigstore", ".intoto.jsonl")):
             raise ValueError("Unexpected publication recovery artifact")
         target = work / "assets" / path.name
@@ -230,11 +246,13 @@ def _verify(package: Path, source_path: Path) -> None:
     if predicate["repository"] != repository or predicate["tag"] != os.environ["TAG_NAME"]:
         raise ValueError("Recovery predicate repository or tag mismatch")
     source_attempt = _positive_integer(predicate["source"]["attempt"])
+
     expected_source = {
         "sha": source["head_sha"],
         "run": source["id"],
         "attempt": source_attempt,
     }
+
     if predicate["source"] != expected_source:
         raise ValueError("Recovery predicate does not identify the selected original build")
     recovery = predicate["recovery"]
@@ -274,6 +292,7 @@ def _verify(package: Path, source_path: Path) -> None:
     original = _github_json(
         f"repos/{repository}/actions/runs/{source['id']}/attempts/{source_attempt}",
     )
+
     if (
         original["head_sha"] != source["head_sha"]
         or original["run_attempt"] != source_attempt
@@ -293,6 +312,7 @@ def _verify(package: Path, source_path: Path) -> None:
 def _publication_run(repository: str, run_id: int, attempt: int, sha: str) -> None:
     route = f"repos/{repository}/actions/runs/{run_id}/attempts/{attempt}"
     run = _github_json(route)
+
     if not (
         run["repository"]["full_name"] == repository
         and run["head_repository"]["full_name"] == repository

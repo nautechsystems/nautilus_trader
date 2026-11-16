@@ -19,7 +19,10 @@ Exercise typed FinFeed REST bindings through a real Python event loop and HTTP p
 import ast
 import asyncio
 import json
+import os
 import runpy
+import subprocess
+import sys
 import threading
 from collections import deque
 from collections.abc import Iterator
@@ -35,9 +38,15 @@ import pytest
 from pandas import Timestamp
 
 from nautilus_trader.adapters import finfeed as ff
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import RecordFlag
+from nautilus_trader.model import get_tick_scheme
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
 TEST_DATA = Path(__file__).resolve().parents[5] / "crates/adapters/finfeed/test_data"
+
 FIELDS = {
     "FinFeedExchange": "exchange_id market_name_institution_description website",
     "FinFeedMarket": "exchange_id market_id outcome_type outcome_name mechanism status price title description exchange source_specific_data",
@@ -52,6 +61,7 @@ FIELDS = {
     "FinFeedOhlcvPeriod": "period_id unit_name unit_count length_seconds length_months display_name",
     "FinFeedOhlcv": "market_id_exchange price_open price_high price_low price_close volume_traded trades_count time_period_start time_period_end time_open time_close",
 }
+
 ENUMS = {
     "status": "FinFeedMarketStatus",
     "outcome_type": "FinFeedOutcomeType",
@@ -75,7 +85,7 @@ def _peer(responses, **controls: Any) -> Iterator:
             entered.set()
 
             if controls.get("block"):
-                release.wait(10)
+                release.wait()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -89,17 +99,28 @@ def _peer(responses, **controls: Any) -> Iterator:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    config = ff.FinFeedDataClientConfig(
-        api_key="python-rest-secret",
-        base_url_http=f"http://127.0.0.1:{server.server_port}/v1/",
-        min_request_interval_ms=1,
-        max_concurrent_requests=1,
-        attempt_budget=controls.get("attempt_budget", 30),
-        max_retries=0,
-        http_timeout_secs=2,
-    )
+
+    base_url = f"http://127.0.0.1:{server.server_port}/v1/"
+
+    options = {
+        "api_key": controls.get("api_key", "python-rest-secret"),
+        "min_request_interval_ms": 1,
+        "max_concurrent_requests": 1,
+        "attempt_budget": controls.get("attempt_budget", 30),
+        "max_retries": 0,
+    }
+
+    if controls.get("kalshi_metadata"):
+        options["kalshi_metadata_url"] = base_url
+
+    if controls.get("client_type") is ff.FinFeedDataLoader:
+        client = ff.FinFeedDataLoader(base_url=base_url, timeout_secs=10, **options)
+    else:
+        config = ff.FinFeedDataClientConfig(base_url_http=base_url, http_timeout_secs=10, **options)
+        client = ff.FinFeedHttpClient(config)
+
     try:
-        yield ff.FinFeedHttpClient(config), requests, entered, release
+        yield client, requests, entered, release
     finally:
         release.set()
         server.shutdown()
@@ -243,6 +264,7 @@ def test_read_only_operations_preserve_every_field(method, args, path, fixture, 
             time_end="2026-10-12T00:00:00.0000001Z",
         ),
     }
+
     args = tuple(queries.get(arg, arg) for arg in args)
     body = _response(fixture)
     if envelope == "array":
@@ -447,6 +469,7 @@ def _exchange_query(**overrides: Any):
         "time_start": "2026-10-11T00:00:00Z",
         "time_end": "2026-10-12T00:00:00Z",
     }
+
     values.update(overrides)
     return ff.FinFeedOhlcvQuery(**values)
 
@@ -757,7 +780,6 @@ def test_nullable_results_preserve_missing_values(kind) -> None:
         body = json.dumps(value).encode()
     elif kind == "bar":
         body = _response("exact-bar.json")
-
         for field, value in [
             ("price_open", "0.1"),
             ("price_high", "0.9"),
@@ -765,6 +787,7 @@ def test_nullable_results_preserve_missing_values(kind) -> None:
             ("price_close", "0.5"),
         ]:
             body = body.replace(f'"{field}":{value}'.encode(), f'"{field}":null'.encode())
+
         for field, value in [
             ("time_open", "2026-10-11T00:00:02.0000003Z"),
             ("time_close", "2026-10-11T00:00:58.0000004Z"),
@@ -1060,12 +1083,14 @@ def test_historical_research_example_keeps_selected_source(
         monkeypatch.setitem(main.__globals__, "FinFeedHttpClient", create_client)
         if result == "saturated":
             monkeypatch.setitem(main.__globals__, "LIMIT", 2)
+
         if result == "http-error":
             with pytest.raises(RuntimeError, match="429"):
                 asyncio.run(main(source))
         else:
             asyncio.run(main(source))
         output = capsys.readouterr().out
+
         expected_controls = {
             "attempt_budget": 1,
             "http_timeout_secs": 20,
@@ -1073,6 +1098,7 @@ def test_historical_research_example_keeps_selected_source(
             "min_request_interval_ms": 10_000,
             "max_retries": 0,
         }
+
         assert len(configs) == 1
         assert {name: getattr(configs[0], name) for name in expected_controls} == expected_controls
         limit = 2 if result == "saturated" else 5
@@ -1121,3 +1147,198 @@ def test_historical_research_example_keeps_selected_source(
                 await client.get_exchanges()
 
         asyncio.run(check_canceled())
+
+
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_loader_reuses_metadata_and_replays_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_environment: bool,
+) -> None:
+    """
+    Reuse one definition and preserve deltas through Parquet.
+    """
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    start = Timestamp("2026-10-11T00:00:05Z").value
+    end = Timestamp("2026-10-11T00:00:10Z").value
+
+    responses = [
+        (200, _response("polymarket-market.json")),
+        (200, _response("book-replay.json")),
+        (200, _response("book-replay.json")),
+    ]
+
+    monkeypatch.setenv("FINFEED_API_KEY", "python-rest-secret")
+    with _peer(
+        responses,
+        client_type=ff.FinFeedDataLoader,
+        api_key=None if use_environment else "python-rest-secret",
+    ) as (loader, requests, *_):
+
+        async def collect():
+            instruments = await loader.request_instruments(
+                [
+                    ff.FinFeedInstrumentSelection("POLYMARKET", ["TEST-OUTCOME_NO"]),
+                ],
+            )
+            instrument = instruments[0]
+            first = await loader.request_book_deltas(instrument_id, start, end)
+            second = await loader.request_book_deltas(instrument_id, start, end)
+            return instrument, first, second
+
+        instrument, first, second = asyncio.run(collect())
+
+    (tmp_path / "catalog").mkdir()
+    catalog = ParquetDataCatalog(str(tmp_path / "catalog"))
+    catalog.write_instruments([instrument])
+    catalog.write_order_book_deltas(first)
+
+    assert loader.instrument(instrument_id) == instrument
+    assert first == second
+    assert first[0].instrument_id == instrument_id
+    assert first[0].action == BookAction.CLEAR
+    assert first[0].ts_init == start
+    assert RecordFlag.F_LAST.matches(first[-1].flags)
+    assert catalog.query_order_book_deltas(identifiers=[str(instrument_id)]) == first
+    assert catalog.instruments(instrument_ids=[str(instrument_id)]) == [instrument]
+    assert len(requests) == 3
+    assert requests[0] == (
+        "/v1/markets/POLYMARKET/TEST-OUTCOME_NO",
+        "python-rest-secret",
+        "nautilus",
+    )
+    assert requests[1] == requests[2]
+
+
+@pytest.mark.parametrize("outcome", ["YES", "NO"])
+def test_kalshi_catalog_reloads_in_fresh_process(tmp_path: Path, outcome: str) -> None:
+    """
+    Restore the exact Yes or complementary No grid after the metadata peer stops.
+    """
+    market = json.loads(_response("kalshi-market.json"))
+    market["market_id"] = f"TEST-KALSHI-30_{outcome}"
+    market["outcome_name"] = outcome.title()
+    native_market = json.loads(_response("kalshi-native-market.json"))
+
+    native_market["market"]["price_ranges"] = [
+        {"start": "0.0000", "end": "0.2000", "step": "0.0010"},
+        {"start": "0.2000", "end": "1.0000", "step": "0.0100"},
+    ]
+
+    instrument_id = InstrumentId.from_str(f"TEST-KALSHI-30_{outcome}.FINFEED_KALSHI")
+
+    responses = [
+        (200, json.dumps(market).encode()),
+        (200, json.dumps(native_market).encode()),
+        (200, _response("kalshi-native-event.json")),
+    ]
+
+    with _peer(responses, client_type=ff.FinFeedDataLoader, kalshi_metadata=True) as (
+        loader,
+        requests,
+        *_,
+    ):
+
+        async def collect():
+            return await loader.request_instrument(instrument_id)
+
+        instrument = asyncio.run(collect())
+
+    catalog = ParquetDataCatalog(str(tmp_path))
+    catalog.write_instruments([instrument])
+    expected = json.dumps(
+        {
+            "instrument": instrument.to_dict(),
+            "ticks": [str(tick) for tick in get_tick_scheme(instrument.tick_scheme).ticks],
+        },
+        default=str,
+    )
+    script = """
+import json
+import sys
+from nautilus_trader.model import get_tick_scheme
+from nautilus_trader.persistence import ParquetDataCatalog
+
+payload = json.loads(sys.stdin.read())
+expected = payload["instrument"]
+name = expected["tick_scheme"]
+try:
+    get_tick_scheme(name)
+except ValueError:
+    pass
+else:
+    raise AssertionError("tick scheme was already registered in the fresh process")
+
+[instrument] = ParquetDataCatalog(sys.argv[1]).instruments()
+assert json.loads(json.dumps(instrument.to_dict(), default=str)) == expected
+scheme = get_tick_scheme(name)
+assert scheme.price_precision == 6
+assert [str(tick) for tick in scheme.ticks] == payload["ticks"]
+assert str(instrument.next_bid_price(0.1055)) == ("0.105000" if expected["outcome"] == "Yes" else "0.100000")
+assert str(instrument.next_ask_price(0.1055)) == ("0.106000" if expected["outcome"] == "Yes" else "0.110000")
+print("restored")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        input=expected,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        env={
+            name: os.environ[name]
+            for name in ("HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "PATH", "SYSTEMROOT")
+            if name in os.environ
+        },
+        check=False,
+    )
+
+    assert len(requests) == 3
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "restored"
+
+
+def test_loader_failed_definition_refresh_preserves_metadata() -> None:
+    """
+    Preserve the accepted definition after a failed refresh.
+    """
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    with _peer(
+        [
+            (200, _response("polymarket-market.json")),
+            (404, b"{}"),
+        ],
+        client_type=ff.FinFeedDataLoader,
+    ) as (loader, requests, *_):
+
+        async def refresh():
+            instrument = await loader.request_instrument(instrument_id)
+            with pytest.raises(RuntimeError):
+                await loader.request_instrument(instrument_id)
+            return instrument
+
+        instrument = asyncio.run(refresh())
+
+    assert loader.instrument(instrument_id) == instrument
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("api_key", [None, "invalid key"])
+def test_loader_checks_metadata_and_limit_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
+) -> None:
+    """
+    Reject missing metadata and zero limits before HTTP admission.
+    """
+    monkeypatch.delenv("FINFEED_API_KEY", raising=False)
+    loader = ff.FinFeedDataLoader(api_key=api_key)
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+
+    async def request():
+        with pytest.raises(RuntimeError, match="No loaded instrument"):
+            await loader.request_trades(instrument_id, 1, 2)
+        with pytest.raises(ValueError, match="number would be zero for non-zero type"):
+            await loader.request_book_deltas(instrument_id, 1, 2, limit=0)
+
+    asyncio.run(request())

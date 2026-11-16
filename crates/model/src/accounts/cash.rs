@@ -18,13 +18,15 @@
 //! # Balance locking
 //!
 //! The account tracks locked balances per `(InstrumentId, Currency)` to support
-//! instruments that lock different currencies depending on order side:
-//! - BUY orders lock quote currency (cost of purchase).
-//! - SELL orders lock base currency (assets being sold).
+//! instruments that lock different currencies depending on order side.
+//! The portfolio computes locks for open orders as follows:
+//! - BUY orders lock quote currency (cost of purchase), unless marked `reduce_only`.
+//! - SELL orders lock base currency (assets being sold), unless marked `reduce_only`.
+//! - Negative-price SELL orders also lock the cash disposal cost, including `reduce_only` orders.
 //!
 //! Instruments that model no base currency (binary options, equities, and the other types whose
-//! `base_currency()` is `None`) have no asset to reserve, so a SELL locks nothing rather than
-//! labeling the quantity as quote money. Inventory availability for those instruments is not
+//! `base_currency()` is `None`) have no asset to reserve, so a SELL locks only a negative-price
+//! disposal cost, when present. Inventory availability for those instruments is not
 //! tracked or checked locally, including across concurrent SELLs, and is left to the venue,
 //! whose rejections arrive through the normal order lifecycle.
 //!
@@ -54,7 +56,7 @@ use crate::{
     enums::{AccountType, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
@@ -219,6 +221,16 @@ impl Account for CashAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
+        if side == OrderSide::Sell && price.is_negative() && instrument.base_currency().is_none() {
+            return self.base_calculate_balance_locked(
+                instrument,
+                OrderSide::Buy,
+                quantity,
+                -price,
+                use_quote_for_inverse,
+            );
+        }
+
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
 
@@ -348,6 +360,39 @@ mod tests {
         cash_account
             .update_balance_locked(instrument.id(), locked)
             .unwrap();
+    }
+
+    #[rstest]
+    #[case::whole("3", "-7.00", dec!(21))]
+    #[case::fractional("0.3", "-0.02", dec!(0.006))]
+    #[case::subcurrency("0.3", "-0.00000001", dec!(0.000000003))]
+    fn test_calculate_balance_locked_negative_price_sell_reserves_disposal_cost(
+        #[case] quantity: &str,
+        #[case] price: &str,
+        #[case] expected: Decimal,
+        cash_account: CashAccount,
+        mut commodity_gold: Commodity,
+    ) {
+        commodity_gold.price_precision = 8;
+        commodity_gold.price_increment = Price::from("0.00000001");
+        commodity_gold.size_precision = 1;
+        commodity_gold.size_increment = Quantity::from("0.1");
+        let instrument = InstrumentAny::Commodity(commodity_gold);
+
+        let locked = cash_account
+            .calculate_balance_locked(
+                &instrument,
+                OrderSide::Sell,
+                Quantity::from(quantity),
+                Price::from(price),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(
+            locked,
+            Money::from_decimal_native(expected, Currency::USD()).unwrap()
+        );
     }
 
     #[rstest]

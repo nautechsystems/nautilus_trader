@@ -21,10 +21,11 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    str::FromStr,
     sync::Arc,
 };
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
@@ -65,7 +66,7 @@ pub struct BlockchainCache {
     /// Map of block numbers to their corresponding timestamp
     block_timestamps: BTreeMap<u64, UnixNanos>,
     /// Map of block numbers to the hashes observed with those timestamps.
-    block_hashes: BTreeMap<u64, String>,
+    block_hashes: BTreeMap<u64, B256>,
     /// Map of DEX identifiers to their corresponding DEX objects.
     dexes: HashMap<DexType, SharedDex>,
     /// Map of token addresses to their corresponding `Token` objects.
@@ -123,8 +124,12 @@ impl BlockchainCache {
 
     /// Returns the observed hash for the specified block number, if cached.
     #[must_use]
-    pub fn get_block_hash(&self, block_number: u64) -> Option<&str> {
-        self.block_hashes.get(&block_number).map(String::as_str)
+    pub fn get_block_hash(&self, block_number: u64) -> Option<B256> {
+        self.block_hashes.get(&block_number).copied()
+    }
+
+    fn parse_block_hash(hash: &str) -> anyhow::Result<B256> {
+        B256::from_str(hash).map_err(|e| anyhow::anyhow!("Invalid block hash {hash}: {e}"))
     }
 
     /// Records a block timestamp in the in-memory cache without persisting it.
@@ -136,9 +141,15 @@ impl BlockchainCache {
     }
 
     /// Records the hash and timestamp observed for one block without persisting it.
-    pub fn cache_block_metadata(&mut self, block: &Block) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block hash is not valid 32-byte hex.
+    pub fn cache_block_metadata(&mut self, block: &Block) -> anyhow::Result<()> {
+        let hash = Self::parse_block_hash(&block.hash)?;
         self.block_timestamps.insert(block.number, block.timestamp);
-        self.block_hashes.insert(block.number, block.hash.clone());
+        self.block_hashes.insert(block.number, hash);
+        Ok(())
     }
 
     /// Initializes the database connection for persistent storage.
@@ -531,10 +542,11 @@ impl BlockchainCache {
     ///
     /// # Errors
     ///
-    /// Returns an error if adding the block to the database fails.
+    /// Returns an error if adding the block to the database fails, or if the
+    /// block hash is not valid 32-byte hex.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
         // Populate in-memory first so the timestamp resolves even if persistence fails
-        self.cache_block_metadata(&block);
+        self.cache_block_metadata(&block)?;
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
         }
@@ -545,7 +557,8 @@ impl BlockchainCache {
     ///
     /// # Errors
     ///
-    /// Returns an error if adding the blocks to the database fails.
+    /// Returns an error if adding the blocks to the database fails, or if a
+    /// block hash is not valid 32-byte hex.
     pub async fn add_blocks_batch(
         &mut self,
         blocks: Vec<Block>,
@@ -554,6 +567,12 @@ impl BlockchainCache {
         if blocks.is_empty() {
             return Ok(());
         }
+
+        // Validate every hash before persisting so a bad hash leaves no partial state.
+        let hashes = blocks
+            .iter()
+            .map(|block| Self::parse_block_hash(&block.hash))
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         if let Some(database) = &self.database {
             if use_copy_command {
@@ -568,9 +587,9 @@ impl BlockchainCache {
         }
 
         // Update in-memory cache
-        for block in blocks {
+        for (block, hash) in blocks.into_iter().zip(hashes) {
             self.block_timestamps.insert(block.number, block.timestamp);
-            self.block_hashes.insert(block.number, block.hash);
+            self.block_hashes.insert(block.number, hash);
         }
 
         Ok(())
@@ -580,11 +599,18 @@ impl BlockchainCache {
     ///
     /// # Errors
     ///
-    /// Returns an error if adding the block timestamps to the database fails.
+    /// Returns an error if adding the block timestamps to the database fails,
+    /// or if a block hash is not valid 32-byte hex.
     pub async fn add_pool_event_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
         if blocks.is_empty() {
             return Ok(());
         }
+
+        // Validate every hash before persisting so a bad hash leaves no partial state.
+        let hashes = blocks
+            .iter()
+            .map(|block| Self::parse_block_hash(&block.hash))
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         if let Some(database) = &self.database {
             database
@@ -592,9 +618,9 @@ impl BlockchainCache {
                 .await?;
         }
 
-        for block in blocks {
+        for (block, hash) in blocks.into_iter().zip(hashes) {
             self.block_timestamps.insert(block.number, block.timestamp);
-            self.block_hashes.insert(block.number, block.hash);
+            self.block_hashes.insert(block.number, hash);
         }
 
         Ok(())
@@ -1181,11 +1207,12 @@ impl BlockchainCache {
 #[cfg(test)]
 mod tests {
     use std::{
+        str::FromStr,
         sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use alloy::primitives::{I256, U160, U256, address};
+    use alloy::primitives::{B256, I256, U160, U256, address};
     use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
@@ -1229,7 +1256,7 @@ mod tests {
     async fn add_block_populates_metadata_without_database() {
         let mut cache = test_cache();
         let block = Block::new(
-            "0x1".to_string(),
+            "0x1111111111111111111111111111111111111111111111111111111111111111".to_string(),
             "0x0".to_string(),
             42,
             Ustr::from("miner"),
@@ -1245,7 +1272,46 @@ mod tests {
             cache.get_block_timestamp(42),
             Some(&UnixNanos::from(1_700_000_000_000_000_000))
         );
-        assert_eq!(cache.get_block_hash(42), Some("0x1"));
+        let expected =
+            B256::from_str("0x1111111111111111111111111111111111111111111111111111111111111111")
+                .unwrap();
+        assert_eq!(cache.get_block_hash(42), Some(expected));
+    }
+
+    #[tokio::test]
+    async fn add_blocks_batch_rejects_invalid_hash_without_partial_cache() {
+        let mut cache = test_cache();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let mut bad = test_block(13, ts);
+        bad.hash = "0xnotahash".to_string();
+
+        let result = cache
+            .add_blocks_batch(vec![test_block(12, ts), bad, test_block(14, ts)], false)
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(cache.get_block_timestamp(12), None);
+        assert_eq!(cache.get_block_timestamp(13), None);
+        assert_eq!(cache.get_block_timestamp(14), None);
+        assert_eq!(cache.get_block_hash(12), None);
+    }
+
+    #[tokio::test]
+    async fn add_pool_event_blocks_batch_rejects_invalid_hash_without_partial_cache() {
+        let mut cache = test_cache();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let mut bad = test_block(13, ts);
+        bad.hash = "0xnotahash".to_string();
+
+        let result = cache
+            .add_pool_event_blocks_batch(vec![test_block(12, ts), bad, test_block(14, ts)])
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(cache.get_block_timestamp(12), None);
+        assert_eq!(cache.get_block_timestamp(13), None);
+        assert_eq!(cache.get_block_timestamp(14), None);
+        assert_eq!(cache.get_block_hash(12), None);
     }
 
     #[tokio::test]

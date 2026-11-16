@@ -17,7 +17,7 @@
 
 use ahash::AHashSet;
 use nautilus_core::{DurationNanos, UnixNanos};
-use nautilus_model::identifiers::VenueOrderId;
+use nautilus_model::{identifiers::VenueOrderId, reports::OrderStatusReport};
 
 /// Allowance for skew between the node's clock, which stamps an order's creation, and the venue's,
 /// which stamps how far back a read reached. Kept generous: too long defers an order the read did
@@ -29,11 +29,12 @@ const COVERAGE_CLOCK_SKEW: DurationNanos = DurationNanos::from_secs(60);
 /// A complete read rules out any order it did not return. An incomplete one rules out only an
 /// order that none of its skipped rows can be and that the venue placed after the earliest time
 /// from which the read is complete.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ReportCoverage {
     skipped: AHashSet<VenueOrderId>,
     skipped_unidentified: bool,
     truncation: Option<Truncation>,
+    withheld: Vec<OrderStatusReport>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,7 +57,8 @@ impl ReportCoverage {
         }
     }
 
-    /// Records a skipped row that names no order.
+    /// Records a skipped row that names no order, or whose kind proves nothing about the order it
+    /// appears to name.
     pub(crate) fn skip_unidentified(&mut self) {
         self.skipped_unidentified = true;
     }
@@ -71,6 +73,22 @@ impl ReportCoverage {
             }
             (None, Some(since)) => Some(Truncation::Since(since)),
         };
+    }
+
+    /// The orders a skipped row names.
+    pub(crate) fn skipped(&self) -> &AHashSet<VenueOrderId> {
+        &self.skipped
+    }
+
+    /// Holds back the report of an order an unread row at least as new left stale. It answers for
+    /// nothing, but a lookup still reads which venue order echoes which client order ID from it.
+    pub(crate) fn withhold(&mut self, report: OrderStatusReport) {
+        self.withheld.push(report);
+    }
+
+    /// The reports held back by [`Self::withhold`].
+    pub(crate) fn withheld(&self) -> &[OrderStatusReport] {
+        &self.withheld
     }
 
     /// Whether the read skipped no row and reached its end.

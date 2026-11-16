@@ -1,0 +1,24 @@
+{
+  "trade": {
+    "trade_id": "e8cb18d4-8b99-40d3-9fce-cc0e33422e67",
+    "market_ticker": "KXBTC15M-26OCT162345-45",
+    "yes_price_dollars": "0.123456",
+    "no_price_dollars": "0.876544",
+    "count_fp": "7.25",
+    "taker_book_side": "ask",
+    "taker_outcome_side": "no",
+    "is_block_trade": false,
+    "ts_ms": 1700000123456,
+    "ts": 1700000123
+  },
+  "ticker": {
+    "market_ticker": "KXBTC15M-26OCT162345-45",
+    "yes_bid_dollars": "0.123456",
+    "yes_ask_dollars": "0.789123",
+    "yes_bid_size_fp": "3.25",
+    "yes_ask_size_fp": "6.75",
+    "price_dollars": "0.246800",
+    "ts_ms": 1700000123789,
+    "ts": 1700000123
+  }
+}

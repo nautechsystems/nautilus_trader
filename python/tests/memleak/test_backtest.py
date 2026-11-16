@@ -86,9 +86,11 @@ def _assert_backtest_released() -> None:
 
 def _run_backtest() -> tuple[int, int, weakref.ReferenceType[QuoteCountActor]]:
     engine = BacktestEngine(_ENGINE_CONFIG)
+
     actor = QuoteCountActor(
         QuoteCountActorConfig(instrument_id=str(_INSTRUMENT.id), log_events=False),
     )
+
     try:
         engine.add_venue(
             venue=_VENUE,

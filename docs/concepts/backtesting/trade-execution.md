@@ -81,7 +81,8 @@ After the iteration, the engine restores matching references from the available 
 - With L2 or L3 data, the depth book stays the independent source of bid and ask state.
 - With an L1 quote baseline, the non-aggressor side is restored from the latest quote.
 - With trade-only L1 data, no quote baseline exists to restore, so the latest trade continues to define the
-  available top-of-book state.
+  available top-of-book state. Each trade sets the non-aggressor side to its own price, so it never matches
+  resting orders at an earlier trade's price.
 
 This distinction matters when interpreting a stream of trades without quotes. Repeated trades can
 move the simulated L1 state, but quote-backed L1 matching does not progressively discard the
@@ -204,8 +205,32 @@ For L3 MBO books:
 - A completed book snapshot keeps only surviving tracked order IDs ahead, each capped at its previous
   quantity.
 
-Changing a simulated order's price resets its queue position at the new level. A quantity-only change keeps
-the progress already made.
+### Order modifications
+
+Changing a simulated order's price resets its queue position at the new level. By default, a quantity-only
+change keeps the progress already made.
+
+Pass an `OrderPriorityResetPolicy` from `nautilus_trader.execution` as `order_priority_reset_policy` on
+`BacktestVenueConfig`, `SandboxExecutionClientConfig`, or `BacktestEngine.add_venue()`:
+
+| Policy                       | Quantity-only decrease | Quantity-only increase |
+| ---------------------------- | ---------------------- | ---------------------- |
+| `PRICE_CHANGE` (default)     | Preserve               | Preserve               |
+| `PRICE_OR_QUANTITY_INCREASE` | Preserve               | Reset                  |
+| `ANY_MODIFY`                 | Reset                  | Reset                  |
+
+Each successful `ModifyOrder` command applies the policy to the remaining resting order.
+`PRICE_OR_QUANTITY_INCREASE` also resets priority when the limit or trigger price changes.
+`ANY_MODIFY` resets priority even when the command leaves quantity and prices unchanged.
+A reset moves the order behind other simulated orders at its price, even with `queue_position=False`.
+With queue tracking enabled, it also snapshots the displayed quantity ahead again.
+Rejected modifications and automatic quantity updates, such as contingent order quantity synchronization,
+preserve priority.
+
+`ANY_MODIFY` models the queue reset on amendments documented by
+[Binance USD-M](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Modify-Order).
+`PRICE_OR_QUANTITY_INCREASE` matches
+[Kraken spot's quantity-only amendment rules](https://docs.kraken.com/exchange/guides/general/amends#queue-priority).
 
 ### L1 queue tracking
 

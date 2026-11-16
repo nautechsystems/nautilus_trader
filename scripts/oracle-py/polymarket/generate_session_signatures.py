@@ -55,6 +55,7 @@ def main() -> None:
         raise RuntimeError(f"Expected polymarket-client {UPSTREAM_VERSION}")
 
     account = Account.from_key(PRIVATE_KEY)
+
     order = {
         "salt": 123456789,
         "maker": WALLET,
@@ -70,7 +71,9 @@ def main() -> None:
         "builder": ZERO_BYTES32,
         "signature": "",
     }
+
     vectors = []
+
     for neg_risk, exchange in [
         (False, "0xE111180000d2663C0091e4f400237545B87B996B"),
         (True, "0xe2222d279d744050d28e00520010520000310F59"),
@@ -92,6 +95,7 @@ def main() -> None:
             metadata=order["metadata"],
             builder=order["builder"],
         )
+
         signature = (
             "0x"
             + account.sign_message(
@@ -113,6 +117,7 @@ def main() -> None:
         )
 
     protocol_vectors = []
+
     for market_version, domain_version, neg_risk, exchange in [
         ("v1", "2", False, "0xE111180000d2663C0091e4f400237545B87B996B"),
         ("v1", "2", True, "0xe2222d279d744050d28e00520010520000310F59"),
@@ -145,6 +150,7 @@ def main() -> None:
                 "0x" + account.sign_message(encode_typed_data(full_message=typed)).signature.hex()
             )
             wrapped = build_order_signature(unsigned, signature)
+
             if signature_type == SIGNATURE_TYPE_POLY_1271:
                 wrapped = wrap_deposit_wallet_signature(
                     signer=account.address,
@@ -169,6 +175,7 @@ def main() -> None:
                     "signature_chunks": [wrapped[i : i + 96] for i in range(0, len(wrapped), 96)],
                 },
             )
+
     protocol_fixture = {
         "source": UPSTREAM_SOURCE,
         "upstream_revision": UPSTREAM_REVISION,
@@ -177,6 +184,7 @@ def main() -> None:
         "private_key": PRIVATE_KEY,
         "vectors": protocol_vectors,
     }
+
     fixture_dir = Path(__file__).resolve().parents[3] / "crates/adapters/polymarket/test_data"
     (fixture_dir / "protocol_signatures.json").write_text(
         json.dumps(protocol_fixture, indent=2) + "\n",
@@ -194,6 +202,7 @@ def main() -> None:
         "order": order,
         "vectors": vectors,
     }
+
     output = (
         Path(__file__).resolve().parents[3]
         / "crates"

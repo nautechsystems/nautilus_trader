@@ -280,6 +280,7 @@ def _make_pool() -> object:
     dex = _make_dex(chain)
     token0 = _make_token0(chain)
     token1 = _make_token1(chain)
+
     return Pool(
         chain=chain,
         dex=dex,

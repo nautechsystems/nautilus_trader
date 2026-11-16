@@ -15,7 +15,10 @@
 
 //! Conversion functions that translate AX API schemas into Nautilus types.
 
-use std::sync::LazyLock;
+use std::{
+    io::{Cursor, Write},
+    sync::LazyLock,
+};
 
 use ahash::RandomState;
 use anyhow::Context;
@@ -117,8 +120,9 @@ const TRADE_ID_DOMAIN: &[u8] = b"nautilus-architect-ax/trade-id/v1";
 /// Both REST and WebSocket trade models require the aggressor side, preserving identity across
 /// transports for the same print.
 ///
-/// The result is exactly 36 characters, which is [`TradeId`]'s maximum, so a timestamp beyond
-/// 19 digits (year 2262) returns an error rather than silently truncating.
+/// The decimal timestamp and 16-digit hexadecimal digest are separated by a hyphen. A timestamp
+/// beyond 19 digits exceeds [`TradeId`]'s 36-character maximum and returns an error rather than
+/// silently truncating.
 ///
 /// # Errors
 ///
@@ -129,6 +133,8 @@ pub fn create_architect_trade_id(
     quantity: Quantity,
     aggressor_side: AggressorSide,
 ) -> anyhow::Result<TradeId> {
+    const FAILED: &str = "Failed to create TradeId";
+
     // Normalized decimals, not raw fixed-point, so the identity survives a precision change
     let price = price.as_decimal().normalize();
     let quantity = quantity.as_decimal().normalize();
@@ -139,21 +145,36 @@ pub fn create_architect_trade_id(
         AggressorSide::Sell => b'S',
     };
 
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(TRADE_ID_DOMAIN);
-    hasher.update(&ts_event.as_u64().to_be_bytes());
-    hasher.update(&price.mantissa().to_be_bytes());
-    hasher.update(&price.scale().to_be_bytes());
-    hasher.update(&quantity.mantissa().to_be_bytes());
-    hasher.update(&quantity.scale().to_be_bytes());
-    hasher.update(&[side]);
+    // One-shot hashing avoids streaming setup for this fixed-size trade identity
+    let mut input = [0u8; TRADE_ID_DOMAIN.len() + 8 + 16 + 4 + 16 + 4 + 1];
+    let mut offset = 0;
+    for part in [
+        TRADE_ID_DOMAIN,
+        &ts_event.as_u64().to_be_bytes(),
+        &price.mantissa().to_be_bytes(),
+        &price.scale().to_be_bytes(),
+        &quantity.mantissa().to_be_bytes(),
+        &quantity.scale().to_be_bytes(),
+        &[side],
+    ] {
+        let end = offset + part.len();
+        input[offset..end].copy_from_slice(part);
+        offset = end;
+    }
+
+    let hash = blake3::hash(&input);
 
     let mut digest = [0u8; 8];
-    digest.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
+    digest.copy_from_slice(&hash.as_bytes()[..8]);
     let suffix = u64::from_be_bytes(digest);
 
-    TradeId::new_checked(format!("{}-{suffix:016x}", ts_event.as_u64()))
-        .context("Failed to create TradeId")
+    // Hold even a 20-digit timestamp so TradeId still rejects IDs beyond its capacity
+    let mut buffer = [0u8; 37];
+    let mut cursor = Cursor::new(buffer.as_mut_slice());
+    write!(cursor, "{}-{suffix:016x}", ts_event.as_u64()).context(FAILED)?;
+    let len = cursor.position() as usize;
+
+    TradeId::from_bytes(&buffer[..len]).context(FAILED)
 }
 
 /// Cached hasher state for deterministic client order ID to cid conversion
@@ -264,6 +285,47 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, AggressorSide::Buy, "0-d66565de305e3202")]
+    #[case(9, AggressorSide::Buy, "9-234d0e8a3df3ae3a")]
+    #[case(10, AggressorSide::Buy, "10-530bf8286ba92b03")]
+    #[case(11, AggressorSide::Buy, "11-011253287c67070e")]
+    #[case(
+        CAPTURED_TS_EVENT,
+        AggressorSide::Buy,
+        "1766193240334589144-38b4fe5a94a253d0"
+    )]
+    #[case(
+        CAPTURED_TS_EVENT,
+        AggressorSide::Sell,
+        "1766193240334589144-5e683093e85c0d45"
+    )]
+    #[case(
+        CAPTURED_TS_EVENT,
+        AggressorSide::NoAggressor,
+        "1766193240334589144-925e31984d86a444"
+    )]
+    #[case(
+        9_999_999_999_999_999_999,
+        AggressorSide::Buy,
+        "9999999999999999999-9b3cb6ef2c9195a6"
+    )]
+    fn test_create_architect_trade_id_preserves_bytes(
+        #[case] timestamp: u64,
+        #[case] aggressor_side: AggressorSide,
+        #[case] expected: &str,
+    ) {
+        let trade_id = create_architect_trade_id(
+            UnixNanos::from(timestamp),
+            Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
+            Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
+            aggressor_side,
+        )
+        .unwrap();
+
+        assert_eq!(trade_id.as_str(), expected);
+    }
+
+    #[rstest]
     fn test_create_architect_trade_id_is_deterministic() {
         assert_eq!(captured_trade_id(), captured_trade_id());
     }
@@ -319,10 +381,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_architect_trade_id_rejects_timestamp_beyond_capacity() {
-        // `u64::MAX` is 20 digits, one past what the 36-character format allows
+    #[case(10_000_000_000_000_000_000)]
+    #[case(u64::MAX)]
+    fn test_create_architect_trade_id_rejects_timestamp_beyond_capacity(#[case] timestamp: u64) {
+        // Twenty-digit timestamps exceed the 36-character format
         let error = create_architect_trade_id(
-            UnixNanos::from(u64::MAX),
+            UnixNanos::from(timestamp),
             Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
             AggressorSide::Buy,

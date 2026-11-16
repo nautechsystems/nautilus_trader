@@ -1,0 +1,31 @@
+{
+  "market": {
+    "close_time": "2029-12-30T04:05:06Z",
+    "event_ticker": "TEST-KALSHI",
+    "latest_expiration_time": "2030-01-03T05:06:07Z",
+    "market_type": "binary",
+    "notional_value_dollars": "1.0000",
+    "open_time": "2026-01-02T03:04:05Z",
+    "price_ranges": [
+      {
+        "start": "0.0000",
+        "end": "0.1000",
+        "step": "0.0010"
+      },
+      {
+        "start": "0.1000",
+        "end": "0.9000",
+        "step": "0.0100"
+      },
+      {
+        "start": "0.9000",
+        "end": "1.0000",
+        "step": "0.0010"
+      }
+    ],
+    "settlement_bounds_type": "default",
+    "status": "active",
+    "ticker": "TEST-KALSHI-30",
+    "updated_time": "2026-11-10T06:02:00Z"
+  }
+}

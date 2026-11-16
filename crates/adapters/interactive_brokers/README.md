@@ -14,13 +14,15 @@ client and connects it to NautilusTrader's live data, execution, historical data
 loading infrastructure. Optional PyO3 bindings expose the same implementation through
 `nautilus_trader`.
 
+The official Interactive Brokers TWS API reference can be found at
+<https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 
 ## What this crate provides
 
@@ -35,22 +37,12 @@ event-driven architecture, providing research-to-live semantic parity.
 - `python`: PyO3 bindings exposed through `nautilus_trader.adapters.interactive_brokers` when the
   `python` feature is enabled.
 
-## Feature flags
+## Configuration
 
-This crate provides feature flags to control source code inclusion during compilation:
+See the [integration guide](../../../docs/integrations/interactive_brokers.md) for client settings,
+credentials, and connection setup.
 
-- `examples`: Enables the crate's example binaries.
-- `execution` (default): Enables order execution and networking support.
-- `extension-module`: Builds the crate as a Python extension module. This is
-  the feature used by the `nautilus_trader` package and includes `python` and
-  `gateway`.
-- `gateway`: Enables the Dockerized IB Gateway manager via
-  [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
-  `python`.
-- `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical client,
-  and the instrument provider.
-
-## Default ports
+### Default ports
 
 Use `127.0.0.1` unless you are connecting to a remote host.
 
@@ -67,19 +59,32 @@ This crate defaults to `4002`, which matches paper-trading IB Gateway and the
 default Dockerized IB Gateway paper setup. If you are connecting to TWS or to a
 live Gateway session, set the port explicitly in your config.
 
-## Market data timestamps
+### Market data timestamps
 
 Configure TWS or IB Gateway to return market data timestamps in UTC before connecting
 NautilusTrader. The adapter does not convert these timestamps automatically at runtime.
 
+## Feature flags
+
+Feature flags control code inclusion for Rust builds and Python bindings:
+
+- `examples`: Enables the crate's example binaries.
+- `execution` (default): Enables order execution and networking support.
+- `extension-module`: Builds the crate as a Python extension module. This is
+  the feature used by the `nautilus_trader` package and includes `python` and
+  `gateway`.
+- `gateway`: Enables the Dockerized IB Gateway manager via
+  [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
+  `python`.
+- `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical client,
+  and the instrument provider.
+
 ## Documentation
 
-- [Crate docs](https://docs.rs/nautilus-interactive-brokers): generated Rust API reference.
-- [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/):
-  setup, configuration, symbology, and usage.
-- [Rust node examples](examples): live data and execution testers.
-- [Python live-node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):
-  Python configuration examples.
+- [Rust API reference](https://docs.rs/nautilus-interactive-brokers)
+- [Integration guide](../../../docs/integrations/interactive_brokers.md): Setup, configuration, symbology, and usage.
+- [Rust examples](examples/): Live data and execution testers.
+- [Python examples](../../../examples/live/interactive_brokers/): Python configuration examples.
 
 ## License
 

@@ -1,0 +1,14 @@
+{
+  "api_key_id": "data-key",
+  "private_key": "data-private-key",
+  "environment": "demo",
+  "base_url_http": "http://localhost:14001/custom-api",
+  "base_url_ws": "ws://localhost:14002/custom-ws",
+  "proxy_url": "http://proxy-user:data-password@localhost:14003",
+  "http_timeout_secs": 17,
+  "ws_timeout_secs": 19,
+  "transport_backend": "sockudo",
+  "update_instruments_interval_mins": 23,
+  "book_snapshot_timeout_secs": 31,
+  "instrument_ids": ["KXBTC15M-26OCT31-T100000.KALSHI"]
+}

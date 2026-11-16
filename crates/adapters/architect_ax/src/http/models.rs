@@ -1768,8 +1768,17 @@ mod tests {
     fn test_deserialize_instruments_response() {
         let json = include_str!("../../test_data/http_get_instruments.json");
         let response: AxInstrumentsResponse = serde_json::from_str(json).unwrap();
+
         assert_eq!(response.instruments.len(), 3);
-        assert_eq!(response.instruments[0].symbol, "EURUSD-PERP");
+        let eurusd = &response.instruments[0];
+        assert_eq!(eurusd.symbol, "EURUSD-PERP");
+        assert_eq!(eurusd.category, AxCategory::Fx);
+        assert_eq!(eurusd.tick_size, dec!(0.0001));
+        assert_eq!(eurusd.minimum_order_size, dec!(100));
+        assert_eq!(response.instruments[1].symbol, "XAU-PERP");
+        assert_eq!(response.instruments[1].category, AxCategory::Metals);
+        assert_eq!(response.instruments[2].symbol, "NVDA-PERP");
+        assert_eq!(response.instruments[2].category, AxCategory::Equities);
     }
 
     #[rstest]

@@ -54,14 +54,26 @@ def test_constants_and_factory() -> None:
     assert FinFeedDataClientFactory().name() == FINFEED
 
 
-def test_config_defaults() -> None:
+@pytest.mark.parametrize(
+    "values",
+    [
+        {},
+        {
+            "http_timeout_secs": None,
+            "retry_operation_timeout_ms": None,
+            "retry_max_elapsed_ms": None,
+        },
+    ],
+)
+def test_config_defaults(values: dict) -> None:
     """
     Expose every default without resolving credentials.
     """
-    config = FinFeedDataClientConfig()
+    config = FinFeedDataClientConfig(**values)
+
     expected = {
         "base_url_http": "https://api.prediction-markets.finfeedapi.com/v1/",
-        "http_timeout_secs": 30,
+        "http_timeout_secs": 300,
         "max_concurrent_requests": 1,
         "attempt_budget": 100,
         "min_request_interval_ms": 10_000,
@@ -70,16 +82,18 @@ def test_config_defaults() -> None:
         "retry_delay_max_ms": 10_000,
         "retry_backoff_factor": 2.0,
         "retry_jitter_ms": 0,
-        "retry_operation_timeout_ms": 30_000,
+        "retry_operation_timeout_ms": 330_000,
         "retry_immediate_first": False,
-        "retry_max_elapsed_ms": 120_000,
+        "retry_max_elapsed_ms": 600_000,
         "poll_interval_ms": 10_000,
         "poll_limit": 100,
         "connect_timeout_secs": 120,
         "instruments": [],
         "has_api_key": False,
         "has_proxy_url": False,
+        "kalshi_metadata_url": None,
     }
+
     assert {name: getattr(config, name) for name in expected} == expected
 
 
@@ -104,13 +118,16 @@ def test_config_distinct_values_and_secret_redaction() -> None:
         "poll_interval_ms": 137,
         "poll_limit": 23,
         "connect_timeout_secs": 43,
+        "kalshi_metadata_url": "http://localhost:8125/trade-api/v2",
     }
+
     config = FinFeedDataClientConfig(
         api_key="projection-secret",
         proxy_url="http://user:proxy-secret@localhost:8124",
         instruments=[_selection()],
         **expected,
     )
+
     assert {name: getattr(config, name) for name in expected} == expected
     assert config.has_api_key is True
     assert config.has_proxy_url is True
@@ -148,6 +165,7 @@ def test_polling_capacity_reaches_client_construction(limit: int) -> None:
         instruments=[_selection()],
         poll_limit=limit,
     )
+
     assert config.poll_limit == limit
     node = _build_node(config)
     assert node.trader_id == TraderId("TESTER-001")
@@ -179,6 +197,7 @@ def test_polling_capacity_reaches_client_construction(limit: int) -> None:
         ({"retry_backoff_factor": 0.0}, "invalid retry backoff"),
         ({"base_url_http": "http://example.com/"}, "base URL must be HTTPS"),
         ({"proxy_url": "bad proxy"}, "invalid proxy URL"),
+        ({"kalshi_metadata_url": "bad endpoint"}, "invalid public Kalshi metadata"),
     ],
 )
 def test_invalid_values_fail_at_client_construction(values: dict, message: str) -> None:

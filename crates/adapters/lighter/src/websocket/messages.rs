@@ -478,6 +478,9 @@ pub struct LighterWsTx {
     pub event_info: String,
 }
 
+/// A venue WebSocket data or account frame.
+///
+/// Account `transaction_time` fields preserve raw microseconds, including zero.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum LighterWsFrame {
@@ -601,6 +604,8 @@ pub enum LighterWsFrame {
         last_funding_round: Option<AHashMap<Ustr, Decimal>>,
         #[serde(default, deserialize_with = "deserialize_optional_decimal_map")]
         last_funding_discount: Option<AHashMap<Ustr, Decimal>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transaction_time: Option<i64>,
     },
     #[serde(rename = "update/account_all_positions")]
     AccountAllPositions {
@@ -612,6 +617,8 @@ pub enum LighterWsFrame {
         last_funding_round: Option<AHashMap<Ustr, Decimal>>,
         #[serde(default, deserialize_with = "deserialize_optional_decimal_map")]
         last_funding_discount: Option<AHashMap<Ustr, Decimal>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transaction_time: Option<i64>,
     },
     #[serde(
         rename = "update/account_all_assets",
@@ -621,6 +628,8 @@ pub enum LighterWsFrame {
         assets: AHashMap<Ustr, LighterAsset>,
         channel: Ustr,
         timestamp: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transaction_time: Option<i64>,
     },
     #[serde(rename = "update/user_stats", alias = "subscribed/user_stats")]
     UserStats {
@@ -1580,6 +1589,7 @@ mod tests {
                 assets,
                 channel,
                 timestamp,
+                transaction_time,
             } => {
                 assert_eq!(channel, Ustr::from("account_all_assets:1234"));
                 let asset = assets.get(&Ustr::from("3")).unwrap();
@@ -1593,6 +1603,7 @@ mod tests {
                 );
                 assert_eq!(asset.margin_mode, Ustr::from("disabled"));
                 assert_eq!(timestamp, 1_781_161_199_648);
+                assert_eq!(transaction_time, None);
             }
             _ => panic!("expected account all assets frame"),
         }
@@ -1779,6 +1790,73 @@ mod tests {
                 assert_eq!(position.sign, 1);
             }
             _ => panic!("expected account all positions snapshot, was {frame:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::absent(None, false)]
+    #[case::null(None, true)]
+    #[case::zero(Some(0), false)]
+    #[case::negative(Some(-1), false)]
+    #[case::micros(Some(1_791_406_944_316_056), false)]
+    #[case::exact_integer(Some(9_007_199_254_740_993), false)]
+    #[case::maximum(Some(i64::MAX), false)]
+    fn test_account_transaction_time_round_trip(
+        #[values("subscribed", "update")] prefix: &str,
+        #[values("positions", "assets")] channel: &str,
+        #[case] transaction_time: Option<i64>,
+        #[case] explicit_null: bool,
+    ) {
+        let fixture = match channel {
+            "positions" => {
+                include_str!("../../test_data/ws_account_all_positions_transaction_time.json")
+            }
+            "assets" => include_str!("../../test_data/ws_account_all_assets_transaction_time.json"),
+            _ => unreachable!(),
+        };
+
+        let mut value: Value = serde_json::from_str(fixture).unwrap();
+        value["type"] = serde_json::json!(format!("{prefix}/account_all_{channel}"));
+        match transaction_time {
+            Some(timestamp) => value["transaction_time"] = serde_json::json!(timestamp),
+            None if explicit_null => value["transaction_time"] = Value::Null,
+            None => {
+                value.as_object_mut().unwrap().remove("transaction_time");
+            }
+        }
+
+        let text = value.to_string();
+
+        for frame in [
+            serde_json::from_str::<LighterWsFrame>(&text).unwrap(),
+            serde_json::from_value(value).unwrap(),
+        ] {
+            let preserved = match &frame {
+                LighterWsFrame::AccountAllPositionsSnapshot {
+                    transaction_time, ..
+                }
+                | LighterWsFrame::AccountAllPositions {
+                    transaction_time, ..
+                }
+                | LighterWsFrame::AccountAllAssets {
+                    transaction_time, ..
+                } => *transaction_time,
+                _ => panic!("expected account position or asset frame"),
+            };
+
+            let serialized = serde_json::to_value(&frame).unwrap();
+
+            assert_eq!(preserved, transaction_time);
+            assert_eq!(
+                serialized.get("transaction_time"),
+                transaction_time
+                    .map(|timestamp| serde_json::json!(timestamp))
+                    .as_ref(),
+            );
+            assert_eq!(
+                serde_json::from_value::<LighterWsFrame>(serialized).unwrap(),
+                frame
+            );
         }
     }
 

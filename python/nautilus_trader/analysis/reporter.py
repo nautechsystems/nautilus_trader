@@ -168,6 +168,7 @@ class ReportProvider:
         if snapshots:
             all_positions.extend(snapshots)
             snapshot_ids = {str(p.id) for p in snapshots}
+
         if not all_positions:
             return pd.DataFrame()
         data = [p.to_dict() for p in all_positions]
@@ -177,7 +178,6 @@ class ReportProvider:
         # Preserve source nanoseconds: pandas coerces mixed int/None columns to float64
         ts_closed = [data[i]["ts_closed"] for i in report.index]
         report = report.set_index("position_id")
-
         for col in (
             "signed_qty",
             "quote_currency",

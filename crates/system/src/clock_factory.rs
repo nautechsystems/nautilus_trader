@@ -71,9 +71,24 @@ impl ClockFactory {
     }
 
     /// Build a fresh component clock instance.
+    ///
+    /// Virtual clocks start at the primary clock's current time when it exists.
     #[must_use]
     pub fn create_component_clock(&self) -> Rc<RefCell<dyn Clock>> {
-        (self.create_clock)()
+        let clock = (self.create_clock)();
+
+        if let Some(primary) = self.clock.get() {
+            let now = primary.borrow().timestamp_ns();
+            if let Some(clock) = clock
+                .borrow_mut()
+                .as_any_mut()
+                .downcast_mut::<VirtualClock>()
+            {
+                clock.set_time(now);
+            }
+        }
+
+        clock
     }
 
     #[cfg(feature = "live")]
@@ -134,6 +149,31 @@ mod tests {
         let first = factory.create_component_clock();
         let second = factory.create_component_clock();
 
+        assert!(!Rc::ptr_eq(&first, &second));
+    }
+
+    #[rstest]
+    fn test_component_clock_starts_at_primary_time() {
+        let factory = ClockFactory::test_default();
+        let primary = factory.clock();
+        primary
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .unwrap()
+            .set_time(42u64.into());
+        let first = factory.create_component_clock();
+        primary
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .unwrap()
+            .set_time(84u64.into());
+        let second = factory.create_component_clock();
+
+        assert_eq!(first.borrow().timestamp_ns().as_u64(), 42);
+        assert_eq!(second.borrow().timestamp_ns().as_u64(), 84);
+        assert!(!Rc::ptr_eq(&primary, &first));
         assert!(!Rc::ptr_eq(&first, &second));
     }
 

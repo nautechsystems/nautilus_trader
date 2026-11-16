@@ -62,12 +62,14 @@ def test_register_tiered_tick_scheme() -> None:
     Tier boundaries preserve exact outward rounding after registration.
     """
     name = f"TEST_PY_TIERS_{uuid4().hex}"
+
     scheme = TieredTickScheme(
         name,
         tiers=[(0.05, 10.00, 0.05), (10.00, float("inf"), 0.25)],
         price_precision=2,
         max_ticks_per_tier=1000,
     )
+
     register_tick_scheme(scheme)
     registered = get_tick_scheme(name.lower())
 

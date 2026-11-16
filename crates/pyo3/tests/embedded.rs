@@ -48,15 +48,19 @@ fn test_embedded_module_shares_host_types_and_selects_adapters() {
 
         for name in [
             "architect_ax",
+            "betfair",
             "binance",
             "bybit",
+            "coinapi",
             "coinbase",
             "databento",
             "deribit",
             "derive",
             "dydx",
+            "finfeed",
             "hyperliquid",
             "interactive_brokers",
+            "kalshi",
             "kraken",
             "lighter",
             "okx",
@@ -70,14 +74,5 @@ fn test_embedded_module_shares_host_types_and_selects_adapters() {
                 "{name}"
             );
         }
-
-        assert_eq!(
-            module.hasattr("betfair").unwrap(),
-            cfg!(feature = "betfair")
-        );
-        assert_eq!(
-            module.hasattr("coinapi").unwrap(),
-            cfg!(feature = "coinapi")
-        );
     });
 }

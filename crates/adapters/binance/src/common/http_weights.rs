@@ -20,6 +20,8 @@
 //! <https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api>
 //! COIN-M history costs follow the shared architecture migration:
 //! <https://developers.binance.com/docs/derivatives/coin-margined-futures/Important-CM-UM-Integration-Notice>
+//! PAPI costs follow the Portfolio Margin trade and account references:
+//! <https://developers.binance.com/docs/derivatives/portfolio-margin/general-info>
 
 use nautilus_network::http::Method;
 
@@ -96,6 +98,125 @@ pub(crate) fn request_weight_futures(
         ("premiumIndex", true) if !coin_m => 1,
         ("premiumIndex", _) => 10,
         ("fundingRate" | "fundingInfo" | "futures/data/openInterestHist", _) if !coin_m => 0,
+        _ => 1,
+    }
+}
+
+/// Strips the PAPI version prefix from an absolute or relative endpoint path, returning the
+/// route that endpoint weights and order counts are matched against.
+pub(crate) fn papi_route(path: &str) -> &str {
+    let path = path.trim_start_matches('/');
+    path.strip_prefix("papi/v1/")
+        .or_else(|| path.strip_prefix("papi/v2/"))
+        .unwrap_or(path)
+}
+
+/// Returns the IP request weight for a Portfolio Margin (PAPI) endpoint.
+///
+/// PAPI charges route-specific IP weight for mutating requests as well as reads, including
+/// order placement and amendment, so every route is matched on both method and path.
+/// Parameter-dependent costs follow the official catalog: `um/openOrders`, `cm/openOrders`,
+/// `um/algo/openAlgoOrders`, `cm/conditional/allOrders`, and `cm/conditional/openOrders` cost 1
+/// with a `symbol` and 40 without one, `um/apiTradingStatus` costs 1 with a `symbol` and 10 without, `um/forceOrders`
+/// and `cm/forceOrders` cost 20 with a `symbol` and 50 without, and `cm/allOrders` and
+/// `cm/userTrades` cost 20 with a `symbol` and 40 with a `pair`.
+///
+/// References:
+/// - <https://developers.binance.com/docs/catalog/advanced-trading-derivatives-trading-portfolio-margin/api/rest-api/trade>
+/// - <https://developers.binance.com/docs/catalog/advanced-trading-derivatives-trading-portfolio-margin/api/rest-api/account>
+pub(crate) fn request_weight_papi(method: &Method, path: &str, query: &str) -> u32 {
+    let path = papi_route(path);
+
+    let has_symbol = query_value(query, "symbol").is_some();
+
+    match (method, path) {
+        (&Method::GET, "ping" | "rateLimit/order") => 1,
+        (&Method::GET, "account" | "balance") => 20,
+        (&Method::GET, "um/commissionRate" | "cm/commissionRate") => 20,
+        (&Method::GET, "um/income" | "cm/income") => 30,
+        (&Method::GET, "um/feeBurn" | "repay-futures-switch") => 30,
+        (&Method::GET, "um/positionSide/dual" | "cm/positionSide/dual") => 30,
+        (&Method::GET, "portfolio/interest-history") => 50,
+        (&Method::GET, "portfolio/negative-balance-exchange-record") => 100,
+        (&Method::GET, "um/order/asyn" | "um/trade/asyn" | "um/income/asyn") => 1_500,
+        (&Method::GET, "um/order/asyn/id" | "um/trade/asyn/id" | "um/income/asyn/id") => 10,
+        (
+            &Method::GET,
+            "um/account" | "um/accountConfig" | "um/symbolConfig" | "um/positionRisk",
+        ) => 5,
+        (&Method::GET, "um/adlQuantile" | "cm/adlQuantile" | "um/userTrades") => 5,
+        (&Method::GET, "cm/account") => 5,
+        (&Method::GET, "margin/allOrderList" | "margin/allOrders") => 100,
+        (&Method::GET, "margin/marginLoan" | "margin/repayLoan" | "margin/order") => 10,
+        (
+            &Method::GET,
+            "margin/maxBorrowable"
+            | "margin/maxWithdraw"
+            | "margin/myTrades"
+            | "margin/openOrderList"
+            | "margin/openOrders"
+            | "margin/orderList",
+        ) => 5,
+        (&Method::GET, "margin/marginInterestHistory" | "margin/forceOrders") => 1,
+        (&Method::GET, "um/allOrders" | "um/algo/allAlgoOrders") => 5,
+        (&Method::GET, "um/leverageBracket" | "cm/leverageBracket" | "cm/positionRisk") => 1,
+        (
+            &Method::GET,
+            "um/algo/algoOrder"
+            | "um/order"
+            | "um/openOrder"
+            | "um/orderAmendment"
+            | "cm/order"
+            | "cm/openOrder"
+            | "cm/orderAmendment"
+            | "cm/conditional/openOrder"
+            | "cm/conditional/orderHistory",
+        ) => 1,
+        (
+            &Method::GET,
+            "um/openOrders"
+            | "cm/openOrders"
+            | "um/algo/openAlgoOrders"
+            | "cm/conditional/allOrders"
+            | "cm/conditional/openOrders",
+        ) => {
+            if has_symbol {
+                1
+            } else {
+                40
+            }
+        }
+        (&Method::GET, "um/apiTradingStatus") => {
+            if has_symbol {
+                1
+            } else {
+                10
+            }
+        }
+        (&Method::GET, "um/forceOrders" | "cm/forceOrders") => {
+            if has_symbol {
+                20
+            } else {
+                50
+            }
+        }
+        (&Method::GET, "cm/allOrders" | "cm/userTrades") => {
+            if has_symbol {
+                20
+            } else {
+                40
+            }
+        }
+        (&Method::POST, "auto-collection" | "bnb-transfer" | "repay-futures-switch") => 750,
+        (&Method::POST, "repay-futures-negative-balance") => 750,
+        (&Method::POST, "asset-collection") => 30,
+        (&Method::POST, "marginLoan" | "repayLoan") => 100,
+        (&Method::POST, "margin/repay-debt") => 3_000,
+        (&Method::POST, "um/stock/contract") => 5,
+        (&Method::DELETE, "margin/allOpenOrders") => 5,
+        (&Method::DELETE, "margin/order" | "margin/orderList") => 2,
+        // Remaining order, conditional, algo, leverage, mode, fee-burn, listen-key, and
+        // undocumented routes all cost one IP weight
         _ => 1,
     }
 }
@@ -301,5 +422,140 @@ mod tests {
             request_weight_futures(&Method::GET, path, "", false),
             weight
         );
+    }
+
+    #[rstest]
+    #[case(Method::GET, "/papi/v1/ping", "", 1)]
+    #[case(Method::GET, "/papi/v1/rateLimit/order", "", 1)]
+    #[case(Method::GET, "/papi/v1/account", "", 20)]
+    #[case(Method::GET, "/papi/v1/balance", "", 20)]
+    #[case(Method::GET, "/papi/v1/um/account", "", 5)]
+    #[case(Method::GET, "/papi/v2/um/account", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/accountConfig", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/symbolConfig", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/positionRisk", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/adlQuantile", "", 5)]
+    #[case(Method::GET, "/papi/v1/cm/adlQuantile", "", 5)]
+    #[case(Method::GET, "/papi/v1/cm/account", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/userTrades", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/commissionRate", "", 20)]
+    #[case(Method::GET, "/papi/v1/cm/commissionRate", "", 20)]
+    #[case(Method::GET, "/papi/v1/um/income", "", 30)]
+    #[case(Method::GET, "/papi/v1/cm/income", "", 30)]
+    #[case(Method::GET, "/papi/v1/um/feeBurn", "", 30)]
+    #[case(Method::GET, "/papi/v1/repay-futures-switch", "", 30)]
+    #[case(Method::GET, "/papi/v1/um/positionSide/dual", "", 30)]
+    #[case(Method::GET, "/papi/v1/cm/positionSide/dual", "", 30)]
+    #[case(Method::GET, "/papi/v1/portfolio/interest-history", "", 50)]
+    #[case(
+        Method::GET,
+        "/papi/v1/portfolio/negative-balance-exchange-record",
+        "",
+        100
+    )]
+    #[case(Method::GET, "/papi/v1/um/order/asyn", "", 1_500)]
+    #[case(Method::GET, "/papi/v1/um/trade/asyn", "", 1_500)]
+    #[case(Method::GET, "/papi/v1/um/income/asyn", "", 1_500)]
+    #[case(Method::GET, "/papi/v1/um/order/asyn/id", "", 10)]
+    #[case(Method::GET, "/papi/v1/um/trade/asyn/id", "", 10)]
+    #[case(Method::GET, "/papi/v1/um/income/asyn/id", "", 10)]
+    #[case(Method::GET, "/papi/v1/margin/allOrderList", "", 100)]
+    #[case(Method::GET, "/papi/v1/margin/allOrders", "", 100)]
+    #[case(Method::GET, "/papi/v1/margin/marginLoan", "", 10)]
+    #[case(Method::GET, "/papi/v1/margin/repayLoan", "", 10)]
+    #[case(Method::GET, "/papi/v1/margin/order", "", 10)]
+    #[case(Method::GET, "/papi/v1/margin/maxBorrowable", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/maxWithdraw", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/myTrades", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/openOrderList", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/openOrders", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/orderList", "", 5)]
+    #[case(Method::GET, "/papi/v1/margin/marginInterestHistory", "", 1)]
+    #[case(Method::GET, "/papi/v1/margin/forceOrders", "", 1)]
+    #[case(Method::GET, "/papi/v1/um/allOrders", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/algo/allAlgoOrders", "", 5)]
+    #[case(Method::GET, "/papi/v1/um/leverageBracket", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/leverageBracket", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/positionRisk", "", 1)]
+    #[case(Method::GET, "/papi/v1/um/algo/algoOrder", "", 1)]
+    #[case(Method::GET, "/papi/v1/um/algo/openAlgoOrders", "symbol=BTCUSDT", 1)]
+    #[case(Method::GET, "/papi/v1/um/algo/openAlgoOrders", "", 40)]
+    #[case(Method::GET, "/papi/v1/um/order", "", 1)]
+    #[case(Method::GET, "/papi/v1/um/openOrder", "", 1)]
+    #[case(Method::GET, "/papi/v1/um/orderAmendment", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/order", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/openOrder", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/orderAmendment", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/conditional/openOrder", "", 1)]
+    #[case(Method::GET, "/papi/v1/cm/conditional/orderHistory", "", 1)]
+    fn test_request_weight_papi_reads(
+        #[case] method: Method,
+        #[case] path: &str,
+        #[case] query: &str,
+        #[case] weight: u32,
+    ) {
+        assert_eq!(request_weight_papi(&method, path, query), weight);
+    }
+
+    #[rstest]
+    #[case("/papi/v1/um/openOrders", "symbol=BTCUSDT", 1)]
+    #[case("/papi/v1/um/openOrders", "", 40)]
+    #[case("/papi/v1/cm/openOrders", "symbol=BTCUSD_PERP", 1)]
+    #[case("/papi/v1/cm/openOrders", "", 40)]
+    #[case("/papi/v1/cm/conditional/allOrders", "symbol=BTCUSD_PERP", 1)]
+    #[case("/papi/v1/cm/conditional/allOrders", "", 40)]
+    #[case("/papi/v1/cm/conditional/openOrders", "symbol=BTCUSD_PERP", 1)]
+    #[case("/papi/v1/cm/conditional/openOrders", "", 40)]
+    #[case("/papi/v1/um/apiTradingStatus", "symbol=BTCUSDT", 1)]
+    #[case("/papi/v1/um/apiTradingStatus", "", 10)]
+    #[case("/papi/v1/um/forceOrders", "symbol=BTCUSDT", 20)]
+    #[case("/papi/v1/um/forceOrders", "", 50)]
+    #[case("/papi/v1/cm/forceOrders", "symbol=BTCUSD_PERP", 20)]
+    #[case("/papi/v1/cm/forceOrders", "", 50)]
+    #[case("/papi/v1/cm/allOrders", "symbol=BTCUSD_PERP", 20)]
+    #[case("/papi/v1/cm/allOrders", "pair=BTCUSD", 40)]
+    #[case("/papi/v1/cm/userTrades", "symbol=BTCUSD_PERP", 20)]
+    #[case("/papi/v1/cm/userTrades", "pair=BTCUSD", 40)]
+    fn test_request_weight_papi_parametrized(
+        #[case] path: &str,
+        #[case] query: &str,
+        #[case] weight: u32,
+    ) {
+        assert_eq!(request_weight_papi(&Method::GET, path, query), weight);
+    }
+
+    #[rstest]
+    #[case(Method::POST, "/papi/v1/auto-collection", 750)]
+    #[case(Method::POST, "/papi/v1/bnb-transfer", 750)]
+    #[case(Method::POST, "/papi/v1/repay-futures-switch", 750)]
+    #[case(Method::POST, "/papi/v1/repay-futures-negative-balance", 750)]
+    #[case(Method::POST, "/papi/v1/asset-collection", 30)]
+    #[case(Method::POST, "/papi/v1/marginLoan", 100)]
+    #[case(Method::POST, "/papi/v1/repayLoan", 100)]
+    #[case(Method::POST, "/papi/v1/margin/repay-debt", 3_000)]
+    #[case(Method::POST, "/papi/v1/um/stock/contract", 5)]
+    #[case(Method::DELETE, "/papi/v1/margin/allOpenOrders", 5)]
+    #[case(Method::DELETE, "/papi/v1/margin/order", 2)]
+    #[case(Method::DELETE, "/papi/v1/margin/orderList", 2)]
+    #[case(Method::POST, "/papi/v1/um/order", 1)]
+    #[case(Method::POST, "/papi/v1/cm/conditional/order", 1)]
+    #[case(Method::POST, "/papi/v1/um/algo/order", 1)]
+    #[case(Method::PUT, "/papi/v1/um/order", 1)]
+    #[case(Method::PUT, "/papi/v1/cm/order", 1)]
+    #[case(Method::DELETE, "/papi/v1/um/order", 1)]
+    #[case(Method::DELETE, "/papi/v1/um/algo/allOpenOrders", 1)]
+    #[case(Method::POST, "/papi/v1/um/leverage", 1)]
+    #[case(Method::POST, "/papi/v1/cm/positionSide/dual", 1)]
+    #[case(Method::POST, "/papi/v1/um/feeBurn", 1)]
+    #[case(Method::POST, "/papi/v1/listenKey", 1)]
+    #[case(Method::PUT, "/papi/v1/listenKey", 1)]
+    #[case(Method::DELETE, "/papi/v1/listenKey", 1)]
+    #[case(Method::GET, "/papi/v1/undocumented", 1)]
+    fn test_request_weight_papi_writes(
+        #[case] method: Method,
+        #[case] path: &str,
+        #[case] weight: u32,
+    ) {
+        assert_eq!(request_weight_papi(&method, path, ""), weight);
     }
 }

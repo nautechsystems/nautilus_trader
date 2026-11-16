@@ -8,22 +8,27 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 
-The `nautilus-okx` crate provides client bindings (HTTP & WebSocket) and data
-models for the official **OKX v5 API**.
+The `nautilus-okx` crate provides instrument loading, live market data, and order execution through
+the **OKX v5 API**. It includes typed HTTP and WebSocket clients and live-node factories for spot,
+derivatives, spreads, and event contracts.
 
 The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/okx.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -36,9 +41,17 @@ This crate provides feature flags to control source code inclusion during compil
   WebSocket connections use controlled peers. See the [DST transport contract](../../../docs/concepts/dst.md#simulated-http-and-websocket-transport)
   for supported transport behavior and exclusions.
 
+## Integrator attribution
+
+HTTP and WebSocket order submissions set `tag` to NautilusTrader's fixed integration ID.
+Caller-provided tags are replaced.
+
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-okx) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-okx)
+- [Integration guide](../../../docs/integrations/okx.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/okx/)
 
 ## License
 

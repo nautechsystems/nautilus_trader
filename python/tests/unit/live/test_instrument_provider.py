@@ -184,6 +184,7 @@ async def test_initialize_load_ids_forwards_filters_and_reload() -> None:
     provider = Provider(
         InstrumentProviderConfig(load_ids=[str(instrument.id)], filters={"market": "spot"}),
     )
+
     await provider.initialize()
     await provider.initialize()
     await provider.initialize(reload=True)

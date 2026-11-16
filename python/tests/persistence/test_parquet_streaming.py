@@ -39,6 +39,7 @@ from nautilus_trader.persistence import StreamingFeatherWriter
 
 def _writer(path: Path, **kwargs: Any) -> StreamingFeatherWriter:
     path.mkdir(parents=True)
+
     return StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
@@ -62,6 +63,7 @@ def test_streaming_feather_writer_option_greeks_marks_run_non_empty(tmp_path: Pa
     """
     path = tmp_path / "backtest" / "run-greeks"
     writer = _writer(path)
+
     greeks = OptionGreeks(
         InstrumentId.from_str("BTC-20260529-100000-C.OKX"),
         0.55,

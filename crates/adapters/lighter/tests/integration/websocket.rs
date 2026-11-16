@@ -136,6 +136,7 @@ fn spot_instrument(
     )
 }
 
+// Queued test frames are sent one per handled subscribe in FIFO order
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
@@ -147,10 +148,7 @@ struct TestServerState {
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
-    /// Optional callback queue sending raw text frames to push to the client
-    /// after each handled subscribe. Drained in handler order.
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
-    /// When set, the server closes the socket after sending the next subscribe ack.
     drop_after_next_subscribe: Arc<AtomicBool>,
 }
 
@@ -235,8 +233,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let mode = if channel.starts_with("order_book:") {
                             state.book_ack_mode.load(Ordering::SeqCst)
@@ -293,8 +290,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
-                            .map(|s| s.replace('/', ":"))
-                            .unwrap_or_default();
+                            .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
                         if sink

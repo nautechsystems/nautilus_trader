@@ -2,6 +2,7 @@
 # ruff: noqa: E501
 
 import decimal
+import enum
 import typing
 
 from nautilus_trader import model
@@ -21,6 +22,7 @@ __all__ = [
     "MarketHoursFillModel",
     "OneTickSlippageFillModel",
     "OrderEmulatorConfig",
+    "OrderPriorityResetPolicy",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
     "ProbabilityPriceFeeModel",
@@ -312,3 +314,11 @@ class VolumeSensitiveFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class OrderPriorityResetPolicy(enum.Enum):
+    PRICE_CHANGE = ...
+    PRICE_OR_QUANTITY_INCREASE = ...
+    ANY_MODIFY = ...
+
+    def __hash__(self) -> int: ...

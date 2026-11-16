@@ -18,6 +18,7 @@
 pub mod config;
 pub mod csv;
 pub mod factories;
+pub mod loaders;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -67,17 +68,11 @@ pub fn coinapi(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(COINAPI_CLIENT_ID), *COINAPI_CLIENT_ID)?;
     m.add_class::<CoinApiDataClientConfig>()?;
     m.add_class::<CoinApiDataClientFactory>()?;
+    m.add_class::<loaders::PyCoinApiDataLoader>()?;
     m.add_class::<CoinApiInstrumentSelection>()?;
-    m.add_class::<crate::csv::CoinApiOhlcvLoader>()?;
     m.add_class::<csv::CoinApiDeltaStreamIterator>()?;
     m.add_class::<csv::CoinApiQuoteStreamIterator>()?;
     m.add_class::<csv::CoinApiTradeStreamIterator>()?;
-    m.add_function(wrap_pyfunction!(csv::py_load_coinapi_deltas, m)?)?;
-    m.add_function(wrap_pyfunction!(csv::py_load_coinapi_quotes, m)?)?;
-    m.add_function(wrap_pyfunction!(csv::py_load_coinapi_trades, m)?)?;
-    m.add_function(wrap_pyfunction!(csv::py_stream_coinapi_deltas, m)?)?;
-    m.add_function(wrap_pyfunction!(csv::py_stream_coinapi_quotes, m)?)?;
-    m.add_function(wrap_pyfunction!(csv::py_stream_coinapi_trades, m)?)?;
 
     let registry = get_global_pyo3_registry();
 
@@ -133,13 +128,10 @@ mod tests {
             );
 
             for name in [
-                "CoinApiOhlcvLoader",
-                "load_coinapi_deltas",
-                "load_coinapi_quotes",
-                "load_coinapi_trades",
-                "stream_coinapi_deltas",
-                "stream_coinapi_quotes",
-                "stream_coinapi_trades",
+                "CoinApiDataLoader",
+                "CoinApiDeltaStreamIterator",
+                "CoinApiQuoteStreamIterator",
+                "CoinApiTradeStreamIterator",
             ] {
                 assert!(module.hasattr(name).unwrap(), "missing {name}");
             }

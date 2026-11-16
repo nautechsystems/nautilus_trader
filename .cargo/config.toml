@@ -2,6 +2,9 @@
 warnings = "deny"
 rustdocflags = ["--cfg", "docsrs", "-D", "warnings"]
 
+[registries.crates-io]
+min-publish-age = "3 days"
+
 [target.'cfg(all())']
 rustflags = ["-Dwarnings"]
 

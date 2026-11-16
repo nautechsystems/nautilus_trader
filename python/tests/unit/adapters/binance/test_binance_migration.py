@@ -277,6 +277,7 @@ def test_load_binance_spot_us_instruments_uses_public_json_without_credentials()
             / "crates/adapters/binance/test_data/spot/http_json/exchange_info_response.json"
         ).read_text(encoding="utf-8"),
     )
+
     payload["symbols"][0]["filters"] = [
         {
             "filterType": "PRICE_FILTER",

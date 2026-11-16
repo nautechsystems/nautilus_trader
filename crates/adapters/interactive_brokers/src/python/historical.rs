@@ -38,7 +38,6 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HistoricalInteractiveBrokersClient {
     #[new]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_new(
         instrument_provider: InteractiveBrokersInstrumentProvider,
         config: InteractiveBrokersDataClientConfig,
@@ -64,7 +63,6 @@ impl HistoricalInteractiveBrokersClient {
     #[pyo3(signature = (bar_specifications, end_date_time, start_date_time=None, duration=None, contracts=None, instrument_ids=None, use_rth=true, timeout=60))]
     #[pyo3(name = "request_bars")]
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
@@ -72,7 +70,7 @@ impl HistoricalInteractiveBrokersClient {
         end_date_time: Timestamp,
         start_date_time: Option<Timestamp>,
         duration: Option<String>,
-        contracts: Option<Py<PyList>>,
+        contracts: Option<&Bound<'py, PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
         timeout: u64,
@@ -82,9 +80,8 @@ impl HistoricalInteractiveBrokersClient {
         let duration_str = duration;
 
         // Convert Python contracts list to Rust Contracts
-        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts.as_ref() {
-            let py_contracts_bound = py_contracts.bind(py);
-            match py_list_to_contracts(py_contracts_bound) {
+        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts {
+            match py_list_to_contracts(py_contracts) {
                 Ok(contracts) => Some(contracts),
                 Err(e) => {
                     return Err(to_pyvalue_err(format!("Failed to convert contracts: {e}")));
@@ -119,14 +116,13 @@ impl HistoricalInteractiveBrokersClient {
     #[pyo3(signature = (tick_type, start_date_time, end_date_time, contracts=None, instrument_ids=None, use_rth=true, timeout=60, limit=0))]
     #[pyo3(name = "request_ticks")]
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_request_ticks<'py>(
         &self,
         py: Python<'py>,
         tick_type: IbHistoricalTickType,
         start_date_time: Timestamp,
         end_date_time: Timestamp,
-        contracts: Option<Py<PyList>>,
+        contracts: Option<&Bound<'py, PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
         timeout: u64,
@@ -135,9 +131,8 @@ impl HistoricalInteractiveBrokersClient {
         let client = self.clone();
 
         // Convert Python contracts list to Rust Contracts
-        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts.as_ref() {
-            let py_contracts_bound = py_contracts.bind(py);
-            match py_list_to_contracts(py_contracts_bound) {
+        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts {
+            match py_list_to_contracts(py_contracts) {
                 Ok(contracts) => Some(contracts),
                 Err(e) => {
                     return Err(to_pyvalue_err(format!("Failed to convert contracts: {e}")));
@@ -177,19 +172,17 @@ impl HistoricalInteractiveBrokersClient {
     /// Request instruments.
     #[pyo3(signature = (instrument_ids=None, contracts=None))]
     #[pyo3(name = "request_instruments")]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_request_instruments<'py>(
         &self,
         py: Python<'py>,
         instrument_ids: Option<Vec<InstrumentId>>,
-        contracts: Option<Py<PyList>>,
+        contracts: Option<&Bound<'py, PyList>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         // Convert Python contracts list to Rust Contracts
-        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts.as_ref() {
-            let py_contracts_bound = py_contracts.bind(py);
-            match py_list_to_contracts(py_contracts_bound) {
+        let contracts_vec: Option<Vec<Contract>> = if let Some(py_contracts) = contracts {
+            match py_list_to_contracts(py_contracts) {
                 Ok(contracts) => Some(contracts),
                 Err(e) => {
                     return Err(to_pyvalue_err(format!("Failed to convert contracts: {e}")));

@@ -46,7 +46,10 @@ pub mod providers;
 #[cfg(feature = "gateway")]
 pub mod gateway;
 
-#[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Signature must match the registry `FactoryExtractor` function pointer"
+)]
 fn extract_interactive_brokers_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -61,7 +64,10 @@ fn extract_interactive_brokers_data_factory(
         })
 }
 
-#[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Signature must match the registry `ExecutionFactoryExtractor` function pointer"
+)]
 fn extract_interactive_brokers_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -76,7 +82,10 @@ fn extract_interactive_brokers_exec_factory(
         })
 }
 
-#[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Signature must match the registry `ConfigExtractor` function pointer"
+)]
 fn extract_interactive_brokers_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -91,7 +100,10 @@ fn extract_interactive_brokers_data_config(
         })
 }
 
-#[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Signature must match the registry `ConfigExtractor` function pointer"
+)]
 fn extract_interactive_brokers_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,

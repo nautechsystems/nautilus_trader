@@ -600,8 +600,9 @@ replaced orders against AX before resuming trading.
 
 The `/balances` endpoint carries no margin data, so account state also requests `/risk-snapshot`. Its USD
 `initial_margin_required_total` populates the USD balance's locked funds, capped at the USD balance. A USD
-`MarginBalance` entry pairs initial with maintenance margin. When `/risk-snapshot` fails, account state falls
-back to balances-only with zero locked margin and a warning.
+`MarginBalance` entry pairs initial with maintenance margin. The risk snapshot has an independent 10-second
+deadline; `http_timeout_secs` does not change it. When the snapshot fails or exceeds that deadline, account
+state falls back to balances-only with zero locked margin and a warning.
 
 ## Authentication
 
@@ -609,9 +610,12 @@ AX Exchange uses bearer token authentication:
 
 1. API key and secret obtain a session token via `/authenticate`.
 2. The session token is used as a bearer token for subsequent REST and WebSocket requests.
-3. The adapter requests one-hour session tokens and refreshes them every 30 minutes.
+3. Managed data and execution clients request one-hour session tokens and refresh them every 30 minutes.
 4. A refresh updates REST authentication and the token used by the next WebSocket reconnect without
    interrupting the active connection.
+
+Low-level Python `AxHttpClient.authenticate` and `authenticate_auto` default to 24-hour tokens.
+Low-level callers manage token refresh themselves.
 
 ## Configuration
 
@@ -629,6 +633,10 @@ endpoint, including authentication, account state, fills, transactions, and mark
 API base URL. The adapter resolves both from the configured environment.
 :::
 
+Low-level HTTP constructors default to production. They resolve the matching orders URL for either known AX
+API URL. With any other `base_url`, set `orders_base_url` for order-management operations; public REST
+endpoints can use the custom API URL alone.
+
 ### Data client configuration options
 
 | Option                             | Default   | Description                                                                     |
@@ -638,16 +646,16 @@ API base URL. The adapter resolves both from the configured environment.
 | `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
 | `base_url_http`                    | `None`    | Override for the REST base URL.                                                 |
 | `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                                     |
-| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                                  |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
-| `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                            |
+| `base_url_ws_private`              | `None`    | Reserved and unused; configure the private WebSocket on the execution client.   |
+| `proxy_url`                        | `None`    | Optional HTTP(S) proxy for HTTP and WebSocket transports; SOCKS is rejected.    |
+| `http_timeout_secs`                | `60`      | Per-attempt REST timeout in seconds; must be positive.                          |
 | `max_retries`                      | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
 | `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                                   |
 | `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
 | `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.                         |
 | `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.                        |
-| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.                          |
+| `update_instruments_interval_mins` | `60`      | Interval between catalog refreshes; `0` disables periodic refresh.              |
+| `funding_rate_poll_interval_mins`  | `15`      | Interval between funding rate polls; `0` selects one minute, not disabled.      |
 | `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.              |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                    |
 
@@ -662,8 +670,8 @@ API base URL. The adapter resolves both from the configured environment.
 | `base_url_http`           | `None`    | Override for the API REST base URL.                                             |
 | `base_url_orders`         | `None`    | Override for the orders REST base URL.                                          |
 | `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                                          |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
-| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                            |
+| `proxy_url`               | `None`    | Optional HTTP(S) proxy for HTTP and WebSocket transports; SOCKS is rejected.    |
+| `http_timeout_secs`       | `60`      | Per-attempt REST timeout in seconds; must be positive.                          |
 | `max_retries`             | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
 | `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                   |
 | `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
@@ -671,6 +679,9 @@ API base URL. The adapter resolves both from the configured environment.
 | `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
 | `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.                      |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                    |
+
+For both clients, `retry_delay_initial_ms` must be positive and no greater than `retry_delay_max_ms`.
+Retries use the configured per-attempt timeout without a separate total elapsed-time cap.
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
@@ -687,6 +698,9 @@ set the following environment variables:
 
 - `AX_API_KEY`
 - `AX_API_SECRET`
+
+Managed data and execution clients require a complete credential pair when connecting. Use the low-level
+HTTP client for public REST endpoints that do not require authentication.
 
 :::tip
 We recommend using environment variables to manage your credentials.
@@ -723,8 +737,10 @@ credentials are valid and have trading permissions.
 - **Funding rate polling**: The data client polls `GET /funding-rates` for each subscribed instrument at
   `funding_rate_poll_interval_mins`. It requests a seven-day lookback to find a rate across weekends and
   holidays. It emits the latest rate only when it differs from the last one emitted.
-- **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
-  to have the exchange cancel all open orders if the orders WebSocket disconnects.
+- **Cancel on disconnect**: Set `cancel_on_disconnect=True` to cancel orders placed through the current
+  orders WebSocket connection if it disconnects. Orders placed through REST or other connections are
+  unaffected. The managed client validates the venue's `cod` login acknowledgment before enabling order
+  writes and validates it again after every reconnect.
 - **Account fee rates**: Instruments do not carry maker or taker fee rates. An
   authenticated client resolves account rates from `GET /whoami` and fails to connect
   if that lookup fails. The execution client caches rates per AX account, apart from

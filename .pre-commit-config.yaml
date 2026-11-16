@@ -73,7 +73,7 @@ repos:
         args: [--strict]
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.31.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -98,7 +98,7 @@ repos:
         files: (^|/)Dockerfile[^/]*$
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.51.1
+    rev: v1.52.2
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
@@ -313,14 +313,6 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
-      - id: check-formatting-py
-        name: check formatting (Python)
-        description: Enforces formatting conventions in Python code
-        entry: bash .pre-commit-hooks/check_formatting_py.sh
-        language: system
-        files: "\\.py$"
-        pass_filenames: false
-
       - id: check-docs-conventions
         name: check docs conventions
         description: Enforces documentation conventions
@@ -496,7 +488,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+    rev: v0.17.5
     hooks:
       - id: ruff
         name: ruff
@@ -524,8 +516,17 @@ repos:
           - "--recursive"
           - "--in-place"
 
+  - repo: local
+    hooks:
+      - id: check-formatting-py
+        name: check formatting (Python)
+        description: Enforces statement spacing after Ruff formats Python code
+        entry: bash .pre-commit-hooks/check_formatting_py.sh --fix
+        language: system
+        files: "\\.py$"
+
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.6 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.7 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
@@ -557,7 +558,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.24.0
+    rev: v0.24.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

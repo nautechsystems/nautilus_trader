@@ -192,6 +192,7 @@ def test_bars_to_arrow_record_batch_bytes() -> None:
             price_type=PriceType.LAST,
         ),
     )
+
     bars = [
         Bar(
             bar_type=bar_type,

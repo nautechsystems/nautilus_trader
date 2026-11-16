@@ -28,7 +28,11 @@ on the use case.
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `BybitLiquidation`: Custom data for public liquidations on linear and inverse contracts, see
   [Liquidations](#liquidations).
+- `BybitMarginBorrowResult`, `BybitMarginRepayResult`, `BybitMarginStatusResult`: Custom data
+  for manual spot margin operations, see [Manual margin operations](#manual-margin-operations).
 - `BYBIT`, `BYBIT_CLIENT_ID`, `BYBIT_VENUE`: Public identifiers.
+- `BybitMarginAction`: Names the manual margin `query_account` actions; params take its spelling
+  as a string.
 - `BybitEnvironment`, `BybitProductType`, `BybitMarginMode`, `BybitPositionIdx`,
   `BybitPositionMode`: Public enums used by the configurations and order params.
 
@@ -89,6 +93,33 @@ The data and execution clients load all instruments for their configured `produc
 connect. The default is `LINEAR`. Include each product type required by your subscriptions or
 orders.
 
+## Reconciliation
+
+`BybitExecutionClientConfig.load_ids` limits reconciliation to the listed instrument IDs.
+It does not limit instrument loading or order submission. Instrument loading still follows
+`product_types`. `None` or an empty list includes every configured product type. IDs must use the
+`BYBIT` venue, an uppercase symbol, and a configured product-type suffix.
+
+Uncached instruments follow the
+[instrument availability](../concepts/execution/reconciliation.md#instrument-availability) rules.
+Bybit uses the execution client's `load_ids` for this scope.
+
+- A closed order or fill with an uncached in-scope instrument fails direct report requests.
+- With `reconciliation_lookback_mins`, mass status records one cutoff at millisecond precision
+  for order and fill history, marks missing historical instruments or unlinked fills incomplete,
+  and keeps open orders of any age.
+- Lookbacks of 24 hours or longer mark history incomplete because fully canceled, rejected,
+  and deactivated orders have only
+  [24-hour retention](https://bybit-exchange.github.io/docs/v5/order/order-list).
+  The default venue order-history query covers seven days. With a lookback longer than seven days,
+  the fill query returns only the first seven days after the cutoff, so recent fills can be absent.
+- Bulk option fill queries use Bybit's
+  [BTC default](https://bybit-exchange.github.io/docs/v5/order/execution).
+  Bounded mass status marks history incomplete whenever `OPTION` is configured.
+- Order parse and commission construction errors fail the request.
+
+See [Reconciliation reports](#reconciliation-reports) for report collection and order status mapping.
+
 ## Environments
 
 Bybit provides three trading environments. Configure the appropriate
@@ -140,6 +171,7 @@ Environment variables: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
 **Demo environment limitations**:
 
 - The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode, including order lists, batch modifies, and batch cancels, which are sent as individual requests.
+- The `execution.fast` private channel is **not supported**. Setting `use_ws_execution_fast=True` in demo mode is rejected; use the standard execution stream.
 - Native TP/SL and option params (`order_iv`, `mmp`) on new orders work in demo via the HTTP create-order endpoint.
 - The custom TP/SL trigger prices `tp_trigger_price` and `sl_trigger_price` are not supported in demo (orders
   setting them are denied). The create-order endpoint cannot carry them.
@@ -277,8 +309,13 @@ for the shared recovery machinery and adapter responsibilities.
 
 The `bybit-book-stress` harness is a development tool for changes to book synchronization and recovery. It
 connects to Bybit mainnet public market data and submits no orders. It checks six linear books at the default
-depth of 50 against the book stream contract. These checks include rising sequences within each snapshot
-episode. It also checks against an independent reconstruction of the venue feed's best 50 levels.
+depth of 50 against:
+
+- The book stream contract, including rising sequences within each snapshot episode.
+- A reference book of the best 50 levels, rebuilt from the frames the proxy relays.
+
+A separate public connection, outside the proxy, compares that reference book at the same cross sequence
+(`seq`). A session fails unless every book has at least one such comparison.
 
 From the repository root, run:
 
@@ -760,7 +797,7 @@ through the Bybit interface if you need one, and manage the resulting position e
 
 ## Spot margin borrowing and repayment
 
-NautilusTrader provides automated spot margin borrow repayment functionality to prevent interest accrual after closing short positions on Bybit.
+NautilusTrader can automatically repay spot margin borrows after BUY orders fill, and strategies can drive borrowing, repayment, and borrow queries manually.
 
 ### Background
 
@@ -820,7 +857,91 @@ minutes 31 seconds past the hour.
   [Manual Repay](https://bybit-exchange.github.io/docs/v5/account/repay) and
   [Manual Repay Without Asset Conversion](https://bybit-exchange.github.io/docs/v5/account/no-convert-repay).
 - Manual borrowing is still required before opening short positions unless auto-borrow is enabled
-  on your Bybit account.
+  on your Bybit account. See [Manual margin operations](#manual-margin-operations).
+
+### Manual margin operations
+
+Strategies control spot margin borrowing directly through `query_account` params. An unknown or
+missing `action` refreshes the account state instead of performing a margin operation, and an
+unknown value also logs a warning.
+
+| Param    | Type            | Description                                                                      |
+| -------- | --------------- | -------------------------------------------------------------------------------- |
+| `action` | `str`           | `borrow`, `repay`, or `get_borrow_amount` (case-insensitive).                    |
+| `coin`   | `str`           | Required. Without it the client logs an error and publishes no result.           |
+| `amount` | `str` or number | Required for `borrow` and must be positive. Omit on `repay` to repay everything. |
+
+An `amount` that is present but null, zero, negative, or not a string or number publishes a failed
+result rather than repaying everything. Unlike v1, the params must use plain strings or numbers:
+`json.dumps` raises `TypeError` on `Decimal` values and enum objects. An omitted `amount` asks the
+venue to repay the whole outstanding borrow, bounded by the available coin balance, so query the
+remaining borrow with `get_borrow_amount` before treating the liability as cleared.
+
+```python
+account_id = self.portfolio.account(BYBIT_VENUE).id
+
+# Borrow the base coin before opening a short
+self.query_account(
+    account_id=account_id,
+    params={"action": "borrow", "coin": "ETH", "amount": 0.5},
+)
+
+# Repay a specific amount, or omit "amount" to repay the whole outstanding borrow
+self.query_account(
+    account_id=account_id,
+    params={"action": "repay", "coin": "ETH", "amount": 0.05},
+)
+
+# Query the current borrowed amount
+self.query_account(
+    account_id=account_id,
+    params={"action": "get_borrow_amount", "coin": "ETH"},
+)
+```
+
+Each action that names a `coin` publishes custom data:
+
+| Action              | Published type            | Notes                                                                  |
+| ------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| `borrow`            | `BybitMarginBorrowResult` | `success` and `message`; a missing or invalid `amount` publishes this. |
+| `repay`             | `BybitMarginRepayResult`  | `result_status` is the venue `P` or `SU` on success, `FAIL` otherwise. |
+| `get_borrow_amount` | `BybitMarginStatusResult` | `borrow_amount`; a failed query publishes nothing.                     |
+
+Manual repayment differs from auto-repayment:
+
+- REPAY uses Bybit's
+  [no-convert repay](https://bybit-exchange.github.io/docs/v5/account/no-convert-repay) endpoint,
+  so an explicit amount that exceeds the available coin balance fails rather than spending other
+  assets. Repaying immediately after a Spot BUY fill can therefore fall short by the base-coin
+  trading fee; use `auto_repay_spot_borrows` to cover that shortfall by conversion.
+- A REPAY is checked immediately before the request and, inside the hourly
+  [blackout window](#utc-blackout-window), is not sent: the client publishes a failed result whose
+  `message` names the retry time. A request admitted just before the window opens can still reach
+  the venue and fail with the venue's error. Borrow and borrow-amount queries are not blocked.
+- A manual repay can race the auto-repay queue on the same coin; the losing side fails with the
+  venue's error and publishes or logs it.
+
+Subscribe with each type's name and unwrap the `CustomData` in `on_data`:
+
+```python
+from nautilus_trader.adapters.bybit import BybitMarginBorrowResult
+from nautilus_trader.adapters.bybit import BybitMarginRepayResult
+from nautilus_trader.adapters.bybit import BybitMarginStatusResult
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+
+
+class MyStrategy(Strategy):
+    def on_start(self):
+        self.subscribe_data(DataType(BybitMarginBorrowResult.__name__))
+        self.subscribe_data(DataType(BybitMarginRepayResult.__name__))
+        self.subscribe_data(DataType(BybitMarginStatusResult.__name__))
+
+    def on_data(self, data: CustomData) -> None:
+        result = data.data
+        if isinstance(result, BybitMarginRepayResult) and not result.success:
+            self.log.error(f"Repay failed: {result.message}")
+```
 
 ## Funding rates
 
@@ -938,9 +1059,15 @@ consume venue quota that this adapter cannot reserve in advance. Response header
 gap for UID limits, but separate processes still require operational coordination.
 :::
 
-Explicit venue rate-limit responses are terminal rejections for the affected order operation.
-Transport timeouts, service restarts, and duplicate request identifiers remain subject to order
-reconciliation because they do not prove whether the venue accepted the order.
+The following outcomes do not prove whether Bybit accepted the command. The adapter emits no
+`OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected`. The order stays in flight until
+a later order update or reconciliation resolves it:
+
+- HTTP or WebSocket `retCode` `10006` ("Too many visits") or `10429` ("System level frequency
+  protection") on submit, modify, or cancel
+- Transport timeouts
+- Service restarts
+- Duplicate request identifiers
 
 :::info
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
@@ -978,8 +1105,9 @@ margin unless you explicitly enable it.
 
 Understanding how Bybit determines the currency for trading fees is important for accurate accounting and position tracking. The fee currency rules vary between Spot and derivatives products.
 
-The adapter takes the commission amount and currency directly from the venue's `execFee` and `feeCurrency`
-fields. Thus, the rules below describe Bybit's reports, not a local calculation.
+For standard `execution` messages and REST execution reports, the adapter takes the commission amount
+and currency directly from the venue's `execFee` and `feeCurrency` fields. The fast-execution path
+described below derives commission instead.
 
 ### Spot trading fees
 
@@ -1018,17 +1146,46 @@ For all derivatives products (LINEAR, INVERSE, OPTION), fees are always charged 
 | INVERSE      | Base coin (e.g., BTC for BTCUSD) | Base coin    |
 | OPTION       | USDT or USDC                     | Settle coin  |
 
-### Missing fee data
+### Fast execution commission derivation
 
-Bybit's `execution.fast` private channel omits the fee and execution type fields. Fill reports
-parsed from that channel therefore carry zero commission. Subscribe to the standard `execution`
-channel when exact fee data is required.
+With `use_ws_execution_fast=True`, the adapter subscribes to `execution.fast` instead of the standard
+`execution` channel. The fast channel omits `execFee`, `feeCurrency`, `feeRate`, and execution type.
+After loading instruments, the adapter asynchronously requests account maker and taker rates from
+Bybit's `/v5/account/fee-rate` endpoint and derives fast-fill commissions on a best-effort basis:
+
+- Spot uses base quantity times the fee rate for base-denominated fees and quote notional times the
+  fee rate for quote-denominated fees. Maker rebates use the opposite fee currency and a negative
+  commission amount.
+- Linear and inverse derivatives use instrument notional times the fee rate, denominated in
+  settlement currency. No currency conversion is applied when quote and settlement currencies differ.
+- Option fast fills use zero commission in settlement currency because the fast payload lacks the
+  underlying/index price and cap inputs required by Bybit's Option fee formula.
+- Missing or invalid rates and failed calculations produce zero commission without dropping the fill.
+  Early fills can use this fallback while the asynchronous request is in progress. A failed refresh
+  retains the previous rates; affected fills use zero only when no previous rate is available.
+
+The adapter refreshes these rates each time the execution client connects, not when an individual
+WebSocket automatically reconnects. Fast fills with an empty `orderLinkId` are correlated by venue
+order ID and deferred until the corresponding order update when necessary.
+
+:::warning
+Fast-execution-derived commission is **not authoritative from the venue**. Cached rates can be stale,
+and the formula excludes special fee schedules such as RPI, `extraFees`, product-specific fee caps,
+and venue rounding. Use the standard `execution` channel or REST execution reports when authoritative
+`execFee` accounting is required.
+:::
+
+The fast channel delivers only ordinary `Trade` executions. It does not provide other execution types
+such as ADL or liquidation fills, and it does not trigger `auto_repay_spot_borrows`. Use the standard
+channel for these behaviors.
 
 ### Official documentation
 
 For complete details on Bybit's fee structure and currency rules, refer to:
 
 - [Bybit WebSocket Private Execution](https://bybit-exchange.github.io/docs/v5/websocket/private/execution)
+- [Bybit WebSocket Fast Execution](https://bybit-exchange.github.io/docs/v5/websocket/private/fast-execution)
+- [Bybit Get Fee Rate](https://bybit-exchange.github.io/docs/v5/account/fee-rate)
 - [Bybit Spot Fee Currency Instruction](https://bybit-exchange.github.io/docs/v5/enum#spot-fee-currency-instruction)
 
 ## Configuration
@@ -1048,9 +1205,9 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_private`              | `None`     | Override for the private WebSocket URL.                                                                         |
 | `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
 | `http_timeout_secs`                | `60`       | Timeout (seconds) for REST requests.                                                                            |
-| `max_retries`                      | `3`        | Maximum retry attempts for REST requests.                                                                       |
-| `retry_delay_initial_ms`           | `1,000`    | Initial retry delay (milliseconds).                                                                             |
-| `retry_delay_max_ms`               | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
+| `max_retries`                      | `3`        | Maximum retry attempts for REST reads.                                                                          |
+| `retry_delay_initial_ms`           | `1,000`    | Initial retry delay for REST reads (milliseconds).                                                              |
+| `retry_delay_max_ms`               | `10,000`   | Maximum retry delay for REST reads (milliseconds).                                                              |
 | `heartbeat_interval_secs`          | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                             |
 | `recv_window_ms`                   | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument catalog refreshes.                                                        |
@@ -1061,29 +1218,31 @@ The product types for each client must be specified in the configurations.
 
 ### Execution client configuration options
 
-| Option                      | Default    | Description                                                                                                     |
-| --------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                |
-| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
-| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                            |
-| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                         |
-| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                 |
-| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                    |
-| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                      |
-| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
-| `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                      |
-| `max_retries`               | `3`        | Maximum retry attempts for REST requests.                                                                       |
-| `retry_delay_initial_ms`    | `1,000`    | Initial REST retry delay and cancel-all polling interval (milliseconds).                                        |
-| `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
-| `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
-| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
-| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
-| `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
-| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).     |
-| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
-| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
-| `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                   |
-| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
+| Option                      | Default    | Description                                                                                                                                |
+| --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                                           |
+| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`.                            |
+| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                                                       |
+| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                                                    |
+| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                                            |
+| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                                               |
+| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                                                 |
+| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                                                      |
+| `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                                                 |
+| `max_retries`               | `3`        | Maximum retry attempts for REST reads.                                                                                                     |
+| `retry_delay_initial_ms`    | `1,000`    | Initial REST read retry delay and cancel-all polling interval (milliseconds).                                                              |
+| `retry_delay_max_ms`        | `10,000`   | Maximum REST read retry delay (milliseconds).                                                                                              |
+| `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                                                        |
+| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                                                       |
+| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                                                |
+| `account_id`                | `None`     | Optional account ID associated with this client.                                                                                           |
+| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).                                |
+| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill on the standard execution channel.                             |
+| `use_ws_execution_fast`     | `False`    | Use `execution.fast` instead of standard `execution`; derives non-authoritative commissions on a best-effort basis. Rejected in demo mode. |
+| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                                               |
+| `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                                              |
+| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                                               |
+| `load_ids`                  | `None`     | Instrument IDs included in reconciliation. See [Reconciliation](#reconciliation).                                                          |
 
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.

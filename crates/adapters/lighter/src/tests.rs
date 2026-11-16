@@ -24,7 +24,7 @@ use crate::{
         credential::Credential,
         enums::{LighterDeployment, LighterEnvironment},
     },
-    config::LighterDataClientConfig,
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     data::LighterDataClient,
 };
 
@@ -184,6 +184,8 @@ const CREDENTIAL_ENV_RESTORE_LEAF: &str = "tests::credential_environment_restore
 fn credential_environment_cases_are_isolated() {
     let cases = [
         ("config_absent", ENV_ABSENT),
+        ("config_mainnet", ENV_PRESENT),
+        ("config_blank_fallback", ENV_MAINNET_SECRET),
         ("config_partial", ENV_ABSENT),
         ("config_blank", ENV_ABSENT),
         ("config_testnet", ENV_TESTNET),
@@ -210,6 +212,7 @@ fn credential_environment_cases_are_isolated() {
         ("credential_config_precedence", ENV_MAINNET_INVALID_SECRET),
         ("data_partial", ENV_ABSENT),
         ("data_config", ENV_ABSENT),
+        ("data_invalid_environment", ENV_MAINNET_INVALID_SECRET),
         ("data_blank_fallback", ENV_MAINNET_SECRET),
         ("data_robinhood_mainnet", ENV_ROBINHOOD_MAINNET),
         ("data_robinhood_testnet", ENV_ROBINHOOD_TESTNET),
@@ -236,7 +239,21 @@ fn credential_environment_is_restored_after_panic_unwind() {
 #[ignore = "runs only in an isolated child process"]
 fn credential_environment_child() {
     match std::env::var(LIGHTER_ENV_CASE_VAR).as_deref() {
-        Ok("config_absent") => assert!(!LighterDataClientConfig::default().has_credentials()),
+        Ok("config_absent") => {
+            assert_config_credentials(&LighterDataClientConfig::default(), false);
+        }
+        Ok("config_mainnet") => {
+            assert_config_credentials(&LighterDataClientConfig::default(), true);
+        }
+        Ok("config_blank_fallback") => assert_config_credentials(
+            &LighterDataClientConfig {
+                api_key_index: Some(5),
+                account_index: Some(12_345),
+                private_key: Some("   ".into()),
+                ..Default::default()
+            },
+            true,
+        ),
         Ok("config_partial") => assert_partial_configs_lack_credentials(),
         Ok("config_blank") => assert_blank_configs_lack_credentials(),
         Ok("config_testnet") => {
@@ -244,20 +261,22 @@ fn credential_environment_child() {
                 environment: LighterEnvironment::Testnet,
                 ..Default::default()
             };
-            assert!(config.has_credentials());
+
+            assert_config_credentials(&config, true);
         }
         Ok("config_mismatch") => {
-            assert!(!LighterDataClientConfig::default().has_credentials());
+            assert_config_credentials(&LighterDataClientConfig::default(), false);
         }
         Ok("config_lighter_deployment_mismatch") => {
-            assert!(!LighterDataClientConfig::default().has_credentials());
+            assert_config_credentials(&LighterDataClientConfig::default(), false);
         }
         Ok("config_robinhood_mainnet") => {
             let config = LighterDataClientConfig {
                 deployment: LighterDeployment::Robinhood,
                 ..Default::default()
             };
-            assert!(config.has_credentials());
+
+            assert_config_credentials(&config, true);
         }
         Ok("config_robinhood_testnet") => {
             let config = LighterDataClientConfig {
@@ -265,14 +284,16 @@ fn credential_environment_child() {
                 deployment: LighterDeployment::Robinhood,
                 ..Default::default()
             };
-            assert!(config.has_credentials());
+
+            assert_config_credentials(&config, true);
         }
         Ok("config_robinhood_mismatch") => {
             let config = LighterDataClientConfig {
                 deployment: LighterDeployment::Robinhood,
                 ..Default::default()
             };
-            assert!(!config.has_credentials());
+
+            assert_config_credentials(&config, false);
         }
         Ok("credential_mainnet") => {
             assert_resolved_credentials(
@@ -377,6 +398,15 @@ fn credential_environment_child() {
             };
             assert!(create_data_client(config).has_credentials());
         }
+        Ok("data_invalid_environment") => {
+            let config = LighterDataClientConfig {
+                api_key_index: Some(5),
+                account_index: Some(12_345),
+                ..Default::default()
+            };
+
+            assert!(create_data_client(config).has_credentials());
+        }
         Ok("data_blank_fallback") => {
             let config = LighterDataClientConfig {
                 api_key_index: Some(5),
@@ -436,6 +466,20 @@ fn credential_environment_restore_leaf() {
     }
 }
 
+fn assert_config_credentials(config: &LighterDataClientConfig, expected: bool) {
+    let exec_config = LighterExecutionClientConfig {
+        deployment: config.deployment,
+        environment: config.environment,
+        account_index: config.account_index,
+        api_key_index: config.api_key_index,
+        private_key: config.private_key.clone(),
+        ..Default::default()
+    };
+
+    assert_eq!(config.has_credentials(), expected);
+    assert_eq!(exec_config.has_credentials(), expected);
+}
+
 fn assert_partial_configs_lack_credentials() {
     let configs = [
         (Some(5), None, None),
@@ -453,7 +497,8 @@ fn assert_partial_configs_lack_credentials() {
             private_key,
             ..Default::default()
         };
-        assert!(!config.has_credentials());
+
+        assert_config_credentials(&config, false);
     }
 }
 
@@ -465,7 +510,8 @@ fn assert_blank_configs_lack_credentials() {
             private_key: Some(private_key.into()),
             ..Default::default()
         };
-        assert!(!config.has_credentials());
+
+        assert_config_credentials(&config, false);
     }
 }
 

@@ -89,9 +89,8 @@ impl InteractiveBrokersInstrumentProvider {
 
     /// Determine venue from contract using provider configuration.
     #[pyo3(name = "determine_venue")]
-    #[allow(clippy::needless_pass_by_value)]
-    fn py_determine_venue(&self, py: Python<'_>, contract: Py<PyAny>) -> PyResult<String> {
-        let rust_contract = py_to_contract(contract.bind(py))?;
+    fn py_determine_venue(&self, contract: &Bound<'_, PyAny>) -> PyResult<String> {
+        let rust_contract = py_to_contract(contract)?;
         Ok(self.determine_venue(&rust_contract, None).to_string())
     }
 

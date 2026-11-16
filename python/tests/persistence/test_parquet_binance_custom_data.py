@@ -91,6 +91,7 @@ def test_binance_futures_open_interest_catalog_round_trip(tmp_path) -> None:
     """
     catalog = ParquetDataCatalog(str(tmp_path))
     data_type = DataType("BinanceFuturesOpenInterest", None, str(BTCUSDT_PERP))
+
     open_interest = BinanceFuturesOpenInterest(
         BTCUSDT_PERP,
         Decimal("123456.789012345678"),
@@ -115,6 +116,7 @@ def test_binance_futures_liquidation_catalog_round_trip(tmp_path) -> None:
     """
     catalog = ParquetDataCatalog(str(tmp_path))
     data_type = DataType("BinanceFuturesLiquidation", None, str(BTCUSDT_PERP))
+
     liquidation = BinanceFuturesLiquidation(
         BTCUSDT_PERP,
         OrderSide.SELL,

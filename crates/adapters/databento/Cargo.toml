@@ -29,7 +29,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-live = ["nautilus-live", "nautilus-live/node", "nautilus-system", "dotenvy"]
+live = ["nautilus-live", "nautilus-live/node", "nautilus-system"]
 python = [
   "arrow",
   "live",
@@ -82,7 +82,6 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 arrow = { workspace = true, optional = true }
-dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
@@ -94,6 +93,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 ] }
 
 criterion = { workspace = true }
+dotenvy = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }

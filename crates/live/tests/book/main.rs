@@ -17,7 +17,7 @@
 //!
 //! The `stress` module is a development tool for changes to book sync and recovery code. Venue
 //! harnesses under `crates/adapters/<venue>/tests/stress/` include it to run live against a venue
-//! with injected faults, checking every emitted book against the book stream contract in
+//! with injected faults, checking every requested book against the book stream contract in
 //! `nautilus_live::book::conformance`. These tests cover the parts that need no venue:
 //!
 //! - The fault proxy's relay rules, against a local test venue.

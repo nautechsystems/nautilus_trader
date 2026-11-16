@@ -110,8 +110,10 @@ async def exercise_lifetime(seed: int) -> list[weakref.ReferenceType]:  # noqa: 
             mode = modes[value]
             if mode == "failure":
                 raise ValueError(f"command {value}")
+
             if mode == "cancel":
                 raise asyncio.CancelledError(f"command {value}")
+
             if mode == "self_cancel":
                 asyncio.current_task().cancel()
                 await asyncio.sleep(0)
@@ -180,6 +182,7 @@ async def exercise_lifetime(seed: int) -> list[weakref.ReferenceType]:  # noqa: 
                 runtime.dispose()
             else:
                 gc.collect()
+
             for _ in range(rng.randrange(1, 4)):
                 await asyncio.sleep(0)
             assert finished == [], seed

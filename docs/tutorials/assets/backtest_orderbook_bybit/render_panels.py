@@ -56,8 +56,7 @@ sys.path.insert(0, str(TUTORIAL_DIR))
 
 from orderbook_data import deltas_from_frame
 from orderbook_data import load_bybit_order_book_deltas
-from orderbook_imbalance import OrderBookImbalance
-from orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -162,6 +161,7 @@ def run_backtest(nrows: int = 1_000_000) -> object:
         ts_event=0,
         ts_init=0,
     )
+
     deltas = deltas_from_frame(df_raw, XRPUSDT_BYBIT)
     deltas.sort(key=lambda x: x.ts_init)
 
@@ -169,6 +169,7 @@ def run_backtest(nrows: int = 1_000_000) -> object:
         trader_id=TraderId.from_str("BACKTESTER-001"),
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     )
+
     engine = BacktestEngine(config=config)
 
     BYBIT = Venue("BYBIT")
@@ -190,17 +191,18 @@ def run_backtest(nrows: int = 1_000_000) -> object:
     sampler = TopBookSampler(
         TopBookSamplerConfig(instrument_id=XRPUSDT_BYBIT.id, sample_every_secs=1),
     )
+
     engine.add_actor(sampler)
 
-    strategy = OrderBookImbalance(
+    engine.add_builtin_strategy(
+        "OrderBookImbalance",
         OrderBookImbalanceConfig(
-            instrument_id=str(XRPUSDT_BYBIT.id),
-            book_type="L2_MBP",
-            max_trade_size="1.000",
+            instrument_id=XRPUSDT_BYBIT.id,
+            book_type=BookType.L2_MBP,
+            max_trade_size=Quantity.from_str("1.000"),
             min_seconds_between_triggers=1.0,
         ),
     )
-    engine.add_strategy(strategy)
     engine.run()
 
     samples_df = pd.DataFrame(sampler.samples)
@@ -260,6 +262,7 @@ def panel_a_top_book(samples: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
     if samples.empty:
         apply_layout(fig, "No samples", height=520)
         return fig
+
     if fills.empty:
         zoom_lo = samples["ts"].min()
         zoom_hi = samples["ts"].min() + pd.Timedelta(minutes=10)
@@ -320,6 +323,7 @@ def panel_a_top_book(samples: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
                 },
             ),
         )
+
     if shorts:
         fig.add_trace(
             go.Scatter(
@@ -335,6 +339,7 @@ def panel_a_top_book(samples: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
                 },
             ),
         )
+
     if c_in:
         fig.add_trace(
             go.Scatter(
@@ -454,6 +459,7 @@ def panel_d_position(fills: pd.DataFrame, samples: pd.DataFrame) -> go.Figure:
     df = df.sort_values("ts_event").reset_index(drop=True)
     if not samples.empty:
         df = df[df["ts_event"] <= samples["ts"].max()]
+
     if df.empty:
         apply_layout(fig, "Net position trajectory (no fills in active window)", height=420)
         return fig
@@ -483,6 +489,7 @@ def panel_d_position(fills: pd.DataFrame, samples: pd.DataFrame) -> go.Figure:
 def main() -> None:
     samples, fills = run_backtest()
     print(f"samples={len(samples)} fill_rows={len(fills)}")
+
     panels = {
         "panel_a_top_book.png": panel_a_top_book(samples, fills),
         "panel_b_imbalance_dist.png": panel_b_imbalance_dist(samples),

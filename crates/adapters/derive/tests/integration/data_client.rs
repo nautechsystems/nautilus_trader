@@ -1012,9 +1012,10 @@ async fn test_subscribe_book_depth_emits_depth_snapshot() {
         other => panic!("expected depth data, was {other:?}"),
     }
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
-        rx.try_recv().is_err(),
+        tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .is_err(),
         "book depth subscription must not emit extra data",
     );
 
@@ -1083,12 +1084,15 @@ async fn test_last_book_owner_can_resubscribe_before_unsubscribe_runs() {
         .unwrap();
     let first = recv_data(&mut rx).await;
 
+    let transition = client.channel_subscriptions.transition(channel);
+    let guard = transition.lock().await;
     client
         .unsubscribe_book_deltas(&unsubscribe_book_deltas(instrument_id, None))
         .unwrap();
     client
         .subscribe_book_deltas(subscribe_book_deltas(instrument_id, Some(10), None))
         .unwrap();
+    drop(guard);
     wait_for_subscribe_count(&ws_state, channel, 2).await;
     let second = recv_data(&mut rx).await;
     let subscribe_count = ws_state
@@ -1196,7 +1200,17 @@ async fn test_book_recovery_keeps_shared_channel_and_active_socket(#[case] missi
     )
     .await;
     let subscribed = ws_state.subscribes().await.len();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                () = wait_for_subscribe_count(&ws_state, channel, subscribed + 1) => {},
+                _ = rx.recv() => {},
+            }
+        })
+        .await
+        .is_err(),
+        "unsubscribed book must not recover or publish data",
+    );
     assert_eq!(ws_state.subscribes().await.len(), subscribed);
     assert!(rx.try_recv().is_err());
     assert_eq!(
@@ -1339,7 +1353,17 @@ async fn test_unsubscribe_cancels_inflight_book_recovery() {
         Duration::from_secs(3),
     )
     .await;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                () = wait_for_subscribe_count(&ws_state, channel, 3) => {},
+                _ = rx.recv() => {},
+            }
+        })
+        .await
+        .is_err(),
+        "cancelled recovery must not resubscribe or publish data",
+    );
 
     assert_eq!(ws_state.subscribes().await.len(), 2);
     assert_eq!(ws_state.unsubscribes().await.len(), 2);
@@ -1434,8 +1458,15 @@ async fn test_unsubscribe_waits_for_inflight_subscribe_before_venue_cleanup() {
     client
         .unsubscribe_quotes(&unsubscribe_quotes(instrument_id, None))
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            wait_for_unsubscribe(&ws_state, channel),
+        )
+        .await
+        .is_err(),
+        "venue cleanup must wait for the subscribe response",
+    );
     assert!(ws_state.unsubscribes().await.is_empty());
 
     ws_state.subscribe_response_gate.add_permits(1);

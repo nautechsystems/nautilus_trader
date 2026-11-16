@@ -78,7 +78,7 @@ pub struct KrakenFuturesSendOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trailing_stop_max_deviation: Option<String>,
 
-    /// Partner/broker attribution ID.
+    /// Integration ID.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker: Option<Ustr>,

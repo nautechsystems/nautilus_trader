@@ -30,7 +30,7 @@ use crate::{
     http::{
         client::FinFeedHttpClient,
         error::Error,
-        parse::{TOKEN_ID_KEY, parse_instrument},
+        parse::{TOKEN_ID_KEY, kalshi_identity, parse_instrument, parse_kalshi},
     },
 };
 
@@ -114,7 +114,7 @@ impl FinFeedInstrumentProvider {
         let mut instruments = HashMap::new();
         let mut loaded = Vec::with_capacity(ids.len());
         for instrument_id in ids {
-            let instrument = self.fetch(instrument_id, ts_init).await?;
+            let instrument = fetch_instrument(&self.http, instrument_id, ts_init).await?;
             check_duplicate_outcome(&instruments, &instrument)?;
             instruments.insert(instrument.id, instrument.clone());
             loaded.push(instrument);
@@ -140,7 +140,7 @@ impl FinFeedInstrumentProvider {
         instrument_id: InstrumentId,
         ts_init: UnixNanos,
     ) -> Result<BinaryOption, Error> {
-        let instrument = self.fetch(instrument_id, ts_init).await?;
+        let instrument = fetch_instrument(&self.http, instrument_id, ts_init).await?;
         check_duplicate_outcome(&self.instruments, &instrument)?;
         self.instruments.insert(instrument.id, instrument.clone());
         Ok(instrument)
@@ -151,28 +151,35 @@ impl FinFeedInstrumentProvider {
     pub fn get(&self, instrument_id: InstrumentId) -> Option<&BinaryOption> {
         self.instruments.get(&instrument_id)
     }
+}
 
-    async fn fetch(
-        &self,
-        instrument_id: InstrumentId,
-        ts_init: UnixNanos,
-    ) -> Result<BinaryOption, Error> {
-        let (exchange_id, market_id) = from_instrument_id(instrument_id)?;
-        let market = match self.http.get_market(&exchange_id, &market_id).await {
-            Err(Error::Http { status: 404, .. }) => return Err(Error::Unavailable(instrument_id)),
-            result => result?,
-        };
+pub(crate) async fn fetch_instrument(
+    http: &FinFeedHttpClient,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<BinaryOption, Error> {
+    let (exchange_id, market_id) = from_instrument_id(instrument_id)?;
+    let market = match http.get_market(&exchange_id, &market_id).await {
+        Err(Error::Http { status: 404, .. }) => return Err(Error::Unavailable(instrument_id)),
+        result => result?,
+    };
 
-        if market.exchange_id.as_deref() != Some(exchange_id.as_str())
-            || market.market_id.as_deref() != Some(market_id.as_str())
-        {
-            return Err(Error::Definition {
-                exchange_id,
-                market_id,
-                field: "identity",
-                reason: "does not match the requested outcome",
-            });
-        }
+    if market.exchange_id.as_deref() != Some(exchange_id.as_str())
+        || market.market_id.as_deref() != Some(market_id.as_str())
+    {
+        return Err(Error::Definition {
+            exchange_id,
+            market_id,
+            field: "identity",
+            reason: "does not match the requested outcome",
+        });
+    }
+
+    if exchange_id == "KALSHI" {
+        let (ticker, event_ticker) = kalshi_identity(&market)?;
+        let (native, event) = http.kalshi_metadata(&ticker, &event_ticker).await?;
+        parse_kalshi(&market, &native, &event, ts_init)
+    } else {
         parse_instrument(&market, ts_init)
     }
 }
@@ -202,7 +209,7 @@ pub(crate) fn selected_ids(
     Ok(ids)
 }
 
-fn check_duplicate_outcome(
+pub(crate) fn check_duplicate_outcome(
     instruments: &HashMap<InstrumentId, BinaryOption>,
     instrument: &BinaryOption,
 ) -> Result<(), Error> {

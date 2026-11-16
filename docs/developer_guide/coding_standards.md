@@ -87,6 +87,17 @@ Use free functions for stateless data ingestion. Use a class only when instances
 configuration, caches, workers, iteration state, or an open resource across calls. Do not use a
 zero-state class solely to group static or class methods.
 
+Name a stateful provider ingestion class `<Provider>DataLoader`. Place new Rust loader implementations
+in `loaders.rs`.
+
+- **Metadata**: Load instrument definitions and provider mappings explicitly and reuse them across calls.
+- **Methods**: Use `load_*` and `stream_*` for local inputs and `request_*` for network retrieval into Nautilus
+  objects. Omit the provider name from methods because the class supplies it.
+- **Reuse**: Keep raw transport clients and conversion code reusable by the loader and node data client.
+  Keep loader decoding functions internal instead of exporting a second API for the same inputs.
+- **Failures**: Loader `request_*` methods raise on incomplete retrieval or conversion failure instead of
+  silently returning partial results.
+
 Follow the semantic distinction in the
 [Polars I/O API](https://docs.pola.rs/api/python/stable/reference/io.html), adapted to the
 established Nautilus `load_*` vocabulary:
@@ -114,8 +125,9 @@ A venue adapter exposes its canonical identity constants plus the supported publ
 - `<VENUE>`, `<VENUE>_CLIENT_ID`, `<VENUE>_VENUE`, registered from Rust via `m.add` in the adapter's
   `python/mod.rs`
 - data types, `*Config`, `*Factory`, user-facing enums (such as `*Environment` and `*ProductType`)
-- stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
-  (`decode_*`, `get_*_arrow_schema_map`)
+- stateful provider `*DataLoader` classes
+- stateless ingestion for paths without reusable state (`load_*`, `stream_*`, `convert_*`)
+- intentional utilities (`decode_*`, `get_*_arrow_schema_map`)
 
 Keep the facade thin. Do not add internals to `__all__` only for structural parity. This includes raw HTTP or
 WebSocket clients, wire models, endpoint URL resolvers (`get_*_url`, `*_HTTP_URL`), and caches. These packages

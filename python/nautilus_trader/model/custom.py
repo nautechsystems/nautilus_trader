@@ -175,6 +175,7 @@ def _get_annotations(cls) -> dict[str, Any]:
 def _serialize_field_value(annotation: Any, value: Any) -> Any:
     if annotation is InstrumentId and value is not None:
         return str(value)
+
     if _is_dict_annotation(annotation) and value is not None:
         return json.dumps(value, sort_keys=True)
     return value
@@ -183,6 +184,7 @@ def _serialize_field_value(annotation: Any, value: Any) -> Any:
 def _deserialize_field_value(annotation: Any, value: Any) -> Any:
     if annotation is InstrumentId and isinstance(value, str):
         return InstrumentId.from_str(value)
+
     if _is_dict_annotation(annotation) and isinstance(value, str):
         return json.loads(value)
     return value
@@ -202,6 +204,7 @@ def _arrow_schema_for_class(cls, pa):
         bytes: pa.binary(),
         dict: pa.string(),
     }
+
     fields = [
         pa.field(name, type_mapping[get_origin(annotation) or annotation])
         for name, annotation in _get_annotations(cls).items()

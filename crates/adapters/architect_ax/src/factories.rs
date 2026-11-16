@@ -98,6 +98,10 @@ impl DataClientFactory for AxDataClientFactory {
             })?
             .clone();
 
+        ax_config
+            .validate_proxy_url()
+            .map_err(|e| anyhow::anyhow!("Invalid AX proxy URL: {e}"))?;
+
         let client_id = ClientId::from(name);
 
         let http_client = if ax_config.has_api_credentials() {
@@ -245,8 +249,11 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
 #[cfg(test)]
 mod tests {
     use nautilus_common::{
-        cache::Cache, clock::VirtualClock, factories::ClientConfig,
-        live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+        cache::Cache,
+        clock::VirtualClock,
+        factories::ClientConfig,
+        live::runner::{replace_exec_event_sender, set_data_event_sender},
+        messages::ExecutionEvent,
     };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -279,6 +286,54 @@ mod tests {
     fn test_ax_data_client_factory_default() {
         let factory = AxDataClientFactory;
         assert_eq!(factory.name(), AX);
+    }
+
+    #[rstest]
+    fn test_managed_factories_reject_socks_proxy() {
+        let proxy_url = Some("socks5://127.0.0.1:1080".into());
+
+        let data_config = AxDataClientConfig {
+            proxy_url: proxy_url.clone(),
+            ..Default::default()
+        };
+
+        let execution_config = AxExecutionClientConfig {
+            proxy_url,
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let (data_sender, _data_receiver) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(data_sender);
+
+        let data_result = AxDataClientFactory::new().create(
+            "AX",
+            &data_config,
+            cache.clone().into(),
+            clock.clone(),
+        );
+
+        let data_error = match data_result {
+            Err(e) => e,
+            Ok(_) => panic!("Expected data factory to reject SOCKS proxy"),
+        };
+
+        let execution_result = AxExecutionClientFactory::new().create(
+            TraderId::from("TESTER-002"),
+            "AX",
+            &execution_config,
+            cache.into(),
+            clock,
+        );
+
+        let execution_error = match execution_result {
+            Err(e) => e,
+            Ok(_) => panic!("Expected execution factory to reject SOCKS proxy"),
+        };
+
+        assert!(data_error.to_string().contains("Invalid AX proxy URL"));
+        assert!(execution_error.to_string().contains("Invalid AX proxy URL"));
     }
 
     #[rstest]

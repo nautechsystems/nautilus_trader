@@ -92,12 +92,14 @@ def main() -> None:
     parser.add_argument("scenario", choices=("self", "fanout"), nargs="?", default="fanout")
     args = parser.parse_args()
     print(f"Scenario: {args.scenario}", flush=True)
+
     engine = BacktestEngine(
         BacktestEngineConfig(
             logging=LoggerConfig(stdout_level=LogLevel.WARNING),
             run_analysis=False,
         ),
     )
+
     try:
         engine.add_actor(PublishingActor())
         if args.scenario == "fanout":

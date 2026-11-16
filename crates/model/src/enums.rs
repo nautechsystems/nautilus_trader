@@ -42,7 +42,7 @@ pub trait FromU16 {
         Self: Sized;
 }
 
-/// An account type provided by a trading venue or broker.
+/// An account type provided by a trading venue or execution provider.
 #[repr(C)]
 #[derive(
     Copy,
@@ -776,7 +776,7 @@ pub enum InstrumentClass {
     FuturesSpread = 4,
     /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     Forward = 5,
-    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD provider to exchange the difference in the value of a financial product between the time the contract opens and closes.
     Cfd = 6,
     /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
     Bond = 7,
@@ -2027,6 +2027,47 @@ impl RecordFlag {
     }
 }
 
+/// The contractual settlement of an option, independent of its exercise style.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
+pub enum SettlementType {
+    /// Pays the option's intrinsic value in its settlement currency.
+    Cash = 1,
+    /// Delivers a position in the contractual underlying instrument.
+    Physical = 2,
+}
+
 /// The 'Time in Force' instruction for an order.
 #[repr(C)]
 #[derive(
@@ -2257,6 +2298,7 @@ enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
 enum_strum_serde!(PriceType);
 enum_strum_serde!(RecordFlag);
+enum_strum_serde!(SettlementType);
 enum_strum_serde!(TimeInForce);
 enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);
@@ -2713,6 +2755,7 @@ mod tests {
             PositionSide,
             PriceType,
             RecordFlag,
+            SettlementType,
             TimeInForce,
             TradingState,
             TrailingOffsetType,
@@ -2872,6 +2915,8 @@ mod tests {
         "RecordFlag::F_TOB=F_TOB",
         "RecordFlag::RESERVED_1=RESERVED_1",
         "RecordFlag::RESERVED_2=RESERVED_2",
+        "SettlementType::Cash=CASH",
+        "SettlementType::Physical=PHYSICAL",
         "TimeInForce::AtTheClose=AT_THE_CLOSE",
         "TimeInForce::AtTheOpen=AT_THE_OPEN",
         "TimeInForce::Day=DAY",
@@ -2938,6 +2983,7 @@ mod tests {
             PositionSide,
             PriceType,
             RecordFlag,
+            SettlementType,
             TimeInForce,
             TradingState,
             TrailingOffsetType,

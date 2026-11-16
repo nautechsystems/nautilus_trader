@@ -16,7 +16,7 @@
 //! REST decoding and checked conversion across batch sizes and book depths.
 //! Network pacing, scheduling, deduplication, and publication are outside the timed region.
 
-#[path = "../src/data/parse.rs"]
+#[path = "../src/parse.rs"]
 mod parse;
 
 use std::hint::black_box;

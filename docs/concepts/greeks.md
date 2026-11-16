@@ -138,7 +138,7 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 Conventions:
 
 - Vega is scaled by 0.01 (sensitivity to a 1 percentage point vol change).
-- Theta is scaled by 1/365.25 (daily decay).
+- Theta is scaled by 1/365 (daily decay).
 - Rho is scaled by 0.01 (sensitivity to a 1 percentage point rate change).
 - American-style options are priced as European for Greeks computation.
 
@@ -377,23 +377,48 @@ hold a non-finite value, and when `tenors` does not strictly increase with each 
 interpolate. `cache.add_yield_curve()` rejects the same curves, including curves decoded from the catalog
 or JSON, so the calculator never evaluates them.
 Python registers the type on import. In Rust, call
-`nautilus_serialization::ensure_custom_data_registered::<YieldCurve>()` before catalog or
-streaming writes and queries.
+`nautilus_serialization::ensure_custom_data_registered::<YieldCurve>()` before catalog, streaming,
+or external message bus use.
 
 ### Recording calculated values
 
-`GreeksData` and `PortfolioGreeks` support native Arrow recording under their matching
-`NautilusRecordType` selectors. Rust streaming writers accept these records directly.
-A subscribed writer also captures the Rust calculator's typed `GreeksData` publications.
+`GreeksData` and `PortfolioGreeks` are custom data. Wrap a calculated value in `CustomData`
+to publish it with `publish_data()`, receive it through `subscribe_data()` and `on_data()`, or store
+it with `ParquetDataCatalog.write_custom_data()`:
 
-In Python, `StreamingFeatherWriter.write()` accepts `GreeksData` and `PortfolioGreeks`.
-Use `nautilus_trader.serialization.pyobjects_to_arrow_record_batch_bytes()` to encode these objects, then
-`ParquetDataCatalog.write_record_arrow_bytes()` with the matching record selector to store them.
+```python
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+from nautilus_trader.model import NautilusDataType
 
-Read recorded values with `query_record_arrow_bytes()` or `query_record_arrow_stream()`.
-These queries return Arrow data. Calculated records do not participate in `OptionGreeks`
-market-data replay or populate the calculator's caches. Yield curves are custom data, not records;
-see [Yield curves](#yield-curves).
+data_type = DataType("GreeksData", identifier=str(greeks.instrument_id))
+data = CustomData(data_type, greeks)
+catalog.write_custom_data([data])
+loaded = catalog.query_custom_data(
+    NautilusDataType.Custom("GreeksData"),
+    identifiers=[str(greeks.instrument_id)],
+)
+```
+
+Pass the loaded `CustomData` objects to `BacktestEngine.add_data()` to replay them through `on_data()`.
+Use the `DataType` identifier to separate instrument, portfolio, or scenario streams in the catalog.
+Metadata is preserved and distinguishes message bus topics. For stream conversion, omit
+`instrument_id` and `bar_type` from `DataType` metadata: these keys override the identifier when
+selecting the catalog directory. Other metadata does not separate catalog storage.
+Custom-data delivery does not populate the calculator's caches. Rust consumers can cache
+received instrument Greeks with `Cache::add_greeks()`; Python's cache has no equivalent method.
+In Rust, register each type with `nautilus_serialization::ensure_custom_data_registered::<T>()`
+before custom-data catalog, streaming, or external message bus use. Python registers these types on import.
+JSON and MsgPack custom-data transport require finite numeric values.
+
+`StreamingFeatherWriter.write()` accepts these values wrapped in `CustomData`. A subscribed writer
+also captures the Rust calculator's typed `GreeksData` publications as custom data, using the
+instrument ID as the catalog identifier. Typed `PortfolioGreeks` messages published through the
+dynamic message bus are recorded as custom data without an identifier.
+
+Calculated Greeks retain their native Arrow schemas. Query them through the custom-data APIs;
+they have no `NautilusRecordType` selectors. They remain separate from venue-reported `OptionGreeks`.
+Yield curves use the same custom-data path; see [Yield curves](#yield-curves).
 
 ## Choosing between the two paths
 
@@ -405,7 +430,7 @@ see [Yield curves](#yield-curves).
 | Shock scenarios       | Not supported                                         | Spot, vol, and time shocks                        |
 | Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built-in through `portfolio_greeks()`             |
 | Beta weighting        | Not supported                                         | Built-in                                          |
-| Backtest support      | From recorded `OptionGreeks` data                     | From cached prices at any point in time           |
+| Backtest support      | From recorded `OptionGreeks` data                     | From cached prices or recorded custom data        |
 | Values                | delta, gamma, vega, theta, rho, IV, and open interest | delta, gamma, vega, theta, rho, itm_prob, and vol |
 | Data type             | `OptionGreeks`                                        | `GreeksData` and `PortfolioGreeks`                |
 

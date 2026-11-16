@@ -1,0 +1,231 @@
+{
+  "market": {
+    "market": {
+      "can_close_early": true,
+      "close_time": "2026-10-17T03:45:00Z",
+      "created_time": "2026-10-15T20:01:37.233287Z",
+      "custom_strike": {
+        "round_digits": "2"
+      },
+      "event_ticker": "KXBTC15M-26OCT162345",
+      "exchange_index": 2,
+      "expected_expiration_time": "2026-10-17T03:50:00Z",
+      "expiration_time": "2026-10-24T03:45:00Z",
+      "expiration_value": "",
+      "floor_strike": 81469.24,
+      "last_price_dollars": "0.4900",
+      "latest_expiration_time": "2026-10-24T03:45:00Z",
+      "market_type": "binary",
+      "no_ask_dollars": "0.5200",
+      "no_bid_dollars": "0.5100",
+      "no_sub_title": "Target price: TBD",
+      "notional_value_dollars": "1.0000",
+      "occurrence_datetime": "2026-10-17T03:50:00Z",
+      "open_interest_fp": "251068.55",
+      "open_time": "2026-10-17T03:30:00Z",
+      "previous_price_dollars": "0.0000",
+      "previous_yes_ask_dollars": "0.0000",
+      "previous_yes_bid_dollars": "0.0000",
+      "price_level_structure": "tapered_deci_cent",
+      "price_ranges": [
+        {
+          "end": "0.1000",
+          "start": "0.0000",
+          "step": "0.0010"
+        },
+        {
+          "end": "0.9000",
+          "start": "0.1000",
+          "step": "0.0100"
+        },
+        {
+          "end": "1.0000",
+          "start": "0.9000",
+          "step": "0.0010"
+        }
+      ],
+      "result": "",
+      "rules_primary": "If the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:45 PM EDT on Oct 16, 2026 is at least the simple average of the sixty seconds of CF Benchmarks' BRTI before 11:30 PM EDT on October 16, 2026, then the market resolves to Yes.",
+      "rules_secondary": "Not all cryptocurrency price data is the same. While checking a source like Google or Coinbase may help guide your decision, the price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices, rounded to the nearest 2 decimal places.",
+      "settlement_bounds_type": "default",
+      "settlement_timer_seconds": 1,
+      "status": "active",
+      "strike_type": "greater_or_equal",
+      "ticker": "KXBTC15M-26OCT162345-45",
+      "title": "BTC price up in next 15 mins?",
+      "updated_time": "2026-10-17T03:30:00.568718Z",
+      "volume_24h_fp": "135537.14",
+      "volume_fp": "618483.38",
+      "yes_ask_dollars": "0.4900",
+      "yes_ask_size_fp": "3605.29",
+      "yes_bid_dollars": "0.4800",
+      "yes_bid_size_fp": "5737.47",
+      "yes_sub_title": "Target Price: $81,469.24"
+    }
+  },
+  "event": {
+    "event": {
+      "category": "Crypto",
+      "collateral_return_type": "",
+      "event_ticker": "KXBTC15M-26OCT162345",
+      "exchange_index": 2,
+      "last_updated_ts": "0001-01-01T00:00:00Z",
+      "mutually_exclusive": false,
+      "product_metadata": {
+        "cadence": "fifteen_min"
+      },
+      "series_ticker": "KXBTC15M",
+      "settlement_sources": [
+        {
+          "name": "CF Benchmarks",
+          "url": "https://www.cfbenchmarks.com/"
+        }
+      ],
+      "strike_date": "2026-10-17T03:45:00Z",
+      "strike_period": "",
+      "sub_title": "Oct 16 - 11:30PM EDT to 11:45PM EDT",
+      "title": "BTC 15 min \u00b7 $81,469.24 target"
+    },
+    "markets": []
+  },
+  "series": {
+    "series": {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Crypto"
+      ],
+      "category": "Crypto",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/CRYPTO.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/CRYPTO.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "fifteen_min",
+      "last_updated_ts": "2026-10-08T16:24:37.117847Z",
+      "product_metadata": {
+        "important_info": {
+          "id": "CRYPTO15M-bulk-2026-04-20",
+          "markdown": "**Important information:** The price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI). At the last minute before expiration, 60 RTI prices are collected. The official and final value is the average of these prices.",
+          "message": "",
+          "title": ""
+        }
+      },
+      "settlement_sources": [
+        {
+          "name": "CF Benchmarks",
+          "url": "https://www.cfbenchmarks.com/"
+        }
+      ],
+      "tags": [
+        "15 min",
+        "Bitcoin",
+        "Crypto",
+        "BTC"
+      ],
+      "ticker": "KXBTC15M",
+      "title": "Bitcoin price up down"
+    }
+  },
+  "cutoff": {
+    "market_settled_ts": "2023-11-14T22:15:00Z",
+    "trades_created_ts": "2023-11-14T22:14:00Z",
+    "orders_updated_ts": "2026-10-16T11:11:11.110000011Z",
+    "market_positions_last_updated_ts": "2026-10-16T12:12:12.120000012Z"
+  },
+  "trade": {
+    "trade_id": "trade-a",
+    "ticker": "KXBTC15M-26OCT162345-45",
+    "count_fp": "2.75",
+    "yes_price_dollars": "0.123456",
+    "no_price_dollars": "0.876544",
+    "taker_outcome_side": "no",
+    "taker_book_side": "ask",
+    "created_time": "2023-11-14T22:14:00.123456789Z",
+    "is_block_trade": false
+  },
+  "trades": {
+    "trades": [
+      {
+        "trade_id": "trade-a",
+        "ticker": "KXBTC15M-26OCT162345-45",
+        "count_fp": "2.75",
+        "yes_price_dollars": "0.123456",
+        "no_price_dollars": "0.876544",
+        "taker_outcome_side": "no",
+        "taker_book_side": "ask",
+        "created_time": "2023-11-14T22:14:00.123456789Z",
+        "is_block_trade": false
+      }
+    ],
+    "cursor": ""
+  },
+  "empty_trades": {
+    "trades": [],
+    "cursor": ""
+  },
+  "candles": {
+    "ticker": "KXBTC15M-26OCT162345-45",
+    "candlesticks": [
+      {
+        "end_period_ts": 1700000040,
+        "yes_bid": {
+          "open_dollars": "0.100001",
+          "low_dollars": "0.090002",
+          "high_dollars": "0.150003",
+          "close_dollars": "0.140004"
+        },
+        "yes_ask": {
+          "open_dollars": "0.200005",
+          "low_dollars": "0.190006",
+          "high_dollars": "0.250007",
+          "close_dollars": "0.240008"
+        },
+        "price": {
+          "open_dollars": "0.130001",
+          "low_dollars": "0.120009",
+          "high_dollars": "0.220010",
+          "close_dollars": "0.210011",
+          "mean_dollars": "0.170012",
+          "previous_dollars": "0.180013",
+          "min_dollars": "0.110014",
+          "max_dollars": "0.230015"
+        },
+        "volume_fp": "0.00",
+        "open_interest_fp": "47.50"
+      }
+    ]
+  },
+  "archived_candles": {
+    "ticker": "KXBTC15M-26OCT162345-45",
+    "candlesticks": [
+      {
+        "end_period_ts": 1700000040,
+        "yes_bid": {
+          "open": "0.100001",
+          "low": "0.090002",
+          "high": "0.150003",
+          "close": "0.140004"
+        },
+        "yes_ask": {
+          "open": "0.200005",
+          "low": "0.190006",
+          "high": "0.250007",
+          "close": "0.240008"
+        },
+        "price": {
+          "open": "0.130001",
+          "low": "0.120009",
+          "high": "0.220010",
+          "close": "0.210011",
+          "mean": "0.170012",
+          "previous": "0.180013"
+        },
+        "volume": "0.00",
+        "open_interest": "47.50"
+      }
+    ]
+  }
+}

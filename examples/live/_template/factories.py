@@ -39,6 +39,7 @@ class TemplateDataClientFactory(DataClientFactory):
         Construct a fresh client for the supplied node context.
         """
         provider = TemplateInstrumentProvider(config.instrument_provider)
+
         return TemplateDataClient(
             name=name,
             config=config,

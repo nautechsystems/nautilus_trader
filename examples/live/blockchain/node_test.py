@@ -70,9 +70,11 @@ def main() -> None:
             password=os.getenv("POSTGRES_PASSWORD", "pass"),
             database=os.getenv("POSTGRES_DATABASE", "nautilus"),
         )
+
         print(f"\nPostgres cache config: {postgres_config}")
 
     client_factory = BlockchainDataClientFactory()
+
     client_config = BlockchainDataClientConfig(
         chain=CHAIN,
         dex_ids=[

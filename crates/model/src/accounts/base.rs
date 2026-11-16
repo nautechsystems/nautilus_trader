@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{
     DurationNanos, UnixNanos,
@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     accounts::fill_position_pnl,
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{AccountState, OrderFilled},
+    events::{AccountState, OrderFilled, account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY},
     fees::{MakerTakerFeeRates, calculate_maker_taker_commission},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -250,12 +250,43 @@ impl BaseAccount {
 
     /// Applies an [`AccountState`] event, updating balances.
     ///
+    /// Current complete balance snapshots zero cached currencies omitted from the event.
+    ///
     /// # Panics
     ///
     /// Panics if `event.account_id` does not match this account's ID. Every account rejects a
     /// foreign event before reaching here, so this remains an internal invariant.
-    pub fn base_apply(&mut self, event: AccountState) {
+    pub fn base_apply(&mut self, mut event: AccountState) {
         check_equal(&event.account_id, &self.id, "event.account_id", "self.id").expect(FAILED);
+        let snapshot_is_current = self
+            .events
+            .last()
+            .is_none_or(|last| event.ts_event >= last.ts_event);
+        if snapshot_is_current
+            && event
+                .info
+                .as_ref()
+                .and_then(|info| info.get_bool(BALANCES_SNAPSHOT_COMPLETE_INFO_KEY))
+                == Some(true)
+        {
+            let reported: AHashSet<Currency> = event
+                .balances
+                .iter()
+                .map(|balance| balance.currency)
+                .collect();
+
+            let omitted = self
+                .balances
+                .keys()
+                .filter(|currency| !reported.contains(*currency))
+                .map(|currency| {
+                    let zero = Money::zero(*currency);
+                    AccountBalance::new(zero, zero, zero)
+                });
+
+            event.balances.extend(omitted);
+        }
+
         self.update_balances(&event.balances);
         Arc::make_mut(&mut self.events).push(event);
     }
@@ -615,12 +646,16 @@ fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
+    use nautilus_core::{Params, UUID4};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::{events::account::stubs::cash_account_state, types::money::MONEY_RAW_MAX};
+    use crate::{
+        events::account::{state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY, stubs::cash_account_state},
+        types::money::MONEY_RAW_MAX,
+    };
 
     #[rstest]
     fn test_base_purge_account_events_retains_latest_when_all_purged() {
@@ -741,6 +776,73 @@ mod tests {
 
         assert_eq!(*account.events, vec![initial.clone(), later]);
         assert_eq!(*cloned.events, vec![initial]);
+    }
+
+    #[rstest]
+    #[case::complete_snapshot(true, 2, "0 BTC", 2)]
+    #[case::partial_snapshot(false, 2, "1 BTC", 1)]
+    #[case::stale_complete_snapshot(true, 0, "1 BTC", 1)]
+    fn test_base_apply_zeroes_omitted_balances_only_for_complete_snapshots(
+        #[case] complete: bool,
+        #[case] event_ts: u64,
+        #[case] expected_btc: &str,
+        #[case] expected_event_balances: usize,
+    ) {
+        let balance = |total: Money| AccountBalance::new(total, Money::zero(total.currency), total);
+        let account_id = AccountId::from("SIM-001");
+
+        let initial = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![
+                balance(Money::from("1 BTC")),
+                balance(Money::from("100 USD")),
+            ],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            Some(Currency::USD()),
+        );
+
+        let mut account = BaseAccount::new(initial, true);
+
+        let info = complete.then(|| {
+            Params::new(IndexMap::from([(
+                BALANCES_SNAPSHOT_COMPLETE_INFO_KEY.to_string(),
+                serde_json::Value::Bool(true),
+            )]))
+        });
+
+        let later = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![balance(Money::from("90 USD"))],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(event_ts),
+            UnixNanos::from(event_ts),
+            Some(Currency::USD()),
+        )
+        .with_info(info);
+
+        account.base_apply(later);
+
+        let expected_btc = Money::from(expected_btc);
+        let btc = account.base_balance(Some(Currency::BTC())).unwrap();
+        let usd = account.base_balance(Some(Currency::USD())).unwrap();
+        assert_eq!(btc.total, expected_btc);
+        assert_eq!(btc.locked, Money::zero(Currency::BTC()));
+        assert_eq!(btc.free, expected_btc);
+        assert_eq!(usd.total, Money::from("90 USD"));
+        assert_eq!(usd.locked, Money::zero(Currency::USD()));
+        assert_eq!(usd.free, Money::from("90 USD"));
+        assert_eq!(
+            account.events.last().unwrap().balances.len(),
+            expected_event_balances,
+        );
     }
 
     #[rstest]

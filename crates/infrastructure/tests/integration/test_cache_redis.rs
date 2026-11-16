@@ -17,13 +17,15 @@
 #[cfg(feature = "redis")]
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
-    use std::{cell::RefCell, rc::Rc, sync::OnceLock, time::Duration};
+    use std::{cell::RefCell, rc::Rc, str::FromStr, sync::OnceLock, time::Duration};
 
     use ahash::AHashMap;
     use bytes::Bytes;
+    use futures::StreamExt;
     use nautilus_common::{
         cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
         clock::VirtualClock,
+        enums::SerializationEncoding,
         testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
@@ -41,11 +43,11 @@ mod serial_tests {
         data::{
             DataType, InstrumentClose,
             greeks::{GreeksData, YieldCurve},
-            stubs::{ensure_stub_custom_data_registered, stub_custom_data},
+            stubs::{ensure_stub_custom_data_registered, stub_custom_data, stub_instrument_close},
         },
         enums::{
-            AccountType, CurrencyType, InstrumentCloseType, OrderSide, OrderStatus, OrderType,
-            TimeInForce,
+            AccountType, CurrencyType, InstrumentCloseType, LiquiditySide, OrderSide, OrderStatus,
+            OrderType, TimeInForce,
         },
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
@@ -53,7 +55,7 @@ mod serial_tests {
                 cash_account_state_multi, cash_account_state_multi_changed_btc,
                 wallet_account_state, wallet_account_state_changed,
             },
-            order::spec::OrderFillVoidedSpec,
+            order::spec::{OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec},
             position::snapshot::PositionSnapshot,
         },
         identifiers::{
@@ -62,9 +64,9 @@ mod serial_tests {
         },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, SyntheticInstrument,
-            stubs::{binary_option, crypto_perpetual_ethusdt},
+            stubs::{binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt},
         },
-        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
@@ -89,6 +91,505 @@ mod serial_tests {
             number_of_retries: 0,
             ..Default::default()
         }
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_cython_v1_cache_records_load_without_rewriting(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] no_expiry: bool,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+
+        if no_expiry {
+            fixture["order_initialized"]["time_in_force"] = "GTC".into();
+            fixture["order_initialized"]["options"]["expire_time_ns"] = 0.into();
+        }
+
+        let config = CacheConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        let trader_id = TraderId::from(format!("V1-{}", UUID4::new()));
+        let instance_id = UUID4::new();
+        let database =
+            RedisCacheDatabase::new(trader_id, instance_id, config.clone(), redis_cache_config())
+                .await
+                .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+
+        let encode = |value: &serde_json::Value| match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(value).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(value).unwrap(),
+            SerializationEncoding::Sbe => unreachable!(),
+        };
+
+        for (code, value) in fixture["currencies"].as_object().unwrap() {
+            adapter
+                .database
+                .insert(
+                    format!("currencies:{code}"),
+                    Some(vec![Bytes::from(encode(value))]),
+                )
+                .unwrap();
+        }
+
+        for (key, field) in [
+            ("instruments:BTCUSDT.BINANCE", "instrument"),
+            ("orders:O-V1-001", "order_initialized"),
+            ("accounts:BINANCE-001", "account_state"),
+            ("orders:O-V1-001", "order_submitted"),
+            ("orders:O-V1-001", "order_accepted"),
+            ("orders:O-V1-001", "order_filled"),
+            ("positions:P-V1", "order_filled"),
+        ] {
+            adapter
+                .database
+                .insert(key.into(), Some(vec![Bytes::from(encode(&fixture[field]))]))
+                .unwrap();
+        }
+
+        let actor = AHashMap::from([
+            ("opaque".to_string(), Bytes::from_static(&[0, 127, 255])),
+            ("text".to_string(), Bytes::from_static(b"state")),
+        ]);
+        let strategy = AHashMap::from([
+            ("opaque".to_string(), Bytes::from_static(&[1, 2, 3])),
+            ("text".to_string(), Bytes::from_static(b"strategy")),
+        ]);
+
+        for (key, field, state) in [
+            ("actors:ACTOR-V1:state", "actor_state", &actor),
+            ("strategies:STRATEGY-V1:state", "strategy_state", &strategy),
+        ] {
+            let payload = match encoding {
+                SerializationEncoding::Json => encode(&fixture[field]),
+                SerializationEncoding::MsgPack => rmp_serde::to_vec_named(state).unwrap(),
+                SerializationEncoding::Sbe => unreachable!(),
+            };
+
+            adapter
+                .database
+                .insert(key.into(), Some(vec![Bytes::from(payload)]))
+                .unwrap();
+        }
+
+        adapter.close().unwrap();
+        adapter.database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, redis_cache_config())
+                .await
+                .unwrap();
+        let restored_account = adapter
+            .load_account(&AccountId::from("BINANCE-001"))
+            .await
+            .unwrap()
+            .unwrap();
+        let loaded = adapter.load_all().await.unwrap();
+        let restored_actor = adapter.load_actor(&ActorId::from("ACTOR-V1")).unwrap();
+        let restored_strategy = adapter
+            .load_strategy(&StrategyId::from("STRATEGY-V1"))
+            .unwrap();
+        let mut instrument = currency_pair_btcusdt();
+        instrument.ts_event = UnixNanos::from(123);
+        instrument.ts_init = UnixNanos::from(456);
+
+        let expected_init = OrderInitializedSpec::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-V1-001"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .quantity(Quantity::from("1.234567"))
+            .time_in_force(if no_expiry {
+                TimeInForce::Gtc
+            } else {
+                TimeInForce::Gtd
+            })
+            .post_only(true)
+            .price(Price::from("12345.67"))
+            .maybe_expire_time(
+                (!no_expiry).then_some(UnixNanos::from(1_234_567_890_123_456_789u64)),
+            )
+            .display_qty(Quantity::from("0.123456"))
+            .event_id(UUID4::from_str("11111111-1111-4111-8111-111111111111").unwrap())
+            .ts_event(UnixNanos::from(100))
+            .ts_init(UnixNanos::from(100))
+            .build();
+
+        let account_id = AccountId::from("BINANCE-001");
+        let venue_order_id = VenueOrderId::from("VENUE-V1");
+        let mut expected_order = OrderAny::try_from(expected_init.clone()).unwrap();
+
+        let OrderEventAny::Submitted(mut submitted) =
+            TestOrderEventStubs::submitted(&expected_order, account_id)
+        else {
+            unreachable!()
+        };
+
+        submitted.event_id = UUID4::from_str("55555555-5555-4555-8555-555555555555").unwrap();
+        submitted.ts_event = UnixNanos::from(110);
+        submitted.ts_init = UnixNanos::from(111);
+        expected_order
+            .apply(OrderEventAny::Submitted(submitted))
+            .unwrap();
+
+        let OrderEventAny::Accepted(mut accepted) =
+            TestOrderEventStubs::accepted(&expected_order, account_id, venue_order_id)
+        else {
+            unreachable!()
+        };
+
+        accepted.event_id = UUID4::from_str("66666666-6666-4666-8666-666666666666").unwrap();
+        accepted.ts_event = UnixNanos::from(120);
+        accepted.ts_init = UnixNanos::from(121);
+        expected_order
+            .apply(OrderEventAny::Accepted(accepted))
+            .unwrap();
+        let fill = OrderFilledSpec::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-V1-001"))
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(TradeId::from("TRADE-V1"))
+            .position_id(PositionId::from("P-V1"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from("0.234567"))
+            .last_px(Price::from("12345.67"))
+            .currency(Currency::USDT())
+            .commission(Money::from("0.12345678 USDT"))
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::from_str("44444444-4444-4444-8444-444444444444").unwrap())
+            .ts_event(UnixNanos::from(300))
+            .ts_init(UnixNanos::from(301))
+            .build();
+        let expected_instrument = InstrumentAny::CurrencyPair(instrument.clone());
+        let expected_position = Position::new_checked(&expected_instrument, fill.clone()).unwrap();
+        expected_order.apply(OrderEventAny::Filled(fill)).unwrap();
+        let expected_account = AccountAny::from(AccountState::new(
+            AccountId::from("BINANCE-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("12345.67890123 USDT"),
+                Money::from("123.45678901 USDT"),
+                Money::from("12222.22211222 USDT"),
+            )],
+            vec![],
+            true,
+            UUID4::from_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            UnixNanos::from(200),
+            UnixNanos::from(201),
+            None,
+        ));
+        let mut connection = adapter.database.con.clone();
+        let original: Vec<u8> = connection
+            .get(format!(
+                "{}:instruments:BTCUSDT.BINANCE",
+                adapter.database.trader_key
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(loaded.currencies.len(), 2);
+
+        for (code, name) in [("BTC", "Bitcoin"), ("USDT", "Tether")] {
+            let currency = loaded.currencies.get(&ustr::Ustr::from(code)).unwrap();
+            assert_eq!(
+                (
+                    currency.code.as_str(),
+                    currency.precision,
+                    currency.iso4217,
+                    currency.name.as_str(),
+                    currency.currency_type
+                ),
+                (code, 8, 0, name, CurrencyType::Crypto)
+            );
+        }
+
+        assert_eq!(loaded.instruments.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&loaded.instruments[&instrument.id]).unwrap(),
+            serde_json::to_value(InstrumentAny::CurrencyPair(instrument)).unwrap()
+        );
+        assert_eq!(loaded.orders.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&loaded.orders[&ClientOrderId::from("O-V1-001")]).unwrap(),
+            serde_json::to_value(&expected_order).unwrap()
+        );
+        assert_eq!(loaded.positions.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&loaded.positions[&PositionId::from("P-V1")]).unwrap(),
+            serde_json::to_value(expected_position).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored_account).unwrap(),
+            serde_json::to_value(&expected_account).unwrap()
+        );
+        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&loaded.accounts[&expected_account.id()]).unwrap(),
+            serde_json::to_value(expected_account).unwrap()
+        );
+        assert_eq!(restored_actor, actor);
+        assert_eq!(restored_strategy, strategy);
+        assert_eq!(original, encode(&fixture["instrument"]));
+
+        let canceled =
+            TestOrderEventStubs::canceled(&expected_order, account_id, Some(venue_order_id));
+        adapter.update_order(&canceled).unwrap();
+        adapter.close().unwrap();
+        expected_order.apply(canceled).unwrap();
+        let restored_order = adapter
+            .load_order(&ClientOrderId::from("O-V1-001"))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(restored_order).unwrap(),
+            serde_json::to_value(expected_order).unwrap()
+        );
+        clear_test_trader(&adapter).await;
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_cache_timestamp_format_round_trip(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] iso8601: bool,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+
+        let config = CacheConfig {
+            encoding,
+            timestamps_as_iso8601: iso8601,
+            ..Default::default()
+        };
+
+        let database = RedisCacheDatabase::new(
+            TraderId::from(format!("FORMAT-{}", UUID4::new())),
+            UUID4::new(),
+            config,
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+        let mut event = cash_account_state_multi();
+        event.ts_event = UnixNanos::from(123);
+        event.ts_init = UnixNanos::from(456);
+        let account = AccountAny::from(event);
+        adapter.add_account(&account).unwrap();
+        adapter.close().unwrap();
+
+        let key = format!("{}:accounts:{}", adapter.database.trader_key, account.id());
+        let mut connection = adapter.database.con.clone();
+        let payloads: Vec<Bytes> = connection.lrange(key, 0, -1).await.unwrap();
+        let value: serde_json::Value = match encoding {
+            SerializationEncoding::Json => serde_json::from_slice(&payloads[0]).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&payloads[0]).unwrap(),
+            SerializationEncoding::Sbe => unreachable!(),
+        };
+
+        let restored = adapter.load_account(&account.id()).await.unwrap().unwrap();
+
+        assert_eq!(payloads.len(), 1);
+
+        if iso8601 {
+            assert_eq!(value["ts_event"], "1970-01-01T00:00:00.000000123Z");
+            assert_eq!(value["ts_init"], "1970-01-01T00:00:00.000000456Z");
+        } else {
+            assert_eq!(value["ts_event"], "123");
+            assert_eq!(value["ts_init"], "456");
+        }
+
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(account).unwrap()
+        );
+        clear_test_trader(&adapter).await;
+    }
+
+    #[rstest]
+    #[case::currencies(0)]
+    #[case::general(1)]
+    #[case::all(2)]
+    #[case::custom(3)]
+    #[case::closes(4)]
+    #[case::instrument(5)]
+    #[case::instrument_sync(6)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_typed_loads_honor_bulk_read_batch_size(
+        #[case] load: u8,
+        #[values(1, 2)] batch_size: usize,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        ensure_stub_custom_data_registered();
+
+        let config = CacheConfig {
+            bulk_read_batch_size: Some(batch_size),
+            ..Default::default()
+        };
+
+        let database = RedisCacheDatabase::new(
+            TraderId::from(format!("BATCH-{}", UUID4::new())),
+            UUID4::new(),
+            config,
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+        let currencies = [Currency::BTC(), Currency::USDT(), Currency::GBP()];
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let general = AHashMap::from([
+            ("a".to_string(), Bytes::from_static(b"first")),
+            ("b".to_string(), Bytes::from_static(b"second")),
+            ("c".to_string(), Bytes::from_static(b"third")),
+        ]);
+        let custom = vec![
+            stub_custom_data(2000, 41, None, None),
+            stub_custom_data(2001, 42, None, None),
+            stub_custom_data(2002, 43, None, None),
+        ];
+
+        let closes = [
+            ("BTCUSDT.BINANCE", "100.50", 100u64, 101u64),
+            ("ETHUSDT.BINANCE", "200.75", 200, 201),
+            ("SOLUSDT.BINANCE", "300.25", 300, 301),
+        ]
+        .map(|(instrument_id, price, ts_event, ts_init)| {
+            let mut close = stub_instrument_close();
+            close.instrument_id = InstrumentId::from(instrument_id);
+            close.close_price = Price::from(price);
+            close.ts_event = UnixNanos::from(ts_event);
+            close.ts_init = UnixNanos::from(ts_init);
+            close
+        });
+
+        for currency in currencies {
+            adapter.add_currency(&currency).unwrap();
+        }
+
+        adapter.add_instrument(&instrument).unwrap();
+        for (key, value) in &general {
+            adapter.add(key.clone(), value.clone()).unwrap();
+        }
+
+        for data in &custom {
+            adapter.add_custom_data(data).unwrap();
+        }
+
+        for close in &closes {
+            adapter.add_instrument_close(close).unwrap();
+        }
+
+        adapter.close().unwrap();
+
+        let (url, _) = nautilus_infrastructure::redis::get_redis_url(&redis_cache_config());
+        let client = redis::Client::open(url).unwrap();
+        let monitor = client.get_async_monitor().await.unwrap();
+        let expected_currencies =
+            AHashMap::from(currencies.map(|currency| (currency.code, currency)));
+        let expected_closes = AHashMap::from(closes.map(|close| (close.instrument_id, close)));
+
+        match load {
+            0 => assert_eq!(
+                adapter.load_currencies().await.unwrap(),
+                expected_currencies
+            ),
+            1 => assert_eq!(adapter.load().unwrap(), general),
+            2 => {
+                let loaded = adapter.load_all().await.unwrap();
+                assert_eq!(loaded.currencies, expected_currencies);
+                assert_eq!(loaded.instrument_closes, expected_closes);
+            }
+            3 => assert_eq!(
+                adapter.load_custom_data(&custom[0].data_type).unwrap(),
+                custom
+            ),
+            4 => assert_eq!(
+                adapter.load_instrument_closes().await.unwrap(),
+                expected_closes
+            ),
+            5 | 6 => {
+                let restored = if load == 5 {
+                    adapter.load_instrument(&instrument.id()).await.unwrap()
+                } else {
+                    adapter.load_instrument_sync(&instrument.id()).unwrap()
+                }
+                .unwrap();
+
+                assert_eq!(
+                    serde_json::to_value(restored).unwrap(),
+                    serde_json::to_value(&instrument).unwrap()
+                );
+            }
+            _ => unreachable!(),
+        }
+
+        let sizes = bulk_read_command_sizes(monitor, &adapter).await;
+
+        let mut expected_sizes = if batch_size == 1 {
+            vec![1, 1, 1]
+        } else {
+            vec![2, 1]
+        };
+
+        if load == 2 {
+            expected_sizes.extend_from_within(..);
+        }
+
+        assert_eq!(sizes, expected_sizes);
+        clear_test_trader(&adapter).await;
+    }
+
+    async fn bulk_read_command_sizes(
+        monitor: redis::aio::Monitor,
+        adapter: &RedisCacheDatabaseAdapter,
+    ) -> Vec<usize> {
+        let marker = UUID4::new().to_string();
+        let mut connection = adapter.database.con.clone();
+        let _: String = redis::cmd("ECHO")
+            .arg(&marker)
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        let mut stream = monitor.into_on_message::<String>();
+        let mut sizes = Vec::new();
+        let prefix = format!("{}:", adapter.database.trader_key);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(command) = stream.next().await {
+                if command.contains(&marker) {
+                    break;
+                }
+
+                if command.contains("\"MGET\"") {
+                    let size = command
+                        .split('"')
+                        .filter(|part| part.starts_with(&prefix))
+                        .count();
+
+                    if size != 0 {
+                        sizes.push(size);
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        sizes
     }
 
     #[rstest]

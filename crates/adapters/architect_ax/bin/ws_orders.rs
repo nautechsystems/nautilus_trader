@@ -26,7 +26,7 @@
 //! ```bash
 //! AX_API_KEY=your_key \
 //!   AX_API_SECRET=your_secret \
-//!   cargo run --bin architect-ws-orders -p nautilus-architect
+//!   cargo run --bin ax-ws-orders -p nautilus-architect-ax
 //! ```
 
 use std::time::Duration;
@@ -149,6 +149,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             order.o
                         );
                     }
+                }
+                AxOrdersWsMessage::PlaceOrderError {
+                    client_order_id,
+                    reason,
+                } => {
+                    log::warn!("Place order failed for {client_order_id}: {reason}");
+                }
+                AxOrdersWsMessage::CancelOrderError {
+                    client_order_id,
+                    reason,
+                    ..
+                } => {
+                    log::warn!("Cancel order failed for {client_order_id}: {reason}");
                 }
                 AxOrdersWsMessage::Error(err) => {
                     log::warn!("Error: {}", err.message);

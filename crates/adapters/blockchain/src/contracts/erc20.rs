@@ -27,7 +27,6 @@ use super::base::{BaseContract, ContractCall, Multicall3};
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
 sol! {
-    #[sol(rpc)]
     contract ERC20 {
         function name() external view returns (string);
         function symbol() external view returns (string);

@@ -72,6 +72,7 @@ def test_subject_number_references() -> None:
     Test that issue and pull request numbers are rejected in subjects.
     """
     expected = "subject must not include an issue or pull request number"
+
     subjects = (
         "Fix invalid order state (#123)",
         "Fix invalid order state #123",

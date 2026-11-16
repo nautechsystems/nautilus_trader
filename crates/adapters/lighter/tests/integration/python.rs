@@ -15,6 +15,8 @@
 
 #![cfg(feature = "python")]
 
+mod config;
+
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{

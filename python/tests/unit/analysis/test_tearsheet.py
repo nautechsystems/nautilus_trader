@@ -177,6 +177,7 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch: pytest.Monk
             "USD": {"PnL (total)": 12.5},
             "AUD": {"PnL (total)": 1.0},
         }
+
         stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
         stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
         elapsed_time_secs = 1.234
@@ -287,16 +288,20 @@ def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch: pytest.M
         total_events = 3
         total_orders = 4
         total_positions = 5
+
         stats_pnls: ClassVar[dict[str, object]] = {
             "USD": {"PnL (total)": 12.5},
             "AUD": {"PnL (total)": 1.0},
         }
+
         stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
         stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
+
         returns_series: ClassVar[dict[str, object]] = {
             1_577_836_800_000_000_000: 0.01,
             1_577_923_200_000_000_000: -0.02,
         }
+
         summary: ClassVar[dict[str, object]] = {"account.SIM.id": "SIM-001"}
 
     class DummyConfig:
@@ -329,6 +334,7 @@ def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch: pytest.M
             """
             assert run_config_id == "run-001"
             assert str(account_id) == "SIM-001"
+
             return pd.DataFrame(
                 {
                     "currency": ["USD", "USD", "AUD", "AUD"],
@@ -460,6 +466,7 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
             "USD": {"PnL (total)": 12.5},
             "AUD": {"PnL (total)": 1.0},
         }
+
         stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
         stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
         elapsed_time_secs = 1.234
@@ -512,6 +519,7 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
             Generate account report.
             """
             currency = "USD" if venue == "SIM_USD" else "AUD"
+
             return pd.DataFrame(
                 {
                     "currency": [currency, currency],
@@ -927,6 +935,7 @@ def test_create_tearsheet_from_stats_exports_static_image(tmp_path: Path) -> Non
         [0.01, -0.005, 0.002],
         index=pd.date_range("2020-01-01", periods=3, tz="UTC"),
     )
+
     output_path = tmp_path / "tearsheet.png"
 
     try:
@@ -1079,6 +1088,7 @@ def _run_issue_3899_backtest() -> object:
 
     usd = Currency.from_str("USD")
     venue = Venue("XNAS")
+
     instrument = Equity(
         instrument_id=InstrumentId(Symbol("KO"), venue),
         raw_symbol=Symbol("KO"),
@@ -1088,10 +1098,12 @@ def _run_issue_3899_backtest() -> object:
         ts_event=0,
         ts_init=0,
     )
+
     bar_type = BarType(
         instrument.id,
         BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
     )
+
     prices = [
         ("100.00", "101.00", "99.00", "100.50"),
         ("100.00", "104.00", "99.50", "103.50"),
@@ -1102,6 +1114,7 @@ def _run_issue_3899_backtest() -> object:
         ("118.00", "123.00", "117.00", "122.50"),
         ("122.00", "126.00", "121.00", "125.00"),
     ]
+
     timestamps = pd.date_range("2024-01-02 21:00:00+00:00", periods=8, freq="B")
     bars = [
         Bar(
@@ -1238,6 +1251,7 @@ def test_to_returns_series_normalizes_inputs() -> None:
         [0.02, 0.01],
         index=pd.to_datetime(["2020-01-02", "2020-01-01"], utc=True),
     )
+
     normalized = tearsheet._to_returns_series(unsorted)
     assert list(normalized.index) == sorted(normalized.index)
     assert normalized.iloc[0] == pytest.approx(0.01)
@@ -1445,6 +1459,7 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
             Snapshots.
             """
             currency = "USD" if account_id == "SIM_USD" else "AUD"
+
             return [
                 DummySnapshot(100.0, currency, 1_577_836_800_000_000_000),
                 DummySnapshot(110.0, currency, 1_577_923_200_000_000_000),
@@ -1500,6 +1515,7 @@ def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total() -> None
         """
 
         base_currency_equity = Money(100.0, Currency.from_str("USD"))
+
         total_equity: ClassVar[list[object]] = [
             Money(100.0, Currency.from_str("USD")),
             Money(50.0, Currency.from_str("AUD")),

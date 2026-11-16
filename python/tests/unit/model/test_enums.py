@@ -32,6 +32,7 @@ from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
 from nautilus_trader.model import PositionSide
+from nautilus_trader.model import SettlementType
 from nautilus_trader.model import TradingState
 from nautilus_trader.model import TrailingOffsetType
 from nautilus_trader.model import TriggerType
@@ -131,6 +132,7 @@ def test_side_enums_accept_domain_tokens(
     ("enum_type", "expected"),
     [
         (ContingencyType, [ContingencyType.OCO, ContingencyType.OTO, ContingencyType.OUO]),
+        (SettlementType, [SettlementType.CASH, SettlementType.PHYSICAL]),
         (
             TrailingOffsetType,
             [
@@ -191,6 +193,8 @@ def test_optional_domain_enums_retain_none_compatibility(
     ("enum_type", "member", "name"),
     [
         (InstrumentClass, InstrumentClass.SPOT, "SPOT"),
+        (SettlementType, SettlementType.CASH, "CASH"),
+        (SettlementType, SettlementType.PHYSICAL, "PHYSICAL"),
         (MarketStatus, MarketStatus.OPEN, "OPEN"),
         (OmsType, OmsType.NETTING, "NETTING"),
         (OtoTriggerMode, OtoTriggerMode.FULL, "FULL"),
@@ -201,6 +205,7 @@ def test_model_enums_from_str(enum_type: object, member: object, name: object) -
     """
     Test model enums from str.
     """
+    assert enum_type(name) == member
     assert enum_type.from_str(name) == member
     assert member.name == name
     assert isinstance(hash(member), int)
@@ -280,7 +285,7 @@ def test_aggressor_side_has_no_alias_members() -> None:
         _ = AggressorSide.SELLER
 
 
-@pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType])
+@pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType, SettlementType])
 def test_workflow_enums_reject_malformed_values(enum_type: object) -> None:
     """
     Test workflow enums reject malformed values.

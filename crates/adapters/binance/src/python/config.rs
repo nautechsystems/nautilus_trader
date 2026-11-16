@@ -141,6 +141,7 @@ impl BinanceDataClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         book_snapshot_timeout_secs = None,
+        use_usdm_raw_trades = false,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -162,6 +163,7 @@ impl BinanceDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         book_snapshot_timeout_secs: Option<u64>,
+        use_usdm_raw_trades: bool,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let config = Self {
@@ -172,6 +174,7 @@ impl BinanceDataClientConfig {
             api_key: api_key.map(SecretString::from).or(defaults.api_key),
             api_secret: api_secret.map(SecretString::from).or(defaults.api_secret),
             spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
+            use_usdm_raw_trades,
             instrument_provider: instrument_provider.unwrap_or(defaults.instrument_provider),
             instrument_refresh_interval_secs: instrument_refresh_interval_secs
                 .unwrap_or(defaults.instrument_refresh_interval_secs),
@@ -376,7 +379,7 @@ mod tests {
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
         let config = BinanceDataClientConfig::py_new(
             None, None, None, None, None, None, None, None, None, None, None, None, false, None,
-            None, None, None, None,
+            None, None, None, None, false,
         )
         .unwrap();
         let defaults = BinanceDataClientConfig::default();
@@ -388,6 +391,7 @@ mod tests {
         assert_eq!(config.api_key, defaults.api_key);
         assert_eq!(config.api_secret, defaults.api_secret);
         assert_eq!(config.spot_market_data_mode, defaults.spot_market_data_mode);
+        assert!(!config.use_usdm_raw_trades);
         assert_eq!(config.instrument_provider, defaults.instrument_provider);
         assert_eq!(
             config.instrument_refresh_interval_secs,
@@ -427,6 +431,7 @@ mod tests {
             Some(123),
             Some(456),
             Some(0),
+            true,
         )
         .unwrap();
 
@@ -449,6 +454,7 @@ mod tests {
             config.spot_market_data_mode,
             BinanceSpotMarketDataMode::Json
         );
+        assert!(config.use_usdm_raw_trades);
         assert_eq!(config.instrument_refresh_interval_secs, 30);
         assert_eq!(config.instrument_status_poll_secs, 15);
         assert_eq!(

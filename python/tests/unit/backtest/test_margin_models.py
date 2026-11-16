@@ -183,6 +183,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
     def create(model: object, account_type: AccountType = AccountType.MARGIN) -> object:
         instrument = TestInstrumentProvider.audusd_sim()
         fee = MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0))
+
         quote = QuoteTick(
             instrument_id=instrument.id,
             bid_price=Price.from_str("0.80000"),
@@ -209,10 +210,12 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
             engine.add_data([quote])
             engine.run()
             return engine.cache.account_for_venue(Venue("SIM"))
+
         if request.param == "node":
             catalog = ParquetDataCatalog(str(tmp_path))
             catalog.write_instruments([instrument])
             catalog.write_quote_ticks([quote])
+
             config = BacktestRunConfig(
                 venues=[
                     BacktestVenueConfig(
@@ -235,6 +238,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
                 engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
                 dispose_on_completion=False,
             )
+
             node = BacktestNode([config])
             request.addfinalizer(node.dispose)
             node.run()

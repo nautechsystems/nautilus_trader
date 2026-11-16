@@ -115,6 +115,7 @@ def test_lighter_configs_expose_deployment_and_custom_venue() -> None:
         deployment=LighterDeployment.ROBINHOOD,
         venue=venue,
     )
+
     exec_config = LighterExecutionClientConfig(
         account_id=account_id,
         deployment=LighterDeployment.ROBINHOOD,

@@ -32,12 +32,14 @@ use nautilus_common::{
     actor::{Component, DataActor, DataActorCore, data_actor::DataActorConfig},
     live::dst,
     logging::logger::LoggerConfig,
+    messages::ExecutionReport,
 };
 use nautilus_core::UnixNanos;
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::LiveNodeConfig,
     node::{LiveNode, LiveNodeHandle, NodeState},
+    runner::AsyncRunner,
 };
 use nautilus_model::{
     enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
@@ -74,6 +76,10 @@ struct StartupWorld {
     behavior: StartupMassStatusBehavior,
     oms_type: OmsType,
     position_report: Option<PositionStatusReport>,
+    delayed_report: Option<OrderStatusReport>,
+    delayed_observation: Option<DelayedReportObservation>,
+    retained_position: bool,
+    claim_external_orders: bool,
     closing: Option<ClosingRecovery>,
     client_state: StartupMassStatusClientState,
     node_state: Option<NodeState>,
@@ -99,6 +105,10 @@ impl StartupWorld {
             behavior: StartupMassStatusBehavior::Available,
             oms_type: OmsType::Hedging,
             position_report: None,
+            delayed_report: None,
+            delayed_observation: None,
+            retained_position: false,
+            claim_external_orders: false,
             closing: None,
             client_state: StartupMassStatusClientState::default(),
             node_state: None,
@@ -204,6 +214,56 @@ fn opening_price_unavailable(world: &mut StartupWorld) {
     world.position_report.as_mut().unwrap().avg_px_open = None;
 }
 
+#[given(
+    "the execution in the delayed Filled order report is already included in the position snapshot"
+)]
+fn delayed_execution(world: &mut StartupWorld) {
+    let position = world.position_report.as_ref().unwrap();
+
+    let side = if position.position_side == PositionSide::Long {
+        OrderSide::Buy
+    } else {
+        OrderSide::Sell
+    };
+
+    world.delayed_report = Some(
+        OrderStatusReport::new(
+            position.account_id,
+            position.instrument_id,
+            None,
+            VenueOrderId::from("V-BEFORE-RESTART"),
+            Some(side),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            position.quantity,
+            position.quantity,
+            UnixNanos::from(100_000),
+            UnixNanos::from(500_000),
+            UnixNanos::from(3_000_000),
+            None,
+        )
+        .with_avg_px(position.avg_px_open.unwrap()),
+    );
+}
+
+#[given("the venue reports an explicit flat position and no orders or fills")]
+fn venue_explicit_flat(world: &mut StartupWorld) {
+    let instrument_id = crypto_perpetual_ethusdt().id();
+    let ts = UnixNanos::from(4_000_000);
+    world.position_report = Some(PositionStatusReport::new(
+        AccountId::from("BLOCKING-REPORT-001"),
+        instrument_id,
+        PositionSide::Flat,
+        Quantity::from("0.000"),
+        ts,
+        ts,
+        None,
+        None,
+        None,
+    ));
+}
+
 #[given("the venue cannot provide mass status")]
 fn mass_status_unavailable(world: &mut StartupWorld) {
     world.behavior = StartupMassStatusBehavior::Unavailable;
@@ -279,6 +339,10 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
         0
     );
 
+    if world.retained_position {
+        populate_retained_position(node);
+    }
+
     if let Some(closing) = &world.closing {
         closing.populate_cache(node);
     }
@@ -289,34 +353,40 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     })
     .unwrap();
 
-    let strategy_config = world
-        .closing
-        .as_ref()
-        .map_or_else(StrategyConfig::default, |closing| StrategyConfig {
+    let claims_external_orders = world.claim_external_orders
+        || world
+            .closing
+            .as_ref()
+            .is_some_and(|closing| closing.source == ClosingSource::Claimed);
+
+    let strategy_config = if world.retained_position {
+        StrategyConfig {
             strategy_id: Some(closing_strategy_id()),
             oms_type: Some(OmsType::Netting),
-            external_order_instrument_ids: (closing.source == ClosingSource::Claimed)
+            external_order_instrument_ids: claims_external_orders
                 .then(|| vec![crypto_perpetual_ethusdt().id()]),
             ..Default::default()
-        });
+        }
+    } else {
+        StrategyConfig::default()
+    };
 
     node.add_strategy(StartupStrategy {
         core: StrategyCore::new(strategy_config),
         handle: node.handle(),
         observation: world.observation.clone(),
+        stop_on_start: world.delayed_report.is_none(),
     })
     .unwrap();
 
-    if let Some(closing) = &world.closing {
-        let expected_claim = (closing.source == ClosingSource::Claimed).then(closing_strategy_id);
-        assert_eq!(
-            node.kernel()
-                .cache()
-                .borrow()
-                .external_order_claim(&crypto_perpetual_ethusdt().id()),
-            expected_claim
-        );
-    }
+    let expected_claim = claims_external_orders.then(closing_strategy_id);
+    assert_eq!(
+        node.kernel()
+            .cache()
+            .borrow()
+            .external_order_claim(&crypto_perpetual_ethusdt().id()),
+        expected_claim
+    );
 
     let result = dst::time::timeout(Duration::from_secs(5), async {
         match entrypoint.as_str() {
@@ -327,6 +397,44 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     })
     .await
     .expect("node startup must finish before the test deadline");
+
+    if let Some(report) = &world.delayed_report {
+        assert!(
+            result.is_ok(),
+            "startup must succeed before report delivery"
+        );
+        assert_eq!(node.state(), NodeState::Running);
+        assert!(report.ts_last < world.position_report.as_ref().unwrap().ts_last);
+        assert!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .client_order_id(&report.venue_order_id)
+                .is_none()
+        );
+
+        AsyncRunner::handle_exec_report(ExecutionReport::Order(Box::new(report.clone())));
+
+        world.delayed_observation = {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            let client_order_id = cache.client_order_id(&report.venue_order_id).unwrap();
+            let positions = cache.positions_open(None, None, None, None, None);
+            assert_eq!(positions.len(), 1);
+            let position = &positions[0];
+            Some(DelayedReportObservation {
+                order: cache.order(client_order_id).unwrap().clone(),
+                position: PositionObservation::new(position, cache.oms_type(&position.id)),
+                net_qty: node
+                    .kernel()
+                    .portfolio()
+                    .net_position(&report.instrument_id),
+                node_state: node.state(),
+            })
+        };
+
+        node.stop().await.expect("restarted node must stop cleanly");
+    }
 
     world.result = Some(result.map_err(|e| format!("{e:#}")));
     world.node_state = Some(node.state());
@@ -344,15 +452,61 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     );
 }
 
+#[when(
+    "the live node restarts and receives the delayed Filled order report after entering Running"
+)]
+async fn restart_before_delayed_report(world: &mut StartupWorld) {
+    assert!(world.delayed_report.is_some());
+    start_node(world, "start".to_string()).await;
+}
+
+#[then(regex = "^the delayed order is FILLED for ([0-9.]+) ETH at ([0-9.]+) USDT$")]
+fn delayed_order_filled(world: &mut StartupWorld, qty: Quantity, price: Decimal) {
+    let observation = world.delayed_observation.as_ref().unwrap();
+    let report = world.delayed_report.as_ref().unwrap();
+    let order = &observation.order;
+
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), qty);
+    assert_eq!(order.filled_qty(), qty);
+    assert_eq!(order.avg_px(), Some(price));
+    assert_eq!(order.account_id(), Some(report.account_id));
+    assert_eq!(order.instrument_id(), report.instrument_id);
+    assert_eq!(order.venue_order_id(), Some(report.venue_order_id));
+    assert_eq!(Some(order.order_side()), report.order_side);
+    assert_eq!(order.trade_ids().len(), 1);
+    assert_eq!(order.ts_last(), report.ts_last);
+}
+
+#[then("the recovered position and portfolio exposure stay unchanged after the delayed report")]
+fn delayed_exposure_unchanged(world: &mut StartupWorld) {
+    let before = world.observation.borrow();
+    let before = before.as_ref().unwrap();
+    let after = world.delayed_observation.as_ref().unwrap();
+
+    assert_eq!(after.node_state, NodeState::Running);
+    assert_eq!(before.positions.len(), 1);
+    assert_eq!(after.position, before.positions[0]);
+    assert_eq!(after.net_qty, before.net_qty);
+}
+
+#[derive(Debug)]
+struct DelayedReportObservation {
+    order: OrderAny,
+    position: PositionObservation,
+    net_qty: Decimal,
+    node_state: NodeState,
+}
+
 #[given("a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee")]
 fn retained_long(world: &mut StartupWorld) {
-    world.closing = Some(ClosingRecovery {
-        source: ClosingSource::Cached,
-        window_start: None,
-        reports_complete: true,
-        fills: Vec::new(),
-        order_status: None,
-    });
+    world.retained_position = true;
+}
+
+#[given("the strategy claims external orders for the retained position's instrument")]
+fn claim_retained_instrument(world: &mut StartupWorld) {
+    assert!(world.retained_position);
+    world.claim_external_orders = true;
 }
 
 #[given("the client cannot provide complete position coverage")]
@@ -365,11 +519,17 @@ fn position_coverage_unavailable(world: &mut StartupWorld) {
 
 #[given(regex = "^the closing order is (cached|claimed)$")]
 fn closing_source(world: &mut StartupWorld, source: String) {
-    world.closing.as_mut().unwrap().source = match source.as_str() {
-        "cached" => ClosingSource::Cached,
-        "claimed" => ClosingSource::Claimed,
-        _ => unreachable!(),
-    };
+    world.closing = Some(ClosingRecovery {
+        source: match source.as_str() {
+            "cached" => ClosingSource::Cached,
+            "claimed" => ClosingSource::Claimed,
+            _ => unreachable!(),
+        },
+        window_start: None,
+        reports_complete: true,
+        fills: Vec::new(),
+        order_status: None,
+    });
 }
 
 #[given("the bounded history starts after the opening trade")]
@@ -493,6 +653,35 @@ fn retained_economics(world: &mut StartupWorld, qty: Quantity, profit: Decimal, 
     );
 }
 
+#[then(
+    regex = "^the retained position is (flat|long) with ([0-9.]+) ETH when the strategy starts$"
+)]
+fn retained_position_at_start(world: &mut StartupWorld, side: String, qty: Quantity) {
+    let observation = world.observation.borrow();
+    let observation = observation.as_ref().unwrap();
+    let position = observation.retained_position.as_ref().unwrap();
+
+    let expected_side = match side.as_str() {
+        "flat" => PositionSide::Flat,
+        "long" => PositionSide::Long,
+        _ => unreachable!(),
+    };
+
+    assert_eq!(position.id, closing_position_id());
+    assert_eq!(position.account_id, AccountId::from("BLOCKING-REPORT-001"));
+    assert_eq!(position.instrument_id, crypto_perpetual_ethusdt().id());
+    assert_eq!(position.strategy_id, closing_strategy_id());
+    assert_eq!(position.side, expected_side);
+    assert_eq!(position.quantity, qty);
+    assert_eq!(position.quantity.precision, qty.precision);
+    assert_eq!(position.avg_px_open, Decimal::from(3000));
+    assert_eq!(observation.orders_open, 0);
+    assert_eq!(
+        observation.positions.len(),
+        usize::from(expected_side != PositionSide::Flat)
+    );
+}
+
 #[then("exactly one position is cached")]
 fn single_position(world: &mut StartupWorld) {
     assert_eq!(world.position_count, Some(1));
@@ -547,47 +736,19 @@ impl ClosingRecovery {
     }
 
     fn populate_cache(&self, node: &LiveNode) {
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let account_id = AccountId::from("BLOCKING-REPORT-001");
         let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+        let instrument_id = crypto_perpetual_ethusdt().id();
         let qty = Quantity::from("1.000");
-        let price = Price::from("3000.00");
-        let mut opening = OrderTestBuilder::new(OrderType::Market)
-            .trader_id(node.kernel().trader_id())
-            .client_order_id(ClientOrderId::from("O-OPEN"))
-            .strategy_id(closing_strategy_id())
-            .instrument_id(instrument.id())
-            .side(OrderSide::Buy)
-            .quantity(qty)
-            .build();
-        accept_order(&mut opening, account_id, VenueOrderId::from("V-OPEN"));
-        let fill = TestOrderEventStubs::filled(
-            &opening,
-            &instrument,
-            Some(TradeId::from("T-OPEN")),
-            Some(closing_position_id()),
-            Some(price),
-            Some(qty),
-            Some(LiquiditySide::Maker),
-            Some(Money::from("0.60 USDT")),
-            Some(UnixNanos::from(1_000_000)),
-            Some(account_id),
-        );
-        opening.apply(fill.clone()).unwrap();
-        let position = Position::new(&instrument, fill.into());
         let cache = node.kernel().cache();
         let mut cache = cache.borrow_mut();
-        cache
-            .add_order(opening, Some(position.id), Some(client_id), false)
-            .unwrap();
-        cache.add_position(&position, OmsType::Netting).unwrap();
 
         if self.source == ClosingSource::Cached {
             let mut closing = OrderTestBuilder::new(OrderType::Market)
                 .trader_id(node.kernel().trader_id())
                 .client_order_id(self.order_id())
                 .strategy_id(closing_strategy_id())
-                .instrument_id(instrument.id())
+                .instrument_id(instrument_id)
                 .side(OrderSide::Sell)
                 .quantity(qty)
                 .build();
@@ -597,6 +758,43 @@ impl ClosingRecovery {
                 .unwrap();
         }
     }
+}
+
+fn populate_retained_position(node: &LiveNode) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("BLOCKING-REPORT-001");
+    let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+    let qty = Quantity::from("1.000");
+    let price = Price::from("3000.00");
+    let mut opening = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(node.kernel().trader_id())
+        .client_order_id(ClientOrderId::from("O-OPEN"))
+        .strategy_id(closing_strategy_id())
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(qty)
+        .build();
+    accept_order(&mut opening, account_id, VenueOrderId::from("V-OPEN"));
+    let fill = TestOrderEventStubs::filled(
+        &opening,
+        &instrument,
+        Some(TradeId::from("T-OPEN")),
+        Some(closing_position_id()),
+        Some(price),
+        Some(qty),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("0.60 USDT")),
+        Some(UnixNanos::from(1_000_000)),
+        Some(account_id),
+    );
+    opening.apply(fill.clone()).unwrap();
+    let position = Position::new(&instrument, fill.into());
+    let cache = node.kernel().cache();
+    let mut cache = cache.borrow_mut();
+    cache
+        .add_order(opening, Some(position.id), Some(client_id), false)
+        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 }
 
 fn closing_strategy_id() -> StrategyId {
@@ -792,11 +990,27 @@ struct PositionObservation {
     avg_px_open: Decimal,
 }
 
+impl PositionObservation {
+    fn new(position: &Position, oms_type: Option<OmsType>) -> Self {
+        Self {
+            id: position.id,
+            account_id: position.account_id,
+            instrument_id: position.instrument_id,
+            strategy_id: position.strategy_id,
+            oms_type,
+            side: position.side,
+            qty: position.quantity,
+            avg_px_open: position.avg_px_open,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct StartupStrategy {
     core: StrategyCore,
     handle: LiveNodeHandle,
     observation: Rc<RefCell<Option<StartupObservation>>>,
+    stop_on_start: bool,
 }
 
 impl DataActor for StartupStrategy {
@@ -808,20 +1022,10 @@ impl DataActor for StartupStrategy {
 
         let cache = self.cache();
         let orders_open = cache.orders_open_count(None, None, None, None, None);
-
         let positions = cache
             .positions_open(None, None, None, None, None)
             .iter()
-            .map(|position| PositionObservation {
-                id: position.id,
-                account_id: position.account_id,
-                instrument_id: position.instrument_id,
-                strategy_id: position.strategy_id,
-                oms_type: cache.oms_type(&position.id),
-                side: position.side,
-                qty: position.quantity,
-                avg_px_open: position.avg_px_open,
-            })
+            .map(|position| PositionObservation::new(position, cache.oms_type(&position.id)))
             .collect();
 
         let instrument_id = crypto_perpetual_ethusdt().id();
@@ -833,7 +1037,10 @@ impl DataActor for StartupStrategy {
             retained_position: cache.position(&closing_position_id()),
         });
 
-        self.handle.stop();
+        if self.stop_on_start {
+            self.handle.stop();
+        }
+
         Ok(())
     }
 }

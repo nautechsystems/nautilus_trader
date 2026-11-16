@@ -218,9 +218,7 @@ impl Scalar {
         debug_assert!(self.is_canonical(), "Scalar::monty_mul: lhs not canonical",);
 
         let mut r = [0u64; LIMBS];
-
-        for i in 0..LIMBS {
-            let m = rhs.0[i];
+        for m in rhs.0 {
             let f = (self.0[0].wrapping_mul(m).wrapping_add(r[0])).wrapping_mul(N0I);
 
             let mut cc1: u64 = 0;

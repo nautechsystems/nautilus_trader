@@ -1,0 +1,28 @@
+{
+  "result": "success",
+  "sendStatus": {
+    "order_id": "179f9af8-e45e-469d-b3e9-2fd4675cb7d0",
+    "status": "placed",
+    "receivedTime": "2019-09-05T16:33:50.734Z",
+    "orderEvents": [
+      {
+        "type": "PLACE",
+        "order": {
+          "orderId": "179f9af8-e45e-469d-b3e9-2fd4675cb7d0",
+          "cliOrdId": null,
+          "type": "lmt",
+          "symbol": "PI_XBTUSD",
+          "side": "buy",
+          "quantity": 10000,
+          "filled": 0,
+          "limitPrice": 9400,
+          "reduceOnly": false,
+          "timestamp": "2019-09-05T16:33:50.734Z",
+          "lastUpdateTimestamp": "2019-09-05T16:33:50.734Z"
+        },
+        "reducedQuantity": null
+      }
+    ]
+  },
+  "serverTime": "2019-09-05T16:33:50.734Z"
+}

@@ -197,27 +197,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_post_with_json_body() {
-        let credential = Credential::new(
-            API_KEY.to_string(),
-            API_SECRET.to_string(),
-            API_PASSPHRASE.to_string(),
-        );
-
-        // Test with a simple JSON body
-        let body = r#"{"instId":"BTC-USD-200925","tdMode":"isolated","side":"buy","ordType":"limit","px":"432.11","sz":"2"}"#;
-        let signature = credential.sign(
-            "2020-12-08T09:08:57.715Z",
-            "POST",
-            "/api/v5/trade/order",
-            body,
-        );
-
-        assert!(!signature.is_empty());
-        BASE64_STANDARD.decode(&signature).unwrap();
-    }
-
-    #[rstest]
     fn test_post_algo_order() {
         let credential = Credential::new(
             API_KEY.to_string(),

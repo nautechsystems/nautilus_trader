@@ -406,6 +406,7 @@ class MultiInstrumentTickScheduled(Strategy):
         for raw_instrument_id, actions in config.instrument_actions.items():
             instrument_id = InstrumentId.from_str(str(raw_instrument_id))
             instrument_actions: dict[int, list[tuple[OrderSide, Quantity]]] = {}
+
             for entry in actions:
                 idx = int(entry[0])
                 side = OrderSide.BUY if str(entry[1]).upper() == "BUY" else OrderSide.SELL
@@ -563,10 +564,13 @@ class _EMACrossTrailingWorkflow(Strategy):
         On bar.
         """
         self._update_indicators(bar)
+
         if not self._indicators_ready():
             return
+
         if not self.portfolio.is_net_flat(self._instrument_id):
             return
+
         if self.entry is not None and not self.entry.is_closed():
             return
 
@@ -1033,11 +1037,13 @@ class MACDTradeTickStrategy(Strategy):
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
         self._entry_threshold = config.entry_threshold
+
         self.macd = MovingAverageConvergenceDivergence(
             fast_period=config.fast_period,
             slow_period=config.slow_period,
             price_type=PriceType.MID,
         )
+
         self._position_side: OrderSide | None = None  # None=flat, BUY=long, SELL=short
 
     def on_start(self) -> None:

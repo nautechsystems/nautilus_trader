@@ -139,9 +139,15 @@ URLs, chain ID, settlement currency, venue, and attribution policy. Both testnet
 the adapter never infers deployment behavior from that ID.
 
 URL overrides for private gateways or local test fixtures affect only transport, preserving deployment
-signing, settlement currency, and attribution.
+signing, settlement currency, and attribution. They also preserve the selected credential namespace.
+Both configs default to mainnet; set `environment` explicitly for testnet.
 
-The data client appends `readonly=true` to its WebSocket URL. The execution client leaves the URL unchanged.
+The data client appends `readonly=true` to its WebSocket URL. This query parameter does not prevent
+authenticated order writes. Execution configs reject `readonly=true` URLs before startup; use the data
+client alone when observing the market without trading. Other execution URL overrides remain unchanged.
+
+Set `proxy_url` to an absolute `http://` or `https://` URL for both transports. Scheme-less addresses and
+SOCKS proxies are rejected before startup. Proxy credentials are omitted from validation errors.
 
 ### Custom venue identity
 
@@ -156,6 +162,9 @@ derive this from `LIGHTER_DEPLOYMENT`.
 Nautilus routes account commands by issuer, so the `account_id` issuer must match the resolved venue:
 `LIGHTER_RH_ALT` requires an ID such as `LIGHTER_RH_ALT-001`. Custom venues do not enable custom
 chain IDs or attribution.
+
+Execution venue names cannot contain hyphens because the first hyphen in `account_id` separates the
+issuer from the account name. Use underscores, as in `LIGHTER_RH_ALT`, when pairing data and execution.
 
 ## Account and API key setup
 
@@ -454,6 +463,11 @@ Lighter requires a worst-acceptable `price` for market-style orders. The cap sta
 
 `market_order_slippage_bps` (default 50 bps) adjusts the cap before rounding to instrument price precision:
 up for buys, down for sells. Override it with `SubmitOrder.params["market_order_slippage_bps"]`.
+The same key in `SubmitOrderList.params` applies to each order. For `STOP_MARKET` and
+`MARKET_IF_TOUCHED` amendments, set it in `ModifyOrder.params`.
+The config default and present overrides must be integers in `[0, 10_000)` bps. Invalid config defaults
+fail client construction. Floats, strings, negative values, `null`, and out-of-range overrides cause
+local denial before signing or dispatch. An absent override uses the config value.
 
 ### Contingent orders
 
@@ -586,6 +600,11 @@ The adapter sends both defaults explicitly. Each native group uses one pair for 
 Unknown names, non-string values, and `reduce` with `master_account_index` deny the order before
 submission. Non-default modes require zero integrator fees, which the adapter uses.
 
+Robinhood Mainnet can still reject non-default modes with `21159` (nonzero fees), even with zero integrator
+fees. Use the default modes unless the venue permits the requested settings for the account.
+Rejections without a transaction hash can leave concurrent or batched submissions unresolved. Restart
+and reconcile venue state before managing affected orders again.
+
 **Reduction**: `reduce` nets overlapping quantities without a fill. Working-order quantities and
 reports show the remainder plus actual fills; price-only amendments preserve this quantity.
 
@@ -651,9 +670,9 @@ Use `post_only` on limit-style orders. The adapter does not synthesize maker-onl
 The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
 otherwise to `OrderRejected` with `due_post_only=true`.
 
-Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only
-opens can be dropped without a venue order report and reconcile as `INFLIGHT_TIMEOUT`, without
-a venue rejection reason.
+Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only opens can
+be dropped without a venue order report. `ResolveLocally` reconciles them as `INFLIGHT_TIMEOUT` without a venue
+rejection reason; the default `RetainUnresolved` leaves them `SUBMITTED`.
 
 ### Advanced order features
 
@@ -741,6 +760,10 @@ within Lighter's deadline window. Keep the host clock synchronized.
   the deadline. Avoid manual schedule changes while renewal is enabled: renewal replaces them.
 
 Automatic arming and renewal confirm execution without reading back the account schedule.
+
+On mainnet, startup integrator approval also spends a transaction token. When approval is submitted,
+`sendtx_quota_per_min=1` leaves the next token 60 seconds away, exceeding the 30-second arming deadline.
+Budget approval, arming, renewal, and trading together.
 
 #### Confirmation and unknown outcomes
 
@@ -969,6 +992,7 @@ Create, cancel, modify, grouped orders, and leverage updates include market IDs 
 | Feature              | Perpetuals | Spot | Notes                                                        |
 | -------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Query open orders    | ✓          | ✓    | REST `accountActiveOrders` scoped by market.                 |
+| Targeted lookup      | ✓          | ✓    | REST `accountOrders` with active/inactive fallback.          |
 | Query order history  | ✓          | ✓    | REST `accountInactiveOrders` with cursor pagination.         |
 | Order status updates | ✓          | ✓    | Private WebSocket order streams plus status reports.         |
 | Trade history        | ✓          | ✓    | REST `trades`; credentials are required for account history. |
@@ -976,6 +1000,16 @@ Create, cancel, modify, grouped orders, and leverage updates include market IDs 
 | Position reports     | ✓          | -    | Perp only; replays cached position stream.                   |
 | Account state        | ✓          | ✓    | Replays the cached merged account state snapshot.            |
 | Mass status          | ✓          | ✓    | Combines orders, fills, and cached positions.                |
+
+- **Targeted lookup**: with a client order ID, the adapter queries `accountOrders` first. If the request
+  fails or finds no match, it queries `accountActiveOrders`, then paginated `accountInactiveOrders` only
+  when the venue order ID is known. A direct response with no match adds one request before fallback;
+  a failed request can also use the shared REST retry policy.
+- **`accountOrders` query**: the raw `LighterAccountOrdersQuery` takes 1 to 20 client-order indexes (the
+  venue limit); targeted lookups send one. Invalid counts are rejected before any HTTP request.
+- **`trades` filters**: the raw `LighterTradesQuery` also accepts `integrator_account_index` and
+  `order_index_str` (Lighter Core, per [API update 184](https://t.me/lighter_api_updates/184)). The venue
+  gives `order_index_str` precedence over `order_index`; use it for indexes above `i64::MAX`.
 
 Authenticated inactive-order and fill pagination rejects repeated cursors and stops after 1,000 pages.
 Fill reconciliation is repeatable across calls and suppresses fills already emitted by WebSocket.
@@ -1030,8 +1064,27 @@ Execution clients authenticate and subscribe to six private streams:
 
 The adapter emits merged `account_all_assets` and `user_stats` state only after both first frames arrive.
 
+`LighterWsFrame` preserves optional `transaction_time` integers on `account_all_positions` and
+`account_all_assets` frames, including zero. The field uses
+[venue microseconds](https://docs.lighter.xyz/developers/reference/timestamps).
+It is available through `NautilusWsMessage::Raw` only without an execution context; trading nodes do
+not expose it in typed account or position reports. Frames are processed in receive order without
+timestamp filtering or deduplication, and report timestamps remain unchanged.
+
 Construction allows missing credentials, but `connect()` requires `private_key`, `account_index`, and
 `api_key_index`. Private streams and nonce refresh are mandatory.
+
+### Account balances
+
+Each asset's `total` is `balance + margin_balance`. Settlement-currency free balance is the lesser of
+`total - locked_balance` and `max(user_stats.available_balance, 0)`. The remainder is `locked`, including
+margin in use and any funds outside the venue's reported availability.
+
+An account-wide `MarginBalance` reports `initial = max(collateral - available_balance, 0)`. See
+[margin accounts](../concepts/accounting.md#margin-accounts) for initialization and risk checks.
+
+Classic mode keeps spot and perpetual funds separate. Risk checks for both products use this single free
+balance, so a Classic spot order can be denied even when separate spot funds would cover it.
 
 ### Position snapshots and updates
 
@@ -1217,6 +1270,10 @@ non-transaction traffic. Reconcile pending outcomes; do not resend blindly.
 One execution limiter enforces `sendtx_quota_per_min` across WebSocket `sendTx`/`sendTxBatch` trading,
 including account-wide cancellation and schedule control, and startup HTTP `sendTx` integrator approval.
 Raw calls use it when configured, falling back to the raw client's REST limiter otherwise.
+HTTP `sendTx` and `sendTxBatch` responses expose optional `remaining_send_tx`, the transactions still
+available in the venue's rolling minute (Lighter Core, per
+[`sendTx`](https://docs.lighter.xyz/api/transactions/sendtx)). Premium accounts return it; the adapter does
+not use it for pacing, which still uses `sendtx_quota_per_min`.
 
 Clients with identical WebSocket URL strings share a 200-message/minute non-transaction control limiter. The default
 data URL's `readonly=true` separates it from execution. Budget combined control traffic within the per-IP limit.
@@ -1400,51 +1457,54 @@ Separate namespaces let one process target multiple deployments without sharing 
 
 Execution rejects incomplete credentials. All data subscriptions and REST requests for instruments,
 books, trades, bars, and funding use public endpoints without credentials.
+The data config accepts credential fields for compatibility, but the client does not parse or use them.
+Malformed credentials do not prevent public data startup. The Rust `has_credentials()` methods on both configs
+and the data client check field presence, including environment fallback; they do not validate credentials.
 
 ## Configuration
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                   |
-| ---------------------------------- | --------- | ------------------------------------------------------------- |
-| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.                   |
-| `deployment`                       | `Lighter` | `LighterDeployment::Lighter` or `Robinhood`.                  |
-| `venue`                            | `None`    | Optional Nautilus venue override; defaults from `deployment`. |
-| `account_index`                    | `None`    | Optional factory field; public data calls do not use it.      |
-| `api_key_index`                    | `None`    | Optional factory field; public data calls do not use it.      |
-| `private_key`                      | `None`    | Optional factory field; public data calls do not use it.      |
-| `base_url_http`                    | `None`    | Optional REST URL override.                                   |
-| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                              |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                    |
-| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                              |
-| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.              |
-| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.               |
-| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.                  |
-| `transport_backend`                | Default   | WebSocket transport backend.                                  |
+| Option                             | Default   | Description                                                     |
+| ---------------------------------- | --------- | --------------------------------------------------------------- |
+| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.                     |
+| `deployment`                       | `Lighter` | `LighterDeployment::Lighter` or `Robinhood`.                    |
+| `venue`                            | `None`    | Optional Nautilus venue override; defaults from `deployment`.   |
+| `account_index`                    | `None`    | Accepted for compatibility; public data calls ignore it.        |
+| `api_key_index`                    | `None`    | Accepted for compatibility; public data calls ignore it.        |
+| `private_key`                      | `None`    | Accepted for compatibility; public data calls ignore it.        |
+| `base_url_http`                    | `None`    | Optional REST URL override.                                     |
+| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                                |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                      |
+| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                                |
+| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                  |
+| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes; 0 disables it. |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.                 |
+| `rest_quota_per_min`               | `None`    | REST quota override; unset or 0 keeps 60 req/min.               |
+| `transport_backend`                | Default   | WebSocket transport backend.                                    |
 
 ### Execution client configuration options
 
-| Option                          | Default       | Description                                                                                             |
-| ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `environment`                   | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                                                             |
-| `deployment`                    | `Lighter`     | `LighterDeployment::Lighter` or `Robinhood`.                                                            |
-| `venue`                         | `None`        | Optional Nautilus venue override; defaults from `deployment`.                                           |
-| `account_id`                    | `LIGHTER-001` | Nautilus account ID; issuer must match the resolved venue.                                              |
-| `account_index`                 | `None`        | Lighter account index.                                                                                  |
-| `api_key_index`                 | `None`        | Lighter API key slot.                                                                                   |
-| `private_key`                   | `None`        | Hex private key for auth and L2 transaction signing.                                                    |
-| `base_url_http`                 | `None`        | Optional REST URL override.                                                                             |
-| `base_url_ws`                   | `None`        | Optional WebSocket URL override.                                                                        |
-| `proxy_url`                     | `None`        | Optional proxy URL for HTTP and WebSocket.                                                              |
-| `http_timeout_secs`             | `60`          | HTTP request timeout in seconds.                                                                        |
-| `ws_timeout_secs`               | `30`          | WebSocket connection and reconnection timeout.                                                          |
-| `market_order_slippage_bps`     | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.                                                |
-| `rest_quota_per_min`            | `None`        | REST quota override; unset keeps 60 req/min.                                                            |
-| `sendtx_quota_per_min`          | `None`        | Transaction quota override; unset keeps 60 req/min.                                                     |
-| `transport_backend`             | Default       | WebSocket transport backend.                                                                            |
-| `use_gtd`                       | `true`        | Use venue-native GTD; see [GTD policy](#gtd-policy).                                                    |
-| `scheduled_cancel_timeout_secs` | `None`        | Automatic account-wide cancellation timeout in seconds; see [cancellation](#account-wide-cancellation). |
+| Option                          | Default             | Description                                                                                                                                         |
+| ------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment`                   | `Mainnet`           | `LighterEnvironment::Mainnet` or `Testnet`.                                                                                                         |
+| `deployment`                    | `Lighter`           | `LighterDeployment::Lighter` or `Robinhood`.                                                                                                        |
+| `venue`                         | `None`              | Optional Nautilus venue override; defaults from `deployment`.                                                                                       |
+| `account_id`                    | Rust: `LIGHTER-001` | Nautilus account ID; required in Python; issuer must match the resolved venue.                                                                      |
+| `account_index`                 | `None`              | Lighter account index.                                                                                                                              |
+| `api_key_index`                 | `None`              | Lighter API key slot.                                                                                                                               |
+| `private_key`                   | `None`              | Hex private key for auth and L2 transaction signing.                                                                                                |
+| `base_url_http`                 | `None`              | Optional REST URL override.                                                                                                                         |
+| `base_url_ws`                   | `None`              | Optional WebSocket URL override.                                                                                                                    |
+| `proxy_url`                     | `None`              | Optional proxy URL for HTTP and WebSocket.                                                                                                          |
+| `http_timeout_secs`             | `60`                | HTTP request timeout in seconds.                                                                                                                    |
+| `ws_timeout_secs`               | `30`                | WebSocket connection and reconnection timeout.                                                                                                      |
+| `market_order_slippage_bps`     | `50`                | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.                                                                                            |
+| `rest_quota_per_min`            | `None`              | REST quota override; unset or 0 keeps 60 req/min.                                                                                                   |
+| `sendtx_quota_per_min`          | `None`              | Transaction quota override; unset or 0 keeps 60 req/min.                                                                                            |
+| `transport_backend`             | Default             | WebSocket transport backend.                                                                                                                        |
+| `use_gtd`                       | `true`              | Use venue-native GTD; false requires strategy `manage_gtd_expiry`. See [GTD policy](#gtd-policy).                                                   |
+| `scheduled_cancel_timeout_secs` | `None`              | Automatic account-wide cancellation timeout in seconds; `None` leaves the venue schedule untouched. See [cancellation](#account-wide-cancellation). |
 
 ### Configuration example
 

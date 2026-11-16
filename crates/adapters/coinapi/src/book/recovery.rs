@@ -172,3 +172,134 @@ async fn restart(
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
+mod tests {
+    use std::{
+        future::{Future, poll_fn},
+        task::Poll,
+    };
+
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_network::websocket::TransportBackend;
+    use rstest::rstest;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    use super::*;
+    use crate::websocket::{
+        client::CoinApiWebSocketConfig,
+        messages::{Channel, DataType, Ohlcv, ScopeChange},
+    };
+
+    #[rstest]
+    #[tokio::test]
+    async fn restart_discards_retained_period_before_and_after_pause() {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let (removed, removal) = tokio::sync::oneshot::channel();
+            let (finished, finish) = tokio::sync::oneshot::channel();
+
+            let peer = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = accept_async(stream).await.unwrap();
+                let mut removed = Some(removed);
+
+                for index in 0..3 {
+                    let frame = socket.next().await.unwrap().unwrap();
+                    assert!(frame.is_text());
+                    socket
+                        .send(Message::text(include_str!(
+                            "../../test_data/ws_heartbeat.json"
+                        )))
+                        .await
+                        .unwrap();
+
+                    if index == 1 {
+                        removed.take().unwrap().send(()).unwrap();
+                    }
+                }
+
+                finish.await.unwrap();
+            });
+
+            let (ws, _messages) = CoinApiWebSocketClient::new(
+                "test-api-key".into(),
+                CoinApiWebSocketConfig {
+                    url: format!("ws://{address}"),
+                    backend: TransportBackend::Tungstenite,
+                    ..CoinApiWebSocketConfig::default()
+                },
+            )
+            .unwrap();
+
+            let retained: Ohlcv =
+                serde_json::from_str(include_str!("../../test_data/ws_ohlcv.json")).unwrap();
+            let key = (retained.symbol_id, retained.period_id);
+
+            let subscription = Subscription {
+                channel: Channel {
+                    data_type: DataType::Book,
+                    period_id: None,
+                },
+                symbol_id: retained.symbol_id,
+            };
+
+            let other = Subscription {
+                channel: Channel {
+                    data_type: DataType::Trade,
+                    period_id: None,
+                },
+                symbol_id: "COINBASE_SPOT_BTC_USDT".into(),
+            };
+
+            assert!(
+                ws.apply(&[
+                    ScopeChange::Subscribe(subscription),
+                    ScopeChange::Subscribe(other)
+                ])
+                .await
+                .unwrap()
+                .is_empty()
+            );
+            let ohlcv = Mutex::new(OhlcvCache::default());
+            ohlcv.lock().insert(key, retained.clone());
+            let mut pending = Box::pin(restart(
+                &ws,
+                &ohlcv,
+                subscription,
+                CancellationToken::new(),
+                SnapshotGate::default(),
+            ));
+            tokio::select! {
+                biased;
+                removed = removal => removed.unwrap(),
+                result = &mut pending => panic!("restart completed before removal: {result:?}"),
+            }
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                poll_fn(|cx| {
+                    assert!(pending.as_mut().poll(cx).is_pending());
+
+                    if ohlcv.lock().is_empty() {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                }),
+            )
+            .await
+            .unwrap();
+
+            ohlcv.lock().insert(key, retained);
+            pending.await.unwrap();
+            assert!(ohlcv.lock().is_empty());
+            finished.send(()).unwrap();
+            peer.await.unwrap();
+            ws.close().await;
+        })
+        .await
+        .unwrap();
+    }
+}

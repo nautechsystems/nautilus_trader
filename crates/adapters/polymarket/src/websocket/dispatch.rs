@@ -96,7 +96,7 @@ use crate::{
     },
 };
 
-/// Signal returned when a finalized trade requires an async account refresh.
+/// Signal returned when a user event requires an async account refresh.
 #[derive(Debug)]
 pub(crate) struct AccountRefreshRequest;
 
@@ -635,6 +635,7 @@ pub(crate) fn dispatch_user_message(
             None
         }
         UserWsMessage::Trade(trade) => dispatch_trade_update(trade, ctx, state),
+        UserWsMessage::AutoRedeem => Some(AccountRefreshRequest),
     }
 }
 
@@ -1700,13 +1701,13 @@ fn gtd_expiry_status(
 
 /// Converts a venue-reported `original_size` on a user-channel order message into shares.
 ///
-/// The venue echoes the signed `makerAmount`, which for a BUY is the pUSD budget rather than a
-/// share count (see `compute_maker_taker_amounts`). Dividing by the order price recovers the
-/// signed `takerAmount`, which is the share quantity the client submitted.
+/// For the market order types (`FAK` and `FOK`) the venue echoes the signed `makerAmount`, which
+/// for a BUY is the pUSD budget rather than a share count (see `compute_maker_taker_amounts`): a
+/// BUY at 0.01 for 100 shares reports `1`. Dividing by the order price recovers the signed
+/// `takerAmount`, which is the share quantity the client submitted.
 ///
-/// This is confirmed for the market order types (`FAK` and `FOK`), where a BUY at 0.01 for 100
-/// shares reports `1`. A SELL signs shares as its maker amount and needs no conversion. Resting
-/// types pass through unchanged: their denomination is unconfirmed, and converting a
+/// A SELL signs shares as its maker amount and needs no conversion. Resting types (`GTC` and
+/// `GTD`) report shares for both sides and pass through unchanged: converting a
 /// share-denominated size would misreport every externally-managed resting order.
 fn original_size_to_shares(
     original_size: Decimal,
@@ -4302,9 +4303,7 @@ mod tests {
             serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
                 .expect("REST trade fixture");
         trade.status = trade_status.unwrap_or(PolymarketTradeStatus::Confirmed);
-        let trades = trade_status
-            .map(|_| vec![trade.clone()])
-            .unwrap_or_default();
+        let trades = trade_status.map_or_default(|_| vec![trade.clone()]);
         let ws_trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = instrument_for_trade(&ws_trade);
         let token_instruments = AtomicMap::new();

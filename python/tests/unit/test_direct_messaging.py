@@ -190,7 +190,6 @@ def test_each_component_publishes_and_unsubscribes_bound_method(components, inde
     publisher.publish_message("app.shared", first)
     publisher.unsubscribe_topic("app.shared", publisher.receive)
     publisher.publish_message("app.shared", second)
-
     for component in components:
         expected = [first] if component is publisher else [first, second]
         assert component.received == expected

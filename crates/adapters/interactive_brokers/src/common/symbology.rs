@@ -38,6 +38,7 @@ use crate::{
 pub struct Symbology {
     method: SymbologyMethod,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
 }
 
 impl Symbology {
@@ -46,6 +47,7 @@ impl Symbology {
         Self {
             method,
             futures_year_digits: FuturesYearDigits::DEFAULT,
+            share_class_space: true,
         }
     }
 
@@ -53,6 +55,14 @@ impl Symbology {
     #[must_use]
     pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
         self.futures_year_digits = futures_year_digits;
+        self
+    }
+
+    /// Selects whether simplified stock IDs keep IB's share-class space (`BRK B`) or use a
+    /// hyphen (`BRK-B`).
+    #[must_use]
+    pub fn with_share_class_space(mut self, share_class_space: bool) -> Self {
+        self.share_class_space = share_class_space;
         self
     }
 
@@ -72,9 +82,12 @@ impl Symbology {
         venue: Option<Venue>,
     ) -> anyhow::Result<InstrumentId> {
         let instrument_id = match self.method {
-            SymbologyMethod::Simplified => {
-                contract_to_instrument_id_simplified(contract, venue, self.futures_year_digits)
-            }
+            SymbologyMethod::Simplified => contract_to_instrument_id_simplified(
+                contract,
+                venue,
+                self.futures_year_digits,
+                self.share_class_space,
+            ),
             SymbologyMethod::Raw => {
                 contract_to_instrument_id_raw(contract, venue, self.futures_year_digits)
             }
@@ -151,6 +164,7 @@ fn contract_to_instrument_id_simplified(
     contract: &Contract,
     venue: Option<Venue>,
     futures_year_digits: FuturesYearDigits,
+    share_class_space: bool,
 ) -> InstrumentId {
     let venue = venue.unwrap_or_else(|| {
         // For Index and Future, use contract exchange when set (e.g. ESTX50 -> EUREX, FESX -> EUREX).
@@ -188,9 +202,12 @@ fn contract_to_instrument_id_simplified(
 
     let symbol = match contract.security_type {
         SecurityType::Stock => {
-            // STK: Use localSymbol with spaces replaced by hyphens, fallback to symbol
+            // STK: Use localSymbol, keeping a share-class space (BRK B) unless configured to
+            // use a hyphen (BRK-B); fallback to symbol
             let symbol_str = if contract.local_symbol.is_empty() {
                 contract.symbol.as_str().to_string()
+            } else if share_class_space {
+                contract.local_symbol.as_str().to_string()
             } else {
                 contract.local_symbol.as_str().replace(' ', "-")
             };
@@ -2006,6 +2023,48 @@ mod tests {
         assert_eq!(contract.local_symbol.as_str(), "YMM6");
         assert!(contract.symbol.as_str().is_empty());
         assert!(contract.last_trade_date_or_contract_month.is_empty());
+    }
+
+    fn share_class_stock() -> Contract {
+        Contract {
+            symbol: Symbol::from("BRK B"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            primary_exchange: Exchange::from("NYSE"),
+            currency: Currency::from("USD"),
+            local_symbol: "BRK B".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    #[case(true, "BRK B.NYSE")]
+    #[case(false, "BRK-B.NYSE")]
+    fn test_ib_contract_to_instrument_id_simplified_names_share_class(
+        #[case] share_class_space: bool,
+        #[case] expected: &str,
+    ) {
+        let instrument_id = Symbology::new(SymbologyMethod::Simplified)
+            .with_share_class_space(share_class_space)
+            .instrument_id(&share_class_stock(), Some(Venue::from("NYSE")))
+            .unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
+    #[case("BRK B.NYSE")]
+    #[case("BRK-B.NYSE")]
+    fn test_instrument_id_to_ib_contract_simplified_spells_share_class_with_space(
+        #[case] instrument_id: &str,
+    ) {
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(InstrumentId::from(instrument_id), Some("NYSE"))
+            .unwrap();
+
+        assert_eq!(contract.security_type, SecurityType::Stock);
+        assert_eq!(contract.symbol.as_str(), "BRK B");
+        assert_eq!(contract.primary_exchange.as_str(), "NYSE");
     }
 
     #[rstest]

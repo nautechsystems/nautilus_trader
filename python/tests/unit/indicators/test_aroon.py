@@ -288,6 +288,7 @@ def _bar(high: float, low: float, close: float) -> Bar:
         InstrumentId.from_str("ETHUSDT.BINANCE"),
         BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
     )
+
     return Bar(
         bar_type=bar_type,
         open=Price.from_str(str(close)),

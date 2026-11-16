@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, B256, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
@@ -29,6 +29,8 @@ pub struct MintEvent {
     pub pool_identifier: PoolIdentifier,
     /// The block number when the mint occurred.
     pub block_number: u64,
+    /// The hash of the block containing this event, when the source log reported it.
+    pub block_hash: Option<B256>,
     /// The unique hash identifier of the transaction containing this event.
     pub transaction_hash: String,
     /// The position of this transaction within the block.
@@ -59,6 +61,7 @@ impl MintEvent {
         dex: SharedDex,
         pool_identifier: PoolIdentifier,
         block_number: u64,
+        block_hash: Option<B256>,
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
@@ -74,6 +77,7 @@ impl MintEvent {
             dex,
             pool_identifier,
             block_number,
+            block_hash,
             transaction_hash,
             transaction_index,
             log_index,

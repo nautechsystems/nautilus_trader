@@ -31,7 +31,7 @@ use nautilus_execution::{
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, OrderStatus, OrderType, TrailingOffsetType, TriggerType},
-    events::{OrderEventAny, OrderInitialized},
+    events::{OrderEventAny, OrderEventType, OrderInitialized},
     identifiers::{AccountId, ClientOrderId, VenueOrderId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -234,8 +234,8 @@ fn test_trailing_stop_activation_does_not_rewrite_order_events(
         submit_command(&order),
     );
 
-    let is_activated = match &*cache.borrow().order(&order.client_order_id()).unwrap() {
-        OrderAny::TrailingStopMarket(order) => order.is_activated,
+    let (status, is_activated) = match &*cache.borrow().order(&order.client_order_id()).unwrap() {
+        OrderAny::TrailingStopMarket(order) => (order.status(), order.is_activated),
         other => panic!("Expected trailing stop market order, was {other:?}"),
     };
 
@@ -244,6 +244,14 @@ fn test_trailing_stop_activation_does_not_rewrite_order_events(
         .iter()
         .enumerate()
         .any(|(i, event)| events[..i].contains(event));
+    let event_types: Vec<OrderEventType> = events.iter().map(OrderEventAny::event_type).collect();
+    let replayed = OrderAny::from_events(
+        std::iter::once(OrderEventAny::Initialized(order.init_event().clone()))
+            .chain(events.iter().cloned())
+            .collect(),
+    )
+    .unwrap();
+    assert_eq!(status, OrderStatus::Emulated);
     assert!(is_activated);
     assert!(!events.is_empty());
     assert!(!has_duplicates, "duplicate events {events:?}");
@@ -252,6 +260,12 @@ fn test_trailing_stop_activation_does_not_rewrite_order_events(
             .iter()
             .any(|event| matches!(event, OrderEventAny::Initialized(_)))
     );
+    assert_eq!(
+        event_types,
+        [OrderEventType::Updated, OrderEventType::Emulated],
+        "persisted events {events:?}"
+    );
+    assert_eq!(replayed.status(), OrderStatus::Emulated);
 }
 
 #[rstest]
@@ -334,7 +348,10 @@ fn test_release_continues_after_transformed_order_persistence_fails(
     ));
     assert_eq!(
         order_events.get_messages().as_slice(),
-        std::slice::from_ref(&released)
+        &[
+            OrderEventAny::Initialized(command.order_init.clone()),
+            released.clone(),
+        ]
     );
     assert_eq!(risk_events.get_messages(), [released]);
     assert_eq!(command.client_order_id, client_order_id);

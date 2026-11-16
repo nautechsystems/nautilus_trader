@@ -126,6 +126,8 @@ pub struct DatabentoDataClientConfig {
     pub reconnect_timeout_mins: Option<u64>,
     /// Year digits in futures IDs: 2 by default, or 1 for existing catalogs and caches.
     pub futures_year_digits: FuturesYearDigits,
+    /// Whether to spell a share class with a space in instrument IDs (`BRK.B` -> `BRK B`).
+    pub share_class_space: bool,
 }
 
 #[cfg(feature = "python")]
@@ -136,6 +138,7 @@ nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
     venue_dataset_map: IndexMap<String, String>,
+    share_class_space: bool,
 });
 
 impl DatabentoDataClientConfig {
@@ -149,6 +152,7 @@ impl DatabentoDataClientConfig {
     ) -> Self {
         Self {
             futures_year_digits: FuturesYearDigits::default(),
+            share_class_space: true,
             credential: Credential::new(api_key),
             publishers_filepath,
             venue_dataset_map: IndexMap::new(),
@@ -224,11 +228,13 @@ impl DatabentoDataClient {
                 config.use_exchange_as_venue,
             )?,
         }
-        .with_futures_year_digits(config.futures_year_digits);
+        .with_futures_year_digits(config.futures_year_digits)
+        .with_share_class_space(config.share_class_space);
 
         // Create data loader for venue-to-dataset mapping
         let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?
-            .with_futures_year_digits(config.futures_year_digits);
+            .with_futures_year_digits(config.futures_year_digits)
+            .with_share_class_space(config.share_class_space);
         for (venue, dataset) in &config.venue_dataset_map {
             loader.set_dataset_for_venue(
                 Dataset::from(dataset.as_str()),
@@ -316,14 +322,24 @@ impl DatabentoDataClient {
             && let databento::Symbols::Symbols(symbols) = &mut subscription.symbols
         {
             for symbol in symbols {
-                let raw = raw_symbol(symbol, dataset, self.config.futures_year_digits);
+                let raw = raw_symbol(
+                    symbol,
+                    dataset,
+                    self.config.futures_year_digits,
+                    self.config.share_class_space,
+                );
 
                 *symbol = raw;
             }
         }
 
         let price_precisions = price_precisions.into_iter().map(|(symbol, precision)| {
-            let raw = raw_symbol(symbol.as_str(), dataset, self.config.futures_year_digits);
+            let raw = raw_symbol(
+                symbol.as_str(),
+                dataset,
+                self.config.futures_year_digits,
+                self.config.share_class_space,
+            );
             (Symbol::from(raw.as_str()), precision)
         });
 
@@ -420,7 +436,8 @@ impl DatabentoDataClient {
             self.config.bars_timestamp_on_close,
             self.config.reconnect_timeout_mins,
         )
-        .with_futures_year_digits(self.config.futures_year_digits);
+        .with_futures_year_digits(self.config.futures_year_digits)
+        .with_share_class_space(self.config.share_class_space);
 
         if let Some(addr) = &self.config.live_gateway_addr {
             feed_handler = feed_handler.with_gateway_addr(addr.clone());

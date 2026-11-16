@@ -18,6 +18,7 @@
 pub mod config;
 pub mod factories;
 pub mod http;
+pub mod loaders;
 pub mod models;
 
 mod query;
@@ -45,6 +46,7 @@ pub fn finfeed(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(FINFEED_CLIENT_ID), *FINFEED_CLIENT_ID)?;
     m.add_class::<FinFeedDataClientConfig>()?;
     m.add_class::<FinFeedDataClientFactory>()?;
+    m.add_class::<loaders::PyFinFeedDataLoader>()?;
     m.add_class::<FinFeedInstrumentSelection>()?;
     http::register(m)?;
     models::register(m)?;

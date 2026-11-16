@@ -95,10 +95,7 @@ where
     F: Fn(&T) -> Headers + Send + Sync,
 {
     fn extract(&self, message: &dyn Any) -> Headers {
-        message
-            .downcast_ref::<T>()
-            .map(&self.func)
-            .unwrap_or_default()
+        message.downcast_ref::<T>().map_or_default(&self.func)
     }
 }
 

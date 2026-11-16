@@ -103,6 +103,9 @@
     )
 )]
 
+// Generated custom data code uses the crate's public name
+extern crate self as nautilus_serialization;
+
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
@@ -124,3 +127,7 @@ mod numeric;
 /// Generates typed Arrow encoding for custom data.
 #[cfg(feature = "arrow")]
 pub use nautilus_macros::arrow_custom_data;
+/// Generates Arrow implementations from fields exported by another crate.
+#[doc(hidden)]
+#[cfg(feature = "arrow")]
+pub use nautilus_macros::arrow_custom_data_remote;

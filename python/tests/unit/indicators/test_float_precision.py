@@ -80,6 +80,7 @@ INSTRUMENT_ID = InstrumentId.from_str("AUD/USD.SIM")
 OTHER_INSTRUMENT_ID = InstrumentId.from_str("GBP/USD.SIM")
 BAR_TYPE = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
 FLOAT_PRECISION = 16
+
 ABOVE_FLOAT_PRECISION_CASES = [
     pytest.param(17, id="precision-17"),
     pytest.param(18, id="precision-18"),
@@ -159,6 +160,7 @@ QUOTE_TRADE_BAR_INDICATORS = [
     ("macd", lambda: MovingAverageConvergenceDivergence(3, 10, price_type=PriceType.MID)),
     ("rsi", lambda: RelativeStrengthIndex(10)),
 ]
+
 PRICE_BAR_INDICATORS = [
     *QUOTE_TRADE_BAR_INDICATORS,
     ("lr", lambda: LinearRegression(10)),
@@ -182,12 +184,14 @@ PRICE_BAR_INDICATORS = [
     ("vr", lambda: VolatilityRatio(10)),
     ("efficiency-ratio", lambda: EfficiencyRatio(10)),
 ]
+
 VOLUME_BAR_INDICATORS = [
     ("vwap", VolumeWeightedAveragePrice),
     ("kvo", lambda: KlingerVolumeOscillator(3, 10)),
     ("obv", OnBalanceVolume),
     ("pressure", lambda: Pressure(10)),
 ]
+
 HANDLER_CASES = [
     *(
         pytest.param(factory, "handle_quote_tick", _quote, id=f"{name}-quote")

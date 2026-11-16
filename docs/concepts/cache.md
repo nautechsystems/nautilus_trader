@@ -13,12 +13,12 @@ The cache:
 
 ## How caching works
 
-The engines add built-in data to the `Cache` as events flow through the system. Live adapters feed
+The engines add built-in and custom data to the `Cache` as events flow through the system. Live adapters feed
 events to the engine asynchronously, so the cache changes **when the engine processes an event**, not
 when the adapter first receives it.
 
-For quotes, trades, and bars, the `DataEngine` attempts to write to the `Cache` before publishing to
-subscribers. After a successful write, the latest value is available by the time the strategy handler runs.
+For quotes, trades, bars, and custom data, the `DataEngine` attempts to write to the `Cache` before
+publishing to subscribers. After a successful write, the latest value is available by the time the strategy handler runs.
 Order book deltas and depth snapshots are published directly. `BookUpdater` subscriptions maintain current
 book state separately:
 
@@ -73,8 +73,8 @@ from nautilus_trader.config import LiveNodeConfig
 # For backtesting
 engine_config = BacktestEngineConfig(
     cache=CacheConfig(
-        # Retain up to 10,000 entries per history per instrument
-        tick_capacity=10_000,
+        # Retain up to 10,000 entries per instrument history or custom data topic
+        data_capacity=10_000,
         # Store last 5,000 bars per bar type
         bar_capacity=5_000,
     ),
@@ -83,17 +83,19 @@ engine_config = BacktestEngineConfig(
 # For live trading
 node_config = LiveNodeConfig(
     cache=CacheConfig(
-        tick_capacity=10_000,
+        data_capacity=10_000,
         bar_capacity=5_000,
     ),
 )
 ```
 
 :::tip
-By default, the `Cache` keeps up to 10,000 values in each per-instrument tick sequence and 10,000
-bars for each bar type. These are separate limits, not combined totals. Set each capacity to a value
-in `[1, 1_000_000]`. Increase them when a strategy needs a longer in-memory lookback and the
-additional memory use is acceptable.
+By default, `data_capacity` retains up to 10,000 values per instrument history or custom data topic.
+`bar_capacity` retains up to 10,000 bars per bar type. These are separate limits, not combined totals.
+Custom histories reserve space for the full `data_capacity` on first insertion, even if they remain
+short. Memory use grows with the capacity and number of distinct topics. Custom and built-in histories
+share this setting. Set each capacity to a value in `[1, 1_000_000]`. Increase them when a strategy
+needs a longer in-memory lookback and the additional memory use is acceptable.
 :::
 
 ### Configuration options
@@ -112,7 +114,7 @@ let config = CacheConfig {
     use_instance_id: false,
     flush_on_start: false,
     drop_instruments_on_reset: true,
-    tick_capacity: 10_000,
+    data_capacity: 10_000,
     bar_capacity: 10_000,
     persist_account_events: true,
     save_market_data: false,
@@ -136,6 +138,33 @@ connection settings. Python passes a concrete backend config or registered nativ
 Custom backend factories must be integrated into NautilusTrader's native extension and use unique
 Python class names. Python does not expose a factory registration API for separately installed packages.
 
+#### Persistence failure policy
+
+Cache operations complete valid in-memory changes independently of optional database persistence.
+Persistence failures are logged at `ERROR` without failing the cache operation or interrupting event
+publication or command dispatch. This policy applies to all cache writes, including
+indexes, snapshots, component state, heartbeats, and purge deletions.
+
+The cache still propagates:
+
+- Validation and in-memory operation errors.
+- DeFi currency integrity errors reported by the backing database.
+- Read, restoration, and explicit database flush errors returned by the backing.
+
+For queued backings, persistence attempts can fail at writer-channel admission or later in the database
+worker. Both failures are logged. Cache success confirms the cache operation, not queue admission or
+durable storage. Restored state can therefore differ from the running cache.
+
+:::note Shut down on persistence errors
+To request a normal shutdown when a persistence error is logged, set `shutdown_on_error=True` in
+[`LiveNodeConfig`](live.md#shutdown-on-error) or
+[`BacktestEngineConfig`](backtesting/apis-and-runs.md#shutdown-on-error). This setting responds to Rust error
+logs emitted after the runtime starts, including persistence errors. Shutdown takes effect when the runtime
+next checks the request; it does not abort the process or roll back the current operation.
+Error-triggered shutdown handling is disabled before final component-state saves. Those saves still follow
+the best-effort persistence policy, so their persistence failures are logged without failing finalization.
+:::
+
 #### Recovery
 
 - Startup restores supported, successfully persisted general data, currencies, instruments,
@@ -151,20 +180,31 @@ Python class names. Python does not expose a factory registration API for separa
   conflicts fail recovery. See [token currency recovery](../integrations/blockchain.md#token-currency-identity-and-recovery)
   for legacy-data and instrument-replacement rules.
 
+An event-store snapshot anchor records a reference and hash, not the snapshot blob. Recording an anchor
+does not confirm blob persistence, and recovery fails if the referenced blob is unavailable. Durable
+blob-before-anchor ordering requires a separate persistence acknowledgment; cache success cannot establish
+it. See [Snapshot-anchored recovery](event_sourcing.md#snapshot-anchored-recovery).
+
 #### Explicit database operations
 
 - `cache.load_instrument(instrument_id)` and `cache.load_synthetic(instrument_id)` check memory first,
   then load from the backing and cache successful results. Fill handling also uses this instrument fallback
   when processing order fills and orderless spread legs. Failed or missing reads leave memory unchanged.
-- `cache.delete_actor(actor_id)` and `cache.delete_strategy(strategy_id)` remove saved component state
-  without unregistering components.
-- `cache.heartbeat(timestamp)` persists a caller-supplied timestamp in UNIX nanoseconds.
+- `cache.delete_actor(actor_id)` and `cache.delete_strategy(strategy_id)` attempt to delete saved component
+  state without unregistering components.
+- `cache.heartbeat(timestamp)` attempts to persist a caller-supplied timestamp in UNIX nanoseconds.
+
+Deletions and heartbeats follow the [persistence failure policy](#persistence-failure-policy).
 
 #### Postgres
 
 - With `save_market_data = true`, Postgres queues `GreeksData` per instrument and `YieldCurve` per name.
   Later writes replace earlier values, regardless of timestamp.
-- Validation and queueing errors preserve memory. The adapter logs later database write failures.
+- Cache validation rejects invalid yield curves. Postgres rejects non-finite Greeks for persistence;
+  the cache logs the error and retains the Greeks in memory. Queueing failures also follow the
+  [persistence failure policy](#persistence-failure-policy); the adapter logs later database write failures.
+- Order-book and funding-rate persistence are unsupported. With `save_market_data = true`, order-book
+  and bulk funding-rate additions log an `ERROR` and update memory only.
 - Orders, positions, their snapshots, and accounts belong to a trader. Two traders can reuse client order
   or position IDs.
 - Flushes, including `flush_on_start`, delete only the trader's rows. Currencies, instruments,
@@ -190,10 +230,11 @@ nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_I
 #### Redis
 
 - Does not persist quotes, trades, bars, order books, funding rates, Greeks, or yield curves.
-- With `save_market_data = true`, these additions fail before changing memory. For funding rates,
-  only bulk additions attempt persistence; single additions stay in memory.
+- With `save_market_data = true`, each unsupported persistence attempt logs an `ERROR` and updates memory
+  only. For funding rates, only bulk additions attempt persistence; single additions stay in memory.
 - Direct `load_greeks` and `load_yield_curves` calls return errors; `load_all` returns empty maps for them.
-- For Greeks and yield curves, disable `save_market_data` for memory-only caching or use Postgres for persistence.
+- Disable `save_market_data` with Redis to avoid unsupported writes. Postgres supports quotes, trades,
+  bars, Greeks, and yield curves; neither built-in backing persists order books or funding rates.
 
 #### Connect a backing
 
@@ -303,16 +344,19 @@ entry. The list accessors use the same order as the single-entry accessors.
 | Index prices        | `index_prices(instrument_id)`        | `index_price(instrument_id)`       |
 | Funding rates       | `funding_rates(instrument_id)`       | `funding_rate(instrument_id)`      |
 | Instrument statuses | `instrument_statuses(instrument_id)` | `instrument_status(instrument_id)` |
+| Custom data         | `custom_data_history(data_type)`     | `custom_data(data_type)`           |
 
 - **Ordering:** Bars use descending `ts_event`. Other histories use reverse insertion order, even
   for older timestamps; they are not sorted by `ts_event` or `ts_init`.
-- **History lists:** Accessors return a list, or `None` when the key has no entries. `[-1]` selects
-  the oldest retained bar or the least recently inserted entry in other histories.
-- **Single entries:** Only `quote()`, `trade()`, and `bar()` accept `index`. They return `None` for a
-  missing entry at a valid non-negative index. Negative indices or values beyond the platform's
-  unsigned index limit raise `OverflowError`; negative indexing works on returned Python lists.
-- **Capacity:** `bar_capacity` limits each bar type; `tick_capacity` limits each other history per
-  instrument. A new insertion at capacity removes the last entry.
+- **History lists:** Built-in histories return a list, or `None` when the key has no entries. Custom
+  histories return an empty list when absent. `[-1]` selects the oldest retained bar or the least
+  recently inserted entry in other histories.
+- **Single entries:** `quote()`, `trade()`, `bar()`, `mark_price()`, `index_price()`, and `funding_rate()`
+  accept `index`; custom data uses `custom_data_at_index()`. They return `None` for a missing entry at
+  a valid non-negative index. Negative indices or values beyond the platform's unsigned index limit
+  raise `OverflowError`; negative indexing works on returned Python lists.
+- **Capacity:** `bar_capacity` limits each bar type; `data_capacity` limits each other history per
+  instrument and each custom history per data type topic. A new insertion at capacity removes the last entry.
 
 #### Order book
 
@@ -664,9 +708,9 @@ the live trading engine can keep memory bounded without restarting the system.
 
 Purges change memory only by default. Pass `purge_from_database=True` to order and position purge methods
 in Python to queue deletion of their persisted histories and routine snapshots. Rust callers pass the
-boolean explicitly and handle the returned `Result`. A successful return confirms queue admission;
-the adapter logs later database failures. Encoded position snapshots used to replay corrections remain
-persisted as general data.
+boolean explicitly. Persistence failures follow the [persistence failure policy](#persistence-failure-policy),
+so a successful return does not confirm queue admission or database deletion. Encoded position snapshots
+used to replay corrections remain persisted as general data.
 Instrument purges change memory only.
 
 #### Targeted purges
@@ -679,7 +723,8 @@ also target IDs absent from memory.
   index entries. Skips open positions.
 - `cache.purge_instrument(instrument_id)`: removes the instrument and its transient per-instrument
   maps (order book, quotes, trades, mark/index/funding prices, instrument status and close, greeks,
-  and bars referencing the instrument). Skips while any associated order is non-terminal (anything
+  and bars referencing the instrument), plus custom histories whose `DataType.identifier` equals the
+  instrument ID. Skips while any associated order is non-terminal (anything
   that has not reached a closed state, including initialized, submitted, accepted, emulated,
   released, and inflight orders) or any associated position is non-closed. Cached orders and
   positions remain indexed until purged separately, preserving historical queries and realized PnL.
@@ -746,11 +791,34 @@ strategy that owns the instrument's lifecycle.
 
 ### Custom data
 
+#### Event histories
+
+Each `DataType` topic, including its metadata and optional identifier, has an independent history.
+Use the payload's `data_type` for reads. A subscription without an identifier can receive identified
+payloads, whose histories remain separate from the subscription's data type.
+
+Automatic retention applies to custom events processed by the data engine. Actor-published custom
+data and signals, and custom-data request responses, do not populate these histories automatically.
+Call `self.cache.add_custom_data(data)` explicitly when retaining one of those events.
+
+```python
+def on_data(self, data: CustomData) -> None:
+    latest = self.cache.custom_data(data.data_type)
+    previous = self.cache.custom_data_at_index(data.data_type, 1)
+    history = self.cache.custom_data_history(data.data_type)
+```
+
+- **Persistence:** Custom histories stay in memory, including when `save_market_data` is enabled;
+  database startup does not restore them.
+- **Pipeline:** Processing honors `DataEngineConfig.disable_historical_cache`. Direct, non-pipeline
+  processing, including backtests, caches custom data regardless of that setting.
+- **Reset:** A cache reset clears all custom histories.
+
+#### Basic storage and retrieval
+
 The `Cache` stores raw bytes under application-defined string keys. Serialize values before adding
 them and deserialize them after retrieval. Actors and strategies can use these entries to share
 small amounts of application data.
-
-#### Basic storage and retrieval
 
 ```python
 # Store serialized data

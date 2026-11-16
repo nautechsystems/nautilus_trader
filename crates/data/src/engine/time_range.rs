@@ -332,9 +332,8 @@ impl DataEngine {
             return;
         }
 
-        let mut params = request_params(&state.parent)
-            .map(|params| IndexMap::clone(params))
-            .unwrap_or_default();
+        let mut params =
+            request_params(&state.parent).map_or_default(|params| IndexMap::clone(params));
 
         if state.data_count != 0 {
             params.insert(

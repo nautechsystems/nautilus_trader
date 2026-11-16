@@ -44,7 +44,7 @@ use nautilus_execution::reconciliation::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderCanceled, OrderEventAny, OrderFilled},
+    events::{OrderCancelRejected, OrderCanceled, OrderEventAny, OrderFilled, OrderModifyRejected},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
         VenueOrderId,
@@ -56,6 +56,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 #[cfg(feature = "node")]
 use super::client::{CollectedReport, LiveExecutionClient, ReportCollector};
@@ -101,10 +102,11 @@ pub struct ReconciliationResult {
     pub unresolved_positions: Vec<String>,
 }
 
-/// Result of inflight order checks containing terminal events and intermediate queries.
+/// Result of inflight order checks containing resolution events and intermediate queries.
 #[derive(Debug, Default)]
 pub struct InflightCheckResult {
-    /// Terminal events (rejection/cancellation) for orders that exceeded max retries.
+    /// Resolution events (rejection, cancellation, or command rejection) for orders that
+    /// exceeded max retries.
     pub events: Vec<OrderEventAny>,
     /// Intermediate venue queries for orders still within retry budget.
     pub queries: Vec<TradingCommand>,
@@ -343,7 +345,11 @@ pub(crate) async fn request_targeted_order_reports(
             if let Some(candidate) =
                 targeted_report_response(&query, client_id, response, &mut coverage_complete)
             {
-                if terminal_report_has_missing_fills(&candidate, query.filled_qty) {
+                if order_report_has_missing_fills(
+                    &candidate,
+                    query.filled_qty,
+                    client.requires_authoritative_fills(),
+                ) {
                     let command = targeted_fill_command(&query, &candidate);
 
                     match client.generate_fill_reports(command).await {
@@ -407,10 +413,22 @@ pub(crate) async fn collect_targeted_order_reports(
             return false;
         };
 
+        let requires_authoritative_fills = result.client_id.is_some_and(|client_id| {
+            clients.iter().any(|client| {
+                client.client_id() == client_id && client.requires_authoritative_fills()
+            })
+        });
+
         let fill_query = result
             .report
             .as_ref()
-            .filter(|report| terminal_report_has_missing_fills(report, query.filled_qty))
+            .filter(|report| {
+                order_report_has_missing_fills(
+                    report,
+                    query.filled_qty,
+                    requires_authoritative_fills,
+                )
+            })
             .map(|report| (targeted_fill_command(&query, report), report.clone()));
         let client_id = result.client_id;
         let result_index = results.borrow().len();
@@ -605,15 +623,18 @@ fn targeted_report_matches(query: &TargetedOrderQuery, report: &OrderStatusRepor
     instrument_matches && order_matches
 }
 
-/// Checks whether a canceled or expired report has more fills than the cached order.
-pub(super) fn terminal_report_has_missing_fills(
+/// Checks whether a report needs authoritative fills before status reconciliation.
+pub(super) fn order_report_has_missing_fills(
     report: &OrderStatusReport,
     cached_filled_qty: Quantity,
+    requires_authoritative_fills: bool,
 ) -> bool {
-    matches!(
-        report.order_status,
-        OrderStatus::Canceled | OrderStatus::Expired
-    ) && report.filled_qty > cached_filled_qty
+    report.filled_qty > cached_filled_qty
+        && (requires_authoritative_fills
+            || matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired
+            ))
 }
 
 /// Builds an order report from fills sharing the same order and venue position.
@@ -1004,7 +1025,11 @@ pub(super) fn create_position_reconciliation_report(
 }
 
 /// Builds a reconciliation cancel for an order resolved without a venue status report.
-pub(super) fn create_reconciliation_canceled(order: &OrderAny, ts_now: UnixNanos) -> OrderEventAny {
+pub(super) fn create_reconciliation_canceled(
+    order: &OrderAny,
+    reason: Option<&str>,
+    ts_now: UnixNanos,
+) -> OrderEventAny {
     OrderEventAny::Canceled(OrderCanceled::new(
         order.trader_id(),
         order.strategy_id(),
@@ -1016,8 +1041,56 @@ pub(super) fn create_reconciliation_canceled(order: &OrderAny, ts_now: UnixNanos
         true, // reconciliation
         order.venue_order_id(),
         order.account_id(),
-        None,
+        reason.map(Ustr::from),
     ))
+}
+
+/// Builds the reconciliation rejections which restore an order's status from before its
+/// pending cancel and modify commands.
+pub(super) fn create_reconciliation_command_rejections(
+    order: &OrderAny,
+    reason: &str,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let mut events = Vec::new();
+
+    if order.has_pending_cancel_command() {
+        let rejected = OrderCancelRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            true, // reconciliation
+            order.venue_order_id(),
+            order.account_id(),
+        );
+
+        events.push(OrderEventAny::CancelRejected(rejected));
+    }
+
+    if order.has_pending_update_command() {
+        let rejected = OrderModifyRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            true, // reconciliation
+            order.venue_order_id(),
+            order.account_id(),
+        );
+
+        events.push(OrderEventAny::ModifyRejected(rejected));
+    }
+
+    events
 }
 
 #[cfg(test)]
@@ -1557,6 +1630,7 @@ pub(super) mod tests {
     pub(crate) struct CommissionStubClient {
         outcome: CommissionOutcome,
         seen: RefCell<Option<(Quantity, Price, LiquiditySide)>>,
+        pub(crate) requires_authoritative_fills: bool,
     }
 
     impl CommissionStubClient {
@@ -1565,6 +1639,7 @@ pub(super) mod tests {
             Self {
                 outcome,
                 seen: RefCell::new(None),
+                requires_authoritative_fills: false,
             }
         }
 
@@ -1581,6 +1656,10 @@ pub(super) mod tests {
 
     #[async_trait::async_trait(?Send)]
     impl ExecutionClient for CommissionStubClient {
+        fn requires_authoritative_fills(&self) -> bool {
+            self.requires_authoritative_fills
+        }
+
         fn is_connected(&self) -> bool {
             true
         }

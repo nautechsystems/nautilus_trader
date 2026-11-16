@@ -29,7 +29,7 @@ use ahash::AHashSet;
 use dashmap::{DashMap, mapref::entry::Entry};
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{AtomicSet, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
@@ -116,6 +116,7 @@ struct AlgoOrderIds {
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
+    pub(crate) cancels_unresolved: Arc<AtomicSet<ClientOrderId>>,
     pub(crate) order_lists: DashMap<ClientOrderId, OrderListIdentity>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
     order_updates: DashMap<ClientOrderId, OrderBinding>,
@@ -135,6 +136,7 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
+            cancels_unresolved: Arc::new(AtomicSet::new()),
             order_lists: DashMap::new(),
             algo_order_ids: DashMap::new(),
             order_updates: DashMap::new(),
@@ -526,6 +528,10 @@ impl WsDispatchState {
 
     /// Removes active order context, retaining bounded replay evidence for tracked orders.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
+        if self.cancels_unresolved.contains(&cid) {
+            self.cancels_unresolved.remove(&cid);
+        }
+
         if let Entry::Occupied(entry) = self.order_identities.entry(cid) {
             self.mark_terminal(cid);
             entry.remove();
@@ -759,7 +765,9 @@ mod tests {
         assert!(state.has_emitted_accepted(&cid));
         assert!(state.has_filled(&cid));
 
+        state.cancels_unresolved.insert(cid);
         state.cleanup_terminal(cid);
+        assert!(!state.cancels_unresolved.contains(&cid));
         assert!(!state.order_identities.contains_key(&cid));
         assert!(!state.orders_restored.contains_key(&cid));
         assert!(!state.has_emitted_accepted(&cid));

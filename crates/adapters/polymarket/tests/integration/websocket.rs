@@ -240,7 +240,6 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
             .expect("ws server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 
@@ -1578,4 +1577,183 @@ async fn pool_primary_reconnect_replays_assets_and_discovery_together() {
     drop(payloads);
 
     pool.disconnect().await.expect("disconnect failed");
+}
+
+mod reconnect_marker {
+    use axum::extract::ws::Message as AxumWsMessage;
+    use nautilus_network::RECONNECTED;
+
+    use super::*;
+
+    async fn handle_upgrade(ws: WebSocketUpgrade) -> Response {
+        ws.on_upgrade(handle_socket)
+    }
+
+    async fn handle_socket(mut socket: WebSocket) {
+        let _ = socket
+            .send(AxumWsMessage::Text(RECONNECTED.to_string().into()))
+            .await;
+    }
+
+    async fn start_test_server() -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test websocket server");
+        let addr = listener.local_addr().expect("test websocket address");
+        let router = Router::new().route("/ws", get(handle_upgrade));
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("test websocket server failed");
+        });
+
+        addr
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn connect_forwards_reconnected_message_to_receiver() {
+        let addr = start_test_server().await;
+        let mut client = PolymarketWebSocketClient::new_market(
+            Some(format!("ws://{addr}/ws")),
+            false,
+            TransportBackend::default(),
+        );
+
+        client.connect().await.expect("connect websocket client");
+
+        let message =
+            tokio::time::timeout(tokio::time::Duration::from_secs(2), client.next_message())
+                .await
+                .expect("wait for websocket message");
+
+        assert!(matches!(
+            message,
+            Some(PolymarketWsMessage::Reconnected { .. })
+        ));
+
+        client
+            .disconnect()
+            .await
+            .expect("disconnect websocket client");
+    }
+}
+
+mod snapshot_cycle {
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_live::book::snapshot::SnapshotGate;
+    use nautilus_polymarket::websocket::{handler::CycleMarketOutcome, messages::MarketWsMessage};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_recovers_snapshot_that_duplicate_subscribe_misses() {
+        let snapshot = include_str!("../../test_data/ws_market_book_msg.json");
+        let url = snapshot_gated_server(snapshot).await;
+        let mut client =
+            PolymarketWebSocketClient::new_market(Some(url), false, TransportBackend::Tungstenite);
+        client.connect().await.unwrap();
+        let handle = client.clone_subscription_handle();
+        let assets = vec![TEST_ASSET_ID.to_string()];
+        handle.subscribe_market(assets.clone()).await.unwrap();
+        let first = next_market_message(&mut client).await;
+
+        let MarketWsMessage::Book(first) = first else {
+            panic!("expected initial book")
+        };
+
+        assert_eq!(first.asset_id.as_str(), TEST_ASSET_ID);
+        handle.subscribe_market(assets.clone()).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), next_market_message(&mut client))
+                .await
+                .is_err()
+        );
+        let (responder, response) = tokio::sync::oneshot::channel();
+        handle
+            .cycle_market_subscription(
+                assets,
+                CancellationToken::new(),
+                responder,
+                SnapshotGate::default(),
+            )
+            .await
+            .unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), response)
+            .await
+            .unwrap()
+            .unwrap();
+        let recovered = next_market_message(&mut client).await;
+
+        let MarketWsMessage::Book(recovered) = recovered else {
+            panic!("expected recovered book")
+        };
+
+        assert_eq!(recovered, first);
+        assert!(matches!(outcome, CycleMarketOutcome::Completed));
+        assert_eq!(client.subscription_count(), 1);
+        client.disconnect().await.unwrap();
+    }
+
+    async fn next_market_message(client: &mut PolymarketWebSocketClient) -> MarketWsMessage {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match client.next_message().await {
+                    Some(PolymarketWsMessage::Market(message)) => return message,
+                    Some(_) => {}
+                    None => panic!("market socket closed before the expected message"),
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    /// Scripted venue: a subscribe only yields a snapshot when the venue-side
+    /// state flips from unsubscribed. This reproduces the live finding that a
+    /// duplicate mid-connection subscribe receives no snapshot.
+    async fn snapshot_gated_server(snapshot: &'static str) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind snapshot-gated server");
+        let addr = listener.local_addr().expect("snapshot-gated address");
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept websocket client");
+            let mut socket = tokio_tungstenite::accept_async(stream)
+                .await
+                .expect("accept websocket handshake");
+            let mut subscribed = false;
+
+            while let Some(message) = socket.next().await {
+                match message.expect("read websocket message") {
+                    Message::Text(text) => {
+                        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                            continue;
+                        };
+
+                        let operation = value.get("operation").and_then(Value::as_str);
+                        let is_initial =
+                            value.get("type").and_then(Value::as_str) == Some("market");
+
+                        if operation == Some("unsubscribe") {
+                            subscribed = false;
+                        } else if (operation == Some("subscribe") || is_initial) && !subscribed {
+                            subscribed = true;
+                            socket
+                                .send(Message::Text(snapshot.into()))
+                                .await
+                                .expect("send gated snapshot");
+                        }
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+        });
+
+        format!("ws://{addr}")
+    }
 }

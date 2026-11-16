@@ -1,0 +1,777 @@
+{
+  "status": {
+    "exchange_active": true,
+    "trading_active": false,
+    "intra_exchange_transfers_active": true,
+    "exchange_estimated_resume_time": null,
+    "exchange_index_statuses": [
+      {
+        "exchange_index": 3,
+        "description": "Synthetic shard",
+        "exchange_active": false,
+        "trading_active": true,
+        "intra_exchange_transfers_active": false
+      }
+    ]
+  },
+  "market": {
+    "market": {
+      "ticker": "TEST-MARKET",
+      "event_ticker": "TEST-EVENT",
+      "market_type": "binary",
+      "yes_sub_title": "Above",
+      "no_sub_title": "Below",
+      "created_time": "2026-10-16T01:01:01.100000001Z",
+      "updated_time": "2026-10-16T02:02:02.200000002Z",
+      "open_time": "2026-10-16T03:03:03.300000003Z",
+      "close_time": "2026-10-16T04:04:04.400000004Z",
+      "latest_expiration_time": "2026-10-16T05:05:05.500000005Z",
+      "settlement_timer_seconds": 41,
+      "status": "active",
+      "yes_bid_dollars": "0.125601",
+      "yes_bid_size_fp": "11.25",
+      "yes_ask_dollars": "0.230402",
+      "yes_ask_size_fp": "22.50",
+      "no_bid_dollars": "0.769598",
+      "no_ask_dollars": "0.874399",
+      "last_price_dollars": "0.180003",
+      "volume_fp": "123.45",
+      "volume_24h_fp": "67.89",
+      "result": "",
+      "can_close_early": true,
+      "open_interest_fp": "987.65",
+      "notional_value_dollars": "1.000000",
+      "previous_yes_bid_dollars": "0.110004",
+      "previous_yes_ask_dollars": "0.250005",
+      "previous_price_dollars": "0.190006",
+      "settlement_bounds_type": "default",
+      "expiration_value": "",
+      "rules_primary": "Observed threshold",
+      "rules_secondary": "Authoritative source",
+      "price_level_structure": "deci_cent",
+      "price_ranges": [
+        {
+          "start": "0.0000",
+          "end": "1.0000",
+          "step": "0.0001"
+        }
+      ],
+      "exchange_index": 3,
+      "settlement_value_dollars": null,
+      "settlement_floor_dollars": "0.000000",
+      "settlement_ts": null,
+      "expected_expiration_time": null,
+      "mve_collection_ticker": ""
+    }
+  },
+  "markets": {
+    "markets": [
+      {
+        "ticker": "TEST-MARKET",
+        "event_ticker": "TEST-EVENT",
+        "market_type": "binary",
+        "yes_sub_title": "Above",
+        "no_sub_title": "Below",
+        "created_time": "2026-10-16T01:01:01.100000001Z",
+        "updated_time": "2026-10-16T02:02:02.200000002Z",
+        "open_time": "2026-10-16T03:03:03.300000003Z",
+        "close_time": "2026-10-16T04:04:04.400000004Z",
+        "latest_expiration_time": "2026-10-16T05:05:05.500000005Z",
+        "settlement_timer_seconds": 41,
+        "status": "active",
+        "yes_bid_dollars": "0.125601",
+        "yes_bid_size_fp": "11.25",
+        "yes_ask_dollars": "0.230402",
+        "yes_ask_size_fp": "22.50",
+        "no_bid_dollars": "0.769598",
+        "no_ask_dollars": "0.874399",
+        "last_price_dollars": "0.180003",
+        "volume_fp": "123.45",
+        "volume_24h_fp": "67.89",
+        "result": "",
+        "can_close_early": true,
+        "open_interest_fp": "987.65",
+        "notional_value_dollars": "1.000000",
+        "previous_yes_bid_dollars": "0.110004",
+        "previous_yes_ask_dollars": "0.250005",
+        "previous_price_dollars": "0.190006",
+        "settlement_bounds_type": "default",
+        "expiration_value": "",
+        "rules_primary": "Observed threshold",
+        "rules_secondary": "Authoritative source",
+        "price_level_structure": "deci_cent",
+        "price_ranges": [
+          {
+            "start": "0.0000",
+            "end": "1.0000",
+            "step": "0.0001"
+          }
+        ],
+        "exchange_index": 3,
+        "settlement_value_dollars": null,
+        "settlement_floor_dollars": "0.000000",
+        "settlement_ts": null,
+        "expected_expiration_time": null,
+        "mve_collection_ticker": ""
+      }
+    ],
+    "cursor": ""
+  },
+  "event": {
+    "event": {
+      "event_ticker": "TEST-EVENT",
+      "series_ticker": "TEST-SERIES",
+      "sub_title": "Daily",
+      "title": "Test threshold",
+      "collateral_return_type": "MECNET",
+      "mutually_exclusive": true,
+      "settlement_sources": [
+        {
+          "name": "Test source",
+          "url": "https://example.com/result"
+        }
+      ],
+      "markets": [
+        {
+          "ticker": "TEST-MARKET",
+          "event_ticker": "TEST-EVENT",
+          "market_type": "binary",
+          "yes_sub_title": "Above",
+          "no_sub_title": "Below",
+          "created_time": "2026-10-16T01:01:01.100000001Z",
+          "updated_time": "2026-10-16T02:02:02.200000002Z",
+          "open_time": "2026-10-16T03:03:03.300000003Z",
+          "close_time": "2026-10-16T04:04:04.400000004Z",
+          "latest_expiration_time": "2026-10-16T05:05:05.500000005Z",
+          "settlement_timer_seconds": 41,
+          "status": "active",
+          "yes_bid_dollars": "0.125601",
+          "yes_bid_size_fp": "11.25",
+          "yes_ask_dollars": "0.230402",
+          "yes_ask_size_fp": "22.50",
+          "no_bid_dollars": "0.769598",
+          "no_ask_dollars": "0.874399",
+          "last_price_dollars": "0.180003",
+          "volume_fp": "123.45",
+          "volume_24h_fp": "67.89",
+          "result": "",
+          "can_close_early": true,
+          "open_interest_fp": "987.65",
+          "notional_value_dollars": "1.000000",
+          "previous_yes_bid_dollars": "0.110004",
+          "previous_yes_ask_dollars": "0.250005",
+          "previous_price_dollars": "0.190006",
+          "settlement_bounds_type": "default",
+          "expiration_value": "",
+          "rules_primary": "Observed threshold",
+          "rules_secondary": "Authoritative source",
+          "price_level_structure": "deci_cent",
+          "price_ranges": [
+            {
+              "start": "0.0000",
+              "end": "1.0000",
+              "step": "0.0001"
+            }
+          ],
+          "exchange_index": 3,
+          "settlement_value_dollars": null,
+          "settlement_floor_dollars": "0.000000",
+          "settlement_ts": null,
+          "expected_expiration_time": null,
+          "mve_collection_ticker": ""
+        }
+      ],
+      "exchange_index": 3,
+      "last_updated_ts": "2026-10-16T06:06:06.600000006Z",
+      "strike_date": null,
+      "strike_period": "day"
+    },
+    "markets": [
+      {
+        "ticker": "TEST-MARKET",
+        "event_ticker": "TEST-EVENT",
+        "market_type": "binary",
+        "yes_sub_title": "Above",
+        "no_sub_title": "Below",
+        "created_time": "2026-10-16T01:01:01.100000001Z",
+        "updated_time": "2026-10-16T02:02:02.200000002Z",
+        "open_time": "2026-10-16T03:03:03.300000003Z",
+        "close_time": "2026-10-16T04:04:04.400000004Z",
+        "latest_expiration_time": "2026-10-16T05:05:05.500000005Z",
+        "settlement_timer_seconds": 41,
+        "status": "active",
+        "yes_bid_dollars": "0.125601",
+        "yes_bid_size_fp": "11.25",
+        "yes_ask_dollars": "0.230402",
+        "yes_ask_size_fp": "22.50",
+        "no_bid_dollars": "0.769598",
+        "no_ask_dollars": "0.874399",
+        "last_price_dollars": "0.180003",
+        "volume_fp": "123.45",
+        "volume_24h_fp": "67.89",
+        "result": "",
+        "can_close_early": true,
+        "open_interest_fp": "987.65",
+        "notional_value_dollars": "1.000000",
+        "previous_yes_bid_dollars": "0.110004",
+        "previous_yes_ask_dollars": "0.250005",
+        "previous_price_dollars": "0.190006",
+        "settlement_bounds_type": "default",
+        "expiration_value": "",
+        "rules_primary": "Observed threshold",
+        "rules_secondary": "Authoritative source",
+        "price_level_structure": "deci_cent",
+        "price_ranges": [
+          {
+            "start": "0.0000",
+            "end": "1.0000",
+            "step": "0.0001"
+          }
+        ],
+        "exchange_index": 3,
+        "settlement_value_dollars": null,
+        "settlement_floor_dollars": "0.000000",
+        "settlement_ts": null,
+        "expected_expiration_time": null,
+        "mve_collection_ticker": ""
+      }
+    ]
+  },
+  "events": {
+    "events": [
+      {
+        "event_ticker": "TEST-EVENT",
+        "series_ticker": "TEST-SERIES",
+        "sub_title": "Daily",
+        "title": "Test threshold",
+        "collateral_return_type": "MECNET",
+        "mutually_exclusive": true,
+        "settlement_sources": [
+          {
+            "name": "Test source",
+            "url": "https://example.com/result"
+          }
+        ],
+        "markets": [
+          {
+            "ticker": "TEST-MARKET",
+            "event_ticker": "TEST-EVENT",
+            "market_type": "binary",
+            "yes_sub_title": "Above",
+            "no_sub_title": "Below",
+            "created_time": "2026-10-16T01:01:01.100000001Z",
+            "updated_time": "2026-10-16T02:02:02.200000002Z",
+            "open_time": "2026-10-16T03:03:03.300000003Z",
+            "close_time": "2026-10-16T04:04:04.400000004Z",
+            "latest_expiration_time": "2026-10-16T05:05:05.500000005Z",
+            "settlement_timer_seconds": 41,
+            "status": "active",
+            "yes_bid_dollars": "0.125601",
+            "yes_bid_size_fp": "11.25",
+            "yes_ask_dollars": "0.230402",
+            "yes_ask_size_fp": "22.50",
+            "no_bid_dollars": "0.769598",
+            "no_ask_dollars": "0.874399",
+            "last_price_dollars": "0.180003",
+            "volume_fp": "123.45",
+            "volume_24h_fp": "67.89",
+            "result": "",
+            "can_close_early": true,
+            "open_interest_fp": "987.65",
+            "notional_value_dollars": "1.000000",
+            "previous_yes_bid_dollars": "0.110004",
+            "previous_yes_ask_dollars": "0.250005",
+            "previous_price_dollars": "0.190006",
+            "settlement_bounds_type": "default",
+            "expiration_value": "",
+            "rules_primary": "Observed threshold",
+            "rules_secondary": "Authoritative source",
+            "price_level_structure": "deci_cent",
+            "price_ranges": [
+              {
+                "start": "0.0000",
+                "end": "1.0000",
+                "step": "0.0001"
+              }
+            ],
+            "exchange_index": 3,
+            "settlement_value_dollars": null,
+            "settlement_floor_dollars": "0.000000",
+            "settlement_ts": null,
+            "expected_expiration_time": null,
+            "mve_collection_ticker": ""
+          }
+        ],
+        "exchange_index": 3,
+        "last_updated_ts": "2026-10-16T06:06:06.600000006Z",
+        "strike_date": null,
+        "strike_period": "day"
+      }
+    ],
+    "cursor": ""
+  },
+  "series": {
+    "series": {
+      "ticker": "TEST-SERIES",
+      "frequency": "daily",
+      "title": "Test series",
+      "category": "Economics",
+      "categories": [
+        "Economics"
+      ],
+      "tags": null,
+      "settlement_sources": [],
+      "contract_url": "https://example.com/contract",
+      "contract_terms_url": "https://example.com/terms",
+      "fee_type": "quadratic",
+      "fee_multiplier": 1.25,
+      "additional_prohibitions": [],
+      "volume_fp": "345.67",
+      "last_updated_ts": "2026-10-16T06:06:06.600000006Z",
+      "exchange_index": 3
+    }
+  },
+  "series_list": {
+    "series": [
+      {
+        "ticker": "TEST-SERIES",
+        "frequency": "daily",
+        "title": "Test series",
+        "category": "Economics",
+        "categories": [
+          "Economics"
+        ],
+        "tags": null,
+        "settlement_sources": [],
+        "contract_url": "https://example.com/contract",
+        "contract_terms_url": "https://example.com/terms",
+        "fee_type": "quadratic",
+        "fee_multiplier": 1.25,
+        "additional_prohibitions": [],
+        "volume_fp": "345.67",
+        "last_updated_ts": "2026-10-16T06:06:06.600000006Z",
+        "exchange_index": 3
+      }
+    ]
+  },
+  "orderbook": {
+    "orderbook_fp": {
+      "yes_dollars": [
+        [
+          "0.123456",
+          "2.75"
+        ]
+      ],
+      "no_dollars": [
+        [
+          "0.765432",
+          "3.25"
+        ]
+      ]
+    }
+  },
+  "trades": {
+    "trades": [
+      {
+        "trade_id": "trade-a",
+        "ticker": "TEST-MARKET",
+        "count_fp": "2.75",
+        "yes_price_dollars": "0.123456",
+        "no_price_dollars": "0.876544",
+        "taker_outcome_side": "no",
+        "taker_book_side": "ask",
+        "created_time": "2026-10-16T01:01:01.100000001Z",
+        "is_block_trade": false
+      }
+    ],
+    "cursor": ""
+  },
+  "candlesticks": {
+    "ticker": "TEST-MARKET",
+    "candlesticks": [
+      {
+        "end_period_ts": 1792112523,
+        "yes_bid": {
+          "open_dollars": "0.100001",
+          "low_dollars": "0.090002",
+          "high_dollars": "0.150003",
+          "close_dollars": "0.140004"
+        },
+        "yes_ask": {
+          "open_dollars": "0.200005",
+          "low_dollars": "0.190006",
+          "high_dollars": "0.250007",
+          "close_dollars": "0.240008"
+        },
+        "price": {
+          "open_dollars": null,
+          "low_dollars": "0.120009",
+          "high_dollars": "0.220010",
+          "close_dollars": "0.210011",
+          "mean_dollars": "0.170012",
+          "previous_dollars": "0.180013",
+          "min_dollars": "0.110014",
+          "max_dollars": "0.230015"
+        },
+        "volume_fp": "30.25",
+        "open_interest_fp": "47.50"
+      }
+    ]
+  },
+  "historical_candlesticks": {
+    "ticker": "TEST-MARKET",
+    "candlesticks": [
+      {
+        "end_period_ts": 1792112523,
+        "yes_bid": {
+          "open": "0.100001",
+          "low": "0.090002",
+          "high": "0.150003",
+          "close": "0.140004"
+        },
+        "yes_ask": {
+          "open": "0.200005",
+          "low": "0.190006",
+          "high": "0.250007",
+          "close": "0.240008"
+        },
+        "price": {
+          "open": null,
+          "low": "0.120009",
+          "high": "0.220010",
+          "close": "0.210011",
+          "mean": "0.170012",
+          "previous": "0.180013"
+        },
+        "volume": "30.25",
+        "open_interest": "47.50"
+      }
+    ]
+  },
+  "cutoff": {
+    "market_settled_ts": "2026-10-16T09:09:09.900000009Z",
+    "trades_created_ts": "2026-10-16T10:10:10.100000013Z",
+    "orders_updated_ts": "2026-10-16T11:11:11.110000011Z",
+    "market_positions_last_updated_ts": "2026-10-16T12:12:12.120000012Z"
+  },
+  "balance": {
+    "balance": 12345,
+    "balance_dollars": "123.456789",
+    "portfolio_value": 6789,
+    "updated_ts": 1792112523,
+    "balance_breakdown": [
+      {
+        "exchange_index": 3,
+        "balance": "123.456789"
+      }
+    ]
+  },
+  "positions": {
+    "market_positions": [
+      {
+        "ticker": "TEST-MARKET",
+        "exchange_index": 3,
+        "total_traded_dollars": "10.010001",
+        "position_fp": "-2.75",
+        "market_exposure_dollars": "1.020002",
+        "realized_pnl_dollars": "-0.030003",
+        "fees_paid_dollars": "0.040004",
+        "last_updated_ts": "2026-10-16T06:06:06.600000006Z"
+      }
+    ],
+    "event_positions": [
+      {
+        "event_ticker": "TEST-EVENT",
+        "total_cost_dollars": "2.010001",
+        "total_cost_shares_fp": "3.25",
+        "event_exposure_dollars": "4.020002",
+        "realized_pnl_dollars": "-0.050003",
+        "fees_paid_dollars": "0.060004"
+      }
+    ],
+    "cursor": ""
+  },
+  "settlements": {
+    "settlements": [
+      {
+        "ticker": "TEST-MARKET",
+        "exchange_index": 3,
+        "event_ticker": "TEST-EVENT",
+        "market_result": "yes",
+        "yes_count_fp": "3.25",
+        "yes_total_cost_dollars": "1.010001",
+        "no_count_fp": "4.50",
+        "no_total_cost_dollars": "2.020002",
+        "revenue": 325,
+        "settled_time": "2026-10-16T08:08:08.800000008Z",
+        "fee_cost": "0.030003",
+        "value": null
+      }
+    ],
+    "cursor": ""
+  },
+  "fills": {
+    "fills": [
+      {
+        "fill_id": "fill-a",
+        "exchange_index": 3,
+        "trade_id": "trade-a",
+        "order_id": "order-a",
+        "ticker": "TEST-MARKET",
+        "market_ticker": "TEST-MARKET",
+        "outcome_side": "no",
+        "book_side": "bid",
+        "count_fp": "2.75",
+        "yes_price_dollars": "0.123456",
+        "no_price_dollars": "0.876544",
+        "is_taker": true,
+        "fee_cost": "0.000001",
+        "created_time": "2026-10-16T01:01:01.100000001Z",
+        "subaccount_number": 0,
+        "ts": 1792112523
+      }
+    ],
+    "cursor": ""
+  },
+  "orders": {
+    "orders": [
+      {
+        "order_id": "order-a",
+        "user_id": "synthetic-user",
+        "client_order_id": "client-a",
+        "ticker": "TEST-MARKET",
+        "outcome_side": "yes",
+        "book_side": "ask",
+        "type": "limit",
+        "status": "resting",
+        "yes_price_dollars": "0.123401",
+        "no_price_dollars": "0.876599",
+        "fill_count_fp": "2.25",
+        "remaining_count_fp": "3.50",
+        "initial_count_fp": "5.75",
+        "taker_fill_cost_dollars": "0.010001",
+        "maker_fill_cost_dollars": "0.020002",
+        "taker_fees_dollars": "0.030003",
+        "maker_fees_dollars": "0.040004",
+        "expiration_time": null,
+        "created_time": "2026-10-16T01:01:01.100000001Z",
+        "last_update_time": "2026-10-16T07:07:07.700000007Z",
+        "self_trade_prevention_type": "maker",
+        "order_group_id": null,
+        "cancel_order_on_pause": false,
+        "subaccount_number": 0,
+        "exchange_index": 3
+      }
+    ],
+    "cursor": ""
+  },
+  "order": {
+    "order": {
+      "order_id": "order-a",
+      "user_id": "synthetic-user",
+      "client_order_id": "client-a",
+      "ticker": "TEST-MARKET",
+      "outcome_side": "yes",
+      "book_side": "ask",
+      "type": "limit",
+      "status": "resting",
+      "yes_price_dollars": "0.123401",
+      "no_price_dollars": "0.876599",
+      "fill_count_fp": "2.25",
+      "remaining_count_fp": "3.50",
+      "initial_count_fp": "5.75",
+      "taker_fill_cost_dollars": "0.010001",
+      "maker_fill_cost_dollars": "0.020002",
+      "taker_fees_dollars": "0.030003",
+      "maker_fees_dollars": "0.040004",
+      "expiration_time": null,
+      "created_time": "2026-10-16T01:01:01.100000001Z",
+      "last_update_time": "2026-10-16T07:07:07.700000007Z",
+      "self_trade_prevention_type": "maker",
+      "order_group_id": null,
+      "cancel_order_on_pause": false,
+      "subaccount_number": 0,
+      "exchange_index": 3
+    }
+  },
+  "limits": {
+    "usage_tier": "test",
+    "read": {
+      "refill_rate": 101,
+      "bucket_capacity": 202
+    },
+    "write": {
+      "refill_rate": 303,
+      "bucket_capacity": 404
+    },
+    "grants": [
+      {
+        "exchange_instance": "event_contract",
+        "level": "test-level",
+        "source": "test-source",
+        "expires_ts": null
+      }
+    ]
+  },
+  "costs": {
+    "default_cost": 11,
+    "endpoint_costs": [
+      {
+        "method": "POST",
+        "path": "/portfolio/events/orders",
+        "cost": 23
+      }
+    ]
+  },
+  "create": {
+    "order_id": "order-a",
+    "fill_count": "0.00",
+    "remaining_count": "2.75",
+    "ts_ms": 1792112523123,
+    "client_order_id": "client-a",
+    "average_fill_price": "0.123456",
+    "average_fee_paid": "0.000001"
+  },
+  "amend": {
+    "order_id": "order-a",
+    "ts_ms": 1792112523456,
+    "client_order_id": "client-b",
+    "remaining_count": "1.25",
+    "fill_count": "1.50",
+    "average_fill_price": null,
+    "average_fee_paid": "0.000002"
+  },
+  "cancel": {
+    "order_id": "order-a",
+    "reduced_by": "1.25",
+    "ts_ms": 1792112523789,
+    "client_order_id": "client-b"
+  },
+  "decrease": {
+    "order_id": "order-a",
+    "remaining_count": "1.00",
+    "ts_ms": 1792112523999,
+    "client_order_id": "client-b"
+  },
+  "batch_create": {
+    "orders": [
+      {
+        "order_id": "order-a",
+        "fill_count": "0.00",
+        "remaining_count": "2.75",
+        "ts_ms": 1792112523123,
+        "client_order_id": "client-a",
+        "average_fill_price": "0.123456",
+        "average_fee_paid": "0.000001"
+      },
+      {
+        "order_id": "",
+        "client_order_id": "client-c",
+        "fill_count": null,
+        "remaining_count": null,
+        "average_fill_price": null,
+        "average_fee_paid": null,
+        "ts_ms": null,
+        "error": {
+          "code": "permission_denied",
+          "message": "synthetic private text",
+          "details": "test details"
+        }
+      }
+    ]
+  },
+  "batch_cancel": {
+    "orders": [
+      {
+        "order_id": "order-a",
+        "reduced_by": "1.25",
+        "ts_ms": 1792112523789,
+        "client_order_id": "client-b"
+      },
+      {
+        "order_id": "order-b",
+        "reduced_by": "0.00",
+        "client_order_id": null,
+        "ts_ms": null,
+        "error": {
+          "code": "not_found",
+          "message": "synthetic rejected cancel",
+          "details": "test detail"
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": {
+      "code": "permission_denied",
+      "message": "synthetic private text",
+      "details": "synthetic evidence"
+    }
+  },
+  "empty_markets": {
+    "markets": [],
+    "cursor": ""
+  },
+  "empty_trades": {
+    "trades": [],
+    "cursor": null
+  },
+  "empty_fills": {
+    "fills": [],
+    "cursor": ""
+  },
+  "empty_orders": {
+    "orders": [],
+    "cursor": ""
+  },
+  "empty_positions": {
+    "market_positions": [],
+    "event_positions": []
+  },
+  "empty_settlements": {
+    "settlements": []
+  },
+  "reject_post_only": {
+    "code": "invalid_order",
+    "message": "invalid order",
+    "details": "post only cross"
+  },
+  "reject_balance": {
+    "code": "insufficient_balance",
+    "message": "Insufficient cash"
+  },
+  "reject_duplicate": {
+    "code": "duplicate_client_order_id",
+    "message": "Already exists"
+  },
+  "reject_temporary": {
+    "code": "internal_error",
+    "message": "Temporary failure"
+  },
+  "reject_missing_order": {
+    "code": "not_found",
+    "message": "Order not found"
+  },
+  "reject_parameters": {
+    "code": "invalid_parameters",
+    "message": "bad\nparameters"
+  },
+  "reject_batch": {
+    "code": "invalid_parameters",
+    "message": "No per-item outcomes"
+  },
+  "reject_cancel": {
+    "code": "invalid_parameters",
+    "message": "Cannot cancel"
+  },
+  "batch_create_cost": {
+    "method": "POST",
+    "path": "/trade-api/v2/portfolio/events/orders/batched",
+    "cost": 11
+  },
+  "batch_cancel_cost": {
+    "method": "DELETE",
+    "path": "/trade-api/v2/portfolio/events/orders/batched",
+    "cost": 16
+  }
+}

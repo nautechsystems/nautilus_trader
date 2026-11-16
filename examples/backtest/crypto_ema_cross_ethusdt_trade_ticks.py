@@ -84,6 +84,7 @@ if __name__ == "__main__":
             slow_ema_period=20,
         ),
     )
+
     engine.add_strategy(strategy)
     engine.run()
 

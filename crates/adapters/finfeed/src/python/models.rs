@@ -168,6 +168,7 @@ impl PyFinFeedMarket {
     /// Polymarket uses pUSD and six-decimal shares, matching the native adapter's conventions.
     /// Unavailable activation uses its zero timestamp convention. `EndDateIso` sets the simulated
     /// trading cutoff; it does not prove actual venue closure or authoritative settlement.
+    /// `FinFeedDataLoader` fetches the public metadata needed for Kalshi definitions.
     /// Other venue families fail until their required field rules are verified.
     ///
     /// # Errors

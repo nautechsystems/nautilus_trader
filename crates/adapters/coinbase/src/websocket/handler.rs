@@ -23,6 +23,7 @@ use nautilus_core::{
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::{
     data::{Bar, BarType, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
     identifiers::{AccountId, InstrumentId, Symbol},
@@ -30,13 +31,16 @@ use nautilus_model::{
     reports::OrderStatusReport,
 };
 use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
+use serde::Deserialize;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
     common::consts::COINBASE_VENUE,
     websocket::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
+        error::CoinbaseWsError,
         messages::{CoinbaseWsMessage, WsEventType, WsOrderUpdate},
         parse::{
             parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_status_product,
@@ -73,6 +77,15 @@ pub enum HandlerCommand {
         product_ids: Vec<Ustr>,
         payload: SecretString,
     },
+    /// Writes book subscription payloads in order on one connection, then opens `gate`.
+    ///
+    /// `completion` receives the write result; cancelling `cancel` abandons the write.
+    BookSubscription {
+        payloads: Vec<SecretString>,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), CoinbaseWsError>>,
+    },
     /// Disconnects the WebSocket.
     Disconnect,
     /// Caches instruments for precision lookups during parsing.
@@ -93,6 +106,9 @@ impl Debug for HandlerCommand {
             Self::SetClient(_) => f.write_str("SetClient"),
             Self::Subscribe { channel, .. } => write!(f, "Subscribe({channel:?})"),
             Self::Unsubscribe { channel, .. } => write!(f, "Unsubscribe({channel:?})"),
+            Self::BookSubscription { payloads, .. } => {
+                write!(f, "BookSubscription({})", payloads.len())
+            }
             Self::Disconnect => f.write_str("Disconnect"),
             Self::InitializeInstruments(v) => write!(f, "InitializeInstruments({})", v.len()),
             Self::UpdateInstrument(i) => write!(f, "UpdateInstrument({})", i.id()),
@@ -142,8 +158,24 @@ pub enum NautilusWsMessage {
     InstrumentStatus(Box<InstrumentStatus>),
     /// The connection was re-established after a drop.
     Reconnected,
+    /// An envelope `sequence_num` skipped or repeated, so at least one envelope was lost.
+    ///
+    /// Emitted before the messages of the envelope that revealed the gap.
+    SequenceGap { expected: u64, received: u64 },
     /// An error occurred during message processing.
     Error(String),
+}
+
+#[derive(Deserialize)]
+struct SequencedEnvelope {
+    sequence_num: u64,
+}
+
+#[derive(Deserialize)]
+struct VenueError {
+    #[serde(rename = "type")]
+    kind: String,
+    message: String,
 }
 
 /// Processes raw WebSocket messages into Nautilus domain types.
@@ -163,6 +195,7 @@ pub struct FeedHandler {
     account_id: Option<AccountId>,
     buffer: Vec<NautilusWsMessage>,
     last_heartbeat_counter: Option<u64>,
+    last_sequence_num: Option<u64>,
 }
 
 impl FeedHandler {
@@ -185,6 +218,7 @@ impl FeedHandler {
             account_id: None,
             buffer: Vec::new(),
             last_heartbeat_counter: None,
+            last_sequence_num: None,
         }
     }
 
@@ -222,6 +256,18 @@ impl FeedHandler {
                         HandlerCommand::Subscribe { payload, .. }
                         | HandlerCommand::Unsubscribe { payload, .. } => {
                             self.send_subscription(&payload).await;
+                        }
+                        HandlerCommand::BookSubscription { payloads, cancel, gate, completion } => {
+                            let result = tokio::select! {
+                                biased;
+                                () = cancel.cancelled() => continue,
+                                result = self.send_book_subscription(&payloads) => result,
+                            };
+
+                            if result.is_ok() {
+                                gate.open();
+                            }
+                            let _ = completion.send(result);
                         }
                         HandlerCommand::Disconnect => {
                             if let Some(client) = self.client.take() {
@@ -290,9 +336,36 @@ impl FeedHandler {
         }
     }
 
+    async fn send_book_subscription(
+        &self,
+        payloads: &[SecretString],
+    ) -> Result<(), CoinbaseWsError> {
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| CoinbaseWsError::ChannelSend("no WebSocket client set".to_string()))?;
+
+        // Bound to one connection so a reconnect cannot split an unsubscribe from its subscribe
+        let epoch = client.connection_epoch();
+
+        for payload in payloads {
+            client
+                .send_text_on_connection(
+                    payload.expose_secret().to_owned(),
+                    Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()),
+                    epoch,
+                )
+                .await
+                .map_err(CoinbaseWsError::TransportSend)?;
+        }
+
+        Ok(())
+    }
+
     fn handle_text(&mut self, text: &str) -> Option<NautilusWsMessage> {
         if text == RECONNECTED {
             self.last_heartbeat_counter = None;
+            self.last_sequence_num = None;
             return Some(NautilusWsMessage::Reconnected);
         }
 
@@ -301,11 +374,44 @@ impl FeedHandler {
         let msg: CoinbaseWsMessage = match serde_json::from_str(text) {
             Ok(m) => m,
             Err(e) => {
+                // Coinbase rejects requests (e.g. over the rate limit) with an error frame that
+                // has no channel or product
+                if let Ok(error) = serde_json::from_str::<VenueError>(text)
+                    && error.kind == "error"
+                {
+                    return Some(NautilusWsMessage::Error(error.message));
+                }
+
                 log::warn!("Failed to parse WS message: {e}");
-                return None;
+
+                // An envelope this handler cannot parse still advances the connection sequence
+                let envelope = serde_json::from_str::<SequencedEnvelope>(text).ok()?;
+                return self.note_sequence_num(envelope.sequence_num).map(
+                    |(expected, received)| NautilusWsMessage::SequenceGap { expected, received },
+                );
             }
         };
 
+        let gap = self.note_sequence_num(msg.sequence_num());
+        let output = self.dispatch_message(msg, ts_init);
+
+        match gap {
+            Some((expected, received)) => {
+                // The buffer pops from its end, so this keeps the envelope's messages after the gap
+                if let Some(output) = output {
+                    self.buffer.push(output);
+                }
+                Some(NautilusWsMessage::SequenceGap { expected, received })
+            }
+            None => output,
+        }
+    }
+
+    fn dispatch_message(
+        &mut self,
+        msg: CoinbaseWsMessage,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
         match msg {
             CoinbaseWsMessage::L2Data {
                 timestamp, events, ..
@@ -347,6 +453,15 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_status_events(&events, &timestamp, ts_init),
         }
+    }
+
+    fn note_sequence_num(&mut self, sequence_num: u64) -> Option<(u64, u64)> {
+        let gap = self.last_sequence_num.and_then(|last| {
+            let expected = last.saturating_add(1);
+            (sequence_num != expected).then_some((expected, sequence_num))
+        });
+        self.last_sequence_num = Some(sequence_num);
+        gap
     }
 
     fn note_heartbeat_counter(&mut self, counter: u64) -> Option<(u64, u64)> {
@@ -728,6 +843,7 @@ mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
     use nautilus_model::{
+        enums::BookAction,
         identifiers::Symbol,
         instruments::CurrencyPair,
         types::{Currency, Price, Quantity},
@@ -1053,13 +1169,218 @@ mod tests {
         assert!(handler.handle_text(&json).is_none());
         assert_eq!(handler.last_heartbeat_counter, Some(42));
 
-        let next = json.replace("\"heartbeat_counter\": 42", "\"heartbeat_counter\": 43");
+        let next = json
+            .replace("\"heartbeat_counter\": 42", "\"heartbeat_counter\": 43")
+            .replace("\"sequence_num\": 0", "\"sequence_num\": 1");
         assert!(handler.handle_text(&next).is_none());
         assert_eq!(handler.last_heartbeat_counter, Some(43));
 
         let result = handler.handle_text(RECONNECTED);
         assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
         assert_eq!(handler.last_heartbeat_counter, None);
+    }
+
+    fn eth_usd_instrument() -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-USD"), *COINBASE_VENUE);
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("ETH-USD"))
+                .base_currency(Currency::get_or_create_crypto("ETH"))
+                .quote_currency(Currency::get_or_create_crypto("USD"))
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .min_quantity(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn capture_handler() -> FeedHandler {
+        let mut handler = test_handler();
+        for instrument in [btc_usd_instrument(), eth_usd_instrument()] {
+            handler.instruments.insert(instrument.id(), instrument);
+        }
+        handler
+    }
+
+    fn capture_frames() -> Vec<String> {
+        load_test_fixture("ws_l2_resubscribe_capture.jsonl")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    // Collects everything one frame produces, in emission order
+    fn handle_frame(handler: &mut FeedHandler, text: &str) -> Vec<NautilusWsMessage> {
+        let mut output: Vec<_> = handler.handle_text(text).into_iter().collect();
+        while let Some(msg) = handler.buffer.pop() {
+            output.push(msg);
+        }
+        output
+    }
+
+    fn is_gap(msg: &NautilusWsMessage) -> bool {
+        matches!(msg, NautilusWsMessage::SequenceGap { .. })
+    }
+
+    // The capture interleaves two level2 books with trades, heartbeats, and subscription acks, and
+    // includes a duplicate subscribe plus an unsubscribe and resubscribe of BTC-USD. One counter
+    // numbers all of it, so none of it may read as a gap.
+    #[rstest]
+    fn test_capture_with_mixed_channels_reports_no_sequence_gaps() {
+        let mut handler = capture_handler();
+        let mut snapshots = Vec::new();
+        let mut updates = 0;
+
+        for frame in capture_frames() {
+            for msg in handle_frame(&mut handler, &frame) {
+                match msg {
+                    NautilusWsMessage::Deltas(deltas)
+                        if deltas.deltas[0].action == BookAction::Clear =>
+                    {
+                        snapshots.push(deltas.instrument_id.symbol.to_string());
+                    }
+                    NautilusWsMessage::Deltas(_) => updates += 1,
+                    NautilusWsMessage::SequenceGap { expected, received } => {
+                        panic!("false gap: expected {expected}, was {received}")
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        assert_eq!(snapshots, ["BTC-USD", "ETH-USD", "BTC-USD"]);
+        assert!(updates > 200, "updates={updates}");
+        assert_eq!(handler.last_sequence_num, Some(300));
+    }
+
+    #[rstest]
+    fn test_capture_matches_subscription_setup() {
+        let setup: Vec<serde_json::Value> =
+            serde_json::from_str(&load_test_fixture("ws_l2_resubscribe_subscriptions.json"))
+                .unwrap();
+        let frames = capture_frames();
+
+        for step in setup {
+            let ack = step["ack_sequence_num"].as_u64().unwrap();
+            let frame: serde_json::Value =
+                serde_json::from_str(&frames[usize::try_from(ack).unwrap()]).unwrap();
+
+            assert_eq!(frame["sequence_num"], ack);
+            assert_eq!(frame["channel"], "subscriptions", "{step}");
+        }
+
+        // The resubscribe snapshot arrives before its acknowledgement
+        let snapshot: serde_json::Value = serde_json::from_str(&frames[281]).unwrap();
+        assert_eq!(snapshot["events"][0]["type"], "snapshot");
+        assert_eq!(snapshot["events"][0]["product_id"], "BTC-USD");
+    }
+
+    #[rstest]
+    #[case::book_update(20)]
+    #[case::heartbeat(16)]
+    #[case::market_trades(19)]
+    #[case::subscription_ack(105)]
+    fn test_skipped_envelope_reports_gap_before_next_envelope(#[case] skipped: usize) {
+        let mut handler = capture_handler();
+        let frames = capture_frames();
+
+        for frame in &frames[..skipped] {
+            assert!(!handle_frame(&mut handler, frame).iter().any(is_gap));
+        }
+
+        let output = handle_frame(&mut handler, &frames[skipped + 1]);
+        let skipped = skipped as u64;
+
+        assert!(matches!(
+            output.first(),
+            Some(NautilusWsMessage::SequenceGap { expected, received })
+                if *expected == skipped && *received == skipped + 1
+        ));
+        assert!(!output[1..].iter().any(is_gap));
+
+        for frame in &frames[usize::try_from(skipped).unwrap() + 2..] {
+            assert!(!handle_frame(&mut handler, frame).iter().any(is_gap));
+        }
+    }
+
+    #[rstest]
+    fn test_gap_precedes_deltas_of_revealing_envelope() {
+        let mut handler = capture_handler();
+        let frames = capture_frames();
+        handle_frame(&mut handler, &frames[18]);
+
+        // Frame 20 is a BTC-USD update, revealing the loss of frame 19
+        let output = handle_frame(&mut handler, &frames[20]);
+
+        assert_eq!(output.len(), 2);
+        assert!(is_gap(&output[0]));
+        assert!(matches!(output[1], NautilusWsMessage::Deltas(_)));
+    }
+
+    #[rstest]
+    fn test_reconnect_resets_sequence_tracking() {
+        let mut handler = capture_handler();
+        let frames = capture_frames();
+
+        for frame in &frames[..50] {
+            handle_frame(&mut handler, frame);
+        }
+        assert_eq!(handler.last_sequence_num, Some(49));
+
+        let reconnected = handle_frame(&mut handler, RECONNECTED);
+        assert!(matches!(reconnected[..], [NautilusWsMessage::Reconnected]));
+        assert_eq!(handler.last_sequence_num, None);
+
+        // A new connection numbers its envelopes from zero again
+        for frame in &frames[..20] {
+            assert!(!handle_frame(&mut handler, frame).iter().any(is_gap));
+        }
+        assert_eq!(handler.last_sequence_num, Some(19));
+    }
+
+    #[rstest]
+    fn test_unparsed_envelope_still_advances_sequence() {
+        let mut handler = capture_handler();
+        let frames = capture_frames();
+        handle_frame(&mut handler, &frames[0]);
+
+        let unknown = r#"{"channel":"unknown","timestamp":"","sequence_num":1,"events":[]}"#;
+        assert!(handle_frame(&mut handler, unknown).is_empty());
+        assert!(!handle_frame(&mut handler, &frames[2]).iter().any(is_gap));
+
+        let skipped = r#"{"channel":"unknown","timestamp":"","sequence_num":4,"events":[]}"#;
+        assert!(matches!(
+            handle_frame(&mut handler, skipped)[..],
+            [NautilusWsMessage::SequenceGap {
+                expected: 3,
+                received: 4
+            }]
+        ));
+    }
+
+    #[rstest]
+    fn test_venue_error_frame_surfaces_message_without_moving_sequence() {
+        let mut handler = capture_handler();
+        let frames = capture_frames();
+        handle_frame(&mut handler, &frames[0]);
+
+        let output = handle_frame(
+            &mut handler,
+            r#"{"type":"error","message":"rate limit exceeded"}"#,
+        );
+
+        assert!(matches!(
+            &output[..],
+            [NautilusWsMessage::Error(message)] if message == "rate limit exceeded"
+        ));
+        assert_eq!(handler.last_sequence_num, Some(0));
+        assert!(!handle_frame(&mut handler, &frames[1]).iter().any(is_gap));
     }
 
     #[rstest]

@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.9"
+version = "0.5.10"
 ci = true
 releases = "pypi:prek"
 
@@ -19,7 +19,7 @@ pre-commit-revision = "v{version}"
 
 [ruff]
 kind = "tool"
-version = "0.17.3"
+version = "0.17.5"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -63,7 +63,7 @@ pre-commit-fragment = "pre-commit/toml.yaml"
 
 [markdownlint-cli2]
 kind = "tool"
-version = "0.24.0"
+version = "0.24.1"
 ci = true
 releases = "npm:markdownlint-cli2"
 pre-commit-repository = "https://github.com/DavidAnson/markdownlint-cli2"
@@ -79,12 +79,12 @@ pre-commit-revision = "v{version}"
 
 [cargo-audit]
 kind = "tool"
-version = "0.22.2"
+version = "0.23.0"
 releases = "crates:cargo-audit"
 
 [cargo-binstall]
 kind = "tool"
-version = "1.26.2"
+version = "1.27.0"
 releases = "crates:cargo-binstall"
 
 [cargo-deny]
@@ -104,7 +104,7 @@ releases = "crates:cargo-fuzz"
 
 [cargo-hack]
 kind = "tool"
-version = "0.6.45"
+version = "0.6.46"
 releases = "crates:cargo-hack"
 
 [cargo-hawk]
@@ -124,7 +124,7 @@ releases = "crates:cargo-machete"
 
 [cargo-nextest]
 kind = "tool"
-version = "0.9.150"
+version = "0.9.151"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
@@ -139,7 +139,7 @@ releases = "crates:rust-code-analysis-cli"
 
 [uv]
 kind = "tool"
-version = "0.13.6"
+version = "0.13.7"
 releases = "pypi:uv"
 
 [pip-audit]
@@ -149,7 +149,7 @@ releases = "pypi:pip-audit"
 
 [osv-scanner]
 kind = "tool"
-version = "2.7.0"
+version = "2.7.1"
 releases = "github:google/osv-scanner"
 
 [capnp]
@@ -199,7 +199,7 @@ pre-commit-fragment = "pre-commit/mermaid.yaml"
 
 [typos]
 kind = "tool"
-version = "1.51.1"
+version = "1.52.2"
 releases = "github:crate-ci/typos"
 pre-commit-repository = "https://github.com/crate-ci/typos"
 pre-commit-revision = "v{version}"
@@ -207,7 +207,7 @@ pre-commit-fragment = "pre-commit/typos.yaml"
 
 [zizmor]
 kind = "tool"
-version = "1.31.1"
+version = "1.32.0"
 releases = "pypi:zizmor"
 pre-commit-repository = "https://github.com/zizmorcore/zizmor-pre-commit"
 pre-commit-revision = "v{version}"

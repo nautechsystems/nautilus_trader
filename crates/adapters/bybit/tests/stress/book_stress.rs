@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Mainnet market-data fault injection with an independent decimal order book oracle.
+//! Mainnet market-data fault injection with a wire reconstruction and a separate public connection.
 //!
 //! Run with adapter credentials unset:
 //! `cargo test -p nautilus-bybit --features examples --test bybit-book-stress -- --timeout 10 --rounds 21`
@@ -29,19 +29,24 @@
 //! No orders are submitted. Books use the linear socket at the default depth of 50. Every emitted
 //! batch passes through the shared `BookStreamChecker` and is verified against a reference book
 //! rebuilt from the raw frames the proxy relays; a session fails unless every snapshot episode
-//! was verified.
+//! was verified. A separate public order book connection compares those levels at the same cross
+//! sequence, and a session fails unless each book has an aligned comparison.
 
 #[path = "../../../../live/tests/book/stress/mod.rs"]
 mod stress;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     str::FromStr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
+use futures_util::{SinkExt, StreamExt};
 use nautilus_bybit::{
     common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType, parse::extract_raw_symbol},
     config::BybitDataClientConfig,
@@ -53,6 +58,7 @@ use nautilus_model::{
     data::OrderBookDeltas,
     identifiers::{ClientId, InstrumentId},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use stress::{
@@ -696,8 +702,10 @@ fn reconnect(session: &mut BybitSession) {
 
 struct Bybit {
     wire: BybitWire,
+    oracle: VenueOracle,
     expected_epoch: usize,
     epochs: HashMap<InstrumentId, usize>,
+    wire_empty: usize,
 }
 
 impl StressVenue for Bybit {
@@ -710,13 +718,20 @@ impl StressVenue for Bybit {
 
     fn self_check() {
         check_wire_oracle();
+        check_sequence_books();
+        check_pending_alignment();
     }
 
     fn new(_args: &StressArgs) -> Self {
+        let wire = BybitWire::default();
+        let oracle = VenueOracle::start(wire.sequences.clone());
+
         Self {
-            wire: BybitWire::default(),
+            wire,
+            oracle,
             expected_epoch: 1,
             epochs: HashMap::new(),
+            wire_empty: 0,
         }
     }
 
@@ -770,6 +785,10 @@ impl StressVenue for Bybit {
             );
         }
 
+        if view.book.bids.is_empty() && view.book.asks.is_empty() {
+            self.wire_empty += 1;
+        }
+
         self.epochs.insert(id, view.epoch);
     }
 
@@ -778,17 +797,33 @@ impl StressVenue for Bybit {
         self.epochs.get(id).copied().unwrap_or(0) >= self.expected_epoch
             && book.batches >= start.batches + 5
     }
+
+    fn stats(&self) -> String {
+        format!("{} wire_empty={}", self.oracle.stats(), self.wire_empty)
+    }
+
+    fn finish(&mut self) {
+        self.oracle.abort();
+
+        for symbol in SYMBOLS {
+            let raw = raw_symbol(symbol);
+            let checks = self.oracle.checks.lock().get(raw).copied().unwrap_or(0);
+            assert!(checks > 0, "{raw} has no aligned venue comparison");
+        }
+    }
 }
 
 #[derive(Clone, Default)]
 struct BybitWire {
     views: WireViews,
+    sequences: SequenceBooks,
 }
 
 impl WireCodec for BybitWire {
     fn open(&self, route: &Route, number: usize) -> Box<dyn WireConnection> {
         Box::new(BybitConnection {
             views: self.views.clone(),
+            sequences: self.sequences.clone(),
             route: route.name,
             epoch: number,
             books: HashMap::new(),
@@ -798,6 +833,7 @@ impl WireCodec for BybitWire {
 
 struct BybitConnection {
     views: WireViews,
+    sequences: SequenceBooks,
     route: &'static str,
     epoch: usize,
     books: HashMap<String, WireBook>,
@@ -832,13 +868,18 @@ impl WireConnection for BybitConnection {
         let snapshot = frame["type"] == "snapshot";
         let book = self.books.entry(key.clone()).or_default();
         apply(book, &frame["data"], snapshot);
+        let sequence = frame["data"]["seq"].as_u64().unwrap();
+        let update_id = frame["data"]["u"].as_u64().unwrap();
+        let top = book.top(DEPTH);
+        self.sequences
+            .record(&key, update_id, sequence, top.clone(), snapshot);
         self.views.record(
             &key,
             WireView {
                 epoch: self.epoch,
-                sequence: frame["data"]["seq"].as_u64().unwrap(),
+                sequence,
                 timestamp: frame["ts"].as_u64().unwrap() * 1_000_000,
-                book: book.top(DEPTH),
+                book: top,
             },
         );
 
@@ -991,6 +1032,7 @@ fn check_wire_oracle() {
         };
 
         let mut connection = wire.open(&route, 3);
+        let sequences = wire.sequences.clone();
         let text = |value: Value| Message::Text(value.to_string().into());
 
         let snapshot = text(json!({
@@ -1085,5 +1127,337 @@ fn check_wire_oracle() {
         assert!(connection.corrupt(&mut update, "BTCUSDT", FrameKind::Update));
         let corrupted = serde_json::from_str::<Value>(update.to_text().unwrap()).unwrap();
         assert_eq!(corrupted["data"]["u"], json!(i64::MAX));
+        assert_eq!(
+            sequences
+                .find("BTCUSDT", 70)
+                .expect("snapshot sequence")
+                .bids,
+            [(Decimal::from(10), Decimal::from(2))].into()
+        );
+        assert_eq!(
+            sequences.find("BTCUSDT", 80).expect("linked update").bids,
+            [].into()
+        );
     }
+}
+
+const SEQUENCES_MAX: usize = 2048;
+const VENUE_WS: &str = "wss://stream.bybit.com/v5/public/linear";
+
+// Books rebuilt from a contiguous update-id chain, keyed by cross sequence for venue alignment
+#[derive(Clone, Default)]
+struct SequenceBooks {
+    symbols: Arc<Mutex<HashMap<String, SymbolBooks>>>,
+}
+
+#[derive(Default)]
+struct SymbolBooks {
+    books: VecDeque<(u64, WireBook)>,
+    last_update_id: Option<u64>,
+}
+
+impl SequenceBooks {
+    fn record(&self, key: &str, update_id: u64, sequence: u64, book: WireBook, snapshot: bool) {
+        let mut symbols = self.symbols.lock();
+        let symbol = symbols.entry(key.to_string()).or_default();
+        let linked = snapshot
+            || symbol
+                .last_update_id
+                .is_some_and(|last| last.checked_add(1) == Some(update_id));
+
+        if !linked {
+            symbol.last_update_id = None;
+            return;
+        }
+
+        symbol.last_update_id = Some(update_id);
+        symbol.books.push_back((sequence, book));
+        if symbol.books.len() > SEQUENCES_MAX {
+            symbol.books.pop_front();
+        }
+    }
+
+    fn find(&self, key: &str, sequence: u64) -> Option<WireBook> {
+        self.symbols
+            .lock()
+            .get(key)?
+            .books
+            .iter()
+            .rev()
+            .find(|(recorded, _)| *recorded == sequence)
+            .map(|(_, book)| book.clone())
+    }
+}
+
+struct VenueOracle {
+    checks: Arc<Mutex<HashMap<String, usize>>>,
+    skipped: Arc<AtomicUsize>,
+    empty: Arc<AtomicUsize>,
+    errors: Arc<AtomicUsize>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl VenueOracle {
+    fn start(books: SequenceBooks) -> Self {
+        let checks = Arc::new(Mutex::new(HashMap::new()));
+        let skipped = Arc::new(AtomicUsize::new(0));
+        let empty = Arc::new(AtomicUsize::new(0));
+        let errors = Arc::new(AtomicUsize::new(0));
+        let handle = watch_venue(
+            books,
+            Arc::clone(&checks),
+            Arc::clone(&skipped),
+            Arc::clone(&empty),
+            Arc::clone(&errors),
+        );
+
+        Self {
+            checks,
+            skipped,
+            empty,
+            errors,
+            handle: Some(handle),
+        }
+    }
+
+    fn abort(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+
+    fn stats(&self) -> String {
+        let checks = self.checks.lock();
+        let aligned = checks.values().sum::<usize>();
+
+        format!(
+            "venue_checks={aligned} venue_books={} venue_skipped={} venue_empty={} venue_errors={}",
+            checks.len(),
+            self.skipped.load(Ordering::Relaxed),
+            self.empty.load(Ordering::Relaxed),
+            self.errors.load(Ordering::Relaxed),
+        )
+    }
+}
+
+impl Drop for VenueOracle {
+    fn drop(&mut self) {
+        self.abort();
+    }
+}
+
+fn watch_venue(
+    books: SequenceBooks,
+    checks: Arc<Mutex<HashMap<String, usize>>>,
+    skipped: Arc<AtomicUsize>,
+    empty: Arc<AtomicUsize>,
+    errors: Arc<AtomicUsize>,
+) -> tokio::task::JoinHandle<()> {
+    let task = async move {
+        let topics = SYMBOLS.map(|symbol| format!("orderbook.{DEPTH}.{}", raw_symbol(symbol)));
+        let subscribe = json!({"op": "subscribe", "args": topics}).to_string();
+        loop {
+            if let Err(e) = watch_venue_once(&books, &checks, &skipped, &empty, &subscribe).await {
+                errors.fetch_add(1, Ordering::Relaxed);
+                eprintln!("Venue oracle: {e}");
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    };
+
+    tokio::spawn(task) // tokio-import-ok: Standalone runtime
+}
+
+async fn watch_venue_once(
+    books: &SequenceBooks,
+    checks: &Mutex<HashMap<String, usize>>,
+    skipped: &AtomicUsize,
+    empty: &AtomicUsize,
+    subscribe: &str,
+) -> Result<(), String> {
+    let (mut stream, _) = tokio_tungstenite::connect_async(VENUE_WS)
+        .await
+        .map_err(|e| e.to_string())?;
+    stream
+        .send(Message::Text(subscribe.to_string().into()))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut local = HashMap::<String, (WireBook, Option<u64>)>::new();
+    let mut pending = VecDeque::new();
+    let mut ping = tokio::time::interval(Duration::from_secs(20));
+    ping.tick().await;
+
+    loop {
+        tokio::select! {
+            _ = ping.tick() => {
+                stream
+                    .send(Message::Text(r#"{"op":"ping"}"#.into()))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            message = stream.next() => {
+                let Some(message) = message else {
+                    return Ok(());
+                };
+                let Message::Text(text) = message.map_err(|e| e.to_string())? else {
+                    continue;
+                };
+                let Ok(frame) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                let Some(symbol) = frame["topic"].as_str().and_then(book_key) else {
+                    continue;
+                };
+                let data = &frame["data"];
+                let Some(update_id) = data["u"].as_u64() else {
+                    continue;
+                };
+                let Some(sequence) = data["seq"].as_u64() else {
+                    continue;
+                };
+                let snapshot = frame["type"] == "snapshot";
+                let entry = local.entry(symbol.to_string()).or_default();
+                let linked = snapshot || entry.1.is_some_and(|last| last.checked_add(1) == Some(update_id));
+
+                if !linked {
+                    entry.1 = None;
+                    continue;
+                }
+
+                apply(&mut entry.0, data, snapshot);
+                entry.1 = Some(update_id);
+                let book = entry.0.top(DEPTH);
+                pending.push_back(PendingView {
+                    symbol: symbol.to_string(),
+                    sequence,
+                    book,
+                    at: Instant::now(),
+                });
+                settle_pending(books, checks, skipped, empty, &mut pending);
+            }
+        }
+    }
+}
+
+struct PendingView {
+    symbol: String,
+    sequence: u64,
+    book: WireBook,
+    at: Instant,
+}
+
+fn settle_pending(
+    books: &SequenceBooks,
+    checks: &Mutex<HashMap<String, usize>>,
+    skipped: &AtomicUsize,
+    empty: &AtomicUsize,
+    pending: &mut VecDeque<PendingView>,
+) {
+    let now = Instant::now();
+
+    pending.retain(|item| match books.find(&item.symbol, item.sequence) {
+        Some(expected) if expected == item.book => {
+            *checks.lock().entry(item.symbol.clone()).or_default() += 1;
+
+            if item.book.bids.is_empty() && item.book.asks.is_empty() {
+                empty.fetch_add(1, Ordering::Relaxed);
+            }
+
+            false
+        }
+        Some(expected) => panic!(
+            "venue oracle mismatch {} seq={}: wire={expected:?}, venue={:?}",
+            item.symbol, item.sequence, item.book
+        ),
+        None if now.duration_since(item.at) >= Duration::from_secs(2) => {
+            skipped.fetch_add(1, Ordering::Relaxed);
+            false
+        }
+        None => true,
+    });
+}
+
+fn raw_symbol(symbol: &str) -> &str {
+    symbol.split_once('-').map_or(symbol, |(raw, _)| raw)
+}
+
+fn check_sequence_books() {
+    let books = SequenceBooks::default();
+
+    let book = WireBook {
+        bids: [(Decimal::from(10), Decimal::from(2))].into(),
+        asks: [].into(),
+    };
+
+    books.record("BTCUSDT", 5, 50, book.clone(), true);
+    books.record("BTCUSDT", 7, 70, book.clone(), false);
+    books.record("BTCUSDT", 6, 60, book.clone(), false);
+    assert_eq!(books.find("BTCUSDT", 50), Some(book.clone()));
+    assert!(books.find("BTCUSDT", 70).is_none());
+    assert!(books.find("BTCUSDT", 60).is_none());
+
+    books.record("BTCUSDT", 8, 80, book.clone(), true);
+    books.record("BTCUSDT", 9, 90, book.clone(), false);
+    assert_eq!(books.find("BTCUSDT", 80), Some(book.clone()));
+    assert_eq!(books.find("BTCUSDT", 90), Some(book));
+}
+
+fn check_pending_alignment() {
+    let books = SequenceBooks::default();
+
+    let book = WireBook {
+        bids: [(Decimal::from(10), Decimal::from(2))].into(),
+        asks: [].into(),
+    };
+
+    let empty_book = WireBook::default();
+    books.record("BTCUSDT", 5, 50, book.clone(), true);
+    books.record("ETHUSDT", 1, 10, empty_book.clone(), true);
+
+    let checks = Mutex::new(HashMap::new());
+    let skipped = AtomicUsize::new(0);
+    let empty = AtomicUsize::new(0);
+
+    let mut pending = VecDeque::from([
+        PendingView {
+            symbol: "BTCUSDT".to_string(),
+            sequence: 50,
+            book: book.clone(),
+            at: Instant::now(),
+        },
+        PendingView {
+            symbol: "ETHUSDT".to_string(),
+            sequence: 10,
+            book: empty_book,
+            at: Instant::now(),
+        },
+    ]);
+
+    settle_pending(&books, &checks, &skipped, &empty, &mut pending);
+
+    assert!(pending.is_empty());
+    assert_eq!(checks.lock().get("BTCUSDT").copied(), Some(1));
+    assert_eq!(checks.lock().get("ETHUSDT").copied(), Some(1));
+    assert_eq!(empty.load(Ordering::Relaxed), 1);
+    assert_eq!(skipped.load(Ordering::Relaxed), 0);
+
+    pending.push_back(PendingView {
+        symbol: "BTCUSDT".to_string(),
+        sequence: 99,
+        book: book.clone(),
+        at: Instant::now(),
+    });
+
+    settle_pending(&books, &checks, &skipped, &empty, &mut pending);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(skipped.load(Ordering::Relaxed), 0);
+
+    pending[0].at = Instant::now()
+        .checked_sub(Duration::from_secs(3))
+        .expect("clock supports a 3s lookback");
+    settle_pending(&books, &checks, &skipped, &empty, &mut pending);
+    assert!(pending.is_empty());
+    assert_eq!(skipped.load(Ordering::Relaxed), 1);
 }

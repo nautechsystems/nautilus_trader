@@ -17,7 +17,7 @@
 
 use nautilus_network::{http::HttpClientError, retry::RetryError};
 
-/// A failure at the CoinAPI REST boundary.
+/// A failure at the CoinAPI HTTP or file boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -35,6 +35,8 @@ pub enum Error {
     },
     #[error("CoinAPI response parsing failed: {0}")]
     Parse(#[from] serde_json::Error),
+    #[error("CoinAPI file I/O failed: {0}")]
+    Io(#[from] std::io::Error),
     #[error("Invalid CoinAPI request: {0}")]
     Validation(String),
     #[error("Unexpected CoinAPI response: {0}")]

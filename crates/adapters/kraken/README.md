@@ -8,18 +8,18 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Kraken](https://www.kraken.com) exchange.
 
-The `nautilus-kraken` crate provides client bindings (HTTP & WebSocket) and data models
-for the official **Kraken API v2**.
+The `nautilus-kraken` crate provides separate Spot and Futures data and execution clients over HTTP
+and WebSocket. It includes typed API models, instrument loading, order and account updates, and
+live-node factories for both markets.
 
-The official Kraken API reference can be found at <https://docs.kraken.com/api/docs/>.
+The official Kraken API reference can be found at <https://docs.kraken.com/>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 
 ## Features
 
@@ -57,6 +57,28 @@ which explains why the APIs remain distinct rather than unified.
 | Spot    | `BTC`  | `BTC/USD`   | XBT normalized to BTC (base or quote position). |
 | Futures | `XBT`  | `PI_XBTUSD` | Uses Kraken's native XBT format.                |
 
+## Configuration
+
+See the [integration guide](../../../docs/integrations/kraken.md) for client settings,
+credentials, and connection setup.
+
+## Feature flags
+
+Feature flags control code inclusion for Rust builds and Python bindings:
+
+- `examples`: Enables the crate's example binaries.
+- `extension-module`: Builds as a Python extension module.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types. Keep this default for Futures because Kraken may return instrument
+  precision above standard-precision mode's nine-decimal limit.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+
+## Integrator attribution
+
+Spot and Futures HTTP order builders set `broker` to NautilusTrader's integration ID.
+Raw HTTP clients preserve caller-provided parameters, and Spot WebSocket orders omit attribution.
+
 ## Examples
 
 See the `bin/` directory for example usage:
@@ -67,21 +89,12 @@ cargo run --bin kraken-http-spot-public
 cargo run --bin kraken-ws-spot-data
 ```
 
-## Feature flags
-
-This crate provides feature flags to control source code inclusion during compilation:
-
-- `examples`: Enables the crate's example binaries.
-- `extension-module`: Builds as a Python extension module.
-- `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
-  to use 128-bit value types. Keep this default for Futures because Kraken may return instrument
-  precision above standard-precision mode's nine-decimal limit.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-kraken) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-kraken)
+- [Integration guide](../../../docs/integrations/kraken.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/kraken/)
 
 ## License
 

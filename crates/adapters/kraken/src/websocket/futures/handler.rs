@@ -112,10 +112,20 @@ impl FuturesFeedHandler {
                         }
                         FuturesHandlerCommand::Subscribe { payload }
                         | FuturesHandlerCommand::Unsubscribe { payload } => {
-                            if let Some(ref client) = self.inner
-                                && let Err(e) = client.send_text(payload.expose_secret().to_owned(), Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
-                            {
-                                log::error!("Failed to send text: {e}");
+                            if let Some(client) = &self.inner {
+                                if let Err(e) = client
+                                    .send_text(
+                                        payload.expose_secret().to_owned(),
+                                        Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+                                    )
+                                    .await
+                                {
+                                    log::error!("Failed to send text: {e}");
+                                }
+                            } else {
+                                log::error!(
+                                    "Kraken Futures WS subscribe or unsubscribe dropped, no active client"
+                                );
                             }
                         }
                         FuturesHandlerCommand::RequestChallenge { payload } => {
@@ -433,7 +443,10 @@ impl FuturesFeedHandler {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use nautilus_core::string::secret::REDACTED;
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -457,6 +470,82 @@ mod tests {
         assert_eq!(
             format!("{command:?}"),
             format!("RequestChallenge {{ payload: {REDACTED} }}")
+        );
+    }
+
+    struct DroppedCommandLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static DROPPED_COMMAND_LOG_CAPTURE: DroppedCommandLogCapture = DroppedCommandLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    impl log::Log for DroppedCommandLogCapture {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.level() == log::Level::Error
+                && metadata.target() == "nautilus_kraken::websocket::futures::handler"
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages.lock().push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    /// A subscribe that reaches the handler before its `SetClient` is dropped with an error
+    /// naming the lost command, rather than vanishing while the client already answered `Ok`.
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_without_active_client_logs_dropped_command() {
+        log::set_logger(&DROPPED_COMMAND_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(log::LevelFilter::Error);
+
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        // The raw stream stays open so `next` cannot return early: the only ready
+        // branch is the command channel, so the queued subscribe is handled first.
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let subscriptions = SubscriptionState::new(':');
+
+        let mut handler = FuturesFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions);
+
+        cmd_tx
+            .send(FuturesHandlerCommand::Subscribe {
+                payload: SecretString::from(
+                    r#"{"event":"subscribe","feed":"trade","token":"SUBSCRIBE_SECRET_MARKER"}"#
+                        .to_string(),
+                ),
+            })
+            .unwrap();
+
+        drop(cmd_tx);
+
+        let mut next = std::pin::pin!(handler.next());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        while DROPPED_COMMAND_LOG_CAPTURE.messages.lock().is_empty() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "handler never processed the queued subscribe"
+            );
+            let _ = tokio::time::timeout(Duration::from_millis(10), next.as_mut()).await;
+        }
+
+        let messages = DROPPED_COMMAND_LOG_CAPTURE.messages.lock().clone();
+        assert_eq!(
+            messages,
+            vec![
+                "Kraken Futures WS subscribe or unsubscribe dropped, no active client".to_string()
+            ],
+            "a subscribe without an active client must log the dropped command"
+        );
+        assert!(
+            !messages.join("\n").contains("SUBSCRIBE_SECRET_MARKER"),
+            "dropped-command log must not leak the payload"
         );
     }
 

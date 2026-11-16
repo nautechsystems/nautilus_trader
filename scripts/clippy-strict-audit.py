@@ -35,6 +35,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
 LINTS = (
     "arithmetic_side_effects",
     "as_conversions",
@@ -50,6 +51,7 @@ LINTS = (
     "panic_in_result_fn",
     "unchecked_time_subtraction",
 )
+
 LINT_SET = frozenset(LINTS)
 
 
@@ -84,6 +86,7 @@ def _cargo_metadata(cargo: str) -> dict[str, str]:
         check=False,
         encoding="utf-8",
     )
+
     if result.returncode != 0:
         detail = result.stderr.strip()
         raise _AuditError(detail or f"Cargo metadata failed with status {result.returncode}")
@@ -98,6 +101,7 @@ def _cargo_metadata(cargo: str) -> dict[str, str]:
         raise _AuditError("Cargo metadata did not contain a package list")
 
     names = {}
+
     for package in packages:
         if not isinstance(package, dict):
             raise _AuditError("Cargo metadata contained an invalid package entry")
@@ -126,6 +130,7 @@ def _clippy_command(
         "--lib",
         "--bins",
     ]
+
     if include_tests:
         command.append("--tests")
     command.extend(
@@ -141,6 +146,7 @@ def _clippy_command(
             "--",
         ],
     )
+
     for lint in LINTS:
         command.extend(("--force-warn", f"clippy::{lint}"))
     return tuple(command)
@@ -196,12 +202,14 @@ def _parse_message(  # noqa: C901, PLR0912
         raise _AuditError(f"Diagnostic for clippy::{lint} did not contain spans")
 
     findings = set()
+
     for span in spans:
         if not isinstance(span, dict) or span.get("is_primary") is not True:
             continue
         file_name = span.get("file_name")
         line = span.get("line_start")
         column = span.get("column_start")
+
         if (
             not isinstance(file_name, str)
             or not isinstance(line, int)
@@ -254,6 +262,7 @@ def _toolchain_channel() -> str:
         channel = config["toolchain"]["channel"]
     except (KeyError, OSError, tomllib.TOMLDecodeError) as e:
         raise _AuditError(f"Could not read the pinned Rust toolchain: {e}") from e
+
     if not isinstance(channel, str):
         raise _AuditError("The pinned Rust toolchain channel is not a string")
     return channel
@@ -267,10 +276,12 @@ def _summary_table(
     production_counts = Counter(finding.lint for finding in production)
     test_counts = Counter(finding.lint for finding in tests)
     full_counts = Counter(finding.lint for finding in full)
+
     lines = [
         "| Lint | Production | Test-only | Full |",
         "| --- | ---: | ---: | ---: |",
     ]
+
     lines.extend(
         f"| `{lint}` | {production_counts[lint]:,} | {test_counts[lint]:,} | "
         f"{full_counts[lint]:,} |"
@@ -291,6 +302,7 @@ def _package_lint_table(findings: set[_Finding]) -> list[str]:
         "| Package | Lint | Count |",
         "| --- | --- | ---: |",
     ]
+
     lines.extend(
         f"| `{package}` | `{lint}` | {count:,} |"
         for (package, lint), count in sorted(counts.items())
@@ -305,6 +317,7 @@ def _render_report(
 ) -> str:
     tests = full_run - production
     full = full_run | production
+
     lines = [
         "# Strict Clippy audit",
         "",
@@ -335,6 +348,7 @@ def _render_report(
         "",
         *_package_lint_table(tests),
     ]
+
     return "\n".join(lines)
 
 
@@ -352,6 +366,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if not args.features.strip():
         raise _AuditError("At least one Cargo feature is required")
+
     if not args.profile.strip():
         raise _AuditError("A Cargo profile is required")
 

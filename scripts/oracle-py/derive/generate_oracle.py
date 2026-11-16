@@ -95,6 +95,7 @@ CHAIN_IDS = {"mainnet": 1, "testnet": 11155111}
 DOMAINS = {name: CONFIGS[chain].DOMAIN_SEPARATOR for name, chain in CHAINS.items()}
 TRADE_MODULES = {name: CONFIGS[chain].contracts.TRADE_MODULE for name, chain in CHAINS.items()}
 ACTION_TYPEHASH = CONFIGS[Chain.ETHEREUM].ACTION_TYPEHASH
+
 SDK_SOURCE_HASHES = {
     "contracts": "c3de85d9797daa21540a960cfd3ac48205b2d1f31ed089deaa9ac8f7d922a7e5",
     "SignedAction": "11705789160cc46ac7cf942b883e5cfcfe785400d7d20d54e4c0990574985880",
@@ -198,6 +199,7 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
     Sign one case through the upstream SDK and capture its full output.
     """
     environment = case["environment"]
+
     action = SignedAction(
         subaccount_id=SUBACCOUNT_ID,
         owner=OWNER,
@@ -217,6 +219,7 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
         DOMAIN_SEPARATOR=DOMAINS[environment],
         ACTION_TYPEHASH=ACTION_TYPEHASH,
     )
+
     for field in ("limit_price", "amount", "max_fee"):
         value = Decimal(case[field])
         if value.as_tuple().exponent < -DECIMAL_PRECISION:
@@ -227,6 +230,7 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
     for field in ("limit_price", "amount", "max_fee"):
         if Decimal(wire[field]) != Decimal(case[field]):
             raise RuntimeError(f"case {case['case']}: {field} wire value differs")
+
     if wire["nonce"] != str(BASE_NONCE + index):
         raise RuntimeError(f"case {case['case']}: nonce wire value differs")
     signature = prefixed(action.sign(SESSION_KEY))
@@ -245,6 +249,7 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
     recomposed = Web3.keccak(
         bytes.fromhex("1901" + DOMAINS[environment][2:] + action_hash.hex()),
     )
+
     if recomposed != typed_data_hash:
         raise RuntimeError(f"case {case['case']}: typed-data hash recomposition diverged")
 
@@ -292,6 +297,7 @@ def main() -> int:
 
     if version("derive-py") != UPSTREAM_VERSION:
         raise RuntimeError("installed derive-py version differs from the pinned oracle")
+
     for name, source in [
         ("SignedAction", SignedAction),
         ("TradeModuleData", TradeModuleData),
@@ -305,8 +311,10 @@ def main() -> int:
         "Action(uint256 subaccountId,uint256 nonce,address module,bytes data,"
         "uint256 expiry,address owner,address signer)"
     )
+
     if prefixed(Web3.keccak(text=action_type).hex()) != ACTION_TYPEHASH:
         raise RuntimeError("SDK Action typehash differs from the v3 formula")
+
     for environment, chain_id in CHAIN_IDS.items():
         domain = Web3.keccak(
             encode(
@@ -323,6 +331,7 @@ def main() -> int:
                 ],
             ),
         )
+
         if prefixed(domain.hex()) != DOMAINS[environment]:
             raise RuntimeError(f"SDK {environment} domain differs from the v3 formula")
 

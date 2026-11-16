@@ -16,3 +16,8 @@
 #![warn(clippy::clone_on_ref_ptr)]
 
 mod test_market_data_sbe;
+
+#[cfg(feature = "arrow")]
+mod arrow_account_id;
+#[cfg(feature = "arrow")]
+mod arrow_custom_data_macro;

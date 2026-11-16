@@ -28,10 +28,18 @@ const OVERFLOW_MESSAGE: &str = "arithmetic overflow calculating fixed-risk posit
 
 /// Calculates the position size based on fixed risk parameters.
 ///
+/// `exchange_rate` converts the instrument's quote currency to the equity currency.
+/// Inverse futures, perpetuals, and futures spreads use reciprocal-price PnL directly
+/// when equity uses the instrument's base currency. Otherwise, they value that PnL in quote currency
+/// at the stop-loss price before conversion.
+/// Inverse options and option spreads retain premium-based sizing.
+/// Reciprocal-price sizing requires positive prices.
+/// The returned quantity rounds down within the risk budget and quantity limits.
+///
 /// # Errors
 ///
 /// Returns an error if an input is invalid, decimal arithmetic overflows, or
-/// the final size cannot be represented as a [`Quantity`].
+/// the final size rounds to zero or cannot be represented as a [`Quantity`].
 #[expect(
     clippy::too_many_arguments,
     reason = "position sizing API mirrors fixed-risk inputs used by callers"
@@ -71,17 +79,48 @@ pub fn calculate_fixed_risk_position_size(
         return Ok(Quantity::zero(instrument.size_precision()));
     }
 
-    let risk_points = calculate_risk_ticks(entry, stop_loss, instrument)?;
+    let inverse = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
+
+    if inverse {
+        check_positive_decimal(entry.as_decimal(), "entry")?;
+        check_positive_decimal(stop_loss.as_decimal(), "stop_loss")?;
+    }
+
+    let risk_distance = calculate_risk_distance(entry, stop_loss)?;
     let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate)?;
 
-    if risk_points <= Decimal::ZERO {
+    if risk_distance.is_zero() {
         return Ok(Quantity::zero(instrument.size_precision()));
     }
 
+    let equity_in_pnl_currency = inverse && equity.currency == instrument.cost_currency();
+
+    let conversion_rate = if equity_in_pnl_currency {
+        Decimal::ONE
+    } else {
+        exchange_rate
+    };
+
     let mut position_size = risk_money
-        .checked_div(exchange_rate)
-        .and_then(|value| value.checked_div(risk_points))
-        .and_then(|value| value.checked_div(instrument.price_increment().as_decimal()))
+        .checked_div(conversion_rate)
+        .ok_or_else(position_size_overflow)?;
+
+    if inverse {
+        position_size = position_size
+            .checked_mul(entry.as_decimal())
+            .ok_or_else(position_size_overflow)?;
+
+        if equity_in_pnl_currency {
+            position_size = position_size
+                .checked_mul(stop_loss.as_decimal())
+                .ok_or_else(position_size_overflow)?;
+        }
+    }
+
+    position_size = position_size
+        .checked_div(risk_distance)
         .and_then(|value| value.checked_div(instrument.multiplier().as_decimal()))
         .ok_or_else(position_size_overflow)?;
 
@@ -110,22 +149,17 @@ pub fn calculate_fixed_risk_position_size(
         });
 
     instrument
-        .try_make_qty_from_decimal(final_size, None)
+        .try_make_qty_from_decimal(final_size, Some(true))
         .map_err(|e| CorrectnessError::PredicateViolation {
             message: e.to_string(),
         })
 }
 
-fn calculate_risk_ticks(
-    entry: Price,
-    stop_loss: Price,
-    instrument: &InstrumentAny,
-) -> CorrectnessResult<Decimal> {
+fn calculate_risk_distance(entry: Price, stop_loss: Price) -> CorrectnessResult<Decimal> {
     entry
         .as_decimal()
         .checked_sub(stop_loss.as_decimal())
         .map(|value| value.abs())
-        .and_then(|value| value.checked_div(instrument.price_increment().as_decimal()))
         .ok_or_else(position_size_overflow)
 }
 
@@ -161,7 +195,9 @@ fn position_size_overflow() -> CorrectnessError {
 mod tests {
     use nautilus_model::{
         identifiers::Symbol,
-        instruments::stubs::{default_fx_ccy, futures_contract_es},
+        instruments::stubs::{
+            btcusd_bybit, crypto_option_btc_deribit, default_fx_ccy, futures_contract_es,
+        },
         types::Currency,
     };
     use rstest::*;
@@ -190,6 +226,156 @@ mod tests {
         let mut instrument = default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None);
         instrument.max_quantity = None;
         InstrumentAny::CurrencyPair(instrument)
+    }
+
+    #[rstest]
+    #[case::risk_budget("160 USD", None)]
+    #[case::hard_limit("260 USD", Some(dec!(1.6)))]
+    fn test_calculate_rounds_down_within_limits(
+        #[case] equity: &str,
+        #[case] hard_limit: Option<Decimal>,
+    ) {
+        let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+
+        let quantity = calculate_fixed_risk_position_size(
+            &instrument,
+            Price::from("100.00"),
+            Price::from("99.00"),
+            Money::from(equity),
+            dec!(0.01),
+            Decimal::ZERO,
+            Decimal::ONE,
+            hard_limit,
+            Decimal::ZERO,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(quantity.as_decimal(), Decimal::ONE);
+    }
+
+    #[rstest]
+    fn test_calculate_rejects_size_below_one_increment() {
+        let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+
+        let error = calculate_fixed_risk_position_size(
+            &instrument,
+            Price::from("100.00"),
+            Price::from("99.00"),
+            Money::from("60 USD"),
+            dec!(0.01),
+            Decimal::ZERO,
+            Decimal::ONE,
+            Some(dec!(0.6)),
+            Decimal::ZERO,
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "value rounded to zero for quantity");
+    }
+
+    #[rstest]
+    #[case::long("20000.0", "19000.0", "1 BTC", dec!(1), dec!(3800))]
+    #[case::quote_rate("20000.0", "19000.0", "1 BTC", Decimal::ONE / dec!(19000), dec!(3800))]
+    #[case::entry_rate("20000.0", "19000.0", "1 BTC", Decimal::ONE / dec!(20000), dec!(3800))]
+    #[case::short("19000.0", "20000.0", "1 BTC", dec!(1), dec!(3800))]
+    #[case::account_currency("20000.0", "19000.0", "1000 USD", dec!(1), dec!(200))]
+    #[case::third_currency("20000.0", "19000.0", "1000 EUR", dec!(0.8), dec!(250))]
+    #[case::zero_rate("20000.0", "19000.0", "1 BTC", dec!(0), dec!(0))]
+    fn test_calculate_inverse_contract_size(
+        #[case] entry: &str,
+        #[case] stop_loss: &str,
+        #[case] equity: &str,
+        #[case] exchange_rate: Decimal,
+        #[case] expected: Decimal,
+        #[values(1_u32, 10_u32)] multiplier: u32,
+    ) {
+        let mut contract = btcusd_bybit();
+        contract.multiplier = Quantity::from_decimal_dp(Decimal::from(multiplier), 0).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(contract);
+
+        let quantity = calculate_fixed_risk_position_size(
+            &instrument,
+            Price::from(entry),
+            Price::from(stop_loss),
+            Money::from(equity),
+            dec!(0.01),
+            Decimal::ZERO,
+            exchange_rate,
+            None,
+            Decimal::ONE,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(quantity.as_decimal(), expected / Decimal::from(multiplier));
+    }
+
+    #[rstest]
+    #[case::zero_entry("0.0", "19000.0", "invalid Decimal for 'entry' not positive, was 0.0")]
+    #[case::zero_stop(
+        "20000.0",
+        "0.0",
+        "invalid Decimal for 'stop_loss' not positive, was 0.0"
+    )]
+    #[case::negative_entry(
+        "-1.0",
+        "19000.0",
+        "invalid Decimal for 'entry' not positive, was -1.0"
+    )]
+    #[case::negative_stop(
+        "20000.0",
+        "-1.0",
+        "invalid Decimal for 'stop_loss' not positive, was -1.0"
+    )]
+    fn test_calculate_inverse_rejects_nonpositive_prices(
+        #[case] entry: &str,
+        #[case] stop_loss: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
+
+        let error = calculate_fixed_risk_position_size(
+            &instrument,
+            Price::from(entry),
+            Price::from(stop_loss),
+            Money::from("1 BTC"),
+            dec!(0.01),
+            Decimal::ZERO,
+            Decimal::ONE,
+            None,
+            Decimal::ONE,
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_calculate_inverse_option_uses_premium_distance() {
+        let mut option =
+            crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+        option.is_inverse = true;
+        option.quote_currency = Currency::BTC();
+        let instrument = InstrumentAny::CryptoOption(option);
+
+        let quantity = calculate_fixed_risk_position_size(
+            &instrument,
+            Price::from("0.100"),
+            Price::from("0.090"),
+            Money::from("1 BTC"),
+            dec!(0.01),
+            Decimal::ZERO,
+            Decimal::ONE,
+            None,
+            Decimal::ONE,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(quantity.as_decimal(), Decimal::ONE);
     }
 
     #[rstest]
@@ -357,7 +543,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_impose_hard_limit(instrument_gbpusd: InstrumentAny) {
+    #[case::single(1, dec!(500000))]
+    #[case::split(3, dec!(166000))]
+    fn test_impose_hard_limit(
+        #[case] units: usize,
+        #[case] expected: Decimal,
+        instrument_gbpusd: InstrumentAny,
+    ) {
         let equity = Money::new(1_000_000.0, instrument_gbpusd.quote_currency());
         let entry = Price::new(1.00010, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
@@ -372,11 +564,11 @@ mod tests {
             EXCHANGE_RATE,
             Some(Decimal::from(500_000)),
             Decimal::from(1000),
-            1,
+            units,
         )
         .unwrap();
 
-        assert_eq!(result, Quantity::from("500000.0"));
+        assert_eq!(result.as_decimal(), expected);
     }
 
     #[rstest]

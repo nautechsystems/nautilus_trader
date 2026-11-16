@@ -107,6 +107,11 @@ mod tests {
     #[case::system_busy("50013", "System busy, please retry later", false)]
     #[case::request_timeout("50004", "API endpoint request timeout", false)]
     #[case::order_timeout("51149", "Order timed out. Please try again.", false)]
+    #[case::request_expired(
+        "50036",
+        "The expTime can't be earlier than the current system time. Please adjust the expTime and try again.",
+        true
+    )]
     #[case::rate_limit("50011", "Request too frequent", false)]
     #[case::ws_rate_limit("60014", "WebSocket requests too frequent", true)]
     #[case::ws_internal_error("64007", "WebSocket internal error", true)]
@@ -127,220 +132,99 @@ mod tests {
     }
 
     #[rstest]
-    fn test_classify_okx_http_permanent_venue_error_is_rejected() {
-        let error = OKXHttpError::OkxError {
+    #[case::permanent_venue_error(
+        OKXHttpError::OkxError {
             error_code: "51000".to_string(),
             message: "Parameter state error".to_string(),
-        };
-        let reason = error.to_string();
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::VenueRejected(reason)
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_retryable_venue_error_is_ambiguous() {
-        let error = OKXHttpError::RetryableOkxError {
+        },
+        CommandFailure::VenueRejected
+    )]
+    #[case::retryable_venue_error(
+        OKXHttpError::RetryableOkxError {
             error_code: "50013".to_string(),
             message: "System busy, please try again later".to_string(),
             retry_after: None,
-        };
-        let reason = error.to_string();
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(reason)
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_missing_credentials_is_not_sent() {
-        let error = OKXHttpError::MissingCredentials;
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_validation_is_not_sent() {
-        let error = OKXHttpError::ValidationError("invalid quantity".to_string());
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_invalid_retry_config_is_not_sent() {
-        let error = OKXHttpError::ValidationError("invalid retry configuration".to_string());
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_timeout_is_ambiguous() {
-        let error = OKXHttpError::OperationTimeout { timeout_ms: 1_000 };
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_budget_is_ambiguous() {
-        let error = OKXHttpError::RetryBudgetExceeded("budget exceeded".to_string());
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_network_is_ambiguous() {
-        let error = OKXHttpError::HttpClientError(HttpClientError::TransportError(
+        },
+        CommandFailure::Ambiguous
+    )]
+    #[case::missing_credentials(OKXHttpError::MissingCredentials, CommandFailure::NotSent)]
+    #[case::validation(
+        OKXHttpError::ValidationError("invalid quantity".to_string()),
+        CommandFailure::NotSent
+    )]
+    #[case::timeout(OKXHttpError::OperationTimeout { timeout_ms: 1_000 }, CommandFailure::Ambiguous)]
+    #[case::budget(
+        OKXHttpError::RetryBudgetExceeded("budget exceeded".to_string()),
+        CommandFailure::Ambiguous
+    )]
+    #[case::network(
+        OKXHttpError::HttpClientError(HttpClientError::TransportError(
             "connection reset".to_string(),
-        ));
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_permanent_client_error_is_ambiguous() {
-        let error = OKXHttpError::HttpClientError(HttpClientError::Error(
+        )),
+        CommandFailure::Ambiguous
+    )]
+    #[case::permanent_client_error(
+        OKXHttpError::HttpClientError(HttpClientError::Error(
             "response body exceeds maximum".to_string(),
-        ));
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_unexpected_status_is_ambiguous() {
-        let error = OKXHttpError::UnexpectedStatus {
+        )),
+        CommandFailure::Ambiguous
+    )]
+    #[case::unexpected_status(
+        OKXHttpError::UnexpectedStatus {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             body: String::new(),
-        };
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
+        },
+        CommandFailure::Ambiguous
+    )]
+    #[case::response_decoding(
+        OKXHttpError::ResponseDecoding("failed to deserialize".to_string()),
+        CommandFailure::Ambiguous
+    )]
+    #[case::request_serialization(
+        OKXHttpError::RequestSerialization("failed to serialize".to_string()),
+        CommandFailure::NotSent
+    )]
+    #[case::empty_response(OKXHttpError::EmptyResponse, CommandFailure::Ambiguous)]
+    fn test_classify_okx_http_failure(
+        #[case] error: OKXHttpError,
+        #[case] expected: fn(String) -> CommandFailure,
+    ) {
+        let reason = error.to_string();
+        assert_eq!(classify_okx_http_failure(&error), expected(reason));
     }
 
     #[rstest]
-    fn test_classify_okx_http_response_decoding_is_ambiguous() {
-        let error = OKXHttpError::ResponseDecoding("failed to deserialize".to_string());
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_request_serialization_is_not_sent() {
-        let error = OKXHttpError::RequestSerialization("failed to serialize".to_string());
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_http_empty_response_is_ambiguous() {
-        let error = OKXHttpError::EmptyResponse;
-
-        assert_eq!(
-            classify_okx_http_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_handler_unavailable_is_not_sent() {
-        let error = OKXWsError::HandlerUnavailable("channel closed".to_string());
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_no_active_client_is_not_sent() {
-        let error = OKXWsError::NoActiveClient;
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_json_encode_is_not_sent() {
-        let error = OKXWsError::JsonError("Failed to serialize order: eof".to_string());
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_send_failed_is_ambiguous() {
-        let error = OKXWsError::SendFailed("connection reset".to_string());
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    #[case(SendError::Timeout)]
-    #[case(SendError::BufferFull)]
-    fn test_classify_okx_ws_pre_write_failure_is_not_sent(#[case] error: SendError) {
-        let error = OKXWsError::TransportSend(error);
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::NotSent(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_write_timeout_is_ambiguous() {
-        let error = OKXWsError::TransportSend(SendError::WriteTimeout);
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
-    }
-
-    #[rstest]
-    fn test_classify_okx_ws_timeout_is_ambiguous() {
-        let error = OKXWsError::OperationTimeout { timeout_ms: 2_000 };
-
-        assert_eq!(
-            classify_okx_ws_failure(&error),
-            CommandFailure::Ambiguous(error.to_string())
-        );
+    #[case::handler_unavailable(
+        OKXWsError::HandlerUnavailable("channel closed".to_string()),
+        CommandFailure::NotSent
+    )]
+    #[case::no_active_client(OKXWsError::NoActiveClient, CommandFailure::NotSent)]
+    #[case::json_encode(
+        OKXWsError::JsonError("Failed to serialize order: eof".to_string()),
+        CommandFailure::NotSent
+    )]
+    #[case::send_failed(
+        OKXWsError::SendFailed("connection reset".to_string()),
+        CommandFailure::Ambiguous
+    )]
+    #[case::pre_write_timeout(
+        OKXWsError::TransportSend(SendError::Timeout),
+        CommandFailure::NotSent
+    )]
+    #[case::pre_write_buffer_full(
+        OKXWsError::TransportSend(SendError::BufferFull),
+        CommandFailure::NotSent
+    )]
+    #[case::write_timeout(
+        OKXWsError::TransportSend(SendError::WriteTimeout),
+        CommandFailure::Ambiguous
+    )]
+    #[case::timeout(OKXWsError::OperationTimeout { timeout_ms: 2_000 }, CommandFailure::Ambiguous)]
+    fn test_classify_okx_ws_failure(
+        #[case] error: OKXWsError,
+        #[case] expected: fn(String) -> CommandFailure,
+    ) {
+        let reason = error.to_string();
+        assert_eq!(classify_okx_ws_failure(&error), expected(reason));
     }
 }

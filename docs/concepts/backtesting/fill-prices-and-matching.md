@@ -93,6 +93,14 @@ Marks supply no executable prices or liquidity. Triggered orders use the normal 
 the executable market. Mark-triggered market orders use market prices even during bar execution;
 they do not use the bar trigger-price rule above. Mark-price bars do not drive execution.
 
+### Trailing stops
+
+Trailing-stop activation and repricing pause while the market is not open. After reopening, trailing
+stops wait for accepted updates to the price sources they need. For `LAST_PRICE` with an activation
+price, activation requires a fresh trade and fresh market data on the order's touch side.
+Submission and modification checks still use the current market prices. These rules apply to
+backtesting and the sandbox execution client.
+
 ## Price protection
 
 **Price protection** limits how far `MARKET` and `STOP_MARKET` orders can walk the book. Configure the

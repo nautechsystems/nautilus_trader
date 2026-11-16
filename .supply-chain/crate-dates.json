@@ -56,13 +56,13 @@
       "published": "2026-08-13T18:57:53.910811Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "alloy-eip7702@0.6.3": {
-      "published": "2025-11-04T23:39:42.318647Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "alloy-eip7702@0.6.4": {
+      "published": "2026-11-09T10:40:41.803784Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "alloy-eip7928@0.4.11": {
-      "published": "2026-09-16T07:56:04.478840Z",
-      "verified_at": "2026-09-19T22:29:50Z"
+    "alloy-eip7928@0.4.12": {
+      "published": "2026-11-09T10:41:10.686871Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "alloy-eip8141@0.1.1": {
       "published": "2026-09-15T21:19:17.399037Z",
@@ -208,13 +208,17 @@
       "published": "2022-01-23T10:15:35.118590Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
+    "ar_archive_writer@0.5.5": {
+      "published": "2026-11-11T11:03:21.586261Z",
+      "verified_at": "2026-11-15T21:13:02Z"
+    },
     "arbitrary@1.5.0": {
       "published": "2026-10-06T23:00:58.853193Z",
       "verified_at": "2026-10-10T04:09:35Z"
     },
-    "arc-swap@1.9.3": {
-      "published": "2026-10-18T08:03:57.417736Z",
-      "verified_at": "2026-10-23T22:31:19Z"
+    "arc-swap@1.9.5": {
+      "published": "2026-11-09T19:33:08.233900Z",
+      "verified_at": "2026-11-12T23:00:08Z"
     },
     "arcstr@1.2.0": {
       "published": "2024-05-07T02:37:10.279194Z",
@@ -384,13 +388,13 @@
       "published": "2025-07-06T07:06:07.101546Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "async-compression@0.4.51": {
-      "published": "2026-10-17T04:48:38.843467Z",
-      "verified_at": "2026-10-23T22:31:19Z"
+    "async-compression@0.4.52": {
+      "published": "2026-11-02T10:52:51.309308Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "async-lock@3.4.2": {
-      "published": "2025-12-21T16:24:46.954239Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "async-lock@3.5.0": {
+      "published": "2026-11-02T17:09:41.933032Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "async-stream-impl@0.3.6": {
       "published": "2024-10-01T19:35:11.626317Z",
@@ -486,10 +490,6 @@
     },
     "bitcoin_hashes@0.14.101": {
       "published": "2026-06-24T14:48:50.717260Z",
-      "verified_at": "2026-09-13T06:09:27Z"
-    },
-    "bitflags@1.3.2": {
-      "published": "2021-08-16T04:16:02.683020Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
     "bitflags@2.13.2": {
@@ -596,9 +596,9 @@
       "published": "2021-09-04T11:07:33.449935Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "cc@1.10.0": {
-      "published": "2026-10-23T08:35:43.203664Z",
-      "verified_at": "2026-10-26T21:43:39Z"
+    "cc@1.11.1": {
+      "published": "2026-11-06T08:34:42.838477Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "cfg-if@1.0.5": {
       "published": "2026-09-16T17:36:11.278420Z",
@@ -684,9 +684,9 @@
       "published": "2026-01-13T02:28:25.932933Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "compression-codecs@0.4.46": {
-      "published": "2026-10-17T04:48:34.657660Z",
-      "verified_at": "2026-10-23T22:31:19Z"
+    "compression-codecs@0.4.47": {
+      "published": "2026-11-02T10:52:46.479623Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "compression-core@0.4.34": {
       "published": "2026-10-17T04:48:30.955274Z",
@@ -704,9 +704,9 @@
       "published": "2026-09-16T22:07:44.344471Z",
       "verified_at": "2026-09-19T22:29:50Z"
     },
-    "const-oid@0.10.2": {
-      "published": "2026-01-07T23:11:57.242553Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "const-oid@0.10.3": {
+      "published": "2026-11-10T17:17:10.923953Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "const-oid@0.9.6": {
       "published": "2023-12-15T00:13:20.730670Z",
@@ -772,9 +772,9 @@
       "published": "2026-04-24T18:44:55.973498Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "crc32fast@1.5.3": {
-      "published": "2026-10-20T13:35:21.061575Z",
-      "verified_at": "2026-10-23T22:31:19Z"
+    "crc32fast@1.5.5": {
+      "published": "2026-11-10T03:41:10.884830Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "crc@3.4.0": {
       "published": "2025-11-26T17:46:02.621035Z",
@@ -824,9 +824,9 @@
       "published": "2025-10-17T13:56:07.013801Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "ctutils@0.4.6": {
-      "published": "2026-10-25T23:01:15.220622Z",
-      "verified_at": "2026-10-29T06:20:58Z"
+    "ctutils@0.4.8": {
+      "published": "2026-11-02T20:07:29.778900Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "cucumber-codegen@0.23.0": {
       "published": "2026-04-23T22:34:41.042099Z",
@@ -1044,18 +1044,6 @@
       "published": "2026-09-29T15:56:25.891196Z",
       "verified_at": "2026-10-07T02:45:06Z"
     },
-    "defmt-macros@1.2.0": {
-      "published": "2026-10-15T14:45:36.471016Z",
-      "verified_at": "2026-10-19T22:11:10Z"
-    },
-    "defmt-parser@1.1.0": {
-      "published": "2026-10-15T14:45:32.962096Z",
-      "verified_at": "2026-10-19T22:11:10Z"
-    },
-    "defmt@1.2.0": {
-      "published": "2026-10-15T14:45:39.202211Z",
-      "verified_at": "2026-10-19T22:11:10Z"
-    },
     "der-parser@10.0.0": {
       "published": "2025-01-21T09:43:38.524624Z",
       "verified_at": "2026-09-13T06:09:27Z"
@@ -1196,9 +1184,9 @@
       "published": "2026-10-13T23:06:49.442503Z",
       "verified_at": "2026-10-17T07:45:59Z"
     },
-    "errno@0.3.14": {
-      "published": "2025-09-09T04:35:15.362504Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "errno@0.3.15": {
+      "published": "2026-11-12T09:54:35.128491Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "etcetera@0.11.0": {
       "published": "2025-10-28T13:28:11.765603Z",
@@ -1264,17 +1252,17 @@
       "published": "2022-09-20T13:04:35.479805Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "fixedbitset@0.5.7": {
-      "published": "2024-04-14T23:53:05.918820Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "fixedbitset@0.5.9": {
+      "published": "2026-11-08T19:38:22.885868Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "flatbuffers@25.12.19": {
       "published": "2025-12-19T23:16:16.576273Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "flate2@1.1.10": {
-      "published": "2026-08-28T04:35:22.192325Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "flate2@1.1.11": {
+      "published": "2026-11-06T09:20:41.620132Z",
+      "verified_at": "2026-11-10T21:51:09Z"
     },
     "flex-error@0.4.4": {
       "published": "2021-10-20T12:16:24.697601Z",
@@ -1676,17 +1664,17 @@
       "published": "2026-06-16T15:09:28.880416Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "itoa@1.0.18": {
-      "published": "2026-03-20T00:12:37.043881Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "itoa@1.0.19": {
+      "published": "2026-11-09T01:42:29.996457Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "jiff-core@0.1.1": {
-      "published": "2026-09-12T15:11:00.823583Z",
-      "verified_at": "2026-09-15T20:44:16Z"
+    "jiff-core@0.1.5": {
+      "published": "2026-11-11T16:45:47.060035Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "jiff-static@0.2.38": {
-      "published": "2026-10-06T15:01:01.847933Z",
-      "verified_at": "2026-10-10T04:09:35Z"
+    "jiff-static@0.2.43": {
+      "published": "2026-11-11T16:45:50.627669Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "jiff-tzdb-platform@0.1.3": {
       "published": "2025-03-23T00:40:18.397031Z",
@@ -1696,9 +1684,9 @@
       "published": "2026-10-06T15:00:54.926966Z",
       "verified_at": "2026-10-10T04:09:35Z"
     },
-    "jiff@0.2.38": {
-      "published": "2026-10-06T15:01:05.919581Z",
-      "verified_at": "2026-10-10T04:09:35Z"
+    "jiff@0.2.43": {
+      "published": "2026-11-11T16:45:55.264110Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "jni-macros@0.22.4": {
       "published": "2026-03-16T13:29:39.385205Z",
@@ -1720,9 +1708,9 @@
       "published": "2026-07-06T01:43:15.155394Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "js-sys@0.3.106": {
-      "published": "2026-09-25T07:13:42.260040Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "js-sys@0.3.107": {
+      "published": "2026-10-30T06:15:06.268363Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "json-writer@0.4.0": {
       "published": "2024-06-30T20:10:13.460890Z",
@@ -1780,9 +1768,9 @@
       "published": "2025-09-21T03:34:35.057671Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "libbz2-rs-sys@0.2.5": {
-      "published": "2026-05-16T13:12:49.413943Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "libbz2-rs-sys@0.2.6": {
+      "published": "2026-10-29T10:51:05.516700Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "libc@0.2.191": {
       "published": "2026-10-16T22:56:46.041660Z",
@@ -1876,9 +1864,9 @@
       "published": "2026-05-22T13:15:21.565252Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "mime@0.3.17": {
-      "published": "2023-03-20T15:05:04.272177Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "mime@0.3.18": {
+      "published": "2026-11-05T13:59:51.417009Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "minimal-lexical@0.2.1": {
       "published": "2021-10-04T10:48:13.942306Z",
@@ -1980,6 +1968,10 @@
       "published": "2025-10-04T16:26:32.185070Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
+    "object@0.39.1": {
+      "published": "2026-04-21T08:41:10.871144Z",
+      "verified_at": "2026-11-15T21:13:02Z"
+    },
     "object_store@0.13.2": {
       "published": "2026-03-24T14:17:29.691176Z",
       "verified_at": "2026-09-13T06:09:27Z"
@@ -2076,13 +2068,13 @@
       "published": "2025-08-21T08:46:50.131801Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "pest@2.9.5": {
-      "published": "2026-10-26T12:54:02.866699Z",
-      "verified_at": "2026-10-30T21:56:58Z"
+    "pest@2.9.6": {
+      "published": "2026-11-10T08:10:43.412948Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "pest_stack_guard@1.0.0": {
-      "published": "2026-10-26T00:34:06.189328Z",
-      "verified_at": "2026-10-30T21:56:58Z"
+    "pest_stack_guard@1.0.1": {
+      "published": "2026-11-03T07:13:36.431217Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "petgraph@0.7.1": {
       "published": "2025-01-08T02:06:14.522371Z",
@@ -2135,10 +2127,6 @@
     "pin-project@1.1.13": {
       "published": "2026-05-13T18:32:09.030433Z",
       "verified_at": "2026-09-13T06:09:27Z"
-    },
-    "pin-utils@0.1.1": {
-      "published": "2026-10-01T07:13:59.339322Z",
-      "verified_at": "2026-10-05T03:27:26Z"
     },
     "pkcs8@0.10.2": {
       "published": "2023-04-05T00:01:55.909808Z",
@@ -2208,9 +2196,9 @@
       "published": "2025-02-12T06:59:07.397388Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "prost-derive@0.14.4": {
-      "published": "2026-06-07T10:13:30.605513Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "prost-derive@0.14.6": {
+      "published": "2026-11-12T17:42:07.894358Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "prost-types@0.13.5": {
       "published": "2025-02-12T06:59:33.702587Z",
@@ -2220,13 +2208,13 @@
       "published": "2025-02-12T06:59:20.501505Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "prost@0.14.4": {
-      "published": "2026-06-07T10:13:40.918481Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "prost@0.14.6": {
+      "published": "2026-11-12T17:42:17.010527Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "psm@0.1.24": {
-      "published": "2024-11-13T11:22:58.753491Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "psm@0.1.32": {
+      "published": "2026-08-02T09:30:52.432582Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "pyo3-async-runtimes-macros@0.30.0": {
       "published": "2026-10-15T14:15:32.529141Z",
@@ -2364,9 +2352,9 @@
       "published": "2026-08-28T21:30:01.600392Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "redb@4.4.0": {
-      "published": "2026-10-13T22:28:27.191131Z",
-      "verified_at": "2026-10-17T07:45:59Z"
+    "redb@4.5.0": {
+      "published": "2026-11-05T23:49:39.251731Z",
+      "verified_at": "2026-11-10T21:51:09Z"
     },
     "redis@1.8.1": {
       "published": "2026-10-30T13:42:43.441551Z",
@@ -2496,9 +2484,9 @@
       "published": "2026-10-13T09:30:35.776742Z",
       "verified_at": "2026-10-17T07:45:59Z"
     },
-    "rustls-pki-types@1.15.1": {
-      "published": "2026-07-23T09:56:11.191923Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "rustls-pki-types@1.16.0": {
+      "published": "2026-11-10T17:38:32.491976Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "rustls-platform-verifier-android@0.2.0": {
       "published": "2026-09-24T20:38:29.961870Z",
@@ -2508,9 +2496,9 @@
       "published": "2026-09-24T20:39:00.557360Z",
       "verified_at": "2026-09-29T01:12:23Z"
     },
-    "rustls-webpki@0.103.16": {
-      "published": "2026-10-20T08:58:28.008618Z",
-      "verified_at": "2026-10-20T21:02:49Z"
+    "rustls-webpki@0.103.17": {
+      "published": "2026-11-12T17:39:47.642757Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "rustls@0.23.46": {
       "published": "2026-10-14T09:54:15.075873Z",
@@ -2660,9 +2648,9 @@
       "published": "2026-07-18T21:51:01.774317Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "serde_spanned@1.1.2": {
-      "published": "2026-10-08T00:54:02.374642Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "serde_spanned@1.1.3": {
+      "published": "2026-11-06T13:51:59.982009Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "serde_urlencoded@0.7.1": {
       "published": "2022-01-17T11:26:21.628923Z",
@@ -2752,9 +2740,9 @@
       "published": "2026-01-31T12:59:22.609198Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "smallvec@1.16.4": {
-      "published": "2026-10-23T17:08:24.995029Z",
-      "verified_at": "2026-10-26T21:43:39Z"
+    "smallvec@1.16.5": {
+      "published": "2026-11-06T20:27:25.684881Z",
+      "verified_at": "2026-11-10T21:51:09Z"
     },
     "smart-default@0.7.1": {
       "published": "2023-04-24T15:51:20.102795Z",
@@ -2772,9 +2760,9 @@
       "published": "2026-07-13T19:45:58.436336Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "sockudo-ws@3.1.0": {
-      "published": "2026-10-16T18:20:40.625115Z",
-      "verified_at": "2026-10-17T00:12:34Z"
+    "sockudo-ws@3.1.1": {
+      "published": "2026-11-04T19:13:20.809182Z",
+      "verified_at": "2026-11-10T21:51:09Z"
     },
     "spin@0.9.9": {
       "published": "2026-07-13T19:44:05.786736Z",
@@ -2888,9 +2876,9 @@
       "published": "2026-07-15T00:23:48.828241Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "syn@3.0.9": {
-      "published": "2026-10-12T15:04:09.212573Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "syn@3.0.10": {
+      "published": "2026-11-09T05:53:12.392384Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "sync_wrapper@1.0.2": {
       "published": "2024-11-20T16:29:59.416129Z",
@@ -2916,9 +2904,9 @@
       "published": "2025-12-12T11:47:32.890926Z",
       "verified_at": "2026-10-25T07:20:59Z"
     },
-    "sysinfo@0.40.1": {
-      "published": "2026-10-30T14:18:56.246395Z",
-      "verified_at": "2026-11-04T00:03:25Z"
+    "sysinfo@0.40.3": {
+      "published": "2026-11-11T23:59:50.761342Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "tabled@0.22.0": {
       "published": "2026-09-05T13:27:35.669751Z",
@@ -3044,29 +3032,29 @@
       "published": "2026-02-10T18:10:32.779034Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "toml@1.1.8+spec-1.1.0": {
-      "published": "2026-10-09T02:46:31.816670Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "toml@1.2.1+spec-1.1.0": {
+      "published": "2026-11-06T13:52:01.467558Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "toml_datetime@0.7.5+spec-1.1.0": {
       "published": "2025-12-18T13:26:19.285628Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "toml_datetime@1.1.2+spec-1.1.0": {
-      "published": "2026-10-08T00:54:03.238939Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "toml_datetime@1.1.3+spec-1.1.0": {
+      "published": "2026-11-06T13:52:00.591421Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "toml_edit@0.25.17+spec-1.1.0": {
-      "published": "2026-10-09T02:46:32.456236Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "toml_edit@0.25.19+spec-1.1.0": {
+      "published": "2026-11-06T13:52:02.218766Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "toml_parser@1.1.5+spec-1.1.0": {
       "published": "2026-10-09T02:46:29.844417Z",
       "verified_at": "2026-10-15T21:32:23Z"
     },
-    "toml_writer@1.1.3+spec-1.1.0": {
-      "published": "2026-10-08T00:54:04.845560Z",
-      "verified_at": "2026-10-15T21:32:23Z"
+    "toml_writer@1.2.0+spec-1.1.0": {
+      "published": "2026-11-04T01:31:04.345652Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "tonic-buf-build@0.3.1": {
       "published": "2025-07-25T17:45:57.039287Z",
@@ -3200,17 +3188,17 @@
       "published": "2026-10-16T23:28:29.955206Z",
       "verified_at": "2026-10-23T22:31:19Z"
     },
-    "unicode-properties@0.1.4": {
-      "published": "2025-10-30T16:34:55.538672Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "unicode-properties@0.1.5": {
+      "published": "2026-10-31T18:12:10.001920Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "unicode-segmentation@1.13.3": {
       "published": "2026-06-01T15:58:43.979474Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "unicode-width@0.2.2": {
-      "published": "2025-10-06T14:33:47.922595Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "unicode-width@0.2.3": {
+      "published": "2026-10-28T00:24:47.852753Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "unicode-xid@0.2.6": {
       "published": "2024-09-19T15:55:24.420864Z",
@@ -3244,17 +3232,21 @@
       "published": "2024-10-26T06:55:16.911979Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "utf8_iter@1.0.4": {
-      "published": "2023-12-01T17:26:51.542538Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "utf8_iter@1.1.0": {
+      "published": "2026-10-29T18:47:53.966530Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "utf8parse@0.2.2": {
       "published": "2024-06-08T07:07:41.813419Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "uuid@1.29.0": {
-      "published": "2026-10-23T09:59:10.723650Z",
-      "verified_at": "2026-10-26T21:43:39Z"
+    "utf_types@1.0.0": {
+      "published": "2026-10-29T18:41:43.673367Z",
+      "verified_at": "2026-11-15T21:13:02Z"
+    },
+    "uuid@1.29.2": {
+      "published": "2026-11-09T00:28:40.980597Z",
+      "verified_at": "2026-11-12T23:00:08Z"
     },
     "valuable@0.1.1": {
       "published": "2025-01-17T00:46:34.256238Z",
@@ -3292,25 +3284,25 @@
       "published": "2026-06-12T17:42:43.116313Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "wasm-bindgen-futures@0.4.79": {
-      "published": "2026-09-25T07:13:46.762707Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "wasm-bindgen-futures@0.4.80": {
+      "published": "2026-10-30T06:15:11.833866Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "wasm-bindgen-macro-support@0.2.129": {
-      "published": "2026-09-25T07:13:36.815330Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "wasm-bindgen-macro-support@0.2.130": {
+      "published": "2026-10-30T06:15:00.831743Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "wasm-bindgen-macro@0.2.129": {
-      "published": "2026-09-25T07:13:38.603121Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "wasm-bindgen-macro@0.2.130": {
+      "published": "2026-10-30T06:15:02.683402Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "wasm-bindgen-shared@0.2.129": {
-      "published": "2026-09-25T07:13:33.159722Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "wasm-bindgen-shared@0.2.130": {
+      "published": "2026-10-30T06:14:57.203710Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "wasm-bindgen@0.2.129": {
-      "published": "2026-09-25T07:13:40.367031Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "wasm-bindgen@0.2.130": {
+      "published": "2026-10-30T06:15:04.504224Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "wasm-streams@0.4.2": {
       "published": "2024-10-25T13:00:49.666818Z",
@@ -3320,29 +3312,29 @@
       "published": "2026-01-22T08:14:59.195606Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "wasmtimer@0.4.3": {
-      "published": "2025-09-01T14:21:42.204971Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "wasmtimer@0.4.5": {
+      "published": "2026-11-06T17:40:46.796404Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "web-sys@0.3.106": {
-      "published": "2026-09-25T07:13:44.661972Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "web-sys@0.3.107": {
+      "published": "2026-10-30T06:15:08.844914Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "web-time@1.1.0": {
       "published": "2024-03-01T10:51:46.373917Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "webpki-root-certs@1.0.11": {
-      "published": "2026-10-23T08:25:18.441682Z",
-      "verified_at": "2026-10-26T21:51:36Z"
+    "webpki-root-certs@1.0.12": {
+      "published": "2026-11-10T21:09:05.937402Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "webpki-roots@0.26.11": {
       "published": "2025-05-06T14:05:11.016513Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "webpki-roots@1.0.11": {
-      "published": "2026-10-23T08:25:08.250247Z",
-      "verified_at": "2026-10-26T21:43:39Z"
+    "webpki-roots@1.0.12": {
+      "published": "2026-11-10T21:08:56.515281Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "whoami@2.1.3": {
       "published": "2026-08-11T23:31:57.132972Z",
@@ -3456,9 +3448,9 @@
       "published": "2026-03-05T19:00:42.033522Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "winnow@1.0.4": {
-      "published": "2026-07-13T14:31:41.405838Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "winnow@1.0.5": {
+      "published": "2026-11-05T01:18:41.061954Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
     "wit-bindgen@0.57.1": {
       "published": "2026-04-17T17:49:55.029832Z",
@@ -3544,25 +3536,25 @@
       "published": "2026-07-13T12:58:53.705886Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "zstd-safe@7.3.0": {
-      "published": "2026-09-04T14:31:21.134134Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "zstd-safe@7.4.1": {
+      "published": "2026-11-12T13:13:03.980961Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "zstd-safe@8.2.0": {
-      "published": "2026-10-16T16:59:12.917175Z",
-      "verified_at": "2026-10-19T22:13:25Z"
+    "zstd-safe@8.3.0": {
+      "published": "2026-11-12T13:52:13.798643Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "zstd-sys@2.1.2+zstd.1.5.7": {
-      "published": "2026-10-16T16:59:08.260973Z",
-      "verified_at": "2026-10-19T22:13:25Z"
+    "zstd-sys@2.1.3+zstd.1.5.7": {
+      "published": "2026-11-12T13:51:56.138815Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "zstd@0.13.3": {
-      "published": "2025-02-20T21:43:13.047065Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "zstd@0.13.5": {
+      "published": "2026-11-12T13:13:17.654670Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     },
-    "zstd@0.14.3": {
-      "published": "2026-10-16T16:59:51.114469Z",
-      "verified_at": "2026-10-19T22:13:25Z"
+    "zstd@0.14.4": {
+      "published": "2026-11-12T13:52:19.291516Z",
+      "verified_at": "2026-11-15T21:13:02Z"
     }
   },
   "schema": 1

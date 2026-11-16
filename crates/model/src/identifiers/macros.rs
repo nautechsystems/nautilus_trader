@@ -41,6 +41,14 @@ macro_rules! impl_serialization_for_identifier {
 
 macro_rules! impl_from_str_for_identifier {
     ($ty:ty) => {
+        impl FromStr for $ty {
+            type Err = CorrectnessError;
+
+            fn from_str(value: &str) -> Result<Self, Self::Err> {
+                Self::new_checked(value)
+            }
+        }
+
         impl From<&str> for $ty {
             fn from(value: &str) -> Self {
                 Self::new(value)

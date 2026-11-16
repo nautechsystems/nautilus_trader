@@ -119,7 +119,6 @@ def check_message(message: str) -> tuple[list[str], list[str]]:
 
 def _check_subject(subject: str) -> list[str]:
     errors = []
-
     if len(subject) < SUBJECT_MIN_LENGTH:
         errors.append(f"subject must contain at least {SUBJECT_MIN_LENGTH} characters")
 
@@ -167,6 +166,7 @@ def _check_attribution(message: str) -> list[str]:
 
     paragraph_start = 0
     paragraph_lines = []
+
     for line_number, line in enumerate((*lines, ""), start=1):
         if line.strip():
             if not paragraph_lines:
@@ -177,6 +177,7 @@ def _check_attribution(message: str) -> list[str]:
         if paragraph_lines:
             paragraph_range = range(paragraph_start, line_number)
             paragraph = " ".join(paragraph_lines)
+
             if (
                 not branded_lines.intersection(paragraph_range)
                 and ATTRIBUTION_PHRASE.search(paragraph)
@@ -212,6 +213,7 @@ def _git_output(*args: str, input_text: str | None = None) -> str:
         input=input_text,
         text=True,
     )
+
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         raise ValueError(f"git {' '.join(args)} failed: {detail}")
@@ -221,6 +223,7 @@ def _git_output(*args: str, input_text: str | None = None) -> str:
 
 def _clean_message_file(message: str) -> str:
     lines = []
+
     for line in message.splitlines(keepends=True):
         if SCISSORS_LINE.match(line.rstrip("\r\n")):
             break
@@ -232,6 +235,7 @@ def _clean_message_file(message: str) -> str:
 def _messages_from_range(base: str, head: str) -> list[tuple[str, str]]:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", base):
         raise ValueError("CHANGED_BASE_SHA must contain a 40-character Git SHA")
+
     if not re.fullmatch(r"[0-9a-fA-F]{40}", head):
         raise ValueError("pull request head must contain a 40-character Git SHA")
 
@@ -280,6 +284,7 @@ def _report_message(label: str, message: str) -> bool:
 
     for error in errors:
         _print_error(f"{label}: {error}")
+
     for warning in warnings:
         _print_warning(f"{label}: {warning}")
 
@@ -320,7 +325,6 @@ def main() -> int:
         help="check pull request commits from CHANGED_BASE_SHA through HEAD",
     )
     args = parser.parse_args()
-
     if args.ci_range:
         if args.message_file is not None:
             parser.error("message_file cannot be used with --ci-range")

@@ -150,7 +150,18 @@ pub enum DeribitOptionType {
 
 /// Deribit instrument lifecycle state.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    StrumDisplay,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -165,18 +176,6 @@ pub enum DeribitInstrumentState {
     Closed,
     /// Instrument has been terminated.
     Terminated,
-}
-
-impl Display for DeribitInstrumentState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Created => write!(f, "created"),
-            Self::Started => write!(f, "started"),
-            Self::Settled => write!(f, "settled"),
-            Self::Closed => write!(f, "closed"),
-            Self::Terminated => write!(f, "terminated"),
-        }
-    }
 }
 
 impl From<DeribitInstrumentState> for MarketStatusAction {
@@ -293,6 +292,19 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(DeribitInstrumentState::Created, "created")]
+    #[case(DeribitInstrumentState::Started, "started")]
+    #[case(DeribitInstrumentState::Settled, "settled")]
+    #[case(DeribitInstrumentState::Closed, "closed")]
+    #[case(DeribitInstrumentState::Terminated, "terminated")]
+    fn test_deribit_instrument_state_display(
+        #[case] state: DeribitInstrumentState,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(state.to_string(), expected);
+    }
 
     #[rstest]
     #[case(DeribitInstrumentState::Created, MarketStatusAction::PreOpen)]

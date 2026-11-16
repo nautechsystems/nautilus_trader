@@ -46,6 +46,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    backoff::ExponentialBackoff,
     http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
@@ -82,7 +83,10 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_URL, AX_ORDERS_URL},
+    consts::{
+        AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_SANDBOX_URL, AX_HTTP_URL, AX_ORDERS_SANDBOX_URL,
+        AX_ORDERS_URL,
+    },
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
     parse::{ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, client_order_id_to_cid},
@@ -101,9 +105,10 @@ const AX_GLOBAL_RATE_KEY: &str = "architect:global";
 ///
 /// This client handles request/response operations with the AX Exchange API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
+/// Order-management operations require `orders_base_url` when `base_url` is a custom endpoint.
 pub struct AxRawHttpClient {
     base_url: String,
-    orders_base_url: String,
+    orders_base_url: Option<String>,
     client: HttpClient,
     credential: Option<Credential>,
     session_token: RwLock<Option<SecretString>>,
@@ -135,6 +140,15 @@ impl AxRawHttpClient {
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    fn orders_base_url(&self) -> Result<&str, AxHttpError> {
+        self.orders_base_url.as_deref().ok_or_else(|| {
+            AxHttpError::ValidationError(
+                "Orders base URL is required for order-management operations with a custom API base URL"
+                    .to_string(),
+            )
+        })
     }
 
     /// Returns a masked version of the API key for logging purposes.
@@ -174,22 +188,18 @@ impl AxRawHttpClient {
         retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
-        let retry_config = RetryConfig {
+        let retry_config = retry_config(
+            timeout_secs,
             max_retries,
-            initial_delay_ms: retry_delay_ms,
-            max_delay_ms: retry_delay_max_ms,
-            backoff_factor: 2.0,
-            jitter_ms: 1000,
-            operation_timeout_ms: Some(60_000),
-            immediate_first: false,
-            max_elapsed_ms: Some(180_000),
-        };
-
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )?;
         let retry_manager = RetryManager::new(retry_config);
+        let (base_url, orders_base_url) = resolve_base_urls(base_url, orders_base_url);
 
         Ok(Self {
-            base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
-            orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
+            base_url,
+            orders_base_url,
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -225,22 +235,18 @@ impl AxRawHttpClient {
         retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
-        let retry_config = RetryConfig {
+        let retry_config = retry_config(
+            timeout_secs,
             max_retries,
-            initial_delay_ms: retry_delay_ms,
-            max_delay_ms: retry_delay_max_ms,
-            backoff_factor: 2.0,
-            jitter_ms: 1000,
-            operation_timeout_ms: Some(60_000),
-            immediate_first: false,
-            max_elapsed_ms: Some(180_000),
-        };
-
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )?;
         let retry_manager = RetryManager::new(retry_config);
+        let (base_url, orders_base_url) = resolve_base_urls(base_url, orders_base_url);
 
         Ok(Self {
-            base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
-            orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
+            base_url,
+            orders_base_url,
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -619,7 +625,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxPlaceOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/place-order",
             None,
@@ -642,7 +648,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(&request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxCancelOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/cancel-order",
             None,
@@ -670,7 +676,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxReplaceOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/replace-order",
             None,
@@ -695,7 +701,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxCancelAllOrdersResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/cancel-all-orders",
             None,
@@ -727,7 +733,7 @@ impl AxRawHttpClient {
         params: &GetOpenOrdersParams,
     ) -> Result<AxOpenOrdersResponse, AxHttpError> {
         self.send_request_to_url::<AxOpenOrdersResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/open-orders",
             Some(params),
@@ -1041,7 +1047,7 @@ impl AxRawHttpClient {
     ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
         let params = GetOrderStatusParams::by_order_id(order_id);
         self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/order-status",
             Some(&params),
@@ -1065,7 +1071,7 @@ impl AxRawHttpClient {
     ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
         let params = GetOrderStatusParams::by_client_order_id(client_order_id);
         self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/order-status",
             Some(&params),
@@ -1088,7 +1094,7 @@ impl AxRawHttpClient {
         params: &GetOrdersParams,
     ) -> Result<AxOrdersResponse, AxHttpError> {
         self.send_request_to_url::<AxOrdersResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/orders",
             Some(params),
@@ -1113,7 +1119,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxInitialMarginRequirementResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/initial-margin-requirement",
             None,
@@ -1122,6 +1128,70 @@ impl AxRawHttpClient {
         )
         .await
     }
+}
+
+fn retry_config(
+    timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_ms: u64,
+    retry_delay_max_ms: u64,
+) -> Result<RetryConfig, AxHttpError> {
+    if timeout_secs == 0 {
+        return Err(AxHttpError::ValidationError(
+            "HTTP timeout must be non-zero".to_string(),
+        ));
+    }
+
+    let operation_timeout_ms = timeout_secs.checked_mul(1_000).ok_or_else(|| {
+        AxHttpError::ValidationError("HTTP timeout in milliseconds exceeds u64::MAX".to_string())
+    })?;
+
+    ExponentialBackoff::new(
+        Duration::from_millis(retry_delay_ms),
+        Duration::from_millis(retry_delay_max_ms),
+        2.0,
+        1_000,
+        false,
+    )
+    .map_err(|e| AxHttpError::ValidationError(format!("Invalid retry configuration: {e}")))?;
+
+    Ok(RetryConfig {
+        max_retries,
+        initial_delay_ms: retry_delay_ms,
+        max_delay_ms: retry_delay_max_ms,
+        backoff_factor: 2.0,
+        jitter_ms: 1_000,
+        operation_timeout_ms: Some(operation_timeout_ms),
+        immediate_first: false,
+        max_elapsed_ms: None,
+    })
+}
+
+fn resolve_base_urls(
+    base_url: Option<String>,
+    orders_base_url: Option<String>,
+) -> (String, Option<String>) {
+    let base_url = base_url.map_or_else(|| AX_HTTP_URL.to_string(), normalize_base_url);
+
+    let orders_base_url = match orders_base_url {
+        Some(url) => Some(normalize_base_url(url)),
+        None => match base_url.as_str() {
+            AX_HTTP_URL => Some(AX_ORDERS_URL.to_string()),
+            AX_HTTP_SANDBOX_URL => Some(AX_ORDERS_SANDBOX_URL.to_string()),
+            _ => None,
+        },
+    };
+
+    (base_url, orders_base_url)
+}
+
+fn normalize_base_url(url: String) -> String {
+    let normalized = url.trim_end_matches('/');
+    if normalized.ends_with(':') {
+        return url;
+    }
+
+    normalized.to_string()
 }
 
 /// High-level HTTP client for the Ax REST API.
@@ -2197,6 +2267,7 @@ impl AxHttpClient {
     /// - The HTTP request or pagination contract fails.
     /// - An order or fill's instrument cannot be fetched or parsed.
     /// - An order or fill cannot be mapped to a complete report.
+    /// - A `start` or `end` timestamp exceeds `i64::MAX` nanoseconds.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2233,8 +2304,14 @@ impl AxHttpClient {
         F: Fn(u64) -> Option<ClientOrderId>,
     {
         let params = GetOrdersParams {
-            start_timestamp_ns: start.map(|timestamp| timestamp.as_i64()),
-            end_timestamp_ns: end.map(|timestamp| timestamp.as_i64()),
+            start_timestamp_ns: start
+                .map(|timestamp| i64::try_from(timestamp.as_u64()))
+                .transpose()
+                .context("start timestamp exceeds the signed nanosecond range")?,
+            end_timestamp_ns: end
+                .map(|timestamp| i64::try_from(timestamp.as_u64()))
+                .transpose()
+                .context("end timestamp exceeds the signed nanosecond range")?,
             ..Default::default()
         };
 
@@ -2371,6 +2448,7 @@ impl AxHttpClient {
     /// - The HTTP request fails.
     /// - A fill's instrument cannot be fetched or parsed.
     /// - Fill parsing fails.
+    /// - A `start` or `end` timestamp exceeds `i64::MAX` nanoseconds.
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -2381,9 +2459,15 @@ impl AxHttpClient {
 
         // The AX `/fills` endpoint requires a bounded time range and caps the span at 7 days
         let max_span_ns = AX_FILLS_MAX_LOOKBACK_DAYS * 24 * 60 * 60 * 1_000_000_000;
-        let end_ns = end.map_or_else(|| self.generate_ts_init().as_i64(), |e| e.as_i64());
+        let end_ns = i64::try_from(end.unwrap_or_else(|| self.generate_ts_init()).as_u64())
+            .context("end timestamp exceeds the signed nanosecond range")?;
         let floor_ns = end_ns - max_span_ns;
-        let start_ns = start.map_or(floor_ns, |s| s.as_i64().max(floor_ns));
+        let start_ns = start
+            .map(|timestamp| i64::try_from(timestamp.as_u64()))
+            .transpose()
+            .context("start timestamp exceeds the signed nanosecond range")?
+            .unwrap_or(floor_ns)
+            .max(floor_ns);
         let mut params = GetFillsParams::new(start_ns, end_ns);
         params.limit = Some(PAGE_SIZE);
         params.sort_ts = Some("desc".to_string());
@@ -2554,296 +2638,220 @@ impl AxHttpClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::AvgPxReconciliation;
-    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+    use crate::common::enums::{AxOrderSide, AxTimeInForce};
 
-    #[tokio::test]
-    #[ignore = "requires AX sandbox credentials and closed order history"]
-    async fn test_live_authoritative_reconciliation_sandbox() {
-        let environment = crate::common::enums::AxEnvironment::Sandbox;
-        let client = AxHttpClient::new(
-            Some(environment.http_url().to_string()),
-            Some(environment.orders_url().to_string()),
-            30,
-            0,
-            1,
-            1,
-            None,
-        )
-        .unwrap();
-        client.authenticate_auto(300).await.unwrap();
-        let account_id = AccountId::from("AX-001");
-
-        let response = client
-            .inner
-            .get_orders(&GetOrdersParams {
-                limit: Some(100),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        let order = response
-            .orders
-            .iter()
-            .find(|order| {
-                matches!(
-                    order.o,
-                    crate::common::enums::AxOrderStatus::Filled
-                        | crate::common::enums::AxOrderStatus::Canceled
-                        | crate::common::enums::AxOrderStatus::Expired
-                )
-            })
-            .expect("sandbox closed history");
-
-        let report = client
-            .request_order_report(
-                account_id,
-                None,
-                Some(VenueOrderId::new(&order.oid)),
-                None::<fn(u64) -> Option<ClientOrderId>>,
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(report.venue_order_id.as_str(), order.oid);
-        assert!(report.order_status.is_closed());
-        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
-
-        if let Some(cid) = order.cid {
-            let status = client.inner.get_order_status_by_cid(cid).await.unwrap();
-            assert_eq!(status.status.order_id, order.oid);
-        }
-
-        let missing_client = client
-            .request_order_report(
-                account_id,
-                Some(ClientOrderId::new("O-RECON-NONEXISTENT-PROBE")),
-                None,
-                None::<fn(u64) -> Option<ClientOrderId>>,
-            )
-            .await
-            .unwrap();
-        assert!(missing_client.is_none());
-        let missing = client
-            .request_order_report(
-                account_id,
-                None,
-                Some(VenueOrderId::new("O-00000000000000000000000000")),
-                None::<fn(u64) -> Option<ClientOrderId>>,
-            )
-            .await
-            .unwrap();
-        assert!(missing.is_none());
-        let positions = client.request_position_reports(account_id).await.unwrap();
-        for position in positions {
-            assert_eq!(
-                position.avg_px_open_reconciliation,
-                AvgPxReconciliation::OpeningOnly
-            );
-            assert_eq!(position.avg_px_open_precision, None);
-        }
+    #[derive(Clone, Copy, Debug)]
+    enum OrderOperation {
+        Place,
+        Cancel,
+        Replace,
+        CancelAll,
+        OpenOrders,
+        OrderStatusById,
+        OrderStatusByCid,
+        Orders,
+        InitialMargin,
     }
 
-    #[tokio::test]
-    #[ignore = "requires AX sandbox credentials and a partially filled expired IOC in history"]
-    async fn test_live_closed_order_timestamps_sandbox() {
-        let environment = crate::common::enums::AxEnvironment::Sandbox;
-        let client = AxHttpClient::new(
-            Some(environment.http_url().to_string()),
-            Some(environment.orders_url().to_string()),
-            30,
-            0,
-            1,
-            1,
+    fn custom_api_client() -> AxRawHttpClient {
+        AxRawHttpClient::new(
+            Some("http://mock".to_string()),
+            None,
+            60,
+            3,
+            1_000,
+            10_000,
             None,
         )
-        .unwrap();
-        client.authenticate_auto(300).await.unwrap();
-
-        let response = client
-            .inner
-            .get_orders(&GetOrdersParams {
-                order_state: Some(crate::common::enums::AxOrderStatus::Expired),
-                limit: Some(100),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        let order = response
-            .orders
-            .iter()
-            .find(|order| {
-                order.xq > 0
-                    && order.xq < order.q
-                    && order.tif == crate::common::enums::AxTimeInForce::Ioc
-            })
-            .expect("sandbox history contains a partially filled expired IOC");
-
-        let mut params = vec![("order_id", order.oid.as_str())];
-        if let Some(aid) = &order.aid {
-            params.push(("aid", aid.as_str()));
-        }
-
-        let fills: AxFillsResponse = client
-            .inner
-            .send_request_to_url(
-                environment.orders_url(),
-                Method::GET,
-                "/order-fills",
-                Some(&params),
-                None,
-                true,
-            )
-            .await
-            .unwrap();
-        let ts_last_fill = fills
-            .fills
-            .iter()
-            .map(|fill| u64::try_from(fill.timestamp.as_nanosecond()).unwrap())
-            .max()
-            .map(UnixNanos::from)
-            .expect("sandbox order has fills");
-        let created = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn).unwrap();
-        let start = UnixNanos::from(created.as_u64() - 1_000_000_000);
-        let end = UnixNanos::from(created.as_u64() + 60_000_000_000);
-        assert!(ts_last_fill > created);
-        assert!(ts_last_fill < end);
-        let reports = client
-            .request_historical_order_status_reports(
-                AccountId::from("AX-001"),
-                Some(start),
-                Some(end),
-                None::<fn(u64) -> Option<ClientOrderId>>,
-            )
-            .await
-            .unwrap();
-        let report = reports
-            .iter()
-            .find(|report| report.venue_order_id.as_str() == order.oid)
-            .expect("sandbox order report");
-
-        assert_eq!(report.order_status, OrderStatus::Canceled);
-        assert_eq!(report.ts_accepted, created);
-        assert_eq!(report.ts_last, ts_last_fill);
-        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
-        assert_eq!(report.filled_qty.as_decimal(), Decimal::from(order.xq));
-        println!(
-            "AX sandbox partial IOC timestamps passed, fill delay ns={}",
-            ts_last_fill.as_u64() - created.as_u64()
-        );
+        .unwrap()
     }
 
     #[rstest]
-    #[tokio::test]
-    async fn test_request_account_fees_caches_accounts_and_replaces_rates() {
-        let mut whoami: AxWhoAmI =
-            serde_json::from_str(include_str!("../../test_data/http_get_whoami.json")).unwrap();
-        let mut secondary = whoami.accounts[0].clone();
-        secondary.id = Ustr::from("secondary");
-        secondary.maker_fee = Some(Decimal::new(-1, 4));
-        secondary.taker_fee = Some(Decimal::new(8, 4));
-        whoami.accounts.push(secondary);
-        let mut incomplete = whoami.accounts[0].clone();
-        incomplete.id = Ustr::from("incomplete");
-        incomplete.taker_fee = None;
-        whoami.accounts.push(incomplete);
-        let response = Arc::new(tokio::sync::Mutex::new(whoami));
-        let state = response.clone();
-        let app = axum::Router::new().route(
-            "/whoami",
-            axum::routing::get(move || {
-                let state = state.clone();
-                async move { axum::Json(state.lock().await.clone()) }
-            }),
+    #[case::production_defaults(None, None, AX_HTTP_URL, Some(AX_ORDERS_URL))]
+    #[case::sandbox_default_orders(
+        Some(AX_HTTP_SANDBOX_URL),
+        None,
+        AX_HTTP_SANDBOX_URL,
+        Some(AX_ORDERS_SANDBOX_URL)
+    )]
+    #[case::sandbox_trailing_slash(
+        Some("https://gateway.sandbox.architect.exchange/api/"),
+        None,
+        AX_HTTP_SANDBOX_URL,
+        Some(AX_ORDERS_SANDBOX_URL)
+    )]
+    #[case::custom_without_orders(Some("http://mock/"), None, "http://mock", None)]
+    #[case::explicit_orders(
+        Some("http://mock/"),
+        Some("http://orders/"),
+        "http://mock",
+        Some("http://orders")
+    )]
+    fn test_resolve_base_urls(
+        #[case] base_url: Option<&str>,
+        #[case] orders_base_url: Option<&str>,
+        #[case] expected_base: &str,
+        #[case] expected_orders: Option<&str>,
+    ) {
+        let (base, orders) = resolve_base_urls(
+            base_url.map(str::to_string),
+            orders_base_url.map(str::to_string),
         );
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let client =
-            AxHttpClient::new(Some(format!("http://{addr}")), None, 3, 0, 1, 1, None).unwrap();
-        client.set_session_token("test_session_token".into());
-        let cloned = client.clone();
-
-        let original = client.request_account_fees().await.unwrap();
-        let original_rates = cloned.account_fee_rates.load();
-        let default_id = response.lock().await.accounts[0].id;
-        let expected = AHashMap::from_iter([
-            (
-                None,
-                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
-            ),
-            (
-                Some(default_id),
-                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
-            ),
-            (
-                Some(Ustr::from("secondary")),
-                MakerTakerFeeRates::new(Decimal::new(-1, 4), Decimal::new(8, 4)),
-            ),
-        ]);
-        {
-            let mut response = response.lock().await;
-            response.accounts.truncate(1);
-            response.accounts[0].maker_fee = Some(Decimal::ZERO);
-            response.accounts[0].taker_fee = Some(Decimal::new(3, 3));
-        }
-
-        let refreshed = cloned.request_account_fees().await.unwrap();
-        let refreshed_rates = client.account_fee_rates.load();
-        let expected_refreshed = AHashMap::from_iter([
-            (
-                None,
-                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
-            ),
-            (
-                Some(default_id),
-                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
-            ),
-        ]);
-
-        assert_eq!(original, (Decimal::new(2, 4), Decimal::new(25, 4)));
-        assert_eq!(**original_rates, expected);
-        assert_eq!(refreshed, (Decimal::ZERO, Decimal::new(3, 3)));
-        assert_eq!(**refreshed_rates, expected_refreshed);
-        server.abort();
+        assert_eq!(base, expected_base);
+        assert_eq!(orders.as_deref(), expected_orders);
     }
 
     #[rstest]
-    #[case::credentials(true)]
-    #[case::session_token(false)]
+    fn test_custom_base_url_without_orders_url_rejects_order_route() {
+        let client = custom_api_client();
+
+        let error = client.orders_base_url().unwrap_err();
+
+        assert!(matches!(error, AxHttpError::ValidationError(_)));
+    }
+
+    #[rstest]
+    #[case::place(OrderOperation::Place)]
+    #[case::cancel(OrderOperation::Cancel)]
+    #[case::replace(OrderOperation::Replace)]
+    #[case::cancel_all(OrderOperation::CancelAll)]
+    #[case::open_orders(OrderOperation::OpenOrders)]
+    #[case::order_status_by_id(OrderOperation::OrderStatusById)]
+    #[case::order_status_by_cid(OrderOperation::OrderStatusByCid)]
+    #[case::orders(OrderOperation::Orders)]
+    #[case::initial_margin(OrderOperation::InitialMargin)]
     #[tokio::test]
-    async fn test_authenticated_client_rejects_redirects(#[case] credentials: bool) {
-        let client = if credentials {
-            AxRawHttpClient::with_credentials(
-                "key".into(),
-                "secret".into(),
-                None,
-                None,
-                3,
-                0,
-                1,
-                1,
-                None,
-            )
-            .unwrap()
-        } else {
-            AxRawHttpClient::new(None, None, 3, 0, 1, 1, None).unwrap()
-        }
-        .client;
-        assert_http_redirect_rejected(|url| async move {
-            client
-                .get(url, None, None, Some(3), None)
+    async fn test_order_operations_require_orders_url_for_custom_api_url(
+        #[case] operation: OrderOperation,
+    ) {
+        let client = custom_api_client();
+
+        let place_request = PlaceOrderRequest::new(
+            AxOrderSide::Buy,
+            Decimal::from(100),
+            1,
+            Ustr::from("XAU-PERP"),
+            AxTimeInForce::Gtc,
+            false,
+        );
+
+        let result = match operation {
+            OrderOperation::Place => client.place_order(&place_request).await.map(|_| ()),
+            OrderOperation::Cancel => client.cancel_order("OID-1").await.map(|_| ()),
+            OrderOperation::Replace => client
+                .replace_order(&ReplaceOrderRequest::new("OID-1"))
                 .await
-                .unwrap()
-                .status
-                .as_u16()
-        })
-        .await;
+                .map(|_| ()),
+            OrderOperation::CancelAll => client
+                .cancel_all_orders(&CancelAllOrdersRequest::new())
+                .await
+                .map(|_| ()),
+            OrderOperation::OpenOrders => client.get_open_orders().await.map(|_| ()),
+            OrderOperation::OrderStatusById => {
+                client.get_order_status_by_id("OID-1").await.map(|_| ())
+            }
+            OrderOperation::OrderStatusByCid => {
+                client.get_order_status_by_cid(123).await.map(|_| ())
+            }
+            OrderOperation::Orders => client
+                .get_orders(&GetOrdersParams::default())
+                .await
+                .map(|_| ()),
+            OrderOperation::InitialMargin => client
+                .check_initial_margin(&place_request)
+                .await
+                .map(|_| ()),
+        };
+
+        let error = result.unwrap_err();
+        match error {
+            AxHttpError::ValidationError(message) => assert_eq!(
+                message,
+                "Orders base URL is required for order-management operations with a custom API base URL"
+            ),
+            other => panic!("Expected validation error, was {other}"),
+        }
+    }
+
+    #[rstest]
+    #[case::new(false)]
+    #[case::with_credentials(true)]
+    fn test_raw_http_constructors_reject_invalid_timing(#[case] with_credentials: bool) {
+        let result = if with_credentials {
+            AxRawHttpClient::with_credentials(
+                "key".to_string(),
+                "secret".to_string(),
+                None,
+                None,
+                0,
+                3,
+                1_000,
+                10_000,
+                None,
+            )
+        } else {
+            AxRawHttpClient::new(None, None, 0, 3, 1_000, 10_000, None)
+        };
+
+        assert!(matches!(
+            result.unwrap_err(),
+            AxHttpError::ValidationError(_)
+        ));
+    }
+
+    #[rstest]
+    fn test_low_level_http_accepts_socks_proxy() {
+        let result = AxRawHttpClient::new(
+            None,
+            None,
+            60,
+            3,
+            1_000,
+            10_000,
+            Some("socks5://127.0.0.1:1080".to_string()),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_retry_config_uses_configured_timeout_without_hidden_elapsed_cap() {
+        let config = retry_config(120, 4, 2_000, 8_000).unwrap();
+
+        assert_eq!(config.max_retries, 4);
+        assert_eq!(config.initial_delay_ms, 2_000);
+        assert_eq!(config.max_delay_ms, 8_000);
+        assert_eq!(config.backoff_factor, 2.0);
+        assert_eq!(config.jitter_ms, 1_000);
+        assert_eq!(config.operation_timeout_ms, Some(120_000));
+        assert!(!config.immediate_first);
+        assert_eq!(config.max_elapsed_ms, None);
+    }
+
+    #[rstest]
+    #[case::zero_timeout(0, 3, 1_000, 10_000)]
+    #[case::timeout_overflow(u64::MAX, 3, 1_000, 10_000)]
+    #[case::zero_initial_delay(60, 3, 0, 10_000)]
+    #[case::zero_initial_delay_without_retries(60, 0, 0, 10_000)]
+    #[case::reversed_delays(60, 3, 10_001, 10_000)]
+    fn test_retry_config_rejects_invalid_timing(
+        #[case] timeout_secs: u64,
+        #[case] max_retries: u32,
+        #[case] retry_delay_ms: u64,
+        #[case] retry_delay_max_ms: u64,
+    ) {
+        let error = retry_config(
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, AxHttpError::ValidationError(_)));
     }
 }

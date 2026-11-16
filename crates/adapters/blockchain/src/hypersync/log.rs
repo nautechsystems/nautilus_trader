@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use nautilus_core::hex;
 
 use super::HypersyncLog;
@@ -85,6 +85,13 @@ pub fn extract_block_number(log: &HypersyncLog) -> anyhow::Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("Missing block number in the log"))
 }
 
+/// Extracts the block hash from a log entry.
+///
+/// Returns `None` when the query did not select the block hash field.
+pub fn extract_block_hash(log: &HypersyncLog) -> Option<B256> {
+    log.block_hash.as_ref().map(B256::from)
+}
+
 /// Extracts the event signature from a log entry and returns it as a hex string
 ///
 /// # Errors
@@ -123,6 +130,8 @@ pub fn validate_event_signature_hash(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::*;
     use serde_json::json;
 
@@ -200,6 +209,35 @@ mod tests {
             "topics": [null]
         });
         serde_json::from_value(log_json).expect("Failed to deserialize log")
+    }
+
+    #[fixture]
+    fn log_with_block_hash() -> HypersyncLog {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": "0xd371b6c7b04ec33d6470f067a82e87d7b294b952bea7a46d7b939b4c7addc275",
+            "block_number": "0x1581b7e",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        serde_json::from_value(log_json).expect("Failed to deserialize log")
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_selected(log_with_block_hash: HypersyncLog) {
+        let expected =
+            B256::from_str("0xd371b6c7b04ec33d6470f067a82e87d7b294b952bea7a46d7b939b4c7addc275")
+                .unwrap();
+        assert_eq!(extract_block_hash(&log_with_block_hash), Some(expected));
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_unselected_returns_none(swap_log_1: HypersyncLog) {
+        assert_eq!(extract_block_hash(&swap_log_1), None);
     }
 
     #[rstest]

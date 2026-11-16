@@ -15,9 +15,7 @@
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{
-        LiquiditySide, OptionKind, OrderSide, OrderType, PositionSide, PriceType, TimeInForce,
-    },
+    enums::{LiquiditySide, OptionKind, OrderSide, OrderType, PriceType, TimeInForce},
     events::{OrderEventAny, OrderFilled},
     identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -340,16 +338,6 @@ impl OrderMatchingEngine {
             );
         }
 
-        let underlying_side = if self.instrument.option_kind() == Some(OptionKind::Call) {
-            position.side
-        } else {
-            match position.side {
-                PositionSide::Long => PositionSide::Short,
-                PositionSide::Short => PositionSide::Long,
-                other => other,
-            }
-        };
-
         let venue = self.venue;
         let close_client_order_id =
             ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
@@ -369,9 +357,10 @@ impl OrderMatchingEngine {
         let close_side = OrderCore::closing_side(position.side)
             .expect("Settlement position must be Long or Short");
 
-        let underlying_order_side = match underlying_side {
-            PositionSide::Long => OrderSide::Buy,
-            _ => OrderSide::Sell,
+        let underlying_order_side = if self.instrument.option_kind() == Some(OptionKind::Call) {
+            OrderCore::opposite_side(close_side)
+        } else {
+            close_side
         };
 
         let close_order = self.option_create_settlement_order(
@@ -405,7 +394,7 @@ impl OrderMatchingEngine {
             position,
             underlying_instrument,
             underlying_qty,
-            underlying_side,
+            underlying_order_side,
             settlement_px,
             open_client_order_id,
             open_venue_order_id,
@@ -534,21 +523,13 @@ impl OrderMatchingEngine {
         position: &Position,
         underlying_instrument: &InstrumentAny,
         quantity: Quantity,
-        side: PositionSide,
+        order_side: OrderSide,
         price: Price,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
         trade_id: TradeId,
         ts_now: UnixNanos,
     ) -> OrderFilled {
-        let order_side = match side {
-            PositionSide::Long => OrderSide::Buy,
-            PositionSide::Short => OrderSide::Sell,
-            PositionSide::Flat => {
-                unreachable!("flat position cannot create an underlying settlement fill")
-            }
-        };
-
         OrderFilled::new(
             position.trader_id,
             position.strategy_id,

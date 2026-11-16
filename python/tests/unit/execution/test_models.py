@@ -330,16 +330,21 @@ def test_concrete_fee_models_inherit_fee_model() -> None:
     Test concrete fee models inherit fee model.
     """
     fixed = FixedFeeModel(commission=Money.from_str("5.00 USD"))
+
     maker_taker = MakerTakerFeeModel(
         maker_rate=Decimal("0.0001"),
         taker_rate=Decimal("0.0002"),
     )
+
     per_contract = PerContractFeeModel(commission=Money.from_str("1.25 USD"))
+
     probability = ProbabilityPriceFeeModel(
         maker_rate=Decimal("0.01"),
         taker_rate=Decimal("0.02"),
     )
+
     capped = CappedOptionFeeModel(maker_rate=Decimal("0.0003"), taker_rate=Decimal("0.0003"))
+
     tiered = TieredNotionalOptionFeeModel(
         maker_rate=Decimal("0.0002"),
         taker_rate=Decimal("0.0005"),
@@ -439,6 +444,7 @@ def test_fixed_fee_model_get_commission_direct_call() -> None:
     commission = Money.from_str("5.00 USD")
     model = FixedFeeModel(commission=commission, charge_commission_once=False)
     instrument = TestInstrumentProvider.audusd_sim()
+
     order = MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -508,6 +514,7 @@ def test_maker_taker_fee_model_get_commission_direct_call() -> None:
         maker_rate=Decimal("0.0001"),
         taker_rate=Decimal("0.0002"),
     )
+
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -528,6 +535,7 @@ def test_probability_price_fee_model_get_commission_direct_call() -> None:
         maker_rate=Decimal("0.01"),
         taker_rate=Decimal("0.02"),
     )
+
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -543,6 +551,7 @@ def test_capped_option_fee_model_get_commission_direct_call() -> None:
         maker_rate=Decimal("0.0003"),
         taker_rate=Decimal("0.0003"),
     )
+
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 
@@ -558,6 +567,7 @@ def test_tiered_notional_option_fee_model_get_commission_direct_call() -> None:
         maker_rate=Decimal("0.0002"),
         taker_rate=Decimal("0.0005"),
     )
+
     instrument = TestInstrumentProvider.audusd_sim()
     order = _make_market_order(instrument)
 

@@ -17,7 +17,7 @@
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{PyResult, pymethods};
 use rust_decimal::Decimal;
@@ -142,6 +142,7 @@ impl DeriveExecutionClientConfig {
         max_per_instrument_matching_requests_per_second = None,
         transport_backend = None,
         cancel_on_disconnect = None,
+        load_ids = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -168,10 +169,11 @@ impl DeriveExecutionClientConfig {
         max_per_instrument_matching_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
         cancel_on_disconnect: Option<bool>,
-    ) -> Self {
+        load_ids: Option<Vec<InstrumentId>>,
+    ) -> PyResult<Self> {
         let defaults = Self::default();
 
-        Self {
+        let config = Self {
             account_id: account_id.unwrap_or(defaults.account_id),
             wallet_address,
             session_key: session_key.map(SecretString::from),
@@ -197,7 +199,13 @@ impl DeriveExecutionClientConfig {
             max_matching_requests_per_second,
             max_per_instrument_matching_requests_per_second,
             cancel_on_disconnect: cancel_on_disconnect.unwrap_or(defaults.cancel_on_disconnect),
-        }
+            load_ids,
+        };
+
+        config
+            .validate_load_ids()
+            .map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -230,6 +238,53 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::unset(None)]
+    #[case::empty(Some(vec![]))]
+    #[case::explicit(Some(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("BTC-PERP.DERIVE")]))]
+    fn test_python_load_ids(#[case] load_ids: Option<Vec<InstrumentId>>) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("load_ids", load_ids.clone()).unwrap();
+            let config = py
+                .get_type::<DeriveExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let getter = config
+                .getattr("load_ids")
+                .unwrap()
+                .extract::<Option<Vec<InstrumentId>>>()
+                .unwrap();
+            let rust_config = config
+                .extract::<PyRef<DeriveExecutionClientConfig>>()
+                .unwrap();
+            assert_eq!(getter, load_ids);
+            assert_eq!(rust_config.load_ids, load_ids);
+            assert_eq!(rust_config.max_fee_per_contract, None);
+        });
+    }
+
+    #[rstest]
+    #[case::duplicate(vec![InstrumentId::from("ETH-PERP.DERIVE"), InstrumentId::from("ETH-PERP.DERIVE")], "duplicate load_ids")]
+    #[case::other_venue(vec![InstrumentId::from("ETH-PERP.BINANCE")], "invalid load_ids: ETH-PERP.BINANCE is not a DERIVE instrument")]
+    fn test_python_load_ids_reject_invalid_selection(
+        #[case] ids: Vec<InstrumentId>,
+        #[case] expected: &str,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("load_ids", ids).unwrap();
+            let error = py
+                .get_type::<DeriveExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(error.value(py).str().unwrap().to_str().unwrap(), expected);
+        });
+    }
 
     #[rstest]
     fn test_python_endpoint_overrides(

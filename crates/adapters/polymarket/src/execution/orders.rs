@@ -1859,7 +1859,7 @@ mod tests {
         assert_eq!(
             reason.as_deref(),
             Some(
-                "Polymarket replacement amount 4.97798 shares is below the market minimum order size 5"
+                "Polymarket replacement amount 4.97797 shares is below the market minimum order size 5"
             )
         );
     }

@@ -18,8 +18,6 @@
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.
 # - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
-#
-# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %%
 import os
@@ -153,7 +151,6 @@ catalog.instruments()[0]
 # Query quote ticks from catalog to determine the data range
 all_ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value])
 print(f"Total ticks in catalog: {len(all_ticks)}")
-
 if all_ticks:
     # Get timestamps from the data
     first_tick_time = pd.Timestamp(all_ticks[0].ts_init, unit="ns", tz="UTC")

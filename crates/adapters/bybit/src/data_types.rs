@@ -15,8 +15,9 @@
 
 //! Bybit-specific custom data types.
 //!
-//! These types carry Bybit domain data through the Nautilus data engine as
-//! [`CustomData`](nautilus_model::data::CustomData).
+//! These types carry Bybit domain data to subscribing actors as
+//! [`CustomData`](nautilus_model::data::CustomData): liquidations flow through the data
+//! engine, and margin results through the execution event channel.
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -52,19 +53,90 @@ pub struct BybitLiquidation {
     pub ts_init: UnixNanos,
 }
 
+/// Result from a manual Bybit spot margin borrow operation.
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")
+)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")]
+pub struct BybitMarginBorrowResult {
+    /// The coin the borrow targeted.
+    pub coin: String,
+    /// The requested amount.
+    pub amount: String,
+    /// Whether the borrow operation was successful.
+    pub success: bool,
+    /// Error message if the operation failed.
+    pub message: String,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Result from a manual Bybit spot margin repay operation.
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")
+)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")]
+pub struct BybitMarginRepayResult {
+    /// The coin the repay targeted.
+    pub coin: String,
+    /// The requested amount (None if repaying all).
+    #[custom_data_field(serde)]
+    pub amount: Option<String>,
+    /// Whether the repay operation was successful.
+    pub success: bool,
+    /// The venue result status on success, or the client-side `FAIL` marker on failure.
+    pub result_status: String,
+    /// Error message if the operation failed.
+    pub message: String,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Current borrowed amount on Bybit for a coin.
+#[cfg_attr(
+    feature = "arrow",
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")
+)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.bybit")]
+pub struct BybitMarginStatusResult {
+    /// The coin being queried.
+    pub coin: String,
+    /// The current borrowed amount.
+    pub borrow_amount: String,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
 /// Registers Bybit custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_bybit_custom_data() {
-    #[cfg(feature = "arrow")]
-    {
-        nautilus_serialization::ensure_custom_data_registered::<BybitLiquidation>();
+    macro_rules! register {
+        ($ty:ty) => {
+            #[cfg(feature = "arrow")]
+            {
+                nautilus_serialization::ensure_custom_data_registered::<$ty>();
+            }
+
+            #[cfg(not(feature = "arrow"))]
+            {
+                let _ = nautilus_model::data::ensure_custom_data_json_registered::<$ty>();
+            }
+        };
     }
 
-    #[cfg(not(feature = "arrow"))]
-    {
-        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BybitLiquidation>();
-    }
+    register!(BybitLiquidation);
+    register!(BybitMarginBorrowResult);
+    register!(BybitMarginRepayResult);
+    register!(BybitMarginStatusResult);
 }
 
 #[cfg(test)]

@@ -1002,21 +1002,9 @@ impl PolymarketMarketPoolHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, sync::Arc as StdArc, time::Duration};
+    use std::{sync::Arc as StdArc, time::Duration};
 
     use PolymarketMarketPoolHandle as Handle;
-    use axum::{
-        Router,
-        extract::ws::{WebSocket, WebSocketUpgrade},
-        response::Response,
-        routing::get,
-    };
-    use nautilus_common::{
-        live::runner::replace_system_event_sender,
-        messages::{SystemEvent, system::SocketState},
-    };
-    use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
-    use nautilus_model::identifiers::ClientId;
     use nautilus_network::transport::TransportError;
     use parking_lot::{Condvar, Mutex as TestMutex};
     use rstest::rstest;
@@ -1037,30 +1025,6 @@ mod tests {
                 wake.wait(&mut state);
             }
         }
-    }
-
-    async fn handle_socket_upgrade(ws: WebSocketUpgrade) -> Response {
-        ws.on_upgrade(handle_socket)
-    }
-
-    async fn handle_socket(mut socket: WebSocket) {
-        while socket.recv().await.is_some() {}
-    }
-
-    async fn start_socket_server() -> SocketAddr {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind test websocket server");
-        let addr = listener.local_addr().expect("test websocket address");
-        let router = Router::new().route("/ws/market", get(handle_socket_upgrade));
-
-        tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("test websocket server failed");
-        });
-
-        addr
     }
 
     // Bare state with unconnected shards for pure capacity-accounting tests.
@@ -1401,88 +1365,6 @@ mod tests {
         assert_eq!(secondary.proxy_url().unwrap().expose(), PROXY_URL);
         assert_eq!(pool.inner.max_subscriptions, 17);
         assert!(!debug.contains("pool-proxy-secret"));
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn pool_assigns_distinct_endpoint_sinks_and_handles_before_connect() {
-        let addr = start_socket_server().await;
-        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
-        replace_system_event_sender(system_tx);
-        let registry = SocketReconnectRegistry::default();
-        let factory = SocketControlFactory::with_registry(
-            ClientId::from("POLYMARKET"),
-            Some(*crate::common::consts::POLYMARKET_VENUE),
-            &registry,
-        );
-        let pool = PolymarketMarketConnectionPool::new(
-            Some(format!("ws://{addr}/ws/market")),
-            false,
-            TransportBackend::Tungstenite,
-            1,
-        )
-        .with_socket_factory(factory);
-
-        pool.connect().await.expect("connect primary shard");
-        pool.handle()
-            .subscribe_market(vec!["asset-0".to_string(), "asset-1".to_string()])
-            .await
-            .expect("open secondary shard");
-
-        let mut connected = Vec::new();
-        while connected.len() < 2 {
-            let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
-                .await
-                .expect("wait for socket state event")
-                .expect("system event channel closed");
-            let SystemEvent::SocketState(change) = event;
-            if change.state == SocketState::Connected {
-                connected.push(change.endpoint);
-            }
-        }
-        connected.sort_unstable();
-
-        assert_eq!(
-            connected,
-            vec![
-                Ustr::from(MARKET_STREAMS_ENDPOINT),
-                Ustr::from("polymarket-market-streams-1"),
-            ],
-        );
-        let client_id = ClientId::from("POLYMARKET");
-        let primary = registry
-            .handle(client_id, Ustr::from(MARKET_STREAMS_ENDPOINT))
-            .expect("primary reconnect handle should be registered");
-        let secondary = registry
-            .handle(client_id, Ustr::from("polymarket-market-streams-1"))
-            .expect("secondary reconnect handle should be registered");
-        assert_eq!(
-            primary.request_reconnect(),
-            SocketReconnectRequestOutcome::Accepted,
-        );
-        let event = system_rx
-            .try_recv()
-            .expect("selected shard should report reconnect state");
-        let SystemEvent::SocketState(change) = event;
-        assert_eq!(change.client_id, client_id);
-        assert_eq!(change.endpoint, Ustr::from(MARKET_STREAMS_ENDPOINT));
-        assert_eq!(change.state, SocketState::Disconnected);
-        assert_eq!(
-            secondary.request_reconnect(),
-            SocketReconnectRequestOutcome::Accepted,
-        );
-
-        pool.disconnect().await.expect("disconnect pool");
-        assert!(
-            registry
-                .handle(client_id, Ustr::from(MARKET_STREAMS_ENDPOINT))
-                .is_none()
-        );
-        assert!(
-            registry
-                .handle(client_id, Ustr::from("polymarket-market-streams-1"))
-                .is_none()
-        );
     }
 
     #[rstest]

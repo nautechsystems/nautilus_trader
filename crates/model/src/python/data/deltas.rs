@@ -122,7 +122,8 @@ impl OrderBookDeltas {
     }
 
     #[staticmethod]
-    fn _from_dicts(
+    #[pyo3(name = "_from_dicts")]
+    fn py_from_dicts(
         instrument_id: InstrumentId,
         delta_dicts: Vec<pyo3::Py<pyo3::types::PyDict>>,
     ) -> PyResult<Self> {

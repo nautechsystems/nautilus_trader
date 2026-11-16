@@ -50,6 +50,8 @@ impl DeribitDataClientConfig {
         auto_load_missing_instruments = None,
         transport_backend = None,
         load_ids = None,
+        book_snapshot_timeout_secs = None,
+        book_stale_threshold_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -70,6 +72,8 @@ impl DeribitDataClientConfig {
         auto_load_missing_instruments: Option<bool>,
         transport_backend: Option<TransportBackend>,
         load_ids: Option<Vec<InstrumentId>>,
+        book_snapshot_timeout_secs: Option<u64>,
+        book_stale_threshold_secs: Option<u64>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -95,6 +99,10 @@ impl DeribitDataClientConfig {
                 .unwrap_or(defaults.auto_load_missing_instruments),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             load_ids,
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
+            book_stale_threshold_secs: book_stale_threshold_secs
+                .unwrap_or(defaults.book_stale_threshold_secs),
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;

@@ -98,6 +98,7 @@ def test_trade_equality(audusd_id: InstrumentId) -> None:
         ts_event=0,
         ts_init=0,
     )
+
     trade2 = TradeTick(
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
@@ -264,6 +265,7 @@ def test_trade_setstate_rejects_invalid_state_without_mutation(
     Test trade setstate rejects invalid state without mutation.
     """
     original_state = trade.__getstate__()
+
     other = TradeTick(
         instrument_id=usdjpy_id,
         price=Price.from_str("150.001"),
@@ -273,6 +275,7 @@ def test_trade_setstate_rejects_invalid_state_without_mutation(
         ts_event=5,
         ts_init=6,
     )
+
     state = list(other.__getstate__())
     state[index] = value
 

@@ -38,10 +38,12 @@ def findings(text: str) -> list[tuple[int, str]]:
         "" if line.lstrip().startswith(("//", "#")) else line for line in text.splitlines()
     )
     found = set()
+
     for pattern in (CALLS, SOCKETS):
         for match in pattern.finditer(text):
             if not _local_address(match["address"]):
                 found.add((text.count("\n", 0, match.start()) + 1, "non-local network call"))
+
     for rule, pattern in (("live-test switch", LIVE), ("fork-RPC option", FORK)):
         for match in pattern.finditer(text):
             found.add((text.count("\n", 0, match.start()) + 1, rule))
@@ -57,8 +59,10 @@ def _local_address(address: str) -> bool:
         )
     except ValueError:
         return False
+
     if not host or "{" in host:
         return True  # Dynamic destinations need code review
+
     if host in {"localhost", "example.com", "example.net", "example.org"} or host.endswith(
         (
             ".localhost",
@@ -85,12 +89,14 @@ def check(root: Path) -> list[str]:
     paths = sorted((root / "crates").rglob("*.rs"))
     paths.extend(sorted((root / "python" / "tests").rglob("*.py")))
     errors = []
+
     for path in paths:
         relative = path.relative_to(root)
         if "test_data" in relative.parts:
             continue
         text = path.read_text(encoding="utf-8")
         offset = 0
+
         if path.suffix == ".rs" and "tests" not in relative.parts and path.name != "tests.rs":
             module = TEST_MODULE.search(text)
             if module is None:

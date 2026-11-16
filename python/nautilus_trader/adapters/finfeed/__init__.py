@@ -32,6 +32,7 @@ __all__ = [
     "FinFeedBookLevel",
     "FinFeedDataClientConfig",
     "FinFeedDataClientFactory",
+    "FinFeedDataLoader",
     "FinFeedExchange",
     "FinFeedFlatFileOhlcvQuery",
     "FinFeedHistoryQuery",

@@ -152,6 +152,7 @@ def test_data_client_config_explicit() -> None:
     """
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
+
     config = DataClientConfig(
         handle_revised_bars=True,
         instrument_provider=ip,
@@ -177,6 +178,7 @@ def test_live_data_engine_config_explicit() -> None:
     Test live data engine config explicit.
     """
     client_id = ClientId("DATA-001")
+
     config = LiveDataEngineConfig(
         time_bars_build_with_no_updates=False,
         time_bars_timestamp_on_close=False,
@@ -269,7 +271,7 @@ def test_live_exec_engine_config_defaults() -> None:
     config = LiveExecutionEngineConfig()
 
     assert isinstance(config, LiveExecutionEngineConfig)
-    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RETAIN_UNRESOLVED
     assert config.snapshot_orders is False
     assert config.snapshot_positions is False
 
@@ -299,7 +301,7 @@ def test_live_exec_engine_config_open_check_lookback(
 @pytest.mark.parametrize(
     ("policy", "expected"),
     [
-        (None, SubmissionRecoveryPolicy.RESOLVE_LOCALLY),
+        (None, SubmissionRecoveryPolicy.RETAIN_UNRESOLVED),
         (
             SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
             SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
@@ -348,7 +350,7 @@ def test_live_exec_engine_config_preserves_positional_arguments() -> None:
     assert config.debug is True
     assert config.snapshot_orders is True
     assert config.snapshot_positions is True
-    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RETAIN_UNRESOLVED
 
 
 def test_live_exec_engine_config_readback() -> None:
@@ -356,6 +358,7 @@ def test_live_exec_engine_config_readback() -> None:
     Test live exec engine config readback.
     """
     client_id = ClientId("EXEC-001")
+
     config = LiveExecutionEngineConfig(
         load_cache=False,
         manage_own_order_books=True,
@@ -484,7 +487,7 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value: object) ->
 )
 @pytest.mark.parametrize(
     "value",
-    [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
+    [0.0, 0.4e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
 )
 def test_live_exec_engine_config_rejects_invalid_intervals(field: object, value: object) -> None:
     """
@@ -518,6 +521,7 @@ def test_live_node_config_accepts_queue_monitor_config_argument() -> None:
         mean_dispatch_ns_trigger=250_000,
         mean_dispatch_ns_clear=150_000,
     )
+
     config = LiveNodeConfig(queue_monitor=queue_monitor)
 
     resolved = config.queue_monitor
@@ -554,6 +558,7 @@ def test_live_node_config_accepts_portfolio_config_argument() -> None:
     data_engine = LiveDataEngineConfig(debug=True)
     risk_engine = LiveRiskEngineConfig(bypass=True)
     exec_engine = LiveExecutionEngineConfig(load_cache=False)
+
     config = LiveNodeConfig(
         logging=logging,
         instance_id=instance_id,

@@ -338,10 +338,7 @@ impl LiveNode {
             }
 
             let mut expected_revision = self.exec_manager.position_activity_revision(&key);
-            let key_venue_reports = venue_reports
-                .get(&key)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let key_venue_reports = venue_reports.get(&key).map_or_default(Vec::as_slice);
             let mut applied_fill = false;
             let mut blocked = false;
 
@@ -505,8 +502,7 @@ impl LiveNode {
         drop(open_order_report_task.take());
         let (planned_client_order_ids, carried_results) = targeted_order_report_task
             .take()
-            .map(|task| task.into_results(false))
-            .unwrap_or_default();
+            .map_or_default(|task| task.into_results(false));
         drop(position_report_task.take());
 
         for client in &self.exec_clients {

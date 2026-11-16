@@ -33,10 +33,10 @@ use ustr::Ustr;
 
 use crate::{
     common::enums::{
-        BinanceAlgoStatus, BinanceAlgoType, BinanceFuturesOrderType, BinanceKlineInterval,
-        BinanceMarginType, BinanceOrderStatus, BinancePositionSide, BinancePriceMatch,
-        BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
-        BinanceWsMethod,
+        BinanceAlgoStatus, BinanceAlgoType, BinanceFuturesOrderType, BinanceFuturesTradeType,
+        BinanceKlineInterval, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
+        BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
+        BinanceWorkingType, BinanceWsMethod,
     },
     futures::http::BinanceFuturesInstrument,
 };
@@ -214,6 +214,9 @@ pub struct BinanceFuturesTradeMsg {
     /// Quantity.
     #[serde(rename = "q")]
     pub quantity: String,
+    /// Trade type.
+    #[serde(rename = "X")]
+    pub trade_type: BinanceFuturesTradeType,
     /// Trade time in milliseconds.
     #[serde(rename = "T")]
     pub trade_time: i64,

@@ -1,0 +1,8 @@
+{
+  "type": "orderbook_delta",
+  "sid": 7,
+  "seq": 9,
+  "msg": {
+    "side": "yes"
+  }
+}

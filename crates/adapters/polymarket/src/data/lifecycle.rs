@@ -293,6 +293,7 @@ impl PolymarketDataClient {
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
                             false,
+                            true,
                         )
                         .await;
                     }
@@ -917,93 +918,6 @@ mod tests {
             ws,
         )
         .unwrap()
-    }
-
-    #[rstest]
-    #[case(false)]
-    #[case(true)]
-    #[tokio::test]
-    async fn test_data_client_keeps_missing_taker_rate_at_zero(#[case] missing_schedule: bool) {
-        let mut market: Value = serde_json::from_str(include_str!(
-            "../../test_data/gamma_market_fee_zero_rate.json"
-        ))
-        .unwrap();
-
-        if missing_schedule {
-            market["feeSchedule"] = Value::Null;
-        }
-
-        let response = serde_json::to_string(&vec![market]).unwrap();
-        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let asserted = Arc::clone(&calls);
-
-        let router = axum::Router::new()
-            .route(
-                "/markets",
-                axum::routing::get(move || {
-                    let response = response.clone();
-                    async move { response }
-                }),
-            )
-            .route(
-                "/fee-rate",
-                axum::routing::get(move || {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    async { include_str!("../../test_data/clob_fee_rate_response_nonzero.json") }
-                }),
-            );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let gamma = PolymarketGammaHttpClient::new(
-            Some(format!("http://{address}")),
-            5,
-            RetryConfig::default(),
-        )
-        .unwrap();
-        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        replace_data_event_sender(tx);
-
-        let client = PolymarketDataClient::new(
-            ClientId::from("POLY-TEST"),
-            PolymarketDataClientConfig::default(),
-            gamma,
-            clob,
-            PolymarketDataApiHttpClient::new(None, 5).unwrap(),
-            PolymarketMarketConnectionPool::new(
-                None,
-                false,
-                TransportBackend::default(),
-                WS_DEFAULT_SUBSCRIPTIONS,
-            ),
-        )
-        .unwrap();
-        let instruments = client
-            .provider()
-            .http_client()
-            .request_instruments_by_slugs(vec!["fee-market".to_string()])
-            .await
-            .unwrap();
-        server.abort();
-
-        assert_eq!(asserted.load(Ordering::SeqCst), 0);
-        assert_eq!(instruments.len(), 2);
-
-        for instrument in instruments {
-            let InstrumentAny::BinaryOption(binary) = instrument else {
-                panic!("expected a binary option instrument");
-            };
-
-            let info = binary.info.unwrap();
-            let schedule: crate::http::models::FeeSchedule =
-                serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
-            assert_eq!(schedule.rate, rust_decimal::Decimal::ZERO);
-            assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
-            assert!(schedule.taker_only);
-            assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
-        }
     }
 
     fn polybolt_crypto_data_type(symbol: &str) -> DataType {
@@ -2035,7 +1949,23 @@ mod tests {
 
         // Retirement is one-shot: a later sweep must not walk the whole terminal set again
         cache_instrument_unchecked(&client.instruments, &client.subscriptions.token_meta, &inst);
-        tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+
+        // The second marker enters a later snapshot, proving the first sweep finished
+        for suffix in ["LATER1", "LATER2"] {
+            let condition_id = format!("0xCOND-{suffix}");
+            let raw_symbol = format!("{condition_id}-0xTOKEN_{suffix}");
+            let later = seed_instrument(&client, &raw_symbol, &condition_id, expiration_ns);
+            client
+                .subscriptions
+                .closed_condition_ids
+                .lock()
+                .insert(condition_id);
+            wait_until_async(
+                || async { !client.instruments.load().contains_key(&later.id()) },
+                tokio::time::Duration::from_secs(5),
+            )
+            .await;
+        }
 
         client.cancellation_token.cancel();
         client

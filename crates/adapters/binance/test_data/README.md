@@ -13,6 +13,7 @@ See [`SOURCES.md`](SOURCES.md) for the current source map by parser surface.
 - `futures/http_json/` holds Futures HTTP JSON fixtures.
 - `futures/market_data_json/` holds Futures market-data stream fixtures.
 - `futures/user_data_json/` holds Futures user-data stream fixtures.
+- `papi/http_json/` holds Portfolio Margin REST JSON fixtures.
 
 ## When to use live capture
 

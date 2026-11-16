@@ -361,6 +361,52 @@ A `heartbeats` subscription is always sent on connect and replayed on every
 reconnect. It satisfies the venue's five-second subscribe deadline and keeps
 the connection alive when the subscribed product topics are quiet.
 
+### Order book recovery
+
+Coinbase numbers every envelope on a connection with one `sequence_num`, shared by all channels and
+products, and `level2` events carry no per-book sequence. The feed handler checks that each envelope
+follows the previous one. A skipped or repeated number means an envelope was lost, and it could have
+belonged to any subscribed book, so every `level2` book on the connection stops emitting at the gap.
+
+Each affected book then recovers on its own. The adapter unsubscribes and resubscribes that product,
+since a duplicate subscribe returns no new snapshot, and the book resumes only once its own fresh
+snapshot arrives. A snapshot is accepted only after the replacement write completes. Retries follow the
+shared budget described in
+[order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership).
+
+After a reconnect, each book waits for the snapshot from its replayed subscription.
+`book_snapshot_timeout_secs` bounds the initial, post-reconnect, and recovery snapshot waits, and a
+book whose snapshot misses the deadline recovers the same way. Setting it to `0` disables snapshot
+deadlines.
+
+### Live recovery validation
+
+`coinbase-book-stress` checks public `level2` data without credentials or orders. It validates the
+`DOGE-USD`, `LINK-USD`, and `BCH-USD` books against the book stream contract and a book rebuilt from the
+raw relayed frames, compared through depth 20 at each envelope timestamp. Every frame the relay drops,
+holds, or rewrites is a sequence gap for all three books, so each fault exercises recovery of every book.
+
+The public WebSocket feed and the public product REST API must be reachable. From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=4 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-coinbase --features examples --test coinbase-book-stress -- \
+  --timeout 10 --rounds 18
+```
+
+| `--scenario` | Options        | Checks                                                                                                                                    |
+| ------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `churn`      | Default        | Dropped updates, missing recovery snapshots, held obsolete frames, reconnects during recovery, resubscribes, and repeated `sequence_num`. |
+| `initial`    | `--timeout 10` | Drops every initial snapshot, then runs `churn`.                                                                                          |
+| `disabled`   | `--timeout 0`  | Gap recovery, reconnects, resubscribes, and repeated `sequence_num` with snapshot deadlines disabled.                                     |
+| `edges`      | `--timeout 10` | Exhausted eight-attempt budget, late snapshot acceptance at the retry ceiling, and retry after a rejected subscribe.                      |
+
+- `--timeout` sets the snapshot timeout in seconds. `0` disables deadlines.
+- `--rounds` sets churn or disabled rounds (default `18`). `edges` runs once.
+
+Every scenario checks bounded shutdown with a recovery running. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for shared flags and output.
+
 ### Bars
 
 Historical bar requests accept EXTERNAL aggregation at the granularities the
@@ -764,6 +810,7 @@ command lost a race with the shutdown signal.
 | `ws_timeout_secs`                  | `30`      | WebSocket timeout (seconds).                                                      |
 | `update_instruments_interval_mins` | `60`      | Interval between instrument catalog refreshes.                                    |
 | `derivatives_poll_interval_secs`   | `15`      | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait; `0` disables the deadlines.       |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                      |
 
 ### Execution client configuration options

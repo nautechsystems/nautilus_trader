@@ -18,7 +18,7 @@ use std::sync::Arc;
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
-use nautilus_core::{AtomicMap, time::AtomicTime};
+use nautilus_core::{AtomicMap, DurationNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentClose, InstrumentStatus},
     enums::{InstrumentCloseType, MarketStatusAction},
@@ -206,6 +206,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     condition_ids: &[String],
     error_mode: ResolveBatchErrorMode,
     include_pending_intents: bool,
+    backoff_clob: bool,
 ) -> ResolveApplyBatchStats {
     let mut stats = ResolveApplyBatchStats::default();
     let mut unique_condition_ids = condition_ids.to_vec();
@@ -275,7 +276,15 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
         }
 
         for condition_id in unresolved_in_chunk {
-            if !allow_ctf_fallback(ctx, &condition_id) {
+            let retry = ctx
+                .watchlist
+                .read()
+                .get(&condition_id)
+                .and_then(|entry| entry.clob_retry);
+            if !allow_ctf_fallback(ctx, &condition_id)
+                || (backoff_clob
+                    && retry.is_some_and(|(_, retry_at)| ctx.clock.get_time_ns() < retry_at))
+            {
                 record_resolution_failure(
                     &mut stats,
                     &condition_id,
@@ -299,6 +308,10 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                         continue;
                     }
 
+                    if let Some(entry) = ctx.watchlist.write().get_mut(&condition_id) {
+                        entry.clob_retry = None;
+                    }
+
                     let Some(resolved) = build_resolved_market_from_clob_market(&market) else {
                         if market.version.as_deref() != Some(SUPPORTED_MARKET_VERSION) {
                             record_resolution_failure(
@@ -320,6 +333,15 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                         .await;
                 }
                 Err(e) => {
+                    if let Some(entry) = ctx.watchlist.write().get_mut(&condition_id) {
+                        let delay = entry
+                            .clob_retry
+                            .map_or(DurationNanos::from_secs(60), |(delay, _)| {
+                                delay.saturating_mul(2).min(DurationNanos::from_secs(900))
+                            });
+                        entry.clob_retry =
+                            Some((delay, ctx.clock.get_time_ns().saturating_add(delay)));
+                    }
                     let message = format!(
                         "Resolve fallback via CLOB failed for condition_id={condition_id}: {e}"
                     );
@@ -1085,6 +1107,7 @@ mod tests {
                 condition_id: "0xCOND".into(),
                 expiration_ns: UnixNanos::default(),
                 paused: false,
+                clob_retry: None,
                 tracked: AHashMap::from_iter([(
                     "101".into(),
                     TrackedInstrument {
@@ -1311,6 +1334,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
 
@@ -1450,6 +1474,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
 
@@ -1580,6 +1605,7 @@ mod tests {
                     },
                 )]),
                 paused: false,
+                clob_retry: None,
             },
         );
         let pending_guard = PendingResolutionGuard::try_claim(

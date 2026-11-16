@@ -90,6 +90,9 @@ use crate::{
         },
         encoder::{decode_client_order_id, encode_broker_id},
         enums::{BinanceEnvironment, BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+        error::{
+            BINANCE_ORDER_RATE_LIMIT_CODE, BINANCE_RATE_LIMIT_STATUS, is_retryable_http_status,
+        },
         failure::{classify_spot_http_failure, classify_venue_failure, sanitize_reason},
         instruments::BinanceInstrumentSelector,
         parse::{
@@ -458,7 +461,7 @@ impl BinanceSpotExecutionClient {
                         let http_error = e.downcast_ref::<BinanceSpotHttpError>();
                         let failure = http_error.map_or_else(
                             || CommandFailure::Ambiguous(e.to_string()),
-                            classify_spot_http_failure,
+                            classify_spot_http_submit_failure,
                         );
 
                         match failure {
@@ -2521,13 +2524,13 @@ fn dispatch_ws_trading_message(
             if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
                 let code_i64 = i64::from(code);
                 let reason = format!("code={code}: {msg}");
-
-                match classify_venue_failure(Some(code_i64), Some(status), &reason) {
-                    CommandFailure::Ambiguous(_) => {
+                match classify_spot_submit_failure(code_i64, Some(status), &reason) {
+                    CommandFailure::Ambiguous(reason) => {
                         log::warn!(
                             "Ambiguous WS submit failure for {}, awaiting reconciliation: {reason}",
                             pending.client_order_id,
                         );
+
                         return;
                     }
                     CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {}
@@ -3425,6 +3428,28 @@ fn is_grouped_order(order: &OrderAny) -> bool {
             .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
 }
 
+fn classify_spot_http_submit_failure(error: &BinanceSpotHttpError) -> CommandFailure {
+    match error {
+        BinanceSpotHttpError::BinanceError { code, status, .. } => {
+            classify_spot_submit_failure(*code, Some(*status), &error.to_string())
+        }
+        _ => classify_spot_http_failure(error),
+    }
+}
+
+fn classify_spot_submit_failure(code: i64, status: Option<u16>, reason: &str) -> CommandFailure {
+    // Spot -1015 confirms rejection, but ambiguous HTTP statuses other than 429 take precedence
+    if code == BINANCE_ORDER_RATE_LIMIT_CODE
+        && !status.is_some_and(|status| {
+            status != BINANCE_RATE_LIMIT_STATUS && is_retryable_http_status(status)
+        })
+    {
+        CommandFailure::venue_rejected(reason)
+    } else {
+        classify_venue_failure(Some(code), status, reason)
+    }
+}
+
 fn handle_spot_order_submit_success(client_order_id: ClientOrderId, venue_order_id: VenueOrderId) {
     log::debug!(
         "Order submit succeeded: client_order_id={client_order_id}, venue_order_id={venue_order_id}",
@@ -3452,7 +3477,7 @@ fn handle_spot_order_list_submit_error(
     orders: &[OrderAny],
     error: BinanceSpotHttpError,
 ) -> anyhow::Result<()> {
-    match classify_spot_http_failure(&error) {
+    match classify_spot_http_submit_failure(&error) {
         CommandFailure::Ambiguous(reason) => {
             log::warn!("Ambiguous order-list submit failure, awaiting reconciliation: {reason}");
         }
@@ -4571,15 +4596,28 @@ mod tests {
     }
 
     #[rstest]
-    #[case(
+    #[case::unexpected_response(
+        400,
         BINANCE_UNEXPECTED_RESPONSE_CODE,
         "An unexpected response was received from the message bus"
     )]
-    #[case(
+    #[case::status_unknown(
+        400,
         BINANCE_STATUS_UNKNOWN_CODE,
         "Timeout waiting for response from backend server"
     )]
+    #[case::order_rate_limit_ip_ban(
+        418,
+        BINANCE_ORDER_RATE_LIMIT_CODE,
+        "Too many new orders; current limit is 100 orders per 10 SECOND."
+    )]
+    #[case::order_rate_limit_server_error(
+        500,
+        BINANCE_ORDER_RATE_LIMIT_CODE,
+        "Too many new orders; current limit is 100 orders per 10 SECOND."
+    )]
     fn test_dispatch_ws_trading_message_unknown_status_keeps_order_registered(
+        #[case] status: u16,
         #[case] code: i64,
         #[case] msg: &str,
     ) {
@@ -4609,7 +4647,7 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceSpotWsTradingMessage::OrderRejected {
                 request_id: "req-submit".to_string(),
-                status: 400,
+                status,
                 code: code as i32,
                 msg: msg.to_string(),
             },
@@ -4637,7 +4675,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_ws_trading_message_definite_submit_rejection_emits_order_rejected() {
+    #[case::post_only(
+        400,
+        BINANCE_NEW_ORDER_REJECTED_CODE as i32,
+        BINANCE_SPOT_POST_ONLY_REJECT_MSG,
+        true
+    )]
+    #[case::order_rate_limit(
+        429,
+        BINANCE_ORDER_RATE_LIMIT_CODE as i32,
+        "Too many new orders; current limit is 100 orders per 10 SECOND.",
+        false
+    )]
+    fn test_dispatch_ws_trading_message_definite_submit_rejection_emits_order_rejected(
+        #[case] status: u16,
+        #[case] code: i32,
+        #[case] msg: &str,
+        #[case] due_post_only: bool,
+    ) {
         let tasks = TaskGroup::new();
         let task_spawner = tasks.spawner().expect("task spawner");
         let clock = get_atomic_clock_realtime();
@@ -4664,9 +4719,9 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceSpotWsTradingMessage::OrderRejected {
                 request_id: "req-submit".to_string(),
-                status: 400,
-                code: BINANCE_NEW_ORDER_REJECTED_CODE as i32,
-                msg: BINANCE_SPOT_POST_ONLY_REJECT_MSG.to_string(),
+                status,
+                code,
+                msg: msg.to_string(),
             },
             &emitter,
             &http_client,
@@ -4689,6 +4744,8 @@ mod tests {
                 .is_none()
         );
 
+        let expected_reason = format!("code={code}: {msg}");
+
         match rx
             .try_recv()
             .expect("OrderRejected event should be emitted")
@@ -4696,8 +4753,8 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.account_id, AccountId::from("BINANCE-001"));
-                assert!(event.reason.contains("code=-2010"));
-                assert!(event.due_post_only);
+                assert_eq!(event.reason.as_str(), expected_reason);
+                assert_eq!(event.due_post_only, due_post_only);
             }
             other => panic!("Expected OrderRejected event, was {other:?}"),
         }

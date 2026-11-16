@@ -32,12 +32,14 @@ unsupported trigger type as an error.
 **Trigger behavior**: emulation depends on the selected trigger type.
 
 - For stop orders, the emulator compares the trigger price with the selected market data.
-- For trailing-stop orders, it updates the trailing trigger from that market data.
+- For trailing-stop orders, `trigger_type` selects the trailing calculation. With `LAST_PRICE`
+  emulation, the emulator uses trade prices for activation and trailing calculations.
 - For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
   `MARKET` order when matched.
 
-**Cached data**: the emulator creates a matching core for a trigger instrument. The first order's
-`emulation_trigger` selects the cached market data used to seed that core.
+**Cached data**: on submission, the emulator initializes missing quote or trade prices from the cache
+for the selected `emulation_trigger`. It preserves existing prices. Orders that share a trigger
+instrument still use their own selected source.
 
 - `DEFAULT` and `BID_ASK` use the latest cached quote's bid and ask.
 - `LAST_PRICE` uses the latest cached trade price.

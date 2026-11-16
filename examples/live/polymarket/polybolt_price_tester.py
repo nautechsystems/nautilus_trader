@@ -102,6 +102,7 @@ class PolyBoltPriceTester(DataActor):
         """
         super().__init__(config)
         self.counts: dict[str, int] = {}
+
         self._data_types = [
             DataType(PolymarketCryptoPrice.__name__, {"symbol": config.crypto_symbol}),
             DataType(
@@ -173,6 +174,7 @@ def main() -> None:
         )
         .build()
     )
+
     actor = PolyBoltPriceTester(
         PolyBoltPriceTesterConfig(
             actor_id="POLYBOLT-PRICE-TESTER-001",
@@ -180,8 +182,8 @@ def main() -> None:
             equity_symbol=EQUITY_SYMBOL,
         ),
     )
-    node.add_actor(actor)
 
+    node.add_actor(actor)
     if RUN_SECONDS is None:
         node.run()
         return
@@ -189,6 +191,7 @@ def main() -> None:
     asyncio.run(run_for(node, RUN_SECONDS))
 
     print(f"PolyBolt samples received in {RUN_SECONDS}s:")
+
     for type_name in (*REQUIRED_TYPES, PolymarketEquityPrice.__name__):
         print(f"  {type_name}: {actor.counts.get(type_name, 0)}")
 

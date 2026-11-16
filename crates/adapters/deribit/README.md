@@ -8,8 +8,9 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Deribit](https://www.deribit.com) derivatives exchange.
 
-The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket) and data
-models for the official **Deribit API v2**.
+The `nautilus-deribit` crate provides live market data, historical requests, and order execution for
+options, futures, perpetuals, spot, and combo instruments. It includes typed HTTP and WebSocket
+clients, instrument loading, and live-node factories for the **Deribit API v2**.
 
 Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (not REST).
 WebSocket is preferred for subscriptions and real-time data.
@@ -18,15 +19,19 @@ The official Deribit API reference can be found at <https://docs.deribit.com/>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/deribit.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `arrow`: Enables Apache Arrow data support.
 - `examples`: Enables the crate's example binaries.
@@ -38,7 +43,10 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-deribit) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-deribit)
+- [Integration guide](../../../docs/integrations/deribit.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/deribit/)
 
 ## License
 

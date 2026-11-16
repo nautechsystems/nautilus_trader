@@ -73,6 +73,7 @@ def algo_requests() -> Iterator[tuple[OKXHttpClient, list[dict[str, object]]]]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), AlgoRequestHandler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
+
     client = OKXHttpClient(
         api_key="test_key",
         api_secret="test_secret",
@@ -80,6 +81,7 @@ def algo_requests() -> Iterator[tuple[OKXHttpClient, list[dict[str, object]]]]:
         base_url=f"http://127.0.0.1:{server.server_port}",
         max_retries=0,
     )
+
     try:
         yield client, requests
     finally:

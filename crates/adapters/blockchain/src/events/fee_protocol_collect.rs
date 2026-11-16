@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolIdentifier, SharedChain, SharedDex, data::PoolFeeProtocolCollect},
@@ -34,6 +34,8 @@ pub struct FeeProtocolCollectEvent {
     pub pool_identifier: PoolIdentifier,
     /// The block number in which this event was included.
     pub block_number: u64,
+    /// The hash of the block containing this event, when the source log reported it.
+    pub block_hash: Option<B256>,
     /// The unique hash identifier of the transaction containing this event.
     pub transaction_hash: String,
     /// The position of this transaction within the block.
@@ -58,6 +60,7 @@ impl FeeProtocolCollectEvent {
         dex: SharedDex,
         pool_identifier: PoolIdentifier,
         block_number: u64,
+        block_hash: Option<B256>,
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
@@ -70,6 +73,7 @@ impl FeeProtocolCollectEvent {
             dex,
             pool_identifier,
             block_number,
+            block_hash,
             transaction_hash,
             transaction_index,
             log_index,

@@ -78,11 +78,13 @@ async def main() -> None:
             max_retries=0,
         ),
     )
+
     try:
         async with asyncio.timeout(DISCOVERY_SECONDS):
             instrument = await discover(client)
     finally:
         client.cancel()
+
     config = FinFeedDataClientConfig(
         instruments=[FinFeedInstrumentSelection("POLYMARKET", [str(instrument.raw_symbol)])],
         attempt_budget=NODE_ATTEMPTS,
@@ -92,6 +94,7 @@ async def main() -> None:
         poll_interval_ms=60_000,
         connect_timeout_secs=45,
     )
+
     node = (
         LiveNode.builder("FINFEED-DISCOVERY", TraderId("TESTER-001"), Environment.LIVE)
         .with_load_state(False)

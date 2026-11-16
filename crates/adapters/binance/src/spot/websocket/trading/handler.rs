@@ -527,8 +527,7 @@ impl BinanceSpotWsTradingHandler {
                         let subscription_id = json
                             .get("result")
                             .and_then(|r| r.get("subscriptionId"))
-                            .map(|v| v.to_string())
-                            .unwrap_or_default();
+                            .map_or_default(|v| v.to_string());
                         log::debug!("User data stream subscribed: id={subscription_id}");
                         self.emit(BinanceSpotWsTradingMessage::UserDataSubscribed {
                             subscription_id,

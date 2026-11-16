@@ -46,6 +46,7 @@ async def main() -> None:
         ],
     )
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
+
     client_config = ib.InteractiveBrokersDataClientConfig(
         host=host,
         port=port,

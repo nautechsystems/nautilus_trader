@@ -744,9 +744,6 @@ async fn terminal_error_preserves_queued_book_depth() {
             include_str!("../../test_data/ws_error_credential.json"),
         )
         .await;
-        // Queue within the transport's graceful-disconnect interval, before retirement completes
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        subscribe_book_depth(&mut client, BookType::L2_MBP, Some(10)).unwrap();
 
         loop {
             if matches!(socket.next().await.unwrap().unwrap(), Message::Close(_)) {
@@ -754,6 +751,8 @@ async fn terminal_error_preserves_queued_book_depth() {
             }
         }
 
+        subscribe_book_depth(&mut client, BookType::L2_MBP, Some(10)).unwrap();
+        socket.flush().await.unwrap();
         drop(socket);
         let mut replacement = accept(&ws_listener).await;
         assert_eq!(next_text(&mut replacement).await, HELLO_BOOK20);
@@ -1316,9 +1315,6 @@ async fn book_restart_discards_paused_symbol_retained_period() {
         send(&mut socket, &book("book", 3, Some(false), &[("84000.00", "2")], &[])).await;
         let removal = next_text(&mut socket).await;
 
-        // An update sent before CoinAPI applied the removal restores the period during the pause,
-        // after the client discarded it at the removal
-        tokio::time::sleep(Duration::from_millis(300)).await;
         send(&mut socket, &ohlcv(1, "84523.68")).await;
         next_text(&mut socket).await;
         send(&mut socket, &book("book", 1, Some(true), &[("84000.00", "3")], &[])).await;

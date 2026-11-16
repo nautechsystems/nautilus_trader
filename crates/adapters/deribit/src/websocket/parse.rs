@@ -134,40 +134,10 @@ fn parse_snapshot_level(
     side: &str,
     instrument_name: &str,
 ) -> Option<(Decimal, Decimal)> {
-    let (price_val, amount_val) = if level.len() >= 3 {
-        let price = deserialize_decimal_token_borrowed(level[1])
-            .ok()
-            .or_else(|| {
-                log::warn!(
-                    "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
-                );
-                None
-            })?;
-
-        let amount = deserialize_decimal_token_borrowed(level[2]).ok().or_else(|| {
-            log::warn!(
-                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
-            );
-            None
-        })?;
-        (price, amount)
+    let (price_index, amount_index) = if level.len() >= 3 {
+        (1, 2)
     } else if level.len() >= 2 {
-        let price = deserialize_decimal_token_borrowed(level[0])
-            .ok()
-            .or_else(|| {
-                log::warn!(
-                    "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
-                );
-                None
-            })?;
-
-        let amount = deserialize_decimal_token_borrowed(level[1]).ok().or_else(|| {
-            log::warn!(
-                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
-            );
-            None
-        })?;
-        (price, amount)
+        (0, 1)
     } else {
         log::warn!(
             "Invalid {side} format at index {index} for {instrument_name}: expected 2-3 elements, was {}",
@@ -175,6 +145,24 @@ fn parse_snapshot_level(
         );
         return None;
     };
+
+    let price_val = deserialize_decimal_token_borrowed(level[price_index])
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+
+    let amount_val = deserialize_decimal_token_borrowed(level[amount_index])
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
 
     if price_val <= Decimal::ZERO {
         log::warn!(
@@ -321,15 +309,7 @@ pub fn parse_book_snapshot(
     }
 
     if let Some(last) = deltas.last_mut() {
-        *last = OrderBookDelta::new(
-            last.instrument_id,
-            last.action,
-            last.order,
-            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
-            last.sequence,
-            last.ts_event,
-            last.ts_init,
-        );
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(OrderBookDeltas::new(instrument_id, deltas))
@@ -399,15 +379,7 @@ pub fn parse_book_delta(
 
     // Set F_LAST flag on the last delta
     if let Some(last) = deltas.last_mut() {
-        *last = OrderBookDelta::new(
-            last.instrument_id,
-            last.action,
-            last.order,
-            RecordFlag::F_LAST as u8,
-            last.sequence,
-            last.ts_event,
-            last.ts_init,
-        );
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(OrderBookDeltas::new(instrument_id, deltas))
@@ -2858,6 +2830,62 @@ mod tests {
                     BookAction::Add,
                     Some(OrderSide::Buy),
                     Price::from("42499.5"),
+                    Quantity::from("10"),
+                    1,
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::short_level(serde_json::json!([42500.0]))]
+    #[case::invalid_price(serde_json::json!(["new", "not-a-price", 10.0]))]
+    #[case::invalid_amount(serde_json::json!(["new", 42500.0, "not-an-amount"]))]
+    #[case::zero_price(serde_json::json!(["new", 0.0, 10.0]))]
+    #[case::negative_price(serde_json::json!(["new", -1.0, 10.0]))]
+    fn test_parse_book_snapshot_skips_invalid_levels(#[case] invalid_level: serde_json::Value) {
+        let instrument = perpetual_instrument_with_increments("0.5", "1");
+        let json = load_test_json("ws_book_snapshot.json");
+        let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        response["params"]["data"]["bids"] =
+            serde_json::json!([invalid_level, ["new", 42500.0, 10.0],]);
+        response["params"]["data"]["asks"] = serde_json::json!([]);
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
+
+        let deltas = parse_book_snapshot(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        let actual: Vec<_> = deltas
+            .deltas
+            .iter()
+            .map(|delta| {
+                (
+                    delta.action,
+                    delta.order.side,
+                    delta.order.price,
+                    delta.order.size,
+                    delta.order.order_id,
+                    delta.flags,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    BookAction::Clear,
+                    None,
+                    Price::from("0"),
+                    Quantity::from("0"),
+                    0,
+                    RecordFlag::F_SNAPSHOT as u8,
+                ),
+                (
+                    BookAction::Add,
+                    Some(OrderSide::Buy),
+                    Price::from("42500"),
                     Quantity::from("10"),
                     1,
                     RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,

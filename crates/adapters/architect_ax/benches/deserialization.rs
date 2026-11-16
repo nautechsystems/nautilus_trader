@@ -82,5 +82,37 @@ fn bench_direct_struct_deser(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_md_parse, bench_direct_struct_deser);
+fn bench_md_parse_compact(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ax_md_parse_compact");
+
+    for (name, raw) in [
+        ("book_l1", MD_BOOK_L1),
+        ("book_l2", MD_BOOK_L2),
+        ("book_l3", MD_BOOK_L3),
+        ("trade", MD_TRADE),
+        ("ticker", MD_TICKER),
+        ("heartbeat", MD_HEARTBEAT),
+    ] {
+        // Preserve the leading type tag so compact frames exercise the wire fast path
+        let compact: String = raw.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&compact).unwrap(),
+            serde_json::from_str::<serde_json::Value>(raw).unwrap(),
+        );
+        assert!(compact.starts_with("{\"t\":\""));
+        parse_md_message(&compact).unwrap();
+        group.bench_function(name, |b| {
+            b.iter(|| parse_md_message(black_box(&compact)).unwrap());
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_md_parse,
+    bench_direct_struct_deser,
+    bench_md_parse_compact,
+);
 criterion_main!(benches);

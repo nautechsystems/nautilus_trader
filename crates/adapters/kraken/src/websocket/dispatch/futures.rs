@@ -39,7 +39,7 @@ use super::{
     fill_report_to_order_filled, resolve_client_order_id,
 };
 use crate::{
-    common::lookup_instrument_in_snapshot,
+    common::{lookup_instrument_in_snapshot, parse::parse_venue_order_id},
     websocket::futures::{
         messages::{
             KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
@@ -85,6 +85,17 @@ pub fn open_orders_delta(
         return;
     };
 
+    let Ok(venue_order_id) = parse_venue_order_id(
+        &delta.order.order_id,
+        format_args!(
+            "futures order delta, cli_ord_id={:?}, is_cancel={}",
+            delta.order.cli_ord_id, delta.is_cancel
+        ),
+    )
+    .inspect_err(|e| log::error!("{e}")) else {
+        return;
+    };
+
     // Cache instrument and qty by venue order id so cancel-only messages
     // (which arrive without the order body) can be reconstructed for the
     // external fallback path.
@@ -122,6 +133,7 @@ pub fn open_orders_delta(
                 cancel_tracked(
                     delta,
                     client_order_id,
+                    venue_order_id,
                     &identity,
                     instrument,
                     state,
@@ -135,6 +147,7 @@ pub fn open_orders_delta(
             delta_tracked(
                 delta,
                 client_order_id,
+                venue_order_id,
                 &identity,
                 instrument,
                 state,
@@ -178,6 +191,7 @@ pub fn open_orders_delta(
 fn delta_tracked(
     delta: &KrakenFuturesOpenOrdersDelta,
     client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
     instrument: &InstrumentAny,
     state: &WsDispatchState,
@@ -185,7 +199,6 @@ fn delta_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
     let ts_event = millis_to_nanos(delta.order.last_update_time);
     let Ok(new_filled) = Quantity::from_decimal_dp(delta.order.filled, instrument.size_precision())
     else {
@@ -288,6 +301,7 @@ fn delta_tracked(
 fn cancel_tracked(
     delta: &KrakenFuturesOpenOrdersDelta,
     client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
     instrument: &InstrumentAny,
     state: &WsDispatchState,
@@ -295,7 +309,6 @@ fn cancel_tracked(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
     let ts_event = millis_to_nanos(delta.order.last_update_time);
 
     let Ok(venue_filled) =
@@ -378,7 +391,16 @@ pub fn open_orders_cancel(
         return;
     }
 
-    let venue_order_id = VenueOrderId::new(&cancel.order_id);
+    let Ok(venue_order_id) = parse_venue_order_id(
+        &cancel.order_id,
+        format_args!(
+            "futures open orders cancel, cli_ord_id={:?}",
+            cancel.cli_ord_id
+        ),
+    )
+    .inspect_err(|e| log::error!("{e}")) else {
+        return;
+    };
     let resolved_id = cancel
         .cli_ord_id
         .as_ref()

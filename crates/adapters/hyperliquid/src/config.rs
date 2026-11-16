@@ -22,11 +22,37 @@ use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 
 use crate::common::{
     consts::{info_url, ws_url},
-    enums::HyperliquidEnvironment,
+    enums::{HyperliquidEnvironment, HyperliquidProductType},
 };
+
+/// Venue source for the shared Hyperliquid order book.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::EnumString,
+)]
+pub enum HyperliquidBookFeed {
+    /// Documented full-snapshot feed.
+    #[default]
+    #[serde(rename = "l2Book")]
+    #[strum(serialize = "l2Book")]
+    L2Book,
+    /// Compact snapshot/update feed used by the web application.
+    #[serde(rename = "l2")]
+    #[strum(serialize = "l2")]
+    L2,
+}
 
 /// Configuration for the Hyperliquid data client.
 ///
@@ -58,9 +84,14 @@ pub struct HyperliquidDataClientConfig {
     pub base_url_http: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Order book source, fixed for the client lifetime (`l2Book` by default).
+    #[builder(default)]
+    pub book_feed: HyperliquidBookFeed,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
+    ///
+    /// Also bounds each complete instrument request, including time queued behind another refresh.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// WebSocket timeout in seconds.
@@ -176,6 +207,10 @@ impl HyperliquidDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidExecutionClientConfig {
+    /// Products covered by order commands, private reports, and reconciliation.
+    /// Defaults to all products. Account balances remain account-wide.
+    #[builder(default = HyperliquidProductType::iter().collect())]
+    pub product_types: Vec<HyperliquidProductType>,
     /// Account identifier for the execution client.
     #[builder(default = AccountId::from("HYPERLIQUID-001"))]
     pub account_id: AccountId,
@@ -257,6 +292,7 @@ pub struct HyperliquidExecutionClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
+    product_types: Vec<HyperliquidProductType>,
     account_id: AccountId,
     vault_address: Option<String>,
     account_address: Option<String>,
@@ -284,6 +320,11 @@ impl Default for HyperliquidExecutionClientConfig {
 
 impl HyperliquidExecutionClientConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.product_types.is_empty(),
+            "Execution product_types must not be empty"
+        );
+
         if let Some(timeout_secs) = self.scheduled_cancel_timeout_secs
             && (timeout_secs < 15 || timeout_secs.checked_mul(1_000).is_none())
         {
@@ -326,6 +367,53 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_execution_product_scope_default_and_toml() {
+        let defaults = HyperliquidExecutionClientConfig::default();
+        assert_eq!(
+            defaults.product_types,
+            vec![
+                HyperliquidProductType::Perp,
+                HyperliquidProductType::Spot,
+                HyperliquidProductType::Outcome,
+            ]
+        );
+        let config: HyperliquidExecutionClientConfig =
+            toml::from_str("product_types = ['SPOT']").unwrap();
+        assert_eq!(config.product_types, vec![HyperliquidProductType::Spot]);
+        config.validate().unwrap();
+        let restored: HyperliquidExecutionClientConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored.product_types, config.product_types);
+    }
+
+    #[rstest]
+    fn test_execution_product_scope_rejects_empty() {
+        let config = HyperliquidExecutionClientConfig::builder()
+            .product_types(vec![])
+            .build();
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("must not be empty")
+        );
+    }
+
+    #[rstest]
+    fn data_book_feed_defaults_and_round_trips() {
+        let default: HyperliquidDataClientConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.book_feed, HyperliquidBookFeed::L2Book);
+        let compact: HyperliquidDataClientConfig =
+            serde_json::from_str(r#"{"book_feed":"l2"}"#).unwrap();
+        assert_eq!(compact.book_feed, HyperliquidBookFeed::L2);
+        assert_eq!(serde_json::to_value(compact).unwrap()["book_feed"], "l2");
+        assert!(
+            serde_json::from_str::<HyperliquidDataClientConfig>(r#"{"book_feed":"fast"}"#).is_err()
+        );
+    }
 
     #[rstest]
     #[case::disabled(None, true)]

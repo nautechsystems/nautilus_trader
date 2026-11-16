@@ -123,7 +123,10 @@ from each snapshot. The adapter does not reconstruct depth snapshots from increm
 Delta and interval subscriptions retain the existing channel selection: requests in `[1, 50]` select
 the 50-level channel when the configured VIP level permits it, otherwise the public 400-level `books`
 channel. Other depths select a 400-level channel. The `rpi` parameter selects `books-rpi` when true.
-Channel access remains subject to OKX account permissions.
+Channel access remains subject to OKX account permissions. Selecting `vip_level` at VIP4 or above requires
+complete API credentials, supplied in config or through the corresponding environment variables. The adapter
+logs in on the public socket before subscribing to `books50-l2-tbt` or `books-l2-tbt`. Lower tiers use an
+unauthenticated public socket. Setting a VIP level does not grant the corresponding venue permission.
 
 Within each client, native depth consumers share one requested limit per instrument, including
 unmanaged subscriptions. A conflicting requested depth is rejected.
@@ -387,12 +390,12 @@ Example:
 ### Common questions
 
 **Q: How do I know which contract type to use?**
-A: Linear and inverse instruments have distinct symbols. The public Python configs do not expose a
-contract-type filter, so the adapter loads both for the selected derivative instrument types.
+A: Linear and inverse instruments have distinct symbols. Set `contract_types=[OKXContractType.LINEAR]`
+or `[OKXContractType.INVERSE]` on either client config to filter discovery. `None` or an empty list loads both.
 
 **Q: How do I load event contracts?**
-A: Use `OKXInstrumentType.EVENTS`. The public Python configs load all discoverable event contract
-series and do not expose a series filter.
+A: Use `OKXInstrumentType.EVENTS`. Set `instrument_families` to event series IDs to limit discovery,
+or leave it unset to load all discoverable series. See [Instrument filters](#instrument-filters).
 
 ## Retail price improvement (RPI)
 
@@ -502,10 +505,12 @@ replace the order's client ID.
 ### RPI minimum notional
 
 RPI maker orders must meet both the instrument's `minSz` and the
-[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-08-18-rpi-maker-minimum-notional-amount):
+[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-09-15-rpi-maker-minimum-notional-amount-thresholds),
+effective 15 September 2026:
 
-- `SWAP` and `FUTURES`: 10,000 USD.
-- `SPOT`: 1,000 USD.
+- `SPOT`: 500 USD.
+- `FUTURES`: 2,000 USD.
+- `SWAP`: 5,000 USD.
 - `EVENTS`: exempt from the RPI minimum notional.
 
 OKX rejects an order below the applicable notional threshold with `54051`. The execution client emits
@@ -723,13 +728,19 @@ Relevant OKX docs:
 | ------------- | --------------------- | ----------------------------------------------------- |
 | `post_only`   | ✓                     | Only for limit orders.                                |
 | `reduce_only` | ✓                     | See the product and position-mode restrictions below. |
+| `display_qty` | -                     | Ignored; orders are sent without a display quantity.  |
 
-The adapter sends OKX's literal `reduceOnly` field for margin orders in `isolated` or `cross`
-trade mode and for futures or swap orders in `net` position mode. In `long/short` position mode,
+Low-level requests explicitly typed `MARGIN` support OKX's literal `reduceOnly` field in `isolated`
+or `cross` trade mode. Futures and swaps use it in `net` position mode. In `long/short` position mode,
 OKX does not accept that field. The adapter uses the closing `side` and `posSide` combination as
-the enforcing venue instruction instead. It rejects reduce-only orders for cash, option, and event
-products, and rejects a long/short-mode combination that would increase the selected side. See
+the enforcing venue instruction instead. Low-level clients deny a long/short-mode combination
+that would increase the selected side. See
 OKX's [place order documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
+The execution client denies reduce-only orders for spot, option, and event products locally with
+`UNSUPPORTED_REDUCE_ONLY`. Spot denial applies in `cash`, `cross`, and `isolated` trade modes.
+For spot closes, pass `reduce_only=False` to `close_position()` or set
+`market_exit_reduce_only=False` for market exits.
 
 ### Time in force
 
@@ -753,7 +764,7 @@ order expiration by canceling the order at the specified expiry time.
 | Operation    | Linear perpetual swap | Notes                                     |
 | ------------ | --------------------- | ----------------------------------------- |
 | Batch Submit | ✓                     | Submit multiple orders in single request. |
-| Batch Modify | ✓                     | Modify multiple orders in single request. |
+| Batch Modify | ✓                     | Sent as individual amend requests.        |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
 Regular-order batch cancels split repeated targets into separate WebSocket requests so each reply
@@ -766,12 +777,22 @@ See [Cancel-all routing](../concepts/execution/index.md#cancel-all-routing) for 
 
 With `strategy_only=False` and an `order_side`, the adapter selects matching open orders from the cache
 across strategies. It sends regular orders through batch cancellation and conditional and spread orders
-through their individual-order cancellation APIs. This bypasses venue mass cancellation, including when
-the Rust configuration option `use_mm_mass_cancel` is `true`.
+through their individual-order cancellation APIs.
 
 Side-filtered cancellation excludes orders absent from the cache and orders still in `SUBMITTED` state.
-Without a side filter, ordinary non-spread cancellation also uses cached open orders by default. Spread
-instruments and the Rust mass-cancel option use venue bulk endpoints.
+Without a side filter, ordinary non-spread cancellation also uses cached open orders. Spread instruments
+use the venue bulk endpoint.
+
+OKX still documents its
+[WebSocket mass cancel API](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order).
+It cancels only pending market maker protection (MMP) orders within an option instrument family in
+Portfolio Margin mode and requires explicit MMP permission. OKX's
+[MMP access instructions](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-mmp) direct users to
+apply through `institutional@okx.com` or their account manager; they do not specify a minimum VIP tier.
+
+Keep the Rust config option `use_mm_mass_cancel` set to `false`. Setting it to `true` fails validation,
+even for accounts with MMP permission, because the adapter submits ordinary orders that the MMP endpoint
+does not cancel.
 
 ### Rejection reasons
 
@@ -785,14 +806,31 @@ reports only its code, such as `OKX error 51008`, because OKX sends only a `fail
 Local modify and cancel refusals proven not sent produce `OrderModifyDenied` or `OrderCancelDenied`.
 They carry the adapter's own message and no OKX error code.
 
+`LIMIT` orders with non-positive prices produce `OrderDenied` with reason code `PRICE_NOT_POSITIVE`
+before submission. With loaded instrument metadata, prices that require rounding to its price precision
+or do not align with its price increment produce `VALIDATION_FAILED`.
+Spread orders and single-order `px_usd` or `px_vol` placeholders skip these checks (see [pricing modes](#pricing-modes)).
+
 ### Position management
 
 | Feature          | Linear perpetual swap | Notes                                |
 | ---------------- | --------------------- | ------------------------------------ |
-| Query positions  | ✓                     | Real-time position updates.          |
+| Query positions  | ✓                     | HTTP position snapshots.             |
+| Stream positions | ✓                     | WebSocket position reports.          |
 | Position mode    | ✓                     | Net vs Long/Short mode (see below).  |
 | Leverage control | -                     | Not exposed by the execution client. |
 | Margin mode      | ✓                     | Supports isolated and cross modes.   |
+
+The execution client subscribes to event-driven position updates for configured `MARGIN`, `SWAP`,
+`FUTURES`, and `OPTION` instrument types. With `SPOT`, setting `use_spot_margin=True` also subscribes
+to `MARGIN` positions. Streamed reports compare venue exposure with cached positions and log mismatches;
+they do not update cached positions. Each report restarts the `position_check_threshold_ms` grace window
+for periodic position checks. The subscription disables timer-driven pushes, which would repeatedly
+restart that window.
+
+See [instrument filters](#instrument-filters) for instrument recovery and buffering limits.
+Mismatch logs can be transient: order and position updates can arrive out of order, and startup reports
+can precede initial reconciliation.
 
 #### Position modes
 
@@ -902,11 +940,14 @@ for alternatives.
 
 The Python execution config selects trade modes as follows:
 
-| Instrument | Trade mode | Configuration                                     |
-| ---------- | ---------- | ------------------------------------------------- |
-| Spot       | `cash`     | Automatic.                                        |
-| Derivative | `isolated` | Default, or `margin_mode=OKXMarginMode.ISOLATED`. |
-| Derivative | `cross`    | `margin_mode=OKXMarginMode.CROSS`.                |
+| Instrument         | Trade mode | Configuration                                                         |
+| ------------------ | ---------- | --------------------------------------------------------------------- |
+| Cash spot          | `cash`     | Default for `SPOT` without spot margin.                               |
+| Margin spot        | `isolated` | Enable spot margin; default, or `margin_mode=OKXMarginMode.ISOLATED`. |
+| Margin spot        | `cross`    | Enable spot margin and set `margin_mode=OKXMarginMode.CROSS`.         |
+| Swap/future/option | `isolated` | Default, or `margin_mode=OKXMarginMode.ISOLATED`.                     |
+| Swap/future/option | `cross`    | `margin_mode=OKXMarginMode.CROSS`.                                    |
+| Event contract     | `isolated` | Always, independently of `margin_mode`.                               |
 
 ```python
 from nautilus_trader.adapters.okx import OKXExecutionClientConfig
@@ -922,13 +963,12 @@ exec_config = OKXExecutionClientConfig(
 )
 ```
 
-The Python config selects `cash` for spot, which requires Spot or Futures account mode.
-For Multi-currency or Portfolio margin, submit spot orders with `params={"td_mode": "cross"}`.
-In a mixed client, `margin_mode` applies to derivatives only. The factory derives the Nautilus account type
-for accounting; it does not change OKX's `acctLv`.
-
-In Rust, `use_spot_margin=true` applies `margin_mode` to spot too. Set `OKXMarginMode::Cross`
-for Multi-currency or Portfolio margin; `None` defaults to `Isolated`, which these modes do not support.
+Cash spot requires Spot or Futures account mode. For Multi-currency or Portfolio margin, enable spot
+margin and select `CROSS`; `None` defaults to `ISOLATED`, which these account modes do not support.
+Selecting `MARGIN` or setting `use_spot_margin=True` applies `margin_mode` to spot orders throughout that
+client and selects Nautilus margin accounting. Use separate clients if cash and margin spot orders need
+different defaults. The factory derives the Nautilus account type for accounting; it does not change OKX's
+`acctLv`. Rust configs follow the same rules.
 
 :::warning
 **Manual trade mode override**: You can override the trade mode per order with
@@ -938,6 +978,7 @@ Multi-currency or Portfolio margin mode.
 
 Only use manual override for requirements that cannot be met through configuration.
 For long/short derivative orders, the override must match the configured margin mode.
+For event contracts, only `isolated` is accepted.
 :::
 
 ### Order querying
@@ -1148,8 +1189,14 @@ Only limit-style orders are supported. OKX does not allow market orders for opti
 | `MARKET`          | -         | Rejected by the adapter before reaching the API. |
 | `MARKET_TO_LIMIT` | -         | Rejected by the adapter before reaching the API. |
 
-Options support FOK and IOC time-in-force. OKX uses a dedicated `op_fok` order type for options FOK orders.
-The adapter handles this mapping automatically.
+Options limit orders support FOK and IOC time-in-force. The adapter sends `fok` for FOK orders through
+both HTTP and WebSocket APIs, as listed in the
+[place-order request parameters](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order).
+OKX reports `op_fok` for simple-options orders; the adapter continues to parse these as limit FOK orders.
+
+Options trading requires account activation. Error `51198` indicates that the account must activate
+options through the OKX app or website. This account restriction differs from an invalid `ordType`
+rejection or an accepted FOK order that cancels because liquidity cannot fill its full quantity.
 
 Conditional/algo orders (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
 `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`) are not supported for options and are denied.
@@ -1261,10 +1308,9 @@ Greeks.
 ### Configuration
 
 :::warning
-Option discovery requires at least one `instrument_families` value, for example `BTC-USD`.
-Pass it to `OKXDataClientConfig` when loading options from Python. The public Python execution
-config constructor does not expose this field, so selecting `OKXInstrumentType.OPTION` only on
-`OKXExecutionClientConfig` skips option loading and logs a warning.
+Selecting `OKXInstrumentType.OPTION` requires a non-empty `instrument_families` list on both
+`OKXDataClientConfig` and `OKXExecutionClientConfig`, for example `["BTC-USD"]`. Missing or empty
+families fail config validation before the client connects.
 :::
 
 ## Event contracts
@@ -1276,8 +1322,9 @@ in the instrument `info` field under the keys `series_id`, `inst_category`,
 
 ### Loading event contract instruments
 
-Use `OKXInstrumentType.EVENTS` in the data or execution client config. The adapter requests the
-event contract series list, then requests instruments for each series.
+Use `OKXInstrumentType.EVENTS` in the data or execution client config. Without `instrument_families`, the adapter requests
+the event contract series list, then requests instruments for each series. When families are set, it uses
+those values directly as series IDs.
 
 ```python
 from nautilus_trader.adapters.okx import OKXDataClientConfig
@@ -1420,8 +1467,8 @@ data_config = OKXDataClientConfig(region=OKXRegion.EEA)
 ```
 
 `region` selects the regional defaults, and combines with `environment` to pick the demo
-hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http` and
-`base_url_ws` overrides always take precedence over the region defaults.
+hosts (for example `wseeapap.okx.com` for EEA demo). Explicit `base_url_http`, `base_url_ws_public`,
+`base_url_ws_private`, and `base_url_ws_business` overrides always take precedence over the region defaults.
 
 ## Funding rates
 
@@ -1456,6 +1503,12 @@ The data engine rejects a request that sets both `update_catalog` and `limit` be
 A truncated request fails with the reason `OKX page limit reached before the start of the window`. For bars
 and funding rates, request the window again in smaller parts with both `start` and `end` set. An HTTP error,
 or a bar or funding rate that fails to parse, fails the request with the error as the reason and without rows.
+
+Instrument requests answer with a completed `DataResponseEnvelope`, and `update_catalog` writes the definitions
+the catalog does not hold yet. A failed fetch of an instrument type, family, or the spreads, or a definition that
+fails to parse, fails `request_instruments` with the reason and the definitions it could read, which skips
+write-back. The adapter stamps definitions when it fetches them, after any `end` the request can set, so leave `end`
+unset on `request_instruments`: the data engine trims a response to its window, which would drop every definition.
 
 Each data type has its own page limits:
 
@@ -1592,6 +1645,20 @@ Values above 7 days are clamped to the longest complete window across the regula
 and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
 available from OKX.
 
+Order reconciliation, including startup, does not infer executions from order status. Executions retain
+the venue trade IDs and fees provided by private updates or fill reports. Queries do not request
+additional fill history. Reconciliation accepts orders while fills are missing, including open orders at
+startup, and applies the venue fills it can obtain. Missing executions and dependent terminal transitions
+remain unresolved when history coverage is incomplete.
+
+To recover missing private executions at runtime, enable `LiveExecutionEngineConfig.open_check_interval_secs`.
+Set `open_check_open_only` to `false` to include terminal orders in bulk reports. In open-only mode,
+missing orders outside in-flight recovery can still produce terminal reports through targeted queries.
+Open-order checks and targeted follow-up queries request fills when a reported filled quantity exceeds the
+cached quantity. Missing fills and dependent status transitions remain unresolved while venue fill reports
+are unavailable or incomplete.
+See [Fill reconciliation](../concepts/execution/reconciliation.md#fill-reconciliation).
+
 Periodic position checks treat an absent report as flat only for configured derivative instrument types.
 Spot, margin, and spread instruments do not have complete bulk position coverage, so an absent report
 does not close their cached positions. Spot-margin positions that OKX reports still reconcile normally.
@@ -1629,11 +1696,11 @@ marking reports incomplete does not restore that recovery coverage.
 ### Unacknowledged submissions
 
 OKX defines `50004` and `51149` as [unknown request outcomes](https://my.okx.com/docs-v5/en/#error-code).
-The adapter leaves these submissions unresolved, but the default execution policy can still resolve
-them locally when reconciliation checks exhaust. OKX does not enable submission retention automatically.
+The adapter leaves these submissions unresolved. The OKX client does not enable submission retention itself;
+the default `RetainUnresolved` execution policy preserves them when reconciliation checks exhaust.
 
-To retain unacknowledged submissions, including those with no response, select the existing engine
-policy when constructing the node:
+To resolve unacknowledged submissions locally after recovery exhaustion, select `ResolveLocally` when
+constructing the node:
 
 ```rust
 use nautilus_live::{
@@ -1642,50 +1709,111 @@ use nautilus_live::{
 };
 
 let exec_engine = LiveExecutionEngineConfig {
-    submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+    submission_recovery_policy: SubmissionRecoveryPolicy::ResolveLocally,
     ..Default::default()
 };
 ```
 
-This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. Exhaustion
-publishes `SubmissionRecoveryExhausted` once and preserves the submission identity for later authoritative
-evidence without resubmitting the order. See
+This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded. With the
+default retention policy, exhaustion publishes `SubmissionRecoveryExhausted` once and preserves the submission
+identity for later authoritative evidence without resubmitting the order. See
 [submission recovery](../concepts/execution/reconciliation.md#submission-recovery) for confirmation and
 query-budget rules. Retained submissions still unresolved at the node's `delay_post_stop` boundary produce an
-[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown. The
-policy does not change timeout resolution for commands on already accepted orders, provide crash-durable
-recovery, or prove that positions are flat.
+[incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown) after teardown.
+When a cancel or update on an already accepted order times out, the retention policy restores the order's
+prior status and does not close it. The policy does not provide crash-durable recovery or prove that
+positions are flat.
+
+### Request expiry
+
+Set `order_request_ttl_ms` on the execution client config to send OKX's
+[`expTime`](https://www.okx.com/docs-v5/en/#overview-transaction-timeouts) on WebSocket place and amend
+requests, single and batch. OKX does not process a request once its server time is past `expTime`. The
+default `None` omits `expTime`, and `0` is rejected.
+
+```python
+OKXExecutionClientConfig(
+    account_id=AccountId("OKX-001"),
+    order_request_ttl_ms=5_000,
+)
+```
+
+- The adapter sets `expTime` to the local time plus the TTL when it builds the request. Time spent waiting
+  for rate limits or a WebSocket reconnect counts against the TTL, so a request delayed past it reaches OKX
+  expired and is rejected.
+- `expTime` is compared with OKX's clock, not the local one. Allow for clock skew when choosing the TTL.
+
+Algo and spread orders do not carry `expTime`.
 
 ## Configuration
+
+### Instrument filters
+
+`instrument_types` selects the supported products. `instrument_families` limits option, futures, and swap
+discovery by family, and event discovery by series ID. It does not filter spot or margin instruments.
+`OPTION` requires at least one family. A non-empty family list cannot combine `EVENTS` with options,
+futures, or swaps because series IDs and derivative families have different meanings; use separate clients.
+Family entries must be non-blank, and selection lists must not contain duplicates.
+
+`contract_types` filters discovery by `LINEAR` or `INVERSE`. Non-inverse products, including spot,
+margin, and event contracts, count as `LINEAR`; an inverse-only filter excludes them. `None` and empty
+filter lists impose no restriction, except that options still require families. `OKXContractType.NONE`
+is a venue metadata placeholder and matches no instruments. Execution discovery fails if a selected type or
+family has no usable instruments after filtering.
+
+At connect and reconciliation, execution family and contract filters do not hide current orders or positions
+within the selected instrument types. The execution client fetches missing definitions for current exposure and targeted queries.
+It prepares current-order and position definitions before opening private streams when filters are set.
+Connect fails if those queries fail or a required active instrument cannot be recovered. Reconciliation
+also fails if it cannot recover a required active instrument. Historical rows with missing
+definitions mark history incomplete without triggering instrument lookups. These filters do not add unselected
+product types to reconciliation.
+
+Private streams retain order, fill, algo, spread, and position updates while fetching missing instrument
+definitions. Updates resume in arrival order for each instrument after the core cache registers its definition.
+For non-spread instruments, recovery also loads the numeric codes needed to submit, amend, and cancel orders.
+Other instruments continue processing during recovery. Recovery uses the configured HTTP retry policy and
+continues across transport reconnects. Pending registration ends when the client stops; it has no separate timeout
+because startup can buffer instrument registration until other execution clients finish connecting.
+
+Recovery retains at most 10,000 update rows across all instruments and recovers up to 64 instruments
+concurrently. A failed lookup, an unavailable registration channel, or queue overflow marks the client
+disconnected and logs the failure. If the core cache rejects a
+definition, updates can remain pending until a matching registration, queue overflow, or shutdown.
+Shutdown reports any incomplete recovery;
+a later session does not replay the abandoned updates. Periodic checks on `LiveExecutionEngineConfig` can
+reconcile current exposure, but do not replay missed updates. Both `open_check_interval_secs` and
+`position_check_interval_secs` are off by default.
 
 ### Data client
 
 The OKX data client provides the following Python configuration options.
 
-| Option                             | Default                    | Description                                                                    |
-| ---------------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
-| `instrument_types`                 | `[OKXInstrumentType.SPOT]` | OKX instrument types to load.                                                  |
-| `instrument_families`              | `None`                     | Required for options (`BTC-USD`); filters futures, swaps, and events when set. |
-| `load_spreads`                     | `False`                    | Loads live spread instruments.                                                 |
-| `base_url_http`                    | `None`                     | Override for the OKX REST endpoint.                                            |
-| `base_url_ws_public`               | `None`                     | Override for the public WebSocket URL.                                         |
-| `base_url_ws_business`             | `None`                     | Override for the business WebSocket URL.                                       |
-| `api_key`                          | `None`                     | Falls back to `OKX_API_KEY` when unset.                                        |
-| `api_secret`                       | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                     |
-| `api_passphrase`                   | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                            |
-| `environment`                      | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                           |
-| `region`                           | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                        |
-| `http_timeout_secs`                | `60`                       | REST market data request timeout.                                              |
-| `max_retries`                      | `3`                        | Retry attempts for recoverable REST errors.                                    |
-| `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                 |
-| `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                             |
-| `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.        |
-| `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
-| `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
-| `book_snapshot_timeout_secs`       | `10`                       | Initial, reconnect, and recovery snapshot wait.                                |
-| `vip_level`                        | `None`                     | Enables higher-depth books by VIP tier.                                        |
-| `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                         |
-| `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                   |
+| Option                             | Default                    | Description                                                                                                   |
+| ---------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `instrument_types`                 | `[OKXInstrumentType.SPOT]` | OKX instrument types to load.                                                                                 |
+| `instrument_families`              | `None`                     | Required for options; derivative families or event series IDs.                                                |
+| `contract_types`                   | `None`                     | Discovery filter: `LINEAR` or `INVERSE`.                                                                      |
+| `load_spreads`                     | `False`                    | Loads live spread instruments.                                                                                |
+| `base_url_http`                    | `None`                     | Override for the OKX REST endpoint.                                                                           |
+| `base_url_ws_public`               | `None`                     | Override for the public WebSocket URL.                                                                        |
+| `base_url_ws_business`             | `None`                     | Override for the business WebSocket URL.                                                                      |
+| `api_key`                          | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                                       |
+| `api_secret`                       | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                                                    |
+| `api_passphrase`                   | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                                           |
+| `environment`                      | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                                          |
+| `region`                           | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                                       |
+| `http_timeout_secs`                | `60`                       | Timeout per REST attempt; see [HTTP retries](#http-retries).                                                  |
+| `max_retries`                      | `3`                        | Retry attempts for recoverable REST errors.                                                                   |
+| `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                                                |
+| `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                                                            |
+| `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.                                       |
+| `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                                                    |
+| `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                                                        |
+| `book_snapshot_timeout_secs`       | `10`                       | Initial, reconnect, and recovery snapshot wait.                                                               |
+| `vip_level`                        | `None`                     | Selects book channels; VIP4+ requires credentials. See [Order book subscriptions](#order-book-subscriptions). |
+| `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                                                        |
+| `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                                                  |
 
 Set `book_stale_check_interval_secs` or `book_stale_threshold_secs` to `0` to disable stale-feed warnings. Set
 `book_snapshot_timeout_secs` to `0` to disable snapshot deadlines, as described in
@@ -1694,7 +1822,7 @@ Set `book_stale_check_interval_secs` or `book_stale_threshold_secs` to `0` to di
 
 Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
-`OPTION` from Python.
+`OPTION`.
 
 Spread instruments use `load_spreads` instead of `instrument_types` because OKX serves them from
 `/api/v5/sprd/spreads`.
@@ -1706,6 +1834,8 @@ The OKX execution client provides the following Python configuration options.
 | Option                             | Default                    | Description                                                                              |
 | ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `instrument_types`                 | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                           |
+| `instrument_families`              | `None`                     | Required for options; derivative families or event series IDs.                           |
+| `contract_types`                   | `None`                     | Discovery filter: `LINEAR` or `INVERSE`.                                                 |
 | `load_spreads`                     | `False`                    | Loads live spread instruments.                                                           |
 | `account_id`                       | Required                   | Nautilus account ID for the client.                                                      |
 | `oms_type`                         | `None`                     | Optional OMS override for the client.                                                    |
@@ -1717,25 +1847,36 @@ The OKX execution client provides the following Python configuration options.
 | `api_passphrase`                   | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                      |
 | `environment`                      | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                     |
 | `region`                           | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                  |
+| `use_spot_margin`                  | `False`                    | Applies `margin_mode` to spot; also enabled by `MARGIN`.                                 |
 | `margin_mode`                      | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
 | `spot_trade_quote_ccy`             | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
-| `http_timeout_secs`                | `60`                       | REST trading request timeout.                                                            |
-| `max_retries`                      | `3`                        | Recoverable REST retries; order submissions and algo amendments send once.               |
+| `http_timeout_secs`                | `60`                       | Timeout per REST attempt; see [HTTP retries](#http-retries).                             |
+| `max_retries`                      | `3`                        | Recoverable REST retries; see [HTTP retries](#http-retries).                             |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                           |
 | `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                                       |
 | `auth_timeout_secs`                | `None`                     | Override WebSocket authentication timeout.                                               |
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                             |
 | `max_reconciliation_history_pages` | `None`                     | Pages per startup history query, capped at 50; `0` skips history.                        |
+| `order_request_ttl_ms`             | `None`                     | Place and amend request TTL, sent as `expTime`; see [Request expiry](#request-expiry).   |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
-`OPTION` from Python.
+`OPTION`.
 
 Spread instruments use OKX spread IDs instead of `instrument_types`. Load them with `load_spreads=True` on the
 data and execution clients before trading them.
 
 See [USD to USDC spot migration](#usd-to-usdc-spot-migration) for `spot_trade_quote_ccy`.
+
+### HTTP retries
+
+`http_timeout_secs` bounds each attempt. The total retry budget, including requests and backoff, is
+`max(180, http_timeout_secs)` seconds. The budget can end before `max_retries` is reached. Order
+submissions, algo amendments and cancels, and spread cancels send once.
+
+`retry_delay_initial_ms` must be positive, and `retry_delay_max_ms` must be at least the initial delay
+and fit the supported backoff duration. These constraints also apply when `max_retries=0`.
 
 ### Manual endpoint overrides
 

@@ -15,7 +15,10 @@
 
 use std::num::NonZeroUsize;
 
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{
+    Params, UUID4, UnixNanos,
+    correctness::{CorrectnessResult, check_positive_u64},
+};
 use nautilus_model::{
     data::{BarType, DataType, option_chain::StrikeRange},
     enums::BookType,
@@ -1309,7 +1312,16 @@ pub struct SubscribeOptionChain {
 }
 
 impl SubscribeOptionChain {
-    /// Creates a new [`SubscribeOptionChain`] instance.
+    // panics-doc-ok
+    /// Creates a checked option-chain subscription command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot interval is zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if both client and venue are absent.
     #[expect(
         clippy::too_many_arguments,
         reason = "constructor exposes the option chain subscription fields"
@@ -1323,9 +1335,14 @@ impl SubscribeOptionChain {
         client_id: Option<ClientId>,
         venue: Option<Venue>,
         params: Option<Params>,
-    ) -> Self {
+    ) -> CorrectnessResult<Self> {
         check_client_id_or_venue(&client_id, &venue);
-        Self {
+
+        if let Some(interval) = snapshot_interval_ms {
+            check_positive_u64(interval, "snapshot_interval_ms")?;
+        }
+
+        Ok(Self {
             series_id,
             strike_range,
             snapshot_interval_ms,
@@ -1335,6 +1352,74 @@ impl SubscribeOptionChain {
             venue,
             correlation_id: None,
             params,
-        }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::types::Price;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(1))]
+    #[case(Some(250))]
+    fn test_option_chain_command_preserves_valid_inputs(#[case] interval: Option<u64>) {
+        let series_id = OptionSeriesId::new_derived(
+            Venue::from("DERIBIT"),
+            "BTC".into(),
+            "USD".into(),
+            UnixNanos::from(37),
+        );
+        let range = StrikeRange::Fixed(vec![Price::from("50000.00")]);
+        let command_id = UUID4::new();
+        let command = SubscribeOptionChain::new(
+            series_id,
+            range.clone(),
+            interval,
+            command_id,
+            UnixNanos::from(19),
+            Some(ClientId::from("SOURCE")),
+            Some(Venue::from("DERIBIT")),
+            None,
+        )
+        .unwrap();
+        assert_eq!(command.series_id, series_id);
+        assert_eq!(command.strike_range, range);
+        assert_eq!(command.snapshot_interval_ms, interval);
+        assert_eq!(command.command_id, command_id);
+        assert_eq!(command.ts_init, UnixNanos::from(19));
+        assert_eq!(command.client_id, Some(ClientId::from("SOURCE")));
+        assert_eq!(command.venue, Some(Venue::from("DERIBIT")));
+        assert_eq!(command.correlation_id, None);
+        assert_eq!(command.params, None);
+    }
+
+    #[rstest]
+    fn test_option_chain_command_rejects_zero_interval() {
+        let series_id = OptionSeriesId::new_derived(
+            Venue::from("DERIBIT"),
+            "BTC".into(),
+            "USD".into(),
+            UnixNanos::from(37),
+        );
+        let error = SubscribeOptionChain::new(
+            series_id,
+            StrikeRange::Fixed(vec![]),
+            Some(0),
+            UUID4::new(),
+            UnixNanos::from(19),
+            None,
+            Some(Venue::from("DERIBIT")),
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid u64 for 'snapshot_interval_ms' not positive, was 0",
+        );
     }
 }

@@ -81,23 +81,21 @@ fn modify_action(
 
 // Returns the resting (oid, limit_px) entries under `cloid_hex` from frontendOpenOrders
 fn resting_for_cloid(open: &Value, cloid_hex: &str) -> Vec<(u64, String)> {
-    open.as_array()
-        .map(|orders| {
-            orders
-                .iter()
-                .filter(|o| o.get("cloid").and_then(Value::as_str) == Some(cloid_hex))
-                .filter_map(|o| {
-                    let oid = o.get("oid").and_then(Value::as_u64)?;
-                    let px = o
-                        .get("limitPx")
-                        .and_then(Value::as_str)
-                        .unwrap_or("?")
-                        .to_string();
-                    Some((oid, px))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    open.as_array().map_or_default(|orders| {
+        orders
+            .iter()
+            .filter(|o| o.get("cloid").and_then(Value::as_str) == Some(cloid_hex))
+            .filter_map(|o| {
+                let oid = o.get("oid").and_then(Value::as_u64)?;
+                let px = o
+                    .get("limitPx")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?")
+                    .to_string();
+                Some((oid, px))
+            })
+            .collect()
+    })
 }
 
 async fn post_and_log(
@@ -237,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("burst converged to ONE resting order (no dupes): {resting:?}"),
     );
     let want = base + Decimal::from(5);
-    let final_px = resting.first().map(|r| r.1.clone()).unwrap_or_default();
+    let final_px = resting.first().map_or_default(|r| r.1.clone());
     report(
         &mut pass,
         final_px.parse::<Decimal>().ok() == Some(want),

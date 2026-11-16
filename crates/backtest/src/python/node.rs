@@ -390,6 +390,7 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
         "EmaCross" => Some(register_ema_cross),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        "OrderBookImbalance" => Some(super::engine::register_orderbook_imbalance),
         _ => None,
     }
 }
@@ -459,6 +460,7 @@ mod tests {
     #[case("EmaCross")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
+    #[case("OrderBookImbalance")]
     fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
         assert!(super::builtin_strategy_register(type_name).is_some());
     }

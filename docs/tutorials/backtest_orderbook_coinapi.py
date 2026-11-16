@@ -18,41 +18,33 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.13, 3.14, or 3.15 and NautilusTrader 2.x with the CoinAPI adapter.
-#   For Python 3.13 or 3.14, run `pip install -U --pre nautilus_trader`.
-#   For Python 3.15, use a [source build](../getting_started/installation.md#from-source)
-#   or [development wheel](../getting_started/installation.md#development-wheels).
-#   Install the data packages with `pip install boto3 pandas`.
+# - Python 3.13, 3.14, or 3.15.
+# - NautilusTrader 2.x with the CoinAPI adapter: `pip install -U --pre nautilus_trader`.
+# - pandas: `pip install pandas`.
 # - A CoinAPI key with Flat Files access and sufficient usage credits for
 #   the first download. Listing and downloading files incur charges; see
 #   [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
-# - The sibling
-#   [`orderbook_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_imbalance.py)
-#   file. Keep it beside this tutorial when downloading or converting it
-#   with Jupytext.
 #
 # From a source checkout, run the tutorial from the repository root after
 # building the Python extension:
 #
 # ```bash
-# uv run --project python --no-sync --with boto3 --with pandas \
+# uv run --project python --no-sync --with pandas \
 #     python docs/tutorials/backtest_orderbook_coinapi.py
 # ```
 
 # %%
+import asyncio
 import os
-import shutil
 from decimal import Decimal
 from getpass import getpass
 from hashlib import file_digest
 from pathlib import Path
 from tempfile import mkdtemp
 
-import boto3
 import pandas as pd
-from botocore.config import Config
 
-from nautilus_trader.adapters.coinapi import stream_coinapi_deltas
+from nautilus_trader.adapters.coinapi import CoinApiDataLoader
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
@@ -61,7 +53,6 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import DataEngineConfig
-from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
@@ -81,6 +72,7 @@ from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
 # %% [markdown]
@@ -96,13 +88,14 @@ from nautilus_trader.persistence import ParquetDataCatalog
 # when selecting another partition.
 #
 # The first run reads `COINAPI_API_KEY` or prompts for the key without
-# echoing it. CoinAPI uses that key as the S3 access key ID and the literal
-# `coinapi` as the secret access key; see
-# [S3 authentication](https://www.coinapi.io/products/flat-files/docs/s3-api/authentication?ref=nautilus).
+# echoing it. `CoinApiDataLoader` handles authentication and streams the
+# file to disk before making it available at the destination.
 # Files go under `NAUTILUS_DATA_DIR/CoinAPI`, which defaults to
 # `~/Downloads/Data/CoinAPI`.
 # The checksum pins the exact export used for the results below. A
 # mismatch stops the run before parsing; verify the file before replacing it.
+# In a notebook with an active event loop, replace
+# `asyncio.run(download_file())` below with `await download_file()`.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "CoinAPI"
@@ -113,24 +106,24 @@ OBJECT_KEY = (
 FILE_SHA256 = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4"
 filepath = DATA_DIR / OBJECT_KEY
 
+api_key = os.environ.get("COINAPI_API_KEY")
+if not filepath.is_file() and not api_key:
+    api_key = getpass("CoinAPI Flat Files API key: ")
+
+loader = CoinApiDataLoader(api_key=api_key)
+
+del api_key
+
+
+async def download_file() -> None:
+    """
+    Download the selected export through the configured loader.
+    """
+    await loader.download_flat_file("coinapi", OBJECT_KEY, filepath)
+
+
 if not filepath.is_file():
-    api_key = os.environ.get("COINAPI_API_KEY") or getpass("CoinAPI Flat Files API key: ")
-    client = boto3.client(
-        "s3",
-        endpoint_url="https://s3.flatfiles.coinapi.io",
-        region_name="us-east-1",
-        aws_access_key_id=api_key,
-        aws_secret_access_key="coinapi",  # noqa: S106 (CoinAPI's public signing constant)
-        config=Config(s3={"addressing_style": "path"}),
-    )
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    response = client.get_object(Bucket="coinapi", Key=OBJECT_KEY)
-    partial_path = filepath.with_suffix(".part")
-    with response["Body"] as source, partial_path.open("wb") as destination:
-        shutil.copyfileobj(source, destination)
-    partial_path.replace(filepath)
-    client.close()
-    del api_key, client, response
+    asyncio.run(download_file())
 
 with filepath.open("rb") as source:
     if file_digest(source, "sha256").hexdigest() != FILE_SHA256:
@@ -141,8 +134,8 @@ print(f"Data file: {filepath}")
 # %% [markdown]
 # ## Define the Lighter contract
 #
-# The CSV loader takes an explicit instrument ID. It does not need the
-# CoinAPI live client's instrument mapper, which does not support Lighter.
+# `CoinApiDataLoader` uses a registered instrument definition. It does not
+# need the live client's instrument mapper, which does not support Lighter.
 #
 # Use the native ID `ANTHROPIC-PERP.LIGHTER` and USDC for the quote and
 # settlement currency. `CryptoPerpetual` matches the native Lighter
@@ -160,6 +153,7 @@ print(f"Data file: {filepath}")
 
 # %%
 USDC = Currency.from_str("USDC")
+
 instrument = CryptoPerpetual(
     instrument_id=InstrumentId.from_str("ANTHROPIC-PERP.LIGHTER"),
     raw_symbol=Symbol("ANTHROPIC"),
@@ -178,6 +172,7 @@ instrument = CryptoPerpetual(
     ts_event=0,
     ts_init=0,
 )
+
 book_type = BookType.L2_MBP
 
 # %% [markdown]
@@ -187,6 +182,8 @@ book_type = BookType.L2_MBP
 # The loader emits a `CLEAR` and snapshot levels, followed by incremental
 # updates. `F_LAST` marks the end of each complete event.
 #
+# Register the contract with `CoinApiDataLoader` so every chunk uses its
+# price and size precision. Local loading requires no credentials.
 # Stream the entire file in its original order. Do not set a row `limit`:
 # it can cut a snapshot or update event short. Streaming chunks preserve
 # event boundaries and may exceed `chunk_size`. The loader derives the UTC
@@ -214,12 +211,12 @@ top_of_book_rows = []
 delta_count = 0
 nonpositive_spread_count = 0
 
-for chunk in stream_coinapi_deltas(
+loader.add_instrument(instrument)
+
+for chunk in loader.stream_book_deltas(
     filepath,
     instrument.id,
     chunk_size=100_000,
-    price_precision=instrument.price_precision,
-    size_precision=instrument.size_precision,
 ):
     if delta_count == 0:
         assert chunk[0].action == BookAction.CLEAR
@@ -280,8 +277,8 @@ print(f"Spread range: {top_of_book['spread'].min()} to {top_of_book['spread'].ma
 # price the strategy's market exit. Without them, it denies the closing
 # order with `MARKET_PRICE_UNAVAILABLE` and leaves the position open.
 #
-# Reuse `OrderBookImbalance` from the Binance and Bybit tutorials. When one
-# best-quote size is less than 20% of the other and the larger exceeds
+# Use the built-in Rust `OrderBookImbalance` through Python, as in the Binance and Bybit tutorials.
+# When one best-quote size is less than 20% of the other and the larger exceeds
 # one contract unit, the strategy submits a fill-or-kill limit order
 # against the thinner side. Each order is at most 0.01 contract units,
 # with at least one second between triggers. The strategy closes its
@@ -326,17 +323,13 @@ config = BacktestRunConfig(
     dispose_on_completion=False,
 )
 
-strategy_config = ImportableStrategyConfig(
-    strategy_path="orderbook_imbalance:OrderBookImbalance",
-    config_path="orderbook_imbalance:OrderBookImbalanceConfig",
-    config={
-        "instrument_id": str(instrument.id),
-        "book_type": book_type.name,
-        "max_trade_size": "0.01000",
-        "trigger_min_size": 1.0,
-        "trigger_imbalance_ratio": 0.20,
-        "min_seconds_between_triggers": 1.0,
-    },
+strategy_config = OrderBookImbalanceConfig(
+    instrument_id=instrument.id,
+    book_type=book_type,
+    max_trade_size=Quantity.from_str("0.01000"),
+    trigger_min_size=Decimal("1.0"),
+    trigger_imbalance_ratio=Decimal("0.20"),
+    min_seconds_between_triggers=1.0,
 )
 
 # %% [markdown]
@@ -361,7 +354,7 @@ strategy_config = ImportableStrategyConfig(
 # %%
 node = BacktestNode(configs=[config])
 node.build()
-node.add_strategy_from_config(config.id, strategy_config)
+node.add_builtin_strategy(config.id, "OrderBookImbalance", strategy_config)
 results = node.run()
 
 print(results)
@@ -398,7 +391,8 @@ node.dispose()
 # and native reports as the backtest above. Lines show successive states
 # as steps; fill markers show individual executions.
 #
-# ![ANTHROPIC best bid and ask with FOK and closing market fills][panel_book]
+# ![ANTHROPIC best bid and ask with FOK and closing market fills](
+# ./assets/backtest_orderbook_coinapi/panel_a_top_book.png)
 #
 # **Figure 1.** The FOK sells build the short position. One FOK buy reduces
 # it, and the final market buy closes it through six fills at the same
@@ -407,7 +401,8 @@ node.dispose()
 # include intermediate states lasting microseconds between recorded level
 # updates. This zero-latency strategy can fill at these prices.
 #
-# ![Full-hour spread and best-quote sizes on a logarithmic depth axis][panel_liquidity]
+# ![Full-hour spread and best-quote sizes on a logarithmic depth axis](
+# ./assets/backtest_orderbook_coinapi/panel_b_liquidity.png)
 #
 # **Figure 2.** Across all states, the spread is in `[0.1, 2.1]` USDC.
 # For states lasting at least one millisecond, it is in `[0.1, 0.9]` USDC.
@@ -416,12 +411,14 @@ node.dispose()
 # sizes vary across several orders of magnitude, so depth uses a
 # logarithmic axis. Sizes are contract units, not company shares.
 #
-# ![Net short position reaching 2.30689 units before closing flat][panel_position]
+# ![Net short position reaching 2.30689 units before closing flat](
+# ./assets/backtest_orderbook_coinapi/panel_c_position.png)
 #
 # **Figure 3.** Cumulative signed execution quantities show the short
 # reaching 2.30689 units. The final market order returns exposure to zero.
 #
-# ![Realized loss of 1.157298 USDC and final account balance][panel_pnl]
+# ![Realized loss of 1.157298 USDC and final account balance](
+# ./assets/backtest_orderbook_coinapi/panel_d_pnl.png)
 #
 # **Figure 4.** The account's total balance change gives realized PnL for
 # this zero-fee run. The final drop books the loss accumulated while
@@ -434,8 +431,8 @@ node.dispose()
 # Chrome-compatible browser. From a source checkout, run:
 #
 # ```bash
-# uv run --project python --no-sync --with boto3 --with pandas \
-#     --with plotly --with kaleido python docs/tutorials/render_coinapi_panels.py
+# uv run --project python --no-sync --with pandas --with plotly --with kaleido \
+#     python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 # ```
 #
 # If Kaleido reports that Chrome is missing, install its browser once with:
@@ -447,11 +444,6 @@ node.dispose()
 # The renderer runs this tutorial and writes PNGs to
 # `docs/tutorials/assets/backtest_orderbook_coinapi/`. It reuses the cached
 # export or follows the first-download procedure above.
-#
-# [panel_book]: ./assets/backtest_orderbook_coinapi/panel_a_top_book.png
-# [panel_liquidity]: ./assets/backtest_orderbook_coinapi/panel_b_liquidity.png
-# [panel_position]: ./assets/backtest_orderbook_coinapi/panel_c_position.png
-# [panel_pnl]: ./assets/backtest_orderbook_coinapi/panel_d_pnl.png
 
 # %% [markdown]
 # To test another hour, list its available objects and select the ANTHROPIC file

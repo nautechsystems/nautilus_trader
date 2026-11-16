@@ -237,7 +237,7 @@ impl From<MarginModelAny> for MarginModelHandle {
 /// Uses fixed margin percentages without leverage division.
 ///
 /// Margin is calculated as `notional_value * margin_rate`, ignoring the
-/// account leverage. Appropriate for traditional brokers where margin
+/// account leverage. Appropriate for execution providers where margin
 /// requirements are fixed percentages of notional value.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(

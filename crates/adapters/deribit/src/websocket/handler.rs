@@ -27,13 +27,20 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
-use futures_util::future::BoxFuture;
-use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
+use ahash::{AHashMap, AHashSet};
+use futures_util::{StreamExt, future::BoxFuture};
+use indexmap::IndexMap;
+use nautilus_common::{
+    cache::fifo::{FifoCache, FifoCacheMap},
+    live::dst::time::{Duration, Instant},
+};
 use nautilus_core::{
     AtomicSet, AtomicTime, UUID4, UnixNanos,
     string::secret::{SecretString, zeroize_json_value},
     time::get_atomic_clock_realtime,
+};
+use nautilus_live::book::{
+    BookSequenceOutcome, DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS, snapshot::SnapshotGate,
 };
 use nautilus_model::{
     data::{Bar, CustomData, Data, DataType, InstrumentStatus},
@@ -46,6 +53,8 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    reports::FillReport,
+    types::Currency,
 };
 use nautilus_network::{
     RECONNECTED,
@@ -57,6 +66,7 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::value::RawValue;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -84,6 +94,10 @@ use super::{
     },
 };
 use crate::{
+    book::{
+        recovery::{BookRecovery, recover},
+        sync::{BookKey, BookSyncTracker, UnsubscribedOutcome},
+    },
     common::{
         consts::{DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE, DERIBIT_WS_SUBSCRIPTION_KEY},
         enums::DeribitInstrumentState,
@@ -94,6 +108,9 @@ use crate::{
 
 // Deribit documents a 32 kB frame limit: https://docs.deribit.com/articles/errors
 const SUBSCRIPTION_REQUEST_MAX_BYTES: usize = 32_000;
+
+// Bounds replay and terminal tombstone caches only, never pending or active ownership
+const REPLAY_CACHE_CAPACITY: usize = 10_000;
 
 /// Type of pending request for request ID correlation.
 #[derive(Debug, Clone)]
@@ -163,10 +180,7 @@ pub enum HandlerCommand {
     /// Disconnect the WebSocket.
     Disconnect,
     /// Authenticate with credentials.
-    Authenticate {
-        /// Serialized auth params (DeribitAuthParams or DeribitRefreshTokenParams).
-        auth_params: SecretString,
-    },
+    Authenticate { auth_params: SecretString },
     /// Enable heartbeat with interval.
     SetHeartbeat { interval: u64 },
     /// Initialize the instrument cache.
@@ -224,6 +238,15 @@ pub enum HandlerCommand {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     },
+    /// Replace a book subscription for one recovery attempt.
+    RecoverBook {
+        instrument: Ustr,
+        channel: Option<String>,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), DeribitWsError>>,
+        recovery: Arc<BookRecovery>,
+    },
 }
 
 /// Context for an order submitted via this handler.
@@ -239,6 +262,12 @@ pub struct OrderContext {
     pub order_type: OrderType,
     pub accepted: bool,
     pub last_order_signature: Option<OrderSignature>,
+}
+
+#[derive(Debug, Clone)]
+struct TerminalOrderContext {
+    context: OrderContext,
+    late_fills_as_reports: bool,
 }
 
 /// Order fields used to identify a venue amendment.
@@ -267,20 +296,26 @@ pub struct DeribitWsFeedHandler {
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
     request_id_counter: AtomicU64,
     pending_requests: AHashMap<u64, PendingRequestType>,
+    book_recovery_requests: AHashMap<BookKey, AHashSet<u64>>,
     account_id: Option<AccountId>,
     order_contexts: AHashMap<VenueOrderId, OrderContext>,
-    submitted_order_contexts: FifoCacheMap<ClientOrderId, OrderContext, 10_000>,
+    // Pending submits stay owned until venue binding or a definitive terminal outcome
+    submitted_order_contexts: AHashMap<ClientOrderId, OrderContext>,
 
-    // Retain recent terminal identities so late trade frames stay on the order-event path
-    terminal_order_contexts: FifoCacheMap<VenueOrderId, OrderContext, 10_000>,
+    // Retain terminal ownership and whether later fills require report recovery
+    terminal_order_contexts:
+        FifoCacheMap<VenueOrderId, TerminalOrderContext, REPLAY_CACHE_CAPACITY>,
 
-    emitted_trades: FifoCache<(VenueOrderId, TradeId), 10_000>,
+    emitted_trades: FifoCache<(VenueOrderId, TradeId), REPLAY_CACHE_CAPACITY>,
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
     last_account_states: AHashMap<String, AccountState>,
     book_depth_subs: Arc<tokio::sync::Mutex<SubscriptionState>>,
-    book_sequence: AHashMap<Ustr, u64>,
-    pending_book_resync: Vec<String>,
+    book_sync: BookSyncTracker,
+    book_cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    book_snapshot_timeout: Duration,
+    book_stale_threshold: Duration,
+    book_monitor_last: Instant,
     pending_outgoing: VecDeque<NautilusWsMessage>,
     subscribe_errors: Arc<Mutex<Vec<String>>>,
 }
@@ -322,20 +357,36 @@ impl DeribitWsFeedHandler {
             index_price_subs,
             request_id_counter: AtomicU64::new(1),
             pending_requests: AHashMap::new(),
+            book_recovery_requests: AHashMap::new(),
             account_id,
             order_contexts: AHashMap::new(),
-            submitted_order_contexts: FifoCacheMap::new(),
+            submitted_order_contexts: AHashMap::new(),
             terminal_order_contexts: FifoCacheMap::new(),
             emitted_trades: FifoCache::new(),
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
             last_account_states: AHashMap::new(),
             book_depth_subs: Arc::new(tokio::sync::Mutex::new(SubscriptionState::new('.'))),
-            book_sequence: AHashMap::new(),
-            pending_book_resync: Vec::new(),
+            book_sync: BookSyncTracker::default(),
+            book_cmd_tx: None,
+            book_snapshot_timeout: Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+            book_stale_threshold: Duration::from_secs(120),
+            book_monitor_last: Instant::now(),
             pending_outgoing: VecDeque::new(),
             subscribe_errors,
         }
+    }
+
+    /// Wires book recovery to the handler command channel with the configured timers.
+    pub(crate) fn set_book_sync(
+        &mut self,
+        cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        snapshot_timeout: Duration,
+        stale_threshold: Duration,
+    ) {
+        self.book_cmd_tx = Some(cmd_tx);
+        self.book_snapshot_timeout = snapshot_timeout;
+        self.book_stale_threshold = stale_threshold;
     }
 
     /// Sets the account ID for order/fill reports.
@@ -353,21 +404,21 @@ impl DeribitWsFeedHandler {
         let pending_count = self.pending_requests.len();
         let bars_count = self.pending_bars.len();
         let account_count = self.last_account_states.len();
-        let book_count = self.book_sequence.len();
+        let book_count = self.book_sync.len();
         let outgoing_count = self.pending_outgoing.len();
 
         self.pending_requests.clear();
+        self.book_recovery_requests.clear();
         self.subscription_requests.clear();
         self.subscription_send = None;
         self.pending_bars.clear();
         self.last_account_states.clear();
-        self.book_sequence.clear();
-        self.pending_book_resync.clear();
+        self.book_sync.reset_on_reconnect();
         self.pending_outgoing.clear();
 
         log::debug!(
             "Reset state: pending_requests={pending_count}, pending_bars={bars_count}, \
-            account_states={account_count}, book_sequence={book_count}, \
+            account_states={account_count}, book_sync={book_count}, \
             pending_outgoing={outgoing_count}"
         );
     }
@@ -813,8 +864,18 @@ impl DeribitWsFeedHandler {
     /// Handles a subscribe command.
     ///
     /// Note: The client has already called `mark_subscribe` before sending this command.
-    fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
-        let result = self.queue_subscription_requests(channels, true);
+    fn handle_subscribe(&mut self, channels: &[String]) -> Result<Vec<u64>, DeribitWsError> {
+        let result = self.queue_subscription_requests(channels.to_vec(), true);
+        if result.is_ok() {
+            for channel in channels {
+                if let Some(key) = BookKey::for_channel(channel)
+                    && let Some(instrument_id) = book_instrument_id(channel)
+                {
+                    self.book_sync.record_subscription(key, instrument_id);
+                }
+            }
+        }
+
         if let Err(e) = &result {
             self.subscribe_errors.lock().push(e.to_string());
         }
@@ -823,7 +884,7 @@ impl DeribitWsFeedHandler {
     }
 
     /// Handles an unsubscribe command.
-    fn handle_unsubscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
+    fn handle_unsubscribe(&mut self, channels: Vec<String>) -> Result<Vec<u64>, DeribitWsError> {
         self.queue_subscription_requests(channels, false)
     }
 
@@ -831,7 +892,7 @@ impl DeribitWsFeedHandler {
         &mut self,
         channels: Vec<String>,
         subscribe: bool,
-    ) -> Result<(), DeribitWsError> {
+    ) -> Result<Vec<u64>, DeribitWsError> {
         let private = channels
             .iter()
             .any(|ch| DeribitWsChannel::requires_auth(ch));
@@ -844,8 +905,10 @@ impl DeribitWsFeedHandler {
         };
 
         let batches = subscription_batches(channels, &method)?;
+        let mut request_ids = Vec::with_capacity(batches.len());
         for channels in batches {
             let request_id = self.next_request_id();
+            request_ids.push(request_id);
 
             let request = DeribitJsonRpcRequest::new(
                 request_id,
@@ -865,7 +928,7 @@ impl DeribitWsFeedHandler {
             self.subscription_requests.push_back((request_id, payload));
         }
 
-        Ok(())
+        Ok(request_ids)
     }
 
     fn coalesce_subscriptions(&mut self, mut channels: Vec<String>) -> Vec<String> {
@@ -942,9 +1005,10 @@ impl DeribitWsFeedHandler {
         self.send_tracked_request(request_id, payload, None).await
     }
 
-    /// Handles a buy order command.
-    async fn handle_buy(
+    /// Handles an order submission command.
+    async fn handle_submit(
         &mut self,
+        order_side: OrderSide,
         params: DeribitOrderParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
@@ -955,12 +1019,16 @@ impl DeribitWsFeedHandler {
         let order_type = parse_deribit_order_type(&params.order_type);
         let order_signature = (params.amount, params.price, params.trigger_price);
 
-        let request =
-            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Buy.as_method_str(), params);
+        let (method, side) = match order_side {
+            OrderSide::Buy => (DeribitWsMethod::Buy, "buy"),
+            OrderSide::Sell => (DeribitWsMethod::Sell, "sell"),
+        };
+
+        let request = DeribitJsonRpcRequest::new(request_id, method.as_method_str(), params);
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
-        log::debug!("Sending buy order: request_id={request_id}");
+        log::debug!("Sending {side} order: request_id={request_id}");
         let sent = self.send_order_once(payload).await;
         if self.should_track_command(&sent) {
             self.track_submit(
@@ -970,46 +1038,7 @@ impl DeribitWsFeedHandler {
                     trader_id,
                     strategy_id,
                     instrument_id,
-                    order_side: OrderSide::Buy,
-                    order_type,
-                    accepted: false,
-                    last_order_signature: Some(order_signature),
-                },
-            );
-        }
-
-        sent
-    }
-
-    /// Handles a sell order command.
-    async fn handle_sell(
-        &mut self,
-        params: DeribitOrderParams,
-        client_order_id: ClientOrderId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-    ) -> Result<(), DeribitWsError> {
-        let request_id = self.next_request_id();
-        let order_type = parse_deribit_order_type(&params.order_type);
-        let order_signature = (params.amount, params.price, params.trigger_price);
-
-        let request =
-            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Sell.as_method_str(), params);
-        let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
-
-        log::debug!("Sending sell order: request_id={request_id}");
-        let sent = self.send_order_once(payload).await;
-        if self.should_track_command(&sent) {
-            self.track_submit(
-                request_id,
-                OrderContext {
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    order_side: OrderSide::Sell,
+                    order_side,
                     order_type,
                     accepted: false,
                     last_order_signature: Some(order_signature),
@@ -1205,18 +1234,28 @@ impl DeribitWsFeedHandler {
                     .insert(instrument.raw_symbol().inner(), *instrument);
             }
             HandlerCommand::Subscribe { channels } => {
-                if let Err(e) = self.handle_subscribe(channels) {
+                if let Err(e) = self.handle_subscribe(&channels) {
                     log::error!("Subscribe failed: {e}");
                 }
             }
             HandlerCommand::Unsubscribe { channels } => {
-                // User-initiated unsubscribe cancels any pending book resync
-                // for these channels so we don't re-subscribe against user intent
-                self.pending_book_resync.retain(|ch| !channels.contains(ch));
+                self.drop_released_book_tracking(&channels);
 
                 if let Err(e) = self.handle_unsubscribe(channels) {
                     log::error!("Unsubscribe failed: {e}");
                 }
+            }
+            HandlerCommand::RecoverBook {
+                instrument,
+                channel,
+                cancel,
+                gate,
+                completion,
+                recovery,
+            } => {
+                self.replace_book_subscription(
+                    instrument, channel, &cancel, gate, completion, &recovery,
+                );
             }
             HandlerCommand::Buy {
                 params,
@@ -1226,7 +1265,8 @@ impl DeribitWsFeedHandler {
                 instrument_id,
             } => {
                 if let Err(e) = self
-                    .handle_buy(
+                    .handle_submit(
+                        OrderSide::Buy,
                         params,
                         client_order_id,
                         trader_id,
@@ -1256,7 +1296,8 @@ impl DeribitWsFeedHandler {
                 instrument_id,
             } => {
                 if let Err(e) = self
-                    .handle_sell(
+                    .handle_submit(
+                        OrderSide::Sell,
                         params,
                         client_order_id,
                         trader_id,
@@ -1414,6 +1455,10 @@ impl DeribitWsFeedHandler {
                 if let Some(request_id) = response.id
                     && let Some(request_type) = self.pending_requests.remove(&request_id)
                 {
+                    for ids in self.book_recovery_requests.values_mut() {
+                        ids.remove(&request_id);
+                    }
+
                     match request_type {
                         PendingRequestType::Authenticate => {
                             if let Some(error) = &response.error {
@@ -1468,6 +1513,9 @@ impl DeribitWsFeedHandler {
                                     "Subscribe rejected: code={}, message={}",
                                     error.code, error.message,
                                 ));
+
+                                self.abort_book_replacements(&channels, error.code, &error.message);
+                                self.recover_rejected_book_subscriptions(&channels);
                             } else {
                                 let acknowledged = self.subscription_acknowledgements(
                                     request_id,
@@ -1479,6 +1527,7 @@ impl DeribitWsFeedHandler {
                                 for ch in acknowledged {
                                     self.subscriptions_state.confirm_subscribe(&ch);
                                     log::debug!("Subscription confirmed: {ch}");
+                                    self.confirm_book_subscription(&ch);
                                 }
                             }
                         }
@@ -1589,6 +1638,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        true,
                                                     );
                                                 }
                                                 return Some(NautilusWsMessage::OrderCanceled(
@@ -1760,6 +1810,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else {
                                                     self.bind_order_context(
@@ -2361,6 +2412,28 @@ impl DeribitWsFeedHandler {
                                         let strategy_id = context.strategy_id;
                                         let client_order_id = context.client_order_id;
 
+                                        let push_accepted = |
+                                            context: &mut OrderContext,
+                                            outgoing: &mut Vec<NautilusWsMessage>,
+                                        | {
+                                            if context.accepted {
+                                                return;
+                                            }
+
+                                            outgoing.push(NautilusWsMessage::OrderAccepted(
+                                                parse_order_accepted_with_client_order_id(
+                                                    order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    client_order_id,
+                                                    ts_init,
+                                                ),
+                                            ));
+                                            context.accepted = true;
+                                        };
+
                                         match event_type {
                                             OrderEventType::Accepted => {
                                                 // Skip if order already reached terminal state (race condition)
@@ -2406,21 +2479,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_canceled_with_client_order_id(
@@ -2435,7 +2494,11 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderCanceled: venue_order_id={venue_order_id}"
                                                 );
-                                                self.finish_order_context(venue_order_id, &context);
+                                                self.finish_order_context(
+                                                    venue_order_id,
+                                                    &context,
+                                                    true,
+                                                );
                                                 outgoing
                                                     .push(NautilusWsMessage::OrderCanceled(event));
                                             }
@@ -2450,21 +2513,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_expired_with_client_order_id(
@@ -2479,7 +2528,11 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderExpired: venue_order_id={venue_order_id}"
                                                 );
-                                                self.finish_order_context(venue_order_id, &context);
+                                                self.finish_order_context(
+                                                    venue_order_id,
+                                                    &context,
+                                                    true,
+                                                );
                                                 outgoing
                                                     .push(NautilusWsMessage::OrderExpired(event));
                                             }
@@ -2491,21 +2544,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_updated_with_client_order_id(
@@ -2535,6 +2574,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else if order.order_state == "rejected" {
                                                     log::debug!(
@@ -2543,11 +2583,13 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        true,
                                                     );
                                                 } else if was_terminal {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else {
                                                     log::trace!(
@@ -2714,6 +2756,9 @@ impl DeribitWsFeedHandler {
                 channels,
                 request_id
             );
+
+            self.abort_book_replacements(channels, error.code, &error.message);
+
             return;
         }
 
@@ -2727,18 +2772,7 @@ impl DeribitWsFeedHandler {
         for ch in &acknowledged {
             self.subscriptions_state.confirm_unsubscribe(ch);
             log::debug!("Unsubscription confirmed: {ch}");
-        }
-
-        if !self.pending_book_resync.is_empty() {
-            let desired = self.subscriptions_state.all_topics();
-            let resync: Vec<String> = acknowledged
-                .into_iter()
-                .filter(|ch| self.pending_book_resync.contains(ch) && desired.contains(ch))
-                .collect();
-
-            if !resync.is_empty() {
-                let _ = self.handle_subscribe(resync);
-            }
+            self.handle_book_unsubscribe_ack(ch);
         }
     }
 
@@ -2816,16 +2850,13 @@ impl DeribitWsFeedHandler {
         };
 
         if is_grouped_book_channel(channel) {
-            return match self.handle_grouped_book(channel, &book_msg, ts_init).await {
-                Ok(message) => message,
-                Err(e) => {
-                    log::error!(
-                        "Failed to parse book snapshot for {} on {channel}: {e}, waiting for the next snapshot",
-                        book_msg.instrument_name
-                    );
-                    None
-                }
-            };
+            return self.handle_grouped_book(channel, &book_msg, ts_init).await;
+        }
+
+        let key = BookKey::for_channel(channel)?;
+
+        if !self.book_sync.is_tracked(&key) {
+            return None;
         }
 
         let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
@@ -2837,48 +2868,55 @@ impl DeribitWsFeedHandler {
             return None;
         };
 
-        let inst_name = book_msg.instrument_name.as_str();
-        let awaiting_resync = self
-            .pending_book_resync
-            .iter()
-            .any(|ch| is_instrument_book_channel(ch, inst_name));
+        // Parse snapshots before accepting so a corrupt frame never completes an episode
+        if book_msg.msg_type == DeribitBookMsgType::Snapshot {
+            let deltas = match parse_book_msg(&book_msg, instrument, ts_init) {
+                Ok(deltas) => deltas,
+                Err(e) => {
+                    log::error!(
+                        "Failed to parse book snapshot for {}: {e}, requesting recovery",
+                        book_msg.instrument_name
+                    );
+                    self.reject_book_frame(&key, DeribitWsError::ParsingError(e.to_string()));
+                    return None;
+                }
+            };
 
-        if awaiting_resync && book_msg.msg_type == DeribitBookMsgType::Change {
-            return None;
+            return match self.book_sync.validate(
+                &key,
+                book_msg.msg_type,
+                book_msg.change_id,
+                book_msg.prev_change_id,
+                Instant::now(),
+            ) {
+                BookSequenceOutcome::Accept => Some(NautilusWsMessage::Deltas(deltas)),
+                BookSequenceOutcome::Suppress | BookSequenceOutcome::Recover => None,
+            };
         }
 
-        if book_msg.msg_type == DeribitBookMsgType::Change
-            && let Some(prev_id) = book_msg.prev_change_id
-            && let Some(&last_id) = self.book_sequence.get(&book_msg.instrument_name)
-            && prev_id != last_id
-        {
-            log::warn!(
-                "Book sequence gap for {}: expected prev_change_id={}, was {} \
-                - dropping delta, forcing resync",
-                book_msg.instrument_name,
-                last_id,
-                prev_id
-            );
-            self.resync_book(book_msg.instrument_name).await;
-            return None;
+        match self.book_sync.validate(
+            &key,
+            book_msg.msg_type,
+            book_msg.change_id,
+            book_msg.prev_change_id,
+            Instant::now(),
+        ) {
+            BookSequenceOutcome::Accept => {}
+            BookSequenceOutcome::Suppress => return None,
+            BookSequenceOutcome::Recover => {
+                self.start_book_recovery(&key);
+                return None;
+            }
         }
 
         match parse_book_msg(&book_msg, instrument, ts_init) {
-            Ok(deltas) => {
-                if awaiting_resync {
-                    self.pending_book_resync.retain(|ch| ch != channel);
-                }
-
-                self.book_sequence
-                    .insert(book_msg.instrument_name, book_msg.change_id);
-                Some(NautilusWsMessage::Deltas(deltas))
-            }
+            Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
             Err(e) => {
                 log::error!(
-                    "Failed to parse book message for {}: {e}, forcing resync",
+                    "Failed to parse book message for {}: {e}, requesting recovery",
                     book_msg.instrument_name
                 );
-                self.resync_book(book_msg.instrument_name).await;
+                self.reject_book_delta(&key, DeribitWsError::ParsingError(e.to_string()));
                 None
             }
         }
@@ -2889,12 +2927,35 @@ impl DeribitWsFeedHandler {
         channel: &str,
         book_msg: &DeribitBookMsg<'_>,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Option<NautilusWsMessage>> {
-        let depth_subs = self.book_depth_subs.lock().await;
-        let depth_refs = depth_subs.get_reference_count(channel);
-        let deltas_subscribed = self.subscriptions_state.get_reference_count(channel) > depth_refs;
+    ) -> Option<NautilusWsMessage> {
+        let (depth_refs, deltas_subscribed) = {
+            let depth_subs = self.book_depth_subs.lock().await;
+            let depth_refs = depth_subs.get_reference_count(channel);
+            let deltas_subscribed =
+                self.subscriptions_state.get_reference_count(channel) > depth_refs;
+            (depth_refs, deltas_subscribed)
+        };
+
         if depth_refs == 0 && !deltas_subscribed {
-            return Ok(None);
+            return None;
+        }
+
+        let key = BookKey::for_channel(channel)?;
+
+        if !self.book_sync.is_tracked(&key) {
+            return None;
+        }
+
+        // Grouped legs stream snapshots, but a contiguous change still advances them
+        if book_msg.msg_type == DeribitBookMsgType::Change
+            && !self.validate_book_frame(
+                &key,
+                book_msg.msg_type,
+                book_msg.change_id,
+                book_msg.prev_change_id,
+            )
+        {
+            return None;
         }
 
         let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
@@ -2902,20 +2963,44 @@ impl DeribitWsFeedHandler {
                 "Book snapshot instrument '{}' not found in cache",
                 book_msg.instrument_name
             );
-            return Ok(None);
+            return None;
         };
 
+        // Parse snapshots before accepting so a corrupt frame never completes an episode
         let depth = if depth_refs > 0 {
-            Some(parse_book_depth(book_msg, instrument, ts_init)?)
+            Some(parse_book_depth(book_msg, instrument, ts_init))
         } else {
             None
         };
 
         let deltas = if deltas_subscribed {
-            Some(parse_book_msg(book_msg, instrument, ts_init)?)
+            Some(parse_book_msg(book_msg, instrument, ts_init))
         } else {
             None
         };
+
+        let (depth, deltas) = self.parse_grouped_snapshot(
+            &key,
+            channel,
+            book_msg.instrument_name.as_str(),
+            depth,
+            deltas,
+        )?;
+
+        if book_msg.msg_type == DeribitBookMsgType::Snapshot
+            && !matches!(
+                self.book_sync.validate(
+                    &key,
+                    book_msg.msg_type,
+                    book_msg.change_id,
+                    book_msg.prev_change_id,
+                    Instant::now(),
+                ),
+                BookSequenceOutcome::Accept
+            )
+        {
+            return None;
+        }
 
         if let Some(depth) = depth {
             if let Some(deltas) = deltas {
@@ -2923,43 +3008,295 @@ impl DeribitWsFeedHandler {
                     .push_back(NautilusWsMessage::Deltas(deltas));
             }
 
-            return Ok(Some(NautilusWsMessage::Data(vec![Data::BookDepth(
-                Box::new(depth),
-            )])));
+            return Some(NautilusWsMessage::Data(vec![Data::BookDepth(Box::new(
+                depth,
+            ))]));
         }
 
-        Ok(deltas.map(NautilusWsMessage::Deltas))
+        deltas.map(NautilusWsMessage::Deltas)
     }
 
-    // Drops the book sequence and resubscribes the instrument's delta book channels; grouped
-    // channels recover from their next snapshot. Each channel stays in `pending_book_resync`
-    // until a snapshot on it converts, and deltas are dropped meanwhile.
-    async fn resync_book(&mut self, instrument_name: Ustr) {
-        self.book_sequence.remove(&instrument_name);
+    fn reject_book_frame(&mut self, key: &BookKey, error: DeribitWsError) {
+        if self.book_sync.reject_snapshot(key, error) == BookSequenceOutcome::Recover {
+            self.start_book_recovery(key);
+        }
+    }
 
-        let book_channels: Vec<String> = self
-            .subscriptions_state
-            .all_topics()
-            .into_iter()
-            .filter(|t| {
-                is_instrument_book_channel(t, &instrument_name) && !is_grouped_book_channel(t)
-            })
-            .collect();
+    fn reject_book_delta(&mut self, key: &BookKey, error: DeribitWsError) {
+        if self.book_sync.reject_delta(key, error) == BookSequenceOutcome::Recover {
+            self.start_book_recovery(key);
+        }
+    }
 
-        if book_channels.is_empty() {
+    fn start_book_recovery(&mut self, key: &BookKey) {
+        // Check what the replacement needs before claiming, so an early return leaves the
+        // book unowned and its next frame requests recovery again
+        if self.book_replacement_channels(key).is_empty() {
             return;
         }
 
-        for ch in &book_channels {
-            self.subscriptions_state.mark_failure(ch);
+        let Some(cmd_tx) = self.book_cmd_tx.clone() else {
+            return;
+        };
 
-            if !self.pending_book_resync.contains(ch) {
-                self.pending_book_resync.push(ch.clone());
-            }
+        let Some(recovery) = self.book_sync.claim(key) else {
+            return;
+        };
+
+        log::debug!("Starting book recovery for {key}");
+        let timeout = self.book_snapshot_timeout;
+        self.book_sync
+            .work
+            .push(recover(key.clone(), recovery, cmd_tx, timeout));
+    }
+
+    fn poll_book_recoveries(&mut self) {
+        if self.book_sync.is_empty() {
+            return;
         }
 
-        // Defer resubscribe until unsubscribe ack
-        let _ = self.handle_unsubscribe(book_channels);
+        let now = Instant::now();
+        let elapsed = now
+            .checked_duration_since(self.book_monitor_last)
+            .unwrap_or_default();
+
+        if elapsed < Duration::from_secs(1) {
+            return;
+        }
+
+        self.book_monitor_last = now;
+
+        for (key, signal) in
+            self.book_sync
+                .recoveries(self.book_stale_threshold, self.book_snapshot_timeout, now)
+        {
+            signal.log();
+            self.start_book_recovery(&key);
+        }
+    }
+
+    // Channels a replacement resubscribes for a book: every desired raw channel of a raw
+    // book, or the grouped channel itself while desired
+    fn book_replacement_channels(&self, key: &BookKey) -> Vec<String> {
+        match key {
+            BookKey::Raw(instrument) => self
+                .subscriptions_state
+                .all_topics()
+                .into_iter()
+                .filter(|t| {
+                    is_instrument_book_channel(t, instrument) && !is_grouped_book_channel(t)
+                })
+                .collect(),
+            BookKey::Grouped(channel) => {
+                if self.subscriptions_state.get_reference_count(channel) > 0 {
+                    vec![channel.clone()]
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+    }
+
+    // Whether another desired channel still feeds a book after `removed` goes away
+    fn book_key_still_desired(&self, key: &BookKey, removed: &str) -> bool {
+        match key {
+            BookKey::Raw(instrument) => self.subscriptions_state.all_topics().iter().any(|t| {
+                t != removed
+                    && is_instrument_book_channel(t, instrument)
+                    && !is_grouped_book_channel(t)
+            }),
+            BookKey::Grouped(_) => false,
+        }
+    }
+
+    // Recovery replacements unsubscribe without touching refcounts, so an unsubscribe
+    // command means the last consumer released the channel; drop tracking unless another
+    // desired channel still feeds the same book
+    fn drop_released_book_tracking(&mut self, channels: &[String]) {
+        for channel in channels {
+            if let Some(key) = BookKey::for_channel(channel)
+                && !self.book_key_still_desired(&key, channel)
+            {
+                self.book_sync.remove(&key);
+                self.book_recovery_requests.remove(&key);
+            }
+        }
+    }
+
+    fn replace_book_subscription(
+        &mut self,
+        instrument: Ustr,
+        channel: Option<String>,
+        cancel: &CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), DeribitWsError>>,
+        recovery: &Arc<BookRecovery>,
+    ) {
+        let key = match channel {
+            Some(channel) => BookKey::Grouped(channel),
+            None => BookKey::Raw(instrument),
+        };
+
+        let channels = self.book_replacement_channels(&key);
+
+        if channels.is_empty() || cancel.is_cancelled() {
+            return;
+        }
+
+        if !self
+            .book_sync
+            .begin_recovery_write(&key, recovery, gate, completion, channels.clone())
+        {
+            return;
+        }
+
+        // A new attempt supersedes prior attempts: drop their unacknowledged
+        // requests so late acks cannot drive this transition
+        self.retire_superseded_recovery_requests(&key);
+
+        match self.handle_unsubscribe(channels) {
+            Ok(ids) => self
+                .book_recovery_requests
+                .entry(key)
+                .or_default()
+                .extend(ids),
+            Err(e) => self.book_sync.abort_recovery_write(&key, e),
+        }
+    }
+
+    fn retire_superseded_recovery_requests(&mut self, key: &BookKey) {
+        // Ownership by request id: only this book's recovery-created requests are
+        // recorded, so user, initial, and other books' requests always survive
+        if let Some(ids) = self.book_recovery_requests.remove(key) {
+            for id in ids {
+                self.pending_requests.remove(&id);
+            }
+        }
+    }
+
+    fn abort_book_replacements(&mut self, channels: &[String], code: i64, message: &str) {
+        for channel in channels {
+            if let Some(key) = BookKey::for_channel(channel) {
+                self.book_sync.abort_recovery_write(
+                    &key,
+                    DeribitWsError::DeribitError {
+                        code,
+                        message: message.to_owned(),
+                    },
+                );
+            }
+        }
+    }
+
+    fn recover_rejected_book_subscriptions(&mut self, channels: &[String]) {
+        // A rejected initial subscribe never resolves its wait; recover those books
+        for channel in channels {
+            if let Some(key) = BookKey::for_channel(channel)
+                && self.book_sync.has_unacked_subscription(&key)
+            {
+                self.start_book_recovery(&key);
+            }
+        }
+    }
+
+    fn confirm_book_subscription(&mut self, channel: &str) {
+        if let Some(key) = BookKey::for_channel(channel) {
+            let timeout = self.book_snapshot_timeout;
+            self.book_sync.subscribed(&key, timeout, Instant::now());
+        }
+    }
+
+    fn handle_book_unsubscribe_ack(&mut self, channel: &str) {
+        let Some(key) = BookKey::for_channel(channel) else {
+            return;
+        };
+
+        let lost = DeribitWsError::Transport("book replacement lost before resubscribe".to_owned());
+
+        match self.book_sync.unsubscribed(&key, channel, lost) {
+            UnsubscribedOutcome::Resubscribe(pending) => {
+                let desired: Vec<String> = pending
+                    .into_iter()
+                    .filter(|channel| self.subscriptions_state.get_reference_count(channel) > 0)
+                    .collect();
+
+                if desired.is_empty() {
+                    self.book_sync.abort_recovery_write(
+                        &key,
+                        DeribitWsError::ClientError("book replacement cancelled".to_owned()),
+                    );
+                    self.book_sync.remove(&key);
+                } else {
+                    match self.handle_subscribe(&desired) {
+                        Ok(ids) => self
+                            .book_recovery_requests
+                            .entry(key.clone())
+                            .or_default()
+                            .extend(ids),
+                        Err(e) => self.book_sync.abort_recovery_write(&key, e),
+                    }
+                }
+            }
+            UnsubscribedOutcome::RejectRecovery => {
+                log::debug!("Book replacement lost for {key}, failing its attempt");
+            }
+            UnsubscribedOutcome::Ignored => {}
+        }
+    }
+
+    // Validate an incremental frame; a gap starts recovery and fails validation
+    fn validate_book_frame(
+        &mut self,
+        key: &BookKey,
+        msg_type: DeribitBookMsgType,
+        change_id: u64,
+        prev_change_id: Option<u64>,
+    ) -> bool {
+        match self
+            .book_sync
+            .validate(key, msg_type, change_id, prev_change_id, Instant::now())
+        {
+            BookSequenceOutcome::Accept => true,
+            BookSequenceOutcome::Suppress => false,
+            BookSequenceOutcome::Recover => {
+                self.start_book_recovery(key);
+                false
+            }
+        }
+    }
+
+    // Parse both legs of a grouped snapshot, requesting recovery when either fails conversion
+    fn parse_grouped_snapshot<T, U>(
+        &mut self,
+        key: &BookKey,
+        channel: &str,
+        instrument_name: &str,
+        depth: Option<anyhow::Result<T>>,
+        deltas: Option<anyhow::Result<U>>,
+    ) -> Option<(Option<T>, Option<U>)> {
+        let depth = match depth.transpose() {
+            Ok(depth) => depth,
+            Err(e) => {
+                log::error!(
+                    "Failed to parse grouped book snapshot for {instrument_name} on {channel}: {e}, requesting recovery",
+                );
+                self.reject_book_frame(key, DeribitWsError::ParsingError(e.to_string()));
+                return None;
+            }
+        };
+
+        let deltas = match deltas.transpose() {
+            Ok(deltas) => deltas,
+            Err(e) => {
+                log::error!(
+                    "Failed to parse grouped book snapshot for {instrument_name} on {channel}: {e}, requesting recovery",
+                );
+                self.reject_book_frame(key, DeribitWsError::ParsingError(e.to_string()));
+                return None;
+            }
+        };
+
+        Some((depth, deltas))
     }
 
     fn handle_order_submit_response(
@@ -3015,14 +3352,14 @@ impl DeribitWsFeedHandler {
 
         context.last_order_signature = Some(Self::order_signature(&order_response.order));
         if was_terminal {
-            self.finish_order_context(venue_order_id, &context);
+            self.finish_order_context(venue_order_id, &context, false);
         } else {
             self.bind_order_context(venue_order_id, context.clone());
         }
 
         if order_state == "rejected" {
             self.submitted_order_contexts.remove(&client_order_id);
-            self.finish_order_context(venue_order_id, &context);
+            self.finish_order_context(venue_order_id, &context, true);
             let due_post_only =
                 order_response.order.reject_reason.as_deref() == Some("post_only_reject");
             let reason = sanitize_strategy_reason(
@@ -3051,7 +3388,7 @@ impl DeribitWsFeedHandler {
             log::debug!(
                 "Deferring acceptance for fast-filled order until its trade arrives: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
             );
-            self.finish_order_context(venue_order_id, &context);
+            self.finish_order_context(venue_order_id, &context, false);
             return None;
         }
 
@@ -3106,7 +3443,11 @@ impl DeribitWsFeedHandler {
     ) -> Option<OrderContext> {
         self.order_contexts
             .get(&venue_order_id)
-            .or_else(|| self.terminal_order_contexts.get(&venue_order_id))
+            .or_else(|| {
+                self.terminal_order_contexts
+                    .get(&venue_order_id)
+                    .map(|terminal| &terminal.context)
+            })
             .cloned()
             .or_else(|| {
                 client_order_id.and_then(|client_order_id| {
@@ -3122,12 +3463,28 @@ impl DeribitWsFeedHandler {
         self.order_contexts.insert(venue_order_id, context);
     }
 
-    fn finish_order_context(&mut self, venue_order_id: VenueOrderId, context: &OrderContext) {
+    fn finish_order_context(
+        &mut self,
+        venue_order_id: VenueOrderId,
+        context: &OrderContext,
+        late_fills_as_reports: bool,
+    ) {
         self.order_contexts.remove(&venue_order_id);
         self.submitted_order_contexts
             .remove(&context.client_order_id);
+        let late_fills_as_reports = late_fills_as_reports
+            || self
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .is_some_and(|terminal| terminal.late_fills_as_reports);
+
+        let terminal = TerminalOrderContext {
+            context: context.clone(),
+            late_fills_as_reports,
+        };
+
         self.terminal_order_contexts
-            .insert(venue_order_id, context.clone());
+            .insert(venue_order_id, terminal);
     }
 
     fn route_user_trades(
@@ -3142,6 +3499,7 @@ impl DeribitWsFeedHandler {
 
         let mut outgoing = Vec::with_capacity(trades.len() + 1);
         let mut reports = Vec::new();
+        let mut completed_contexts = IndexMap::new();
 
         for trade in trades {
             let instrument_name = trade.instrument_name;
@@ -3166,87 +3524,139 @@ impl DeribitWsFeedHandler {
                     continue;
                 }
             };
-            let venue_order_id = report.venue_order_id;
-            let was_terminal = self.terminal_order_contexts.contains_key(&venue_order_id);
-            let Some(mut context) = self.find_order_context(venue_order_id, report.client_order_id)
-            else {
-                log::debug!(
-                    "Parsed external fill report: {} @ {}",
-                    report.trade_id,
-                    report.last_px
-                );
-                reports.push(report);
-                continue;
-            };
 
-            if !context.accepted {
-                outgoing.push(NautilusWsMessage::OrderAccepted(OrderAccepted::new(
-                    context.trader_id,
-                    context.strategy_id,
-                    context.instrument_id,
-                    context.client_order_id,
-                    venue_order_id,
-                    account_id,
-                    UUID4::new(),
-                    report.ts_event,
-                    report.ts_init,
-                    false,
-                )));
-                context.accepted = true;
+            self.route_user_trade(
+                trade,
+                report,
+                quote_currency,
+                &mut outgoing,
+                &mut reports,
+                &mut completed_contexts,
+            );
+        }
+
+        for (venue_order_id, context) in completed_contexts {
+            self.finish_order_context(venue_order_id, &context, true);
+        }
+
+        if !reports.is_empty() {
+            outgoing.push(NautilusWsMessage::FillReports(reports));
+        }
+
+        // Preserve order-context updates before suppressing duplicate trade output
+        outgoing.retain_mut(|message| match message {
+            NautilusWsMessage::OrderFilled(fill) => self
+                .emitted_trades
+                .insert((fill.venue_order_id, fill.trade_id)),
+            NautilusWsMessage::FillReports(reports) => {
+                reports.retain(|report| {
+                    self.emitted_trades
+                        .insert((report.venue_order_id, report.trade_id))
+                });
+
+                !reports.is_empty()
             }
+            _ => true,
+        });
 
+        outgoing
+    }
+
+    fn route_user_trade(
+        &mut self,
+        trade: &DeribitUserTradeMsg,
+        mut report: FillReport,
+        quote_currency: Currency,
+        outgoing: &mut Vec<NautilusWsMessage>,
+        reports: &mut Vec<FillReport>,
+        completed_contexts: &mut IndexMap<VenueOrderId, OrderContext>,
+    ) {
+        let venue_order_id = report.venue_order_id;
+        let terminal = self.terminal_order_contexts.get(&venue_order_id);
+        let was_terminal = terminal.is_some();
+        let late_fills_as_reports = terminal.is_some_and(|terminal| terminal.late_fills_as_reports);
+
+        let Some(mut context) = self.find_order_context(venue_order_id, report.client_order_id)
+        else {
             log::debug!(
-                "Parsed tracked fill event: {} @ {}",
+                "Parsed external fill report: {} @ {}",
                 report.trade_id,
                 report.last_px
             );
-            outgoing.push(NautilusWsMessage::OrderFilled(OrderFilled::new(
+            reports.push(report);
+            return;
+        };
+
+        if late_fills_as_reports {
+            report.client_order_id = Some(context.client_order_id);
+            log::debug!(
+                "Parsed post-terminal fill report: {} @ {}",
+                report.trade_id,
+                report.last_px
+            );
+            reports.push(report);
+            return;
+        }
+
+        if !reports.is_empty() {
+            outgoing.push(NautilusWsMessage::FillReports(std::mem::take(reports)));
+        }
+
+        let account_id = report.account_id;
+
+        if !context.accepted {
+            outgoing.push(NautilusWsMessage::OrderAccepted(OrderAccepted::new(
                 context.trader_id,
                 context.strategy_id,
                 context.instrument_id,
                 context.client_order_id,
                 venue_order_id,
                 account_id,
-                report.trade_id,
-                context.order_side,
-                context.order_type,
-                report.last_qty,
-                report.last_px,
-                quote_currency,
-                report.liquidity_side,
                 UUID4::new(),
                 report.ts_event,
                 report.ts_init,
                 false,
-                report.venue_position_id,
-                Some(report.commission),
-                None,
             )));
-
-            if was_terminal || trade.state == "filled" {
-                self.finish_order_context(venue_order_id, &context);
-            } else {
-                self.bind_order_context(venue_order_id, context);
-            }
+            context.accepted = true;
         }
 
-        // Preserve order-context updates before suppressing duplicate trade output
-        outgoing.retain(|message| match message {
-            NautilusWsMessage::OrderFilled(fill) => self
-                .emitted_trades
-                .insert((fill.venue_order_id, fill.trade_id)),
-            _ => true,
-        });
+        log::debug!(
+            "Parsed tracked fill event: {} @ {}",
+            report.trade_id,
+            report.last_px
+        );
+        outgoing.push(NautilusWsMessage::OrderFilled(OrderFilled::new(
+            context.trader_id,
+            context.strategy_id,
+            context.instrument_id,
+            context.client_order_id,
+            venue_order_id,
+            account_id,
+            report.trade_id,
+            context.order_side,
+            context.order_type,
+            report.last_qty,
+            report.last_px,
+            quote_currency,
+            report.liquidity_side,
+            UUID4::new(),
+            report.ts_event,
+            report.ts_init,
+            false,
+            report.venue_position_id,
+            Some(report.commission),
+            None,
+        )));
 
-        reports.retain(|report| {
-            self.emitted_trades
-                .insert((report.venue_order_id, report.trade_id))
-        });
-
-        if !reports.is_empty() {
-            outgoing.push(NautilusWsMessage::FillReports(reports));
+        if trade.state == "filled" {
+            completed_contexts.insert(venue_order_id, context.clone());
         }
-        outgoing
+
+        if was_terminal {
+            self.finish_order_context(venue_order_id, &context, false);
+        } else {
+            self.bind_order_context(venue_order_id, context);
+        }
     }
 
     /// Main message processing loop.
@@ -3255,6 +3665,9 @@ impl DeribitWsFeedHandler {
     /// Messages that need client-side handling (e.g., Reconnected) are returned.
     /// Data messages are sent directly to `out_tx` for the user stream.
     pub async fn next(&mut self) -> Option<NautilusWsMessage> {
+        // A persistent interval: recreating a sleep each pass would starve under traffic
+        let mut book_monitor = tokio::time::interval(tokio::time::Duration::from_millis(100));
+
         loop {
             if let Some(msg) = self.pending_outgoing.pop_front() {
                 match msg {
@@ -3305,6 +3718,9 @@ impl DeribitWsFeedHandler {
                         }
                         log::error!("Subscription request send failed: request_id={request_id}, {e}");
                     }
+                }
+                Some(_) = self.book_sync.work.next(), if !self.book_sync.work.is_empty() => {
+                    // Recovery ends once a snapshot is accepted or the episode is cancelled
                 }
                 // Keep later commands behind all queued subscription batches
                 Some(cmd) = async {
@@ -3382,8 +3798,9 @@ impl DeribitWsFeedHandler {
                         _ => {}
                     }
                 }
-                // Check for stop signal
-                () = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                // Check for stop signal, and poll book health on its own cadence
+                _ = book_monitor.tick() => {
+                    self.poll_book_recoveries();
                 }
             }
         }
@@ -3451,11 +3868,20 @@ fn is_grouped_book_channel(channel: &str) -> bool {
     channel.starts_with("book.") && channel.split('.').count() == 5
 }
 
+fn book_instrument_id(channel: &str) -> Option<InstrumentId> {
+    let symbol = channel.split('.').nth(1)?;
+    Some(InstrumentId::new(
+        Symbol::from(Ustr::from(symbol)),
+        *DERIBIT_VENUE,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
+    use nautilus_live::book::BookSyncSignalKind;
     use nautilus_model::{
         enums::{BookType, LiquiditySide},
         events::OrderEventAny,
@@ -3721,6 +4147,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&VenueOrderId::from("ETH-584830574"))
                 .unwrap()
+                .context
                 .accepted
         );
 
@@ -3853,6 +4280,11 @@ mod tests {
             handler.order_contexts.contains_key(&venue_order_id),
             trade_state == "open",
         );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
     }
 
     #[rstest]
@@ -3902,36 +4334,41 @@ mod tests {
         handler.process_raw_message(&replay_update).await;
         let second = handler.pending_outgoing.pop_front().unwrap();
 
-        let fills = [first, second].map(|message| match message {
-            NautilusWsMessage::OrderFilled(fill) => {
-                assert!(tracked);
-                assert_eq!(fill.client_order_id, client_order_id);
-                (
-                    fill.trade_id,
-                    fill.last_qty,
-                    fill.last_px,
-                    fill.commission.unwrap(),
-                )
-            }
-            NautilusWsMessage::FillReports(mut reports) => {
-                assert!(!tracked);
-                assert_eq!(reports.len(), 1);
-                let report = reports.pop().unwrap();
-                (
-                    report.trade_id,
-                    report.last_qty,
-                    report.last_px,
-                    report.commission,
-                )
-            }
-            message => panic!("unexpected fill message: {message:?}"),
-        });
+        let fills: Vec<_> = [first, second]
+            .into_iter()
+            .enumerate()
+            .map(|(index, message)| match message {
+                NautilusWsMessage::OrderFilled(fill) => {
+                    assert!(tracked && index == 0);
+                    assert_eq!(fill.client_order_id, client_order_id);
+                    (
+                        fill.trade_id,
+                        fill.last_qty,
+                        fill.last_px,
+                        fill.commission.unwrap(),
+                    )
+                }
+                NautilusWsMessage::FillReports(mut reports) => {
+                    assert!(!tracked || index == 1);
+                    assert_eq!(reports.len(), 1);
+                    let report = reports.pop().unwrap();
+                    assert_eq!(report.client_order_id, Some(client_order_id));
+                    (
+                        report.trade_id,
+                        report.last_qty,
+                        report.last_px,
+                        report.commission,
+                    )
+                }
+                message => panic!("unexpected fill message: {message:?}"),
+            })
+            .collect();
 
         assert!(matches!(reconnected, Some(NautilusWsMessage::Reconnected)));
         assert!(handler.pending_outgoing.is_empty());
         assert_eq!(
             fills,
-            [
+            vec![
                 (
                     TradeId::from("ETH-2696068"),
                     Quantity::from(1),
@@ -4035,6 +4472,189 @@ mod tests {
                 .unwrap()
                 .accepted
         );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_submit_survives_replay_cache_eviction_pressure() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.track_submit(
+            1,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        for seq in 2..=(REPLAY_CACHE_CAPACITY as u64 + 1) {
+            let filler_id = ClientOrderId::from(format!("O-FILLER-{seq:05}"));
+            handler.track_submit(
+                seq,
+                OrderContext {
+                    client_order_id: filler_id,
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id: StrategyId::from("S-001"),
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Market,
+                    accepted: false,
+                    last_order_signature: None,
+                },
+            );
+        }
+
+        assert!(
+            handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            handler
+                .order_contexts
+                .get(&VenueOrderId::from("ETH-584830574"))
+                .unwrap()
+                .accepted
+        );
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn active_order_survives_terminal_cache_eviction_pressure() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        for seq in 0..=REPLAY_CACHE_CAPACITY {
+            let filler_id = VenueOrderId::from(format!("ETH-FILLER-{seq:05}"));
+            let filler_client_id = ClientOrderId::from(format!("O-FILLER-{seq:05}"));
+            handler.terminal_order_contexts.insert(
+                filler_id,
+                TerminalOrderContext {
+                    context: OrderContext {
+                        client_order_id: filler_client_id,
+                        trader_id: TraderId::from("TRADER-001"),
+                        strategy_id: StrategyId::from("S-001"),
+                        instrument_id,
+                        order_side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                        accepted: true,
+                        last_order_signature: None,
+                    },
+                    late_fills_as_reports: true,
+                },
+            );
+        }
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            handler
+                .order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
+        );
+    }
+
+    #[tokio::test]
+    async fn submitted_order_cancelled_before_bind_releases_pending_context() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderCanceled(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+        assert!(
+            handler
+                .terminal_order_contexts
+                .contains_key(&venue_order_id)
+        );
     }
 
     #[rstest]
@@ -4089,7 +4709,11 @@ mod tests {
     #[case("filled")]
     #[case("open")]
     #[tokio::test]
-    async fn late_fill_after_cancel_stays_on_tracked_event_path(#[case] trade_state: &str) {
+    async fn late_fill_after_terminal_status_uses_report_recovery(
+        #[case] trade_state: &str,
+        #[values("cancelled", "expired", "rejected")] terminal_state: &str,
+        #[values(None, Some("STALE-CLIENT-ID"))] label: Option<&str>,
+    ) {
         let mut handler = routing_test_handler();
         let venue_order_id = VenueOrderId::from("ETH-584830574");
         let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -4110,11 +4734,65 @@ mod tests {
         handler
             .process_raw_message(&subscription(
                 "user.orders.any.any.raw",
-                &serde_json::json!([order_data("cancelled", false)]),
+                &serde_json::json!([order_data(terminal_state, false)]),
             ))
             .await;
         let mut trade = trade_data();
         trade["state"] = serde_json::Value::String(trade_state.to_string());
+
+        trade["label"] = match label {
+            Some(label) => serde_json::json!(label),
+            None => serde_json::Value::Null,
+        };
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade.clone(), trade.clone()]),
+            ))
+            .await;
+
+        match terminal_state {
+            "cancelled" | "expired" => {
+                let terminal = handler.pending_outgoing.pop_front().unwrap();
+                assert!(
+                    matches!(
+                        (terminal_state, terminal),
+                        ("cancelled", NautilusWsMessage::OrderCanceled(_))
+                            | ("expired", NautilusWsMessage::OrderExpired(_))
+                    ),
+                    "unexpected terminal message for {terminal_state}",
+                );
+            }
+            "rejected" => {}
+            _ => unreachable!(),
+        }
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected late fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        let report = &reports[0];
+        assert_eq!(report.account_id, AccountId::from("DERIBIT-001"));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+        );
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.trade_id, TradeId::from("ETH-2696068"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty, Quantity::from(2));
+        assert_eq!(report.last_px, Price::from("203.8"));
+        assert_eq!(report.commission, Money::from("0.00073602 USDT"));
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.avg_px, None);
+        assert_eq!(report.ts_event, UnixNanos::from(1_590_480_712_800_000_000));
+
         handler
             .process_raw_message(&subscription(
                 "user.trades.any.any.raw",
@@ -4122,23 +4800,412 @@ mod tests {
             ))
             .await;
 
-        assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
-            NautilusWsMessage::OrderCanceled(event)
-                if event.client_order_id == client_order_id
-        ));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+    }
+
+    #[rstest]
+    #[case("cancelled")]
+    #[case("rejected")]
+    #[tokio::test]
+    async fn late_fill_after_command_response_uses_report_recovery(#[case] terminal_state: &str) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let pending = if terminal_state == "cancelled" {
+            PendingRequestType::Cancel {
+                venue_order_id: Some(venue_order_id),
+                causation_id: None,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            }
+        } else {
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            }
+        };
+
+        handler.pending_requests.insert(42, pending);
+
+        let result = if terminal_state == "cancelled" {
+            order_data(terminal_state, false)
+        } else {
+            serde_json::json!({
+                "order": order_data(terminal_state, false),
+                "trades": []
+            })
+        };
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": result,
+        });
+
+        let terminal = handler.process_raw_message(&response.to_string()).await;
+
+        assert!(
+            matches!(
+                (terminal_state, terminal),
+                ("cancelled", Some(NautilusWsMessage::OrderCanceled(_)))
+                    | ("rejected", Some(NautilusWsMessage::OrderRejected(_)))
+            ),
+            "unexpected terminal response for {terminal_state}",
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected late fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].venue_order_id, venue_order_id);
+        assert_eq!(reports[0].client_order_id, Some(client_order_id));
+        assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696068"));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+    }
+
+    #[rstest]
+    #[case::direct_stream("direct_stream")]
+    #[case::venue_status("venue_status")]
+    #[case::submit_response("submit_response")]
+    #[tokio::test]
+    async fn final_trade_routing_handles_batches_and_split_delivery(#[case] delivery: &str) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let mut first_trade = trade_data();
+        first_trade["amount"] = serde_json::json!(1);
+        let mut second_trade = trade_data();
+        second_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        second_trade["amount"] = serde_json::json!(1);
+        second_trade["price"] = serde_json::json!(204.1);
+        second_trade["fee"] = serde_json::json!(0.00083602);
+
+        match delivery {
+            "direct_stream" => {
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([first_trade.clone(), second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            "venue_status" => {
+                handler
+                    .process_raw_message(&subscription(
+                        "user.orders.any.any.raw",
+                        &serde_json::json!([order_data("filled", false)]),
+                    ))
+                    .await;
+                assert!(handler.pending_outgoing.is_empty());
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([first_trade.clone(), second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            "submit_response" => {
+                handler.pending_requests.insert(
+                    42,
+                    PendingRequestType::Buy {
+                        client_order_id,
+                        trader_id: TraderId::from("TRADER-001"),
+                        strategy_id: StrategyId::from("S-001"),
+                        instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                        order_side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                    },
+                );
+
+                let response = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "result": {
+                        "order": order_data("filled", false),
+                        "trades": [first_trade.clone()],
+                    }
+                });
+                handler.process_raw_message(&response.to_string()).await;
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            _ => unreachable!(),
+        }
+
         assert!(matches!(
             handler.pending_outgoing.pop_front().unwrap(),
             NautilusWsMessage::OrderFilled(event)
                 if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
+                    && event.last_qty == Quantity::from(1)
+                    && event.last_px == Price::from("203.8")
+                    && event.commission == Some(Money::from("0.00073602 USDT"))
+        ));
+        let second_message = handler.pending_outgoing.pop_front().unwrap();
+
+        match delivery {
+            "direct_stream" | "venue_status" => {
+                assert!(matches!(
+                    second_message,
+                    NautilusWsMessage::OrderFilled(event)
+                        if event.client_order_id == client_order_id
+                            && event.trade_id == TradeId::from("ETH-2696069")
+                            && event.last_qty == Quantity::from(1)
+                            && event.last_px == Price::from("204.1")
+                            && event.commission == Some(Money::from("0.00083602 USDT"))
+                ));
+            }
+            "submit_response" => {
+                let NautilusWsMessage::FillReports(reports) = second_message else {
+                    panic!("expected split-delivery fill report, was {second_message:?}");
+                };
+
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].client_order_id, Some(client_order_id));
+                assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696069"));
+                assert_eq!(reports[0].last_qty, Quantity::from(1));
+                assert_eq!(reports[0].last_px, Price::from("204.1"));
+                assert_eq!(reports[0].commission, Money::from("0.00083602 USDT"));
+            }
+            _ => unreachable!(),
+        }
+
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+
+        let mut late_trade = trade_data();
+        late_trade["trade_id"] = serde_json::json!("ETH-2696070");
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([first_trade, late_trade]),
+            ))
+            .await;
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected post-terminal fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].client_order_id, Some(client_order_id));
+        assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696070"));
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn venue_filled_status_before_trade_keeps_first_fill_typed() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("filled", false)]),
+            ))
+            .await;
+
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
         ));
         assert!(handler.pending_outgoing.is_empty());
         assert!(!handler.order_contexts.contains_key(&venue_order_id));
         assert!(
             handler
                 .terminal_order_contexts
-                .contains_key(&venue_order_id)
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn mixed_late_report_and_tracked_fill_preserve_trade_order() {
+        let mut handler = routing_test_handler();
+        let terminal_venue_order_id = VenueOrderId::from("ETH-584830574");
+        let terminal_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            terminal_venue_order_id,
+            OrderContext {
+                client_order_id: terminal_client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            ))
+            .await;
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderCanceled(_)
+        ));
+
+        let active_venue_order_id = VenueOrderId::from("ETH-584830575");
+        let active_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+        handler.order_contexts.insert(
+            active_venue_order_id,
+            OrderContext {
+                client_order_id: active_client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let mut late_trade = trade_data();
+        late_trade["state"] = serde_json::json!("open");
+        let mut active_trade = trade_data();
+        active_trade["order_id"] = serde_json::json!(active_venue_order_id.to_string());
+        active_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        active_trade["label"] = serde_json::json!(active_client_order_id.to_string());
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([late_trade, active_trade]),
+            ))
+            .await;
+
+        let late_message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = late_message else {
+            panic!("expected late report first, was {late_message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].venue_order_id, terminal_venue_order_id);
+        assert_eq!(reports[0].client_order_id, Some(terminal_client_order_id));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.venue_order_id == active_venue_order_id
+                    && event.client_order_id == active_client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696069")
+        ));
+        assert!(handler.pending_outgoing.is_empty());
     }
 
     #[rstest]
@@ -4229,7 +5296,7 @@ mod tests {
             handler.process_raw_message(&terminal_update).await;
             events.extend(handler.pending_outgoing.drain(..));
 
-            // New trade evidence stays on the tracked terminal path
+            // New trade evidence uses terminal report recovery
             handler.process_raw_message(&new_trade_update).await;
             events.extend(handler.pending_outgoing.drain(..));
         } else {
@@ -4246,6 +5313,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .accepted
         );
 
@@ -4254,14 +5322,15 @@ mod tests {
             .map(|event| match event {
                 NautilusWsMessage::OrderAccepted(_) => "accepted",
                 NautilusWsMessage::OrderFilled(_) => "filled",
+                NautilusWsMessage::FillReports(_) => "fill_report",
                 NautilusWsMessage::OrderCanceled(_) => "canceled",
                 other => panic!("unexpected message: {other:?}"),
             })
             .collect();
 
         let expected: &[&str] = match (terminal_state, terminal_first) {
-            ("filled", true) => &["accepted", "filled", "filled"],
-            ("cancelled", true) => &["accepted", "canceled", "filled"],
+            ("filled", true) => &["accepted", "filled", "fill_report"],
+            ("cancelled", true) => &["accepted", "canceled", "fill_report"],
             ("filled", false) => &["accepted", "filled"],
             ("cancelled", false) => &["accepted", "canceled"],
             _ => unreachable!(),
@@ -4272,8 +5341,10 @@ mod tests {
         if terminal_first {
             assert!(matches!(
                 events.last(),
-                Some(NautilusWsMessage::OrderFilled(event))
-                    if event.trade_id == TradeId::from("ETH-2696069")
+                Some(NautilusWsMessage::FillReports(reports))
+                    if reports.len() == 1
+                        && reports[0].trade_id == TradeId::from("ETH-2696069")
+                        && reports[0].client_order_id == Some(client_order_id)
             ));
         }
     }
@@ -4324,6 +5395,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .accepted
         );
 
@@ -4358,6 +5430,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .accepted
         );
 
@@ -4387,6 +5460,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .accepted
         );
     }
@@ -4791,6 +5865,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .last_order_signature
                 .is_some(),
         );
@@ -4913,10 +5988,11 @@ mod tests {
         assert!(updated.is_none());
 
         match filled {
-            Some(NautilusWsMessage::OrderFilled(event)) => {
+            Some(NautilusWsMessage::FillReports(reports)) => {
                 assert!(new_trade);
-                assert_eq!(event.client_order_id, client_order_id);
-                assert_eq!(event.trade_id, TradeId::from("ETH-2696069"));
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].client_order_id, Some(client_order_id));
+                assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696069"));
             }
             None => assert!(!new_trade),
             message => panic!("unexpected fill message: {message:?}"),
@@ -4977,6 +6053,47 @@ mod tests {
         assert!(handler.pending_outgoing.is_empty());
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn unaccepted_amendment_synthesizes_accepted_first() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", true)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderUpdated(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(handler.order_contexts[&venue_order_id].accepted);
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
     const BOOK_CHANNEL: &str = "book.BTC-PERPETUAL.100ms";
     const GROUPED_CHANNEL: &str = "book.BTC-PERPETUAL.none.10.100ms";
 
@@ -5017,19 +6134,59 @@ mod tests {
         )
     }
 
-    fn book_test_handler() -> DeribitWsFeedHandler {
-        let handler = routing_test_handler();
-
+    async fn book_test_handler() -> (
+        DeribitWsFeedHandler,
+        tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    ) {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_book_sync(cmd_tx, Duration::from_secs(10), Duration::from_secs(120));
         for channel in [
             BOOK_CHANNEL,
             "book.ETH-PERPETUAL.100ms",
             "trades.BTC-PERPETUAL.100ms",
         ] {
-            handler.subscriptions_state.mark_subscribe(channel);
-            handler.subscriptions_state.confirm_subscribe(channel);
+            subscribe_channel(&mut handler, channel).await;
         }
 
+        (handler, cmd_rx)
+    }
+
+    async fn subscribe_channel(handler: &mut DeribitWsFeedHandler, channel: &str) {
+        handler.subscriptions_state.mark_subscribe(channel);
+        handler.subscriptions_state.add_reference(channel);
         handler
+            .process_command(HandlerCommand::Subscribe {
+                channels: vec![channel.to_owned()],
+            })
+            .await;
+
+        let requests: Vec<(u64, Vec<String>)> = handler
+            .pending_requests
+            .iter()
+            .filter_map(|(id, request)| match request {
+                PendingRequestType::Subscribe { channels } => Some((*id, channels.clone())),
+                _ => None,
+            })
+            .collect();
+
+        for (id, channels) in requests {
+            let ack = serde_json::json!({"jsonrpc": "2.0", "id": id, "result": channels});
+            handler.process_raw_message(&ack.to_string()).await;
+        }
+    }
+
+    async fn next_recover_command(
+        handler: &mut DeribitWsFeedHandler,
+        cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    ) -> HandlerCommand {
+        let work = handler.book_sync.work.next();
+        tokio::pin!(work);
+
+        tokio::select! {
+            cmd = cmd_rx.recv() => cmd.expect("recovery sends its replacement command"),
+            _ = &mut work => panic!("recovery ended without replacement"),
+        }
     }
 
     fn pending_unsubscribe_channels(handler: &DeribitWsFeedHandler) -> Vec<Vec<String>> {
@@ -5043,10 +6200,21 @@ mod tests {
             .collect()
     }
 
+    fn pending_subscribe_channels(handler: &DeribitWsFeedHandler) -> Vec<Vec<String>> {
+        handler
+            .pending_requests
+            .values()
+            .filter_map(|request| match request {
+                PendingRequestType::Subscribe { channels } => Some(channels.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[rstest]
     #[tokio::test]
-    async fn book_sequence_gap_forces_resync_after_contiguous_delta() {
-        let mut handler = book_test_handler();
+    async fn book_sequence_gap_starts_recovery_and_resubscribes() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
 
         let snapshot = handler
             .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
@@ -5063,34 +6231,91 @@ mod tests {
             contiguous,
             Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 101
         ));
-        assert_eq!(
-            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
-            Some(&101)
-        );
-        assert!(handler.pending_book_resync.is_empty());
+        assert!(handler.book_sync.work.is_empty());
 
         let gap = handler
             .process_raw_message(&book_message("change", 103, Some(102), 42499.0))
             .await;
 
         assert!(gap.is_none());
-        assert!(handler.book_sequence.is_empty());
-        assert_eq!(handler.pending_book_resync, vec![BOOK_CHANNEL.to_string()]);
+        assert_eq!(handler.book_sync.work.len(), 1);
+
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
         assert_eq!(
             pending_unsubscribe_channels(&handler),
             vec![vec![BOOK_CHANNEL.to_string()]]
         );
+
+        let unsubscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": unsubscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(
+            pending_subscribe_channels(&handler),
+            vec![vec![BOOK_CHANNEL.to_string()]]
+        );
+
+        let subscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Subscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": subscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        let recovered = handler
+            .process_raw_message(&book_message("snapshot", 200, None, 42500.0))
+            .await;
+
+        assert!(matches!(
+            recovered,
+            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 200
+        ));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn first_delta_without_snapshot_is_suppressed() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        let delta = handler
+            .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
+            .await;
+
+        assert!(delta.is_none());
+        // The armed snapshot deadline owns the book; recovery starts at expiry
+        assert!(handler.book_sync.work.is_empty());
     }
 
     #[tokio::test]
     async fn grouped_book_waits_for_depth_subscription_update() {
-        let mut handler = book_test_handler();
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+        subscribe_channel(&mut handler, GROUPED_CHANNEL).await;
         handler
             .book_depth_subs
             .lock()
             .await
             .add_reference(GROUPED_CHANNEL);
-        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
         handler
             .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
             .await;
@@ -5117,11 +6342,16 @@ mod tests {
 
         assert_eq!(depth.sequence, 999);
         assert!(handler.pending_outgoing.is_empty());
-        assert_eq!(
-            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
-            Some(&100)
-        );
-        assert!(handler.pending_book_resync.is_empty());
+        assert!(handler.book_sync.work.is_empty());
+
+        let contiguous = handler
+            .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
+            .await;
+
+        assert!(matches!(
+            contiguous,
+            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 101
+        ));
     }
 
     #[rstest]
@@ -5129,13 +6359,14 @@ mod tests {
     #[case::shared_grouped_channel(true)]
     #[tokio::test]
     async fn grouped_depth_does_not_change_raw_book_sequence(#[case] grouped_deltas: bool) {
-        let mut handler = book_test_handler();
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+        subscribe_channel(&mut handler, GROUPED_CHANNEL).await;
         handler
             .book_depth_subs
             .lock()
             .await
             .add_reference(GROUPED_CHANNEL);
-        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+
         if grouped_deltas {
             handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
         }
@@ -5148,10 +6379,6 @@ mod tests {
             .process_raw_message(&grouped_book_message(999, 89532.5))
             .await
             .unwrap();
-        let sequence_after_grouped = handler
-            .book_sequence
-            .get(&Ustr::from("BTC-PERPETUAL"))
-            .copied();
         let contiguous = handler
             .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
             .await
@@ -5182,11 +6409,6 @@ mod tests {
 
         book.apply_deltas(&contiguous).unwrap();
 
-        assert_eq!(sequence_after_grouped, Some(100));
-        assert_eq!(
-            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
-            Some(&101)
-        );
         assert_eq!(depth.sequence, 999);
         assert_eq!(depth.bids[0].price, Price::from("89532.5"));
         assert_eq!(
@@ -5196,7 +6418,7 @@ mod tests {
                 (Decimal::new(424995, 1), Decimal::from(10)),
             ]
         );
-        assert!(handler.pending_book_resync.is_empty());
+        assert!(handler.book_sync.work.is_empty());
         assert!(pending_unsubscribe_channels(&handler).is_empty());
         assert_eq!(handler.pending_outgoing.len(), usize::from(grouped_deltas));
 
@@ -5214,9 +6436,9 @@ mod tests {
     #[case::deltas(false)]
     #[case::depth(true)]
     #[tokio::test]
-    async fn rejected_grouped_book_snapshot_waits_for_next_snapshot(#[case] depth: bool) {
-        let mut handler = book_test_handler();
-        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+    async fn rejected_grouped_book_snapshot_requests_recovery(#[case] depth: bool) {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+        subscribe_channel(&mut handler, GROUPED_CHANNEL).await;
         if depth {
             handler
                 .book_depth_subs
@@ -5225,48 +6447,56 @@ mod tests {
                 .add_reference(GROUPED_CHANNEL);
         }
 
-        handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
-        handler
-            .subscriptions_state
-            .confirm_subscribe(GROUPED_CHANNEL);
-
-        let rejected = handler
-            .process_raw_message(&grouped_book_message(100, UNCONVERTIBLE_PRICE))
+        let first = handler
+            .process_raw_message(&grouped_book_message(100, 42500.0))
             .await;
 
-        assert!(rejected.is_none());
-        assert!(handler.book_sequence.is_empty());
-        assert!(handler.pending_book_resync.is_empty());
-        assert!(pending_unsubscribe_channels(&handler).is_empty());
-
-        let next = handler
-            .process_raw_message(&grouped_book_message(101, 42500.0))
-            .await;
-
-        match next.unwrap() {
-            NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 101),
+        match first.unwrap() {
+            NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 100),
             NautilusWsMessage::Data(data) if depth => {
                 let [Data::BookDepth(snapshot)] = data.as_slice() else {
                     panic!("expected depth");
                 };
 
-                assert_eq!(snapshot.sequence, 101);
+                assert_eq!(snapshot.sequence, 100);
             }
             message => panic!("unexpected message: {message:?}"),
         }
 
-        assert!(handler.book_sequence.is_empty());
+        let rejected = handler
+            .process_raw_message(&grouped_book_message(101, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(rejected.is_none());
+        assert_eq!(handler.book_sync.work.len(), 1);
+        assert!(pending_unsubscribe_channels(&handler).is_empty());
+
+        let next = handler
+            .process_raw_message(&grouped_book_message(102, 42500.0))
+            .await;
+
+        match next.unwrap() {
+            NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 102),
+            NautilusWsMessage::Data(data) if depth => {
+                let [Data::BookDepth(snapshot)] = data.as_slice() else {
+                    panic!("expected depth");
+                };
+
+                assert_eq!(snapshot.sequence, 102);
+            }
+            message => panic!("unexpected message: {message:?}"),
+        }
     }
 
     #[rstest]
     #[case::deltas(false)]
     #[case::depth(true)]
     #[tokio::test]
-    async fn delta_channel_resync_survives_grouped_snapshot_before_unsubscribe_ack(
+    async fn delta_channel_recovery_survives_grouped_snapshot_before_unsubscribe_ack(
         #[case] depth: bool,
     ) {
-        let mut handler = book_test_handler();
-        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+        subscribe_channel(&mut handler, GROUPED_CHANNEL).await;
         if depth {
             handler
                 .book_depth_subs
@@ -5275,20 +6505,18 @@ mod tests {
                 .add_reference(GROUPED_CHANNEL);
         }
 
-        handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
-        handler
-            .subscriptions_state
-            .confirm_subscribe(GROUPED_CHANNEL);
-
         handler
             .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
             .await;
-        handler
+        let rejected = handler
             .process_raw_message(&book_message("change", 101, Some(100), UNCONVERTIBLE_PRICE))
             .await;
         let grouped = handler
             .process_raw_message(&grouped_book_message(102, 42500.0))
             .await;
+
+        assert!(rejected.is_none());
+        assert_eq!(handler.book_sync.work.len(), 1);
 
         match grouped.unwrap() {
             NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 102),
@@ -5302,8 +6530,9 @@ mod tests {
             message => panic!("unexpected message: {message:?}"),
         }
 
-        assert!(handler.book_sequence.is_empty());
-        assert_eq!(handler.pending_book_resync, vec![BOOK_CHANNEL.to_string()]);
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
         assert_eq!(
             pending_unsubscribe_channels(&handler),
             vec![vec![BOOK_CHANNEL.to_string()]]
@@ -5324,22 +6553,16 @@ mod tests {
         });
         handler.process_raw_message(&ack.to_string()).await;
 
-        let resubscribed: Vec<Vec<String>> = handler
-            .pending_requests
-            .values()
-            .filter_map(|request| match request {
-                PendingRequestType::Subscribe { channels } => Some(channels.clone()),
-                _ => None,
-            })
-            .collect();
-
-        assert_eq!(resubscribed, vec![vec![BOOK_CHANNEL.to_string()]]);
+        assert_eq!(
+            pending_subscribe_channels(&handler),
+            vec![vec![BOOK_CHANNEL.to_string()]]
+        );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn rejected_book_delta_forces_resync_and_drops_successor() {
-        let mut handler = book_test_handler();
+    async fn rejected_book_delta_forces_recovery_and_drops_successor() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
 
         let snapshot = handler
             .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
@@ -5357,16 +6580,8 @@ mod tests {
         ));
         assert!(rejected.is_none());
         assert!(successor.is_none());
-        assert!(handler.book_sequence.is_empty());
-        assert_eq!(handler.pending_book_resync, vec![BOOK_CHANNEL.to_string()]);
-        assert_eq!(
-            pending_unsubscribe_channels(&handler),
-            vec![vec![BOOK_CHANNEL.to_string()]]
-        );
-        assert_eq!(
-            handler.subscriptions_state.pending_subscribe_topics(),
-            vec![BOOK_CHANNEL.to_string()]
-        );
+        assert_eq!(handler.book_sync.work.len(), 1);
+        assert!(pending_unsubscribe_channels(&handler).is_empty());
 
         let recovered = handler
             .process_raw_message(&book_message("snapshot", 200, None, 42500.0))
@@ -5376,34 +6591,772 @@ mod tests {
             recovered,
             Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 200
         ));
-        assert!(handler.pending_book_resync.is_empty());
+
+        let contiguous = handler
+            .process_raw_message(&book_message("change", 201, Some(200), 42499.5))
+            .await;
+
+        assert!(matches!(
+            contiguous,
+            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 201
+        ));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejected_snapshot_during_recovery_keeps_episode() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        let gap = handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        assert!(gap.is_none());
+        assert_eq!(handler.book_sync.work.len(), 1);
+
+        // The corrupt frame never completes the episode: the same recovery keeps
+        // ownership and its replacement still runs
+        let rejected = handler
+            .process_raw_message(&book_message("snapshot", 200, None, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(rejected.is_none());
+        assert_eq!(handler.book_sync.work.len(), 1);
+
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
         assert_eq!(
-            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
-            Some(&200)
+            pending_unsubscribe_channels(&handler),
+            vec![vec![BOOK_CHANNEL.to_string()]]
+        );
+
+        let unsubscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": unsubscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        let subscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Subscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": subscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        let recovered = handler
+            .process_raw_message(&book_message("snapshot", 300, None, 42500.0))
+            .await;
+
+        assert!(matches!(
+            recovered,
+            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 300
+        ));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn corrupt_snapshot_awaiting_replacement_retries_fast() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        // Drive the replacement to its resubscribe acknowledgement, so the attempt
+        // waits for the fresh snapshot with the gate open
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
+        let unsubscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": unsubscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        let subscribe_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Subscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": subscribe_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        // The corrupt snapshot fails the waiting attempt, which must retry in about
+        // a second rather than skipping to the 60s ceiling
+        let corrupt = handler
+            .process_raw_message(&book_message("snapshot", 200, None, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(corrupt.is_none());
+
+        // Poll the recovery like the handler loop so the failed attempt retries
+        let next = handler.book_sync.work.next();
+        tokio::pin!(next);
+        let retried = tokio::select! {
+            cmd = cmd_rx.recv() => cmd,
+            _ = &mut next => panic!("recovery ended without retry"),
+            () = tokio::time::sleep(Duration::from_secs(10)) => {
+                panic!("replacement did not retry fast")
+            }
+        };
+        retried.expect("recovery sends its next replacement");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn superseded_attempt_ack_is_ignored() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        // The first attempt sends its unsubscribe, then times out
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
+        let first_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let key = BookKey::for_channel(BOOK_CHANNEL).expect("book key");
+        handler
+            .book_sync
+            .abort_recovery_write(&key, DeribitWsError::Timeout("book replacement".to_owned()));
+
+        // The retry supersedes the first attempt and retires its request
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
+        assert_eq!(
+            pending_unsubscribe_channels(&handler),
+            vec![vec![BOOK_CHANNEL.to_string()]]
+        );
+
+        // The late acknowledgement to the first attempt is ignored
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": first_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert!(pending_subscribe_channels(&handler).is_empty());
+
+        // The current attempt's acknowledgement resubscribes, and a duplicate
+        // response to the same request is ignored by request-id removal
+        let second_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": second_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(
+            pending_subscribe_channels(&handler),
+            vec![vec![BOOK_CHANNEL.to_string()]]
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn rejected_resync_book_snapshot_keeps_resync_pending() {
-        let mut handler = book_test_handler();
-        handler.pending_book_resync.push(BOOK_CHANNEL.to_string());
+    async fn withheld_subscribe_acks_stay_bounded_across_attempts() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
 
-        let rejected = handler
-            .process_raw_message(&book_message("snapshot", 200, None, UNCONVERTIBLE_PRICE))
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
             .await;
-        let delta = handler
-            .process_raw_message(&book_message("change", 201, Some(200), 42499.5))
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
             .await;
 
-        assert!(rejected.is_none());
-        assert!(delta.is_none());
-        assert!(handler.book_sequence.is_empty());
-        assert_eq!(handler.pending_book_resync, vec![BOOK_CHANNEL.to_string()]);
+        let key = BookKey::for_channel(BOOK_CHANNEL).expect("book key");
+
+        for _ in 0..3 {
+            let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+            handler.process_command(command).await;
+
+            // Only the current attempt holds requests: earlier resubscribes retired
+            assert!(pending_subscribe_channels(&handler).is_empty());
+            assert_eq!(pending_unsubscribe_channels(&handler).len(), 1);
+
+            // The unsubscribe is acknowledged but the resubscribe is not
+            let id = handler
+                .pending_requests
+                .iter()
+                .find_map(|(id, request)| {
+                    matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+                })
+                .unwrap();
+
+            let ack = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [BOOK_CHANNEL],
+            });
+            handler.process_raw_message(&ack.to_string()).await;
+
+            handler
+                .book_sync
+                .abort_recovery_write(&key, DeribitWsError::Timeout("book replacement".to_owned()));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn recovery_retirement_preserves_unacked_initial_subscribe() {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_book_sync(cmd_tx, Duration::from_secs(10), Duration::from_secs(120));
+
+        // The initial subscribe is sent but never acknowledged
+        handler.subscriptions_state.mark_subscribe(BOOK_CHANNEL);
+        handler.subscriptions_state.add_reference(BOOK_CHANNEL);
+        handler
+            .process_command(HandlerCommand::Subscribe {
+                channels: vec![BOOK_CHANNEL.to_owned()],
+            })
+            .await;
+
+        let initial_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Subscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        // A delta before any snapshot starts recovery while still unacked
+        handler
+            .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
+            .await;
+
+        let key = BookKey::for_channel(BOOK_CHANNEL).expect("book key");
+
+        for _ in 0..2 {
+            let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+            handler.process_command(command).await;
+
+            let id = handler
+                .pending_requests
+                .iter()
+                .find_map(|(id, request)| {
+                    matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+                })
+                .unwrap();
+
+            let ack = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [BOOK_CHANNEL],
+            });
+            handler.process_raw_message(&ack.to_string()).await;
+
+            handler
+                .book_sync
+                .abort_recovery_write(&key, DeribitWsError::Timeout("book replacement".to_owned()));
+        }
+
+        // One more attempt retires the withheld resubscribes but keeps the
+        // initial subscribe for the identical channel
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
         assert_eq!(
-            pending_unsubscribe_channels(&handler),
+            pending_subscribe_channels(&handler),
             vec![vec![BOOK_CHANNEL.to_string()]]
         );
+        assert!(handler.pending_requests.contains_key(&initial_id));
+
+        // The late initial acknowledgement still confirms the subscription
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": initial_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert!(!handler.pending_requests.contains_key(&initial_id));
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn concurrent_book_recoveries_keep_their_own_requests() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+        subscribe_channel(&mut handler, GROUPED_CHANNEL).await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&grouped_book_message(500, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        let grouped_gap = subscription(
+            GROUPED_CHANNEL,
+            &serde_json::json!({
+                "type": "change",
+                "instrument_name": "BTC-PERPETUAL",
+                "timestamp": 1_700_000_000_000_u64,
+                "change_id": 505,
+                "prev_change_id": 504,
+                "bids": [],
+                "asks": [],
+            }),
+        );
+        handler.process_raw_message(&grouped_gap).await;
+
+        assert_eq!(handler.book_sync.work.len(), 2);
+
+        // Both replacements hold their own requests: neither begin retires the
+        // other book's entries
+        for _ in 0..2 {
+            let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+            handler.process_command(command).await;
+        }
+
+        let unsubs = pending_unsubscribe_channels(&handler);
+        assert_eq!(unsubs.len(), 2);
+        assert!(unsubs.contains(&vec![BOOK_CHANNEL.to_string()]));
+        assert!(unsubs.contains(&vec![GROUPED_CHANNEL.to_owned()]));
+
+        // Both acknowledgements still drive their own resubscribe
+        for (id, request) in handler.pending_requests.clone() {
+            if let PendingRequestType::Unsubscribe { channels } = request {
+                let ack = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": channels,
+                });
+                handler.process_raw_message(&ack.to_string()).await;
+            }
+        }
+
+        let subs = pending_subscribe_channels(&handler);
+        assert_eq!(subs.len(), 2);
+        assert!(subs.contains(&vec![BOOK_CHANNEL.to_string()]));
+        assert!(subs.contains(&vec![GROUPED_CHANNEL.to_owned()]));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn unsubscribe_ack_after_cancel_is_ignored() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+        handler.process_command(command).await;
+
+        let request_id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| {
+                matches!(request, PendingRequestType::Unsubscribe { .. }).then_some(*id)
+            })
+            .unwrap();
+
+        // The user unsubscribes while the replacement is queued
+        handler.subscriptions_state.remove_reference(BOOK_CHANNEL);
+        handler
+            .process_command(HandlerCommand::Unsubscribe {
+                channels: vec![BOOK_CHANNEL.to_string()],
+            })
+            .await;
+
+        assert_eq!(handler.book_sync.len(), 1);
+
+        let ack = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": [BOOK_CHANNEL],
+        });
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert!(pending_subscribe_channels(&handler).is_empty());
+        assert_eq!(handler.book_sync.len(), 1);
+    }
+
+    #[rstest]
+    fn retire_superseded_recovery_requests_keeps_user_requests() {
+        let mut handler = routing_test_handler();
+
+        handler.pending_requests.insert(
+            901,
+            PendingRequestType::Unsubscribe {
+                channels: vec![BOOK_CHANNEL.to_owned()],
+            },
+        );
+
+        handler.pending_requests.insert(
+            902,
+            PendingRequestType::Subscribe {
+                channels: vec![BOOK_CHANNEL.to_owned()],
+            },
+        );
+
+        handler.pending_requests.insert(
+            903,
+            PendingRequestType::Unsubscribe {
+                channels: vec!["book.ETH-PERPETUAL.100ms".to_owned()],
+            },
+        );
+
+        // Recorded ids alone decide ownership: 901 is this book's recovery residue
+        // while the user's subscribe and the other book's recovery request survive
+        let btc = BookKey::for_channel(BOOK_CHANNEL).expect("book key");
+        let eth = BookKey::for_channel("book.ETH-PERPETUAL.100ms").expect("book key");
+        handler
+            .book_recovery_requests
+            .insert(btc.clone(), AHashSet::from([901]));
+        handler
+            .book_recovery_requests
+            .insert(eth, AHashSet::from([903]));
+
+        handler.retire_superseded_recovery_requests(&btc);
+
+        assert!(!handler.pending_requests.contains_key(&901));
+        assert!(handler.pending_requests.contains_key(&902));
+        assert!(handler.pending_requests.contains_key(&903));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn corrupt_snapshot_before_ack_starts_no_recovery() {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_book_sync(cmd_tx, Duration::from_secs(10), Duration::from_secs(120));
+        handler.subscriptions_state.mark_subscribe(BOOK_CHANNEL);
+        handler.subscriptions_state.add_reference(BOOK_CHANNEL);
+        let key = BookKey::for_channel(BOOK_CHANNEL).expect("book key");
+        handler
+            .book_sync
+            .record_subscription(key, InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+
+        // The gate stays closed until the subscribe acknowledgement; the snapshot
+        // timer owns the wait, so a corrupt frame is dropped, not rejected
+        let corrupt = handler
+            .process_raw_message(&book_message("snapshot", 100, None, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(corrupt.is_none());
+        assert!(handler.book_sync.work.is_empty());
+    }
+
+    #[rstest]
+    #[case::deltas(false)]
+    #[case::depth(true)]
+    #[tokio::test]
+    async fn corrupt_grouped_snapshot_before_ack_starts_no_recovery(#[case] depth: bool) {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_book_sync(cmd_tx, Duration::from_secs(10), Duration::from_secs(120));
+        handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        if depth {
+            handler
+                .book_depth_subs
+                .lock()
+                .await
+                .add_reference(GROUPED_CHANNEL);
+        }
+
+        let key = BookKey::for_channel(GROUPED_CHANNEL).expect("book key");
+        handler
+            .book_sync
+            .record_subscription(key, InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+
+        let corrupt = handler
+            .process_raw_message(&grouped_book_message(100, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(corrupt.is_none());
+        assert!(handler.book_sync.work.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn corrupt_snapshot_after_ack_requests_recovery() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+
+        let corrupt = handler
+            .process_raw_message(&book_message("snapshot", 101, None, UNCONVERTIBLE_PRICE))
+            .await;
+
+        assert!(corrupt.is_none());
+        assert_eq!(handler.book_sync.work.len(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn user_unsubscribe_removes_book_tracking() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        assert_eq!(handler.book_sync.len(), 2);
+
+        handler.subscriptions_state.remove_reference(BOOK_CHANNEL);
+        handler
+            .process_command(HandlerCommand::Unsubscribe {
+                channels: vec![BOOK_CHANNEL.to_string()],
+            })
+            .await;
+
+        assert_eq!(handler.book_sync.len(), 1);
+
+        let delta = handler
+            .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
+            .await;
+
+        assert!(delta.is_none());
+        assert!(handler.book_sync.work.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn reconnect_during_recovery_keeps_episode_and_arms_deadline() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        assert_eq!(handler.book_sync.work.len(), 1);
+
+        handler.process_raw_message(RECONNECTED).await;
+
+        // The episode survives the reconnect instead of restarting
+        assert_eq!(handler.book_sync.len(), 2);
+        assert_eq!(handler.book_sync.work.len(), 1);
+        let key = BookKey::Raw(Ustr::from("BTC-PERPETUAL"));
+        assert!(handler.book_sync.claim(&key).is_none());
+
+        // A snapshot deadline is armed for the replayed subscription
+        let now = Instant::now() + Duration::from_secs(11);
+        let recoveries =
+            handler
+                .book_sync
+                .recoveries(Duration::from_secs(120), Duration::from_secs(10), now);
+        let btc = recoveries
+            .iter()
+            .find(|(k, _)| *k == key)
+            .expect("btc recovery signal");
+        assert_eq!(btc.1.kind, BookSyncSignalKind::SnapshotMissing);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn user_unsubscribe_during_recovery_cancels_episode() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        assert_eq!(handler.book_sync.work.len(), 1);
+
+        handler.subscriptions_state.remove_reference(BOOK_CHANNEL);
+        handler
+            .process_command(HandlerCommand::Unsubscribe {
+                channels: vec![BOOK_CHANNEL.to_string()],
+            })
+            .await;
+
+        assert_eq!(handler.book_sync.len(), 1);
+        // Dropping the episode completes its work without resubscribing
+        assert!(handler.book_sync.work.next().await.is_some());
+        assert!(handler.book_sync.work.is_empty());
+        assert!(pending_subscribe_channels(&handler).is_empty());
+
+        let delta = handler
+            .process_raw_message(&book_message("change", 106, Some(105), 42499.5))
+            .await;
+
+        assert!(delta.is_none());
+        assert!(handler.book_sync.work.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejected_initial_subscribe_starts_recovery() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        handler
+            .process_command(HandlerCommand::Subscribe {
+                channels: vec![GROUPED_CHANNEL.to_owned()],
+            })
+            .await;
+
+        let id = handler
+            .pending_requests
+            .iter()
+            .find_map(|(id, request)| match request {
+                PendingRequestType::Subscribe { .. } => Some(*id),
+                _ => None,
+            })
+            .expect("subscribe request");
+
+        let rejection = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": 10028, "message": "too many requests"},
+        });
+        handler.process_raw_message(&rejection.to_string()).await;
+
+        // The rejected wait retires into a running recovery that resubscribes
+        assert_eq!(handler.book_sync.work.len(), 1);
+        let key = BookKey::Grouped(GROUPED_CHANNEL.to_owned());
+        assert!(!handler.book_sync.has_unacked_subscription(&key));
+
+        let HandlerCommand::RecoverBook { .. } =
+            next_recover_command(&mut handler, &mut cmd_rx).await
+        else {
+            panic!("expected a recovery command");
+        };
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn book_monitor_runs_while_socket_stays_busy() {
+        let (mut handler, _cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler.book_stale_threshold = Duration::from_secs(1);
+
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        let signal = handler.signal.clone();
+
+        // Keep the socket busy with pings the handler answers without book work
+        let busy = tokio::spawn(async move {
+            while raw_tx.send(Message::Ping(vec![].into())).is_ok() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+
+        let looping = tokio::spawn(async move {
+            while handler.next().await.is_some() {}
+            handler
+        });
+
+        // The silent books must still reach stale recovery under traffic
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        signal.store(true, Ordering::SeqCst);
+        let handler = looping.await.expect("loop task");
+        busy.abort();
+
+        assert_eq!(handler.book_sync.work.len(), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cancelled_recovery_command_sends_nothing() {
+        let (mut handler, mut cmd_rx) = book_test_handler().await;
+
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        handler
+            .process_raw_message(&book_message("change", 105, Some(104), 42499.0))
+            .await;
+
+        let command = next_recover_command(&mut handler, &mut cmd_rx).await;
+
+        let HandlerCommand::RecoverBook { cancel, .. } = &command else {
+            panic!("expected a recovery command");
+        };
+
+        cancel.cancel();
+        handler.process_command(command).await;
+
+        assert!(pending_unsubscribe_channels(&handler).is_empty());
+        assert_eq!(handler.book_sync.work.len(), 1);
     }
 
     #[rstest]
@@ -5436,7 +7389,8 @@ mod tests {
         let result = match side {
             OrderSide::Buy => {
                 handler
-                    .handle_buy(
+                    .handle_submit(
+                        OrderSide::Buy,
                         params,
                         client_order_id,
                         trader_id,
@@ -5447,7 +7401,8 @@ mod tests {
             }
             OrderSide::Sell => {
                 handler
-                    .handle_sell(
+                    .handle_submit(
+                        OrderSide::Sell,
                         params,
                         client_order_id,
                         trader_id,
@@ -5802,6 +7757,20 @@ mod tests {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("BTC_USDC.DERIBIT");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
         handler.pending_requests.insert(
             42,
             PendingRequestType::Buy {
@@ -5834,6 +7803,11 @@ mod tests {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason.as_str(), "post_only_reject");
         assert!(rejected.due_post_only);
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
     }
 
     #[rstest]
@@ -5905,7 +7879,7 @@ mod tests {
             handler.subscriptions_state.mark_subscribe(channel);
         }
 
-        handler.handle_subscribe(channels.clone()).unwrap();
+        handler.handle_subscribe(&channels).unwrap();
         assert_eq!(handler.subscription_requests.len(), 2);
         let requests: Vec<_> = handler.subscription_requests.iter().cloned().collect();
         for (index, (request_id, payload)) in requests.iter().enumerate() {
@@ -6099,7 +8073,7 @@ mod tests {
 
         let coalesced = handler.coalesce_subscriptions(vec![first.clone()]);
         assert_eq!(coalesced, [first.clone(), first.clone(), last.clone()]);
-        handler.handle_subscribe(coalesced.clone()).unwrap();
+        handler.handle_subscribe(&coalesced).unwrap();
         let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
         let ack =
             serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first, first]});
@@ -6116,21 +8090,43 @@ mod tests {
         assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
         assert_eq!(handler.subscriptions_state.get_reference_count(&last), 2);
 
-        for channel in [&first, &last] {
-            handler.subscriptions_state.mark_failure(channel);
+        let book_first = "book.BTC-PERPETUAL.100ms".to_string();
+        let book_last = "book.BTC-PERPETUAL.raw".to_string();
+        for channel in [&book_first, &book_last] {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            handler.subscriptions_state.confirm_subscribe(channel);
         }
 
-        handler.pending_book_resync = vec![first.clone(), last.clone()];
-        handler.handle_unsubscribe(coalesced).unwrap();
+        let key = BookKey::Raw(Ustr::from("BTC-PERPETUAL"));
+        handler
+            .book_sync
+            .record_subscription(key.clone(), InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+        let recovery = handler.book_sync.claim(&key).unwrap();
+        let (completion, _rx) = tokio::sync::oneshot::channel();
+        assert!(handler.book_sync.begin_recovery_write(
+            &key,
+            &recovery,
+            recovery.gate.clone(),
+            completion,
+            vec![book_first.clone(), book_last.clone()],
+        ));
+        handler
+            .handle_unsubscribe(vec![
+                book_first.clone(),
+                book_first.clone(),
+                book_last.clone(),
+            ])
+            .unwrap();
         let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
-        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first]});
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [book_last, book_first]});
         handler.process_raw_message(&ack.to_string()).await;
         let (_, payload) = handler.subscription_requests.pop_front().unwrap();
         let replay: serde_json::Value = serde_json::from_str(&payload).unwrap();
 
         assert_eq!(
             replay["params"]["channels"],
-            serde_json::json!([first, last])
+            serde_json::json!([book_first, book_last])
         );
         assert_eq!(handler.subscription_requests.len(), 0);
         assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
@@ -6149,7 +8145,7 @@ mod tests {
         }
 
         handler
-            .handle_subscribe(vec![retained.clone(), canceled.clone()])
+            .handle_subscribe(&[retained.clone(), canceled.clone()])
             .unwrap();
         let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
         let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": []});
@@ -6161,7 +8157,7 @@ mod tests {
         handler.subscriptions_state.mark_unsubscribe(&canceled);
         handler.process_raw_message(RECONNECTED).await;
         let replay = handler.subscriptions_state.reset_after_reconnect();
-        handler.handle_subscribe(replay.clone()).unwrap();
+        handler.handle_subscribe(&replay).unwrap();
         let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
         let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [retained]});
         handler.process_raw_message(&ack.to_string()).await;
@@ -6201,7 +8197,7 @@ mod tests {
     #[case::malformed("malformed")]
     #[case::error("error")]
     #[tokio::test]
-    async fn subscription_acknowledgements_gate_book_resync(
+    async fn subscription_acknowledgements_gate_book_recovery(
         #[case] response_kind: &str,
         #[values(false, true)] cancel: bool,
     ) {
@@ -6218,7 +8214,20 @@ mod tests {
             handler.subscriptions_state.confirm_subscribe(channel);
         }
 
-        handler.resync_book(Ustr::from("BTC-PERPETUAL")).await;
+        let key = BookKey::Raw(Ustr::from("BTC-PERPETUAL"));
+        handler
+            .book_sync
+            .record_subscription(key.clone(), InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+        let recovery = handler.book_sync.claim(&key).unwrap();
+        let (completion, _rx) = tokio::sync::oneshot::channel();
+        assert!(handler.book_sync.begin_recovery_write(
+            &key,
+            &recovery,
+            recovery.gate.clone(),
+            completion,
+            channels.to_vec(),
+        ));
+        handler.handle_unsubscribe(channels.to_vec()).unwrap();
         let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
         if cancel {
             handler.subscriptions_state.remove_reference(&channels[0]);
@@ -6255,25 +8264,22 @@ mod tests {
         let mut expected = match (response_kind, cancel) {
             ("full", false) => channels.to_vec(),
             ("full", true) => vec![channels[1].clone()],
-            ("partial", false) => vec![channels[0].clone()],
             _ => Vec::new(),
         };
 
         expected.sort();
-        let mut pending = handler.subscriptions_state.pending_subscribe_topics();
-        pending.sort();
-
-        let mut desired = if cancel {
-            vec![channels[1].clone()]
-        } else {
-            channels.to_vec()
-        };
-
-        desired.sort();
 
         assert_eq!(resubscribed, expected);
-        assert_eq!(pending, desired);
-        assert_eq!(handler.subscriptions_state.len(), 0);
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert_eq!(
+            handler.subscriptions_state.len(),
+            if cancel { 1 } else { 2 }
+        );
         assert_eq!(
             handler
                 .subscriptions_state
@@ -6286,7 +8292,6 @@ mod tests {
                 .get_reference_count(&channels[1]),
             2
         );
-        assert_eq!(handler.pending_book_resync.len(), 2);
     }
 
     #[rstest]
@@ -6403,7 +8408,9 @@ mod tests {
         for channel in &channels {
             handler.subscriptions_state.add_reference(channel);
             handler.subscriptions_state.mark_subscribe(channel);
-            handler.handle_subscribe(vec![channel.clone()]).unwrap();
+            handler
+                .handle_subscribe(std::slice::from_ref(channel))
+                .unwrap();
         }
 
         handler.subscriptions_state.add_reference(&channels[0]);

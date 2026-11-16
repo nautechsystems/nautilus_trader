@@ -518,6 +518,8 @@ pub enum UserWsMessage {
     Order(PolymarketUserOrder),
     #[serde(rename = "trade")]
     Trade(PolymarketUserTrade),
+    #[serde(rename = "auto_redeem")]
+    AutoRedeem,
 }
 
 struct UserWsMessageVisitor;
@@ -548,9 +550,13 @@ impl<'de> Visitor<'de> for UserWsMessageVisitor {
         match event_type {
             "order" => PolymarketUserOrder::deserialize(remaining).map(Self::Value::Order),
             "trade" => PolymarketUserTrade::deserialize(remaining).map(Self::Value::Trade),
+            "auto_redeem" => {
+                serde::de::IgnoredAny::deserialize(remaining)?;
+                Ok(Self::Value::AutoRedeem)
+            }
             other => Err(serde::de::Error::unknown_variant(
                 other,
-                &["order", "trade"],
+                &["order", "trade", "auto_redeem"],
             )),
         }
     }
@@ -611,8 +617,9 @@ impl UserWsMessage {
         }
 
         serde_json::from_str::<EventTypeTag>(text).is_ok_and(|tag| {
-            tag.event_type
-                .is_some_and(|event_type| !matches!(event_type.as_str(), "order" | "trade"))
+            tag.event_type.is_some_and(|event_type| {
+                !matches!(event_type.as_str(), "order" | "trade" | "auto_redeem")
+            })
         })
     }
 
@@ -621,6 +628,7 @@ impl UserWsMessage {
         match tag.event_type {
             UserWsEventTag::Order => serde_json::from_str(text).map(Self::Order),
             UserWsEventTag::Trade => serde_json::from_str(text).map(Self::Trade),
+            UserWsEventTag::AutoRedeem => serde_json::from_str(text),
         }
     }
 }
@@ -630,6 +638,7 @@ impl UserWsMessage {
 enum UserWsEventTag {
     Order,
     Trade,
+    AutoRedeem,
 }
 
 #[derive(Deserialize)]
@@ -754,24 +763,10 @@ mod tests {
         std::fs::read_to_string(path).expect("Failed to read test data")
     }
 
-    /// An `auto_redeem` user-channel event as observed from the venue, which is undocumented and
-    /// not modeled by [`UserWsMessage`].
-    fn auto_redeem_element() -> serde_json::Value {
-        serde_json::json!({
-            "event_type": "auto_redeem",
-            "proxy_wallet": "0x0000000000000000000000000000000000000000",
-            "txn_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "amount": "70",
-            "condition_id": "0xb88862256916cb0c82e72667bd43f3e6cfe94cd7d5cda0bf763ec82394021e07",
-            "question": "Bitcoin Up or Down - August 17, 9:35AM-9:40AM ET",
-            "slug": "btc-updown-5m-1786973700",
-            "neg_risk": false,
-            "timestamp": "1786974414920",
-            "position_id": "",
-            "outcome_index": 0,
-            "legs": 0,
-            "owner": "00000000-0000-0000-0000-000000000000",
-        })
+    fn unknown_user_element() -> serde_json::Value {
+        let mut value: serde_json::Value = load("ws_user_auto_redeem.json");
+        value["event_type"] = "future_event".into();
+        value
     }
 
     #[rstest]
@@ -1180,6 +1175,7 @@ mod tests {
     #[case("ws_user_order_msg.json")]
     #[case("ws_user_order_fok_killed.json")]
     #[case("ws_user_trade_msg.json")]
+    #[case("ws_user_auto_redeem.json")]
     fn test_user_ws_message_parse(#[case] filename: &str) {
         let text = load_text(filename);
         let expected: UserWsMessage =
@@ -1191,9 +1187,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_user_ws_message_parse_with_reordered_event_type() {
-        let expected: UserWsMessage = load("ws_user_trade_msg.json");
-        let mut value: serde_json::Value = load("ws_user_trade_msg.json");
+    #[case("ws_user_trade_msg.json")]
+    #[case("ws_user_auto_redeem.json")]
+    fn test_user_ws_message_parse_with_reordered_event_type(#[case] filename: &str) {
+        let expected: UserWsMessage = load(filename);
+        let mut value: serde_json::Value = load(filename);
         let object = value
             .as_object_mut()
             .expect("user fixture should be an object");
@@ -1211,12 +1209,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_user_ws_message_parse_rejects_duplicate_event_type() {
-        let text = load_text("ws_user_order_msg.json").replacen(
-            r#""event_type": "order""#,
-            r#""event_type": "order", "event_type": "order""#,
-            1,
-        );
+    #[case("ws_user_order_msg.json", "order")]
+    #[case("ws_user_auto_redeem.json", "auto_redeem")]
+    fn test_user_ws_message_parse_rejects_duplicate_event_type(
+        #[case] filename: &str,
+        #[case] event_type: &str,
+    ) {
+        let tag = format!(r#""event_type": "{event_type}""#);
+        let text = load_text(filename).replacen(&tag, &format!("{tag}, {tag}"), 1);
         let expected = serde_json::from_str::<UserWsMessage>(&text)
             .expect_err("derived parser should reject a duplicate event_type");
         let actual = UserWsMessage::parse(&text)
@@ -1226,10 +1226,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_user_ws_message_parse_batch() {
-        let text = load_text("ws_user_batch_msg.json");
-        let expected: Vec<UserWsMessage> =
-            serde_json::from_str(&text).expect("user batch fixture should deserialize");
+    #[case::order_and_trade(false)]
+    #[case::with_redemption(true)]
+    fn test_user_ws_message_parse_batch(#[case] with_redemption: bool) {
+        let mut value: serde_json::Value = load("ws_user_batch_msg.json");
+        let mut expected: Vec<UserWsMessage> = load("ws_user_batch_msg.json");
+
+        if with_redemption {
+            value
+                .as_array_mut()
+                .unwrap()
+                .insert(1, load("ws_user_auto_redeem.json"));
+            expected.insert(1, UserWsMessage::AutoRedeem);
+        }
+
+        let text = serde_json::to_string(&value).unwrap();
 
         let actual = UserWsMessage::parse_batch(&text).expect("user batch fixture should parse");
 
@@ -1285,8 +1296,6 @@ mod tests {
         assert!(UserWsMessage::parse_batch(&text).is_err());
     }
 
-    /// Polymarket emits undocumented user-channel events such as `auto_redeem`, which must not
-    /// discard the `order` and `trade` messages batched alongside them.
     #[rstest]
     fn test_user_ws_message_parse_batch_skips_unknown_event_type() {
         let expected: Vec<UserWsMessage> = load("ws_user_batch_msg.json");
@@ -1294,7 +1303,7 @@ mod tests {
         let elements = value
             .as_array_mut()
             .expect("user batch fixture should be an array");
-        elements.insert(1, auto_redeem_element());
+        elements.insert(1, unknown_user_element());
         let text = serde_json::to_string(&value).expect("user batch fixture should serialize");
 
         let actual =
@@ -1306,8 +1315,8 @@ mod tests {
     #[rstest]
     fn test_user_ws_message_parse_batch_all_unknown_event_types() {
         let text = serde_json::to_string(&serde_json::Value::Array(vec![
-            auto_redeem_element(),
-            auto_redeem_element(),
+            unknown_user_element(),
+            unknown_user_element(),
         ]))
         .expect("unknown batch should serialize");
 
@@ -1318,7 +1327,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::auto_redeem(auto_redeem_element().to_string(), true)]
+    #[case::auto_redeem(load_text("ws_user_auto_redeem.json"), false)]
+    #[case::unknown(unknown_user_element().to_string(), true)]
     #[case::order(load_text("ws_user_order_msg.json"), false)]
     #[case::trade(load_text("ws_user_trade_msg.json"), false)]
     #[case::missing_event_type(serde_json::json!({"type": "order"}).to_string(), false)]

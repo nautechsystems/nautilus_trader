@@ -77,6 +77,7 @@ class Consumer(DataActor):
         super().__init__()
         self.instruments = []
         self.quotes = []
+        self.quote_received = asyncio.Event()
 
     def on_start(self) -> None:
         """
@@ -96,6 +97,7 @@ class Consumer(DataActor):
         Record sampled quotes.
         """
         self.quotes.append(quote)
+        self.quote_received.set()
 
 
 def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noqa: C901 - One selection crosses both node lifecycles
@@ -151,6 +153,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             "min_request_interval_ms": 1,
             "max_retries": 0,
         }
+
         client = FinFeedHttpClient(FinFeedDataClientConfig(attempt_budget=2, **controls))
         try:
             instrument = await discovery["discover"](client)
@@ -169,6 +172,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
                 attempt_budget=5,
                 **controls,
             )
+
             node = (
                 LiveNode.builder("FINFEED-NODE", TraderId("TESTER-001"), Environment.LIVE)
                 .with_reconciliation(False)
@@ -184,6 +188,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             node.add_actor(consumer)
             node.add_actor(historical)
             handle = node.handle()
+            cache = node.cache
             task = asyncio.create_task(node.run_async())
 
             try:
@@ -191,21 +196,19 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
                     async with asyncio.timeout(10):
                         await historical.received.wait()
 
-                        while not consumer.instruments or not consumer.quotes:
-                            await asyncio.sleep(0.01)
+                        await consumer.quote_received.wait()
+                        quotes = cache.quotes(instrument.id)
                 finally:
                     handle.stop()
                     await asyncio.wait_for(task, timeout=10)
 
-                quotes = node.cache.quotes(instrument.id)
-                await asyncio.sleep(0.05)
                 results.append(
                     (
                         handle.state,
                         consumer,
                         historical,
                         quotes,
-                        node.cache.quotes(instrument.id),
+                        cache.quotes(instrument.id),
                     ),
                 )
             finally:
@@ -245,6 +248,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             "/v1/markets/POLYMARKET/active?limit=3&page=1",
             f"/v1/markets/POLYMARKET/{MARKET_ID}",
         ]
+
         expected_paths = [
             "/v1/exchanges",
             f"/v1/markets/POLYMARKET/{MARKET_ID}",
@@ -254,6 +258,7 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             "&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000",
             f"/v1/activity/POLYMARKET/{MARKET_ID}/latest?limit=3",
         ]
+
         assert len(paths) == 12
 
         for generation_paths in (paths[2:7], paths[7:]):
@@ -545,6 +550,7 @@ def test_retirement_preserves_shared_internal_bars_until_final_subscriber(pollin
             await asyncio.wait_for(task, timeout=10)
 
     asyncio.run(exercise())
+
     expected = [
         ("0.3100", "2.000002", 1_791_676_802_000_000_000),
         ("0.3200", "4.000004", 1_791_676_802_000_000_000),
@@ -697,6 +703,7 @@ def polling_node() -> Iterator[tuple[LiveNode, Queue, list]]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+
     config = FinFeedDataClientConfig(
         api_key="node-test-key",
         base_url_http=f"http://127.0.0.1:{server.server_port}/v1/",
@@ -707,6 +714,7 @@ def polling_node() -> Iterator[tuple[LiveNode, Queue, list]]:
         attempt_budget=16,
         max_retries=0,
     )
+
     node = (
         LiveNode.builder("FINFEED-POLLING", TraderId("TESTER-001"), Environment.LIVE)
         .with_reconciliation(False)
@@ -764,7 +772,6 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
         return json.dumps(market).encode()
 
     replies = Queue()
-
     for status, body in [
         (200, (TEST_DATA / "exchanges.json").read_bytes()),
         (200, definition("alpha_NO", "101")),
@@ -818,6 +825,7 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
             min_request_interval_ms=1,
             max_retries=0,
         )
+
         node = (
             LiveNode.builder("FINFEED-REFRESH", TraderId("TESTER-001"), Environment.LIVE)
             .with_reconciliation(False)
@@ -957,7 +965,9 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
         try:
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == (
-                f"/v1/activity/POLYMARKET/{MARKET_ID}/history/{family}?date=2026-10-11&limit=10000"
+                f"/v1/activity/POLYMARKET/{MARKET_ID}/history/{family}?"
+                "time_start=2026-10-11T00%3A00%3A00.0000000Z&"
+                "time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000"
             )
             reply.put((TEST_DATA / f"client-{family}.json").read_bytes())
             await _wait_for(lambda: consumer.records is not None)
@@ -1048,28 +1058,28 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
 
 
 @pytest.mark.parametrize(
-    ("receive_rows", "incompatible", "second", "microsecond", "tie_rows"),
+    ("receive_rows", "count", "second", "microsecond", "tie_rows"),
     [
-        pytest.param([], False, 6, 0, [], id="missing"),
-        pytest.param([], False, 6, 0, [9], id="snapshot-update"),
-        pytest.param([], False, 6, 0, [8], id="update-snapshot"),
-        pytest.param([], False, 6, 0, [8, 9], id="multiple-transitions"),
-        pytest.param([7], False, 2, 3, [], id="within"),
-        pytest.param([7], True, 2, 1, [], id="partial-after-end"),
-        pytest.param([4, 5, 6, 7], True, 2, 1, [], id="all-after-end"),
-        pytest.param([4], True, 2, 3, [], id="reversed"),
+        pytest.param([], 5, 6, 0, [], id="missing"),
+        pytest.param([], 5, 6, 0, [9], id="snapshot-update"),
+        pytest.param([], 5, 6, 0, [8], id="update-snapshot"),
+        pytest.param([], 5, 6, 0, [8, 9], id="multiple-transitions"),
+        pytest.param([7], 2, 2, 3, [], id="within"),
+        pytest.param([7], 1, 2, 1, [], id="partial-after-end"),
+        pytest.param([4, 5, 6, 7], 1, 2, 1, [], id="all-after-end"),
+        pytest.param([4], 2, 2, 3, [], id="reversed"),
     ],
 )
 def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 - One actor lifecycle verifies all clock cases
     polling_node,
     receive_rows: list[int],
-    incompatible: bool,
+    count: int,
     second: int,
     microsecond: int,
     tie_rows: list[int],
 ) -> None:
     """
-    Preserve complete historical actor delivery or reject incompatible clocks.
+    Preserve complete historical actor delivery on the derived group ordering clock.
     """
     node, observed, requests = polling_node
     rows = json.loads((TEST_DATA / "book-replay.json").read_bytes())
@@ -1081,7 +1091,6 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
     source = json.dumps(rows).encode()
     start = datetime(2026, 10, 11, 0, 0, 1, 1, tzinfo=UTC)
     end = datetime(2026, 10, 11, 0, 0, second, microsecond, tzinfo=UTC)
-    count = 5 if second == 6 else 2
 
     class HistoricalConsumer(DataActor):
         """
@@ -1154,17 +1163,13 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
                 path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
                 assert path.startswith(f"/v1/orderbook/POLYMARKET/{MARKET_ID}/history?")
                 reply.put(source)
-            if incompatible:
-                await _wait_for(lambda: consumer.point is not None)
-                await asyncio.sleep(0.2)
-            else:
-                await _wait_for(
-                    lambda: (
-                        consumer.depths is not None
-                        and consumer.point is not None
-                        and len(consumer.ladders) == count
-                    ),
-                )
+            await _wait_for(
+                lambda: (
+                    consumer.depths is not None
+                    and consumer.point is not None
+                    and len(consumer.ladders) == count
+                ),
+            )
         finally:
             handle.stop()
             await asyncio.wait_for(task, timeout=10)
@@ -1173,6 +1178,7 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
         asyncio.run(exercise())
         assert handle.state == NodeState.STOPPED
         assert len(set(consumer.ids)) == 3
+
         expected = [
             (
                 {Decimal(".4"): Decimal(2), Decimal(".3"): Decimal(5)},
@@ -1187,40 +1193,49 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
             ({Decimal(".2"): Decimal(6)}, {Decimal(".9"): Decimal(10)}),
         ]
 
-        if incompatible:
-            assert consumer.deltas is None
-            assert consumer.depths is None
-            assert consumer.ladders == []
-        else:
-            assert consumer.ladders == expected[:count]
-            assert [delta for group in consumer.groups for delta in group] == consumer.deltas
-            for group in consumer.groups:
-                snapshot = RecordFlag.F_SNAPSHOT.matches(group[0].flags)
-                assert all(
-                    RecordFlag.F_SNAPSHOT.matches(delta.flags) == snapshot for delta in group
-                )
+        ordering = [
+            1_791_676_801_000_001_000,
+            1_791_676_802_000_000_100,
+            1_791_676_803_000_000_100,
+            1_791_676_804_000_000_100,
+            1_791_676_805_000_000_100,
+        ]
 
-                if snapshot:
-                    assert group[0].action == BookAction.CLEAR
-                    assert all(delta.action == BookAction.ADD for delta in group[1:])
-                else:
-                    assert all(delta.action != BookAction.CLEAR for delta in group)
-            assert len(consumer.depths) == count
-            assert [(depth.ts_event, depth.ts_init) for depth in consumer.depths] == [
-                (group[-1].ts_event, group[-1].ts_init) for group in consumer.groups
-            ]
-            assert [
-                (order.price.as_decimal(), order.size.as_decimal())
-                for order in consumer.depths[1].bids
-            ] == [(Decimal(".4"), Decimal("5.25"))]
-            assert [
-                (order.price.as_decimal(), order.size.as_decimal())
-                for order in consumer.depths[1].asks
-            ] == [(Decimal(".65"), Decimal(8))]
+        if 8 in tie_rows:
+            ordering[2] = ordering[1]
 
-            if receive_rows:
-                assert consumer.deltas[-1].ts_init == consumer.deltas[-1].ts_event + 2900
-                assert consumer.depths[-1].ts_init == consumer.deltas[-1].ts_init
+        if 9 in tie_rows:
+            ordering[3] = ordering[2]
+
+        if receive_rows:
+            ordering[1] = 1_791_676_802_000_003_000
+
+        assert consumer.ladders == expected[:count]
+        assert [delta for group in consumer.groups for delta in group] == consumer.deltas
+        for index, group in enumerate(consumer.groups):
+            snapshot = RecordFlag.F_SNAPSHOT.matches(group[0].flags)
+            assert all(RecordFlag.F_SNAPSHOT.matches(delta.flags) == snapshot for delta in group)
+            assert [delta.ts_init for delta in group] == [ordering[index]] * len(group)
+            if snapshot:
+                assert group[0].action == BookAction.CLEAR
+                assert all(delta.action == BookAction.ADD for delta in group[1:])
+            else:
+                assert all(delta.action != BookAction.CLEAR for delta in group)
+        assert len(consumer.depths) == count
+        assert [(depth.ts_event, depth.ts_init) for depth in consumer.depths] == [
+            (group[-1].ts_event, group[-1].ts_init) for group in consumer.groups
+        ]
+        assert [
+            (
+                [(order.price.as_decimal(), order.size.as_decimal()) for order in depth.bids],
+                [(order.price.as_decimal(), order.size.as_decimal()) for order in depth.asks],
+            )
+            for depth in consumer.depths
+        ] == [(list(bids.items())[:1], list(asks.items())[:1]) for bids, asks in expected[:count]]
+
+        if receive_rows and count > 1:
+            assert consumer.deltas[-1].ts_init == consumer.deltas[-1].ts_event + 2900
+            assert consumer.depths[-1].ts_init == consumer.deltas[-1].ts_init
         point_ladder = expected[1]
         if 8 in tie_rows:
             point_ladder = expected[3] if 9 in tie_rows else expected[2]
@@ -1394,6 +1409,7 @@ def test_historical_book_example_uses_bounded_controls(monkeypatch) -> None:
     monkeypatch.setitem(example["main"].__globals__, "FinFeedDataClientConfig", capture_config)
     with pytest.raises(RuntimeError, match="Configuration captured before node construction"):
         asyncio.run(example["main"]())
+
     expected_controls = {
         "attempt_budget": 3,
         "http_timeout_secs": 60,
@@ -1404,6 +1420,7 @@ def test_historical_book_example_uses_bounded_controls(monkeypatch) -> None:
         "max_retries": 0,
         "connect_timeout_secs": 45,
     }
+
     assert len(configs) == 1
     assert {name: getattr(configs[0], name) for name in expected_controls} == expected_controls
     assert [(item.exchange_id, item.market_ids) for item in configs[0].instruments] == [

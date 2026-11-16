@@ -34,23 +34,21 @@
 //! order IDs. Bars publish when a later period arrives, and reconnects discard retained periods to
 //! avoid incomplete bars. Historical book snapshots are unsupported.
 //!
-//! The [`csv`] module loads downloaded book, quote, trade, and OHLCV exports without downloading them.
-//! Optional Python bindings expose provider identity, configuration, factories, and flat-file loaders.
+//! [`loaders::CoinApiDataLoader`] loads local exports and historical REST data with retained metadata.
+//! Optional Python bindings expose provider identity, configuration, factories, and the standalone data loader.
+//!
+//! The official CoinAPI API reference can be found at <https://www.coinapi.io/products/market-data-api/docs?ref=nautilus>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
@@ -58,10 +56,23 @@
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
-//! - `python`: Enables Python bindings for identity, configuration, factories, and flat-file loaders
+//! - `python`: Enables Python bindings for identity, configuration, factories, and the standalone data loader
 //!   through [PyO3](https://pyo3.rs).
 //! - `simulation`: Routes HTTP and WebSocket through deterministic transport when built with
 //!   `cfg(madsim)`.
+//!
+//! # Integrator Attribution
+//!
+//! REST requests and WebSocket handshakes include `X-Referrer: nautilus` for API Bricks usage attribution.
+//! The fixed header contains no credential or account data.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/coinapi/#integrator-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/coinapi/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -74,11 +85,13 @@
 pub mod book;
 pub mod common;
 pub mod config;
-pub mod csv;
 pub mod data;
 pub mod factories;
 pub mod http;
+pub mod loaders;
 pub mod websocket;
+
+mod csv;
 
 #[cfg(feature = "python")]
 pub mod python;

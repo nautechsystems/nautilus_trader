@@ -29,12 +29,12 @@
 //! emits **one merged `AccountState`** per update from either source.
 //!
 //! Output contract:
-//! - `AccountType::Margin` (Lighter is a unified margin venue).
+//! - `AccountType::Margin`.
 //! - `base_currency = None`: the account holds multiple spot currencies.
 //! - `balances`: one `AccountBalance` per asset reported by
 //!   `account_all_assets`, with `total = balance + margin_balance` and
-//!   `locked = locked_balance` (spot-order reservations only; perp margin
-//!   in use is reported via `margins`, not `locked`).
+//!   `free = total - locked_balance`. Settlement-currency free is also capped at
+//!   `max(user_stats.available_balance, 0)`. The remainder is `locked`.
 //! - `margins`: one cross-margin balance in the deployment settlement currency, with
 //!   `instrument_id=None` and `initial = max(collateral - available_balance, 0)`.
 //!
@@ -45,8 +45,13 @@
 
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::{events::AccountState, identifiers::AccountId, types::Currency};
+use nautilus_model::{
+    events::AccountState,
+    identifiers::AccountId,
+    types::{AccountBalance, Currency},
+};
 use parking_lot::Mutex;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
@@ -141,21 +146,39 @@ impl LighterAccountStateReconciler {
             return None;
         }
 
+        let stats = inner.user_stats.as_ref()?;
+
         let mut balances = Vec::with_capacity(inner.assets.len());
         for asset in inner.assets.values() {
-            match account_balance_from_lighter_asset(asset) {
-                Ok(balance) => balances.push(balance),
+            let mut balance = match account_balance_from_lighter_asset(asset) {
+                Ok(balance) => balance,
                 Err(e) => return Some(Err(e)),
+            };
+
+            if balance.currency == self.settlement_currency {
+                let free = stats
+                    .available_balance
+                    .max(Decimal::ZERO)
+                    .min(balance.free.as_decimal());
+
+                balance = match AccountBalance::from_total_and_free(
+                    balance.total.as_decimal(),
+                    free,
+                    balance.currency,
+                ) {
+                    Ok(balance) => balance,
+                    Err(e) => return Some(Err(e.into())),
+                };
             }
+
+            balances.push(balance);
         }
 
-        let margin = match inner.user_stats.as_ref().map(|stats| {
-            margin_balance_from_user_stats_with_currency(stats, self.settlement_currency)
-        }) {
-            Some(Ok(m)) => Some(m),
-            Some(Err(e)) => return Some(Err(e)),
-            None => None,
-        };
+        let margin =
+            match margin_balance_from_user_stats_with_currency(stats, self.settlement_currency) {
+                Ok(margin) => Some(margin),
+                Err(e) => return Some(Err(e)),
+            };
 
         Some(Ok(build_unified_account_state(
             balances, margin, account_id, ts_event, ts_init,
@@ -271,10 +294,7 @@ mod tests {
 
     #[rstest]
     fn reconciler_merges_spot_and_perp_into_one_balance() {
-        // 10 spot + 40 perp, no positions, no resting spot orders.
-        // Unified-margin shape: both legs are deployable equity, so
-        // total=50, locked=0, free=50. MarginBalance carries the
-        // (zero) margin-in-use breakdown.
+        // Total includes spot funds, while venue availability bounds funding checks
         let r = LighterAccountStateReconciler::new();
         r.update_assets(&asset_map(usdc_asset("10.0", "0.0", "40.0")));
         r.update_user_stats(&user_stats("40.0", "40.0", "0.0"));
@@ -290,8 +310,8 @@ mod tests {
         let bal = &state.balances[0];
         assert_eq!(bal.currency, usdc);
         assert_eq!(bal.total, Money::from("50.000000 USDC"));
-        assert_eq!(bal.locked, Money::from("0 USDC"));
-        assert_eq!(bal.free, Money::from("50.000000 USDC"));
+        assert_eq!(bal.locked, Money::from("10 USDC"));
+        assert_eq!(bal.free, Money::from("40.000000 USDC"));
 
         assert_eq!(state.margins.len(), 1);
         let margin = &state.margins[0];
@@ -302,11 +322,7 @@ mod tests {
 
     #[rstest]
     fn reconciler_tracks_position_open_via_user_stats_drift() {
-        // After opening a perp position: collateral unchanged at 40,
-        // available_balance drops to 35 (5 USDC margin in use).
-        // AccountBalance is unchanged; margin-in-use lives on
-        // MarginBalance, not in `locked`. Maintenance stays 0 because
-        // Lighter doesn't publish maintenance on `user_stats`.
+        // Venue availability reserves the position margin in the settlement balance
         let r = LighterAccountStateReconciler::new();
         r.update_assets(&asset_map(usdc_asset("10.0", "0.0", "40.0")));
         r.update_user_stats(&user_stats("40.0", "35.0", "12.50"));
@@ -318,12 +334,79 @@ mod tests {
 
         let bal = &state.balances[0];
         assert_eq!(bal.total, Money::from("50.000000 USDC"));
-        assert_eq!(bal.locked, Money::from("0 USDC"));
-        assert_eq!(bal.free, Money::from("50.000000 USDC"));
+        assert_eq!(bal.locked, Money::from("15 USDC"));
+        assert_eq!(bal.free, Money::from("35.000000 USDC"));
 
         let margin = &state.margins[0];
         assert_eq!(margin.initial, Money::from("5.000000 USDC"));
         assert_eq!(margin.maintenance, Money::from("0 USDC"));
+    }
+
+    #[rstest]
+    #[case::reserved("250", "25", "250")]
+    #[case::zero("0", "25", "0")]
+    #[case::negative("-15", "25", "0")]
+    #[case::spot_locked("995", "25", "975")]
+    #[case::above_total("1200", "0", "1000")]
+    fn reconciler_bounds_settlement_free_by_venue_availability(
+        #[values(Currency::USDC(), Currency::USDG())] currency: Currency,
+        #[case] available: &str,
+        #[case] spot_locked: &str,
+        #[case] expected_free: &str,
+    ) {
+        let r = LighterAccountStateReconciler::new_with_settlement_currency(currency);
+        let mut asset = usdc_asset("100", spot_locked, "900");
+        asset.symbol = Ustr::from(&currency.to_string());
+        let mut assets = asset_map(asset);
+        assets.insert(
+            Ustr::from("1"),
+            LighterAsset {
+                symbol: Ustr::from("ETH"),
+                asset_id: 1,
+                balance: Decimal::from(7),
+                locked_balance: Decimal::from(2),
+                margin_balance: Decimal::ZERO,
+                margin_mode: Ustr::from("disabled"),
+            },
+        );
+
+        r.update_assets(&assets);
+        r.update_user_stats(&user_stats("1000", available, "75"));
+        let state = r
+            .build_state(account_id(), 1.into(), 2.into())
+            .unwrap()
+            .unwrap();
+        let settlement = state
+            .balances
+            .iter()
+            .find(|b| b.currency == currency)
+            .unwrap();
+        let free = Decimal::from_str(expected_free).unwrap();
+        let expected =
+            AccountBalance::from_total_and_free(Decimal::from(1000), free, currency).unwrap();
+        let eth = state
+            .balances
+            .iter()
+            .find(|b| b.currency == Currency::ETH())
+            .unwrap();
+        assert_eq!(state.balances.len(), 2);
+        assert_eq!(*settlement, expected);
+        assert_eq!(
+            *eth,
+            AccountBalance::new(
+                Money::from("7 ETH"),
+                Money::from("2 ETH"),
+                Money::from("5 ETH")
+            )
+        );
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(state.margins[0].instrument_id, None);
+        assert_eq!(state.margins[0].currency, currency);
+        assert_eq!(
+            state.margins[0].initial.as_decimal(),
+            (Decimal::from(1000) - Decimal::from_str(available).unwrap()).max(Decimal::ZERO)
+        );
+        assert_eq!(state.margins[0].maintenance.as_decimal(), Decimal::ZERO);
     }
 
     #[rstest]

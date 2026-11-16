@@ -290,7 +290,7 @@ self.subscribe_option_chain(
     snapshot_interval_ms,
     Some(client_id),
     None, // params
-);
+)?;
 ```
 
 For raw mode, pass `None` for `snapshot_interval_ms`. In this mode, every quote or Greeks update publishes a

@@ -256,12 +256,49 @@ pub enum OhlcvUnit {
     Other(Ustr),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
+pub(crate) enum Exchange {
+    #[strum(serialize = "KALSHI")]
+    Kalshi,
+    #[strum(serialize = "POLYMARKET")]
+    Polymarket,
+    #[strum(serialize = "MYRIAD")]
+    Myriad,
+    #[strum(serialize = "MANIFOLD")]
+    Manifold,
+    #[strum(serialize = "HYPERLIQUIDOUTCOME")]
+    HyperliquidOutcome,
+    #[strum(serialize = "PASCAL")]
+    Pascal,
+    #[strum(serialize = "GEMINIPM")]
+    GeminiPm,
+    #[strum(serialize = "CRYPTOCOMPM")]
+    CryptocomPm,
+    #[strum(serialize = "FORECASTEX")]
+    Forecastex,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
     use crate::http::models::OhlcvPeriod;
+
+    #[rstest]
+    #[case("KALSHI", Exchange::Kalshi)]
+    #[case("POLYMARKET", Exchange::Polymarket)]
+    #[case("MYRIAD", Exchange::Myriad)]
+    #[case("MANIFOLD", Exchange::Manifold)]
+    #[case("HYPERLIQUIDOUTCOME", Exchange::HyperliquidOutcome)]
+    #[case("PASCAL", Exchange::Pascal)]
+    #[case("GEMINIPM", Exchange::GeminiPm)]
+    #[case("CRYPTOCOMPM", Exchange::CryptocomPm)]
+    #[case("FORECASTEX", Exchange::Forecastex)]
+    fn exchange_labels_preserve_exact_identity(#[case] label: &str, #[case] expected: Exchange) {
+        assert_eq!(label.parse::<Exchange>().unwrap(), expected);
+        assert!(label.to_ascii_lowercase().parse::<Exchange>().is_err());
+    }
 
     #[rstest]
     fn every_documented_interval_decodes_and_serializes_verbatim() {

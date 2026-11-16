@@ -63,7 +63,7 @@ enum RepayOutcome {
 /// Delay to wait out Bybit's hourly repayment blackout (mm:04:00-mm:05:30 UTC,
 /// end inclusive so repayment resumes at :05:31), or `None` when repayment is allowed.
 #[must_use]
-fn repay_blackout_delay(now_ns: UnixNanos) -> Option<Duration> {
+pub(crate) fn repay_blackout_delay(now_ns: UnixNanos) -> Option<Duration> {
     let sec_of_hour = now_ns.as_seconds().rem_euclid(3600);
     if (BLACKOUT_START_SEC..=BLACKOUT_END_SEC).contains(&sec_of_hour) {
         Some(Duration::from_secs(BLACKOUT_END_SEC + 1 - sec_of_hour))

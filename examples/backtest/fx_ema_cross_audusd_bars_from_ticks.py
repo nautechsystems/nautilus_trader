@@ -48,6 +48,7 @@ from ema_cross import EMACrossConfig
 if __name__ == "__main__":
     provider = TestDataProvider()
     rates = provider.read_csv("short-term-interest.csv")
+
     rollover = FXRolloverInterestModule(
         records=[
             InterestRateRecord(location=row[0], time=row[1], value=row[2])
@@ -58,6 +59,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
+
     SIM = Venue("SIM")
     USD = Currency.from_str("USD")
     engine.add_venue(
@@ -91,6 +93,7 @@ if __name__ == "__main__":
             slow_ema_period=20,
         ),
     )
+
     engine.add_strategy(strategy)
     engine.run()
 

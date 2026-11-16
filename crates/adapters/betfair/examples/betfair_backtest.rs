@@ -13,15 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Betfair backtest: loads historical exchange data and runs a book imbalance actor.
+//! Betfair backtest: loads historical exchange data and runs the order book imbalance strategy.
 //!
 //! This example shows how to:
-//! 1. Load raw Betfair `.gz` streaming data into Nautilus domain objects
+//! 1. Load raw Betfair `.gz` or `.bz2` streaming data into Nautilus domain objects
 //! 2. Convert those objects into the `Data` enum the backtest engine accepts
 //! 3. Configure a `BacktestEngine` with a BETFAIR venue
-//! 4. Use the `BookImbalanceActor` to track order book imbalance
+//! 4. Run `OrderBookImbalance` for every runner
 //!
-//! The actor computes a running bid/ask quoted volume imbalance per runner.
+//! The strategy compares the current best bid/ask sizes and takes the thinner side with capped FOK orders.
 //! In Betfair terms: bids = "back" orders, asks = "lay" orders.
 //!
 //! Edit the constants below to change the data file and imbalance log interval.
@@ -48,20 +48,23 @@ use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Money},
+    types::{Currency, Money, Quantity},
 };
-use nautilus_trading::examples::actors::BookImbalanceActor;
+use nautilus_trading::{
+    examples::strategies::{OrderBookImbalance, OrderBookImbalanceConfig},
+    strategy::StrategyConfig,
+};
 
 const DATA_FILE: &str = "test_data/local/betfair/1.253378068.gz";
-const LOG_INTERVAL: u64 = 5000;
+const LOG_INTERVAL: u64 = 200;
 
-/// Loads a Betfair `.gz` streaming file and separates instruments from data.
+/// Loads a compressed Betfair streaming file and separates instruments from data.
 ///
 /// `BetfairDataLoader` parses raw files into `BetfairDataItem` variants.
 /// The backtest engine only accepts the `Data` enum, so we convert book
-/// deltas, trades, and settlement events, and skip Betfair-specific types
+/// deltas, statuses, trades, and settlement events, and skip Betfair-specific types
 /// (tickers, BSP, race GPS data) that have no `Data` variant.
 ///
 /// `Data::BookDeltas` boxes its `OrderBookDeltas` payload to keep the enum small.
@@ -96,6 +99,9 @@ fn load_betfair_data(
             BetfairDataItem::Deltas(d) => {
                 data.push(Data::BookDeltas(Box::new(d)));
             }
+            BetfairDataItem::Status(s) => {
+                data.push(Data::InstrumentStatus(s));
+            }
             BetfairDataItem::Trade(t) => {
                 data.push(Data::Trade(t));
             }
@@ -128,14 +134,15 @@ fn main() -> anyhow::Result<()> {
     let filepath = resolve_filepath();
     if !filepath.exists() {
         anyhow::bail!(
-            "File not found: {}\n\nCopy Betfair .gz files to test_data/local/betfair/",
+            "File not found: {}\n\nCopy Betfair .gz or .bz2 files to test_data/local/betfair/",
             filepath.display()
         );
     }
 
     println!("Loading: {}", filepath.display());
     let (instruments, data) = load_betfair_data(&filepath)?;
-    let instrument_ids: Vec<InstrumentId> = instruments.keys().copied().collect();
+    let mut instrument_ids: Vec<InstrumentId> = instruments.keys().copied().collect();
+    instrument_ids.sort();
     println!(
         "\n{} instruments, {} data points",
         instruments.len(),
@@ -161,8 +168,24 @@ fn main() -> anyhow::Result<()> {
         engine.add_instrument(instrument)?;
     }
 
-    let actor = BookImbalanceActor::new(instrument_ids, LOG_INTERVAL, None);
-    engine.add_actor(actor)?;
+    for (index, instrument_id) in instrument_ids.into_iter().enumerate() {
+        let tag = format!("{index:03}");
+
+        let base = StrategyConfig {
+            strategy_id: Some(StrategyId::from(format!("OrderBookImbalance-{tag}"))),
+            order_id_tag: Some(tag),
+            ..Default::default()
+        };
+
+        let config = OrderBookImbalanceConfig::builder()
+            .base(base)
+            .instrument_id(instrument_id)
+            .max_trade_size(Quantity::from("1.00"))
+            .log_interval(LOG_INTERVAL)
+            .build();
+        engine.add_strategy(OrderBookImbalance::from_config(config)?)?;
+    }
+
     engine.add_data(data, None, true, true)?;
 
     println!("\nRunning backtest...");

@@ -94,6 +94,11 @@ macro_rules! nautilus_strategy {
             fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
                 $crate::_macro_reexports::DataActorNative::core_mut(&mut self.$field)
             }
+
+            fn dispatch_start(&mut self) -> $crate::_macro_reexports::anyhow::Result<()> {
+                $crate::strategy::Strategy::on_start(self)?;
+                $crate::_macro_reexports::DataActor::on_start(self)
+            }
         }
 
         impl $crate::strategy::StrategyNative for $ty {

@@ -35,10 +35,12 @@ def _float_maps_equal(a: dict[str, float], b: dict[str, float]) -> bool:
     """
     if a.keys() != b.keys():
         return False
+
     for key in a:
         va, vb = a[key], b[key]
         if math.isnan(va) and math.isnan(vb):
             continue
+
         if va != vb:
             return False
     return True

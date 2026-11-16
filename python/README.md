@@ -106,8 +106,6 @@ uv pip install --pre --index-url=https://packages.nautechsystems.io/simple/ naut
 
 The nightly merge builds and tests wheels on every listed platform.
 
-Python 3.15 requires a source build or a development wheel until the next PyPI release.
-
 The `--pre` flag is required because wheels are tagged as pre-release builds. Run this command
 outside the NautilusTrader source checkout so the repository's `exclude-newer` uv policy does not
 filter out newly published wheels. The installed package imports as `nautilus_trader`.

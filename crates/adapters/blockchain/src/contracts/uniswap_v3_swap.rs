@@ -27,7 +27,6 @@ use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient}
 // The original Uniswap V3 SwapRouter interface: `exactInputSingle` carries a `deadline`
 // parameter, unlike the later SwapRouter02 whose struct drops it.
 sol! {
-    #[sol(rpc)]
     contract UniswapV3SwapRouter {
         struct ExactInputSingleParams {
             address tokenIn;
@@ -45,13 +44,11 @@ sol! {
 }
 
 sol! {
-    #[sol(rpc)]
     contract UniswapV3RouterState {
         function factory() external view returns (address);
         function WETH9() external view returns (address);
     }
 
-    #[sol(rpc)]
     contract UniswapV3Factory {
         function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool);
     }

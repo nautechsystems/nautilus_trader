@@ -316,14 +316,41 @@ impl PolymarketPositionClient {
         &self,
         condition_id: &str,
     ) -> Result<PolymarketPositionTransaction> {
-        let PositionMarket::Ctf { neg_risk } = self.market(condition_id).await? else {
-            return Err(Error::bad_request(
-                "redeem_positions supports only v1 CTF markets; use redeem_position for V2",
-            ));
-        };
-
-        let call = encode_redeem_positions(condition_id, neg_risk)?;
+        let call = self.prepare_ctf_redemption(condition_id).await?;
         self.submit_call(call, "Redeem positions").await
+    }
+
+    /// Redeems CTF conditions in one ordered Deposit Wallet batch.
+    ///
+    /// Preserves input order and duplicates. The caller chooses the batch size, subject to Relayer
+    /// limits. All conditions are prepared before signing. Preparation errors retain their original
+    /// type; a warning identifies the failing condition and its zero-based input index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input is empty, a market is unsupported or invalid, or submission is
+    /// rejected or ambiguous. The returned transaction reports one outcome for the entire batch.
+    pub async fn redeem_positions_batch(
+        &self,
+        condition_ids: &[&str],
+    ) -> Result<PolymarketPositionTransaction> {
+        if condition_ids.is_empty() {
+            return Err(Error::bad_request(
+                "redeem_positions_batch requires at least one condition",
+            ));
+        }
+
+        let mut calls = Vec::with_capacity(condition_ids.len());
+        for (index, condition_id) in condition_ids.iter().enumerate() {
+            calls.push(self.prepare_ctf_redemption(condition_id).await.inspect_err(|e| {
+                log::warn!(
+                    "Polymarket batch redemption preparation failed: wallet={:#x}, condition_index={index}, condition_id={condition_id}, error={e}",
+                    self.deposit_wallet,
+                );
+            })?);
+        }
+
+        self.submit_calls(&calls, "Redeem positions batch").await
     }
 
     /// Redeems an explicit amount of V2 outcome index `0` or `1`.
@@ -380,6 +407,16 @@ impl PolymarketPositionClient {
             .map(encode_approval)
             .collect::<Vec<_>>();
         self.submit_calls(&calls, "Approve V2 trading").await
+    }
+
+    async fn prepare_ctf_redemption(&self, condition_id: &str) -> Result<PositionCall> {
+        let PositionMarket::Ctf { neg_risk } = self.market(condition_id).await? else {
+            return Err(Error::bad_request(
+                "redeem_positions supports only v1 CTF markets; use redeem_position for V2",
+            ));
+        };
+
+        encode_redeem_positions(condition_id, neg_risk)
     }
 
     async fn market(&self, condition_id: &str) -> Result<PositionMarket> {

@@ -118,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .order_qty(order_qty)
         .dry_run(DRY_RUN)
         .open_position_on_start_qty(order_qty.as_decimal())
+        .open_position_on_first_quote(true)
         .log_data(false)
         // .enable_limit_buys(false)
         // .enable_limit_sells(false)

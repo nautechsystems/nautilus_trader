@@ -223,7 +223,7 @@ pub const WEEKDAYS: [Weekday; 5] = [
     Weekday::Friday,
 ];
 
-/// Converts seconds to nanoseconds (ns).
+/// Converts seconds to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
 /// # Errors
 ///
@@ -244,10 +244,10 @@ pub fn secs_to_nanos(secs: f64) -> anyhow::Result<u64> {
         nanos < U64_UPPER_BOUND_F64,
         "seconds {secs} is out of range for `u64` nanoseconds"
     );
-    Ok(nanos.trunc() as u64)
+    Ok(nanos.round() as u64)
 }
 
-/// Converts seconds to milliseconds (ms).
+/// Converts seconds to milliseconds (ms), rounding to the nearest millisecond.
 ///
 /// # Errors
 ///
@@ -268,7 +268,7 @@ pub fn secs_to_millis(secs: f64) -> anyhow::Result<u64> {
         millis < U64_UPPER_BOUND_F64,
         "seconds {secs} is out of range for `u64` milliseconds"
     );
-    Ok(millis.trunc() as u64)
+    Ok(millis.round() as u64)
 }
 
 /// Converts seconds to nanoseconds (ns), panicking on invalid input.
@@ -300,10 +300,9 @@ pub const fn checked_mins_to_secs(mins: u64) -> Option<u64> {
     mins.checked_mul(SECONDS_IN_MINUTE)
 }
 
-/// Converts milliseconds (ms) to nanoseconds (ns).
+/// Converts milliseconds (ms) to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
+/// Returns 0 for a negative input.
 ///
 /// # Errors
 ///
@@ -328,7 +327,7 @@ pub fn millis_to_nanos(millis: f64) -> anyhow::Result<u64> {
         nanos < U64_UPPER_BOUND_F64,
         "milliseconds {millis} is out of range for `u64` nanoseconds"
     );
-    Ok(nanos.trunc() as u64)
+    Ok(nanos.round() as u64)
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns), panicking on invalid input.
@@ -341,10 +340,9 @@ pub fn millis_to_nanos_unchecked(millis: f64) -> u64 {
     millis_to_nanos(millis).expect("millis_to_nanos_unchecked: invalid or overflowing input")
 }
 
-/// Converts microseconds (μs) to nanoseconds (ns).
+/// Converts microseconds (μs) to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
+/// Returns 0 for a negative input.
 ///
 /// # Errors
 ///
@@ -369,7 +367,7 @@ pub fn micros_to_nanos(micros: f64) -> anyhow::Result<u64> {
         nanos < U64_UPPER_BOUND_F64,
         "microseconds {micros} is out of range for `u64` nanoseconds"
     );
-    Ok(nanos.trunc() as u64)
+    Ok(nanos.round() as u64)
 }
 
 /// Converts microseconds (μs) to nanoseconds (ns), panicking on invalid input.
@@ -716,6 +714,9 @@ mod tests {
     #[case(0.000_000_01, 10)]
     #[case(0.000_000_001, 1)]
     #[case(9.999_999_999, 9_999_999_999)]
+    #[case(1.001, 1_001_000_000)]
+    #[case(0.000_000_001_4, 1)]
+    #[case(0.000_000_000_5, 1)]
     fn test_secs_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_nanos(value).unwrap();
         assert_eq!(result, expected);
@@ -728,6 +729,7 @@ mod tests {
     #[case(42.0, 42_000)]
     #[case(0.012_34, 12)]
     #[case(0.001, 1)]
+    #[case(1.001, 1_001)]
     fn test_secs_to_millis(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_millis(value).unwrap();
         assert_eq!(result, expected);
@@ -844,6 +846,7 @@ mod tests {
     #[case(0.000_01, 10)]
     #[case(0.000_001, 1)]
     #[case(9.999_999, 9_999_999)]
+    #[case(1.001, 1_001_000)]
     fn test_millis_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = millis_to_nanos(value).unwrap();
         assert_eq!(result, expected);
@@ -866,6 +869,7 @@ mod tests {
     #[case(0.01, 10)]
     #[case(0.001, 1)]
     #[case(9.999, 9_999)]
+    #[case(1.001, 1_001)]
     fn test_micros_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = micros_to_nanos(value).unwrap();
         assert_eq!(result, expected);

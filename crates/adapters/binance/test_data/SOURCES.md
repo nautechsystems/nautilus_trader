@@ -36,7 +36,17 @@ for cases where a docs example is missing or stale.
 | Market data streams | `parse_agg_trade`, `parse_trade`, `parse_book_ticker`, `parse_depth_update`, `parse_mark_price`, `parse_kline`, `extract_symbol`, `extract_event_type`                                                             | USD-M Futures market stream docs for aggregate trade, book ticker, diff depth, mark price, and klines. |
 | User data streams   | `parse_futures_order_update_to_order_status`, `parse_futures_order_update_to_fill`, `parse_futures_algo_update_to_order_status`, `parse_futures_account_update`, `decode_order_client_id`, `decode_algo_client_id` | USD-M Futures user-data docs for balance and position updates, order updates, and algo order updates.  |
 
+## Portfolio Margin
+
+| Surface           | Parser functions                                 | Primary source                                                                                                                                 |
+| ----------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| PAPI account REST | Response models under `src/papi/http/models.rs`. | [PAPI account docs](https://developers.binance.com/en/docs/catalog/advanced-trading-derivatives-trading-portfolio-margin/api/rest-api/account) |
+
 ## Notes
+
+- The `papi/http_json/*.json` fixtures are synthetic, independently authored from the official PAPI
+  response schemas and examples. They cover exact decimal values, missing/empty/zero fields, and
+  both balance response shapes; they are not documentation or live captures.
 
 - As of March 12, 2026, Binance spot REST, user-data stream, and WS API docs
   publish canonical JSON examples for the major parser surfaces.
@@ -50,11 +60,14 @@ for cases where a docs example is missing or stale.
   `load_event_fixture` loader in tests.
 - For SBE coverage, the docs define the expected fields. Live capture supplies
   the canonical wire bytes.
-- As of March 12, 2026, Binance does not appear to publish a separate USD-M
-  individual trade stream example on the market-stream docs pages. The fixture
-  `futures/market_data_json/trade_stream.json` is derived from the published
-  aggregate trade example and should be replaced with a live sample if we
-  capture one.
+- As of November 10, 2026, Binance does not list a USD-M individual trade
+  stream on the market-stream docs pages. The fixtures
+  `futures/market_data_json/trade_stream.json` and
+  `futures/market_data_json/trade_stream_na.json` are the `data` objects of
+  live `btcusdt@trade` messages captured from the combined stream at
+  `wss://fstream.binance.com/public/stream` on that date. The first is an
+  order book trade (`X="MARKET"`). The second is an `X="NA"` message with zero
+  price and quantity, which the stream interleaves with trades.
 - The fixtures `futures/market_data_json/kline_stream_closed.json`,
   `futures/user_data_json/order_update_trade.json`, and
   `futures/user_data_json/algo_update_new.json` are narrow derived variants of

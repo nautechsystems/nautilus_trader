@@ -124,8 +124,7 @@ pub fn contract_to_pydict<'py>(
         contract
             .last_trade_date
             .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_default(),
+            .map_or_default(ToString::to_string),
     )?;
     dict.set_item("multiplier", &contract.multiplier)?;
     dict.set_item("strike", contract.strike)?;

@@ -91,8 +91,7 @@ impl CustomData {
         let id = self
             .data_type
             .identifier()
-            .map(|s| format!(", identifier={s:?}"))
-            .unwrap_or_default();
+            .map_or_default(|s| format!(", identifier={s:?}"));
         format!(
             "CustomData(data_type={type_name:?}{id}, ts_event={}, ts_init={})",
             self.data.ts_event().as_u64(),

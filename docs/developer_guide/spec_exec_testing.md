@@ -1766,8 +1766,14 @@ conditions hold, the adapter emits the matching denied event with the command ID
 - Explicit per-order venue rejections still emit the matching rejection event with the venue
   reason.
 
-After an ambiguous outcome, the order remains in the appropriate in-flight state until a venue
-update, query result, or reconciliation pass resolves it.
+These criteria apply to adapter request failures. Separately, when the engine exhausts in-flight retries
+under `RetainUnresolved`, it emits `OrderCancelRejected` or `OrderModifyRejected` with reason
+`INFLIGHT_TIMEOUT` for a pending cancel or modify on an accepted order. This restores the prior order status
+without proving a venue rejection. See [In-flight checks](../concepts/execution/reconciliation.md#in-flight-checks).
+
+After an ambiguous outcome, the order remains in flight until venue evidence resolves it or the engine's
+in-flight timeout policy handles it. When periodic open-order checks are enabled, open-only missing-order
+queries can return a terminal report for a restored order; a missing report or failed query leaves it open.
 
 ### TC-E70: PostOnly rejection
 
@@ -1819,19 +1825,22 @@ ExecTesterConfig::builder()
 
 ### TC-E71: ReduceOnly rejection
 
-| Field              | Value                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Prerequisite**   | Adapter connected, no open position for the instrument.                                                                                                            |
-| **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                                                         |
-| **Pass criteria**  | Order rejected. `OrderRejected` event with reason indicating reduce-only violation.                                                                                |
-| **Skip when**      | Adapter does not support reduce-only flag.                                                                                                                         |
+| Field              | Value                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, no open position for the instrument.                                                    |
+| **Action**         | Submit a supported order type with `reduce_only=True` when no position exists to reduce.                   |
+| **Event sequence** | `OrderInitialized` -> `OrderDenied`, or `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.         |
+| **Pass criteria**  | Order denied before submission or rejected by the venue, with a reason indicating a reduce-only violation. |
+| **Skip when**      | Adapter does not support the reduce-only flag.                                                             |
 
 **Considerations**:
 
 - The `test_reject_reduce_only` flag only applies to the opening market order submitted via
-  `open_position_on_start_qty`.
+  `open_position_on_start_qty`. For adapters without market orders, use a manual strategy with
+  a supported marketable limit IOC order.
 - Verify no prior position exists for the instrument before running this test.
+- An unsupported-order-type denial does not prove reduce-only validation. The reason must identify
+  the reduce-only violation.
 
 **Python config**:
 
@@ -2287,8 +2296,7 @@ ExecTesterConfig(
 
 **Considerations**:
 
-- Some venues use a dedicated order type for options FOK orders (e.g. OKX uses
-  `op_fok`). The adapter handles this mapping transparently.
+- See the adapter's integration guide for its options FOK request mapping.
 - Use small quantities and aggressive pricing to get a fill for the positive case.
 
 ### TC-E100: Cancel option order

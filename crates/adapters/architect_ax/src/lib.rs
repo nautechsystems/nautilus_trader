@@ -21,28 +21,37 @@
 //! innovations from digital asset perpetual exchanges with the safety and risk management of
 //! traditional futures exchanges. Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm).
 //!
-//! The `nautilus-architect-ax` crate provides client bindings (HTTP & WebSocket) and data models
-//! for the official AX Exchange API.
+//! The `nautilus-architect-ax` crate connects AX Exchange market data and order execution to NautilusTrader.
+//! It provides typed HTTP and WebSocket clients, instrument definitions, and live-node factories for
+//! production and sandbox environments.
+//!
+//! The official AX Exchange API reference can be found at <https://docs.architect.exchange/api-reference>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation:
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
+//! # Integrator Attribution
+//!
+//! WebSocket order submissions set `tag` to `Nautilus` for attribution.
+//! HTTP order submissions omit `tag` unless the caller supplies it.
+//!
 //! # Documentation
 //!
-//! - API reference: <https://docs.architect.exchange/api-reference>
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/architect_ax/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/architect_ax/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

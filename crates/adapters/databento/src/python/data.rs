@@ -37,7 +37,7 @@ impl DatabentoDataClient {
     /// and `DatabentoHistoricalClient` for historical data requests. It supports multiple
     /// datasets simultaneously, with separate feed handlers per dataset.
     #[new]
-    #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true, futures_year_digits=None))]
+    #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true, futures_year_digits=None, share_class_space=true))]
     pub fn py_new(
         client_id: ClientId,
         api_key: String,
@@ -45,6 +45,7 @@ impl DatabentoDataClient {
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
         futures_year_digits: Option<u8>,
+        share_class_space: bool,
     ) -> PyResult<Self> {
         let futures_year_digits = futures_year_digits
             .map(FuturesYearDigits::try_from)
@@ -60,6 +61,7 @@ impl DatabentoDataClient {
         );
 
         config.futures_year_digits = futures_year_digits;
+        config.share_class_space = share_class_space;
         Self::new(client_id, config, get_atomic_clock_realtime()).map_err(to_pyruntime_err)
     }
 

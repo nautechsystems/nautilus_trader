@@ -17,7 +17,9 @@
 //!
 //! Converts `RpcLog` fields and hex strings to their domain types.
 
-use alloy::primitives::Address;
+use std::str::FromStr;
+
+use alloy::primitives::{Address, B256};
 use nautilus_core::hex;
 use nautilus_model::defi::rpc::RpcLog;
 
@@ -61,6 +63,22 @@ pub fn extract_block_number(log: &RpcLog) -> anyhow::Result<u64> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Missing block number"))?;
     parse_hex_u64(hex)
+}
+
+/// Extracts the block hash from an RPC log.
+///
+/// Returns `None` for pending logs, which carry no block hash.
+///
+/// # Errors
+///
+/// Returns an error if the reported block hash is not valid 32-byte hex.
+pub fn extract_block_hash(log: &RpcLog) -> anyhow::Result<Option<B256>> {
+    log.block_hash
+        .as_deref()
+        .map(|hash| {
+            B256::from_str(hash).map_err(|e| anyhow::anyhow!("Invalid block hash {hash}: {e}"))
+        })
+        .transpose()
 }
 
 /// Extract transaction hash from RPC log.
@@ -145,8 +163,8 @@ pub fn extract_address_from_topic(
     let bytes = extract_topic_bytes(log, index)
         .map_err(|_| anyhow::anyhow!("Missing {description} address in topic{index}"))?;
     anyhow::ensure!(
-        bytes.len() >= 32,
-        "Topic must be at least 32 bytes, was {}",
+        bytes.len() == 32,
+        "Topic must be 32 bytes, was {}",
         bytes.len()
     );
     Ok(Address::from_slice(&bytes[12..32]))
@@ -250,6 +268,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_extract_block_hash(log: RpcLog) {
+        let expected =
+            B256::from_str("0xd371b6c7b04ec33d6470f067a82e87d7b294b952bea7a46d7b939b4c7addc275")
+                .unwrap();
+        assert_eq!(extract_block_hash(&log).unwrap(), Some(expected));
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_pending_log_returns_none(mut log: RpcLog) {
+        log.block_hash = None;
+
+        assert_eq!(extract_block_hash(&log).unwrap(), None);
+    }
+
+    #[rstest]
+    fn test_extract_block_hash_invalid_returns_error(mut log: RpcLog) {
+        log.block_hash = Some("0xnotahash".to_string());
+
+        assert!(extract_block_hash(&log).is_err());
+    }
+
+    #[rstest]
     fn test_extract_transaction_hash(log: RpcLog) {
         assert_eq!(
             extract_transaction_hash(&log).unwrap(),
@@ -311,6 +351,29 @@ mod tests {
         assert_eq!(
             address.to_string().to_lowercase(),
             "0x838930cfe7502dd36b0b1ebbef8001fbf94f3bfb"
+        );
+    }
+
+    #[rstest]
+    #[case(31)]
+    #[case(33)]
+    fn test_extract_address_from_topic_rejects_noncanonical_width(
+        mut log: RpcLog,
+        #[case] byte_len: usize,
+    ) {
+        let valid_log = log.clone();
+        log.topics[1] = format!("0x{}", "11".repeat(byte_len));
+
+        let error = extract_address_from_topic(&log, 1, "token0").unwrap_err();
+        let address = extract_address_from_topic(&valid_log, 1, "token0").unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Topic must be 32 bytes, was {byte_len}")
+        );
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0x2e5353426c89f4ecd52d1036da822d47e73376c4"
         );
     }
 

@@ -748,7 +748,7 @@ fn single_submit_definitive_failure_rejects_and_removes_tracking() {
         account_id,
         UnixNanos::new(19),
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -994,7 +994,7 @@ async fn inactive_accepted_order_stays_working(#[case] pending_modify: bool, #[c
         let order = tracker.active_orders.get_mut(&order_id).unwrap();
         order.accepted = true;
         order.pending_modify = pending_modify.then_some(PendingModifyValues {
-            total_quantity: 1.0,
+            total_quantity: Some(1.0),
             limit_price: Some(5000.0),
             aux_price: None,
             trail_stop_price: None,
@@ -1125,7 +1125,7 @@ fn order_notice_rejection_emits_terminal_event_after_informational_notices() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &rejection,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(43),
         account_id,
         None,
@@ -1191,7 +1191,7 @@ fn order_notice_sub_200_error_rejects_pre_acceptance_order() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(44),
         account_id,
         None,
@@ -1246,7 +1246,7 @@ fn order_notice_for_accepted_order_with_pending_modify_emits_modify_rejected() {
         let order = tracker.active_orders.get_mut(&order_id).unwrap();
         order.accepted = true;
         order.pending_modify = Some(PendingModifyValues {
-            total_quantity: 1.0,
+            total_quantity: Some(1.0),
             limit_price: Some(5000.0),
             aux_price: None,
             trail_stop_price: None,
@@ -1264,7 +1264,7 @@ fn order_notice_for_accepted_order_with_pending_modify_emits_modify_rejected() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(45),
         account_id,
         None,
@@ -1328,7 +1328,7 @@ fn order_notice_for_accepted_order_with_pending_cancel_emits_cancel_rejected() {
     InteractiveBrokersExecutionClient::handle_order_notice(
         &notice,
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(47),
         account_id,
         None,
@@ -1446,7 +1446,7 @@ fn resolve_failed_order_list_predecessors_cancels_and_clears_tracking() {
         &state.0,
         strategy_id,
         account_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -1506,7 +1506,7 @@ fn resolve_failed_order_list_predecessors_skips_failed_cancels() {
         &state.0,
         strategy_id,
         account_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -1664,7 +1664,7 @@ async fn open_order_refresh_clears_pending_modify_only_on_match(
     let mut tracked = create_tracked_order_context(client_order_id, instrument_id);
     tracked.accepted = true;
     tracked.pending_modify = Some(PendingModifyValues {
-        total_quantity: 2.0,
+        total_quantity: Some(2.0),
         limit_price: Some(101.0),
         aux_price: None,
         trail_stop_price: None,
@@ -1718,7 +1718,7 @@ async fn trailing_stop_modify_is_acknowledged_by_its_trail_stop_price() {
     tracked.accepted = true;
     tracked.last_update = Some((Quantity::from(2), None, Some(Price::from("96.00"))));
     tracked.pending_modify = Some(PendingModifyValues {
-        total_quantity: 2.0,
+        total_quantity: Some(2.0),
         limit_price: None,
         aux_price: Some(1.5),
         trail_stop_price: Some(95.0),
@@ -1763,6 +1763,126 @@ async fn trailing_stop_modify_is_acknowledged_by_its_trail_stop_price() {
     );
     let state = orders.lock().unwrap();
     assert!(state.active_orders[&order_id].pending_modify.is_none());
+}
+
+// IB reports limit and trail stop prices on plain stop orders with values that can differ
+// between the pre-modify copy and the acknowledgement, so they must not hold the modify open
+#[rstest]
+#[case::trail_follows_new_trigger(Some(0.0), Some(0.0), Some(99.0))]
+#[case::limit_reset_on_ack(Some(101.37), Some(0.0), Some(99.0))]
+#[case::trail_keeps_original_trigger(Some(0.0), Some(0.0), Some(100.0))]
+#[case::not_reported(None, None, None)]
+#[tokio::test]
+async fn stop_modify_is_acknowledged_by_its_trigger_alone(
+    #[case] pre_modify_limit_price: Option<f64>,
+    #[case] reported_limit_price: Option<f64>,
+    #[case] reported_trail_stop_price: Option<f64>,
+) {
+    let order_id = 7504;
+    let client_order_id = ClientOrderId::from("O-STOP-MODIFY");
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let instrument_provider = create_test_instrument_provider();
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let position_tracker = create_position_tracker();
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+    let mut tracked = create_tracked_order_context(client_order_id, instrument_id);
+    tracked.order_type = OrderType::StopMarket;
+    tracked.accepted = true;
+    tracked.last_update = Some((Quantity::from(1), None, Some(Price::from("100.00"))));
+    insert_tracked_order(&orders, order_id, tracked);
+
+    let modify_cmd = |trigger_price: &str| {
+        ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("CLIENT-001")),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            client_order_id,
+            Some(VenueOrderId::from(order_id.to_string())),
+            None,
+            None,
+            Some(Price::from(trigger_price)),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    // IB's copy of the open stop order with the new trigger applied, still carrying the
+    // limit and trail stop prices IB reported before the modify
+    let outgoing = IBOrder {
+        order_type: "STP".to_string(),
+        total_quantity: 1.0,
+        limit_price: pre_modify_limit_price,
+        aux_price: Some(99.0),
+        trail_stop_price: Some(100.0),
+        ..Default::default()
+    };
+    InteractiveBrokersExecutionClient::mark_pending_modify(
+        &modify_cmd("99.00"),
+        order_id,
+        &orders,
+        &outgoing,
+    )
+    .unwrap();
+
+    let mut open_order = create_test_open_order(order_id, "PreSubmitted", client_order_id.as_str());
+    open_order.order.order_type = "STP".to_string();
+    open_order.order.total_quantity = 1.0;
+    open_order.order.limit_price = reported_limit_price;
+    open_order.order.aux_price = Some(99.0);
+    open_order.order.trail_stop_price = reported_trail_stop_price;
+
+    InteractiveBrokersExecutionClient::handle_order_update(
+        &OrderUpdate::OpenOrder(open_order),
+        &orders,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let mut updates = Vec::new();
+
+    while let Ok(event) = exec_receiver.try_recv() {
+        if let ExecutionEvent::Order(OrderEventAny::Updated(event)) = event {
+            updates.push(event.trigger_price);
+        }
+    }
+
+    assert_eq!(updates, vec![Some(Price::from("99.00"))]);
+    assert!(
+        orders.lock().unwrap().active_orders[&order_id]
+            .pending_modify
+            .is_none()
+    );
+
+    // The next modify of the same order is no longer refused locally
+    let next = IBOrder {
+        aux_price: Some(98.0),
+        trail_stop_price: reported_trail_stop_price,
+        ..outgoing
+    };
+    InteractiveBrokersExecutionClient::mark_pending_modify(
+        &modify_cmd("98.00"),
+        order_id,
+        &orders,
+        &next,
+    )
+    .unwrap();
 }
 
 #[rstest]
@@ -1842,6 +1962,35 @@ async fn open_order_refresh_emits_order_updated_only_on_change(
         .map(|price| (client_order_id, Quantity::from(2), Some(price)))
         .collect();
     assert_eq!(updates, expected);
+}
+
+#[rstest]
+fn recovered_order_tracking_rejects_route_mapped_to_another_order() {
+    let order_id = 7503;
+    let instrument_id = equity_aapl().id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(ClientOrderId::from("O-TRACKED"), instrument_id),
+    );
+    let recovered = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-RECOVERED"))
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(2))
+        .submit(true)
+        .build();
+
+    let result = InteractiveBrokersExecutionClient::cache_recovered_order_tracking(
+        order_id, &recovered, &orders,
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "IB order ID 7503 is already mapped to client order O-TRACKED"
+    );
 }
 
 #[rstest]
@@ -1930,7 +2079,7 @@ fn pending_modify_checks_trailing_trigger_only_when_requested(
     #[case] expected: bool,
 ) {
     let pending = PendingModifyValues {
-        total_quantity: 2.0,
+        total_quantity: Some(2.0),
         limit_price: None,
         aux_price: Some(1.5),
         trail_stop_price: requested,
@@ -1946,6 +2095,99 @@ fn pending_modify_checks_trailing_trigger_only_when_requested(
     };
 
     assert_eq!(pending.matches(&order), expected);
+}
+
+#[rstest]
+#[case::stop_trigger("STP", None, (false, false, true), (None, None, Some(1.5), None))]
+#[case::stop_quantity("STP", None, (true, false, false), (Some(2.0), None, None, None))]
+#[case::limit_price("LMT", None, (false, true, false), (None, Some(101.0), None, None))]
+#[case::stop_limit_price_and_trigger(
+    "STP LMT",
+    None,
+    (false, true, true),
+    (None, Some(101.0), Some(1.5), None)
+)]
+#[case::trailing_amount_trigger(
+    "TRAIL",
+    None,
+    (false, false, true),
+    (None, None, Some(1.5), Some(95.0))
+)]
+#[case::trailing_percent_trigger(
+    "TRAIL",
+    Some(0.5),
+    (false, false, true),
+    (None, None, None, Some(95.0))
+)]
+#[case::trailing_limit_trigger(
+    "TRAIL LIMIT",
+    None,
+    (false, false, true),
+    (None, None, Some(1.5), Some(95.0))
+)]
+#[case::trailing_quantity("TRAIL", None, (true, false, false), (Some(2.0), None, None, None))]
+fn pending_modify_records_only_requested_fields(
+    #[case] order_type: &str,
+    #[case] trailing_percent: Option<f64>,
+    #[case] requested: (bool, bool, bool),
+    #[case] expected: (Option<f64>, Option<f64>, Option<f64>, Option<f64>),
+) {
+    let (quantity, price, trigger_price) = requested;
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let order_id = 7121;
+    let client_order_id = ClientOrderId::from("O-MODIFY-FIELDS");
+    let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("SMART"));
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::from("STRATEGY-001"),
+        instrument_id,
+        client_order_id,
+        Some(VenueOrderId::from(order_id.to_string())),
+        quantity.then(|| Quantity::from(2)),
+        price.then(|| Price::from("101.00")),
+        trigger_price.then(|| Price::from("95.00")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // The modified copy with every price field populated, as IB can report on any order type
+    let ib_order = IBOrder {
+        order_type: order_type.to_string(),
+        total_quantity: 2.0,
+        limit_price: Some(101.0),
+        aux_price: Some(1.5),
+        trail_stop_price: Some(95.0),
+        trailing_percent,
+        ..Default::default()
+    };
+
+    InteractiveBrokersExecutionClient::mark_pending_modify(&cmd, order_id, &orders, &ib_order)
+        .unwrap();
+
+    let (total_quantity, limit_price, aux_price, trail_stop_price) = expected;
+    assert_eq!(
+        orders
+            .lock()
+            .unwrap()
+            .order(order_id)
+            .unwrap()
+            .pending_modify,
+        Some(PendingModifyValues {
+            total_quantity,
+            limit_price,
+            aux_price,
+            trail_stop_price,
+        }),
+    );
 }
 
 #[rstest]
@@ -1993,7 +2235,7 @@ fn pending_modify_is_marked_once_for_matching_tracked_order() {
             .unwrap()
             .pending_modify,
         Some(PendingModifyValues {
-            total_quantity: 2.0,
+            total_quantity: Some(2.0),
             limit_price: Some(101.0),
             aux_price: None,
             trail_stop_price: None,
@@ -2064,6 +2306,51 @@ async fn execution_data_records_own_fill_before_commission_report(
 }
 
 #[rstest]
+#[tokio::test]
+async fn execution_data_backfills_unset_tracked_perm_id() {
+    let order_id = 7402;
+    let client_order_id = ClientOrderId::from("O-PERM-BACKFILL");
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let instrument_provider = create_test_instrument_provider();
+    let (exec_sender, _exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let position_tracker = create_position_tracker();
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let mut exec_data = create_test_execution_data(order_id, "EXEC-PERM-1", 2.0, 100.0, "BOT");
+    exec_data.execution.perm_id = 8801;
+    InteractiveBrokersExecutionClient::handle_order_update(
+        &OrderUpdate::ExecutionData(exec_data),
+        &orders,
+        &instrument_provider,
+        &exec_sender.into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        orders.lock().unwrap().order(order_id).unwrap().perm_id,
+        8801
+    );
+}
+
+#[rstest]
 fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
     let state = SubmitTrackingState::new();
     let prior_id = 7201;
@@ -2111,7 +2398,7 @@ fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
         AccountId::from("IB-LIST-001"),
         UnixNanos::new(31),
         &state.0,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -2157,7 +2444,7 @@ fn list_submit_failure_denies_every_unsubmitted_tail_order() {
         &orders,
         DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED,
         strategy_id,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     )
     .unwrap();
@@ -2282,7 +2569,7 @@ fn unpreparable_order_is_denied_with_coded_reason(
         &cmd,
         &error,
         &orders,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -4016,7 +4303,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
         client_order_id,
         VenueOrderId::from(order_id.to_string()),
         &orders,
-        &exec_sender.clone().into(),
+        &exec_sender.into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
     )
@@ -5075,6 +5362,27 @@ fn binding_notification_resolves_a_duplicate_order_route() {
         state.group_cancel_routes(parent_id, None),
         (vec![(101, 11), (202, 22)], vec![])
     );
+}
+
+#[rstest]
+fn open_order_data_backfills_unset_tracked_perm_id() {
+    let order_id = 7403;
+    let client_order_id = ClientOrderId::from("O-OPEN-PERM");
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, create_test_stock_instrument()),
+    );
+    let mut data = create_test_open_order(order_id, "Submitted", client_order_id.as_str());
+    data.order.perm_id = 8802;
+
+    let mut state = orders.lock().unwrap();
+    state
+        .observe_order_data(&data, AccountId::from("IB-001"), false)
+        .unwrap();
+
+    assert_eq!(state.order(order_id).unwrap().perm_id, 8802);
 }
 
 #[rstest]

@@ -14,6 +14,9 @@
   [`generate_oracle.py --cancel-all-out`](../../../../scripts/oracle-py/lighter/README.md).
 - Unless noted below, `ws_*.json` fixtures follow the official Lighter WebSocket documentation
   examples and message field definitions.
+- `ws_account_all_positions_transaction_time.json` and `ws_account_all_assets_transaction_time.json`
+  are constructed fixtures based on the existing account frames and the documented optional
+  `transaction_time` envelope field.
 - `ws_order_book_subscribe_failed.json` is a constructed error fixture for subscription-failure
   routing tests. Its `channel` attribution is assumed until a genuine live 30012 frame is captured.
 - `ws_spot_market_stats_subscribed_single_empty_mid.json` is a verbatim live Testnet

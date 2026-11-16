@@ -2341,8 +2341,7 @@ impl DeriveReplaceResponse {
             trades: Vec<Box<RawValue>>,
         }
         let trades = serde_json::from_str::<Trades>(response.get())
-            .map(|response| salvage_rows(response.trades))
-            .unwrap_or_default();
+            .map_or_default(|response| salvage_rows(response.trades));
         let result = serde_json::from_str(response.get()).map_err(|e| e.to_string());
         Self { result, trades }
     }

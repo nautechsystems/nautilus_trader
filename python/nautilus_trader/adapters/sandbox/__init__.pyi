@@ -4,6 +4,7 @@
 import decimal
 import typing
 
+from nautilus_trader import execution
 from nautilus_trader import model
 
 __all__ = [
@@ -42,6 +43,7 @@ class SandboxExecutionClientConfig:
         use_market_order_acks: bool = False,
         oto_full_trigger: bool = False,
         price_protection_points: int | None = None,
+        order_priority_reset_policy: execution.OrderPriorityResetPolicy = execution.OrderPriorityResetPolicy.PRICE_CHANGE,
     ) -> None: ...
     @property
     def account_id(self) -> model.AccountId: ...
@@ -85,6 +87,8 @@ class SandboxExecutionClientConfig:
     def use_random_ids(self) -> bool: ...
     @property
     def use_reduce_only(self) -> bool: ...
+    @property
+    def order_priority_reset_policy(self) -> execution.OrderPriorityResetPolicy: ...
     @property
     def queue_position(self) -> bool: ...
     @property

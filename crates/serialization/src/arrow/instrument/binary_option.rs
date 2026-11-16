@@ -27,10 +27,17 @@ use nautilus_core::Params;
 use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
-    instruments::binary_option::BinaryOption,
+    instruments::{
+        binary_option::BinaryOption,
+        tick_scheme::{
+            FixedTickScheme, TickScheme, TickSchemeError, TieredTickScheme, get_tick_scheme,
+            register_tick_scheme,
+        },
+    },
     types::{money::Money, price::Price, quantity::Quantity},
 };
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::validate_required_instrument_columns;
@@ -70,6 +77,7 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("ts_event", timestamp_data_type(), false),
             Field::new("ts_init", timestamp_data_type(), false),
             Field::new("event_id", DataType::Utf8, true),
+            json_string_field("tick_scheme_definition", true),
         ];
 
         Schema::new_with_metadata(fields, metadata_with_type_name("BinaryOption", metadata))
@@ -109,6 +117,7 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
+        let mut tick_scheme_definition_builder = StringBuilder::new();
 
         for bo in data.iter().map(Borrow::borrow) {
             id_builder.append_value(bo.id.to_string());
@@ -175,8 +184,18 @@ impl EncodeToRecordBatch for BinaryOption {
 
             if let Some(tick_scheme) = bo.tick_scheme {
                 tick_scheme_builder.append_value(tick_scheme);
+
+                let scheme = get_tick_scheme(tick_scheme.as_str()).ok_or_else(|| {
+                    ArrowError::InvalidArgumentError(format!("Unknown tick scheme {tick_scheme}"))
+                })?;
+
+                let definition = TickSchemeDefinition::from(scheme);
+                let json = serde_json::to_string(&definition)
+                    .map_err(|e| ArrowError::InvalidArgumentError(e.to_string()))?;
+                tick_scheme_definition_builder.append_value(json);
             } else {
                 tick_scheme_builder.append_null();
+                tick_scheme_definition_builder.append_null();
             }
 
             event_id_builder.append_option(bo.event_id.as_ref().map(Ustr::as_str));
@@ -228,6 +247,7 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
                 Arc::new(event_id_builder.finish()),
+                Arc::new(tick_scheme_definition_builder.finish()),
             ],
         )
     }
@@ -264,6 +284,8 @@ pub fn decode_binary_option_batch(
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
     let event_id_values = extract_optional_string_column_by_name(record_batch, "event_id")?;
+    let tick_scheme_definition_values =
+        extract_optional_string_column_by_name(record_batch, "tick_scheme_definition")?;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -422,6 +444,13 @@ pub fn decode_binary_option_batch(
         let ts_init = nautilus_core::UnixNanos::from(ts_init_values.value(i));
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
+        tick_scheme_definition_values
+            .filter(|column| !column.is_null(i))
+            .map(|column| restore_tick_scheme(tick_scheme, column.value(i)))
+            .transpose()
+            .map_err(|e| {
+                EncodingError::ParseError("tick_scheme_definition", format!("row {i}: {e}"))
+            })?;
 
         let max_notional = match max_notional_values {
             Some(column) if !column.is_null(i) => {
@@ -482,4 +511,70 @@ pub fn decode_binary_option_batch(
     }
 
     Ok(result)
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum TickSchemeDefinition {
+    Fixed { tick: Price },
+    Tiered { ticks: Vec<Price>, precision: u8 },
+    Betfair,
+    Crypto,
+}
+
+impl From<TickScheme> for TickSchemeDefinition {
+    fn from(scheme: TickScheme) -> Self {
+        match scheme {
+            TickScheme::Fixed(scheme) => Self::Fixed {
+                tick: scheme.tick(),
+            },
+            TickScheme::Tiered(scheme) => Self::Tiered {
+                ticks: scheme.ticks(),
+                precision: scheme.precision(),
+            },
+            TickScheme::Betfair => Self::Betfair,
+            TickScheme::Crypto => Self::Crypto,
+        }
+    }
+}
+
+impl TryFrom<TickSchemeDefinition> for TickScheme {
+    type Error = TickSchemeError;
+
+    fn try_from(definition: TickSchemeDefinition) -> Result<Self, Self::Error> {
+        match definition {
+            TickSchemeDefinition::Fixed { tick } => FixedTickScheme::new(tick).map(Self::Fixed),
+            TickSchemeDefinition::Tiered { ticks, precision } => {
+                TieredTickScheme::from_ticks(ticks, precision).map(Self::Tiered)
+            }
+            TickSchemeDefinition::Betfair => Ok(Self::Betfair),
+            TickSchemeDefinition::Crypto => Ok(Self::Crypto),
+        }
+    }
+}
+
+fn restore_tick_scheme(name: Option<Ustr>, json: &str) -> anyhow::Result<()> {
+    let name = name.ok_or_else(|| anyhow::anyhow!("definition has no tick scheme name"))?;
+    let definition: TickSchemeDefinition = serde_json::from_str(json)?;
+    let scheme = TickScheme::try_from(definition)?;
+
+    if let Some(existing) = get_tick_scheme(name.as_str()) {
+        anyhow::ensure!(
+            existing == scheme,
+            "conflicting definition for tick scheme {name}"
+        );
+        return Ok(());
+    }
+
+    match register_tick_scheme(name.as_str(), scheme.clone()) {
+        Ok(()) => Ok(()),
+        Err(TickSchemeError::DuplicateName { .. }) => {
+            anyhow::ensure!(
+                get_tick_scheme(name.as_str()).as_ref() == Some(&scheme),
+                "conflicting definition for tick scheme {name}"
+            );
+            Ok(())
+        }
+        Err(e) => Err(e.into()),
+    }
 }

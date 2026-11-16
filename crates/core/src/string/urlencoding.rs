@@ -167,26 +167,28 @@ pub fn decode_bytes(input: &[u8]) -> Cow<'_, [u8]> {
 
     let mut i = first;
     while i < input.len() {
-        if input[i] == b'%' {
-            if i + 2 < input.len() {
-                let hi = DECODE_NIBBLE[input[i + 1] as usize];
-                let lo = DECODE_NIBBLE[input[i + 2] as usize];
-                if (hi | lo) & 0xF0 == 0 {
-                    out.push((hi << 4) | lo);
-                    i += 3;
-                    continue;
-                }
-            }
-            // Malformed or trailing `%`: pass through literally.
-            out.push(b'%');
-            i += 1;
-        } else {
+        if input[i] != b'%' {
             let run_start = i;
             while i < input.len() && input[i] != b'%' {
                 i += 1;
             }
             out.extend_from_slice(&input[run_start..i]);
+            continue;
         }
+
+        if i + 2 < input.len() {
+            let hi = DECODE_NIBBLE[input[i + 1] as usize];
+            let lo = DECODE_NIBBLE[input[i + 2] as usize];
+            if (hi | lo) & 0xF0 == 0 {
+                out.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+
+        // Malformed or trailing `%`: pass through literally
+        out.push(b'%');
+        i += 1;
     }
     Cow::Owned(out)
 }

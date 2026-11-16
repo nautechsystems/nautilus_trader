@@ -223,6 +223,7 @@ impl DataEngine {
 
     pub(super) fn handle_custom_data(&self, custom: &CustomData) {
         log::debug!("Processing custom data: {}", custom.data.type_name());
+        self.cache.borrow_mut().add_custom_data(custom.clone());
         let topic = switchboard::get_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }
@@ -383,6 +384,11 @@ impl DataEngine {
 
     pub(super) fn handle_custom_data_pipeline(&self, custom: &CustomData) {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
+
+        if self.pipeline_cache_writes_allowed() {
+            self.cache.borrow_mut().add_custom_data(custom.clone());
+        }
+
         let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }

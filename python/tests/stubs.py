@@ -95,6 +95,7 @@ class TestDataProviderPyo3:
             )
             for level in range(10)
         ]
+
         return OrderBookDepth(
             instrument_id=instrument_id or InstrumentId.from_str("AAPL.XNAS"),
             bids=bids,
@@ -160,6 +161,7 @@ class TestDataProviderPyo3:
             InstrumentId.from_str("ETHUSDT.BINANCE"),
             BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
         )
+
         return Bar(
             bar_type=bar_type,
             open=Price.from_str("1.00002"),

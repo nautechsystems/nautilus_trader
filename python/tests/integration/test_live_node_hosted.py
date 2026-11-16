@@ -350,6 +350,7 @@ async def test_host_loop_keeps_running_while_the_node_runs() -> None:
         Host work.
         """
         nonlocal ticks
+
         while True:
             ticks += 1
             await asyncio.sleep(0.005)
@@ -371,6 +372,7 @@ async def test_strategy_timers_and_orders_are_serviced_by_the_host_loop() -> Non
     node = build_node("HOSTED-010")
     cache = node.cache
     handle = node.handle()
+
     strategy = DualTimer(
         DualTimerConfig(
             instrument_id="AUD/USD.SIM",
@@ -378,6 +380,7 @@ async def test_strategy_timers_and_orders_are_serviced_by_the_host_loop() -> Non
             alert_iso=(datetime.now(UTC) + timedelta(seconds=1)).isoformat(),
         ),
     )
+
     node.add_strategy(strategy)
 
     task = asyncio.create_task(node.run_async())
@@ -731,6 +734,7 @@ async def test_concurrent_stop_calls_from_many_threads_resolve_once() -> None:
         threads = [threading.Thread(target=spam_stop, daemon=True) for _ in range(8)]
         for thread in threads:
             thread.start()
+
         for thread in threads:
             # Joining on the loop thread would block the node it is waiting for.
             await asyncio.to_thread(thread.join, 10.0)

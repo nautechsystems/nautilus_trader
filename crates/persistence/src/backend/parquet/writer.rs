@@ -211,10 +211,13 @@ impl ParquetWriter {
     }
 
     fn prepare_promotion(&self) -> anyhow::Result<Option<PromotionWork<ParquetPromotionBackend>>> {
-        let backend =
-            ParquetPromotionBackend::new(&self.catalog, Arc::clone(&self.legacy_manifest_missing))?;
         self.core.prepare_promotion(
-            backend,
+            || {
+                ParquetPromotionBackend::new(
+                    &self.catalog,
+                    Arc::clone(&self.legacy_manifest_missing),
+                )
+            },
             self.source.clone(),
             self.use_ts_event_for_ts_init,
             self.delete_feather_after_commit,
@@ -284,18 +287,19 @@ impl StagedWriter for ParquetWriter {
             return Ok(());
         };
 
-        if self
-            .core
-            .promotion_driver
-            .is_due(self.core.clock.timestamp_ns(), interval_ns)
-            && let Some(work) = self.prepare_promotion()?
-        {
+        let now = self.core.clock.timestamp_ns();
+        if !self.core.promotion_driver.is_due(now, interval_ns) {
+            return Ok(());
+        }
+
+        // A due check starts the next interval even when it finds nothing or fails,
+        // otherwise every later message would seal and open the catalog again
+        self.core.promotion_driver.mark_committed_at(now);
+
+        if let Some(work) = self.prepare_promotion()? {
             self.core
                 .promotion_driver
                 .submit(work, "parquet-promotion")?;
-            self.core
-                .promotion_driver
-                .mark_committed_at(self.core.clock.timestamp_ns());
         }
 
         Ok(())
@@ -630,6 +634,7 @@ mod tests {
         writer::{
             feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
             promotion::{list_session_feather_files, tests::assert_scheduled_count},
+            traits::StreamingSink,
         },
     };
 
@@ -1169,6 +1174,100 @@ mod tests {
     }
 
     #[rstest]
+    fn due_promotion_without_staged_files_skips_catalog_and_waits_for_next_interval() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-idle");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promotion_interval_ms = Some(1);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::clone(&clock))).unwrap();
+
+        // Any catalog open fails from here, so an empty promotion must not open one
+        writer.catalog.params = Some(Params::new(
+            [("compression".to_string(), serde_json::json!(0))].into(),
+        ));
+
+        clock.store(1_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+
+        // Data staged during the idle interval promotes once the next interval is due
+        writer.catalog.params = None;
+        writer.core.write_data(Data::Quote(sample_quote())).unwrap();
+        writer.maybe_promote().unwrap();
+        assert!(writer.wait().unwrap().is_empty());
+
+        clock.store(2_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        assert_eq!(writer.wait().unwrap().len(), 1);
+    }
+
+    #[rstest]
+    fn failed_catalog_open_seals_once_per_interval_and_keeps_files_retryable() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-failing");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promotion_interval_ms = Some(1);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::clone(&clock))).unwrap();
+
+        let quotes = (1..=5)
+            .map(|timestamp| QuoteTick {
+                ts_event: UnixNanos::from(timestamp),
+                ts_init: UnixNanos::from(timestamp),
+                ..sample_quote()
+            })
+            .collect::<Vec<_>>();
+
+        let sealed_count = |writer: &ParquetWriter| {
+            list_session_feather_files(&writer.source.storage, Environment::Backtest, "run-failing")
+                .unwrap()
+                .len()
+        };
+
+        // Any catalog open fails from here
+        writer.catalog.params = Some(Params::new(
+            [("compression".to_string(), serde_json::json!(0))].into(),
+        ));
+
+        clock.store(1_000_000, Ordering::Relaxed);
+        let first_error = writer.write_data(Data::Quote(quotes[0])).unwrap_err();
+        writer.write_data(Data::Quote(quotes[1])).unwrap();
+        writer.write_data(Data::Quote(quotes[2])).unwrap();
+        let sealed_first_interval = sealed_count(&writer);
+
+        clock.store(2_000_000, Ordering::Relaxed);
+        let second_error = writer.write_data(Data::Quote(quotes[3])).unwrap_err();
+        writer.write_data(Data::Quote(quotes[4])).unwrap();
+        let sealed_second_interval = sealed_count(&writer);
+
+        writer.catalog.params = None;
+        clock.store(3_000_000, Ordering::Relaxed);
+        writer.maybe_promote().unwrap();
+        writer.wait().unwrap();
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        let open_error =
+            "Unknown Parquet catalog param 'compression': this catalog takes no params";
+        assert_eq!(first_error.to_string(), open_error);
+        assert_eq!(second_error.to_string(), open_error);
+        assert_eq!(sealed_first_interval, 1);
+        assert_eq!(sealed_second_interval, 2);
+        assert_eq!(rows.as_ref(), &quotes[..]);
+    }
+
+    #[rstest]
     fn parquet_streaming_funding_round_trip() {
         use nautilus_model::data::FundingRateUpdate;
         let directory = TempDir::new().unwrap();
@@ -1275,7 +1374,6 @@ mod tests {
     fn parquet_promotion_preserves_every_record_family(#[values(false, true)] automatic: bool) {
         use nautilus_core::UUID4;
         use nautilus_model::{
-            data::greeks::{GreeksData, OptionGreekValues, PortfolioGreeks},
             enums::{
                 LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
                 PositionSide, TimeInForce,
@@ -1307,59 +1405,6 @@ mod tests {
                 families.insert(assert_record_promotion($record, automatic));
             };
         }
-
-        let greeks = GreeksData::new(
-            "ESZ26 C7000.XCME".parse().unwrap(),
-            false,
-            7000.5,
-            20_261_218,
-            68,
-            0.186,
-            50.0,
-            -3.0,
-            6950.25,
-            0.0425,
-            0.0125,
-            0.175,
-            12.5,
-            98.75,
-            OptionGreekValues {
-                delta: 0.41,
-                gamma: 0.0012,
-                vega: 11.2,
-                theta: -2.3,
-                rho: 1.7,
-            },
-            0.62,
-            11.into(),
-            13.into(),
-        );
-
-        let mut second = greeks.clone();
-        second.ts_init = 113.into();
-        second.instrument_id = "ESZ26 P6900.XCME".parse().unwrap();
-        families.insert(assert_native_record_promotion(&[greeks, second], automatic));
-
-        let portfolio = PortfolioGreeks {
-            pnl: -125.5,
-            price: 4310.25,
-            greeks: OptionGreekValues {
-                delta: 0.83,
-                gamma: 0.004,
-                vega: 45.5,
-                theta: -12.25,
-                rho: 3.75,
-            },
-            ts_event: 19.into(),
-            ts_init: 17.into(),
-        };
-
-        let mut second = portfolio.clone();
-        second.ts_init = 117.into();
-        families.insert(assert_native_record_promotion(
-            &[portfolio, second],
-            automatic,
-        ));
 
         promote!(cash_account_state());
         promote!(OrderInitialized::test_default());
@@ -1526,12 +1571,81 @@ mod tests {
         assert_eq!(families, expected);
     }
 
-    fn assert_native_record_promotion<T>(records: &[T], automatic: bool) -> NautilusRecordType
-    where
-        T: std::any::Any + EncodeToRecordBatch + DecodeTypedFromRecordBatch,
-    {
+    #[rstest]
+    fn parquet_promotion_preserves_calculated_greeks_as_custom_data(
+        #[values(false, true)] automatic: bool,
+        #[values(false, true)] portfolio: bool,
+    ) {
+        use nautilus_model::data::{
+            CustomData, DataType,
+            greeks::{GreeksData, OptionGreekValues, PortfolioGreeks},
+        };
+
+        let greeks = GreeksData::new(
+            "ESZ26 C7000.XCME".parse().unwrap(),
+            false,
+            7000.5,
+            20_261_218,
+            68,
+            0.186,
+            50.0,
+            -3.0,
+            6950.25,
+            0.0425,
+            0.0125,
+            0.175,
+            12.5,
+            98.75,
+            OptionGreekValues {
+                delta: 0.41,
+                gamma: 0.0012,
+                vega: 11.2,
+                theta: -2.3,
+                rho: 1.7,
+            },
+            0.62,
+            11.into(),
+            13.into(),
+        );
+
+        let mut second = greeks.clone();
+        second.ts_init = 113.into();
+        second.instrument_id = "ESZ26 P6900.XCME".parse().unwrap();
+
+        let greeks = vec![greeks, second]
+            .into_iter()
+            .map(|value| {
+                let data_type =
+                    DataType::new("GreeksData", None, Some(value.instrument_id.to_string()));
+                CustomData::new(Arc::new(value), data_type)
+            })
+            .collect::<Vec<_>>();
+
+        let portfolio_value = PortfolioGreeks {
+            pnl: -125.5,
+            price: 4310.25,
+            greeks: OptionGreekValues {
+                delta: 0.83,
+                gamma: 0.004,
+                vega: 45.5,
+                theta: -12.25,
+                rho: 3.75,
+            },
+            ts_event: 19.into(),
+            ts_init: 17.into(),
+        };
+
+        let mut second = portfolio_value.clone();
+        second.ts_init = 117.into();
+        let portfolios = vec![portfolio_value, second]
+            .into_iter()
+            .map(|value| CustomData::from_arc(Arc::new(value)))
+            .collect::<Vec<_>>();
+
+        let expected = if portfolio { portfolios } else { greeks };
+
         let directory = TempDir::new().unwrap();
-        let staging = directory.path().join("backtest/run-native-record");
+        let staging = directory.path().join("backtest/run-greeks-custom");
         let mut config =
             WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
         config.promote_on_close = automatic;
@@ -1539,20 +1653,22 @@ mod tests {
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
                 .unwrap();
 
-        for record in records {
-            assert!(sink.write_any(record).unwrap());
+        for custom in &expected {
+            assert!(sink.write_any(custom.data.as_any()).unwrap());
         }
 
         sink.close().unwrap();
-        let record_type = T::get_schema(None).metadata()["type_name"]
-            .parse::<NautilusRecordType>()
-            .unwrap();
+
+        let data_type = NautilusDataType::Custom {
+            type_name: expected[0].data_type.type_name().to_string(),
+        };
+
         let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
         if !automatic {
             catalog
                 .convert_stream_to_data(
-                    "run-native-record",
-                    &record_type.into(),
+                    "run-greeks-custom",
+                    &data_type.clone().into(),
                     Environment::Backtest,
                     None,
                     false,
@@ -1560,22 +1676,12 @@ mod tests {
                 .unwrap();
         }
 
-        let batches = catalog
-            .query_record_batches(&record_type.into(), None, None, None, None, true)
-            .unwrap();
+        let DataBatch::Custom(actual) = catalog.query_batch(&CatalogQuery::new(data_type)).unwrap()
+        else {
+            panic!("expected custom data")
+        };
 
-        let decoded = batches
-            .into_iter()
-            .flat_map(|batch| {
-                let schema = batch.schema();
-                T::decode_typed_batch(schema.metadata(), batch).unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        let expected = T::encode_batch(&records[0].metadata(), records).unwrap();
-        let actual = T::encode_batch(&records[0].metadata(), &decoded).unwrap();
-        assert_eq!(actual.columns(), expected.columns());
-        record_type
+        assert_eq!(actual.as_ref(), expected.as_slice());
     }
 
     fn assert_record_promotion<T>(record: T, automatic: bool) -> NautilusRecordType
@@ -1676,8 +1782,7 @@ mod tests {
         let mut rows = Vec::new();
         for batch in batches {
             rows.extend(
-                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch.clone())
-                    .unwrap(),
+                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch).unwrap(),
             );
         }
 

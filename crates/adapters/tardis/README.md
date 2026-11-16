@@ -8,21 +8,27 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for [Tardis](https://tardis.dev).
 
-The `nautilus-tardis` crate provides integration with the Tardis API for accessing
-normalized historical and real-time market data across multiple exchanges.
+The `nautilus-tardis` crate combines Tardis instrument metadata, normalized Tardis Machine streams,
+and CSV loaders for cryptocurrency market data across exchanges. It supports live data collection,
+historical replay, and Parquet catalog generation, with optional Python bindings.
+
+The official Tardis API reference can be found at <https://docs.tardis.dev/>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/tardis.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation,
-depending on the intended use case:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `arrow`: Enables Apache Arrow and Parquet data support.
 - `examples`: Enables the crate's example binaries.
@@ -35,7 +41,10 @@ depending on the intended use case:
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-tardis) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-tardis)
+- [Integration guide](../../../docs/integrations/tardis.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/tardis/)
 
 ## License
 

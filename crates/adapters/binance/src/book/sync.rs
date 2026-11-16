@@ -74,6 +74,7 @@ pub(crate) struct DepthUpdate {
 /// A REST depth snapshot ready to seed a book.
 ///
 /// Snapshot deltas without a venue event time take the first replayed diff's event time.
+/// Replayed diffs take the snapshot's `ts_init` when their own is earlier.
 #[derive(Debug)]
 pub(crate) struct DepthSnapshot {
     pub(crate) last_update_id: u64,
@@ -240,10 +241,14 @@ impl BookSyncTracker {
             set_event_time(&mut snapshot_deltas, first.ts_event);
         }
 
+        // Buffered diffs can predate the snapshot response but only apply once it is accepted, so
+        // raise their ts_init to keep ts_init order equal to emission order
+        let snapshot_ts_init = snapshot_deltas.ts_init;
         self.send(snapshot_deltas);
         let replayed_count = replay.len();
 
-        for deltas in replay {
+        for mut deltas in replay {
+            raise_init_time(&mut deltas, snapshot_ts_init);
             self.send(deltas);
         }
 
@@ -377,6 +382,14 @@ fn set_event_time(deltas: &mut OrderBookDeltas, ts_event: UnixNanos) {
 
     for delta in &mut deltas.deltas {
         delta.ts_event = ts_event;
+    }
+}
+
+fn raise_init_time(deltas: &mut OrderBookDeltas, ts_init: UnixNanos) {
+    deltas.ts_init = deltas.ts_init.max(ts_init);
+
+    for delta in &mut deltas.deltas {
+        delta.ts_init = delta.ts_init.max(ts_init);
     }
 }
 
@@ -616,6 +629,49 @@ mod tests {
                 .all(|delta| delta.ts_event == received[1].ts_event)
         );
         assert_eq!(received[0].ts_init, UnixNanos::from(9_u64));
+    }
+
+    #[rstest]
+    fn replayed_diffs_do_not_precede_snapshot_ts_init() {
+        let (tracker, mut rx) = tracker(DepthSequencing::Spot);
+        tracker.subscribe(instrument_id());
+        let recovery = tracker
+            .handle_update(instrument_id(), spot_update(101, 101))
+            .unwrap();
+        tracker.handle_update(instrument_id(), spot_update(102, 102));
+        tracker.handle_update(instrument_id(), spot_update(103, 104));
+
+        // The snapshot response arrives after the first two diffs are buffered and before the third
+        let snapshot_ts_init = UnixNanos::from(103_000_u64);
+        let mut depth_snapshot = snapshot(100, false);
+        depth_snapshot.deltas.ts_init = snapshot_ts_init;
+        for delta in &mut depth_snapshot.deltas.deltas {
+            delta.ts_init = snapshot_ts_init;
+        }
+
+        accept(&tracker, &recovery, depth_snapshot).unwrap();
+
+        let received = received(&mut rx);
+        assert_eq!(sequences(&received), vec![100, 101, 102, 104]);
+        assert_eq!(received[0].ts_init, snapshot_ts_init);
+
+        for deltas in &received[1..3] {
+            assert_eq!(deltas.ts_init, snapshot_ts_init);
+            assert!(
+                deltas
+                    .deltas
+                    .iter()
+                    .all(|delta| delta.ts_init == snapshot_ts_init)
+            );
+        }
+
+        assert_eq!(received[1].ts_event, UnixNanos::from(101_000_u64));
+        assert_eq!(received[3].ts_init, UnixNanos::from(104_001_u64));
+        assert!(
+            received
+                .windows(2)
+                .all(|pair| pair[0].ts_init <= pair[1].ts_init)
+        );
     }
 
     #[rstest]

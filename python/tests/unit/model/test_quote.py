@@ -87,6 +87,7 @@ def test_quote_equality(audusd_id: InstrumentId) -> None:
         ts_event=0,
         ts_init=0,
     )
+
     quote2 = QuoteTick(
         instrument_id=audusd_id,
         bid_price=Price.from_str("1.00000"),
@@ -342,6 +343,7 @@ def test_quote_setstate_rejects_invalid_state_without_mutation(
     Test quote setstate rejects invalid state without mutation.
     """
     original_state = quote.__getstate__()
+
     other = QuoteTick(
         instrument_id=usdjpy_id,
         bid_price=Price.from_str("150.000"),
@@ -351,6 +353,7 @@ def test_quote_setstate_rejects_invalid_state_without_mutation(
         ts_event=5,
         ts_init=6,
     )
+
     state = list(other.__getstate__())
     state[index] = value
 

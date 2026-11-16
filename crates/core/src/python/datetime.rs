@@ -28,7 +28,7 @@ use crate::{
     },
 };
 
-/// Converts seconds to nanoseconds (ns).
+/// Converts seconds to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
 /// # Errors
 ///
@@ -39,7 +39,7 @@ pub fn py_secs_to_nanos(secs: f64) -> PyResult<u64> {
     secs_to_nanos(secs).map_err(to_pyvalue_err)
 }
 
-/// Converts seconds to milliseconds (ms).
+/// Converts seconds to milliseconds (ms), rounding to the nearest millisecond.
 ///
 /// # Errors
 ///
@@ -50,10 +50,9 @@ pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
     secs_to_millis(secs).map_err(to_pyvalue_err)
 }
 
-/// Converts milliseconds (ms) to nanoseconds (ns).
+/// Converts milliseconds (ms) to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
+/// Returns 0 for a negative input.
 ///
 /// # Errors
 ///
@@ -64,10 +63,9 @@ pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
     millis_to_nanos(millis).map_err(to_pyvalue_err)
 }
 
-/// Converts microseconds (μs) to nanoseconds (ns).
+/// Converts microseconds (μs) to nanoseconds (ns), rounding to the nearest nanosecond.
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
+/// Returns 0 for a negative input.
 ///
 /// # Errors
 ///

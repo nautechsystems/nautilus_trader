@@ -20,18 +20,19 @@
 //! client and connects it to NautilusTrader's live data, execution, historical data, and
 //! instrument loading infrastructure.
 //!
+//! The official Interactive Brokers TWS API reference can be found at
+//! <https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/>.
+//!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `examples`: Enables the crate's example binaries.
 //! - `execution` (default): Enables order execution and networking support.
@@ -42,32 +43,25 @@
 //!   `python`.
 //! - `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical
 //!   client, and the instrument provider.
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/interactive_brokers/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 // Clippy: allow style lints that would require large refactors across the adapter
 #![allow(
-    clippy::collapsible_if,
-    clippy::if_not_else,
-    clippy::uninlined_format_args,
-    clippy::map_unwrap_or,
-    clippy::redundant_clone,
-    clippy::ignored_unit_patterns,
-    clippy::items_after_statements,
-    clippy::bool_to_int_with_if,
-    clippy::cloned_instead_of_copied,
     clippy::option_if_let_else,
     clippy::type_complexity,
     clippy::module_inception,
     clippy::result_large_err,
-    clippy::implicit_clone,
-    clippy::single_char_pattern,
     clippy::bind_instead_of_map,
-    clippy::explicit_iter_loop,
     clippy::too_many_arguments,
     clippy::missing_errors_doc,
-    clippy::doc_overindented_list_items,
-    clippy::needless_borrows_for_generic_args
+    clippy::doc_overindented_list_items
 )]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]

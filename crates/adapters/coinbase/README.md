@@ -6,22 +6,30 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) adapter for the [Coinbase Advanced Trade](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview) API.
+[NautilusTrader](https://nautilustrader.io) adapter for the Coinbase Advanced Trade API.
 
-The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket) and data models
-for the official **Coinbase Advanced Trade API**.
+The `nautilus-coinbase` crate provides instrument loading, live market data, and order execution for
+spot, futures, and perpetuals through the **Coinbase Advanced Trade API**. It includes authenticated
+HTTP and WebSocket clients, live-node factories, and optional Python bindings.
+
+The official Coinbase Advanced Trade API reference can be found at
+<https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/coinbase.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -32,7 +40,10 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-coinbase) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-coinbase)
+- [Integration guide](../../../docs/integrations/coinbase.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/coinbase/)
 
 ## License
 

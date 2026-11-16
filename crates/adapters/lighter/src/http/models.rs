@@ -172,6 +172,8 @@ pub struct LighterSendTxResponse {
     pub tx_hash: String,
     pub predicted_execution_time_ms: i64,
     pub volume_quota_remaining: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining_send_tx: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -182,6 +184,8 @@ pub struct LighterSendTxBatchResponse {
     pub tx_hash: Vec<String>,
     pub predicted_execution_time_ms: i64,
     pub volume_quota_remaining: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining_send_tx: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -588,6 +592,13 @@ mod tests {
     const HTTP_CANDLES_NULL: &str = include_str!("../../test_data/http_candles_null.json");
     const HTTP_FUNDINGS: &str = include_str!("../../test_data/http_fundings.json");
     const HTTP_ACCOUNT: &str = include_str!("../../test_data/http_account.json");
+    const HTTP_SEND_TX_WITH_HEADROOM: &str =
+        include_str!("../../test_data/http_send_tx_with_headroom.json");
+    const HTTP_SEND_TX_LEGACY: &str = include_str!("../../test_data/http_send_tx_legacy.json");
+    const HTTP_SEND_TX_BATCH_WITH_HEADROOM: &str =
+        include_str!("../../test_data/http_send_tx_batch_with_headroom.json");
+    const HTTP_SEND_TX_BATCH_LEGACY: &str =
+        include_str!("../../test_data/http_send_tx_batch_legacy.json");
 
     #[rstest]
     fn test_account_response_deserializes_live_shape() {
@@ -635,6 +646,60 @@ mod tests {
 
         assert!(missing.tx_hash.is_empty());
         assert!(null.tx_hash.is_empty());
+    }
+
+    #[rstest]
+    #[case::with_headroom(HTTP_SEND_TX_WITH_HEADROOM, Some(17))]
+    #[case::legacy(HTTP_SEND_TX_LEGACY, None)]
+    fn test_send_tx_response_deserializes_optional_remaining_send_tx(
+        #[case] fixture: &str,
+        #[case] expected: Option<i64>,
+    ) {
+        let response: LighterSendTxResponse = serde_json::from_str(fixture).unwrap();
+
+        assert_eq!(response.code, 200);
+        assert_eq!(response.message, None);
+        assert_eq!(response.tx_hash, "0xabc");
+        assert_eq!(response.predicted_execution_time_ms, 1_751_465_474);
+        assert_eq!(response.volume_quota_remaining, Some(123));
+        assert_eq!(response.remaining_send_tx, expected);
+
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            serialized.get("remaining_send_tx").is_some(),
+            expected.is_some()
+        );
+
+        if let Some(expected) = expected {
+            assert_eq!(serialized["remaining_send_tx"], expected);
+        }
+    }
+
+    #[rstest]
+    #[case::with_headroom(HTTP_SEND_TX_BATCH_WITH_HEADROOM, Some(18))]
+    #[case::legacy(HTTP_SEND_TX_BATCH_LEGACY, None)]
+    fn test_send_tx_batch_response_deserializes_optional_remaining_send_tx(
+        #[case] fixture: &str,
+        #[case] expected: Option<i64>,
+    ) {
+        let response: LighterSendTxBatchResponse = serde_json::from_str(fixture).unwrap();
+
+        assert_eq!(response.code, 200);
+        assert_eq!(response.message, None);
+        assert_eq!(response.tx_hash, vec!["0xabc", "0xdef"]);
+        assert_eq!(response.predicted_execution_time_ms, 1_751_465_475);
+        assert_eq!(response.volume_quota_remaining, Some(122));
+        assert_eq!(response.remaining_send_tx, expected);
+
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            serialized.get("remaining_send_tx").is_some(),
+            expected.is_some()
+        );
+
+        if let Some(expected) = expected {
+            assert_eq!(serialized["remaining_send_tx"], expected);
+        }
     }
 
     #[rstest]

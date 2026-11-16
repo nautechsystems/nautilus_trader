@@ -145,6 +145,7 @@ def test_handle_bar_rejects_price_above_float_precision(er: EfficiencyRatio) -> 
     """
     source = TestDataProviderPyo3.bar_5decimal()
     price = Price.from_raw(1_000_000_000_000_000_000, 18)
+
     bar = Bar(
         bar_type=source.bar_type,
         open=price,
@@ -291,7 +292,6 @@ def test_value_uses_period_deltas(prices: list[float], expected: float) -> None:
     Test value uses period deltas.
     """
     er = EfficiencyRatio(5)
-
     for price in prices:
         er.update_raw(price)
 

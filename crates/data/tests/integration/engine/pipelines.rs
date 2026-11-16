@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::msgbus::ShareableMessageHandler;
+
 use super::*;
 
 #[rstest]
@@ -4191,4 +4193,86 @@ fn test_request_bar_aggregation_retains_intermediate_trade_chunks(
         UnixNanos::from(3),
     );
     assert_eq!(cache.borrow().bar(&bar_type), Some(&expected));
+}
+
+#[rstest]
+#[case::any("any", false)]
+#[case::any_cache_disabled("any", true)]
+#[case::owned("owned", false)]
+#[case::owned_cache_disabled("owned", true)]
+#[case::borrowed("borrowed", false)]
+#[case::borrowed_cache_disabled("borrowed", true)]
+#[case::pipeline("pipeline", false)]
+#[case::pipeline_cache_disabled("pipeline", true)]
+fn test_custom_data_is_cached_before_publication(
+    #[case] path: &str,
+    #[case] disable_historical_cache: bool,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        disable_historical_cache,
+        ..Default::default()
+    };
+
+    let mut engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
+    let custom = stub_custom_data(8_000, 42, None, Some("CUSTOM.SIM".into()));
+    let live_topic = switchboard::get_custom_topic(&custom.data_type);
+    let pipeline_topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
+    let (live_handler, live_saver) = get_any_saving_handler::<CustomData>(None);
+    let (pipeline_handler, pipeline_saver) = get_any_saving_handler::<CustomData>(None);
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
+    let observations = Rc::new(RefCell::new(Vec::new()));
+    let observed = Rc::clone(&observations);
+    let observed_cache = Rc::clone(&cache);
+    let handler = ShareableMessageHandler::from_typed(move |item: &CustomData| {
+        let cached = observed_cache
+            .borrow()
+            .custom_data(&item.data_type)
+            .cloned();
+        observed.borrow_mut().push((item.clone(), cached));
+    });
+
+    let topic = if path == "pipeline" {
+        pipeline_topic
+    } else {
+        live_topic
+    };
+
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    match path {
+        "any" => engine.process(&custom as &dyn Any),
+        "owned" => engine.process_data(Data::Custom(custom.clone())),
+        "borrowed" => engine.process_data_ref(DataRef::Custom(&custom)),
+        "pipeline" => engine.process_pipeline(Data::Custom(custom.clone())),
+        _ => unreachable!(),
+    }
+
+    let expected_cache = if path == "pipeline" && disable_historical_cache {
+        None
+    } else {
+        Some(custom.clone())
+    };
+
+    assert_eq!(
+        *observations.borrow(),
+        vec![(custom.clone(), expected_cache.clone())]
+    );
+    assert_eq!(
+        cache.borrow().custom_data(&custom.data_type).cloned(),
+        expected_cache
+    );
+
+    let (expected_live, expected_pipeline) = if path == "pipeline" {
+        (vec![], vec![custom])
+    } else {
+        (vec![custom], vec![])
+    };
+
+    assert_eq!(live_saver.get_messages(), expected_live);
+    assert_eq!(pipeline_saver.get_messages(), expected_pipeline);
 }

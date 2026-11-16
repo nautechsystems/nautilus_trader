@@ -469,6 +469,13 @@ Cache snapshots are owned by the cache. The event store stores only the snapshot
 high-watermark at snapshot time, an opaque cache-owned `blob_ref` naming the snapshot, and the cache-owned
 `content_hash` for that blob.
 
+:::note Cache writes do not confirm durability
+Cache writes use [best-effort persistence](cache.md#persistence-failure-policy). A successful cache call
+does not acknowledge database storage, and recording a durable anchor does not make its referenced blob
+durable. Recovery fails if that blob is unavailable. Confirmed blob storage and blob-before-anchor
+ordering require a separate persistence contract.
+:::
+
 ```mermaid
 sequenceDiagram
     participant Cache
@@ -485,7 +492,8 @@ sequenceDiagram
 Recovery loads the snapshot the anchor names, then applies only the entries after the anchor's
 high-watermark.
 
-Recovery cases are ordered by how far the message progressed:
+Recovery cases are ordered by how far the message progressed. Snapshot-based cases assume the referenced
+blob is available:
 
 | Failure point                        | Recovery behavior                                                |
 | ------------------------------------ | ---------------------------------------------------------------- |

@@ -64,3 +64,28 @@ pub(crate) fn ensure_unique_order_id_tag(
 
     Ok(())
 }
+
+pub(crate) fn next_order_id_tag(existing_order_id_tags: &[&str]) -> String {
+    let mut next = existing_order_id_tags.len();
+
+    loop {
+        let tag = format!("{next:03}");
+        if !existing_order_id_tags.contains(&tag.as_str()) {
+            return tag;
+        }
+
+        next += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_next_order_id_tag_skips_consecutive_tags() {
+        assert_eq!(next_order_id_tag(&["002", "003"]), "004");
+    }
+}

@@ -43,6 +43,7 @@ def test_execution_engine_config_with_overrides() -> None:
     Test execution engine config with overrides.
     """
     client_id = ClientId("EXEC-001")
+
     config = ExecutionEngineConfig(
         load_cache=False,
         manage_own_order_books=True,
@@ -60,6 +61,7 @@ def test_execution_engine_config_with_overrides() -> None:
         purge_from_database=True,
         debug=True,
     )
+
     assert config.load_cache is False
     assert config.manage_own_order_books is True
     assert config.snapshot_orders is True

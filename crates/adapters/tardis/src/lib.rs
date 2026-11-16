@@ -15,23 +15,22 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for [Tardis](https://tardis.dev).
 //!
-//! The `nautilus-tardis` crate provides integration with the Tardis API for accessing
-//! normalized historical and real-time market data across multiple exchanges.
+//! The `nautilus-tardis` crate combines Tardis instrument metadata, normalized Tardis Machine streams,
+//! and CSV loaders for cryptocurrency market data across exchanges. It supports live data collection,
+//! historical replay, and Parquet catalog generation, with optional Python bindings.
+//!
+//! The official Tardis API reference can be found at <https://docs.tardis.dev/>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `arrow`: Enables Apache Arrow and Parquet data support.
 //! - `examples`: Enables the crate's example binaries.
@@ -41,6 +40,12 @@
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `replay`: Enables market data replay functionality (implies `arrow`).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/tardis/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/tardis/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/tardis)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

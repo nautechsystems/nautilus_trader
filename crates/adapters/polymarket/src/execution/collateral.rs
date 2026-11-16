@@ -16,6 +16,7 @@
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_core::UnixNanos;
+use nautilus_execution::reconciliation::is_inferred_reconciliation_trade_id_format;
 use nautilus_model::{
     identifiers::{ClientOrderId, TradeId},
     types::{AccountBalance, Money},
@@ -109,7 +110,11 @@ impl CollateralLocks {
             return;
         }
 
-        if reconciliation && !self.reconciled_fill_is_recent(ts_event) {
+        // No venue trade can confirm an inferred fill, so its spend would stay locked
+        if reconciliation
+            && (is_inferred_reconciliation_trade_id_format(&trade_id)
+                || !self.reconciled_fill_is_recent(ts_event))
+        {
             return;
         }
 

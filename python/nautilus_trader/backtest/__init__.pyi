@@ -312,6 +312,8 @@ class BacktestVenueConfig:
     @property
     def allow_cash_borrowing(self) -> bool: ...
     @property
+    def order_priority_reset_policy(self) -> execution.OrderPriorityResetPolicy: ...
+    @property
     def queue_position(self) -> bool: ...
     @property
     def oto_trigger_mode(self) -> model.OtoTriggerMode: ...
@@ -374,6 +376,7 @@ class BacktestVenueConfig:
         liquidation_enabled: bool | None = None,
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool | None = None,
+        order_priority_reset_policy: execution.OrderPriorityResetPolicy | None = None,
     ) -> BacktestVenueConfig: ...
 
 @typing.final
@@ -478,6 +481,7 @@ class BacktestEngine:
         liquidation_enabled: bool = False,
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool = True,
+        order_priority_reset_policy: execution.OrderPriorityResetPolicy = execution.OrderPriorityResetPolicy.PRICE_CHANGE,
     ) -> None: ...
     def change_fill_model(self, venue: model.Venue, fill_model: typing.Any) -> None: ...
     def add_data(

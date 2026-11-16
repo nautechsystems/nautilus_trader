@@ -16,17 +16,23 @@ and matching engine run on-chain as part of the validator process. Orders are su
 Cosmos transactions via gRPC and settled each block. An Indexer service exposes REST and
 WebSocket APIs for market data and account state.
 
+The official dYdX API reference can be found at <https://docs.dydx.xyz/>.
+
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/dydx.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
@@ -35,9 +41,16 @@ This crate provides feature flags to control source code inclusion during compil
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
+## Integrator attribution
+
+Orders built by the gRPC `OrderBuilder` set `order_router_address` to NautilusTrader's address.
+
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-dydx) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-dydx)
+- [Integration guide](../../../docs/integrations/dydx.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/dydx/)
 
 ## License
 

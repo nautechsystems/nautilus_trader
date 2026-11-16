@@ -431,8 +431,7 @@ impl WsDispatchState {
         self.venue_order_legs
             .lock()
             .get(client_order_id)
-            .map(|legs| legs.iter().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|legs| legs.iter().copied().collect())
     }
 
     pub(crate) fn order_binding(&self, client_order_id: &ClientOrderId) -> Option<OrderBinding> {

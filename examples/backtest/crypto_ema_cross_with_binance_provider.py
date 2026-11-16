@@ -80,6 +80,7 @@ if __name__ == "__main__":
             risk_engine=RiskEngineConfig(bypass=True),
         ),
     )
+
     engine.add_venue(
         venue=BINANCE_VENUE,
         oms_type=OmsType.NETTING,
@@ -110,6 +111,7 @@ if __name__ == "__main__":
             slow_ema_period=20,
         ),
     )
+
     engine.add_strategy(strategy)
     engine.run()
 

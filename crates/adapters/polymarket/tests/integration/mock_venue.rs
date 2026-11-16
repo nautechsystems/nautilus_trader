@@ -127,6 +127,10 @@ impl RequestGate {
     }
 }
 
+/// Configurable responses and recorded requests for the mock execution venue.
+///
+/// For retry tests, `order_post_500_remaining` sets how many order submissions return HTTP 500
+/// before the handler uses `order_response_status`.
 #[derive(Clone)]
 pub(super) struct TestServerState {
     pub(super) last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -149,8 +153,6 @@ pub(super) struct TestServerState {
     pub(super) order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) order_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     pub(super) order_post_count: Arc<tokio::sync::Mutex<usize>>,
-    /// When > 0, `handle_post_order` returns 500 on this many calls before
-    /// reverting to the configured `order_response_status`. Used by retry tests.
     pub(super) order_post_500_remaining: Arc<tokio::sync::Mutex<usize>>,
     pub(super) order_response_uses_request_hash: Arc<AtomicBool>,
     pub(super) order_market_versions: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
@@ -191,6 +193,7 @@ pub(super) struct TestServerState {
     pub(super) batch_order_request_gate: Arc<RequestGate>,
     pub(super) open_order_ids: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub(super) orders_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) orders_response_pages: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     pub(super) orders_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -280,6 +283,7 @@ impl Default for TestServerState {
             batch_order_request_gate: Arc::new(RequestGate::default()),
             open_order_ids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_response_pages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             orders_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             orders_get_count: Arc::new(AtomicUsize::new(0)),
             single_order_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -364,9 +368,20 @@ async fn handle_get_orders(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let cursor = query.get("next_cursor").cloned().unwrap_or_default();
     *state.last_query.lock().await = query;
     state.orders_get_count.fetch_add(1, Ordering::AcqRel);
     let status = *state.orders_response_status.lock().await;
+    if let Some(body) = state
+        .orders_response_pages
+        .lock()
+        .await
+        .get(&cursor)
+        .cloned()
+    {
+        return (status, Json(body)).into_response();
+    }
+
     let body = state
         .orders_response_override
         .lock()

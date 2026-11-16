@@ -8,23 +8,27 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com) betting exchange.
 
-The `nautilus-betfair` crate provides data and execution clients, streaming
-and REST API models, and full NautilusTrader integration for the
-[Betfair](https://www.betfair.com) betting exchange.
+The `nautilus-betfair` crate connects Betfair market data and order execution to NautilusTrader.
+It includes REST and streaming clients, instrument discovery, and historical file loading for
+backtesting, with shared protocol models and live-node factories.
 
-The official API reference can be found at <https://docs.developer.betfair.com/>.
+The official Betfair API reference can be found at <https://docs.developer.betfair.com/>.
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, providing research-to-live semantic parity.
+The system spans research, simulation, and live execution, providing research-to-live semantic parity.
+
+## Configuration
+
+See the [integration guide](../../../docs/integrations/betfair.md) for client settings,
+credentials, and connection setup.
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation:
+Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `arrow`: Enables Apache Arrow data support.
 - `examples`: Enables the crate's example binaries.
@@ -36,7 +40,10 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-betfair) for more detailed usage.
+- [Rust API reference](https://docs.rs/nautilus-betfair)
+- [Integration guide](../../../docs/integrations/betfair.md)
+- [Rust examples](examples/)
+- [Python examples](../../../examples/live/betfair/)
 
 ## License
 

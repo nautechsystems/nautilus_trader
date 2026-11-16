@@ -22,8 +22,9 @@ use crate::{
     hypersync::{
         HypersyncLog,
         log::{
-            extract_address_from_topic, extract_block_number, extract_log_index,
-            extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
+            extract_address_from_topic, extract_block_hash, extract_block_number,
+            extract_log_index, extract_transaction_hash, extract_transaction_index,
+            validate_event_signature_hash,
         },
     },
     rpc::log as rpc_log,
@@ -86,6 +87,7 @@ pub fn parse_swap_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
             dex,
             pool_identifier,
             extract_block_number(log)?,
+            extract_block_hash(log),
             extract_transaction_hash(log)?,
             extract_transaction_index(log)?,
             extract_log_index(log)?,
@@ -130,6 +132,7 @@ pub fn parse_swap_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Swap
         dex,
         pool_identifier,
         rpc_log::extract_block_number(log)?,
+        rpc_log::extract_block_hash(log)?,
         rpc_log::extract_transaction_hash(log)?,
         rpc_log::extract_transaction_index(log)?,
         rpc_log::extract_log_index(log)?,
@@ -145,9 +148,9 @@ pub fn parse_swap_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Swap
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
-    use alloy::primitives::{I256, U160, U256};
+    use alloy::primitives::{B256, I256, U160, U256};
     use rstest::*;
 
     use super::*;
@@ -173,6 +176,8 @@ mod tests {
     fn test_parse_swap_event_hypersync(hypersync_log: HypersyncLog) {
         let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let event = parse_swap_event_hypersync(dex, &hypersync_log).unwrap();
+
+        assert_eq!(event.block_hash, None);
 
         assert_eq!(
             event.pool_identifier.to_string(),
@@ -210,6 +215,11 @@ mod tests {
     fn test_parse_swap_event_rpc(rpc_log: RpcLog) {
         let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let event = parse_swap_event_rpc(dex, &rpc_log).unwrap();
+
+        let expected =
+            B256::from_str("0x7c92e97f57ff8f490095730746b0b90a7c9e035bcf94c800f50b56fb18986e97")
+                .unwrap();
+        assert_eq!(event.block_hash, Some(expected));
 
         assert_eq!(
             event.pool_identifier.to_string(),

@@ -27,21 +27,21 @@
 //! The crate also includes shared enums, endpoint constants, URL routing, and
 //! credential plumbing for adjacent Binance surfaces such as Margin and European Options.
 //! Those surfaces do not have live data or execution clients in this crate.
+//! Portfolio Margin likewise has no live clients here, but its signed REST transport
+//! is available in [`papi`].
 //!
-//! The official Binance API reference can be found at <https://binance-docs.github.io/apidocs/>.
+//! The official Binance API reference can be found at <https://developers.binance.com/en/docs/>.
 //!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `arrow`: Enables Apache Arrow data support.
 //! - `examples`: Enables the crate's example binaries.
@@ -50,6 +50,20 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! Spot and Futures execution clients and HTTP clients that build orders from Nautilus types encode
+//! supported client order IDs with NautilusTrader's Link and Trade integration prefix. Raw HTTP and
+//! WebSocket API trading clients preserve caller-supplied IDs.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/binance/#link--trade).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/binance/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/binance/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -67,6 +81,7 @@ pub mod config;
 pub mod data_types;
 pub mod factories;
 pub mod futures;
+pub mod papi;
 pub mod spot;
 
 pub(crate) mod book;

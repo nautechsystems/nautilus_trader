@@ -20,7 +20,6 @@ pub mod enums;
 pub mod factories;
 pub mod http;
 pub mod params;
-pub mod types;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -39,7 +38,10 @@ use crate::{
         symbol::BybitSymbol,
     },
     config::{BybitDataClientConfig, BybitExecutionClientConfig},
-    data_types::{BybitLiquidation, register_bybit_custom_data},
+    data_types::{
+        BybitLiquidation, BybitMarginBorrowResult, BybitMarginRepayResult, BybitMarginStatusResult,
+        register_bybit_custom_data,
+    },
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 
@@ -193,9 +195,9 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::models::BybitOrder>()?;
     m.add_class::<crate::http::models::BybitOrderCursorList>()?;
     m.add_class::<crate::http::models::BybitTickerData>()?;
-    m.add_class::<crate::common::types::BybitMarginBorrowResult>()?;
-    m.add_class::<crate::common::types::BybitMarginRepayResult>()?;
-    m.add_class::<crate::common::types::BybitMarginStatusResult>()?;
+    m.add_class::<crate::data_types::BybitMarginBorrowResult>()?;
+    m.add_class::<crate::data_types::BybitMarginRepayResult>()?;
+    m.add_class::<crate::data_types::BybitMarginStatusResult>()?;
     m.add_class::<params::BybitTickersParams>()?;
     m.add_class::<params::BybitNativeTpSlParams>()?;
     m.add_class::<BybitLiquidation>()?;
@@ -245,7 +247,10 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     register_bybit_custom_data();
-    let _result = ensure_rust_extractor_registered::<BybitLiquidation>();
+    let _ = ensure_rust_extractor_registered::<BybitLiquidation>();
+    let _ = ensure_rust_extractor_registered::<BybitMarginBorrowResult>();
+    let _ = ensure_rust_extractor_registered::<BybitMarginRepayResult>();
+    let _ = ensure_rust_extractor_registered::<BybitMarginStatusResult>();
 
     Ok(())
 }

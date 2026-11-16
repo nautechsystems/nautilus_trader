@@ -1,0 +1,110 @@
+{
+  "frames": [
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 1,
+      "sending_ts_ms": 1792207801000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "created"
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 2,
+      "sending_ts_ms": 1792207802000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "activated"
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 3,
+      "sending_ts_ms": 1792207803000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "deactivated",
+        "is_deactivated": true
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 4,
+      "sending_ts_ms": 1792207804000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "deactivated",
+        "is_deactivated": false
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 5,
+      "sending_ts_ms": 1792207805000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "close_date_updated",
+        "close_ts": 1792207807
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 6,
+      "sending_ts_ms": 1792207806000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "price_level_structure_updated",
+        "price_level_structure": "deci_cent",
+        "price_ranges": [
+          {
+            "start": "0.0000",
+            "end": "1.0000",
+            "step": "0.0010"
+          }
+        ]
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 7,
+      "sending_ts_ms": 1792207807000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "metadata_updated",
+        "yes_sub_title": "Updated exact subtitle"
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 8,
+      "sending_ts_ms": 1792207808000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "determined",
+        "determination_ts": 1792207808,
+        "result": "yes",
+        "settlement_value": "1.0000"
+      }
+    },
+    {
+      "id": null,
+      "sid": 11,
+      "seq": 9,
+      "sending_ts_ms": 1792207809000,
+      "msg": {
+        "market_ticker": "KXBTC15M-26OCT162345-45",
+        "event_type": "settled",
+        "settled_ts": 1792207809
+      }
+    }
+  ]
+}

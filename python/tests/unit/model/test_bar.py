@@ -453,6 +453,7 @@ def test_bar_equality(audusd_1_min_bid: object) -> None:
         0,
         0,
     )
+
     bar2 = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00000"),
@@ -963,6 +964,7 @@ def test_bar_pickle_composite_bar_type() -> None:
     bar_type = BarType.from_str(
         "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
     )
+
     bar = Bar(
         bar_type=bar_type,
         open=Price.from_str("50000.0"),
@@ -1019,6 +1021,7 @@ def test_bar_setstate_rejects_invalid_state_without_mutation(
         ts_event=1,
         ts_init=2,
     )
+
     other = Bar(
         bar_type=BarType.from_str("USD/JPY.SIM-5-MINUTE-ASK-EXTERNAL"),
         open=Price.from_str("150.001"),
@@ -1029,6 +1032,7 @@ def test_bar_setstate_rejects_invalid_state_without_mutation(
         ts_event=5,
         ts_init=6,
     )
+
     original_state = bar.__getstate__()
     state = list(other.__getstate__())
     state[index] = value
@@ -1054,6 +1058,7 @@ def test_bar_setstate_accepts_state_outside_ohlc_invariants(audusd_1_min_bid: ob
         ts_event=1,
         ts_init=2,
     )
+
     state = list(bar.__getstate__())
     state[3], state[4] = state[4], state[3]
 

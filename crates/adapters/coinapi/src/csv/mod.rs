@@ -17,7 +17,7 @@
 //!
 //! - [`load_trades`], [`load_quotes`], and [`load_deltas`] read a whole per-symbol file.
 //! - [`stream_trades`], [`stream_quotes`], and [`stream_deltas`] read one in chunks.
-//! - [`CoinApiOhlcvLoader`] reads an exchange-wide OHLCV file.
+//! - [`load_bars`] reads an exchange-wide OHLCV file using registered symbol mappings.
 //!
 //! Values convert exactly from their text. A load infers each precision it is not given from every
 //! value it reads. A stream infers it from a leading sample and rejects a later value that
@@ -37,7 +37,7 @@ use nautilus_model::{
     data::{OrderBookDelta, QuoteTick, TradeTick},
     identifiers::InstrumentId,
 };
-pub use ohlcv::CoinApiOhlcvLoader;
+pub(crate) use ohlcv::load_bars;
 
 use self::{
     book::BookDecoder,
@@ -46,7 +46,7 @@ use self::{
 };
 
 /// The largest `chunk_size` a stream accepts.
-pub const STREAM_CHUNK_SIZE_MAX: usize = 1_000_000;
+pub(crate) const STREAM_CHUNK_SIZE_MAX: usize = 1_000_000;
 
 const LOAD_CHUNK_SIZE: usize = 1_000_000;
 
@@ -60,7 +60,7 @@ const PRECISION_SAMPLE_ROWS: usize = 10_000;
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, a column is missing, or a row is invalid.
-pub fn load_trades(
+pub(crate) fn load_trades(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     price_precision: Option<u8>,
@@ -83,7 +83,7 @@ pub fn load_trades(
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, a column is missing, or a row is invalid.
-pub fn load_quotes(
+pub(crate) fn load_quotes(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     price_precision: Option<u8>,
@@ -109,7 +109,7 @@ pub fn load_quotes(
 ///
 /// Returns an error if no date is given or found in the path, the file cannot be read, a column is
 /// missing, or a row is invalid.
-pub fn load_deltas(
+pub(crate) fn load_deltas(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     date: Option<Date>,
@@ -136,7 +136,7 @@ pub fn load_deltas(
 ///
 /// Returns an error if `chunk_size` is outside [1, [`STREAM_CHUNK_SIZE_MAX`]] or the file cannot
 /// be opened. Each chunk is an error if a row is invalid or finer than its precision.
-pub fn stream_trades(
+pub(crate) fn stream_trades(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     chunk_size: usize,
@@ -162,7 +162,7 @@ pub fn stream_trades(
 ///
 /// Returns an error if `chunk_size` is outside [1, [`STREAM_CHUNK_SIZE_MAX`]] or the file cannot
 /// be opened. Each chunk is an error if a row is invalid or finer than its precision.
-pub fn stream_quotes(
+pub(crate) fn stream_quotes(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     chunk_size: usize,
@@ -192,7 +192,7 @@ pub fn stream_quotes(
 /// Returns an error if `chunk_size` is outside [1, [`STREAM_CHUNK_SIZE_MAX`]], no date is given or
 /// found in the path, or the file cannot be opened. Each chunk is an error if a row is invalid or
 /// finer than its precision.
-pub fn stream_deltas(
+pub(crate) fn stream_deltas(
     path: impl AsRef<Path>,
     instrument_id: InstrumentId,
     date: Option<Date>,
@@ -422,6 +422,7 @@ fn stream<D: Decode>(
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fs,
         io::Write,
         path::{Path, PathBuf},
@@ -442,7 +443,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::http::models::Symbol;
 
     const SNAPSHOT: u8 = RecordFlag::F_SNAPSHOT as u8;
     const LAST: u8 = RecordFlag::F_LAST as u8;
@@ -1278,18 +1278,18 @@ mod tests {
     }
 
     #[rstest]
-    fn ohlcv_loader_loads_mapped_symbols_at_their_inferred_precisions() {
+    fn ohlcv_loads_mapped_symbols_with_registered_prices_and_observed_volumes() {
         let first = InstrumentId::from("SOLUSD.BITSTAMP");
         let second = InstrumentId::from("DOGEUSD.BITSTAMP");
-        let loader = CoinApiOhlcvLoader::new([(138_492, first), (5_968_363, second)]);
+        let symbols = HashMap::from([(138_492, (first, 2)), (5_968_363, (second, 5))]);
 
-        let bars = loader
-            .load_bars(
-                fixture("ohlcv_bitstamp_1day_20250911.csv"),
-                Some("1DAY"),
-                None,
-            )
-            .unwrap();
+        let bars = load_bars(
+            fixture("ohlcv_bitstamp_1day_20250911.csv"),
+            &symbols,
+            Some("1DAY"),
+            None,
+        )
+        .unwrap();
 
         let period_end = UnixNanos::from(1_757_635_200_000_000_000);
         let volume = Decimal::from_str("689.5507347100003")
@@ -1339,9 +1339,9 @@ mod tests {
              2025-09-11T00:00:01;2025-09-11T00:00:59;1;2;0.5;1.5;3;{volume}"
         );
         let path = write_file(dir.path(), "TP-1MIN.csv", &[OHLCV_HEADER, &row]);
-        let loader = CoinApiOhlcvLoader::new([(7, InstrumentId::from("SOLUSD.BITSTAMP"))]);
+        let symbols = HashMap::from([(7, (InstrumentId::from("SOLUSD.BITSTAMP"), 1))]);
 
-        let error = loader.load_bars(&path, None, None).unwrap_err();
+        let error = load_bars(&path, &symbols, None, None).unwrap_err();
 
         let expected = if negative {
             format!("sx_sum must be non-negative: {volume}")
@@ -1367,9 +1367,9 @@ mod tests {
              2025-09-11T00:00:01;2025-09-11T00:00:59;1;2;0.5;1.5;3;{volume}"
         );
         let path = write_file(dir.path(), "TP-1MIN.csv", &[OHLCV_HEADER, &row]);
-        let loader = CoinApiOhlcvLoader::new([(7, InstrumentId::from("SOLUSD.BITSTAMP"))]);
+        let symbols = HashMap::from([(7, (InstrumentId::from("SOLUSD.BITSTAMP"), 1))]);
 
-        let bars = loader.load_bars(&path, None, None).unwrap();
+        let bars = load_bars(&path, &symbols, None, None).unwrap();
 
         let period_end = UnixNanos::from(1_757_548_860_000_000_000);
         assert_eq!(
@@ -1388,46 +1388,7 @@ mod tests {
     }
 
     #[rstest]
-    fn ohlcv_loader_from_symbols_maps_symbol_id_int_to_native_instruments() {
-        let mut symbols: Vec<Symbol> =
-            serde_json::from_str(include_str!("../../test_data/symbols_spot.json")).unwrap();
-        let kraken = symbols
-            .iter_mut()
-            .find(|symbol| symbol.symbol_id == "KRAKEN_SPOT_BTC_USD")
-            .unwrap();
-        kraken.symbol_id_int = None;
-        let loader = CoinApiOhlcvLoader::from_symbols(&symbols);
-
-        let dir = TempDir::new().unwrap();
-
-        let row = |symbol_id: &str| {
-            format!(
-                "{symbol_id};2025-09-11T00:00:00.0000000;2025-09-11T00:01:00.0000000;\
-                 2025-09-11T00:00:01.0000000;2025-09-11T00:00:59.0000000;1;2;0.5;1.5;3;4"
-            )
-        };
-
-        let rows = [row("138123"), row("27576"), row("599"), row("1")];
-        let mut lines = vec![
-            "symbol_id;time_period_start;time_period_end;time_open;time_close;px_open;px_high;\
-             px_low;px_close;sx_cnt;sx_sum",
-        ];
-        lines.extend(rows.iter().map(String::as_str));
-        let path = write_file(dir.path(), "TP-1MIN.csv", &lines);
-
-        let bars = loader.load_bars(&path, None, None).unwrap();
-
-        assert_eq!(
-            bars.iter().map(|bar| bar.bar_type).collect::<Vec<_>>(),
-            [
-                BarType::from("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-                BarType::from("BTC-USD.COINBASE-1-MINUTE-LAST-EXTERNAL"),
-            ]
-        );
-    }
-
-    #[rstest]
-    fn ohlcv_loader_backfills_each_instruments_final_precision() {
+    fn ohlcv_preserves_registered_price_precision_across_rows() {
         let dir = TempDir::new().unwrap();
 
         let row = |open: &str| {
@@ -1439,9 +1400,9 @@ mod tests {
 
         let (first, second) = (row("1"), row("1.125"));
         let path = write_file(dir.path(), "TP-1MIN.csv", &[OHLCV_HEADER, &first, &second]);
-        let loader = CoinApiOhlcvLoader::new([(7, InstrumentId::from("SOLUSD.BITSTAMP"))]);
+        let symbols = HashMap::from([(7, (InstrumentId::from("SOLUSD.BITSTAMP"), 3))]);
 
-        let bars = loader.load_bars(&path, None, None).unwrap();
+        let bars = load_bars(&path, &symbols, None, None).unwrap();
 
         assert_eq!(bars.len(), 2);
         assert_eq!(bars[0].open, Price::from("1.000"));
@@ -1458,12 +1419,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("TP-1DAY.csv");
         fs::copy(fixture("ohlcv_bitstamp_1day_20250911.csv"), &path).unwrap();
-        let loader = CoinApiOhlcvLoader::new([(138_492, InstrumentId::from("SOLUSD.BITSTAMP"))]);
+        let symbols = HashMap::from([(138_492, (InstrumentId::from("SOLUSD.BITSTAMP"), 2))]);
 
-        let bars = loader.load_bars(&path, None, None).unwrap();
-        let error = loader
-            .load_bars(fixture("ohlcv_bitstamp_1day_20250911.csv"), None, None)
-            .unwrap_err();
+        let bars = load_bars(&path, &symbols, None, None).unwrap();
+        let error = load_bars(
+            fixture("ohlcv_bitstamp_1day_20250911.csv"),
+            &symbols,
+            None,
+            None,
+        )
+        .unwrap_err();
 
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].bar_type.spec().to_string(), "1-DAY-LAST");
@@ -1491,7 +1456,8 @@ mod tests {
                 "7;2025-09-01T00:01:00;2025-09-01T00:02:00;;;102.5;104.75;100.25;103.25;5;6.375",
             ],
         );
-        let loader = CoinApiOhlcvLoader::new([(7, coinbase())]);
+        let symbols = HashMap::from([(7, (coinbase(), 2))]);
+
         let expected = [
             Bar::new(
                 BarType::from("BTC-USD.COINBASE-1-MINUTE-LAST-EXTERNAL"),
@@ -1515,7 +1481,7 @@ mod tests {
             ),
         ];
 
-        let bars = loader.load_bars(path, None, Some(limit)).unwrap();
+        let bars = load_bars(path, &symbols, None, Some(limit)).unwrap();
 
         assert_eq!(bars, expected[..limit.min(2)]);
         assert!(bars.iter().all(|bar| {

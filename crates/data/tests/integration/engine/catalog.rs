@@ -759,17 +759,40 @@ fn test_time_range_pipeline_child_uses_catalog_client_fanin(
 
 #[cfg(feature = "streaming")]
 #[rstest]
+#[case::explicit(false)]
+#[case::venue(true)]
 fn test_request_quotes_catalog_only_serves_from_disk(
+    #[case] venue_routed: bool,
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
     let _ = stub_msgbus;
+
+    let client_id = if venue_routed {
+        ClientId::from("VENUE_SOURCE")
+    } else {
+        client_id
+    };
+
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache, None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    if venue_routed {
+        register_recording_client(
+            &mut data_engine,
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache,
+            client_id,
+            instrument_id.venue,
+        );
+        data_engine
+            .register_venue_routing(client_id, instrument_id.venue)
+            .unwrap();
+    }
 
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
@@ -791,7 +814,7 @@ fn test_request_quotes_catalog_only_serves_from_disk(
         Some(UnixNanos::from(1_000).to_datetime_utc()),
         Some(UnixNanos::from(2_000).to_datetime_utc()),
         None,
-        Some(client_id),
+        (!venue_routed).then_some(client_id),
         parent_id,
         UnixNanos::default(),
         None,
@@ -801,6 +824,7 @@ fn test_request_quotes_catalog_only_serves_from_disk(
     let received = saver.get_messages();
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].client_id, client_id);
     let ts_inits: Vec<u64> = received[0]
         .data
         .iter()

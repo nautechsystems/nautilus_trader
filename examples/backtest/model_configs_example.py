@@ -57,13 +57,16 @@ if __name__ == "__main__":
         maker_rate=Decimal("0.0001"),
         taker_rate=Decimal("0.0002"),
     )
+
     fixed_fee_model = FixedFeeModel(
         commission=Money.from_str("1.50 USD"),
         charge_commission_once=True,
     )
+
     per_contract_fee_model = PerContractFeeModel(
         commission=Money.from_str("0.01 USD"),
     )
+
     recurring_fixed_fee_model = FixedFeeModel(
         commission=Money.from_str("2.00 USD"),
         charge_commission_once=False,

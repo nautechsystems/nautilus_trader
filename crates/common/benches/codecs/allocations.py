@@ -109,6 +109,7 @@ def _main() -> None:
     counts, sizes = _read_counts(args.trace, operations.pop())
     if len(rows) != len(counts):
         parser.error("case markers do not match the benchmark output")
+
     for row, count, size in zip(rows, counts, sizes, strict=True):
         calls = row["profile_calls"]
         if calls <= 0:

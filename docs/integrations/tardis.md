@@ -26,9 +26,14 @@ The adapter is implemented in Rust with optional Python bindings. Its components
 NautilusTrader, so it does not require a separate Tardis client library installation. Consult the
 [Tardis documentation](https://docs.tardis.dev/) for the upstream APIs, formats, and server.
 
-The minimum tested Tardis Node version used by Tardis Machine is **18.2.2**. This release fixes
-Deribit order book normalization when queued updates already covered by a snapshot arrive after it.
-NautilusTrader does not pin the version in your Tardis Machine deployment.
+The minimum tested Tardis Node version used by Tardis Machine is **18.3.8**. This version includes
+the Deribit fix introduced in 18.2.2 for order book normalization when queued updates already
+covered by a snapshot arrive after it. NautilusTrader does not pin the version in your Tardis Machine
+deployment.
+
+For OKX real-time streaming after **2026-10-31**, use Tardis Node 18.3.8 or later. This release
+connects OKX WebSockets on port 443; OKX stopped accepting public-internet WebSocket connections on
+port 8443 on that date.
 
 ## Supported formats
 
@@ -860,16 +865,18 @@ quote, trade, funding rate, and bar requests. Configure historical replay throug
 ## Testing Tardis Node compatibility
 
 The Deribit regression feeds a snapshot, covered queued updates, and a fresh update through the
-installed Tardis Node normalizer, then checks the complete Nautilus order book. It requires Node.js
-compatible with the tested `tardis-dev` package and runs separately from the default Rust tests.
-From the repository root:
+installed Tardis Node normalizer, then checks the complete Nautilus order book. The OKX regression
+checks that the `okex`, `okex-futures`, `okex-swap`, and `okex-options` feeds resolve the
+`/ws/v5/public` endpoint on port 443 without opening a network connection. Both regressions require
+Node.js compatible with the tested `tardis-dev` package and run separately from the default Rust
+tests. From the repository root:
 
 ```bash
 tardis_test_dir=$(mktemp -d)
-npm install --prefix "$tardis_test_dir" --ignore-scripts --no-audit --no-fund tardis-dev@18.2.2
+npm install --prefix "$tardis_test_dir" --ignore-scripts --no-audit --no-fund tardis-dev@18.3.8
 TARDIS_NODE_MODULE="$tardis_test_dir/node_modules/tardis-dev" \
   CARGO_BUILD_JOBS=4 NEXTEST_TEST_THREADS=4 cargo nextest run --locked -p nautilus-tardis \
-  --cargo-profile nextest --run-ignored only -E 'test(test_deribit_snapshot_queued_updates_with_tardis_node)'
+  --cargo-profile nextest --run-ignored only -E 'test(with_tardis_node)'
 rm -rf "$tardis_test_dir"
 ```
 

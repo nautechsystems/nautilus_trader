@@ -7,12 +7,12 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-//! Tracks distinct broker orders sharing a Nautilus order reference.
+//! Tracks distinct venue orders sharing a Nautilus order reference.
 
 use super::{core::*, parse::parse_order_data_to_report};
 use crate::common::enums::IbAction;
 
-/// Returns the client order ID reporting a broker order that shares another order's reference.
+/// Returns the client order ID reporting a venue order that shares another order's reference.
 ///
 /// The engine models one physical order per client order ID, so each additional permanent ID
 /// reaches it as an external order under this ID.
@@ -49,16 +49,15 @@ pub(super) struct OrderIncarnationGroup {
 
 impl OrderTrackerState {
     pub(super) fn observe_order_binding(&mut self, binding: &ibapi::orders::OrderBound) {
-        if let Some(parent) = self.incarnation_parents.get(&binding.perm_id).copied() {
-            if let Some(member) = self
+        if let Some(parent) = self.incarnation_parents.get(&binding.perm_id).copied()
+            && let Some(member) = self
                 .groups
                 .get_mut(&parent)
                 .and_then(|group| group.members.get_mut(&binding.perm_id))
-            {
-                member.route = Some((binding.client_id, binding.order_id));
-                member.route_conflict = false;
-                member.seen = !member.terminal;
-            }
+        {
+            member.route = Some((binding.client_id, binding.order_id));
+            member.route_conflict = false;
+            member.seen = !member.terminal;
         }
     }
 
@@ -253,11 +252,10 @@ impl OrderTrackerState {
                 if data.order.perm_id > 0 {
                     self.order_snapshots
                         .insert(data.order.perm_id, data.clone());
-
-                    if let Some(order) = self.order_mut(order_id) {
-                        if order.perm_id == 0 {
-                            order.perm_id = data.order.perm_id;
-                        }
+                    if let Some(order) = self.order_mut(order_id)
+                        && order.perm_id == 0
+                    {
+                        order.perm_id = data.order.perm_id;
                     }
                 }
 

@@ -72,6 +72,7 @@ def test_session_requires_explicit_credentials(missing: str) -> None:
         "passphrase": "session-passphrase",
         "funder": WALLET,
     }
+
     del kwargs[missing]
     with pytest.raises(ValueError, match="Session"):
         PolymarketExecutionClientConfig(**kwargs)
@@ -90,6 +91,7 @@ def test_session_configuration_selects_role() -> None:
         passphrase="session-passphrase",
         funder=WALLET,
     )
+
     assert config.signer_type == PolymarketSignerType.Session
     assert config.signature_type == PolymarketSignatureType.Poly1271
     assert config.funder == WALLET
@@ -109,6 +111,7 @@ def test_admin_configuration_redacts_credentials(proxy_url: str | None) -> None:
         "builder_api_secret": "YnVpbGRlcg==",
         "builder_passphrase": "builder-passphrase",
     }
+
     config = PolymarketSessionKeyClientConfig(
         **credentials,
         funder=WALLET,
@@ -116,6 +119,7 @@ def test_admin_configuration_redacts_credentials(proxy_url: str | None) -> None:
         base_url_relayer="https://relayer.example.test",
         proxy_url=proxy_url,
     )
+
     representations = (repr(config), str(config))
     assert config.funder == WALLET
     assert config.base_url_http == "https://clob.example.test"
@@ -125,6 +129,7 @@ def test_admin_configuration_redacts_credentials(proxy_url: str | None) -> None:
     for name, value in credentials.items():
         assert not hasattr(config, name)
         assert all(value not in representation for representation in representations)
+
     if proxy_url is not None:
         assert all(proxy_url not in representation for representation in representations)
 
@@ -159,6 +164,7 @@ async def test_admin_lists_typed_metadata() -> None:
     server = await asyncio.start_server(respond, "127.0.0.1", 0)
     async with server:
         port = server.sockets[0].getsockname()[1]
+
         client = PolymarketSessionKeyClient(
             PolymarketSessionKeyClientConfig(
                 private_key=PRIVATE_KEY,
@@ -172,6 +178,7 @@ async def test_admin_lists_typed_metadata() -> None:
                 base_url_http=f"http://127.0.0.1:{port}",
             ),
         )
+
         keys = await client.list_session_keys()
     assert [(key.address, key.scopes, key.valid_until) for key in keys] == [
         (address, ["CLOB"], valid_until),

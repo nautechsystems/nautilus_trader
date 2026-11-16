@@ -45,6 +45,7 @@ def test_data_tester_config_readback() -> None:
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     request_start = datetime(2026, 10, 29, 1, 2, 3, 123456, tzinfo=UTC)
     request_end = datetime(2026, 10, 29, 1, 7, 8, 654321, tzinfo=UTC)
+
     config = DataTesterConfig(
         actor_id=actor_id,
         client_id=client_id,
@@ -182,6 +183,7 @@ def test_exec_tester_config_readback() -> None:
     strategy_id = StrategyId("EXEC-TESTER-001")
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     client_id = ClientId("EXEC-001")
+
     config = ExecTesterConfig(
         strategy_id=strategy_id,
         order_id_tag="001",

@@ -103,6 +103,7 @@ async def main() -> None:
         max_retries=0,
         connect_timeout_secs=60,
     )
+
     native = PolymarketDataClientConfig(
         instrument_config=PolymarketInstrumentProviderConfig(load_ids=[native_id]),
         update_instruments_interval_mins=0,
@@ -112,6 +113,7 @@ async def main() -> None:
         resolve_poll_enabled=False,
         http_timeout_secs=10,
     )
+
     node = (
         LiveNode.builder("FINFEED-LIVE-ACCEPTANCE", TraderId("TESTER-001"), Environment.LIVE)
         .with_reconciliation(False)
@@ -170,6 +172,7 @@ async def main() -> None:
         assert instrument.price_precision == 4
         assert instrument.size_precision == 6
         assert Decimal(str(instrument.price_increment)) == Decimal(source["MinimumTickSize"])
+
         for record in history:
             source_volume = Decimal(str(record["volume_traded"]))
             normalized = source_volume.quantize(Decimal("0.000001"), rounding=ROUND_HALF_EVEN)
@@ -210,6 +213,7 @@ async def main() -> None:
             assert Decimal(0) <= Decimal(str(quote.ask_price)) <= Decimal(1)
             assert 10**16 <= quote.ts_event <= now
             assert 10**16 <= quote.ts_init <= now
+
         for trade in trades:
             assert trade.instrument_id == INSTRUMENT_ID
             assert trade.aggressor_side == AggressorSide.NO_AGGRESSOR
@@ -259,6 +263,7 @@ def read_response(path: str, key: str) -> Any:
         f"https://api.prediction-markets.finfeedapi.com/v1/{path}",
         headers={"Authorization": key, "X-Referrer": "nautilus", "Accept": "application/json"},
     )
+
     with build_opener(ProxyHandler({}), RejectRedirects()).open(request, timeout=30) as response:
         return json.load(response, parse_float=Decimal)
 

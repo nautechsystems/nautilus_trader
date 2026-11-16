@@ -196,6 +196,7 @@ pub struct DataEngine {
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     bar_aggregator_warmups: AHashMap<BarAggregatorKey, BarAggregatorWarmup>,
+    bar_aggregators_pending_stop: AHashSet<BarAggregatorKey>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
     inflight_requests: AHashMap<UUID4, RequestCommand>,
@@ -276,6 +277,7 @@ impl DataEngine {
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             bar_aggregator_warmups: AHashMap::new(),
+            bar_aggregators_pending_stop: AHashSet::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
             inflight_requests: AHashMap::new(),
@@ -535,26 +537,8 @@ impl DataEngine {
             }
         }
 
-        let keys: Vec<BarAggregatorKey> = self.bar_aggregators.keys().copied().collect();
-        for (bar_type, request_id) in keys {
-            if let Err(e) = self.stop_bar_aggregator(bar_type, request_id) {
-                log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
-            }
-        }
-        self.subscriptions_bar_aggregation.clear();
-
-        self.request_bar_aggregations.clear();
-        self.inflight_requests.clear();
-        self.request_pipeline_parent_request.clear();
-        self.request_pipeline_n_components.clear();
-        self.request_pipeline_parent_request_id.clear();
-        self.request_pipeline_responses.clear();
-        self.time_range_pipeline_requests.clear();
-        self.time_range_pipeline_parent_request_id.clear();
-        self.parent_join_request_id.clear();
-        self.pending_join_requests.clear();
-        self.continuous_future_requests.clear();
-        self.continuous_future_parent_request_id.clear();
+        self.clear_bar_aggregators();
+        self.clear_request_state();
 
         for state in self.continuous_future_subscriptions.values_mut() {
             if let Some(name) = state.timer_name.take() {
@@ -568,43 +552,9 @@ impl DataEngine {
             self.stop_spread_quote_aggregation(spread_id);
         }
 
-        // Tear down option chain managers to unregister their msgbus handlers
-        let managers: Vec<_> = self.option_chain_managers.drain().collect();
-        for (_, manager) in managers {
-            manager.borrow_mut().teardown(&self.clock);
-        }
+        self.clear_option_chain_managers();
 
-        self.option_chain_instrument_index.clear();
-        self.cancel_pending_option_chain_requests(None);
-        self.clear_option_chain_greeks_bootstraps();
-
-        // Unsubscribe BookUpdaters before dropping; otherwise the typed router
-        // keeps dispatching to abandoned updaters. `book_updaters` is keyed by
-        // per-underlying id, so the literal per-underlying topic is the same
-        // string the subscribe path used.
-        let book_updaters: Vec<(InstrumentId, Rc<BookUpdater>)> =
-            self.book_updaters.drain().collect();
-        for (instrument_id, updater) in book_updaters {
-            let deltas_topic = switchboard::get_book_deltas_topic(instrument_id);
-            let depth_topic = switchboard::get_book_depth_topic(instrument_id);
-            let deltas_handler: TypedHandler<OrderBookDeltas> =
-                TypedHandler::new(Rc::clone(&updater));
-            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
-            msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
-            msgbus::unsubscribe_book_depth(depth_topic.into(), &depth_handler);
-        }
-
-        self.book_subscriptions.clear();
-        self.book_subscription_owners.clear();
-
-        self.book_deltas_counts.clear();
-        self.book_depth_counts.clear();
-        self.book_intervals.clear();
-        self.book_snapshot_counts.clear();
-        self.book_snapshot_sources.clear();
-        self.book_snapshotters.clear();
-        self.buffered_deltas_map.clear();
-        self.deltas_frame.clear();
+        self.clear_book_state();
 
         self.synthetic_quote_feeds.clear();
         self.synthetic_trade_feeds.clear();
@@ -623,6 +573,21 @@ impl DataEngine {
         self.data_count = 0;
         self.request_count = 0;
         self.response_count = 0;
+    }
+
+    fn clear_request_state(&mut self) {
+        self.request_bar_aggregations.clear();
+        self.inflight_requests.clear();
+        self.request_pipeline_parent_request.clear();
+        self.request_pipeline_n_components.clear();
+        self.request_pipeline_parent_request_id.clear();
+        self.request_pipeline_responses.clear();
+        self.time_range_pipeline_requests.clear();
+        self.time_range_pipeline_parent_request_id.clear();
+        self.parent_join_request_id.clear();
+        self.pending_join_requests.clear();
+        self.continuous_future_requests.clear();
+        self.continuous_future_parent_request_id.clear();
     }
 
     /// Disposes the engine, stopping all clients and canceling any timers.
@@ -670,9 +635,14 @@ impl DataEngine {
 
     /// Connects all registered data clients concurrently.
     ///
-    /// Connection failures are logged but do not prevent the node from running.
-    /// Logs identify the client but omit provider error text, which can contain credentials.
-    pub async fn connect(&mut self) {
+    /// Successful clients remain connected if another client fails.
+    /// Logs identify failed clients without provider error text, which can contain credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect, listing failed client IDs without provider
+    /// error text.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
@@ -683,11 +653,22 @@ impl DataEngine {
             .collect();
 
         let results = join_all(futures).await;
+        let mut failed_clients = Vec::new();
 
         for (client_id, result) in results {
             if result.is_err() {
                 log::error!("Failed to connect data client {client_id}: connection failed");
+                failed_clients.push(client_id.to_string());
             }
+        }
+
+        if failed_clients.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Failed to connect data clients: {}",
+                failed_clients.join(", ")
+            )
         }
     }
 
@@ -775,7 +756,7 @@ impl DataEngine {
         subscribed.extend(
             self.bar_aggregators
                 .keys()
-                .filter(|(_, request_id)| request_id.is_none())
+                .filter(|key| key.1.is_none() && !self.bar_aggregators_pending_stop.contains(*key))
                 .map(|(bar_type, _)| *bar_type),
         );
         subscribed
@@ -1086,12 +1067,6 @@ impl DataEngine {
                 {
                     return Ok(None);
                 }
-            }
-            SubscribeCommand::OptionChain(cmd) if cmd.snapshot_interval_ms == Some(0) => {
-                anyhow::bail!(
-                    "Cannot subscribe option chain {} with a zero `snapshot_interval_ms`; use `None` for raw mode",
-                    cmd.series_id,
-                );
             }
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);

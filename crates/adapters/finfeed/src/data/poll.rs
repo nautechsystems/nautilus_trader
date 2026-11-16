@@ -1012,10 +1012,12 @@ mod tests {
     use crate::http::{client::FinFeedHttpConfig, models::Market, parse::parse_instrument};
 
     #[rstest]
-    #[case::book_unsubscribed(Feed::Book, true)]
-    #[case::book_subscribed(Feed::Book, false)]
-    #[case::activity_unsubscribed(Feed::Activity, true)]
-    #[case::activity_subscribed(Feed::Activity, false)]
+    #[case::book_unsubscribed(Feed::Book, true, false)]
+    #[case::book_subscribed(Feed::Book, false, false)]
+    #[case::book_churn(Feed::Book, false, true)]
+    #[case::activity_unsubscribed(Feed::Activity, true, false)]
+    #[case::activity_subscribed(Feed::Activity, false, false)]
+    #[case::activity_churn(Feed::Activity, false, true)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     #[cfg_attr(
         not(all(feature = "simulation", madsim)),
@@ -1024,6 +1026,7 @@ mod tests {
     async fn unsubscribe_cancels_admission_wait_before_any_poll_is_sent(
         #[case] feed: Feed,
         #[case] unsubscribe: bool,
+        #[case] churn: bool,
     ) {
         let mut client = super::super::tests::subscription_client();
 
@@ -1091,11 +1094,47 @@ mod tests {
 
         assert_eq!(http.attempts_remaining(), 2);
 
-        if unsubscribe {
-            let client_id = Some(client.client_id());
-            let command_id = UUID4::new();
-            let ts_init = UnixNanos::from(0);
+        let client_id = Some(client.client_id());
+        let command_id = UUID4::new();
+        let ts_init = UnixNanos::from(0);
 
+        if churn {
+            match feed {
+                Feed::Book => client.subscribe_activity(id, true).unwrap(),
+                Feed::Activity => client
+                    .subscribe_book(id, BookType::L2_MBP, true, None)
+                    .unwrap(),
+                Feed::Bars(_) => unreachable!(),
+            }
+
+            poll_fn(|cx| {
+                assert!(pending.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+
+            match feed {
+                Feed::Book => client
+                    .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                        id, client_id, None, command_id, ts_init, None, None,
+                    ))
+                    .unwrap(),
+                Feed::Activity => client
+                    .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+                        id, client_id, None, command_id, ts_init, None, None,
+                    ))
+                    .unwrap(),
+                Feed::Bars(_) => unreachable!(),
+            }
+
+            poll_fn(|cx| {
+                assert!(pending.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+        }
+
+        if unsubscribe {
             match feed {
                 Feed::Book => client
                     .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(

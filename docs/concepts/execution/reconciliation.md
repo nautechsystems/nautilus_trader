@@ -145,13 +145,14 @@ An origin is recorded:
 An origin may be absent for:
 
 - Cache data written before resolved origins were persisted.
+- Orders restored after an origin write failed or the process exited before it committed.
 - External orders whose runtime report does not identify exactly one registered client by account
   and instrument venue.
 - Synthetic reconciliation orders.
 
-The built-in cache backends enqueue a resolved origin for persistence before transport. Their writes stay
-asynchronous, so enqueue order does not guarantee that the origin is durable before the order reaches the
-client.
+The built-in cache backends attempt to enqueue a resolved origin for persistence before transport.
+Enqueue failures are logged without blocking transport. These writes are asynchronous, so enqueue order
+does not guarantee that the origin is durable before the order reaches the client.
 
 At startup, each client's mass status is checked against the cached origins. An order the client reports is
 expected to be bound to that same client.
@@ -179,6 +180,17 @@ history can instead use [order-only fill projection](#order-only-fill-projection
 | `OrderWithFills`       | Order state plus fills.  | Creates an order, applies fills, and infers residue. |
 | `PositionStatusReport` | Venue position snapshot. | Logs the report. Positions stay fill-derived.        |
 
+When a `FillReport` has no cached order, the execution engine creates a market order tagged `FILL_REPORT`.
+Each distinct trade can increase its quantity, including after an earlier fill closes the order.
+Status reports do not generate inferred fills for these orders or cap their quantity against later distinct trades.
+Replaying an unchanged fill leaves order and position totals unchanged.
+Orders without this marker retain their existing overfill checks.
+Older versions that reject additional fills on filled orders cannot replay these order histories.
+
+Clients that require authoritative fills, such as OKX, do not infer executions from order status.
+Missing fills and dependent status transitions wait for venue fill reports or private fill events.
+An uncached runtime order status creates and accepts the order while its executions remain pending.
+
 #### When to use each variant
 
 Adapters choose the variant that matches the venue event:
@@ -189,6 +201,9 @@ Adapters choose the variant that matches the venue event:
   Hyperliquid liquidations follow this pattern.
 - Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
   Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
+
+Streamed `OrderWithFills` reports can infer fill voids from a lower cumulative filled quantity only
+when their status is `VOIDED`. Use mass status for authoritative snapshot corrections.
 
 ### Snapshot freshness and fill corrections
 
@@ -384,15 +399,18 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 
 ### Submission recovery
 
-`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` enables:
+`submission_recovery_policy` defaults to `RetainUnresolved`, which enables:
 
 - Submission identity tracking.
 - Exhaustion diagnostics.
 - Preservation of the submission's recovery budget until acknowledgement.
 
 Exhausted unacknowledged submissions stay unresolved, with further automatic per-order recovery queries
-stopped. Clients can also require this protection independently of the configured policy. Polymarket enables
-this protection automatically.
+stopped. Select `ResolveLocally` to close them through the local resolution rules instead. Clients can also
+require retention when `ResolveLocally` is selected. Polymarket enables this protection automatically.
+
+The policy also selects how [in-flight checks](#in-flight-checks) resolve a pending cancel or update on an
+accepted order.
 
 Retained submissions also affect the [node shutdown result](../live.md#submission-recovery-at-shutdown).
 Rust `LiveNode::stop` and `run`, and hosted runs, report unresolved client order IDs after teardown
@@ -456,7 +474,7 @@ The existing limits and coverage checks still apply:
 
 - **In-flight checks**: `inflight_check_retries` counts checks. A limit of `N` permits `N - 1`
   intermediate order queries before exhaustion.
-- **Missing-order checks**: use `open_check_missing_retries` and require completed, matching client
+- **Full-history missing-order checks**: use `open_check_missing_retries` and require completed, matching client
   coverage plus a successful targeted query with no order found before reporting exhaustion. Failed
   or deferred targeted queries do not produce that diagnostic.
 
@@ -538,7 +556,7 @@ does not prevent recovery from an explicit position report.
 
 ### Fill reconciliation
 
-- Infers `OrderFilled` events for missing trade reports.
+- Infers `OrderFilled` events for missing trade reports unless the client requires authoritative fills.
 - Verifies fill report data consistency with tolerance-based price and commission comparisons.
 - Drops a fill group that has neither an order report nor a cached order. Logs one aggregated warning per mass
   status for the dropped groups. A group whose fills carry a `venue_position_id` is handled separately. The
@@ -588,24 +606,39 @@ validation still checks the remaining difference against the account's quantity 
 
 #### Replayed fills
 
-Reconciliation can open a position from a venue position report. While that position stays open, a fill report
-for the same instrument and account with an earlier `ts_event` updates its order but no position. The report
-already includes those executions. Thus, a venue that resends them after a restart (such as Interactive
-Brokers TWS) does not double the position. Earlier fills still apply when no such position is open for the
-instrument and account.
+Reconciliation can open, adjust, or close a position from a venue position report. A late execution can
+already be included in that report.
 
-The protection has these known gaps:
+Reconciliation fills that predate a cached synthetic correction **update the order only**, within the
+scope below. This avoids duplicate exposure or reopening a reconciled closure, including after startup.
+Ordinary private fills and price restatement events retain normal position handling.
 
-- **Reconciliation window**: the synthetic opening fill carries the reconciliation time rather than the report
+Coverage for the same instrument and account:
+
+| Fill source                              | NETTING scope  | HEDGING scope        |
+| ---------------------------------------- | -------------- | -------------------- |
+| Runtime standalone report                | All strategies | All strategies       |
+| Bundled or inferred from an order report | All strategies | Routed position only |
+
+Continuous position checks also keep earlier fill reports off cached positions already covered by
+synthetic corrections for the same instrument and account.
+
+**Known gaps**:
+
+- **Reconciliation window**: the synthetic correction fill carries the reconciliation time rather than the report
   time. Thus, a real fill that lands between the position report query and reconciliation also stays off the
   position. Continuous position checks align it only when they run with `generate_missing_orders` enabled.
-- **Opening order purge**: the protection needs the synthetic opening order in the cache. When
+- **Position cycles**: reopening a NETTING position archives the prior cycle; this check does not read
+  archived snapshots. Closed-position purging also removes its correction history. Late reconciliation
+  fills can then apply to a new cycle. Recover missing executions before reopening or purging the position.
+- **Correction order purge**: the protection needs the synthetic correction order in the cache. When
   closed-order purging is enabled, a `purge_closed_orders_buffer_mins` shorter than the venue's
   replay delay can remove it first.
-- **Bundled fills**: fills that arrive bundled with an order status report bypass the protection.
+- **Inferred timestamps**: inferred fills use the order report's last-update time. If the venue supplies
+  creation time instead of execution time, a fill executed after the snapshot can appear older and stay off
+  the position. Position checks with `generate_missing_orders` enabled can correct the difference.
 
-A fill kept off the position stays on its order only, as in
-[order-only fill projection](#order-only-fill-projection), with these effects:
+**Order-only effects** (see [order-only fill projection](#order-only-fill-projection)):
 
 - **Event store restore**: restoring the cache from the event store applies the fill to a
   position, so the restored position can overstate the venue quantity.
@@ -762,6 +795,13 @@ re-entry, fill corrections, missing executions, or mixed inferred and explicit f
 reconciliation of exposure and PnL. An order reaching `FILLED` does not establish that every execution updated
 the position. Reconcile the retained state before resuming trading in those cases.
 
+For instruments without bulk position coverage, startup logs a warning for bounded fills that stay order-only.
+It names the account, the instrument, and the position the fills route to, where one resolves, with sample trade
+IDs and their orders. It skips fills that retained-fill deduplication or older-lifecycle projection already
+accounts for, and fills their cached order already holds, so a restart with the orders cached does not repeat it.
+Without a persisted cache, it repeats on every start. It does not flag fill corrections or executions missing
+from the reports.
+
 ### Failure handling
 
 During startup, an execution client's mass-status request has three outcomes:
@@ -818,12 +858,24 @@ After exhausting the configured retries, the in-flight checker resolves timed-ou
 unless the order has never been accepted and submission retention applies:
 
 - `SUBMITTED`: rejects the order with reason `INFLIGHT_TIMEOUT`.
-- `PENDING_CANCEL` or `PENDING_UPDATE`: resolves the order to `CANCELED`.
+- `PENDING_CANCEL` or `PENDING_UPDATE` under `ResolveLocally`: resolves the order to `CANCELED` with reason
+  `INFLIGHT_TIMEOUT`.
+- `PENDING_CANCEL` or `PENDING_UPDATE` under `RetainUnresolved`: rejects the pending command with reason
+  `INFLIGHT_TIMEOUT` and restores the order's status from before the command. The order stays open
+  for later venue evidence.
 
 For orders that have never been accepted, `SubmissionRecoveryPolicy::RetainUnresolved` requires
 retention, as does Polymarket regardless of the configured policy. Retention stops automatic
 per-order recovery queries while allowing later venue evidence to resolve the order. See
 [Submission recovery](#submission-recovery) for the retention rules.
+
+:::warning[Restored orders rely on later venue evidence]
+Under `RetainUnresolved`, no order closes on a timeout alone. If a venue cancel event is lost, the restored
+order needs a later event or report to close it. When periodic open-order checks are enabled, either mode
+can obtain that report; open-only checks use a targeted query, subject to the adapter's report semantics and
+the configured lookback. Use full-history checks when an adapter supplies closed orders only through bulk
+history. See [Open-only mode](#open-only-mode).
+:::
 
 [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance) distinguishes
 local policy resolutions from venue-reported outcomes.
@@ -853,7 +905,8 @@ processing.
 A response ready exactly at the deadline is discarded. Accepted results stay under node ownership until
 reconciliation, including after fill timeout, fill error, cancellation, or normal shutdown. Slow processing
 cannot discard accepted results. A canceled or expired status with unaccounted fills stays deferred until
-those fills arrive. A timed out or canceled task does not resolve orders as missing. Fatal callback failure
+those fills arrive. Clients requiring authoritative fills defer any status with unaccounted fills.
+A timed out or canceled task does not resolve orders as missing. Fatal callback failure
 stops further dispatch and discards the retained results.
 
 The table below applies when cache state differs from venue state. A missing open-order report does not by
@@ -861,9 +914,10 @@ itself prove a pending modify or cancel outcome. Thus, these checks leave those 
 another check can determine the venue state.
 
 :::info[Full-history checks]
-The *Not found* rows apply only in full-history mode (`open_check_open_only=False`). Open-only mode is the
-default. Submission retention also applies here: an unacknowledged `SUBMITTED` order stays unresolved when the
-policy or its client requires retention.
+The *Not found* resolutions apply only in full-history mode (`open_check_open_only=False`), after a targeted
+query confirms absence. The default [open-only mode](#open-only-mode) also queries missing orders outside
+in-flight recovery, but leaves a "not found" result unresolved. In full-history mode, an unacknowledged
+`SUBMITTED` order stays unresolved when the policy or its client requires retention.
 :::
 
 | Cache status       | Venue status | Resolution   | Rationale                                                                |
@@ -880,9 +934,31 @@ policy or its client requires retention.
 
 #### Open-only mode
 
-Venue "open orders" endpoints exclude closed orders by design, making it impossible to distinguish missing
-orders from recently closed ones. Pending cancel/update orders stay unresolved when a missing-order check
-cannot prove the final venue state.
+Venue "open orders" endpoints exclude recently filled or canceled orders, so bulk absence alone cannot
+distinguish missing orders from recently closed ones. After `open_check_missing_retries` eligible missing
+checks with complete client coverage, the engine issues a targeted `GenerateOrderStatusReport` query.
+In-flight statuses and orders registered for in-flight recovery are excluded from missing-order queries.
+The in-flight checker handles registered commands. After a timeout restores an order's prior status, it
+becomes eligible for missing-order queries. Persisted in-flight orders without a registered command are also
+excluded; they still need a returned report, venue event, or full-history reconciliation.
+
+Recent local activity and query recency defer the query. Orders whose last update predates
+`open_check_lookback_mins` are skipped. With the default 60-minute window, an order with no update for an
+hour remains unqueried through this path.
+
+A returned report reconciles status and fills normally. If the targeted query returns no report or fails,
+the engine keeps the order open; it generates no `NOT_FOUND_AT_VENUE` rejection or synthetic cancel from
+that result. Adapter report semantics still apply, including any adapter-local status inference.
+
+Sending a missing-order query resets the retry counter, including when collection later times out.
+Persistent absence can therefore trigger another query after `open_check_missing_retries` eligible checks.
+The existing `max_single_order_queries_per_cycle` cap and query spacing apply to logical status requests;
+an adapter can make several HTTP requests to produce one report.
+
+Some adapters time-filter bulk open-order reports. For example, Bybit filters by the venue's last-update
+time. After a local timeout restore, a still-open order can remain absent from bulk reports while targeted
+queries repeatedly find it open. Each positive report clears the missing-order counter, but this can repeat
+until the cached last update falls outside the lookback window.
 
 #### Recent order protection
 
@@ -926,15 +1002,15 @@ instead of treating missing reports as flat.
 
 ### Retry coordination
 
-The in-flight loop increments its own per-order retry count against `inflight_check_retries` and mirrors that
-value into missing-order tracking. The open-order loop increments the missing-order count against
-`open_check_missing_retries`. Each loop applies its own limit. Neither setting automatically overrides the
-other.
+The in-flight loop counts per-order retries against `inflight_check_retries` and mirrors that count into
+missing-order tracking. The open-order loop uses `open_check_missing_retries`. In open-only mode, missing-order
+queries skip in-flight orders and registered in-flight checks, so they neither consume nor reset the in-flight
+budget. Timeout exhaustion clears the tracking before later checks query a restored order.
 
-When the open-order loop exhausts retries, the engine issues one targeted `GenerateOrderStatusReport` probe.
-It does this before applying a terminal state or leaving an ambiguous pending cancel/update unresolved. If the
-venue returns the order, reconciliation proceeds and missing-order tracking clears. If a pending state stays
-unresolved, the engine also resets the in-flight count before checking again after the configured threshold.
+Full-history checks can query missing in-flight orders. Each loop applies its own limit; neither setting
+automatically overrides the other. A returned targeted report reconciles normally and clears missing-order
+tracking. If missing-order resolution leaves a pending cancel or update unresolved, it resets the in-flight
+count before checking again after the configured threshold.
 
 When `RetainUnresolved` or the registered client requires retention, a tracked submission that has not been
 acknowledged keeps its original in-flight budget instead of resetting it. Repeated missing-order checks cannot
@@ -983,17 +1059,19 @@ checks, open-order polls, own-books audits), fill adjustment, and bounded histor
 
 ### Runtime scenarios
 
-| Scenario                            | Description                                               | System behavior                                 |
-| ----------------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
-| **In-flight submit timeout**        | `SUBMITTED` stays unconfirmed beyond retry exhaustion.    | Resolves to `REJECTED` with `INFLIGHT_TIMEOUT`. |
-| **In-flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | Resolves to `CANCELED` through reconciliation.  |
-| **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.        |
-| **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible.  |
-| **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.      |
-| **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                |
+| Scenario                            | Description                                               | System behavior                                   |
+| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------- |
+| **In-flight submit timeout**        | `SUBMITTED` stays unconfirmed beyond retry exhaustion.    | `ResolveLocally` rejects with `INFLIGHT_TIMEOUT`. |
+| **In-flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | `ResolveLocally` cancels with `INFLIGHT_TIMEOUT`. |
+| **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.          |
+| **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible.    |
+| **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.        |
+| **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                  |
 
 The in-flight timeout rows do not apply to an unacknowledged order when the policy or its client requires
-submission retention. That order stays unresolved. See [In-flight checks](#in-flight-checks).
+submission retention. That order stays unresolved. Under `RetainUnresolved`, a cancel or update timeout on
+an accepted order rejects the pending command and keeps the order open. See
+[In-flight checks](#in-flight-checks).
 
 ### Fill adjustment scenarios
 

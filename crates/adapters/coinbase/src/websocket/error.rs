@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_network::error::SendError;
+
 /// Error type for Coinbase WebSocket operations.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CoinbaseWsError {
@@ -39,6 +41,14 @@ pub enum CoinbaseWsError {
     /// Authentication failed.
     #[error("authentication failed: {0}")]
     Auth(String),
+
+    /// A transport send failed.
+    #[error("transport send failed: {0}")]
+    TransportSend(SendError),
+
+    /// An operation did not complete before its deadline.
+    #[error("timed out: {0}")]
+    Timeout(String),
 }
 
 impl CoinbaseWsError {

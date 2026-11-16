@@ -408,7 +408,7 @@ pub trait Instrument: Any + Send {
     /// Returns an error if `price` is a sentinel value or would require rounding.
     #[inline(always)]
     fn try_normalize_price(&self, price: Price) -> CorrectnessResult<Price> {
-        if price == ERROR_PRICE {
+        if price.precision == ERROR_PRICE.precision {
             return Err(CorrectnessError::InvalidValue {
                 param: "price".to_string(),
                 value: "ERROR_PRICE".to_string(),
@@ -988,6 +988,8 @@ mod tests {
     #[rstest]
     #[case(Price::from("10000"), "10000.00")]
     #[case(Price::from("10000.0000"), "10000.00")]
+    #[case(Price::from("0"), "0.00")]
+    #[case(Price::from("0.0000"), "0.00")]
     fn try_normalize_price_rewrites_grid_aligned_values(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: Price,

@@ -126,6 +126,7 @@ def query_catalog(
 
     if use_arrow_dtypes and output is not CatalogOutput.PANDAS:
         raise ValueError("use_arrow_dtypes is only valid with pandas output")
+
     if as_of is not None:
         raise ValueError("as_of is not supported by ParquetDataCatalog")
 
@@ -146,6 +147,7 @@ def query_catalog(
     elif isinstance(data_type, model.NautilusInstrumentType) or data_type == _INSTRUMENT_DATA_TYPE:
         if as_of is not None:
             raise ValueError("as_of is not supported for instrument queries")
+
         if not display:
             raise ValueError("display=False is not supported for instrument queries")
         table = _query_instrument_arrow_table(
@@ -271,8 +273,10 @@ def _query_instrument_arrow_table(
 def _timestamp_to_nanos(value: Any | None) -> int | None:
     if value is None:
         return None
+
     if isinstance(value, bool):
         raise TypeError("timestamp bounds must not be bool")
+
     if isinstance(value, int):
         return value
     return dt_to_unix_nanos(value)

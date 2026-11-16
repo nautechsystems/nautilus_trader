@@ -30,7 +30,10 @@ use std::path::PathBuf;
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
 use nautilus_databento::{data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory};
-use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
+use nautilus_execution::{
+    matching_engine::config::OrderPriorityResetPolicy,
+    models::fee::{FeeModelAny, MakerTakerFeeModel},
+};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -120,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use_market_order_acks: false,
         oto_full_trigger: false,
         price_protection_points: 0,
+        order_priority_reset_policy: OrderPriorityResetPolicy::PriceChange,
     };
 
     let databento_factory = DatabentoDataClientFactory::new();

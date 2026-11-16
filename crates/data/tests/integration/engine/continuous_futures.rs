@@ -504,8 +504,7 @@ fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
     let stamps: Vec<_> = cache
         .borrow()
         .bars(&standard)
-        .map(|bars| bars.iter().map(|bar| bar.ts_event).collect())
-        .unwrap_or_default();
+        .map_or_default(|bars| bars.iter().map(|bar| bar.ts_event).collect());
     assert_eq!(
         stamps,
         vec![

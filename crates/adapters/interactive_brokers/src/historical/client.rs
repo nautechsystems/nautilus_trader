@@ -43,10 +43,10 @@ use crate::{
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
     data::{
         convert::{
-            IbPriceConverter, bar_request_segments, bar_type_to_ib_bar_size,
-            calculate_duration_segments, extend_historical_tick_batch, ib_bar_to_nautilus_bar,
-            ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
-            price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
+            IbPriceConverter, bar_request_range, bar_type_to_ib_bar_size,
+            extend_historical_tick_batch, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos,
+            jiff_to_ib_datetime, price_type_to_ib_what_to_show_for_security,
+            retain_historical_ticks_in_range,
         },
         parse::parse_trade_tick,
     },
@@ -362,38 +362,14 @@ impl HistoricalInteractiveBrokersClient {
 
                 // Omit the end date for continuous futures (IB error 10339).
                 let is_continuous_future = contract.security_type == SecurityType::ContinuousFuture;
-                let segments = bar_request_segments(
-                    calculate_duration_segments(start_date_time, Some(end_date_time), duration),
+                let range = bar_request_range(
+                    start_date_time,
+                    Some(end_date_time),
+                    duration,
                     is_continuous_future,
                 );
 
-                for (segment_end, segment_duration) in segments {
-                    tracing::debug!(
-                        "Requesting historical bars ending on {:?} with duration {}",
-                        segment_end,
-                        segment_duration
-                    );
-
-                    let mut request = self
-                        .ib_client
-                        .historical_data(&contract, ib_bar_size)
-                        .duration(segment_duration)
-                        .what_to_show(ib_what_to_show)
-                        .trading_hours(trading_hours);
-
-                    if let Some(end) = segment_end {
-                        request = request.ending(jiff_to_ib_datetime(&end));
-                    }
-
-                    let historical_data = tokio::time::timeout(
-                        std::time::Duration::from_secs(timeout),
-                        request.fetch(),
-                    )
-                    .await
-                    .context(format!(
-                        "Historical data request timed out after {timeout} seconds"
-                    ))??;
-
+                if let Some(range) = range {
                     let instrument =
                         self.instrument_provider
                             .find(&instrument_id)
@@ -407,18 +383,39 @@ impl HistoricalInteractiveBrokersClient {
                     );
                     let size_precision = instrument.size_precision();
 
-                    // Create new bar_type with correct instrument_id
-                    for ib_bar in &historical_data.bars {
-                        let nautilus_bar = ib_bar_to_nautilus_bar(
-                            ib_bar,
-                            bar_type_with_id,
-                            prices,
-                            size_precision,
-                        )?;
-                        all_bars.push(nautilus_bar);
-                    }
+                    for bar_request in range.requests(&bar_spec) {
+                        tracing::debug!("Requesting historical bars over {bar_request:?}");
 
-                    tracing::debug!("Retrieved {} bars in batch", historical_data.bars.len());
+                        let request = bar_request
+                            .apply(self.ib_client.historical_data(&contract, ib_bar_size))
+                            .what_to_show(ib_what_to_show)
+                            .trading_hours(trading_hours);
+
+                        let historical_data = tokio::time::timeout(
+                            std::time::Duration::from_secs(timeout),
+                            request.fetch(),
+                        )
+                        .await
+                        .context(format!(
+                            "Historical data request timed out after {timeout} seconds"
+                        ))??;
+
+                        // Create new bar_type with correct instrument_id
+                        for ib_bar in &historical_data.bars {
+                            let nautilus_bar = ib_bar_to_nautilus_bar(
+                                ib_bar,
+                                bar_type_with_id,
+                                prices,
+                                size_precision,
+                            )?;
+
+                            if range.contains(nautilus_bar.ts_event) {
+                                all_bars.push(nautilus_bar);
+                            }
+                        }
+
+                        tracing::debug!("Retrieved {} bars in batch", historical_data.bars.len());
+                    }
                 }
             }
         }

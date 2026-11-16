@@ -116,7 +116,10 @@ use crate::{
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
     },
-    config::{LighterExecutionClientConfig, validate_scheduled_cancel_timeout},
+    config::{
+        LighterExecutionClientConfig, validate_execution_venue, validate_execution_ws_url,
+        validate_market_order_slippage_bps, validate_proxy_url, validate_scheduled_cancel_timeout,
+    },
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
         error::LighterHttpError,
@@ -284,7 +287,11 @@ impl LighterExecutionClient {
         core: ExecutionClientCore,
         config: LighterExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        validate_market_order_slippage_bps(config.market_order_slippage_bps)?;
         validate_scheduled_cancel_timeout(config.scheduled_cancel_timeout_secs)?;
+        validate_execution_venue(config.venue)?;
+        validate_execution_ws_url(config.base_url_ws.as_deref())?;
+        validate_proxy_url(config.proxy_url.as_ref())?;
         anyhow::ensure!(
             core.venue == config.resolved_venue(),
             "Lighter execution core venue {} does not match configured venue {}",
@@ -1778,10 +1785,18 @@ impl LighterExecutionClient {
     }
 
     // Per-order `params["market_order_slippage_bps"]` overrides the config default.
-    fn resolve_slippage_bps(&self, params: Option<&Params>) -> u32 {
-        params
-            .and_then(|p| p.get_u64("market_order_slippage_bps"))
-            .map_or(self.config.market_order_slippage_bps, |v| v as u32)
+    fn resolve_slippage_bps(&self, params: Option<&Params>) -> anyhow::Result<u32> {
+        let Some(value) = params.and_then(|p| p.get("market_order_slippage_bps")) else {
+            return Ok(self.config.market_order_slippage_bps);
+        };
+
+        let value = value
+            .as_u64()
+            .context("Lighter market_order_slippage_bps must be an unsigned integer")?;
+        let value =
+            u32::try_from(value).context("Lighter market_order_slippage_bps exceeds u32 range")?;
+        validate_market_order_slippage_bps(value)?;
+        Ok(value)
     }
 
     fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<ReservedTxContext> {
@@ -1898,9 +1913,9 @@ impl LighterExecutionClient {
     fn prepare_create_order_plan(
         &self,
         order: &OrderAny,
-        slippage_bps: u32,
         params: Option<&Params>,
     ) -> anyhow::Result<CreateOrderPlan> {
+        let slippage_bps = self.resolve_slippage_bps(params)?;
         let attributes = self.resolve_create_attributes(params)?;
         let instrument_id = order.instrument_id();
         let market_index = self.registry.market_index(&instrument_id).ok_or_else(|| {
@@ -2042,7 +2057,6 @@ impl LighterExecutionClient {
     fn prepare_create_group_plan(
         &self,
         orders: &[OrderAny],
-        slippage_bps: u32,
         params: Option<&Params>,
     ) -> anyhow::Result<CreateGroupPlan> {
         let (grouping_type, indices) = grouped_order_indices(orders)?;
@@ -2063,7 +2077,7 @@ impl LighterExecutionClient {
                 !is_lighter_spot_order(order, instrument.as_ref()),
                 "Lighter grouped orders require perpetual markets"
             );
-            plans.push(self.prepare_create_order_plan(order, slippage_bps, params)?);
+            plans.push(self.prepare_create_order_plan(order, params)?);
         }
 
         prepare_group_bodies(grouping_type, &mut plans, self.config.use_gtd)?;
@@ -2567,7 +2581,7 @@ impl LighterExecutionClient {
                     anyhow::anyhow!("{:?} orders require a trigger_price", order.order_type())
                 })?;
                 let is_buy = matches!(order.order_side(), OrderSide::Buy);
-                let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
+                let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref())?;
 
                 derive_market_order_price_ticks(
                     trigger.as_decimal(),
@@ -6328,9 +6342,7 @@ impl ExecutionClient for LighterExecutionClient {
             return Ok(());
         }
 
-        let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
-
-        let plan = match self.prepare_create_order_plan(&order, slippage_bps, cmd.params.as_ref()) {
+        let plan = match self.prepare_create_order_plan(&order, cmd.params.as_ref()) {
             Ok(plan) => plan,
             Err(e) => {
                 let reason = OrderDeniedReason::ValidationFailed {
@@ -6365,11 +6377,7 @@ impl ExecutionClient for LighterExecutionClient {
 
         if orders.iter().any(is_grouped_order) {
             let result = self
-                .prepare_create_group_plan(
-                    &orders,
-                    self.resolve_slippage_bps(cmd.params.as_ref()),
-                    cmd.params.as_ref(),
-                )
+                .prepare_create_group_plan(&orders, cmd.params.as_ref())
                 .and_then(|plan| {
                     let context = self.fanout_dispatch_context(credential)?;
                     self.spawn_task("submit_grouped_orders", async move {
@@ -6391,7 +6399,6 @@ impl ExecutionClient for LighterExecutionClient {
             return Ok(());
         }
 
-        let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
         let mut plans = Vec::with_capacity(orders.len());
 
         for order in orders {
@@ -6411,7 +6418,7 @@ impl ExecutionClient for LighterExecutionClient {
                 continue;
             }
 
-            match self.prepare_create_order_plan(&order, slippage_bps, cmd.params.as_ref()) {
+            match self.prepare_create_order_plan(&order, cmd.params.as_ref()) {
                 Ok(plan) => plans.push(plan),
                 Err(e) => {
                     let reason = OrderDeniedReason::ValidationFailed {
@@ -7329,15 +7336,13 @@ fn incomplete_order_reports(
 fn partial_order_reports(error: &anyhow::Error) -> Vec<OrderStatusReport> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.reports.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.reports.clone())
 }
 
 fn withheld_order_instruments(error: &anyhow::Error) -> AHashSet<InstrumentId> {
     error
         .downcast_ref::<IncompleteOrderReports>()
-        .map(|incomplete| incomplete.withheld_instruments.clone())
-        .unwrap_or_default()
+        .map_or_default(|incomplete| incomplete.withheld_instruments.clone())
 }
 
 fn is_commission_error(error: &anyhow::Error) -> bool {
@@ -7739,11 +7744,7 @@ impl LighterReportClient {
             .extend(self.markets.iter().map(|market| *market));
 
         let inactive_markets: Vec<i64> = match cmd.instrument_id {
-            Some(id) => self
-                .registry
-                .market_index(&id)
-                .map(|m| vec![m])
-                .unwrap_or_default(),
+            Some(id) => self.registry.market_index(&id).map_or_default(|m| vec![m]),
             None => sweep.markets.iter().copied().collect::<Vec<_>>(),
         };
 
@@ -7899,6 +7900,8 @@ async fn collect_fill_reports(
             market_id,
             account_index: Some(credential.account_index()),
             order_index,
+            order_index_str: None,
+            integrator_account_index: None,
             sort_by: LighterTradeSortBy::Timestamp,
             sort_dir: Some(LighterSortDirection::Desc),
             cursor: cursor.clone(),
@@ -10442,6 +10445,8 @@ async fn recover_terminal_trades(
         market_id: Some(market_index),
         account_index: Some(context.credential.account_index()),
         order_index: Some(order_index),
+        order_index_str: None,
+        integrator_account_index: None,
         sort_by: LighterTradeSortBy::Timestamp,
         sort_dir: Some(LighterSortDirection::Desc),
         cursor: None,
@@ -10706,6 +10711,8 @@ mod tests {
     use axum::{
         Router,
         extract::Query,
+        http::HeaderMap,
+        response::IntoResponse,
         routing::{get, post},
     };
     use nautilus_common::{
@@ -10985,6 +10992,65 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     ) {
         create_execution_client_with_config(test_config())
+    }
+
+    #[rstest]
+    #[case(
+        "proxy_url",
+        "127.0.0.1:8080",
+        "Lighter proxy_url must be an absolute http:// or https:// URL with a host"
+    )]
+    #[case(
+        "base_url_ws",
+        "wss://example.com/stream?readonly=true",
+        "Lighter execution WebSocket URL must not set readonly=true; it does not disable trading"
+    )]
+    #[case(
+        "venue",
+        "LIGHTER-ALT",
+        "Lighter execution venue must not contain '-'; use '_' so the account ID issuer can match"
+    )]
+    fn execution_constructor_rejects_config_footguns(
+        #[case] field: &str,
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let (client, _, _) = create_execution_client();
+        let mut config = test_config();
+        match field {
+            "proxy_url" => config.proxy_url = Some(value.into()),
+            "base_url_ws" => config.base_url_ws = Some(value.to_string()),
+            "venue" => config.venue = Some(Venue::from(value)),
+            _ => unreachable!(),
+        }
+
+        assert_eq!(
+            LighterExecutionClient::new(client.core, config)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(0, true)]
+    #[case(9_999, true)]
+    #[case(10_000, false)]
+    #[case(u32::MAX, false)]
+    fn market_order_slippage_constructor_validates_range(#[case] value: u32, #[case] valid: bool) {
+        let (client, _, _) = create_execution_client();
+        let mut config = test_config();
+        config.market_order_slippage_bps = value;
+        let result = LighterExecutionClient::new(client.core, config);
+
+        if valid {
+            assert_eq!(result.unwrap().config().market_order_slippage_bps, value);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "Lighter market_order_slippage_bps must be in [0, 10000)"
+            );
+        }
     }
 
     #[rstest]
@@ -11327,25 +11393,35 @@ mod tests {
     }
 
     #[rstest]
-    #[case::inline_deferred(false, true)]
-    #[case::worker_deferred(true, true)]
-    #[case::inline_absent(false, false)]
-    #[case::worker_absent(true, false)]
+    #[case::inline_deferred(false, true, false, false)]
+    #[case::worker_deferred(true, true, false, false)]
+    #[case::inline_absent(false, false, false, false)]
+    #[case::worker_absent(true, false, false, false)]
+    #[case::inline_account_orders_failure(false, true, true, false)]
+    #[case::worker_account_orders_failure(true, true, true, false)]
+    #[case::inline_ambiguous_account_orders(false, true, false, true)]
+    #[case::worker_ambiguous_account_orders(true, true, false, true)]
     #[tokio::test]
     async fn single_order_lookup_distinguishes_deferred_report_from_absence(
         #[case] worker: bool,
         #[case] present: bool,
+        #[case] account_orders_fails: bool,
+        #[case] duplicate: bool,
     ) {
         let rig = dispatcher_rig("DEFERRED-PROBE");
         register_identity(&rig);
         let order = dispatcher_test_order(&rig, LighterOrderStatus::Open);
         let venue_order_id = VenueOrderId::from(order.order_id.as_str());
-        rig.dispatch.observe_create_submission(
-            &rig.cloid,
-            order.client_order_index,
-            TEST_SUBMISSION_NONCE,
-            venue_order_id,
-        );
+
+        if !duplicate {
+            rig.dispatch.observe_create_submission(
+                &rig.cloid,
+                order.client_order_index,
+                TEST_SUBMISSION_NONCE,
+                venue_order_id,
+            );
+        }
+
         rig.dispatch
             .order_identity(&rig.cloid)
             .unwrap()
@@ -11355,27 +11431,66 @@ mod tests {
             code: 200,
             message: None,
             next_cursor: None,
-            orders: if present { vec![order] } else { Vec::new() },
+            orders: if duplicate {
+                vec![order.clone(), order]
+            } else if present {
+                vec![order]
+            } else {
+                Vec::new()
+            },
         };
 
         let body = serde_json::to_string(&response).unwrap();
+        let account_orders_calls = Arc::new(AtomicUsize::new(0));
+        let active_calls = Arc::new(AtomicUsize::new(0));
+        let inactive_calls = Arc::new(AtomicUsize::new(0));
+
         let app = Router::new()
             .route(
-                "/api/v1/accountActiveOrders",
-                get(move || {
+                "/api/v1/accountOrders",
+                get({
                     let body = body.clone();
-                    async move { body }
+                    let calls = Arc::clone(&account_orders_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        let body = body.clone();
+                        async move {
+                            if account_orders_fails {
+                                (axum::http::StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+                            } else {
+                                (axum::http::StatusCode::OK, body).into_response()
+                            }
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/accountActiveOrders",
+                get({
+                    let body = body.clone();
+                    let calls = Arc::clone(&active_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        let body = body.clone();
+                        async move { body }
+                    }
                 }),
             )
             .route(
                 "/api/v1/accountInactiveOrders",
-                get(|| async {
-                    axum::Json(LighterOrders {
-                        code: 200,
-                        message: None,
-                        next_cursor: None,
-                        orders: Vec::new(),
-                    })
+                get({
+                    let calls = Arc::clone(&inactive_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        async move {
+                            axum::Json(LighterOrders {
+                                code: 200,
+                                message: None,
+                                next_cursor: None,
+                                orders: Vec::new(),
+                            })
+                        }
+                    }
                 }),
             );
 
@@ -11399,7 +11514,11 @@ mod tests {
             UnixNanos::from(1),
             Some(rig.instrument_id),
             Some(rig.cloid),
-            Some(venue_order_id),
+            if duplicate {
+                None
+            } else {
+                Some(venue_order_id)
+            },
             None,
             None,
         );
@@ -11415,7 +11534,25 @@ mod tests {
         server.abort();
         let _ = server.await;
 
-        if present {
+        assert_eq!(
+            account_orders_calls.load(Ordering::SeqCst),
+            if account_orders_fails { 4 } else { 1 }
+        );
+        assert_eq!(
+            active_calls.load(Ordering::SeqCst),
+            usize::from(!present || account_orders_fails)
+        );
+        assert_eq!(inactive_calls.load(Ordering::SeqCst), usize::from(!present));
+
+        if duplicate {
+            let error = result.unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("ambiguous Lighter account-order lookup"),
+                "unexpected error: {error:#}"
+            );
+        } else if present {
             assert_eq!(
                 result.unwrap_err().to_string(),
                 "Lighter order report deferred until execution state is applied"
@@ -11432,6 +11569,156 @@ mod tests {
                 .has_publication()
         );
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::other_market(LighterOrderStatus::Open, 999, false, false, false, 0)]
+    #[case::terminal(
+        LighterOrderStatus::Canceled,
+        TEST_MARKET_INDEX,
+        false,
+        false,
+        false,
+        0
+    )]
+    #[case::pending_flip(LighterOrderStatus::Open, TEST_MARKET_INDEX, true, false, false, 0)]
+    #[case::direct_open(LighterOrderStatus::Open, TEST_MARKET_INDEX, false, true, false, 0)]
+    #[case::known_terminal(LighterOrderStatus::Canceled, TEST_MARKET_INDEX, false, true, true, 0)]
+    #[case::known_other_market(LighterOrderStatus::Open, 999, false, false, true, 1)]
+    #[tokio::test]
+    async fn client_order_lookup_filters_market_status_and_pending(
+        #[case] status: LighterOrderStatus,
+        #[case] market_index: i64,
+        #[case] stop_pending_after_response: bool,
+        #[case] expect_present: bool,
+        #[case] known_venue: bool,
+        #[case] expected_inactive_calls: usize,
+    ) {
+        let rig = dispatcher_rig("FILTERED-PROBE");
+        register_identity(&rig);
+        let mut order = dispatcher_test_order(&rig, status);
+        order.market_index = market_index;
+        let venue_order_id = known_venue.then(|| VenueOrderId::from(order.order_id.as_str()));
+        rig.dispatch
+            .order_identity(&rig.cloid)
+            .unwrap()
+            .publish_update(UUID4::new());
+
+        let account_orders_body = serde_json::to_string(&LighterOrders {
+            code: 200,
+            message: None,
+            next_cursor: None,
+            orders: vec![order],
+        })
+        .unwrap();
+
+        let empty_body = serde_json::to_string(&LighterOrders {
+            code: 200,
+            message: None,
+            next_cursor: None,
+            orders: Vec::new(),
+        })
+        .unwrap();
+
+        let account_orders_calls = Arc::new(AtomicUsize::new(0));
+        let active_calls = Arc::new(AtomicUsize::new(0));
+        let inactive_calls = Arc::new(AtomicUsize::new(0));
+        let pending = Arc::new(AtomicBool::new(true));
+
+        let app = Router::new()
+            .route(
+                "/api/v1/accountOrders",
+                get({
+                    let body = account_orders_body.clone();
+                    let calls = Arc::clone(&account_orders_calls);
+                    let pending = Arc::clone(&pending);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        let body = body.clone();
+                        let pending = Arc::clone(&pending);
+                        async move {
+                            if stop_pending_after_response {
+                                pending.store(false, Ordering::Release);
+                            }
+
+                            body
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/accountActiveOrders",
+                get({
+                    let body = empty_body.clone();
+                    let calls = Arc::clone(&active_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        let body = body.clone();
+                        async move { body }
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/accountInactiveOrders",
+                get({
+                    let calls = Arc::clone(&inactive_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        let body = empty_body.clone();
+                        async move { body }
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let config = LighterExecutionClientConfig {
+            base_url_http: Some(format!("http://{addr}")),
+            ..test_config()
+        };
+
+        let (mut client, _cache, _rx) = create_execution_client_with_config(config);
+        client.registry = rig.registry;
+        client.dispatch = rig.dispatch;
+        let credential = test_credential();
+        let lookup = OrderReportLookup::new(
+            &client.registry,
+            &client.dispatch,
+            Some(rig.instrument_id),
+            Some(&rig.cloid),
+            venue_order_id.as_ref(),
+        )
+        .unwrap();
+        let result = collect_order_while_pending(
+            &client.http_client,
+            &client.registry,
+            &credential,
+            &lookup,
+            || pending.load(Ordering::Acquire),
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(account_orders_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            active_calls.load(Ordering::SeqCst),
+            usize::from(!expect_present && !stop_pending_after_response)
+        );
+        assert_eq!(
+            inactive_calls.load(Ordering::SeqCst),
+            expected_inactive_calls
+        );
+
+        if expect_present {
+            assert!(result.unwrap().is_some());
+        } else {
+            assert_eq!(result.unwrap(), None);
+        }
     }
 
     fn register_test_instrument(
@@ -12820,7 +13107,7 @@ mod tests {
 
         let before_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
         let plan = client
-            .prepare_create_order_plan(&order, 0, None)
+            .prepare_create_order_plan(&order, None)
             .expect("managed GTD plan must validate");
         let after_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
 
@@ -13251,7 +13538,7 @@ mod tests {
         let instrument = register_test_instrument(&client, &cache);
         let mut orders = test_native_group(instrument, grouping);
         orders.reverse();
-        let plan = client.prepare_create_group_plan(&orders, 50, None).unwrap();
+        let plan = client.prepare_create_group_plan(&orders, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -13496,7 +13783,7 @@ mod tests {
                 .build();
         }
 
-        let result = client.prepare_create_group_plan(&orders, 50, None);
+        let result = client.prepare_create_group_plan(&orders, None);
         if matching {
             let plan = result.unwrap();
             assert_eq!(
@@ -13526,7 +13813,7 @@ mod tests {
         );
         orders[1].set_quantity(Quantity::from("0.2000"));
         let error = client
-            .prepare_create_group_plan(&orders, 50, None)
+            .prepare_create_group_plan(&orders, None)
             .err()
             .unwrap();
         assert_eq!(
@@ -13546,7 +13833,7 @@ mod tests {
         );
         orders[1] = orders[2].clone();
         let error = client
-            .prepare_create_group_plan(&orders, 50, None)
+            .prepare_create_group_plan(&orders, None)
             .err()
             .unwrap();
         assert_eq!(
@@ -13564,7 +13851,7 @@ mod tests {
             instrument,
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
-        let plan = client.prepare_create_group_plan(&orders, 50, None).unwrap();
+        let plan = client.prepare_create_group_plan(&orders, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -14232,7 +14519,7 @@ mod tests {
             instrument,
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
-        let group = client.prepare_create_group_plan(&orders, 50, None).unwrap();
+        let group = client.prepare_create_group_plan(&orders, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -16546,12 +16833,15 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::default(None, "dispatch failed")]
+    #[case::invalid(Some(serde_json::json!("0")), "market_order_slippage_bps must be an unsigned integer")]
+    #[case::out_of_range(Some(serde_json::json!(10_000)), "market_order_slippage_bps must be in [0, 10000)")]
     #[tokio::test]
-    async fn modify_stop_market_derives_price_from_trigger_without_explicit_price() {
-        // A trigger-only STOP_MARKET carries no limit price; modifying its trigger
-        // must derive the wire cap from the trigger rather than trip the price
-        // guard. Prepare succeeds, so the only failure here is the test harness's
-        // missing WS send handler.
+    async fn modify_stop_market_validates_slippage_and_derives_price_from_trigger(
+        #[case] slippage: Option<serde_json::Value>,
+        #[case] expected_reason: &str,
+    ) {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
@@ -16577,6 +16867,10 @@ mod tests {
         let venue_order_id = VenueOrderId::from("123");
         cache_order(&cache, order);
 
+        let params = slippage.map(|value| {
+            serde_json::from_value(serde_json::json!({"market_order_slippage_bps": value})).unwrap()
+        });
+
         let command = ModifyOrder::new(
             trader_id(),
             Some(client_id()),
@@ -16589,7 +16883,7 @@ mod tests {
             Some(Price::from("2310.00")),
             UUID4::new(),
             UnixNanos::default(),
-            None,
+            params,
             None,
         );
         client.modify_order(command).unwrap();
@@ -16597,19 +16891,20 @@ mod tests {
         let rejected = recv_order_event(&mut rx).await;
         match rejected {
             OrderEventAny::ModifyDenied(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
                 assert!(
-                    !event.reason.contains("requires a price"),
-                    "trigger-only stop modify must not trip the price guard, was: {}",
-                    event.reason,
-                );
-                assert!(
-                    event.reason.contains("dispatch failed"),
-                    "expected send-stage failure after a successful prepare, was: {}",
+                    event.reason.contains(expected_reason),
+                    "expected {expected_reason}, was: {}",
                     event.reason,
                 );
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
         assert_nonce_reusable(&client.dispatch);
     }
 
@@ -17384,16 +17679,148 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_slippage_bps_prefers_params_over_config_default() {
-        let (client, _cache, _rx) = create_execution_client();
-        assert_eq!(client.resolve_slippage_bps(None), 50);
+        let config = LighterExecutionClientConfig {
+            market_order_slippage_bps: 73,
+            ..test_config()
+        };
+
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        assert_eq!(client.resolve_slippage_bps(None).unwrap(), 73);
 
         let override_params: Params =
             serde_json::from_value(serde_json::json!({"market_order_slippage_bps": 100})).unwrap();
-        assert_eq!(client.resolve_slippage_bps(Some(&override_params)), 100);
+        assert_eq!(
+            client.resolve_slippage_bps(Some(&override_params)).unwrap(),
+            100
+        );
 
         let unrelated_params: Params =
             serde_json::from_value(serde_json::json!({"other_key": 999})).unwrap();
-        assert_eq!(client.resolve_slippage_bps(Some(&unrelated_params)), 50);
+        assert_eq!(
+            client
+                .resolve_slippage_bps(Some(&unrelated_params))
+                .unwrap(),
+            73
+        );
+    }
+
+    #[rstest]
+    #[case::zero(serde_json::json!(0), Ok(0))]
+    #[case::integer(serde_json::json!(37), Ok(37))]
+    #[case::maximum(serde_json::json!(9_999), Ok(9_999))]
+    #[case::out_of_range(serde_json::json!(10_000), Err("must be in [0, 10000)"))]
+    #[case::maximum_u32(serde_json::json!(u32::MAX), Err("must be in [0, 10000)"))]
+    #[case::float(serde_json::json!(0.0), Err("must be an unsigned integer"))]
+    #[case::negative(serde_json::json!(-1), Err("must be an unsigned integer"))]
+    #[case::string(serde_json::json!("0"), Err("must be an unsigned integer"))]
+    #[case::null(serde_json::Value::Null, Err("must be an unsigned integer"))]
+    #[case::boolean(serde_json::json!(false), Err("must be an unsigned integer"))]
+    #[case::overflow(serde_json::json!(u64::from(u32::MAX) + 1), Err("exceeds u32 range"))]
+    #[case::maximum_u64(serde_json::json!(u64::MAX), Err("exceeds u32 range"))]
+    fn resolve_slippage_bps_validates_present_override(
+        #[case] value: serde_json::Value,
+        #[case] expected: Result<u32, &str>,
+    ) {
+        let (client, _cache, _rx) = create_execution_client();
+        let params = serde_json::from_value(serde_json::json!({
+            "market_order_slippage_bps": value,
+        }))
+        .unwrap();
+
+        let result = client.resolve_slippage_bps(Some(&params));
+
+        assert_eq!(
+            result.map_err(|e| e.to_string()),
+            expected.map_err(|reason| format!("Lighter market_order_slippage_bps {reason}")),
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_invalid_slippage_before_dispatch() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-SLIPPAGE-INVALID");
+        cache_order(&cache, order.clone());
+        let mut command = SubmitOrder::from_order(
+            &order,
+            trader_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        command.params = Some(
+            serde_json::from_value(serde_json::json!({"market_order_slippage_bps": 0.0})).unwrap(),
+        );
+
+        client.submit_order(command).unwrap();
+
+        match recv_order_event(&mut rx).await {
+            OrderEventAny::Denied(event) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+                assert_eq!(
+                    event.reason,
+                    "VALIDATION_FAILED: Lighter submit_order failed: Lighter market_order_slippage_bps must be an unsigned integer",
+                );
+            }
+            event => panic!("expected denied event, was {event:?}"),
+        }
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    #[case::out_of_range(10_000, "market_order_slippage_bps must be in [0, 10000)")]
+    #[case::overflow(u64::from(u32::MAX) + 1, "market_order_slippage_bps exceeds u32 range")]
+    #[tokio::test]
+    async fn submit_order_list_denies_invalid_slippage_before_dispatch(
+        #[values(false, true)] grouped: bool,
+        #[case] value: u64,
+        #[case] expected_reason: &str,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+
+        let orders = if grouped {
+            test_native_group(instrument_id, LighterGroupingType::OneCancelsTheOther)
+        } else {
+            vec![
+                test_limit_order(&mut factory, instrument_id, "O-SLIPPAGE-LIST-A"),
+                test_limit_order(&mut factory, instrument_id, "O-SLIPPAGE-LIST-B"),
+            ]
+        };
+
+        for order in &orders {
+            cache_order(&cache, order.clone());
+        }
+
+        let mut command = submit_order_list_command(&orders, "OL-SLIPPAGE-INVALID");
+        command.params = Some(
+            serde_json::from_value(serde_json::json!({
+                "market_order_slippage_bps": value,
+            }))
+            .unwrap(),
+        );
+
+        client.submit_order_list(command).unwrap();
+
+        for order in &orders {
+            match recv_order_event(&mut rx).await {
+                OrderEventAny::Denied(event) => {
+                    assert_eq!(event.client_order_id, order.client_order_id());
+                    assert!(event.reason.contains(expected_reason));
+                }
+                event => panic!("expected denied event, was {event:?}"),
+            }
+        }
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
     }
 
     #[tokio::test]
@@ -21715,7 +22142,7 @@ mod tests {
 
         let credential = test_credential();
         let plan = client
-            .prepare_create_order_plan(&order, 0, None)
+            .prepare_create_order_plan(&order, None)
             .expect("prepare must validate");
         let prepared = client
             .fanout_dispatch_context(&credential)
@@ -25064,7 +25491,8 @@ mod tests {
             .route(
                 "/api/v1/trades",
                 get(
-                    move |axum::extract::Query(query): axum::extract::Query<
+                    move |headers: HeaderMap,
+                          axum::extract::Query(query): axum::extract::Query<
                         BTreeMap<String, String>,
                     >| {
                         let trades = trades.clone();
@@ -25083,7 +25511,13 @@ mod tests {
                             assert_eq!(query.get("sort_dir").map(String::as_str), Some("desc"));
                             assert_eq!(query.get("limit").map(String::as_str), Some("100"));
                             assert!(!query.contains_key("from"));
-                            assert!(query.get("auth").is_some_and(|auth| !auth.is_empty()));
+                            assert!(
+                                headers
+                                    .get("authorization")
+                                    .is_some_and(|auth| !auth.is_empty())
+                            );
+                            assert!(!query.contains_key("authorization"));
+                            assert!(!query.contains_key("auth"));
                             axum::Json(serde_json::json!({"code":200,"trades":trades}))
                         }
                     },
@@ -26983,6 +27417,8 @@ mod tests {
         sell_trade.ask_client_id_str = Some(sell_index.to_string());
         sell_trade.size = buy_trade.size;
         sell_trade.usd_amount = sell_trade.size * sell_trade.price;
+        buy.updated_at = buy_trade.timestamp + 1;
+        sell.updated_at = sell_trade.timestamp + 1;
         let expected = [
             (
                 rig.cloid,

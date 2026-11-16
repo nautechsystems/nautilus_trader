@@ -88,8 +88,10 @@ def load_market_target() -> tuple[str, InstrumentId]:
 
     if not market_id:
         raise SystemExit("BETFAIR_MARKET_ID must be set to an active Betfair market")
+
     if not instrument_id:
         raise SystemExit("BETFAIR_INSTRUMENT_ID must be set to a runner in BETFAIR_MARKET_ID")
+
     if not instrument_id.startswith(f"{market_id}-") or not instrument_id.endswith(f".{BETFAIR}"):
         raise SystemExit("BETFAIR_INSTRUMENT_ID must belong to BETFAIR_MARKET_ID")
 

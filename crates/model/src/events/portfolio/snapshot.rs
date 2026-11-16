@@ -33,7 +33,7 @@ use crate::{
 /// UTC midnight, and at shutdown, including while the account is flat. An optional
 /// fine-grained stream records additional snapshots while positions are open.
 /// Totals span every venue the account holds positions on, so multi-venue
-/// accounts (e.g., a prime broker routing across exchanges) produce a single
+/// accounts (e.g., an execution provider routing across exchanges) produce a single
 /// account-wide snapshot rather than per-venue slices.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

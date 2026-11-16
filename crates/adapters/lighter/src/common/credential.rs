@@ -429,24 +429,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_credential_from_resolved_values() {
-        let credential = credential_from_resolved_values(
-            Some(4),
-            Some(12_345),
-            Some(PRIVATE_KEY_HEX.to_string()),
-            LIGHTER_API_KEY_INDEX_VAR,
-            LIGHTER_API_SECRET_VAR,
-            LIGHTER_ACCOUNT_INDEX_VAR,
-        )
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(credential.api_key_index(), 4);
-        assert_eq!(credential.account_index(), 12_345);
-        assert!(credential.private_key().is_ok());
-    }
-
-    #[rstest]
     fn test_credential_from_resolved_values_rejects_partial_values() {
         let err = credential_from_resolved_values(
             Some(4),

@@ -1,0 +1,7 @@
+{
+  "code": 200,
+  "message": null,
+  "tx_hash": "0xabc",
+  "predicted_execution_time_ms": 1751465474,
+  "volume_quota_remaining": 123
+}

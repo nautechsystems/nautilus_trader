@@ -16,7 +16,6 @@
 use alloy::sol;
 
 sol! {
-    #[sol(rpc)]
     contract WETH9 {
         function deposit() external payable;
     }

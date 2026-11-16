@@ -52,7 +52,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::SocketState,
     },
@@ -64,7 +64,7 @@ use nautilus_hyperliquid::{
     HyperliquidHttpClient, HyperliquidWebSocketClient,
     common::{
         consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
-        enums::HyperliquidEnvironment,
+        enums::{HyperliquidEnvironment, HyperliquidProductType},
         parse::make_fill_trade_id,
     },
     config::HyperliquidExecutionClientConfig,
@@ -77,7 +77,7 @@ use nautilus_hyperliquid::{
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
     execution::context::OrderContext,
-    manager::{ExecutionManager, ExecutionManagerConfig},
+    manager::{ExecutionManager, ExecutionManagerConfig, ReportClientCoverage},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -94,7 +94,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
-    instruments::{CryptoPerpetual, InstrumentAny},
+    instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -141,6 +141,7 @@ struct TestServerState {
     frontend_open_orders_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     /// Optional override for `orderStatus` info responses.
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    outcome_meta_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `spotClearinghouseState` info responses;
     /// defaults to `{"balances": []}` when unset.
     spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -203,6 +204,7 @@ impl Default for TestServerState {
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            outcome_meta_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             user_abstraction_response: Arc::new(tokio::sync::Mutex::new(None)),
             perp_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -414,6 +416,15 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "spotMeta" => Json(json!({"universe": [], "tokens": []})).into_response(),
         "spotMetaAndAssetCtxs" => Json(json!([{"universe": [], "tokens": []}, []])).into_response(),
+        "outcomeMeta" => Json(
+            state
+                .outcome_meta_response
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| json!({})),
+        )
+        .into_response(),
         "openOrders" => Json(json!([])).into_response(),
         "frontendOpenOrders" => {
             if state
@@ -6159,6 +6170,61 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
 #[case::cloid_miss(false)]
 #[case::cloid_error(true)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_order_status_report_without_oid_returns_closed_order_by_cloid(
+    #[case] transport_error: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let coid = ClientOrderId::new("O-20240101-000007");
+    let cloid = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    let mut closed = historical_order("BTC", 222227);
+    closed["order"]["cloid"] = json!(cloid);
+    closed["order"]["tif"] = json!("Ioc");
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": closed}));
+
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.max_retries = 0;
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    state.info_requests.lock().await.clear();
+    if transport_error {
+        state
+            .fail_frontend_open_orders_count
+            .store(100, Ordering::Relaxed);
+    }
+
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let report = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("222227"));
+    assert_eq!(report.client_order_id, Some(coid));
+    assert_eq!(report.quantity, Quantity::from("0.10000"));
+    assert_eq!(report.filled_qty, Quantity::from("0.10000"));
+    let requests = state.info_requests.lock().await;
+    let status_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| r["type"] == "orderStatus")
+        .collect();
+    assert_eq!(status_requests.len(), 1);
+    assert_eq!(status_requests[0]["oid"], json!(cloid));
+    assert!(requests.iter().all(|r| r["type"] != "userFills"));
+    drop(requests);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cloid_miss(false)]
+#[case::cloid_error(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_generate_order_status_report_uses_cached_oid(
     #[case] cloid_error: bool,
     #[values(false, true)] worker: bool,
@@ -7451,6 +7517,26 @@ fn make_query_order_cmd(
 }
 
 fn query_recovery_order() -> OrderAny {
+    let mut order = query_recovery_submitted_order();
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from("900029"),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )))
+        .unwrap();
+    order
+}
+
+fn query_recovery_submitted_order() -> OrderAny {
     let mut init = OrderInitialized::from(&make_limit_order("O-QUERY-RECOVER"));
     init.quantity = Quantity::from("0.00100");
     init.price = Some(Price::from("92000.00"));
@@ -7466,20 +7552,6 @@ fn query_recovery_order() -> OrderAny {
             UUID4::new(),
             UnixNanos::default(),
             UnixNanos::default(),
-        )))
-        .unwrap();
-    order
-        .apply(OrderEventAny::Accepted(OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("900029"),
-            account_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
         )))
         .unwrap();
     order
@@ -7658,13 +7730,16 @@ async fn query_recovery_client(
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
         .unwrap();
-    cache
-        .borrow_mut()
-        .add_venue_order_id(&coid, &order.venue_order_id().unwrap(), false)
-        .unwrap();
     let dispatch = client.ws_dispatch_state();
     dispatch.register_context(OrderContext::from(&order));
-    dispatch.record_venue_order_id(coid, order.venue_order_id().unwrap());
+    if let Some(venue_order_id) = order.venue_order_id() {
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&coid, &venue_order_id, false)
+            .unwrap();
+        dispatch.record_venue_order_id(coid, venue_order_id);
+    }
+
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let engine = ExecutionEngine::new(clock, cache.clone(), None);
     (client, rx, cache, engine)
@@ -8108,6 +8183,7 @@ async fn test_query_order_failed_status_leaves_stream_fills_processable() {
 #[case::pending_modify("pending")]
 #[case::replacement("replacement")]
 #[case::changed_terms("terms")]
+#[case::rebound("rebound")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_query_order_recovery_discards_changed_binding(#[case] transition: &str) {
     let state = query_recovery_state().await;
@@ -8123,12 +8199,16 @@ async fn test_query_order_recovery_discards_changed_binding(#[case] transition: 
         .await
         .unwrap();
     let dispatch = client.ws_dispatch_state();
-    if transition != "terms" {
+    if matches!(transition, "pending" | "replacement") {
         dispatch.mark_pending_modify(
             coid,
             VenueOrderId::from("900029"),
             Quantity::from("0.00200"),
         );
+    }
+
+    if transition == "rebound" {
+        dispatch.record_venue_order_id(coid, VenueOrderId::from("900030"));
     }
 
     if transition == "replacement" {
@@ -8200,6 +8280,260 @@ async fn test_query_order_recovery_discards_changed_binding(#[case] transition: 
             assert!(current.commissions().is_empty());
         }
     }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_recovery_skips_fill_history_for_order_closed_during_query() {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let (mut client, mut rx, _cache, _engine) =
+        query_recovery_client(state.clone(), order.clone()).await;
+    state.pause_next_info.store(true, Ordering::Release);
+    client
+        .query_order(make_query_order_cmd(coid, order.venue_order_id()))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    client.ws_dispatch_state().cleanup_terminal(&coid);
+    state.info_release.notify_one();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], ExecutionEvent::Report(ExecutionReport::Order(report))
+        if report.venue_order_id == VenueOrderId::from("900029"))
+    );
+    assert!(
+        state
+            .info_requests
+            .lock()
+            .await
+            .iter()
+            .all(|r| r["type"] != "userFills")
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_without_oid_recovers_filled_order_by_cloid_in_engine() {
+    let state = query_recovery_state().await;
+    let order = query_recovery_submitted_order();
+    let coid = order.client_order_id();
+    let cloid = Cloid::from_client_order_id(coid).to_hex();
+    state.order_status_response.lock().await.as_mut().unwrap()["order"]["order"]["cloid"] =
+        json!(cloid);
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state.clone(), order).await;
+    let commissions = [Money::from("0.008 USDC")];
+
+    let fees = [
+        (Money::from("0.010 USDC"), Currency::USD()),
+        (Money::from("-0.002 USDC"), Currency::USD()),
+    ];
+
+    for pass in 0..2 {
+        client
+            .query_order(make_query_order_cmd(coid, None))
+            .unwrap();
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        let reports = apply_query_events(&mut engine, &mut rx);
+        assert_eq!(reports.len(), if pass == 0 { 2 } else { 0 });
+        assert_query_recovery_cache(&cache.borrow(), coid, &commissions, fees);
+    }
+
+    let mut replay = query_recovery_fills();
+    for fill in replay.as_array_mut().unwrap() {
+        fill["cloid"] = json!(cloid);
+    }
+
+    state
+        .stream_frames
+        .send(json!({"channel": "user", "data": {"fills": replay}}))
+        .unwrap();
+    apply_query_stream_fills(&mut engine, &mut rx, 2).await;
+    assert_query_recovery_cache(&cache.borrow(), coid, &commissions, fees);
+    let requests = state.info_requests.lock().await;
+    let status_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| r["type"] == "orderStatus")
+        .collect();
+    assert_eq!(status_requests.len(), 2);
+    assert_eq!(status_requests[0]["oid"], json!(cloid));
+    assert_eq!(status_requests[1]["oid"], json!(900029));
+    assert_eq!(
+        requests.iter().filter(|r| r["type"] == "userFills").count(),
+        1
+    );
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_without_oid_stream_events_during_history_collection_book_once() {
+    let state = query_recovery_state().await;
+    let order = query_recovery_submitted_order();
+    let coid = order.client_order_id();
+    let cloid = Cloid::from_client_order_id(coid).to_hex();
+    state.order_status_response.lock().await.as_mut().unwrap()["order"]["order"]["cloid"] =
+        json!(cloid);
+
+    let fees = [
+        (Money::from("0.010 USDC"), Currency::USDC()),
+        (Money::from("-0.002 USDC"), Currency::USD()),
+    ];
+
+    let (mut client, mut rx, cache, mut engine) =
+        query_recovery_client(state.clone(), order.clone()).await;
+
+    // Submit through the client so the stream resolves the cloid; the venue reply carries no oid
+    let init = order.events()[0].clone();
+    let initialized = OrderAny::from_events(vec![init]).unwrap();
+    cache
+        .borrow_mut()
+        .add_order(initialized.clone(), None, None, true)
+        .unwrap();
+    client.ws_dispatch_state().cleanup_terminal(&coid);
+    *state.order_response_override.lock().await = Some(json!({
+        "status": "ok", "response": {"type": "order", "data": {"statuses": ["waitingForFill"]}}
+    }));
+    client.submit_order(make_submit_cmd(&initialized)).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    apply_query_events(&mut engine, &mut rx);
+    assert_eq!(
+        cache.borrow().order(&coid).unwrap().status(),
+        OrderStatus::Submitted
+    );
+    assert_eq!(cache.borrow().order(&coid).unwrap().venue_order_id(), None);
+
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    client
+        .query_order(make_query_order_cmd(coid, None))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    let mut accepted = historical_order("BTC", 900029);
+    accepted["status"] = json!("open");
+    accepted["order"]["cloid"] = json!(cloid);
+    accepted["order"]["origSz"] = json!("0.001");
+    accepted["order"]["sz"] = json!("0.001");
+    accepted["order"]["limitPx"] = json!("92000");
+    state
+        .stream_frames
+        .send(order_updates_frame(&[accepted]))
+        .unwrap();
+    let mut streamed = query_recovery_fills()[0].clone();
+    streamed["cloid"] = json!(cloid);
+    state
+        .stream_frames
+        .send(json!({"channel": "user", "data": {"fills": [streamed]}}))
+        .unwrap();
+    apply_query_stream_fills(&mut engine, &mut rx, 1).await;
+    assert_eq!(
+        cache.borrow().order(&coid).unwrap().filled_qty(),
+        Quantity::from("0.00040")
+    );
+    assert_eq!(
+        client.ws_dispatch_state().cached_venue_order_id(&coid),
+        Some(VenueOrderId::from("900029"))
+    );
+
+    state.info_release.notify_one();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let recovered = apply_query_events(&mut engine, &mut rx);
+    assert_eq!(recovered.len(), 2);
+    assert_query_recovery_cache(&cache.borrow(), coid, &[Money::from("0.008 USDC")], fees);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::canceled("canceled", Some(OrderStatus::Canceled))]
+#[case::rejected("iocCancelRejected", Some(OrderStatus::Rejected))]
+#[case::unknown("unknownOid", None)]
+#[case::failed("invalid", None)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_order_without_oid_queries_status_by_cloid(
+    #[case] status: &str,
+    #[case] expected: Option<OrderStatus>,
+) {
+    let coid = ClientOrderId::new("O-QUERY-006");
+    let cloid = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(if expected.is_some() {
+        let mut closed = historical_order("BTC", 900006);
+        closed["order"]["cloid"] = json!(cloid);
+        closed["order"]["tif"] = json!("Ioc");
+        closed["status"] = json!(status);
+        json!({"status": "order", "order": closed})
+    } else {
+        json!({"status": status})
+    });
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    state.info_requests.lock().await.clear();
+
+    client
+        .query_order(make_query_order_cmd(coid, None))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let resolved: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Report(ExecutionReport::Order(report)) => Some((
+                report.venue_order_id,
+                report.client_order_id,
+                report.order_status,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let expected: Vec<_> = expected
+        .map(|status| (VenueOrderId::from("900006"), Some(coid), status))
+        .into_iter()
+        .collect();
+    assert_eq!(resolved, expected);
+    let requests = state.info_requests.lock().await;
+    let status_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| r["type"] == "orderStatus")
+        .collect();
+    assert_eq!(status_requests.len(), 1);
+    assert_eq!(status_requests[0]["oid"], json!(cloid));
+    drop(requests);
 
     client.disconnect().await.unwrap();
 }
@@ -14245,5 +14579,1111 @@ async fn test_canceled_report_task_never_promotes_replacement() {
     assert!(dispatch.has_pending_modify(&coid));
     assert!(rx.try_recv().is_err());
     state.info_release.notify_one();
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::all(None, 3)]
+#[case::perp(Some(vec![HyperliquidProductType::Perp]), 1)]
+#[case::spot(Some(vec![HyperliquidProductType::Spot]), 1)]
+#[case::outcome(Some(vec![HyperliquidProductType::Outcome]), 1)]
+#[case::spot_perp(Some(vec![HyperliquidProductType::Spot, HyperliquidProductType::Perp]), 2)]
+#[case::spot_outcome(Some(vec![HyperliquidProductType::Spot, HyperliquidProductType::Outcome]), 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_mass_status(
+    #[case] products: Option<Vec<HyperliquidProductType>>,
+    #[case] count: usize,
+) {
+    let state = TestServerState::default();
+    let coins = ["BTC", "vntls:TOKEN", "#200"];
+    *state.frontend_open_orders_response.lock().await = Some(Value::Array(
+        coins
+            .iter()
+            .enumerate()
+            .map(|(i, coin)| frontend_order(coin, 100 + i as u64))
+            .collect(),
+    ));
+    *state.user_fills_response.lock().await = Some(Value::Array(
+        coins
+            .iter()
+            .enumerate()
+            .map(|(i, coin)| user_fill(coin, 200 + i as u64))
+            .collect(),
+    ));
+    *state.historical_orders_response.lock().await = Some(Value::Array(
+        coins
+            .iter()
+            .enumerate()
+            .map(|(i, coin)| historical_order(coin, 200 + i as u64))
+            .collect(),
+    ));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
+        {"coin": "vntls:TOKEN", "token": 1, "total": "2", "hold": "0", "entryNtl": "1"},
+        {"coin": "+200", "token": 100000200, "total": "2", "hold": "0", "entryNtl": "1"},
+    ]}));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    if let Some(products) = &products {
+        config.product_types.clone_from(products);
+    }
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(mass.reports_complete());
+    assert_eq!(mass.order_reports().len(), 2 * count);
+    assert_eq!(mass.fill_reports().len(), count);
+    assert_eq!(mass.position_reports().len(), count);
+    for report in mass.order_reports().values() {
+        assert!(client.provides_bulk_position_coverage(report.instrument_id));
+
+        if let Some(products) = &products {
+            assert!(products.contains(
+                &HyperliquidProductType::from_symbol(report.instrument_id.symbol.as_str()).unwrap()
+            ));
+        }
+    }
+
+    for id in [
+        "BTC-USD-PERP.HYPERLIQUID",
+        "vntls:TOKEN-USDC-SPOT.HYPERLIQUID",
+        "20-YES-OUTCOME.HYPERLIQUID",
+    ] {
+        let id = InstrumentId::from(id);
+        let expected = products.as_ref().is_none_or(|products| {
+            products.contains(&HyperliquidProductType::from_symbol(id.symbol.as_str()).unwrap())
+        });
+        assert_eq!(client.provides_bulk_position_coverage(id), expected);
+    }
+    assert!(!client.provides_bulk_position_coverage(InstrumentId::from("BTC-USD-PERP.OTHER")));
+    let requests = state.info_requests.lock().await;
+
+    if products
+        .as_ref()
+        .is_some_and(|products| !products.contains(&HyperliquidProductType::Perp))
+    {
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["type"] != "clearinghouseState")
+        );
+    }
+
+    if products.as_ref().is_some_and(|products| {
+        products
+            .iter()
+            .all(|product| *product == HyperliquidProductType::Perp)
+    }) {
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["type"] != "spotClearinghouseState")
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_denies_before_submission() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Spot];
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+    let order = make_limit_order("O-PRODUCT-SCOPE");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let event = rx.try_recv().expect("scope rejection must be synchronous");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("expected OrderDenied, received {event:?}");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert!(denied.reason.contains("outside execution product scope"));
+    assert!(rx.try_recv().is_err());
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert!(state.info_requests.lock().await.is_empty());
+}
+
+#[rstest]
+#[case::excluded(false)]
+#[case::included(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_preserves_snapshot_completeness(#[case] included: bool) {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        user_fill("BTC", 101),
+        user_fill("NOCOIN", 102),
+        user_fill("#200", 103),
+    ]));
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![if included {
+        HyperliquidProductType::Perp
+    } else {
+        HyperliquidProductType::Outcome
+    }];
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_perp_instrument_to_cache(&cache);
+    let id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    client.on_instrument(cache.borrow().instrument(&id).unwrap().clone());
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert_eq!(mass.reports_complete(), !included);
+    assert_eq!(mass.fill_reports().len(), 1);
+    let expected_oid = VenueOrderId::from(if included { "101" } else { "103" });
+    assert!(mass.fill_reports().contains_key(&expected_oid));
+}
+
+#[rstest]
+#[case::excluded(HyperliquidProductType::Spot, true)]
+#[case::covered(HyperliquidProductType::Perp, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_does_not_flatten_excluded_position(
+    #[case] product: HyperliquidProductType,
+    #[case] remains_open: bool,
+) {
+    let state = TestServerState::default();
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut original, _rx, original_cache) = create_test_execution_client(addr);
+    add_test_perp_instrument_to_cache(&original_cache);
+    let id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let instrument = original_cache.borrow().instrument(&id).unwrap().clone();
+    original.on_instrument(instrument.clone());
+    let initial_mass = original.generate_mass_status(None).await.unwrap().unwrap();
+    assert_eq!(initial_mass.position_reports().len(), 1);
+
+    let mut flat = clearinghouse_position("BTC");
+    flat["assetPositions"][0]["position"]["szi"] = json!("0");
+    *state.perp_clearinghouse_response.lock().await = Some(flat);
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![product];
+    let cache = original_cache;
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *HYPERLIQUID_CLIENT_ID,
+        *HYPERLIQUID_VENUE,
+        OmsType::Netting,
+        AccountId::from("HYPERLIQUID-001"),
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+    let mut client = HyperliquidExecutionClient::new(core, config).unwrap();
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.on_instrument(instrument);
+    let scoped_mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    assert!(scoped_mass.reports_complete());
+    assert_eq!(
+        scoped_mass.position_reports().len(),
+        usize::from(!remains_open)
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+    manager.reconcile_execution_mass_status(&initial_mass, &engine);
+    assert_eq!(
+        cache
+            .borrow()
+            .positions_open(None, Some(&id), None, None, None)
+            .len(),
+        1
+    );
+
+    let check =
+        manager.prepare_position_report_check(UUID4::new(), &engine.borrow().get_all_clients());
+    let key = (id, AccountId::from("HYPERLIQUID-001"));
+    assert!(match &check.client_coverage[&key] {
+        ReportClientCoverage::Unavailable(_) => remains_open,
+        ReportClientCoverage::Resolved(_) => !remains_open,
+        ReportClientCoverage::Unresolved => false,
+    });
+
+    manager.reconcile_execution_mass_status(&scoped_mass, &engine);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .positions_open(None, Some(&id), None, None, None)
+            .len(),
+        usize::from(remains_open)
+    );
+
+    if remains_open {
+        let cache = cache.borrow();
+        let positions = cache.positions_open(None, Some(&id), None, None, None);
+        assert_eq!(positions[0].quantity, Quantity::from("0.10000"));
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_preserves_cached_perp_order_across_checks() {
+    let order = query_recovery_order();
+    let client_order_id = order.client_order_id();
+    let instrument_id = order.instrument_id();
+    let venue_order_id = order.venue_order_id().unwrap();
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order(
+        "BTC",
+        venue_order_id.as_str().parse().unwrap()
+    )]));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Spot];
+    let (client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_perp_instrument_to_cache(&cache);
+    add_test_account_to_cache(&cache, order.account_id().unwrap());
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*HYPERLIQUID_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().build_index();
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: false,
+            open_check_lookback_mins: None,
+            open_check_missing_retries: 1,
+            max_single_order_queries_per_cycle: 1,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    for cycle in 1..=3 {
+        let events = manager.check_open_orders(&engine.get_all_clients()).await;
+        for event in &events {
+            engine.process(event);
+        }
+
+        assert!(
+            events.is_empty(),
+            "targeted check emitted events in cycle {cycle}"
+        );
+        assert_eq!(manager.recon_check_retry_count(&client_order_id), cycle);
+
+        let queries = manager.check_open_order_queries();
+        let [TradingCommand::QueryOrder(query)] = queries.as_slice() else {
+            panic!("Expected one fallback order query in cycle {cycle}");
+        };
+        assert_eq!(query.client_order_id, client_order_id);
+        assert_eq!(query.instrument_id, instrument_id);
+        assert_eq!(query.venue_order_id, Some(venue_order_id));
+        let e = engine.get_all_clients()[0]
+            .query_order(query.clone())
+            .unwrap_err();
+        assert!(e.to_string().contains("outside execution product scope"));
+        assert!(rx.try_recv().is_err());
+
+        let cache = cache.borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Accepted, "cycle {cycle}");
+        assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+    }
+
+    let requests = state.info_requests.lock().await;
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request["type"] == "frontendOpenOrders")
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_rejects_order_query() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Spot];
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let e = client
+        .query_order(make_query_order_cmd(
+            ClientOrderId::from("O-PERP"),
+            Some(VenueOrderId::from("101")),
+        ))
+        .unwrap_err();
+
+    assert!(e.to_string().contains("outside execution product scope"));
+    assert!(state.info_requests.lock().await.is_empty());
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_rejects_single_order_report(
+    #[values(false, true)] worker: bool,
+    #[values(false, true)] instrument_filter: bool,
+) {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order("BTC", 101)]));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Spot];
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+    let mut command = make_status_report_cmd(None, Some(VenueOrderId::from("101")));
+    if !instrument_filter {
+        command.instrument_id = None;
+    }
+
+    let e = generate_order_report(&client, &command, worker)
+        .await
+        .unwrap_err();
+
+    assert!(format!("{e:#}").contains("outside execution product scope"));
+    if instrument_filter {
+        assert!(state.info_requests.lock().await.is_empty());
+    }
+}
+
+#[rstest]
+#[case::submit("submit", OrderEventType::Denied)]
+#[case::list("list", OrderEventType::Denied)]
+#[case::modify("modify", OrderEventType::ModifyDenied)]
+#[case::cancel("cancel", OrderEventType::CancelDenied)]
+#[case::cancel_all("cancel_all", OrderEventType::CancelDenied)]
+#[case::batch_cancel("batch_cancel", OrderEventType::CancelDenied)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_denies_order_commands(
+    #[case] operation: &str,
+    #[case] expected_event: OrderEventType,
+    #[values(HyperliquidProductType::Spot, HyperliquidProductType::Perp)]
+    product: HyperliquidProductType,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![product];
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let order = if matches!(operation, "submit" | "list") {
+        let order = make_limit_order("O-SCOPE-SUBMIT");
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        order
+    } else {
+        open_limit_order_in_cache(&cache, "O-SCOPE-MANAGED", "900029")
+    };
+    let cancel = make_cancel_entry(order.client_order_id(), VenueOrderId::from("900029"));
+
+    match operation {
+        "submit" => client.submit_order(make_submit_cmd(&order)).unwrap(),
+        "list" => {
+            let list = OrderList::new(
+                OrderListId::from("scope-list"),
+                order.instrument_id(),
+                order.strategy_id(),
+                vec![order.client_order_id()],
+                UnixNanos::default(),
+            );
+            let cmd = SubmitOrderList::new(
+                order.trader_id(),
+                Some(*HYPERLIQUID_CLIENT_ID),
+                order.strategy_id(),
+                list,
+                vec![order.init_event().clone()],
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            );
+            client.submit_order_list(cmd).unwrap();
+        }
+        "modify" => client
+            .modify_order(make_modify_cmd(&order, order.venue_order_id()))
+            .unwrap(),
+        "cancel" => client.cancel_order(cancel).unwrap(),
+        "cancel_all" => client
+            .cancel_all_orders(make_cancel_all_cmd(
+                HYPERLIQUID_TEST_INSTRUMENT,
+                OrderSide::Buy,
+            ))
+            .unwrap(),
+        "batch_cancel" => {
+            let cmd = BatchCancelOrders::new(
+                order.trader_id(),
+                Some(*HYPERLIQUID_CLIENT_ID),
+                order.strategy_id(),
+                order.instrument_id(),
+                vec![cancel],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            );
+            client.batch_cancel_orders(cmd).unwrap();
+        }
+        _ => unreachable!(),
+    }
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(event) => Some(event),
+            _ => None,
+        })
+        .collect();
+
+    if product == HyperliquidProductType::Spot {
+        assert_eq!(events.len(), 1, "unexpected events: {events:?}");
+        assert_eq!(events[0].event_type(), expected_event);
+        assert!(
+            events[0]
+                .message()
+                .unwrap()
+                .contains("outside execution product scope")
+        );
+        assert_eq!(*state.exchange_request_count.lock().await, 0);
+    } else {
+        assert!(
+            events
+                .iter()
+                .all(|event| event.event_type() != expected_event)
+        );
+        assert_eq!(*state.exchange_request_count.lock().await, 1);
+    }
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        order.status()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_batch_cancel_keeps_allowed_entries() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Perp];
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let order = open_limit_order_in_cache(&cache, "O-SCOPE-ALLOWED", "900029");
+    let excluded_id = ClientOrderId::from("O-SCOPE-EXCLUDED");
+    let mut excluded = make_cancel_entry(excluded_id, VenueOrderId::from("101"));
+    excluded.instrument_id = InstrumentId::from("20-YES-OUTCOME.HYPERLIQUID");
+    let cmd = BatchCancelOrders::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        vec![
+            excluded,
+            make_cancel_entry(order.client_order_id(), VenueOrderId::from("900029")),
+        ],
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.batch_cancel_orders(cmd).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let denied: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => Some(event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(denied.len(), 1);
+    assert_eq!(denied[0].client_order_id, excluded_id);
+    assert!(denied[0].reason.contains("outside execution product scope"));
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    let action = state.last_exchange_action.lock().await.clone().unwrap();
+    assert_eq!(action["type"], "cancel");
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_eq!(action["cancels"][0]["o"], 900029);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_does_not_resolve_perp_as_spot() {
+    let state = TestServerState::default();
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order("BTC", 101)]));
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 101)]));
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Perp];
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    let spot = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTC-USDC-SPOT.HYPERLIQUID"))
+            .raw_symbol(Symbol::from("BTC/USDC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
+    client.on_instrument(spot);
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        mass.position_reports().is_empty(),
+        "Spot metadata must not explain Perp positions: {:?}",
+        mass.position_reports()
+    );
+    assert!(
+        !mass.reports_complete(),
+        "missing Perp metadata must not become a complete empty snapshot"
+    );
+    assert!(mass.order_reports().is_empty());
+    assert!(mass.fill_reports().is_empty());
+    assert!(
+        mass.position_reports().is_empty(),
+        "Spot metadata must not explain Perp positions"
+    );
+
+    add_test_perp_instrument_to_cache(&cache);
+    let perp_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    client.on_instrument(cache.borrow().instrument(&perp_id).unwrap().clone());
+    let restored = client.generate_mass_status(None).await.unwrap().unwrap();
+    let oid = VenueOrderId::from("101");
+
+    assert!(restored.reports_complete());
+    assert_eq!(restored.order_reports()[&oid].instrument_id, perp_id);
+    assert_eq!(restored.fill_reports()[&oid][0].instrument_id, perp_id);
+    assert!(restored.position_reports().contains_key(&perp_id));
+}
+
+#[rstest]
+#[case::spot(HyperliquidProductType::Spot, "BTC/USDC")]
+#[case::perp(HyperliquidProductType::Perp, "BTC")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_filters_live_and_reconnected_fills(
+    #[case] product: HyperliquidProductType,
+    #[case] allowed_coin: &str,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![product];
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) =
+        registry.scope(|| create_test_execution_client_from_config(config));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    let spot = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTC-USDC-SPOT.HYPERLIQUID"))
+            .raw_symbol(Symbol::from("BTC/USDC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
+    client.on_instrument(spot);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    for cycle in 0..2 {
+        if cycle == 1 {
+            request_user_streams_reconnect(&registry);
+        }
+        wait_until_async(
+            || async { state.ws_subscriptions.lock().await.len() == (cycle + 1) * 4 },
+            Duration::from_secs(5),
+        )
+        .await;
+        let oid = 100 + cycle as u64 * 100;
+        state
+            .stream_frames
+            .send(json!({
+                "channel": "user",
+                "data": {"fills": [
+                    user_fill("BTC", oid + 1),
+                    user_fill("BTC/USDC", oid + 2),
+                    user_fill(allowed_coin, oid + 3),
+                ]},
+            }))
+            .unwrap();
+        let fills = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut fills = Vec::new();
+
+            loop {
+                if let ExecutionEvent::Report(ExecutionReport::Fill(fill)) =
+                    rx.recv().await.unwrap()
+                {
+                    let last = fill.venue_order_id == VenueOrderId::new((oid + 3).to_string());
+                    fills.push(fill);
+
+                    if last {
+                        break fills;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("the final in-scope fill must be delivered");
+        assert_eq!(fills.len(), 2);
+
+        for fill in fills {
+            assert_eq!(
+                HyperliquidProductType::from_symbol(fill.instrument_id.symbol.as_str()).unwrap(),
+                product,
+            );
+        }
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cloid_open("cloid_open")]
+#[case::cached_oid_open("cached_oid_open")]
+#[case::explicit_oid_status("explicit_oid_status")]
+#[case::cached_oid_status("cached_oid_status")]
+#[case::cloid_error_oid_status("cloid_error_oid_status")]
+#[case::cloid_status("cloid_status")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_order_query_branches(
+    #[case] branch: &str,
+    #[values(false, true)] excluded: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let state = TestServerState::default();
+    let coid = ClientOrderId::from("O-SCOPE-QUERY");
+    let coin = if excluded { "vntls:TOKEN" } else { "BTC" };
+    let mut row = frontend_order(coin, 101);
+    if branch == "cloid_open" {
+        row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    }
+    let open = matches!(branch, "cloid_open" | "cached_oid_open");
+    *state.frontend_open_orders_response.lock().await =
+        Some(if open { json!([row]) } else { json!([]) });
+    let mut closed = historical_order(coin, 101);
+    closed["status"] = json!("canceled");
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": closed}));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Perp];
+    config.max_retries = 0;
+    config.outcome_settlement_poll_secs = 0;
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    if branch.starts_with("cached_oid") {
+        let order = make_limit_order(coid.as_str());
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&coid, &VenueOrderId::from("101"), false)
+            .unwrap();
+    }
+
+    if branch == "cloid_error_oid_status" {
+        state
+            .fail_frontend_open_orders_count
+            .store(100, Ordering::Relaxed);
+    }
+    state.info_requests.lock().await.clear();
+    let explicit = matches!(branch, "explicit_oid_status" | "cloid_error_oid_status");
+    let mut cmd = make_status_report_cmd(Some(coid), explicit.then(|| VenueOrderId::from("101")));
+    cmd.instrument_id = None;
+    let result = generate_order_report(&client, &cmd, worker).await;
+    if excluded {
+        assert!(format!("{:#}", result.unwrap_err()).contains("outside execution product scope"));
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
+        assert_eq!(report.client_order_id, Some(coid));
+        assert_eq!(
+            report.order_status,
+            if open {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::Canceled
+            }
+        );
+    }
+
+    // An unusable open row leaves no venue order ID, so the lookup falls back to the cloid status
+    let cloid_fallback = branch == "cloid_status" || (branch == "cloid_open" && excluded);
+    let requests = state.info_requests.lock().await;
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r["type"] == "orderStatus")
+            .count(),
+        usize::from(!open || cloid_fallback)
+    );
+
+    let status_oid = if cloid_fallback {
+        json!(Cloid::from_client_order_id(coid).to_hex())
+    } else {
+        json!(101)
+    };
+
+    assert!(
+        requests
+            .iter()
+            .filter(|r| r["type"] == "orderStatus")
+            .all(|r| r["oid"] == status_oid)
+    );
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::missing(false)]
+#[case::transport_error(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_cloid_without_oid(
+    #[case] transport_error: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Perp];
+    config.max_retries = 0;
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    state.info_requests.lock().await.clear();
+    if transport_error {
+        state
+            .fail_frontend_open_orders_count
+            .store(100, Ordering::Relaxed);
+    }
+
+    let coid = ClientOrderId::from("O-NO-OID");
+    let mut cmd = make_status_report_cmd(Some(coid), None);
+    cmd.instrument_id = None;
+    let result = generate_order_report(&client, &cmd, worker).await;
+    if transport_error {
+        assert!(format!("{:#}", result.unwrap_err()).contains("cloid lookup failed"));
+    } else {
+        assert!(result.unwrap().is_none());
+    }
+
+    let requests = state.info_requests.lock().await;
+    let status_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| r["type"] == "orderStatus")
+        .collect();
+    assert_eq!(status_requests.len(), 1);
+    assert_eq!(
+        status_requests[0]["oid"],
+        json!(Cloid::from_client_order_id(coid).to_hex())
+    );
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::outcome(HyperliquidProductType::Outcome, true)]
+#[case::spot(HyperliquidProductType::Spot, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_outcome_settlement_poll(
+    #[case] product: HyperliquidProductType,
+    #[case] enabled: bool,
+) {
+    let state = TestServerState::default();
+    let mut meta = load_json("http_outcome_meta.json");
+    meta["questions"] = json!([{
+        "question": 1, "name": "settled", "description": "",
+        "namedOutcomes": [1], "settledNamedOutcomes": [1],
+    }]);
+    *state.outcome_meta_response.lock().await = Some(meta);
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
+        {"coin": "+10", "token": 100000010, "total": "2", "hold": "0", "entryNtl": "1"},
+    ]}));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![product];
+    config.outcome_settlement_poll_secs = 1;
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let baseline = state
+        .info_requests
+        .lock()
+        .await
+        .iter()
+        .filter(|r| r["type"] == "outcomeMeta")
+        .count();
+    let fill = tokio::time::timeout(
+        Duration::from_millis(if enabled { 5000 } else { 2100 }),
+        async {
+            loop {
+                if let ExecutionEvent::Report(ExecutionReport::Fill(fill)) =
+                    rx.recv().await.unwrap()
+                {
+                    break fill;
+                }
+            }
+        },
+    )
+    .await;
+
+    if enabled {
+        let fill = fill.expect("Outcome-enabled polling must dispatch a settlement fill");
+        assert_eq!(
+            fill.instrument_id,
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID")
+        );
+        assert_eq!(fill.last_qty, Quantity::from("2"));
+        assert_eq!(fill.last_px, Price::from("1"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        wait_until_async(
+            || async {
+                state
+                    .info_requests
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|r| r["type"] == "outcomeMeta")
+                    .count()
+                    >= baseline + 3
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    } else {
+        assert!(
+            fill.is_err(),
+            "Spot-only must not dispatch outcome settlements"
+        );
+    }
+    client.disconnect().await.unwrap();
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(!matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+        ));
+    }
+    let count = state
+        .info_requests
+        .lock()
+        .await
+        .iter()
+        .filter(|r| r["type"] == "outcomeMeta")
+        .count();
+    if enabled {
+        assert!(count >= baseline + 3);
+    } else {
+        assert_eq!(
+            count, baseline,
+            "Spot-only must not start the settlement poll"
+        );
+    }
+}
+
+#[rstest]
+#[case::perp(HyperliquidProductType::Perp, true)]
+#[case::spot(HyperliquidProductType::Spot, false)]
+#[case::outcome(HyperliquidProductType::Outcome, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_hip3_commands_and_reports(
+    #[case] product: HyperliquidProductType,
+    #[case] allowed: bool,
+) {
+    let state = TestServerState::default();
+    *state.all_perp_metas_response.lock().await =
+        Some(perp_metas([builder_perp_meta("xyz", &["ONE"])]));
+    *state.historical_orders_response.lock().await =
+        Some(json!([historical_order("xyz:ONE", 8001)]));
+    *state.user_fills_response.lock().await = Some(json!([user_fill("xyz:ONE", 8001)]));
+    state
+        .frontend_open_orders_dex_responses
+        .lock()
+        .await
+        .insert("xyz".into(), json!([frontend_order("xyz:ONE", 9001)]));
+    state
+        .perp_clearinghouse_dex_responses
+        .lock()
+        .await
+        .insert("xyz".into(), clearinghouse_position("xyz:ONE"));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![product];
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let id = InstrumentId::from("xyz:ONE-USD-PERP.HYPERLIQUID");
+    let order = make_limit_order_on_instrument("O-HIP3-SCOPE", id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert_eq!(
+        *state.exchange_request_count.lock().await,
+        usize::from(allowed)
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, ExecutionEvent::Order(OrderEventAny::Denied(_))))
+            .count(),
+        usize::from(!allowed)
+    );
+
+    if allowed {
+        let action = state.last_exchange_action.lock().await.clone().unwrap();
+        assert_eq!(action["orders"][0]["a"], 110000);
+    }
+    let mut cmd = make_status_report_cmd(None, Some(VenueOrderId::from("8001")));
+    cmd.instrument_id = None;
+    let mut closed = historical_order("xyz:ONE", 8001);
+    closed["status"] = json!("canceled");
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": closed}));
+    let report = generate_order_report(&client, &cmd, false).await;
+    if allowed {
+        assert_eq!(report.unwrap().unwrap().instrument_id, id);
+    } else {
+        assert!(format!("{:#}", report.unwrap_err()).contains("outside execution product scope"));
+    }
+    state.info_requests.lock().await.clear();
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    assert!(mass.reports_complete());
+    assert_eq!(mass.order_reports().len(), if allowed { 2 } else { 0 });
+    assert_eq!(mass.fill_reports().len(), usize::from(allowed));
+    assert_eq!(mass.position_reports().len(), usize::from(allowed));
+    for report in mass.order_reports().values() {
+        assert_eq!(report.instrument_id, id);
+    }
+
+    for reports in mass.fill_reports().values() {
+        for report in reports {
+            assert_eq!(report.instrument_id, id);
+        }
+    }
+
+    if allowed {
+        assert!(mass.position_reports().contains_key(&id));
+    }
+    assert_eq!(
+        state
+            .info_requests
+            .lock()
+            .await
+            .iter()
+            .filter(|r| r.get("dex") == Some(&json!("xyz")))
+            .count(),
+        if allowed { 2 } else { 0 }
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::excluded_cloid(false)]
+#[case::unavailable_cloid(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_execution_product_scope_failed_cloid_is_not_absence(
+    #[case] unavailable: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let state = TestServerState::default();
+    let coid = ClientOrderId::from("O-SCOPE-CLOID-FALLBACK");
+    let mut row = frontend_order("vntls:TOKEN", 101);
+    row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    *state.order_status_response.lock().await = Some(json!({"status": "unknownOid"}));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![HyperliquidProductType::Perp];
+    config.max_retries = 0;
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    if unavailable {
+        state
+            .fail_frontend_open_orders_count
+            .store(100, Ordering::Relaxed);
+    }
+    let mut cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("102")));
+    cmd.instrument_id = None;
+    let e = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap_err();
+    assert!(format!("{e:#}").contains(if unavailable {
+        "cloid lookup failed"
+    } else {
+        "outside execution product scope"
+    }));
     client.disconnect().await.unwrap();
 }

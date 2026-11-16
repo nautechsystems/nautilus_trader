@@ -21,6 +21,9 @@
 //! event counts and final order states so a rejection or no-op cannot be timed
 //! as successful work.
 
+#[path = "matching_engine/spread.rs"]
+mod spread;
+
 use std::{
     cell::RefCell,
     hint::black_box,
@@ -1653,5 +1656,6 @@ criterion_group!(
     bench_resting_fill,
     bench_reduce_only_contingencies,
     bench_commands,
+    spread::bench_spreads,
 );
 criterion_main!(benches);

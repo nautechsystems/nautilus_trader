@@ -492,12 +492,22 @@ impl InteractiveBrokersExecutionClient {
             order.pending_modify.is_none(),
             "IB order {ib_order_id} already has a pending modify",
         );
+        // Records only the fields `apply_modify_fields_to_ib_order` writes for this modify. A
+        // trailing stop takes its trigger in `trail_stop_price` and its new offset in `aux_price`,
+        // unless the offset is a percent; other orders take the trigger in `aux_price`.
+        let is_trailing = matches!(ib_order.order_type.as_str(), "TRAIL" | "TRAIL LIMIT");
+        let trigger_in_aux = !is_trailing || ib_order.trailing_percent.is_none();
         order.pending_modify = Some(PendingModifyValues {
-            total_quantity: ib_order.total_quantity,
-            limit_price: ib_order.limit_price,
-            aux_price: ib_order.aux_price,
-            // IB moves a trailing stop's trigger with the market, so only a requested one is checked
-            trail_stop_price: cmd.trigger_price.and(ib_order.trail_stop_price),
+            total_quantity: cmd.quantity.map(|_| ib_order.total_quantity),
+            limit_price: cmd.price.and(ib_order.limit_price),
+            aux_price: cmd
+                .trigger_price
+                .filter(|_| trigger_in_aux)
+                .and(ib_order.aux_price),
+            trail_stop_price: cmd
+                .trigger_price
+                .filter(|_| is_trailing)
+                .and(ib_order.trail_stop_price),
         });
 
         Ok(())

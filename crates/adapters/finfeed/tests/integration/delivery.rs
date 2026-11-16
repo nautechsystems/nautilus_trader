@@ -42,7 +42,7 @@ use nautilus_finfeed::{
     http::{
         client::{FinFeedHttpClient, FinFeedHttpConfig},
         models::{Ohlcv, Quote},
-        query::HistoryQuery,
+        query::{HistoryQuery, PAGE_LIMIT_MAX},
     },
     instruments::FinFeedInstrumentSelection,
 };
@@ -69,11 +69,14 @@ const BAR_MARKET: &str = "2026-BALANCE-OF-POWER-D-SENATE-D-HOUSE-949_NO";
 async fn bounded_quote_history_matches_received_provider_rows() {
     let _logging = logging();
     let market = QUOTE_MARKET;
-    let path =
-        format!("/v1/activity/POLYMARKET/{market}/history/quotes?date={QUOTE_DATE}&limit=10000");
-    let (control_path, query) = quote_control();
+    let (path, _) = quote_control(PAGE_LIMIT_MAX);
+    let (control_path, query) = quote_control(100);
     let start = query.time_start.unwrap();
-    let end = query.time_end.unwrap();
+    let end = query
+        .time_end
+        .unwrap()
+        .checked_sub(jiff::Span::new().nanoseconds(100))
+        .unwrap();
     let (mut http, mut captures, peer) =
         recording_peer(market, vec![path.clone(), control_path], 4, 600).await;
 
@@ -140,11 +143,11 @@ async fn bounded_quote_history_matches_received_provider_rows() {
     let raw: Vec<Quote> = serde_json::from_slice(&source.body).unwrap();
     assert!(
         !raw.is_empty(),
-        "source unavailable: empty whole-date quote response"
+        "source unavailable: empty covering-hour quote response"
     );
     assert!(
-        raw.len() < 10_000,
-        "source saturated: native conversion must reject this date"
+        raw.len() < PAGE_LIMIT_MAX as usize,
+        "source saturated: smoke allowance permits one native history page"
     );
     let mut selected: Vec<_> = raw
         .iter()
@@ -201,7 +204,7 @@ async fn bounded_quote_history_matches_received_provider_rows() {
 
     assert!(receiver.try_recv().is_err());
     println!(
-        "Native quotes: {} raw date rows, three exact delivered ticks in [{start}, {end}], four GETs including control, no completeness claim",
+        "Native quotes: {} raw covering-hour rows, three exact delivered ticks in [{start}, {end}], four GETs including control, no completeness claim",
         raw.len()
     );
 }
@@ -301,8 +304,11 @@ async fn bounded_closed_bar_publication_and_reconnect() {
     );
 }
 
+#[rstest]
+#[case(100)]
+#[case(PAGE_LIMIT_MAX)]
 #[tokio::test]
-async fn covering_hour_control_matches_admitted_wire_selector() {
+async fn covering_hour_control_matches_admitted_wire_selector(#[case] limit: u32) {
     let (peer, http) = start_peer(vec![(
         200,
         "",
@@ -311,26 +317,28 @@ async fn covering_hour_control_matches_admitted_wire_selector() {
     .await;
     let client =
         FinFeedHttpClient::new(Some(SecretString::from("test-api-key")), http.clone()).unwrap();
-    let (path, query) = quote_control();
+    let (path, query) = quote_control(limit);
     client
         .get_quotes_history("POLYMARKET", QUOTE_MARKET, &query)
         .await
         .unwrap();
     let requests = peer.await.unwrap();
+
+    assert_eq!(query.limit, limit);
     assert_eq!(requests.len(), 1);
     assert_request(&requests[0], &path, &http);
 }
 
-fn quote_control() -> (String, HistoryQuery) {
+fn quote_control(limit: u32) -> (String, HistoryQuery) {
     let path = format!(
-        "/v1/activity/POLYMARKET/{QUOTE_MARKET}/history/quotes?time_start={QUOTE_DATE}T00%3A00%3A00.0000000Z&time_end={QUOTE_DATE}T01%3A00%3A00.0000000Z&limit=100"
+        "/v1/activity/POLYMARKET/{QUOTE_MARKET}/history/quotes?time_start={QUOTE_DATE}T00%3A00%3A00.0000000Z&time_end={QUOTE_DATE}T01%3A00%3A00.0000000Z&limit={limit}"
     );
 
     let query = HistoryQuery {
         date: None,
         time_start: Some(format!("{QUOTE_DATE}T00:00:00Z").parse().unwrap()),
         time_end: Some(format!("{QUOTE_DATE}T01:00:00Z").parse().unwrap()),
-        limit: 100,
+        limit,
     };
 
     (path, query)

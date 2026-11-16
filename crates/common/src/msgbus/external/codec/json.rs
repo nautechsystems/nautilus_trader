@@ -15,6 +15,7 @@
 
 use anyhow::Context;
 use bytes::Bytes;
+use nautilus_core::serialization::timestamps;
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::PayloadCodecError;
@@ -26,11 +27,31 @@ where
     serde_json::from_slice(payload).with_context(|| format!("failed to decode JSON {type_name}"))
 }
 
-pub(super) fn serialize<T>(message: &T, type_name: &str) -> Result<Bytes, PayloadCodecError>
+pub(super) fn serialize<T>(
+    message: &T,
+    type_name: &str,
+    timestamps_as_iso8601: bool,
+) -> Result<Bytes, PayloadCodecError>
 where
     T: Serialize,
 {
-    serde_json::to_vec(message).map(Bytes::from).map_err(|e| {
+    if timestamps_as_iso8601 {
+        let mut value = serde_json::to_value(message).map_err(|e| {
+            PayloadCodecError::Failed(format!("JSON serialization failed for {type_name}: {e}"))
+        })?;
+
+        timestamps::serialize(&mut value, true).map_err(|e| {
+            PayloadCodecError::Failed(format!(
+                "Timestamp serialization failed for {type_name}: {e}"
+            ))
+        })?;
+
+        serde_json::to_vec(&value)
+    } else {
+        serde_json::to_vec(message)
+    }
+    .map(Bytes::from)
+    .map_err(|e| {
         PayloadCodecError::Failed(format!("JSON serialization failed for {type_name}: {e}"))
     })
 }

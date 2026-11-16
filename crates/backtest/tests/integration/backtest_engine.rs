@@ -401,11 +401,18 @@ struct TwapOrderStrategy {
     core: StrategyCore,
     instrument_id: InstrumentId,
     exec_algorithm_id: ExecAlgorithmId,
+    quantity: Quantity,
+    horizon_secs: u64,
     submitted: bool,
 }
 
 impl TwapOrderStrategy {
-    fn new(instrument_id: InstrumentId, exec_algorithm_id: ExecAlgorithmId) -> Self {
+    fn new(
+        instrument_id: InstrumentId,
+        exec_algorithm_id: ExecAlgorithmId,
+        quantity: Quantity,
+        horizon_secs: u64,
+    ) -> Self {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("TWAP-ORDER-001")),
             order_id_tag: Some("001".to_string()),
@@ -415,6 +422,8 @@ impl TwapOrderStrategy {
             core: StrategyCore::new(config),
             instrument_id,
             exec_algorithm_id,
+            quantity,
+            horizon_secs,
             submitted: false,
         }
     }
@@ -438,13 +447,16 @@ impl DataActor for TwapOrderStrategy {
         if !self.submitted {
             self.submitted = true;
             let mut params = IndexMap::new();
-            params.insert(Ustr::from("horizon_secs"), Ustr::from("4.0"));
+            params.insert(
+                Ustr::from("horizon_secs"),
+                Ustr::from(self.horizon_secs.to_string().as_str()),
+            );
             params.insert(Ustr::from("interval_secs"), Ustr::from("1.0"));
 
             let order = self.order().market(
                 self.instrument_id,
                 OrderSide::Buy,
-                Quantity::from("0.100"),
+                self.quantity,
                 None,
                 None,
                 None,
@@ -3575,7 +3587,12 @@ fn test_twap_exec_algorithm_routes_and_slices_order(crypto_perpetual_ethusdt: Cr
         }))
         .unwrap();
     engine
-        .add_strategy(TwapOrderStrategy::new(instrument_id, exec_algorithm_id))
+        .add_strategy(TwapOrderStrategy::new(
+            instrument_id,
+            exec_algorithm_id,
+            Quantity::from("0.100"),
+            4,
+        ))
         .unwrap();
 
     let quotes = vec![
@@ -3681,6 +3698,67 @@ fn test_twap_exec_algorithm_routes_and_slices_order(crypto_perpetual_ethusdt: Cr
             .positions_closed(None, Some(&instrument_id), None, None, None)
             .is_empty()
     );
+}
+
+#[rstest]
+fn test_twap_final_slice_passes_risk_engine_min_quantity(
+    mut crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    crypto_perpetual_ethusdt.min_quantity = Some(Quantity::from("0.5"));
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP-001");
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_exec_algorithm(TwapAlgorithm::new(TwapAlgorithmConfig {
+            exec_algorithm_id: Some(exec_algorithm_id),
+            ..Default::default()
+        }))
+        .unwrap();
+
+    engine
+        .add_strategy(TwapOrderStrategy::new(
+            instrument_id,
+            exec_algorithm_id,
+            Quantity::from("1.501"),
+            3,
+        ))
+        .unwrap();
+
+    let quotes = (1..=4)
+        .map(|secs| quote(instrument_id, "1000.00", "1000.00", secs * 1_000_000_000))
+        .collect();
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let (primary_orders, mut spawned_orders): (Vec<_>, Vec<_>) = orders
+        .iter()
+        .partition(|order| order.exec_spawn_id() == Some(order.client_order_id()));
+    spawned_orders.sort_by_key(|order| order.client_order_id());
+    let spawned_quantities: Vec<_> = spawned_orders
+        .iter()
+        .map(|order| order.quantity())
+        .collect();
+    let filled_total: Decimal = orders
+        .iter()
+        .map(|order| order.filled_qty().as_decimal())
+        .sum();
+
+    assert_eq!(primary_orders.len(), 1);
+    assert_eq!(primary_orders[0].quantity(), Quantity::from("0.501"));
+    assert_eq!(
+        spawned_quantities,
+        vec![Quantity::from("0.500"), Quantity::from("0.500")]
+    );
+    assert!(
+        orders
+            .iter()
+            .all(|order| order.status() == OrderStatus::Filled)
+    );
+    assert_eq!(filled_total, dec!(1.501));
 }
 
 struct ShutdownOnTick {

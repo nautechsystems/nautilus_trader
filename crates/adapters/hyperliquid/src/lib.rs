@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](https://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the Hyperliquid decentralized exchange.
 //!
 //! The `nautilus-hyperliquid` crate provides integration with the Hyperliquid API for
 //! market data and trading in perpetual futures, HIP-3 builder-deployed perpetuals, spot markets,
@@ -21,20 +21,19 @@
 //! [product support table](https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#product-support)
 //! defines support levels and validation limits.
 //!
+//! The official Hyperliquid API reference can be found at
+//! <https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api>.
+//!
 //! # NautilusTrader
 //!
-//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
-//! engine for multi-asset, multi-venue trading systems.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native trading engine
+//! with a deterministic, event-driven architecture for multi-asset, multi-venue systems.
 //!
-//! The system spans research, deterministic simulation, and live execution within a single
-//! event-driven architecture, providing research-to-live semantic parity.
+//! The system spans research, simulation, and live execution, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `arrow`: Enables Apache Arrow data support.
 //! - `examples`: Enables the crate's example binaries.
@@ -43,6 +42,19 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//!
+//! # Integrator Attribution
+//!
+//! Mainnet orders include NautilusTrader's builder address at a zero fee rate by default.
+//! These orders require a one-time builder-fee approval. Testnet and vault orders omit the builder.
+//!
+//! See [attribution details](https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#builder-code-attribution).
+//!
+//! # Documentation
+//!
+//! - [Integration guide](https://nautilustrader.io/docs/nightly/integrations/hyperliquid/)
+//! - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/hyperliquid/examples)
+//! - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid)
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

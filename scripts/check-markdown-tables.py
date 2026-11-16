@@ -52,6 +52,7 @@ def find_tables(lines: list[str]) -> Iterator[tuple[int, int]]:
                 fence = None
             index += 1
             continue
+
         if fence is not None or not lines[index].startswith("|"):
             index += 1
             continue
@@ -66,6 +67,7 @@ def cell_alignment(cell: str) -> str:
     trailing = len(cell) - len(cell.rstrip(" "))
     if leading > 1 and trailing > 1:
         return "center"
+
     if leading > 1:
         return "right"
     return "left"
@@ -75,6 +77,7 @@ def render_cell(content: str, width: int, alignment: str) -> str:
     padding = width - 2 - utf16_width(content)
     if alignment == "right":
         return f" {' ' * padding}{content} "
+
     if alignment == "center":
         left = padding // 2
         return f" {' ' * left}{content}{' ' * (padding - left)} "
@@ -99,6 +102,7 @@ def normalize_table(rows: list[str]) -> list[str] | None:
         return None
 
     widths = []
+
     for column in range(columns):
         marker = grid[1][column].strip()
         colons = int(marker.startswith(":")) + int(marker.endswith(":"))
@@ -108,6 +112,7 @@ def normalize_table(rows: list[str]) -> list[str] | None:
         widths.append(max(content, MIN_DASHES + colons) + 2)
 
     normalized = []
+
     for index, cells in enumerate(grid):
         if index == 1:
             rendered = [
@@ -148,7 +153,6 @@ def _write(message: str) -> None:
 def main() -> int:
     paths = [Path(argument) for argument in sys.argv[1:] if argument.endswith(".md")]
     changed = [path for path in sorted(paths) if normalize_file(path)]
-
     if changed:
         for path in changed:
             _write(f"{path}: normalized table column widths")

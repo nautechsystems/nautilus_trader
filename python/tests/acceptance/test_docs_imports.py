@@ -45,7 +45,6 @@ def _import_statements(block: str) -> list[str]:
     statements = []
     lines = block.splitlines()
     index = 0
-
     while index < len(lines):
         if not _IMPORT_START.match(lines[index]):
             index += 1
@@ -67,7 +66,6 @@ def _resolve(statement: str) -> str | None:
     Return a failure reason for the import statement, or `None` when it resolves.
     """
     node = ast.parse(textwrap.dedent(statement)).body[0]
-
     if isinstance(node, ast.Import):
         for alias in node.names:
             try:

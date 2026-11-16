@@ -50,13 +50,14 @@ use nautilus_lighter::{
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountActiveOrdersQueryBuilder,
             LighterAccountInactiveOrdersQuery, LighterAccountInactiveOrdersQueryBuilder,
-            LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery,
-            LighterCandlesQueryBuilder, LighterFundingsQuery, LighterMakerOnlyApiKeysQueryBuilder,
-            LighterNextNonceQuery, LighterOrderBookDetailsQuery,
-            LighterOrderBookDetailsQueryBuilder, LighterOrderBookOrdersQuery,
-            LighterOrderBooksQuery, LighterOrderBooksQueryBuilder, LighterRecentTradesQuery,
-            LighterSortDirection, LighterTradeQueryType, LighterTradeRole, LighterTradeSortBy,
-            LighterTradesQuery, LighterTradesQueryBuilder,
+            LighterAccountLookup, LighterAccountOrdersQuery, LighterAccountOrdersQueryBuilder,
+            LighterAccountQuery, LighterCandlesQuery, LighterCandlesQueryBuilder,
+            LighterFundingsQuery, LighterMakerOnlyApiKeysQuery,
+            LighterMakerOnlyApiKeysQueryBuilder, LighterNextNonceQuery,
+            LighterOrderBookDetailsQuery, LighterOrderBookDetailsQueryBuilder,
+            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterOrderBooksQueryBuilder,
+            LighterRecentTradesQuery, LighterSortDirection, LighterTradeQueryType,
+            LighterTradeRole, LighterTradeSortBy, LighterTradesQuery, LighterTradesQueryBuilder,
         },
     },
 };
@@ -74,6 +75,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
+use nautilus_testkit::http::assert_http_redirect_rejected;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -121,6 +123,23 @@ struct LatestFundingsState {
 struct CappedHistoryState {
     calls: Arc<AtomicUsize>,
     row_page: Option<usize>,
+}
+
+#[tokio::test]
+async fn test_authenticated_client_rejects_redirects() {
+    assert_http_redirect_rejected(|url| async move {
+        let client =
+            LighterRawHttpClient::new(LighterEnvironment::Testnet, Some(url), 3, None).unwrap();
+        let query = LighterOrderBooksQuery::default();
+        let error = client.get_order_books(&query).await.unwrap_err();
+
+        let LighterHttpError::Http { status, .. } = error else {
+            panic!("expected HTTP redirect status, was {error:?}");
+        };
+
+        status
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -208,6 +227,150 @@ async fn raw_client_get_trades_sends_paginated_query_and_parses_response() {
     assert_eq!(response.trades.len(), 1);
 }
 
+#[rstest]
+#[case::trades("trades")]
+#[case::active("accountActiveOrders")]
+#[case::inactive("accountInactiveOrders")]
+#[case::orders("accountOrders")]
+#[case::maker_only("getMakerOnlyApiKeys")]
+#[tokio::test]
+async fn raw_client_sends_auth_only_in_header(
+    #[case] endpoint: &str,
+    #[values(None, Some("header-token"))] authorization: Option<&'static str>,
+    #[values(None, Some("legacy-token"))] auth: Option<&'static str>,
+) {
+    let expected_header = authorization.or(auth);
+    let mut expected_params = HashMap::from([("account_index".to_string(), "712440".to_string())]);
+
+    match endpoint {
+        "trades" => {
+            expected_params.extend([
+                ("market_id".to_string(), "3".to_string()),
+                ("sort_by".to_string(), "timestamp".to_string()),
+                ("limit".to_string(), "25".to_string()),
+            ]);
+        }
+        "accountActiveOrders" => {
+            expected_params.insert("market_id".to_string(), "3".to_string());
+        }
+        "accountInactiveOrders" => {
+            expected_params.insert("limit".to_string(), "25".to_string());
+        }
+        "accountOrders" => {
+            expected_params.insert("client_order_indexes".to_string(), "42,43".to_string());
+        }
+        "getMakerOnlyApiKeys" => {}
+        _ => unreachable!(),
+    }
+
+    let body = match endpoint {
+        "trades" => HTTP_RECENT_TRADES.to_string(),
+        "getMakerOnlyApiKeys" => {
+            serde_json::json!({"code": 200, "api_key_indexes": [5]}).to_string()
+        }
+        _ => HTTP_ORDERS.to_string(),
+    };
+
+    let path = format!("/api/v1/{endpoint}");
+
+    let base_url = spawn_server(Router::new().route(
+        &path,
+        get(
+            move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                let expected_params = expected_params.clone();
+                let body = body.clone();
+                async move {
+                    assert_eq!(
+                        headers
+                            .get("authorization")
+                            .map(|value| value.to_str().unwrap()),
+                        expected_header
+                    );
+                    assert_eq!(params, expected_params);
+                    (StatusCode::OK, body).into_response()
+                }
+            },
+        ),
+    ))
+    .await;
+
+    let client = raw_client(base_url);
+    let authorization = authorization.map(SecretString::from);
+    let auth = auth.map(SecretString::from);
+
+    let code = match endpoint {
+        "trades" => {
+            client
+                .get_trades(&LighterTradesQuery {
+                    authorization,
+                    auth,
+                    market_id: Some(3),
+                    account_index: Some(712_440),
+                    sort_by: LighterTradeSortBy::Timestamp,
+                    limit: 25,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .code
+        }
+        "accountActiveOrders" => {
+            client
+                .get_account_active_orders(&LighterAccountActiveOrdersQuery {
+                    authorization,
+                    auth,
+                    account_index: 712_440,
+                    market_id: 3,
+                })
+                .await
+                .unwrap()
+                .code
+        }
+        "accountInactiveOrders" => {
+            client
+                .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
+                    authorization,
+                    auth,
+                    account_index: 712_440,
+                    market_id: None,
+                    ask_filter: None,
+                    between_timestamps: None,
+                    cursor: None,
+                    limit: 25,
+                })
+                .await
+                .unwrap()
+                .code
+        }
+        "accountOrders" => {
+            client
+                .get_account_orders(&LighterAccountOrdersQuery {
+                    authorization,
+                    auth,
+                    account_index: 712_440,
+                    client_order_indexes: vec![42, 43],
+                })
+                .await
+                .unwrap()
+                .code
+        }
+        "getMakerOnlyApiKeys" => {
+            client
+                .get_maker_only_api_keys(&LighterMakerOnlyApiKeysQuery {
+                    authorization,
+                    auth,
+                    account_index: 712_440,
+                })
+                .await
+                .unwrap()
+                .code
+        }
+        _ => unreachable!(),
+    };
+
+    assert_eq!(code, 200);
+}
+
 #[tokio::test]
 async fn raw_client_get_candles_sends_query_and_parses_response() {
     let base_url = spawn_server(Router::new().route("/api/v1/candles", get(handle_candles))).await;
@@ -275,7 +438,7 @@ async fn raw_client_get_trades_serializes_lighter_rest_page_size() {
 }
 
 #[tokio::test]
-async fn raw_client_get_account_orders_sends_auth_queries_and_parses_response() {
+async fn raw_client_get_account_orders_sends_auth_headers_and_parses_response() {
     let base_url = spawn_server(
         Router::new()
             .route(
@@ -317,6 +480,90 @@ async fn raw_client_get_account_orders_sends_auth_queries_and_parses_response() 
 
     assert_eq!(active.orders.len(), 1);
     assert_eq!(inactive.next_cursor.as_deref(), Some("cursor-1"));
+}
+
+#[rstest]
+#[case::single(vec![42])]
+#[case::multiple(vec![42, 43, 44])]
+#[tokio::test]
+async fn raw_client_get_account_orders_serializes_client_order_indexes(#[case] indexes: Vec<i64>) {
+    let expected_indexes = indexes.clone();
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/accountOrders",
+        get(
+            move |headers: HeaderMap,
+                  Query(params): Query<HashMap<String, String>>,
+                  Query(query): Query<LighterAccountOrdersQuery>| {
+                let expected_indexes = expected_indexes.clone();
+                async move {
+                    assert_eq!(
+                        headers
+                            .get("authorization")
+                            .map(|value| value.to_str().unwrap()),
+                        Some("auth-token")
+                    );
+                    assert!(!params.contains_key("authorization"));
+                    assert!(!params.contains_key("auth"));
+                    assert_eq!(query.account_index, 712_440);
+                    assert_eq!(query.client_order_indexes, expected_indexes);
+                    (StatusCode::OK, HTTP_ORDERS).into_response()
+                }
+            },
+        ),
+    ))
+    .await;
+
+    let client = raw_client(base_url);
+    let query = LighterAccountOrdersQueryBuilder::default()
+        .auth("auth-token")
+        .account_index(712_440)
+        .client_order_indexes(indexes)
+        .build()
+        .unwrap();
+
+    let response = client.get_account_orders(&query).await.unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.message, None);
+    assert_eq!(response.next_cursor.as_deref(), Some("cursor-1"));
+    assert_eq!(response.orders.len(), 1);
+    assert_eq!(response.orders[0].client_order_index, 42);
+}
+
+#[rstest]
+#[case::empty(vec![])]
+#[case::too_many((1..=21).collect::<Vec<i64>>())]
+#[tokio::test]
+async fn raw_client_get_account_orders_rejects_invalid_index_counts_before_request(
+    #[case] indexes: Vec<i64>,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/accountOrders",
+        get(move || {
+            let calls = Arc::clone(&requests);
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (StatusCode::OK, HTTP_ORDERS).into_response()
+            }
+        }),
+    ))
+    .await;
+
+    let client = raw_client(base_url);
+    let query = LighterAccountOrdersQueryBuilder::default()
+        .account_index(712_440)
+        .client_order_indexes(indexes)
+        .build()
+        .unwrap();
+
+    let error = client.get_account_orders(&query).await.unwrap_err();
+
+    assert!(
+        matches!(error, LighterHttpError::Parse(message) if message.contains("between 1 and 20"))
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -2087,14 +2334,19 @@ async fn handle_paginated_candles(
     }
 }
 
-async fn handle_trades(Query(query): Query<LighterTradesQuery>) -> Response {
+async fn handle_trades(
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    Query(query): Query<LighterTradesQuery>,
+) -> Response {
     assert_eq!(
-        query
-            .authorization
-            .as_ref()
-            .map(SecretString::expose_secret),
+        headers
+            .get("authorization")
+            .map(|value| value.to_str().unwrap()),
         Some("bearer-token")
     );
+    assert!(!params.contains_key("authorization"));
+    assert!(!params.contains_key("auth"));
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.account_index, Some(712_440));
     assert_eq!(query.order_index, Some(281_476_929_510_110));
@@ -2116,27 +2368,36 @@ async fn handle_trades_with_page_size_limit(Query(query): Query<LighterTradesQue
 }
 
 async fn handle_account_active_orders(
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
     Query(query): Query<LighterAccountActiveOrdersQuery>,
 ) -> Response {
     assert_eq!(
-        query.auth.as_ref().map(SecretString::expose_secret),
+        headers
+            .get("authorization")
+            .map(|value| value.to_str().unwrap()),
         Some("auth-token")
     );
+    assert!(!params.contains_key("authorization"));
+    assert!(!params.contains_key("auth"));
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, 0);
     (StatusCode::OK, HTTP_ORDERS).into_response()
 }
 
 async fn handle_account_inactive_orders(
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
     Query(query): Query<LighterAccountInactiveOrdersQuery>,
 ) -> Response {
     assert_eq!(
-        query
-            .authorization
-            .as_ref()
-            .map(SecretString::expose_secret),
+        headers
+            .get("authorization")
+            .map(|value| value.to_str().unwrap()),
         Some("bearer-token")
     );
+    assert!(!params.contains_key("authorization"));
+    assert!(!params.contains_key("auth"));
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.ask_filter, Some(1));

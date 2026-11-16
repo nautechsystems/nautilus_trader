@@ -458,6 +458,7 @@ def create_populated_l3_book(instrument_id: InstrumentId) -> tuple[OrderBook, li
             21,
         ),
     ]
+
     book = OrderBook(instrument_id=instrument_id, book_type=BookType.L3_MBO)
     for sequence, order in enumerate(orders, start=41):
         book.add(order, flags=0, sequence=sequence, ts_event=sequence + 100)
@@ -534,6 +535,7 @@ def test_order_book_pickle_roundtrip_preserves_l2_state(audusd_id: InstrumentId)
     Test order book pickle roundtrip preserves L2 price-based order IDs.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
     orders = [
         BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1.25"), 11),
         BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("2.50"), 12),
@@ -564,6 +566,7 @@ def test_order_book_pickle_roundtrip_preserves_flag_normalized_l3_state(
     Test order book pickle roundtrip preserves flag-normalized L3 order IDs.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L3_MBO)
+
     orders = [
         BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1.25"), 11),
         BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("2.50"), 12),
@@ -769,6 +772,7 @@ def test_update_book_with_quote_tick(audusd_id: InstrumentId) -> None:
     Test update book with quote tick.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L1_MBP)
+
     quote = QuoteTick(
         instrument_id=audusd_id,
         bid_price=Price.from_str("100.50"),
@@ -793,6 +797,7 @@ def test_update_book_with_trade_tick(audusd_id: InstrumentId) -> None:
     Test update book with trade tick.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L1_MBP)
+
     trade = TradeTick(
         instrument_id=audusd_id,
         price=Price.from_str("100.55"),
@@ -872,6 +877,7 @@ def test_depth_bid_ask_structure(depth: object) -> None:
     """
     for bid in depth.bids:
         assert bid.side == OrderSide.BUY
+
     for ask in depth.asks:
         assert ask.side == OrderSide.SELL
 
@@ -1012,7 +1018,6 @@ def test_book_level_comparisons_follow_ladder_order(audusd_id: InstrumentId) -> 
     Test book level comparisons follow ladder order.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
-
     for sequence, order in enumerate(
         [
             BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1"), 1),
@@ -1200,6 +1205,7 @@ def test_order_book_filtered_view_excludes_own_orders(audusd_id: InstrumentId) -
         Decimal("1.00000"): Decimal(75000),
         Decimal("0.99990"): Decimal(50000),
     }
+
     expected_asks = {Decimal("1.00010"): Decimal(40000)}
 
     assert book.bids_filtered_to_dict(own_book=own_book) == expected_bids
@@ -1323,6 +1329,7 @@ def test_order_book_get_all_crossed_levels(audusd_id: InstrumentId) -> None:
     Test order book get all crossed levels.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
     orders = [
         BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10"), 1),
         BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("20"), 2),

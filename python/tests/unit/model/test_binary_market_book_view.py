@@ -38,6 +38,7 @@ def _populate_book(book: OrderBook, bids: object = None, asks: object = None) ->
     for i, (price, size) in enumerate(bids or []):
         order = BookOrder(OrderSide.BUY, Price(price, 2), Quantity(size, 0), i)
         book.add(order, 0, 0, 0)
+
     for i, (price, size) in enumerate(asks or [], start=len(bids or [])):
         order = BookOrder(OrderSide.SELL, Price(price, 2), Quantity(size, 0), i)
         book.add(order, 0, 0, 0)

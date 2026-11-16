@@ -163,6 +163,12 @@ name = "msgbus_python"
 harness = false
 required-features = ["python"]
 
+[[bench]]
+name = "tick_to_trade"
+harness = true
+test = false
+required-features = ["node"]
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"

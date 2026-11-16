@@ -37,12 +37,15 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Price,
 };
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{LOT_SIZE_SCALE, POLYMARKET_NAUTILUS_BUILDER_CODE, USDC_DECIMALS},
+        consts::{
+            LOT_SIZE_SCALE, POLYMARKET_NAUTILUS_BUILDER_CODE, POLYMARKET_PRICE_PRECISION,
+            USDC_DECIMALS,
+        },
         enums::{PolymarketOrderSide, PolymarketOrderType, PolymarketSignatureType},
     },
     http::models::PolymarketOrder,
@@ -109,8 +112,8 @@ impl PolymarketOrderBuilder {
     ///
     /// Immediate BUYs spend a cent-denominated maker budget. When `quantity * price` is not an
     /// exact cent amount, the builder truncates that budget to cents and signs the share quantity
-    /// derived from it, rounded up to the market amount precision so the signed ratio does not
-    /// exceed the limit price.
+    /// derived from it, rounded down to the market amount precision so the order can cross at
+    /// the limit price. The signed ratio must remain below the next supported price tick.
     ///
     /// `expiration` is the GTD expiry, or `None` for no expiry. It is serialized as whole Unix
     /// seconds (`"0"` when absent), truncating subsecond precision, and excluded from the signed
@@ -255,6 +258,10 @@ impl PolymarketOrderBuilder {
 
         let (maker_amount, taker_amount) =
             compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
+        if side == PolymarketOrderSide::Buy {
+            validate_buy_price_rounding(price, maker_amount, taker_amount)
+                .map_err(anyhow::Error::msg)?;
+        }
         self.build_and_sign(token_id, side, maker_amount, taker_amount, None, context)
     }
 
@@ -536,7 +543,7 @@ pub(crate) fn signed_limit_order_quantity(quantity: Decimal) -> Decimal {
 ///
 /// # Errors
 ///
-/// Returns an error if an immediate buy cannot derive a positive share quantity.
+/// Returns an error if an immediate buy cannot derive safe signed amounts.
 pub(crate) fn posted_limit_share_quantity(
     side: PolymarketOrderSide,
     price: Decimal,
@@ -553,7 +560,7 @@ pub(crate) fn posted_limit_share_quantity(
 ///
 /// Polymarket treats `FAK` and `FOK` as market orders: the direct maker amount is limited to
 /// two decimal places, and the computed share amount uses the market amount precision. Rounding
-/// the derived shares up keeps the signed ratio at or below the limit price.
+/// the derived shares down allows matching at the limit, provided no higher price tick is reachable.
 fn immediate_buy_maker_taker_amounts(
     price: Decimal,
     quantity: Decimal,
@@ -570,21 +577,34 @@ fn immediate_buy_maker_taker_amounts(
         ));
     }
 
-    let amount_decimals = tick_decimals + LOT_SIZE_SCALE;
-    let taker_amount = (maker_amount / price)
-        .round_dp_with_strategy(amount_decimals, RoundingStrategy::ToPositiveInfinity);
+    let (maker_amount, taker_amount) =
+        compute_quote_buy_maker_taker_amounts(price, maker_amount, tick_decimals);
+    validate_buy_price_rounding(price, maker_amount, taker_amount)?;
 
-    if taker_amount.is_zero() {
+    Ok((maker_amount, taker_amount))
+}
+
+/// Validates a BUY's signed base-unit amounts against the next supported price tick.
+fn validate_buy_price_rounding(
+    price: Decimal,
+    maker_amount: Decimal,
+    taker_amount: Decimal,
+) -> Result<(), String> {
+    if maker_amount <= Decimal::ZERO || taker_amount <= Decimal::ZERO {
+        return Err("Polymarket BUY requires positive signed maker and taker amounts".to_string());
+    }
+
+    // Use the finest supported tick even when cached instrument metadata has a coarser tick,
+    // so a tick-size refinement cannot let the order match above the requested limit.
+    let next_price = price + Decimal::new(1, u32::from(POLYMARKET_PRICE_PRECISION));
+    if maker_amount >= taker_amount * next_price {
         return Err(format!(
-            "Polymarket {order_type} BUY derives a zero share quantity from maker amount {} pUSD",
-            maker_amount.normalize(),
+            "Polymarket BUY signed amounts can match above limit price {} after venue quantization",
+            price.normalize(),
         ));
     }
 
-    Ok((
-        to_fixed_decimal(maker_amount),
-        to_fixed_decimal(taker_amount),
-    ))
+    Ok(())
 }
 
 /// Builds the maker/taker amounts for a Polymarket CLOB limit order.
@@ -1400,9 +1420,12 @@ mod tests {
     #[rstest]
     #[case::tick_tenth(1, dec!(0.5), dec!(1.01), dec!(500_000), dec!(1_000_000))]
     #[case::tick_hundredth(2, dec!(0.56), dec!(1.01), dec!(560_000), dec!(1_000_000))]
-    #[case::tick_thousandth(3, dec!(0.961), dec!(5), dec!(4_800_000), dec!(4_994_800))]
-    #[case::tick_ten_thousandth(4, dec!(0.9612), dec!(5), dec!(4_800_000), dec!(4_993_758))]
-    #[case::live_aggressive(3, dec!(0.227), dec!(5), dec!(1_130_000), dec!(4_977_980))]
+    #[case::tick_thousandth(3, dec!(0.961), dec!(5), dec!(4_800_000), dec!(4_994_790))]
+    #[case::tick_ten_thousandth(4, dec!(0.9612), dec!(5), dec!(4_800_000), dec!(4_993_757))]
+    #[case::live_aggressive(3, dec!(0.227), dec!(5), dec!(1_130_000), dec!(4_977_970))]
+    #[case::paris(3, dec!(0.999), dec!(75.82), dec!(75_740_000), dec!(75_815_810))]
+    #[case::half_cent(3, dec!(0.335), dec!(5), dec!(1_670_000), dec!(4_985_070))]
+    #[case::quarter_cent(4, dec!(0.4325), dec!(7), dec!(3_020_000), dec!(6_982_658))]
     fn test_build_limit_order_quantizes_immediate_buy_to_cent_budget(
         #[case] tick_decimals: u32,
         #[case] price: Decimal,
@@ -1429,6 +1452,25 @@ mod tests {
 
         assert_eq!(order.maker_amount, expected_maker);
         assert_eq!(order.taker_amount, expected_taker);
+        assert!(order.maker_amount >= price * order.taker_amount);
+        assert!(order.maker_amount < (price + dec!(0.0001)) * order.taker_amount);
+        assert!(order.maker_amount <= to_fixed_decimal(quantity * price));
+        assert!(order.taker_amount <= to_fixed_decimal(signed_limit_order_quantity(quantity)));
+        assert_eq!(
+            posted_limit_share_quantity(
+                PolymarketOrderSide::Buy,
+                price,
+                quantity,
+                order_type,
+                tick_decimals,
+            )
+            .unwrap(),
+            signed_base_quantity(
+                order.maker_amount,
+                order.taker_amount,
+                PolymarketOrderSide::Buy
+            ),
+        );
     }
 
     #[rstest]
@@ -1463,7 +1505,7 @@ mod tests {
         dec!(0.961),
         dec!(5),
         3,
-        dec!(4.9948)
+        dec!(4.99479)
     )]
     #[case::immediate_live(
         PolymarketOrderSide::Buy,
@@ -1471,7 +1513,7 @@ mod tests {
         dec!(0.227),
         dec!(5),
         3,
-        dec!(4.977980)
+        dec!(4.977970)
     )]
     fn test_posted_limit_share_quantity_matches_signed_amounts(
         #[case] side: PolymarketOrderSide,
@@ -1621,6 +1663,101 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Polymarket market BUY amount 0.008823 pUSD truncates to zero at 2 decimal places",
+        );
+        assert_eq!(builder.last_timestamp_ms.load(Ordering::Relaxed), 0);
+    }
+
+    #[rstest]
+    #[case::below_next_tick(dec!(700_099), dec!(1_000_000), true)]
+    #[case::at_next_tick(dec!(700_100), dec!(1_000_000), false)]
+    #[case::above_next_tick(dec!(700_101), dec!(1_000_000), false)]
+    #[case::zero_shares(dec!(700_000), dec!(0), false)]
+    #[case::zero_budget(dec!(0), dec!(1_000_000), false)]
+    fn test_validate_buy_price_rounding(
+        #[case] maker: Decimal,
+        #[case] taker: Decimal,
+        #[case] accepted: bool,
+    ) {
+        assert_eq!(
+            validate_buy_price_rounding(dec!(0.7), maker, taker).is_ok(),
+            accepted
+        );
+    }
+
+    #[rstest]
+    #[case::paris(dec!(0.999), dec!(75.74), 3, dec!(75_815_810))]
+    #[case::tenth(dec!(0.7), dec!(5), 1, dec!(7_142_000))]
+    #[case::cent(dec!(0.07), dec!(1), 2, dec!(14_285_700))]
+    #[case::half_cent(dec!(0.335), dec!(1.5), 3, dec!(4_477_610))]
+    #[case::quarter_cent(dec!(0.4325), dec!(3), 4, dec!(6_936_416))]
+    #[case::ten_thousandth(dec!(0.4275), dec!(100), 4, dec!(233_918_128))]
+    fn test_build_market_buy_rounding_preserves_limit_tick(
+        #[case] price: Decimal,
+        #[case] amount: Decimal,
+        #[case] tick_decimals: u32,
+        #[case] expected_taker: Decimal,
+    ) {
+        let order = make_test_builder()
+            .build_market_order(
+                "1",
+                PolymarketOrderSide::Buy,
+                price,
+                amount,
+                false,
+                tick_decimals,
+            )
+            .unwrap();
+
+        assert_eq!(order.maker_amount, to_fixed_decimal(amount));
+        assert_eq!(order.taker_amount, expected_taker);
+        assert!(order.maker_amount >= price * order.taker_amount);
+        assert!(order.maker_amount < (price + dec!(0.0001)) * order.taker_amount);
+    }
+
+    #[rstest]
+    fn test_build_market_buy_rejects_rounding_across_finer_tick() {
+        let builder = make_test_builder();
+
+        let error = builder
+            .build_market_order("1", PolymarketOrderSide::Buy, dec!(0.7), dec!(1), false, 1)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("can match above limit price"));
+        assert_eq!(builder.last_timestamp_ms.load(Ordering::Relaxed), 0);
+    }
+
+    #[rstest]
+    fn test_build_immediate_buy_rejects_rounding_across_finer_tick(
+        #[values(PolymarketOrderType::FAK, PolymarketOrderType::FOK)]
+        order_type: PolymarketOrderType,
+    ) {
+        let builder = make_test_builder();
+
+        // The coarse tick permits three share decimals, but 0.7 can refine to 0.0001,
+        // 1 / 1.428 is above 0.7001 even though it is below the cached next tick of 0.8.
+        let error = builder
+            .build_limit_order(
+                "1",
+                PolymarketOrderSide::Buy,
+                dec!(0.7),
+                dec!(1.43),
+                order_type,
+                None,
+                false,
+                1,
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("can match above limit price"));
+        assert!(
+            posted_limit_share_quantity(
+                PolymarketOrderSide::Buy,
+                dec!(0.7),
+                dec!(1.43),
+                order_type,
+                1,
+            )
+            .is_err()
         );
         assert_eq!(builder.last_timestamp_ms.load(Ordering::Relaxed), 0);
     }

@@ -54,8 +54,10 @@ def _test_scoped_checks(failing_manifest: str | None) -> None:
     def run_process(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         _assert_equal(args[0], "cargo")
         _assert_equal(kwargs["root"], ROOT)
+
         if args[1:] == ["vet", "--version"]:
             return subprocess.CompletedProcess(args, 0, f"cargo-vet {version}", "")
+
         if args[1] == "metadata":
             _assert_equal(
                 args[2:],
@@ -68,6 +70,7 @@ def _test_scoped_checks(failing_manifest: str | None) -> None:
                     "1",
                 ],
             )
+
             return subprocess.CompletedProcess(
                 args,
                 0,
@@ -112,6 +115,7 @@ def _test_scoped_checks(failing_manifest: str | None) -> None:
     _assert_equal(checks, ["Cargo.toml", FUZZ_MANIFEST])
     _assert_equal(len(scoped_stores), 1)
     _assert_equal(scoped_stores[0].exists(), expected=False)
+
     if failing_manifest is not None:
         _assert_equal(f"cargo vet {failing_manifest} failed" in stderr.getvalue(), expected=True)
     _assert_equal(
@@ -127,5 +131,6 @@ if __name__ == "__main__":
         release_policy,
         {"version": policy["version"], "cargo": {"vet": policy["cargo"]["vet"]}},
     )
+
     for failing_manifest in (None, "Cargo.toml", FUZZ_MANIFEST):
         _test_scoped_checks(failing_manifest)

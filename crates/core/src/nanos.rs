@@ -32,8 +32,8 @@
 //! `UnixNanos` can be created from and serialized to various formats:
 //!
 //! - Integer values are interpreted as nanoseconds since the UNIX epoch.
-//! - Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds
-//!   using truncation, not rounding, for consistency with [`secs_to_nanos`](crate::datetime::secs_to_nanos)).
+//! - Floating-point values are interpreted as seconds since the UNIX epoch (rounded to the nearest
+//!   nanosecond, for consistency with [`secs_to_nanos`](crate::datetime::secs_to_nanos)).
 //! - String values may be:
 //!   - A numeric string (interpreted as nanoseconds).
 //!   - A floating-point string (interpreted as seconds, converted to nanoseconds).
@@ -648,8 +648,8 @@ impl UnixNanos {
     }
 }
 
-// Converts non-negative float seconds to nanoseconds, truncating (not rounding)
-// sub-nanosecond precision for consistency with `datetime::secs_to_nanos`.
+// Converts non-negative float seconds to nanoseconds, rounding to the nearest
+// nanosecond for consistency with `datetime::secs_to_nanos`.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -666,14 +666,14 @@ fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
 
     // Convert seconds to nanoseconds while checking for overflow.
     // We perform the multiplication in `f64`, then validate the
-    // result fits inside `u64` *before* truncating / casting.
+    // result fits inside `u64` *before* rounding / casting.
     let nanos_f64 = value * 1_000_000_000.0;
 
     if nanos_f64 >= U64_UPPER_BOUND_F64 {
         return Err(format!("Unix timestamp {value} seconds is out of range"));
     }
 
-    Ok(nanos_f64.trunc() as u64)
+    Ok(nanos_f64.round() as u64)
 }
 
 impl From<DurationNanos> for Duration {
@@ -1849,7 +1849,8 @@ mod tests {
     #[case("42", Some(42))]
     #[case("42.0", Some(42_000_000_000))]
     #[case("1e-3", Some(1_000_000))]
-    #[case("0.9999999999", Some(999_999_999))]
+    #[case("0.9999999999", Some(1_000_000_000))]
+    #[case("1.4e-9", Some(1))]
     #[case("18446744073709551615", Some(u64::MAX))]
     #[case("-1", None)]
     #[case("-0.5", None)]
@@ -1901,11 +1902,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deserialize_float_uses_truncation() {
-        // Truncation (not rounding) for consistency with secs_to_nanos() etc
+    fn test_deserialize_float_rounds_to_nearest() {
+        // Rounds to nearest for consistency with secs_to_nanos() etc
         let json = "0.9999999999";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.as_u64(), 999_999_999); // Truncated, not rounded to 1B
+        assert_eq!(deserialized.as_u64(), 1_000_000_000);
     }
 
     #[rstest]
