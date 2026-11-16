@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
+- Changed Bybit `use_ws_execution_fast` to reject the Option product type; use the standard stream
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
@@ -65,6 +66,9 @@ Released on TBD (UTC).
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
+- Fixed Bybit fast-execution fills recording zero commission when it cannot be derived; they are now skipped
+- Fixed Bybit fast-execution Linear commissions rounding below the venue fee
+- Fixed Bybit fast-execution fee rates loading after the private stream connects
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien

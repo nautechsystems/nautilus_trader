@@ -36,7 +36,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::{
     enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
@@ -960,11 +960,10 @@ pub fn parse_ws_fill_report(
 
 /// Parses a fast-stream WebSocket execution payload into a [`FillReport`].
 ///
-/// The `execution.fast` channel omits fee and exec-type fields. When account fee
-/// rates are supplied, commission is derived on a best-effort basis and is not
-/// venue-authoritative. Missing rates or derivation failures produce zero commission.
-/// Option fast fills always use zero commission because the payload lacks the inputs
-/// required by Bybit's Option fee formula. Liquidity side is derived from `isMaker`.
+/// The `execution.fast` channel omits fee and exec-type fields. Commission is derived
+/// from the supplied account fee rates and is not venue-authoritative. A charged Linear
+/// fee rounds up at the settlement currency precision, as the venue fee does. Liquidity
+/// side is derived from `isMaker`.
 ///
 /// `client_order_id` takes precedence over the payload's `orderLinkId`. The execution client
 /// supplies the identity it correlates by venue order ID for maker fills.
@@ -975,7 +974,11 @@ pub fn parse_ws_fill_report(
 ///
 /// # Errors
 ///
-/// Returns an error if price or quantity fields cannot be parsed or timestamps are invalid.
+/// Returns an error if:
+/// - Price or quantity fields cannot be parsed or timestamps are invalid.
+/// - The commission cannot be derived: `fee_rates` is `None`, the calculation fails, or
+///   the execution is an Option fill, whose payload lacks the inputs required by Bybit's
+///   Option fee formula.
 pub fn parse_ws_fill_report_fast(
     execution: &BybitWsAccountExecutionFast,
     account_id: AccountId,
@@ -1016,7 +1019,8 @@ pub fn parse_ws_fill_report_fast(
         last_qty,
         last_px,
         liquidity_side,
-    );
+    )
+    .context("cannot derive fast-execution commission")?;
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
     let client_order_id = client_order_id.or_else(|| {
         if execution.order_link_id.is_empty() {
@@ -1052,40 +1056,24 @@ fn derive_fast_commission(
     last_qty: Quantity,
     last_px: Price,
     liquidity_side: LiquiditySide,
-) -> Money {
-    let fee_rate = fee_rates.map(|rates| {
-        if liquidity_side == LiquiditySide::Maker {
-            rates.maker
-        } else {
-            rates.taker
-        }
-    });
+) -> anyhow::Result<Money> {
+    anyhow::ensure!(
+        execution.category != BybitProductType::Option,
+        "fast-execution payload lacks the inputs for the Option fee formula"
+    );
+
+    let rates =
+        fee_rates.with_context(|| format!("no cached fee rates for {}", instrument.id()))?;
+
+    let fee_rate = if liquidity_side == LiquiditySide::Maker {
+        rates.maker
+    } else {
+        rates.taker
+    };
 
     let currency = fast_commission_currency(execution, instrument, order_side, fee_rate);
-    let zero_commission = || {
-        Money::from_decimal(Decimal::ZERO, currency)
-            .expect("zero commission is valid in any currency")
-    };
 
-    if execution.category == BybitProductType::Option {
-        return zero_commission();
-    }
-
-    let Some(fee_rate) = fee_rate else {
-        return zero_commission();
-    };
-
-    match calculate_fast_commission(execution, instrument, fee_rate, last_qty, last_px, currency) {
-        Ok(commission) => commission,
-        Err(e) => {
-            log::warn!(
-                "Failed to derive fast execution commission for {} on {}, using zero: {e}",
-                execution.exec_id,
-                instrument.id()
-            );
-            zero_commission()
-        }
-    }
+    calculate_fast_commission(execution, instrument, fee_rate, last_qty, last_px, currency)
 }
 
 fn calculate_fast_commission(
@@ -1112,23 +1100,39 @@ fn calculate_fast_commission(
         return calculate_maker_taker_commission(instrument, last_qty, last_px, fee_rate, None);
     }
 
+    let settlement_currency = instrument.settlement_currency();
+
+    // Bybit rounds a charged Linear fee up at the settlement precision
+    if execution.category == BybitProductType::Linear && fee_rate > Decimal::ZERO {
+        let notional = instrument.try_calculate_notional_value(last_qty, last_px, None)?;
+        let amount = notional
+            .as_decimal()
+            .abs()
+            .checked_mul(fee_rate)
+            .ok_or_else(|| anyhow::anyhow!("fast commission calculation overflow"))?
+            .round_dp_with_strategy(
+                u32::from(settlement_currency.precision),
+                RoundingStrategy::AwayFromZero,
+            );
+        return Money::from_decimal(amount, settlement_currency).map_err(Into::into);
+    }
+
     let commission =
         calculate_maker_taker_commission(instrument, last_qty, last_px, fee_rate, None)?;
-    Money::from_decimal(commission.as_decimal(), instrument.settlement_currency())
-        .map_err(Into::into)
+    Money::from_decimal(commission.as_decimal(), settlement_currency).map_err(Into::into)
 }
 
 fn fast_commission_currency(
     execution: &BybitWsAccountExecutionFast,
     instrument: &InstrumentAny,
     order_side: OrderSide,
-    fee_rate: Option<Decimal>,
+    fee_rate: Decimal,
 ) -> Currency {
     if execution.category != BybitProductType::Spot {
         return instrument.settlement_currency();
     }
 
-    let is_rebate = execution.is_maker && fee_rate.is_some_and(|rate| rate < Decimal::ZERO);
+    let is_rebate = execution.is_maker && fee_rate < Decimal::ZERO;
     let use_base = matches!(
         (order_side, is_rebate),
         (OrderSide::Buy, false) | (OrderSide::Sell, true)
@@ -1886,21 +1890,23 @@ mod tests {
 
     #[rstest]
     // Maker fast fill: docs say orderLinkId is always empty -> client_order_id is None.
-    #[case(true, "", LiquiditySide::Maker, None)]
+    #[case(true, "", LiquiditySide::Maker, None, dec!(2.5))]
     // Taker fast fill: orderLinkId is populated -> client_order_id is set.
-    #[case(false, "link-1", LiquiditySide::Taker, Some("link-1"))]
+    #[case(false, "link-1", LiquiditySide::Taker, Some("link-1"), dec!(15))]
     fn parse_ws_fill_report_fast_maps_is_maker_and_link_id(
         #[case] is_maker: bool,
         #[case] order_link_id: &str,
         #[case] expected_liquidity: LiquiditySide,
         #[case] expected_cid: Option<&str>,
+        #[case] expected_commission: Decimal,
     ) {
         let instrument = linear_instrument();
         let exec = fast_execution(is_maker, order_link_id);
         let account_id = AccountId::new("BYBIT-001");
+        let rates = MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006));
 
         let report =
-            parse_ws_fill_report_fast(&exec, account_id, &instrument, None, None, None, TS)
+            parse_ws_fill_report_fast(&exec, account_id, &instrument, Some(rates), None, None, TS)
                 .unwrap();
 
         assert_eq!(report.account_id, account_id);
@@ -1910,7 +1916,8 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(50000.0));
-        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.commission.as_decimal(), expected_commission);
+        assert_eq!(report.commission.currency.code, "USDT");
         assert_eq!(report.liquidity_side, expected_liquidity);
         assert_eq!(
             report.client_order_id.map(|c| c.to_string()),
@@ -1918,6 +1925,31 @@ mod tests {
         );
         assert_eq!(report.venue_position_id, None);
         assert_eq!(report.ts_event, UnixNanos::new(1_716_800_399_334_000_000));
+    }
+
+    #[rstest]
+    #[case::charge_midpoint(false, "50000.3", dec!(0.00055), dec!(0.02750017))]
+    #[case::charge_below_midpoint(false, "50000.1", dec!(0.00051), dec!(0.02550006))]
+    #[case::rebate_below_midpoint(true, "50000.1", dec!(-0.00051), dec!(-0.02550005))]
+    fn parse_ws_fill_report_fast_rounds_linear_charge_up(
+        #[case] is_maker: bool,
+        #[case] exec_price: &str,
+        #[case] fee_rate: Decimal,
+        #[case] expected_commission: Decimal,
+    ) {
+        let instrument = linear_instrument();
+        let mut exec = fast_execution(is_maker, "link-1");
+        exec.exec_price = exec_price.to_string();
+        exec.exec_qty = "0.001".to_string();
+        let account_id = AccountId::new("BYBIT-001");
+        let rates = MakerTakerFeeRates::new(fee_rate, fee_rate);
+
+        let report =
+            parse_ws_fill_report_fast(&exec, account_id, &instrument, Some(rates), None, None, TS)
+                .unwrap();
+
+        assert_eq!(report.commission.as_decimal(), expected_commission);
+        assert_eq!(report.commission.currency.code, "USDT");
     }
 
     #[rstest]
@@ -2006,7 +2038,7 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_ws_fill_report_fast_option_missing_data_uses_zero_settlement_commission() {
+    fn parse_ws_fill_report_fast_option_returns_error() {
         let instrument = option_instrument_with_distinct_settlement();
         let mut exec = fast_execution(false, "link-1");
         exec.category = BybitProductType::Option;
@@ -2015,7 +2047,7 @@ mod tests {
         exec.exec_price = "1000".to_string();
         let rates = MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0002));
 
-        let report = parse_ws_fill_report_fast(
+        let error = parse_ws_fill_report_fast(
             &exec,
             AccountId::new("BYBIT-001"),
             &instrument,
@@ -2024,19 +2056,22 @@ mod tests {
             None,
             TS,
         )
-        .unwrap();
+        .unwrap_err();
 
-        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
-        assert_eq!(report.commission.currency.code, "USDC");
+        assert_eq!(
+            format!("{error:#}"),
+            "cannot derive fast-execution commission: \
+             fast-execution payload lacks the inputs for the Option fee formula"
+        );
     }
 
     #[rstest]
-    fn parse_ws_fill_report_fast_missing_spot_rate_uses_side_currency() {
+    fn parse_ws_fill_report_fast_missing_rates_returns_error() {
         let instrument = spot_instrument();
         let mut exec = fast_execution(false, "link-1");
         exec.category = BybitProductType::Spot;
 
-        let report = parse_ws_fill_report_fast(
+        let error = parse_ws_fill_report_fast(
             &exec,
             AccountId::new("BYBIT-001"),
             &instrument,
@@ -2045,19 +2080,24 @@ mod tests {
             None,
             TS,
         )
-        .unwrap();
+        .unwrap_err();
 
-        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
-        assert_eq!(report.commission.currency.code, "BTC");
+        assert_eq!(
+            format!("{error:#}"),
+            format!(
+                "cannot derive fast-execution commission: no cached fee rates for {}",
+                instrument.id()
+            )
+        );
     }
 
     #[rstest]
-    fn parse_ws_fill_report_fast_derivation_overflow_preserves_fill() {
+    fn parse_ws_fill_report_fast_derivation_overflow_returns_error() {
         let instrument = linear_instrument();
         let exec = fast_execution(false, "link-1");
         let rates = MakerTakerFeeRates::new(dec!(0.0001), Decimal::MAX);
 
-        let report = parse_ws_fill_report_fast(
+        let error = parse_ws_fill_report_fast(
             &exec,
             AccountId::new("BYBIT-001"),
             &instrument,
@@ -2066,11 +2106,12 @@ mod tests {
             None,
             TS,
         )
-        .unwrap();
+        .unwrap_err();
 
-        assert_eq!(report.trade_id.to_string(), "abc-123");
-        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
-        assert_eq!(report.commission.currency.code, "USDT");
+        assert!(
+            format!("{error:#}").starts_with("cannot derive fast-execution commission: "),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[rstest]
@@ -2084,7 +2125,7 @@ mod tests {
             &exec,
             account_id,
             &instrument,
-            None,
+            Some(MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006))),
             None,
             Some(venue_pid),
             TS,
