@@ -135,6 +135,9 @@ pub const LOCAL_ACTIVE_ORDER_STATUSES: &[OrderStatus] = &[
     OrderStatus::Released,
 ];
 
+// Shorter histories are scanned, which costs less than hashing each trade ID
+const FILL_INDEX_MIN_EVENTS: usize = 16;
+
 #[derive(thiserror::Error, Debug)]
 pub enum OrderError {
     #[error("Order not found: {0}")]
@@ -695,6 +698,8 @@ pub struct OrderCore {
     pending_previous_status: Option<OrderStatus>,
     #[serde(skip)]
     fill_totals: Option<FillTotals>,
+    #[serde(skip)]
+    fill_index: Option<AHashMap<TradeId, FillRecord>>,
     pub commissions: IndexMap<Currency, Money>,
     pub venue_order_ids: Vec<VenueOrderId>,
     pub trade_ids: Vec<TradeId>,
@@ -755,6 +760,7 @@ impl OrderCore {
             pending_commands: Vec::new(),
             pending_previous_status: None,
             fill_totals: Some(FillTotals::default()),
+            fill_index: None,
             commissions: IndexMap::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
@@ -819,10 +825,18 @@ impl OrderCore {
 
         // Check for duplicate fill before state transition to maintain consistency
         if let OrderEventAny::Filled(fill) = &event {
-            has_prior_fill_void = self.has_prior_fill_void(fill.trade_id);
-            if self.is_price_restatement_fill(fill)? {
-                self.restate_fill_price(event);
-                return Ok(());
+            let record = self.fill_record(fill.trade_id);
+            has_prior_fill_void = record.is_voided;
+
+            match record.last_px {
+                Some(price) if price == fill.last_px => {
+                    return Err(OrderError::DuplicateFill(fill.trade_id));
+                }
+                Some(_) => {
+                    self.restate_fill_price(event);
+                    return Ok(());
+                }
+                None => {}
             }
         }
 
@@ -849,7 +863,7 @@ impl OrderCore {
                         }) =>
             {
                 // Cache persistence writes last_event after every successful apply
-                self.events.push(event);
+                self.push_event(event);
                 return Ok(());
             }
             _ => {}
@@ -1050,7 +1064,7 @@ impl OrderCore {
         }
 
         self.ts_last = event.ts_event();
-        self.events.push(event);
+        self.push_event(event);
     }
 
     fn denied(&mut self, event: &OrderDenied) {
@@ -1603,15 +1617,6 @@ impl OrderCore {
         );
     }
 
-    fn has_prior_fill_void(&self, trade_id: TradeId) -> bool {
-        self.events.iter().any(|candidate| {
-            matches!(
-                candidate,
-                OrderEventAny::FillVoided(existing) if existing.trade_id == trade_id
-            )
-        })
-    }
-
     fn update_fill_status(
         &mut self,
         event: &OrderFilled,
@@ -1652,34 +1657,60 @@ impl OrderCore {
                     tags.contains(&Ustr::from(FILL_REPORT_ORDER_TAG))))
     }
 
-    fn is_price_restatement_fill(&self, fill: &OrderFilled) -> Result<bool, OrderError> {
-        let mut latest = None;
+    fn fill_record(&mut self, trade_id: TradeId) -> FillRecord {
+        if self.fill_index.is_none() && self.events.len() >= FILL_INDEX_MIN_EVENTS {
+            self.fill_index = Some(self.fill_index_from_events());
+        }
 
-        for candidate in &self.events {
-            let OrderEventAny::Filled(existing) = candidate else {
-                continue;
-            };
+        if let Some(index) = &self.fill_index {
+            return index.get(&trade_id).copied().unwrap_or_default();
+        }
 
-            if existing.trade_id != fill.trade_id {
-                continue;
+        let mut record = FillRecord::default();
+
+        for event in &self.events {
+            match event {
+                OrderEventAny::Filled(fill) if fill.trade_id == trade_id => {
+                    record.last_px = Some(fill.last_px);
+                }
+                OrderEventAny::FillVoided(void) if void.trade_id == trade_id => {
+                    record.is_voided = true;
+                }
+                _ => {}
             }
-
-            latest = Some(existing.last_px);
         }
 
-        match latest {
-            Some(price) if price == fill.last_px => Err(OrderError::DuplicateFill(fill.trade_id)),
-            Some(_) => Ok(true),
-            None => Ok(false),
+        record
+    }
+
+    fn fill_index_from_events(&self) -> AHashMap<TradeId, FillRecord> {
+        let mut index = AHashMap::<TradeId, FillRecord>::new();
+
+        for event in &self.events {
+            if let Some(trade_id) = fill_trade_id(event) {
+                index.entry(*trade_id).or_default().update(event);
+            }
         }
+
+        index
     }
 
     fn restate_fill_price(&mut self, event: OrderEventAny) {
         self.ts_last = event.ts_event();
-        self.events.push(event);
+        self.push_event(event);
         let totals = self.fill_totals_from_events();
         self.avg_px = totals.average();
         self.fill_totals = Some(totals);
+    }
+
+    fn push_event(&mut self, event: OrderEventAny) {
+        if let Some(index) = &mut self.fill_index
+            && let Some(trade_id) = fill_trade_id(&event)
+        {
+            index.entry(*trade_id).or_default().update(&event);
+        }
+
+        self.events.push(event);
     }
 
     fn fill_totals_from_events(&self) -> FillTotals {
@@ -1834,6 +1865,7 @@ impl OrderCore {
     /// average-price fold from the combined history; other derived state is unchanged.
     pub fn prepend_events(&mut self, events: impl IntoIterator<Item = OrderEventAny>) {
         self.fill_totals = None;
+        self.fill_index = None;
         self.events.splice(..0, events);
     }
 
@@ -1873,6 +1905,35 @@ impl FillTotals {
 
     fn average(&self) -> Option<Decimal> {
         self.notional.checked_div(self.quantity)
+    }
+}
+
+// What `events` holds for one trade ID: the latest fill price and whether a fill void exists.
+// A present `fill_index` equals folding every fill and fill void in history order, and
+// `push_event` keeps it so. Deserialization and prepended history leave it absent; the next
+// fill then scans, or rebuilds it once history reaches `FILL_INDEX_MIN_EVENTS`.
+// Fill arithmetic stays with `FillTotals`.
+#[derive(Clone, Copy, Debug, Default)]
+struct FillRecord {
+    last_px: Option<Price>,
+    is_voided: bool,
+}
+
+impl FillRecord {
+    fn update(&mut self, event: &OrderEventAny) {
+        match event {
+            OrderEventAny::Filled(fill) => self.last_px = Some(fill.last_px),
+            OrderEventAny::FillVoided(_) => self.is_voided = true,
+            _ => {}
+        }
+    }
+}
+
+fn fill_trade_id(event: &OrderEventAny) -> Option<&TradeId> {
+    match event {
+        OrderEventAny::Filled(fill) => Some(&fill.trade_id),
+        OrderEventAny::FillVoided(void) => Some(&void.trade_id),
+        _ => None,
     }
 }
 
@@ -2096,12 +2157,29 @@ mod tests {
         order
     }
 
+    // Lengthens history with events that leave fill state unchanged
+    fn pad_history(order: &mut MarketOrder, count: usize) {
+        for _ in 0..count {
+            order
+                .apply(OrderEventAny::Updated(
+                    OrderUpdatedSpec::builder()
+                        .quantity(order.quantity())
+                        .build(),
+                ))
+                .unwrap();
+        }
+    }
+
+    // The initialized and accepted events complete the shortest indexed history
+    const INDEXED_PADDING: usize = FILL_INDEX_MIN_EVENTS - 2;
+
     #[rstest]
-    #[case::cloned("clone")]
-    #[case::snapshot("snapshot")]
-    #[case::replayed("replay")]
-    fn test_fill_totals_survive_corrections_and_restoration(#[case] restoration: &str) {
+    fn test_fill_totals_survive_corrections_and_restoration(
+        #[values("clone", "snapshot", "replay")] restoration: &str,
+        #[values(0, INDEXED_PADDING)] padding: usize,
+    ) {
         let mut order = market_order_with_fills(OrderSide::Buy, Quantity::from(20), &[]);
+        pad_history(&mut order, padding);
         let first = OrderFilledSpec::builder()
             .trade_id(TradeId::from("T-1"))
             .last_qty(Quantity::from(4))
@@ -2122,9 +2200,13 @@ mod tests {
             .last_qty(Quantity::from(2))
             .last_px(Price::from("0.15"))
             .build();
+        let mut restated = first.clone();
+        restated.last_px = Price::from("1.50");
+
         let steps = [
             (
                 OrderEventAny::Filled(first.clone()),
+                false,
                 4,
                 0,
                 16,
@@ -2132,6 +2214,39 @@ mod tests {
             ),
             (
                 OrderEventAny::Filled(second.clone()),
+                false,
+                6,
+                0,
+                14,
+                Some(dec!(1.3333333333333333333333333333)),
+            ),
+            (
+                OrderEventAny::Filled(first.clone()),
+                true,
+                6,
+                0,
+                14,
+                Some(dec!(1.3333333333333333333333333333)),
+            ),
+            (
+                OrderEventAny::Filled(restated.clone()),
+                false,
+                6,
+                0,
+                14,
+                Some(dec!(1.6666666666666666666666666667)),
+            ),
+            (
+                OrderEventAny::Filled(restated),
+                true,
+                6,
+                0,
+                14,
+                Some(dec!(1.6666666666666666666666666667)),
+            ),
+            (
+                OrderEventAny::Filled(first.clone()),
+                false,
                 6,
                 0,
                 14,
@@ -2139,6 +2254,7 @@ mod tests {
             ),
             (
                 OrderEventAny::FillVoided(matching_fill_void(&first, Quantity::from(1), None)),
+                false,
                 5,
                 1,
                 15,
@@ -2146,6 +2262,7 @@ mod tests {
             ),
             (
                 OrderEventAny::FillVoided(matching_fill_void(&first, Quantity::from(3), None)),
+                false,
                 3,
                 3,
                 17,
@@ -2153,6 +2270,7 @@ mod tests {
             ),
             (
                 OrderEventAny::Filled(third.clone()),
+                false,
                 4,
                 3,
                 16,
@@ -2160,6 +2278,15 @@ mod tests {
             ),
             (
                 OrderEventAny::FillVoided(matching_fill_void(&first, Quantity::from(4), None)),
+                false,
+                3,
+                4,
+                17,
+                Some(dec!(0.3333333333333333333333333333)),
+            ),
+            (
+                OrderEventAny::Filled(first.clone()),
+                true,
                 3,
                 4,
                 17,
@@ -2167,6 +2294,7 @@ mod tests {
             ),
             (
                 OrderEventAny::FillVoided(matching_fill_void(&second, Quantity::from(2), None)),
+                false,
                 1,
                 6,
                 19,
@@ -2174,16 +2302,24 @@ mod tests {
             ),
             (
                 OrderEventAny::FillVoided(matching_fill_void(&third, Quantity::from(1), None)),
+                false,
                 0,
                 7,
                 20,
                 None,
             ),
-            (OrderEventAny::Filled(fourth), 2, 7, 18, Some(dec!(0.15))),
+            (
+                OrderEventAny::Filled(fourth),
+                false,
+                2,
+                7,
+                18,
+                Some(dec!(0.15)),
+            ),
         ];
         let mut expected_events = OrderCore::events(&order).to_vec();
 
-        for (event, filled, voided, leaves, average) in steps {
+        for (event, is_duplicate, filled, voided, leaves, average) in steps {
             let mut restored = match restoration {
                 "clone" => order.clone(),
                 "snapshot" => {
@@ -2208,9 +2344,23 @@ mod tests {
                 _ => unreachable!(),
             };
 
-            order.apply(event.clone()).unwrap();
-            restored.apply(event.clone()).unwrap();
-            expected_events.push(event);
+            let result = order.apply(event.clone());
+            let restored_result = restored.apply(event.clone());
+
+            if is_duplicate {
+                assert!(matches!(
+                    result,
+                    Err(OrderError::DuplicateFill(trade_id)) if trade_id == first.trade_id
+                ));
+                assert!(matches!(
+                    restored_result,
+                    Err(OrderError::DuplicateFill(trade_id)) if trade_id == first.trade_id
+                ));
+            } else {
+                result.unwrap();
+                restored_result.unwrap();
+                expected_events.push(event);
+            }
 
             assert_eq!(restored.avg_px(), average);
             assert_eq!(restored.filled_qty(), Quantity::from(filled));
@@ -2223,15 +2373,47 @@ mod tests {
             );
             order = restored;
         }
+
+        let mut records: Vec<_> = order
+            .fill_index
+            .iter()
+            .flatten()
+            .map(|(trade_id, record)| (trade_id.to_string(), record.last_px, record.is_voided))
+            .collect();
+        records.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let expected_records = if padding == 0 {
+            vec![]
+        } else {
+            vec![
+                ("T-1".to_string(), Some(Price::from("1.00")), true),
+                ("T-2".to_string(), Some(Price::from("2.00")), true),
+                ("T-3".to_string(), Some(Price::from("-3.00")), true),
+                ("T-4".to_string(), Some(Price::from("0.15")), false),
+            ]
+        };
+
+        assert_eq!(order.fill_index.is_some(), padding == INDEXED_PADDING);
+        assert_eq!(records, expected_records);
     }
 
     #[rstest]
-    fn test_prepended_events_invalidate_fill_totals_without_applying_state() {
-        let mut order = market_order_with_fills(
-            OrderSide::Buy,
-            Quantity::from(10),
-            &[fill("T-CURRENT", "1", "2.00")],
-        );
+    #[case::scanned(0)]
+    #[case::indexed(INDEXED_PADDING)]
+    fn test_prepended_events_invalidate_fill_totals_without_applying_state(#[case] padding: usize) {
+        let mut order = market_order_with_fills(OrderSide::Buy, Quantity::from(10), &[]);
+        pad_history(&mut order, padding);
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("T-CURRENT"))
+                    .last_qty(Quantity::from(1))
+                    .last_px(Price::from("2.00"))
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.fill_index.is_some(), padding == INDEXED_PADDING);
+
         let historical = [
             OrderEventAny::Filled(
                 OrderFilledSpec::builder()
@@ -2250,11 +2432,16 @@ mod tests {
         ];
         let mut expected_events = historical.to_vec();
         expected_events.extend_from_slice(OrderCore::events(&order));
+        let duplicate = historical[0].clone();
         order.prepend_events(historical);
         assert_eq!(OrderCore::events(&order), expected_events);
         assert_eq!(order.avg_px(), Some(dec!(2)));
         assert_eq!(order.filled_qty(), Quantity::from(1));
         assert_eq!(order.leaves_qty(), Quantity::from(9));
+        assert!(matches!(
+            order.apply(duplicate),
+            Err(OrderError::DuplicateFill(trade_id)) if trade_id == TradeId::from("T-PAST-1")
+        ));
 
         let next = OrderEventAny::Filled(
             OrderFilledSpec::builder()
@@ -2300,8 +2487,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_restored_unknown_fill_void_applies_after_matching_fill() {
+    #[case::scanned(0)]
+    #[case::indexed(INDEXED_PADDING)]
+    fn test_restored_unknown_fill_void_applies_after_matching_fill(#[case] padding: usize) {
         let mut order = market_order_with_fills(OrderSide::Buy, Quantity::from(10), &[]);
+        pad_history(&mut order, padding);
         let first = OrderFilledSpec::builder()
             .trade_id(TradeId::from("T-RESTORED"))
             .last_qty(Quantity::from(4))

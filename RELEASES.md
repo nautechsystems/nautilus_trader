@@ -108,6 +108,7 @@ Released on TBD (UTC).
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
 - Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
+- Optimized order fill processing for orders with many fills
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-audit` tool to v0.23.0
 - Upgraded `cargo-binstall` tool to v1.27.0
