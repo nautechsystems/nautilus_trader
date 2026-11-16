@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed Bybit fast-execution fills recording zero commission when it cannot be derived; they are now skipped
 - Fixed Bybit fast-execution Linear commissions rounding below the venue fee
 - Fixed Bybit fast-execution fee rates loading after the private stream connects
+- Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
