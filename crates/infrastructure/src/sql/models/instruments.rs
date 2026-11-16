@@ -21,7 +21,7 @@ use std::str::FromStr;
 
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    enums::{AssetClass, OptionKind, SettlementType},
+    enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
@@ -598,7 +598,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
-        let (underlying_instrument_id, settlement_type) = read_option_terms(row)?;
+        let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let exercise_style = read_optional_parsed(row, "exercise_style")?;
+        let settlement_type = read_optional_parsed(row, "settlement_type")?;
 
         let inst = CryptoOption::builder()
             .instrument_id(id)
@@ -609,6 +611,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
             .is_inverse(is_inverse)
             .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .activation_ns(activation_ns)
@@ -1053,7 +1056,9 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
 
         let info: Option<Json<Params>> = row.try_get("info")?;
 
-        let (underlying_instrument_id, settlement_type) = read_option_terms(row)?;
+        let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let exercise_style = read_optional_parsed(row, "exercise_style")?;
+        let settlement_type = read_optional_parsed(row, "settlement_type")?;
 
         let inst = OptionContract::builder()
             .instrument_id(id)
@@ -1063,6 +1068,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
             .underlying(underlying)
             .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .currency(currency)
@@ -1731,32 +1737,17 @@ fn read_optional_quantity(row: &PgRow, column: &str) -> Option<Quantity> {
         .and_then(|res| res.map(|res| Quantity::from(res.as_str())))
 }
 
-fn read_option_terms(
-    row: &PgRow,
-) -> Result<(Option<InstrumentId>, Option<SettlementType>), sqlx::Error> {
-    let underlying_instrument_id = row
-        .try_get::<Option<String>, _>("underlying_instrument_id")?
+fn read_optional_parsed<T>(row: &PgRow, column: &str) -> Result<Option<T>, sqlx::Error>
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    row.try_get::<Option<String>, _>(column)?
         .map(|value| {
-            value
-                .parse::<InstrumentId>()
-                .map_err(|e| sqlx::Error::ColumnDecode {
-                    index: "underlying_instrument_id".to_string(),
-                    source: Box::new(e),
-                })
+            value.parse::<T>().map_err(|e| sqlx::Error::ColumnDecode {
+                index: column.to_string(),
+                source: Box::new(e),
+            })
         })
-        .transpose()?;
-
-    let settlement_type = row
-        .try_get::<Option<String>, _>("settlement_type")?
-        .map(|value| {
-            value
-                .parse::<SettlementType>()
-                .map_err(|e| sqlx::Error::ColumnDecode {
-                    index: "settlement_type".to_string(),
-                    source: Box::new(e),
-                })
-        })
-        .transpose()?;
-
-    Ok((underlying_instrument_id, settlement_type))
+        .transpose()
 }

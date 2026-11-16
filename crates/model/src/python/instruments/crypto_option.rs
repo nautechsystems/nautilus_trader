@@ -26,7 +26,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::{OptionKind, SettlementType},
+    enums::{ExerciseStyle, OptionKind, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::CryptoOption,
     python::instruments::register_crypto_currencies_from_dict,
@@ -39,7 +39,7 @@ impl CryptoOption {
     /// Represents a generic option contract instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None, underlying_instrument_id=None, settlement_type=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, option_kind, strike_price, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None, underlying_instrument_id=None, exercise_style=None, settlement_type=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -70,6 +70,7 @@ impl CryptoOption {
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
         underlying_instrument_id: Option<InstrumentId>,
+        exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
     ) -> PyResult<Self> {
         // Convert Python dict to Params
@@ -107,6 +108,7 @@ impl CryptoOption {
             .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
             .maybe_info(info_map)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .ts_event(ts_event.into())
             .ts_init(ts_init.into())
@@ -173,6 +175,12 @@ impl CryptoOption {
     #[pyo3(name = "underlying_instrument_id")]
     fn py_underlying_instrument_id(&self) -> Option<InstrumentId> {
         self.underlying_instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "exercise_style")]
+    fn py_exercise_style(&self) -> Option<ExerciseStyle> {
+        self.exercise_style
     }
 
     #[getter]
@@ -345,6 +353,10 @@ impl CryptoOption {
         dict.set_item(
             "underlying_instrument_id",
             self.underlying_instrument_id.map(|id| id.to_string()),
+        )?;
+        dict.set_item(
+            "exercise_style",
+            self.exercise_style.map(|style| style.to_string()),
         )?;
         dict.set_item(
             "settlement_type",

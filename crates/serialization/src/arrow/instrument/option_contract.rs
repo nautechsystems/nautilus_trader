@@ -25,7 +25,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
-    enums::{AssetClass, OptionKind, SettlementType},
+    enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::option_contract::OptionContract,
     types::{price::Price, quantity::Quantity},
@@ -33,7 +33,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::validate_required_instrument_columns;
+use super::{optional_parsed_value, validate_required_instrument_columns};
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
@@ -72,6 +72,7 @@ impl ArrowSchemaProvider for OptionContract {
             Field::new("ts_event", timestamp_data_type(), false),
             Field::new("ts_init", timestamp_data_type(), false),
             Field::new("underlying_instrument_id", DataType::Utf8, true),
+            Field::new("exercise_style", DataType::Utf8, true),
             Field::new("settlement_type", DataType::Utf8, true),
         ];
 
@@ -114,6 +115,7 @@ impl EncodeToRecordBatch for OptionContract {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
         let mut underlying_instrument_id_builder = StringBuilder::new();
+        let mut exercise_style_builder = StringBuilder::new();
         let mut settlement_type_builder = StringBuilder::new();
 
         for oc in data.iter().map(Borrow::borrow) {
@@ -192,6 +194,7 @@ impl EncodeToRecordBatch for OptionContract {
             ts_init_builder.append_value(oc.ts_init.as_u64());
             underlying_instrument_id_builder
                 .append_option(oc.underlying_instrument_id.map(|id| id.to_string()));
+            exercise_style_builder.append_option(oc.exercise_style.map(|style| style.to_string()));
             settlement_type_builder.append_option(oc.settlement_type.map(|kind| kind.to_string()));
         }
 
@@ -225,6 +228,7 @@ impl EncodeToRecordBatch for OptionContract {
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
                 Arc::new(underlying_instrument_id_builder.finish()),
+                Arc::new(exercise_style_builder.finish()),
                 Arc::new(settlement_type_builder.finish()),
             ],
         )
@@ -306,6 +310,8 @@ pub fn decode_option_contract_batch(
 
     let underlying_instrument_id_values =
         extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
+    let exercise_style_values =
+        extract_optional_string_column_by_name(record_batch, "exercise_style")?;
     let settlement_type_values =
         extract_optional_string_column_by_name(record_batch, "settlement_type")?;
 
@@ -332,23 +338,15 @@ pub fn decode_option_contract_batch(
             Some(Ustr::from(exchange_str))
         };
 
-        let underlying_instrument_id = underlying_instrument_id_values
-            .filter(|values| !values.is_null(i))
-            .map(|values| {
-                InstrumentId::from_str(values.value(i)).map_err(|e| {
-                    EncodingError::ParseError("underlying_instrument_id", format!("row {i}: {e}"))
-                })
-            })
-            .transpose()?;
+        let underlying_instrument_id = optional_parsed_value(
+            underlying_instrument_id_values,
+            "underlying_instrument_id",
+            i,
+        )?;
 
-        let settlement_type = settlement_type_values
-            .filter(|values| !values.is_null(i))
-            .map(|values| {
-                SettlementType::from_str(values.value(i)).map_err(|e| {
-                    EncodingError::ParseError("settlement_type", format!("row {i}: {e}"))
-                })
-            })
-            .transpose()?;
+        let exercise_style = optional_parsed_value(exercise_style_values, "exercise_style", i)?;
+
+        let settlement_type = optional_parsed_value(settlement_type_values, "settlement_type", i)?;
 
         let option_kind = OptionKind::from_str(option_kind_values.value(i))
             .map_err(|e| EncodingError::ParseError("option_kind", format!("row {i}: {e}")))?;
@@ -411,6 +409,7 @@ pub fn decode_option_contract_batch(
             .underlying(underlying)
             .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
             .currency(currency)

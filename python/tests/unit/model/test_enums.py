@@ -23,6 +23,7 @@ from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ContingencyType
+from nautilus_trader.model import ExerciseStyle
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
@@ -132,6 +133,10 @@ def test_side_enums_accept_domain_tokens(
     ("enum_type", "expected"),
     [
         (ContingencyType, [ContingencyType.OCO, ContingencyType.OTO, ContingencyType.OUO]),
+        (
+            ExerciseStyle,
+            [ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+        ),
         (SettlementType, [SettlementType.CASH, SettlementType.PHYSICAL]),
         (
             TrailingOffsetType,
@@ -192,6 +197,9 @@ def test_optional_domain_enums_retain_none_compatibility(
 @pytest.mark.parametrize(
     ("enum_type", "member", "name"),
     [
+        (ExerciseStyle, ExerciseStyle.AMERICAN, "AMERICAN"),
+        (ExerciseStyle, ExerciseStyle.EUROPEAN, "EUROPEAN"),
+        (ExerciseStyle, ExerciseStyle.BERMUDAN, "BERMUDAN"),
         (InstrumentClass, InstrumentClass.SPOT, "SPOT"),
         (SettlementType, SettlementType.CASH, "CASH"),
         (SettlementType, SettlementType.PHYSICAL, "PHYSICAL"),
@@ -285,7 +293,10 @@ def test_aggressor_side_has_no_alias_members() -> None:
         _ = AggressorSide.SELLER
 
 
-@pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType, SettlementType])
+@pytest.mark.parametrize(
+    "enum_type",
+    [BookType, ExerciseStyle, OrderSide, OrderType, SettlementType],
+)
 def test_workflow_enums_reject_malformed_values(enum_type: object) -> None:
     """
     Test workflow enums reject malformed values.

@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
 
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS info JSON;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS underlying_instrument_id TEXT;
+ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS exercise_style TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS settlement_type TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS defi_currency_codes TEXT[];
 -- Maker/taker fee rates are account-owned; drop the retired instrument columns from
