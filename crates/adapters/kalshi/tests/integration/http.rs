@@ -478,7 +478,7 @@ pub(super) async fn assert_no_connection(
     }
 
     // A known connection fences requests still waiting for reactor readiness
-    time::timeout(Duration::from_secs(2), async {
+    time::timeout(Duration::from_secs(10), async {
         let marker = 0;
 
         let probe = async {

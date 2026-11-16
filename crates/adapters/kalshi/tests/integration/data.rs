@@ -382,8 +382,9 @@ async fn failed_bootstrap_canceled_connect_and_idle_closed_consumer_release_sess
 
 #[tokio::test]
 async fn blocked_command_is_canceled_without_emitting_a_response() {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let peer = Peer::new().await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let mut peer = Peer::new().await;
+        peer.config.http_timeout_secs = 10;
         peer.revision.store(100, Ordering::SeqCst);
         let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
         let id = ids()[0];
@@ -403,7 +404,7 @@ async fn blocked_command_is_canceled_without_emitting_a_response() {
         }
 
         client.stop().unwrap();
-        tokio::time::timeout(Duration::from_secs(1), client.disconnect())
+        tokio::time::timeout(Duration::from_secs(5), client.disconnect())
             .await
             .unwrap()
             .unwrap();

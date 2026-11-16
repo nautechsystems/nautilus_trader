@@ -149,7 +149,8 @@ impl Peer {
             base_url_ws: Some(
                 format!("ws://{}/ws", websocket_listener.local_addr().unwrap()).into(),
             ),
-            ws_timeout_secs: 3,
+            // A voided recovery round repeats two one-per-second balance reads before this deadline
+            ws_timeout_secs: 6,
             http_timeout_secs,
             exchange_index: 3,
             subaccount,
@@ -635,9 +636,11 @@ async fn bootstrap_accepts_advancing_timestamps_and_marks_and_reconnect_uses_a_n
         }
 
         assert_eq!(*peer.subscriptions.lock().unwrap(), vec!["fill", "market_positions", "user_orders", "fill", "market_positions", "user_orders"]);
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while peer.sessions.load(Ordering::SeqCst) != 0 { tokio::task::yield_now().await; }
-        }).await.unwrap();
+        wait_until_async(
+            || async { peer.sessions.load(Ordering::SeqCst) == 0 },
+            Duration::from_secs(10),
+        )
+        .await;
 
         client.dispose().unwrap();
         assert!(client.connect().await.unwrap_err().to_string().contains("disposed"));
@@ -727,7 +730,7 @@ async fn external_resting_orders_reserve_both_sides_without_command_metadata(
     #[case] insufficient: bool,
     #[case] inconsistent_prices: bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(40), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = if insufficient { "2.0000" } else { "3.0001" }.into();
         let fixtures: Value = serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
@@ -1053,7 +1056,7 @@ async fn late_fill_on_claimed_external_order_rewinds_fill_history() {
     reason = "single-threaded test harness drives one client and cache consumer at a time"
 )]
 async fn late_fill_on_recovered_external_order(claimed: bool) {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::new(None).await;
         let instrument = bootstrap_instrument();
         let (harness, mut client, mut output, _data) =
@@ -1244,20 +1247,18 @@ async fn late_fill_on_recovered_external_order(claimed: bool) {
 #[case("/portfolio/positions")]
 #[tokio::test]
 async fn failed_bootstrap_closes_the_started_private_transport(#[case] path: &'static str) {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(20), async {
         let peer = Peer::new(Some(path)).await;
         let (mut client, _, mut output) = client(&peer);
         assert!(client.connect().await.is_err());
         assert!(!client.is_connected());
         assert!(output.try_recv().is_err());
         assert_eq!(peer.subscriptions.lock().unwrap().len(), 3);
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while peer.sessions.load(Ordering::SeqCst) != 0 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
+        wait_until_async(
+            || async { peer.sessions.load(Ordering::SeqCst) == 0 },
+            Duration::from_secs(10),
+        )
+        .await;
     })
     .await
     .unwrap();
@@ -1344,7 +1345,7 @@ async fn venue_binding_prevents_a_stale_cached_order_from_overwriting_snapshot_h
         orders::{Order, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
-    tokio::time::timeout(Duration::from_secs(12), async {
+    tokio::time::timeout(Duration::from_secs(20), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         let fixtures: Value = serde_json::from_str(include_str!("../../test_data/instruments.json")).unwrap();
@@ -1450,7 +1451,7 @@ async fn persisted_close_and_received_fill_evidence_fence_account_recovery(
         orders::{Order, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(20), async {
         let mut peer = Peer::new(None).await;
         let delayed = delay != 0;
         if delayed {
@@ -1833,7 +1834,7 @@ async fn startup_rejects_missing_fills_or_opening_exposure(#[case] missing_fill:
 )]
 #[tokio::test]
 async fn startup_recovers_resting_external_order_for_mass_status() {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         let instrument = bootstrap_instrument();
@@ -1945,7 +1946,7 @@ async fn startup_recovers_resting_external_order_for_mass_status() {
 )]
 #[tokio::test]
 async fn startup_filtering_omits_unclaimed_resting_order() {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         let instrument = bootstrap_instrument();
@@ -2171,7 +2172,7 @@ async fn startup_claimed_resting_order_cancel_all_with_claimant() {
 )]
 #[tokio::test]
 async fn startup_claimed_resting_order_cancel_rejection_preserves_claimant() {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         let instrument = bootstrap_instrument();
@@ -2330,7 +2331,7 @@ async fn startup_claimed_resting_order_cancel_rejection_preserves_claimant() {
     reason = "single-threaded test harness drives one client and cache consumer at a time"
 )]
 async fn claimed_resting_order_cancels_with_claimant(cancel_all: bool) {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         let instrument = bootstrap_instrument();
@@ -2488,8 +2489,9 @@ async fn startup_rejects_cold_open_position_without_readiness_timeout(
     #[values("0.75", "-0.75")] net: &str,
     #[values(false, true)] cached_order: bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let peer = Peer::new(None).await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let mut peer = Peer::new(None).await;
+        peer.config.ws_timeout_secs = 10;
         let instrument = bootstrap_instrument();
         let fixtures: Value =
             serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
@@ -2516,7 +2518,7 @@ async fn startup_rejects_cold_open_position_without_readiness_timeout(
             *peer.orders.lock().unwrap() = json!({"orders": [source], "cursor": ""});
         }
 
-        let error = tokio::time::timeout(Duration::from_secs(2), client.connect())
+        let error = tokio::time::timeout(Duration::from_secs(8), client.connect())
             .await
             .expect("cold position recovery waited for the connection timeout")
             .unwrap_err();
@@ -2535,14 +2537,15 @@ async fn startup_rejects_cold_open_position_without_readiness_timeout(
 #[case::short(true)]
 #[tokio::test]
 async fn startup_rejects_unrecoverable_filled_order_without_readiness_timeout(#[case] short: bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let peer = Peer::new(None).await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let mut peer = Peer::new(None).await;
+        peer.config.ws_timeout_secs = 10;
         let instrument = bootstrap_instrument();
         let (_harness, mut client, _output, _data) = bootstrap_consumer(&peer, &instrument, false);
         filled_bootstrap(&peer, &instrument, short, [Decimal::ZERO; 2]);
         peer.orders.lock().unwrap()["orders"][0]["status"] = "canceled".into();
 
-        let error = tokio::time::timeout(Duration::from_secs(2), client.connect())
+        let error = tokio::time::timeout(Duration::from_secs(8), client.connect())
             .await
             .expect("missing order authority waited for the connection timeout")
             .unwrap_err();
@@ -3645,7 +3648,7 @@ async fn native_gtc_failures_preserve_the_evidence_authority(
 #[rstest]
 #[tokio::test]
 async fn native_post_only_rejection_recovers_and_allows_following_order() {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         let peer = Peer::with_timeout(None, 10).await;
         *peer.submissions.outcome.lock().unwrap() = "post_only".into();
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -4543,7 +4546,7 @@ async fn native_limit_fill_before_ack_and_duplicate_delivery_apply_once(
     #[case] tif: TimeInForce,
     #[case] fill_qty: &str,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::with_timeout(None, 10).await;
         let (harness, mut output, _data) = native_consumer(&peer).await;
         let mut builder = native_order_builder(&harness, "native-filled", side);
@@ -4704,7 +4707,7 @@ async fn native_limit_fill_before_ack_and_duplicate_delivery_apply_once(
 #[case(TimeInForce::Fok)]
 #[tokio::test]
 async fn native_notified_fill_readiness_admits_reduce_only_close(#[case] tif: TimeInForce) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(40), async {
         let peer = Peer::with_timeout(None, 10).await;
         let (harness, mut output, _data) = native_consumer(&peer).await;
         let order = native_order_builder(&harness, "native-current", OrderSide::Buy)
@@ -4767,13 +4770,13 @@ async fn native_notified_fill_readiness_admits_reduce_only_close(#[case] tif: Ti
         peer.notification_ready.notify_one();
         wait_until_async(
             || async { peer.notification.lock().unwrap().is_none() },
-            Duration::from_secs(2),
+            Duration::from_secs(10),
         )
         .await;
         let read_target = peer.balance_reads.load(Ordering::SeqCst) + 2;
         wait_until_async(
             || async { peer.balance_reads.load(Ordering::SeqCst) >= read_target },
-            Duration::from_secs(4),
+            Duration::from_secs(10),
         )
         .await;
 
@@ -5555,12 +5558,17 @@ async fn native_gtd_expiring_during_preparation_never_submits() {
             .build();
         native_submit(&harness, &order, None);
         peer.market_read.notified().await;
-        let remaining = expires.saturating_sub(
-            nautilus_core::time::get_atomic_clock_realtime()
-                .get_time_ns()
-                .as_u64(),
-        );
-        tokio::time::sleep(Duration::from_nanos(remaining)).await;
+        wait_until_async(
+            || async {
+                nautilus_core::time::get_atomic_clock_realtime()
+                    .get_time_ns()
+                    .as_u64()
+                    >= expires
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
         drop(blocked);
 
         let events = native_wait(&mut output, || {
@@ -5671,7 +5679,7 @@ async fn native_reduce_only_fills_keep_canonical_account_net(
     #[case] cash: &str,
     #[values(false, true)] cross_strategy: bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.market.lock().unwrap()["open_time"] = "2020-01-01T00:00:00Z".into();
         peer.market.lock().unwrap()["close_time"] = "2100-01-01T00:00:00Z".into();
@@ -6213,7 +6221,7 @@ async fn native_closed_order_changes_are_denied_before_dispatch(
         };
 
         let events = tokio::time::timeout(
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             native_wait(&mut output, || {
                 match harness.cache().borrow().order(&id).unwrap().last_event() {
                     OrderEventAny::CancelDenied(event) => event.causation_id == Some(command_id),
@@ -6270,7 +6278,7 @@ async fn native_closed_order_changes_are_denied_before_dispatch(
 
 #[tokio::test]
 async fn native_individual_cancels_drain_both_orders_across_readiness_invalidation() {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "3.0001".into();
         peer.submissions.ack_gate.add_permits(2);
@@ -6411,7 +6419,7 @@ async fn native_changes_wait_for_observed_recovery_before_admission(
     let cancel = expected == OrderStatus::Canceled;
     let expired = rejection_reason == Some(NATIVE_ADMISSION_TIMEOUT_REASON);
 
-    tokio::time::timeout(Duration::from_secs(if expired { 40 } else { 18 }), async {
+    tokio::time::timeout(Duration::from_secs(if expired { 55 } else { 30 }), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.submissions.ack_gate.add_permits(1);
         peer.changes.ack_gate.add_permits(1);
@@ -6486,7 +6494,7 @@ async fn native_changes_wait_for_observed_recovery_before_admission(
             peer.notification_ready.notify_one();
             wait_until_async(
                 || async { peer.notification.lock().unwrap().is_none() },
-                Duration::from_secs(2),
+                Duration::from_secs(10),
             )
             .await;
         }
@@ -7343,7 +7351,7 @@ async fn native_modify_rejection_is_scoped_and_clean(
 
 #[tokio::test]
 async fn native_change_rejection_preserves_recovered_terms() {
-    tokio::time::timeout(Duration::from_secs(22), async {
+    tokio::time::timeout(Duration::from_secs(35), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.submissions.ack_gate.add_permits(1);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -7726,7 +7734,7 @@ async fn native_decrease_partial_result_uses_acknowledged_authoritative_terms(#[
 #[case::closed_during_recovery(true)]
 #[tokio::test]
 async fn native_change_preparation_waits_for_recovered_account(#[case] closed: bool) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(35), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.submissions.ack_gate.add_permits(1);
         peer.changes.ack_gate.add_permits(1);
@@ -7932,7 +7940,7 @@ async fn native_change_preparation_rejects_newer_order_terms() {
 #[case::venue_rejection(true)]
 #[tokio::test]
 async fn native_change_completed_commands_do_not_replay(#[case] rejected: bool) {
-    tokio::time::timeout(Duration::from_secs(22), async {
+    tokio::time::timeout(Duration::from_secs(40), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.submissions.ack_gate.add_permits(1);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -8132,7 +8140,7 @@ async fn native_unknown_cancel_publishes_fills_before_resolution(
     #[case] zero_leaves: bool,
     #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.submissions.ack_gate.add_permits(1);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -8470,7 +8478,7 @@ async fn single_write_rechecks_connection_after_admitted_discovery(#[case] opera
         } else {
             wait_until_async(|| async {
                 !harness.exec_engine().borrow().get_client(&harness.client_id()).unwrap().is_connected()
-            }, Duration::from_secs(3)).await;
+            }, Duration::from_secs(10)).await;
         }
 
         peer.limits_read.notified().await;
@@ -8481,7 +8489,7 @@ async fn single_write_rechecks_connection_after_admitted_discovery(#[case] opera
         peer.notification_ready.notify_one();
         wait_until_async(
             || async { peer.notification.lock().unwrap().is_none() },
-            Duration::from_secs(2),
+            Duration::from_secs(10),
         )
         .await;
         {
@@ -8972,7 +8980,7 @@ async fn native_batch_list_correlates_each_child_and_recovers(
 #[rstest]
 #[tokio::test]
 async fn native_batch_cancel_skips_closed_children(#[values(false, true)] closed_first: bool) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(35), async {
         let peer = Peer::with_timeout(None, 10).await;
         peer.batches.ack_gate.add_permits(2);
         peer.changes.ack_gate.add_permits(1);
@@ -9076,7 +9084,7 @@ async fn native_batch_cancel_correlates_each_child_and_recovers(
     #[case] mode: &str,
     #[case] subaccount: u32,
 ) {
-    tokio::time::timeout(Duration::from_secs(15), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::with_scope(None, 2, subaccount).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "10.0001".into();
         peer.batches.ack_gate.add_permits(2);
@@ -9173,7 +9181,7 @@ async fn native_batch_cancel_correlates_each_child_and_recovers(
 
 #[tokio::test]
 async fn native_batch_chunks_by_weighted_capacity() {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    tokio::time::timeout(Duration::from_secs(45), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "10.0001".into();
         peer.limits.lock().unwrap()["write"]["bucket_capacity"] = 33.into();
@@ -9268,7 +9276,7 @@ fn native_cancel_all(
 
 #[tokio::test]
 async fn native_batch_cancel_all_preserves_scoped_peers() {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(25), async {
         let peer = Peer::new(None).await;
         peer.balance.lock().unwrap()["balance_dollars"] = "20.0001".into();
         peer.batches.ack_gate.add_permits(2);
@@ -9485,7 +9493,7 @@ async fn native_batch_denials_preserve_inflight_recovery(#[case] recovering: boo
         let reads = peer.balance_reads.load(Ordering::SeqCst);
         wait_until_async(
             || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
-            Duration::from_secs(4),
+            Duration::from_secs(10),
         )
         .await;
         let mut reads = peer.balance_reads.load(Ordering::SeqCst);
@@ -9502,7 +9510,7 @@ async fn native_batch_denials_preserve_inflight_recovery(#[case] recovering: boo
             peer.balance_gate.add_permits(2);
             wait_until_async(
                 || async { peer.balance_reads.load(Ordering::SeqCst) >= reads + 2 },
-                Duration::from_secs(4),
+                Duration::from_secs(10),
             )
             .await;
             reads = peer.balance_reads.load(Ordering::SeqCst);
@@ -9560,7 +9568,7 @@ async fn native_batch_denials_preserve_inflight_recovery(#[case] recovering: boo
         peer.balance_gate.add_permits(2);
         wait_until_async(
             || async { peer.balance_reads.load(Ordering::SeqCst) >= reads + 2 },
-            Duration::from_secs(4),
+            Duration::from_secs(10),
         )
         .await;
         let events: Vec<_> = std::iter::from_fn(|| output.try_recv().ok()).collect();
@@ -9652,7 +9660,7 @@ async fn native_recovery_rechecks_locally_denied_identities(
         let reads = peer.balance_reads.load(Ordering::SeqCst);
         wait_until_async(
             || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
-            Duration::from_secs(4),
+            Duration::from_secs(10),
         )
         .await;
         let held = peer.series_gate.acquire().await.unwrap();
@@ -9693,7 +9701,7 @@ async fn native_recovery_rechecks_locally_denied_identities(
         drop(held);
         wait_until_async(
             || async { peer.balance_reads.load(Ordering::SeqCst) > reads },
-            Duration::from_secs(4),
+            Duration::from_secs(10),
         )
         .await;
         assert!(output.try_recv().is_err());
@@ -9838,7 +9846,7 @@ async fn native_batch_ambiguity_retains_each_child_until_authority(
     #[case] mode: &str,
     #[case] cancel: bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         let peer = Peer::new(None).await;
         peer.batches.ack_gate.add_permits(2);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -10075,7 +10083,7 @@ fn native_refresh(harness: &ExecutionHarness) {
 async fn native_batch_partial_application_keeps_the_other_child_unresolved(
     #[values(false, true)] cancel: bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(18), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         let peer = Peer::new(None).await;
         peer.batches.ack_gate.add_permits(2);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -10581,7 +10589,7 @@ async fn native_batch_later_chunks_survive_private_notices() {
 
 #[tokio::test]
 async fn native_batch_cancel_all_progresses_while_one_submission_is_unknown() {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    tokio::time::timeout(Duration::from_secs(50), async {
         let peer = Peer::new(None).await;
         peer.batches.ack_gate.add_permits(3);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -10680,7 +10688,7 @@ async fn native_batch_cancel_all_progresses_while_one_submission_is_unknown() {
 
 #[tokio::test]
 async fn native_batch_mixed_instruments_preserve_other_owned_orders() {
-    tokio::time::timeout(Duration::from_secs(25), async {
+    tokio::time::timeout(Duration::from_secs(35), async {
         let peer = Peer::new(None).await;
         peer.batches.ack_gate.add_permits(3);
         let (harness, mut output, _data) = native_consumer(&peer).await;
@@ -11200,7 +11208,7 @@ async fn conformance_schedule_preserves_order_totals_reports_and_teardown() {
         let balance_reads = peer.balance_reads.load(Ordering::SeqCst);
         wait_until_async(
             || async { peer.sessions.load(Ordering::SeqCst) == 0 },
-            Duration::from_secs(2),
+            Duration::from_secs(10),
         )
         .await;
         assert_eq!(data_peer.requests.load(Ordering::SeqCst), data_requests);

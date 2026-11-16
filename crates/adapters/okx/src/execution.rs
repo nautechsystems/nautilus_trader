@@ -1812,6 +1812,7 @@ impl ExecutionClient for OKXExecutionClient {
             && self.session_tasks.is_empty()
             && !self.ws_private.has_task()
             && !self.ws_business.has_task()
+            && self.stream_state.is_healthy()
         {
             return Ok(());
         }
