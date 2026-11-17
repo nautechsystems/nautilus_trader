@@ -22,7 +22,9 @@ use nautilus_model::{
         BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick,
         TradeTick,
     },
-    enums::{AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{
+        AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, RecordFlag, TriggerType,
+    },
     identifiers::{AccountId, ClientOrderId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
@@ -147,7 +149,7 @@ pub fn parse_futures_ws_book_snapshot_deltas(
             instrument_id,
             BookAction::Add,
             order,
-            0,
+            RecordFlag::F_SNAPSHOT as u8,
             seq,
             ts_event,
             ts_init,
@@ -168,12 +170,16 @@ pub fn parse_futures_ws_book_snapshot_deltas(
             instrument_id,
             BookAction::Add,
             order,
-            0,
+            RecordFlag::F_SNAPSHOT as u8,
             seq,
             ts_event,
             ts_init,
         ));
         seq += 1;
+    }
+
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(deltas)
@@ -211,7 +217,7 @@ pub fn parse_futures_ws_book_delta(
         instrument.id(),
         action,
         order,
-        0,
+        RecordFlag::F_LAST as u8,
         sequence,
         ts_event,
         ts_init,
@@ -445,6 +451,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        data::OrderBookDeltas,
         enums::{CurrencyType, LiquiditySide, OrderSide, TimeInForce},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
@@ -511,6 +518,22 @@ mod tests {
         assert_eq!(tick.aggressor_side, AggressorSide::Sell);
     }
 
+    fn assert_snapshot_delta_flags(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) {
+        assert!(!deltas.is_empty());
+        assert!(
+            deltas
+                .iter()
+                .all(|d| RecordFlag::F_SNAPSHOT.matches(d.flags))
+        );
+        let (last, init) = deltas.split_last().unwrap();
+        assert!(init.iter().all(|d| !RecordFlag::F_LAST.matches(d.flags)));
+        assert!(RecordFlag::F_LAST.matches(last.flags));
+
+        let batch = OrderBookDeltas::new(instrument_id, deltas);
+        assert!(RecordFlag::F_SNAPSHOT.matches(batch.flags));
+        assert!(RecordFlag::F_LAST.matches(batch.flags));
+    }
+
     #[rstest]
     fn test_parse_futures_ws_book_snapshot() {
         let json = include_str!("../../../test_data/ws_futures_book_snapshot.json");
@@ -525,6 +548,7 @@ mod tests {
         assert_eq!(deltas[1].action, BookAction::Add);
         assert_eq!(deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
+        assert_snapshot_delta_flags(instrument.id(), deltas);
     }
 
     #[rstest]
@@ -544,6 +568,27 @@ mod tests {
         assert_eq!(deltas[2].order.price, Price::from("34891.5"));
         assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
         assert_eq!(deltas[3].order.price, Price::from("34912.0"));
+        assert_snapshot_delta_flags(instrument.id(), deltas);
+    }
+
+    #[rstest]
+    fn test_parse_futures_ws_book_snapshot_all_zero_qty_marks_clear_last() {
+        let json = include_str!("../../../test_data/ws_futures_book_snapshot.json");
+        let mut snapshot: KrakenFuturesBookSnapshot = serde_json::from_str(json).unwrap();
+        for level in snapshot.bids.iter_mut().chain(snapshot.asks.iter_mut()) {
+            level.qty = Decimal::ZERO;
+        }
+        let instrument = create_mock_perp();
+
+        let deltas = parse_futures_ws_book_snapshot_deltas(&snapshot, &instrument, 0, TS).unwrap();
+
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+        assert_snapshot_delta_flags(instrument.id(), deltas);
     }
 
     #[rstest]
@@ -558,6 +603,8 @@ mod tests {
         assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.action, BookAction::Delete); // qty=0
         assert_eq!(delta.sequence, 10);
+        assert!(RecordFlag::F_LAST.matches(delta.flags));
+        assert!(!RecordFlag::F_SNAPSHOT.matches(delta.flags));
     }
 
     #[rstest]
