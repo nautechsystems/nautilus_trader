@@ -1080,6 +1080,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::paths::escape_local_file_uri;
 
     #[rstest]
     #[tokio::test]
@@ -1692,6 +1693,25 @@ mod tests {
                 "data/quotes/EURUSD.SIM/file.parquet",
             ),
             "file:///C:/data/catalog/data/quotes/EURUSD.SIM/file.parquet",
+        );
+    }
+
+    #[rstest]
+    #[case::hash(
+        "file:///C:/data/C# work",
+        "file:///C:/data/C%23%20work/data/bars/file.parquet"
+    )]
+    #[case::percent_escape("file:///tmp/a%20b", "file:///tmp/a%2520b/data/bars/file.parquet")]
+    #[case::question_mark("file:///tmp/a?b", "file:///tmp/a%3Fb/data/bars/file.parquet")]
+    fn append_path_to_file_uri_keeps_escaped_local_root(
+        #[case] base: &str,
+        #[case] expected: &str,
+    ) {
+        let base = escape_local_file_uri(base);
+
+        assert_eq!(
+            append_path_to_file_uri(&base, "data/bars/file.parquet"),
+            expected,
         );
     }
 

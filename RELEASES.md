@@ -66,6 +66,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
+- Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching

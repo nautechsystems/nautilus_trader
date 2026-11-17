@@ -37,7 +37,10 @@ use object_store::path::Path as ObjectPath;
 use crate::{
     common::{
         conversion::FeatherConversionSummary,
-        paths::{environment_directory, environment_from_directory, normalize_path_separators},
+        paths::{
+            environment_directory, environment_from_directory, escape_local_file_uri,
+            normalize_path_separators,
+        },
         storage::StorageBackend,
     },
     writer::{
@@ -67,12 +70,9 @@ pub(crate) struct PromotionSession {
 
 impl PromotionSession {
     pub(crate) fn from_uri(uri: &str) -> Option<Self> {
-        let uri_local_encoded = uri.starts_with("file://").then(|| {
-            normalize_path_separators(uri)
-                .replace('%', "%25")
-                .replace('#', "%23")
-                .replace('?', "%3F")
-        });
+        let uri_local_encoded = uri
+            .starts_with("file://")
+            .then(|| escape_local_file_uri(&normalize_path_separators(uri)));
 
         if let Ok(url) = url::Url::parse(uri_local_encoded.as_deref().unwrap_or(uri))
             && let Some(session) = Self::from_url(url)
@@ -1197,6 +1197,19 @@ pub(crate) mod tests {
             PromotionSession::from_uri(r"C:\catalog\backtest\run-1").expect("valid run path");
 
         assert_eq!(session.root_uri, "C:/catalog");
+        assert_eq!(session.environment, Environment::Backtest);
+        assert_eq!(session.instance_id, "run-1");
+    }
+
+    #[rstest]
+    #[case("file:///C:/C# work/backtest/run-1", "file:///C:/C# work")]
+    #[case("file:///tmp/a%20b/backtest/run-1", "file:///tmp/a%20b")]
+    #[case("file:///tmp/a?b/backtest/run-1", "file:///tmp/a?b")]
+    #[case("s3://bucket/catalog/backtest/run-1", "s3://bucket/catalog")]
+    fn promotion_session_preserves_literal_local_roots(#[case] uri: &str, #[case] root: &str) {
+        let session = PromotionSession::from_uri(uri).unwrap();
+
+        assert_eq!(session.root_uri, root);
         assert_eq!(session.environment, Environment::Backtest);
         assert_eq!(session.instance_id, "run-1");
     }
