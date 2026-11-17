@@ -1170,7 +1170,10 @@ impl FeatherWriter {
             let path = self.build_writer_path(&data_type, timestamp, sequence);
 
             // Files left by an earlier writer in the same directory keep their names
-            if path.exists() || path.with_extension(FEATHER_PARTIAL_EXTENSION).exists() {
+            if path.exists()
+                || path.with_extension(FEATHER_PARTIAL_EXTENSION).exists()
+                || path.with_extension(FEATHER_REFUSED_EXTENSION).exists()
+            {
                 continue;
             }
 
@@ -2858,18 +2861,24 @@ mod tests {
             .path()
             .join("trades")
             .join("trades_5-1.feather.partial");
+        let refused = temp_dir
+            .path()
+            .join("trades")
+            .join("trades_5-2.feather.refused");
         fs::create_dir_all(sealed.parent().unwrap()).unwrap();
         fs::write(&sealed, b"sealed").unwrap();
         fs::write(&partial, b"partial").unwrap();
+        fs::write(&refused, b"refused").unwrap();
 
         let path = writer.reserve_writer_path(NautilusDataType::TradeTick.into());
 
         assert_eq!(
             path.path,
-            temp_dir.path().join("trades").join("trades_5-2.feather")
+            temp_dir.path().join("trades").join("trades_5-3.feather")
         );
         assert_eq!(fs::read(&sealed).unwrap(), b"sealed");
         assert_eq!(fs::read(&partial).unwrap(), b"partial");
+        assert_eq!(fs::read(&refused).unwrap(), b"refused");
     }
 
     #[rstest]
