@@ -211,7 +211,8 @@ The hook excludes:
 
 - Files under `tests/`, `python/`, and `ffi/` directories.
 - Files named `tests.rs`, `*_test.rs`, or `*_tests.rs`.
-- Lines inside an inline `#[cfg(test)]` module.
+- Items gated by `#[cfg(test)]` or `#[cfg(all(..., test, ...))]` without nested
+  predicates before `test`.
 
 These paths are not part of the production DST contract.
 
@@ -551,7 +552,8 @@ deterministic scheduling contract.
 
 Rule 4 of the hook bans raw thread spawning outside three escape cases:
 
-- `#[cfg(test)]` test modules.
+- Items gated by `#[cfg(test)]` or `#[cfg(all(..., test, ...))]` without nested
+  predicates before `test`.
 - `#[cfg(not(madsim))]` or `#[cfg(not(all(feature = "simulation", madsim)))]` production
   sites (for example, the logging writer thread).
 - An inline `// dst-ok` marker.

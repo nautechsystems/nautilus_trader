@@ -119,6 +119,7 @@ Released on TBD (UTC).
 - Refined portfolio realized PnL aggregation and order reservation calculations
 - Refined position replay and accounting, order fill-void validation, and order status report construction
 - Refined `Cache` purge index cleanup and integrity checks
+- Improved DST convention checks to keep production code after test-gated items in scope
 - Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
 - Improved portfolio position-event benchmark coverage
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client

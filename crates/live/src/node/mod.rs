@@ -1977,7 +1977,7 @@ impl LiveNode {
             dispatches_since_yield += 1;
             if dispatches_since_yield >= DISPATCHES_PER_YIELD {
                 dispatches_since_yield = 0;
-                tokio::task::yield_now().await;
+                dst::task::yield_now().await;
             }
         };
 

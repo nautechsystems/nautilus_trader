@@ -21,7 +21,8 @@
 #
 # Use '// dst-ok' inline comment to allow specific exceptions.
 # Test modules (files under tests/, matching *_tests.rs, or lines inside an
-# inline `#[cfg(test)]` module) are excluded.
+# item gated by `#[cfg(test)]` or `#[cfg(all(..., test, ...))]`) are excluded.
+# A cfg(all(...)) gate requires test before any nested predicate.
 
 set -euo pipefail
 
@@ -250,31 +251,8 @@ is_doc_comment() {
   return 1
 }
 
-# Return 0 if the given line number falls after an inline `#[cfg(test)]`
-# attribute in the same file. Inline test modules live at the bottom of many
-# Rust source files; violations beyond that boundary are test-only.
-#
-# Matches arrive grouped by file, so the last scan is cached. A precomputed
-# repo-wide map is not the answer here: bash pattern matching over a string
-# that large is quadratic whenever a lookup misses.
-CFG_TEST_SCANNED_FILE=""
-CFG_TEST_FIRST_LINE=""
-
-is_in_test_module() {
-  local file="$1"
-  local line_num="$2"
-
-  if [[ "$file" != "$CFG_TEST_SCANNED_FILE" ]]; then
-    local first_hit
-    first_hit=$(rg -n -m1 '^\s*#\[cfg\(test\)\]' "$file" 2> /dev/null || true)
-    CFG_TEST_SCANNED_FILE="$file"
-    CFG_TEST_FIRST_LINE="${first_hit%%:*}"
-  fi
-
-  [[ -z "$CFG_TEST_FIRST_LINE" ]] && return 1
-  [[ "$line_num" -ge "$CFG_TEST_FIRST_LINE" ]] && return 0
-  return 1
-}
+# shellcheck source=.pre-commit-hooks/rust_test_scope.bash
+source "$(dirname "${BASH_SOURCE[0]}")/rust_test_scope.bash"
 
 is_in_rule1_allowlist() {
   local file
@@ -329,7 +307,7 @@ jiff_clock_aliases() {
 }
 
 # Return 0 if any of the 15 lines preceding `line_num` in `file` carry a cfg
-# attribute that excludes madsim or restricts to test builds.
+# attribute that excludes madsim. Test gates are bounded by is_in_test_module.
 has_preceding_dst_cfg() {
   local file="$1"
   local line_num="$2"
@@ -337,7 +315,7 @@ has_preceding_dst_cfg() {
   ((start_line < 1)) && start_line=1
 
   sed -n "${start_line},$((line_num - 1))p" "$file" 2> /dev/null |
-    grep -qE '#\[cfg\(not\(all\(feature[[:space:]]*=[[:space:]]*"simulation"[[:space:]]*,[[:space:]]*madsim\)\)\)\]|#\[cfg\(test\)\]|#\[cfg\(not\(madsim\)\)\]'
+    grep -qE '#\[cfg\(not\(all\(feature[[:space:]]*=[[:space:]]*"simulation"[[:space:]]*,[[:space:]]*madsim\)\)\)\]|#\[cfg\(not\(madsim\)\)\]'
 }
 
 report() {
@@ -554,6 +532,7 @@ for rule5_file in "${RULE5_FILES[@]}"; do
   # ripgrep omits the path when it searches one explicit file
   while IFS=: read -r line_num content; do
     [[ -z "$line_num" ]] && continue
+    is_in_test_module "$rule5_file" "$line_num" && continue
     is_doc_comment "$content" && continue
     [[ "$content" =~ $ALLOW_MARKER ]] && continue
 

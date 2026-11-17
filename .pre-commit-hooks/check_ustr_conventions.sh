@@ -80,62 +80,8 @@ is_doc_comment() {
   return 1
 }
 
-# Return 0 if the given line number falls inside a test-gated item in the same
-# file. Only `#[cfg(test)]` and `#[cfg(all(..., test, ...))]` gate an item for
-# tests alone; `any(..., test)`, `not(test)`, and a quoted feature name such as
-# `feature = "testers"` all keep the item in production builds. The attribute
-# gates individual imports and functions as well as inline `mod tests` blocks,
-# and any of them can sit above production code, so the exclusion covers only the
-# gated item itself. rustfmt aligns an item's attributes and its closing brace
-# with the item, so the attribute's own indentation bounds the block.
-is_in_test_module() {
-  local file="$1"
-  local line_num="$2"
-
-  # States: 1 attribute seen, 2 inside the item header, 3 inside the item body
-  awk -v target="$line_num" '
-    {
-      gated = 0
-
-      if (state == 3) {
-        gated = 1
-        if ($0 ~ close_re) {
-          state = 0
-        }
-      } else if (state == 2) {
-        gated = 1
-        if ($0 !~ /^[[:space:]]*\/\//) {
-          if ($0 ~ /\{[[:space:]]*$/) {
-            state = 3
-          } else if ($0 ~ /[;}][[:space:]]*$/) {
-            state = 0
-          }
-        }
-      } else if (state == 1) {
-        gated = 1
-        if ($0 !~ /^[[:space:]]*#\[/ && $0 !~ /^[[:space:]]*\/\//) {
-          if ($0 ~ /\{[[:space:]]*$/) {
-            state = 3
-          } else if ($0 ~ /[;}][[:space:]]*$/) {
-            state = 0
-          } else {
-            state = 2
-          }
-        }
-      } else if ($0 ~ /^[[:space:]]*#\[cfg\((test\)|all\((test[,)]|[^]]*,[[:space:]]*test[,)]))/) {
-        gated = 1
-        state = 1
-        match($0, /^[[:space:]]*/)
-        close_re = "^" substr($0, 1, RLENGTH) "\\}[;,]?[[:space:]]*$"
-      }
-
-      if (NR == target) {
-        inside = gated
-      }
-    }
-    END { exit(inside ? 0 : 1) }
-  ' "$file"
-}
+# shellcheck source=.pre-commit-hooks/rust_test_scope.bash
+source "$(dirname "${BASH_SOURCE[0]}")/rust_test_scope.bash"
 
 report() {
   local rule="$1"
