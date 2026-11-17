@@ -187,7 +187,7 @@ jobs:
 
       - name: Set up Python
         # https://github.com/actions/setup-python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
 
@@ -197,7 +197,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: true
@@ -218,7 +218,7 @@ jobs:
           (github.event_name != 'pull_request' ||
           !github.event.pull_request.head.repo.fork)
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -251,7 +251,7 @@ jobs:
 
       - name: Set up Rust toolchain
         # https://github.com/actions-rust-lang/setup-rust-toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
           override: true
@@ -277,7 +277,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ steps.uv-version.outputs.version }}
           prune-cache: true
