@@ -78,6 +78,7 @@ use crate::{
             identifier_from_session_feather_path,
         },
     },
+    errors::PersistenceError,
     writer::{
         feather::recover_partial_feather_files,
         materializer::{
@@ -917,10 +918,11 @@ impl ParquetDataCatalog {
         intervals.extend(remaining.iter().map(|plan| (plan.start_ts, plan.end_ts)));
 
         if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!(
+            let message = format!(
                 "Writing promoted groups for {directory} would create non-disjoint intervals. \
                  Existing intervals: {existing:?}"
             );
+            anyhow::bail!(PersistenceError::NonDisjointIntervals(message));
         }
 
         Ok(remaining)

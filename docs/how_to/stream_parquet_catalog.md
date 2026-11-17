@@ -80,7 +80,7 @@ Rotation compares a row with the open file alone, so a late row at or before a s
 Interval-based promotion and explicit seals, such as the Rust `FeatherWriter::seal`, do not follow
 `ts_init`: they seal every open file when they run, so a row written afterward with the same
 `ts_init` as a sealed file's last row starts the next file. Unless the later rows are exact bar
-replays, promotion rejects the overlapping catalog interval and retains that source. Leave
+replays, promotion rejects the overlapping catalog interval and sets that source aside. Leave
 `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
 
 ## Understand query visibility
@@ -126,10 +126,12 @@ identical source whose promotion is already recorded.
 
 Use explicit close and handle its error. Dropping a writer only provides best-effort cleanup and is
 not evidence of successful promotion. If a promotion fails, preserve its staged files and investigate
-the error before retrying. With `promote_on_close=False`, closing can intentionally leave a completed
-run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`. Pass the
-run's `environment`, such as `Environment.LIVE`, to convert a run outside the default backtest
-folder.
+the error before retrying. Promotion sets aside a staged file whose rows overlap intervals already
+in the catalog by renaming it to `.feather.refused`, so later promotions skip it. After resolving the
+overlap, rename it back to `.feather` to convert it again. With `promote_on_close=False`, closing can
+intentionally leave a completed run staged for later conversion through
+`ParquetDataCatalog.convert_stream_to_data()`. Pass the run's `environment`, such as
+`Environment.LIVE`, to convert a run outside the default backtest folder.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
 crashed process leaves its open files unlocked. Recovery seals each unlocked regular partial file: it keeps
