@@ -594,11 +594,12 @@ pub struct BybitBatchOrderError {
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAuthResponse {
     pub op: BybitWsOperation,
-    #[serde(default)]
+    // The private stream sends snake_case names, the trade stream camelCase
+    #[serde(default, alias = "conn_id")]
     pub conn_id: Option<String>,
     #[serde(default)]
     pub ret_code: Option<i64>,
-    #[serde(default)]
+    #[serde(default, alias = "ret_msg")]
     pub ret_msg: Option<String>,
     #[serde(default)]
     pub success: Option<bool>,
