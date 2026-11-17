@@ -319,6 +319,10 @@ pub(crate) const FEATHER_EXTENSION: &str = "feather";
 /// File extension of a Feather stream file that is still being appended to.
 pub(crate) const FEATHER_PARTIAL_EXTENSION: &str = "feather.partial";
 
+/// File extension of a sealed Feather stream file that promotion refused, which later
+/// promotions skip.
+pub(crate) const FEATHER_REFUSED_EXTENSION: &str = "feather.refused";
+
 /// An open local Feather file that appends Arrow IPC stream batches.
 ///
 /// Batches go to `{name}.feather.partial`, which is renamed to `{name}.feather` when the file is

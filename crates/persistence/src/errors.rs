@@ -43,6 +43,9 @@ pub enum PersistenceError {
     /// The operation is not supported by this concrete backend.
     #[error("Operation not supported by this backend: {0}")]
     Unsupported(String),
+    /// The write would create non-disjoint intervals in the catalog.
+    #[error("{0}")]
+    NonDisjointIntervals(String),
 }
 
 impl PersistenceError {

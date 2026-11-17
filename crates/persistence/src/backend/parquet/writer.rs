@@ -37,7 +37,7 @@ use crate::{
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
-        feather::WriterClock,
+        feather::{FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION, WriterClock},
         materializer::read_feather_record_batches_with_identity,
         promotion::{
             PromotionBackend, PromotionResult, PromotionSession, PromotionWork,
@@ -538,6 +538,21 @@ impl PromotionBackend for ParquetPromotionBackend {
             source.storage.object_store.delete(&object_path).await?;
             Ok::<(), anyhow::Error>(())
         })
+    }
+
+    fn set_aside_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<String> {
+        let stem = file
+            .strip_suffix(FEATHER_EXTENSION)
+            .ok_or_else(|| anyhow::anyhow!("Staged file '{file}' is not a Feather file"))?;
+        let refused = format!("{stem}{FEATHER_REFUSED_EXTENSION}");
+        let from = ObjectPath::parse(file)?;
+        let to = ObjectPath::parse(&refused)?;
+        block_on_nautilus_with(|| async {
+            source.storage.object_store.rename(&from, &to).await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        Ok(refused)
     }
 }
 
@@ -2715,7 +2730,56 @@ mod tests {
             1
         );
         assert_eq!(files.len(), 1);
-        assert!(directory.path().join(&files[0]).exists());
+        assert!(!directory.path().join(&files[0]).exists());
+        assert!(
+            directory
+                .path()
+                .join(format!("{}.refused", files[0]))
+                .exists()
+        );
+    }
+
+    #[rstest]
+    fn promotion_sets_aside_file_overlapping_catalog_and_does_not_retry_it() {
+        let directory = TempDir::new().unwrap();
+        let config = WriterConnectConfig::new(
+            directory.path().join("live/run-overlap").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+
+        let quote_at = |timestamp: u64| QuoteTick {
+            ts_event: UnixNanos::from(timestamp),
+            ts_init: UnixNanos::from(timestamp),
+            ..sample_quote()
+        };
+
+        writer.core.write_data(Data::Quote(quote_at(10))).unwrap();
+        writer.core.write_data(Data::Quote(quote_at(30))).unwrap();
+        writer.promote_now().unwrap();
+
+        writer.core.write_data(Data::Quote(quote_at(20))).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        let files = work.files().to_vec();
+        let error = writer.finalize(work.execute()).unwrap_err();
+        let retry = writer.prepare_promotion().unwrap();
+        writer.core.close().unwrap();
+
+        let refused = "live/run-overlap/quotes/quotes_1-1.feather.refused";
+        assert_eq!(files, ["live/run-overlap/quotes/quotes_1-1.feather"]);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Parquet promotion failed for Feather file '{}', set aside as '{refused}': \
+                 Writing promoted groups for data/quotes/AUDUSD.SIM would create non-disjoint \
+                 intervals. Existing intervals: [(10, 30)]",
+                files[0],
+            ),
+        );
+        assert!(!directory.path().join(&files[0]).exists());
+        assert!(directory.path().join(refused).exists());
+        assert!(retry.is_none());
     }
 
     #[rstest]

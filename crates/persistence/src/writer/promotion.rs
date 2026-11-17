@@ -43,6 +43,7 @@ use crate::{
         },
         storage::StorageBackend,
     },
+    errors::PersistenceError,
     writer::{
         run::{FeatherSessionSource, RunStatus},
         traits::StreamingSink,
@@ -251,6 +252,10 @@ pub(crate) trait PromotionBackend: Send + 'static {
     ) -> anyhow::Result<Option<FeatherConversionSummary>>;
 
     fn delete_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<()>;
+
+    /// Renames a staged file out of the Feather listing so later promotions skip it, and
+    /// returns its new path.
+    fn set_aside_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<String>;
 }
 
 pub(crate) struct PromotionScope {
@@ -355,6 +360,7 @@ where
                 files,
                 committed_paths: Vec::new(),
                 deleted_paths: Vec::new(),
+                refused_paths: Vec::new(),
                 partial_converted: Vec::new(),
                 run_state_recorded: false,
                 converted: Err(anyhow::anyhow!(
@@ -387,6 +393,7 @@ where
         let mut converted = Vec::new();
         let mut committed_paths = Vec::new();
         let mut deleted_paths = Vec::new();
+        let mut refused_paths = Vec::new();
         let mut errors = Vec::new();
         let mut promoted_recorded = false;
         let mut record_error = None;
@@ -469,11 +476,37 @@ where
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    let e = e.context(format!(
-                        "{} promotion failed for Feather file '{file}'",
-                        B::NAME,
-                    ));
-                    errors.push(format!("{e:#}"));
+                    // Retrying a file that overlaps the catalog cannot succeed until the catalog
+                    // changes, so it leaves the listing for the user to resolve.
+                    let set_aside = matches!(
+                        e.downcast_ref::<PersistenceError>(),
+                        Some(PersistenceError::NonDisjointIntervals(_))
+                    )
+                    .then(|| self.backend.set_aside_file(&self.source, file));
+
+                    let context = match set_aside {
+                        Some(Ok(refused)) => {
+                            refused_paths.push(file.clone());
+                            format!(
+                                "{} promotion failed for Feather file '{file}', set aside as \
+                                 '{refused}'",
+                                B::NAME,
+                            )
+                        }
+                        Some(Err(e)) => {
+                            errors.push(format!(
+                                "{:#}",
+                                e.context(format!(
+                                    "{} failed to set aside Feather file '{file}'",
+                                    B::NAME,
+                                )),
+                            ));
+                            format!("{} promotion failed for Feather file '{file}'", B::NAME)
+                        }
+                        None => format!("{} promotion failed for Feather file '{file}'", B::NAME),
+                    };
+
+                    errors.push(format!("{:#}", e.context(context)));
                 }
             }
         }
@@ -483,6 +516,7 @@ where
                 files: self.files,
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded: false,
                 converted: Err(
@@ -515,6 +549,7 @@ where
                 files: self.files,
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded,
                 converted: Err(anyhow::anyhow!(errors.join("; "))),
@@ -535,6 +570,7 @@ where
                 files: self.files,
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded: false,
                 converted: Err(
@@ -553,6 +589,7 @@ where
             files: self.files,
             committed_paths,
             deleted_paths,
+            refused_paths,
             partial_converted: Vec::new(),
             run_state_recorded,
             converted: Ok(converted),
@@ -568,6 +605,7 @@ pub struct PromotionResult {
     pub(crate) files: Vec<String>,
     pub(crate) committed_paths: Vec<String>,
     pub(crate) deleted_paths: Vec<String>,
+    pub(crate) refused_paths: Vec<String>,
     pub(crate) partial_converted: Vec<FeatherConversionSummary>,
     pub(crate) run_state_recorded: bool,
     pub(crate) converted: anyhow::Result<Vec<FeatherConversionSummary>>,
@@ -901,6 +939,7 @@ impl PromotionSchedule {
             .committed_paths
             .iter()
             .chain(&result.deleted_paths)
+            .chain(&result.refused_paths)
             .collect::<AHashSet<_>>();
 
         for file in &result.files {
@@ -1011,6 +1050,14 @@ pub(crate) mod tests {
         ) -> anyhow::Result<()> {
             self.state.lock().unwrap().deleted.push(file.to_string());
             Ok(())
+        }
+
+        fn set_aside_file(
+            &mut self,
+            _source: &FeatherSessionSource,
+            _file: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!("tests refuse no files")
         }
     }
 
