@@ -262,6 +262,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.11 -> 0.4.12"
 notes = "Reviewed published source. Uint32 RLP validation, cached code hashes with invalidation, and constructor changes. No new unsafe or ambient access."
 
+[[audits.alloy-eip7928]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.12 -> 0.4.13"
+notes = "Reviewed checksum-verified published source. Raises BAL_RETENTION_PERIOD_EPOCHS from 3533 to 14299 to match the EIP-4444 retention window, which also raises the derived slot count. No new dependencies, unsafe operations, or ambient access."
+
 [[audits.alloy-eip8141]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1842,6 +1848,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.10.0 -> 1.11.1"
 notes = "Reviewed published source. Reviewed compiler argument construction, prefix maps, opt-in CodeView reproducibility, MSVC source argument joining, and target CPU flags. Compiler commands retain separate arguments; no new network or credential access."
+
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.1 -> 1.11.2"
+notes = "Reviewed checksum-verified published source. Passes a fixed GCC code-folding flag when address sanitizer is requested and updates two UEFI target mappings. Compiler selection and command inputs are unchanged."
 
 [[audits.cfg-if]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3660,6 +3672,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.39 -> 0.2.43"
 notes = "Reviewed published source. Span overflow checks, DST difference corrections, timezone cache reset under its write lock, and defmt formatting updates. No new network, process, or credential access."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.43 -> 0.2.44"
+notes = "Reviewed checksum-verified published source. Makes weekday accessors and iteration constructors const without changing their bodies. Updates the existing Jiff companion dependencies."
+
 [[audits.jiff-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3679,6 +3697,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.2 -> 0.1.5"
 notes = "Reviewed published source. Bounded time-of-day arithmetic, floor rounding of negative fractional transition times, and missing POSIX transition-rule inspection. No new unsafe or ambient access."
+
+[[audits.jiff-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.5 -> 0.1.6"
+notes = "Reviewed checksum-verified published source. Checks timestamp range after balancing nanoseconds, including the lower boundary, and routes subtraction assignment through subtraction. No new unsafe operations or ambient access."
 
 [[audits.jiff-static]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3705,11 +3729,23 @@ criteria = "safe-to-deploy"
 delta = "0.2.39 -> 0.2.43"
 notes = "Reviewed published source. Only package and jiff-core dependency versions change; macro implementation is unchanged."
 
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.43 -> 0.2.44"
+notes = "Reviewed checksum-verified published source. Updates the existing Jiff core and time-zone dependencies. Published procedural macro source is identical."
+
 [[audits.jiff-tzdb]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.8 -> 0.1.9"
 notes = "Reviewed checksum-verified published crates. Updates bundled IANA data from 2026c to 2026e and matching offsets; all 598 zone ranges are within the data blob and begin with TZif. Parser/runtime source is unchanged; no build or ambient capabilities added."
+
+[[audits.jiff-tzdb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.9 -> 0.1.10"
+notes = "Reviewed checksum-verified published source. Updates the bundled IANA 2026f TZif data and its offsets. No parser, build script, or executable logic changes."
 
 [[audits.js-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3856,6 +3892,12 @@ criteria = "safe-to-deploy"
 delta = "0.13.1 -> 0.14.0"
 notes = "Reviewed the 0.13.1 to 0.14.0 delta: compression and decompression paths add table reuse, dictionary limits, and buffer-oriented APIs. Default safe encode and decode features remain enabled, and the reviewed source adds no unsafe blocks or ambient authority."
 
+[[audits.lz4_flex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.14.0 -> 0.14.1"
+notes = "Reviewed checksum-verified published source. Uses the remaining distance between pointers in the same output buffer for the overlapping copy loop. The tail still copies the final byte when needed."
+
 [[audits.mime]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3879,6 +3921,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.2.3 -> 1.2.4"
 notes = "Reviewed published platform delta. Windows named-pipe completion retains pending buffers, FreeBSD removes an event mask, and Haiku adjusts nonblocking configuration. No new external destination, credential, build-script, or process behavior."
+
+[[audits.mio]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.4 -> 1.2.5"
+notes = "Reviewed checksum-verified published source. Reviewed Emscripten socket gating, kqueue flags, and Windows completion handling. Named pipe operations keep their buffers and handle alive through completion, with cancellation matched by operation identity."
 
 [[audits.nom]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4419,6 +4467,12 @@ delta = "4.4.0 -> 4.5.0"
 importable = false
 notes = "Reviewed the published delta, focusing on file backends, locking, cache lifetime, commit publication, repair, allocator decoding, and unchanged unsafe boundaries. Stabilizes opt-in multi-process modes with protocol-generation checks; ExclusiveWriter remains the default used here. Shared commits publish the primary only after flushing; close clears caches and propagates errors. Repair verifies persistent-savepoint trees; malformed page and allocator records use checked slices and return corruption errors in release builds. Existing std behavior with default-features=false remains. No new dependency or build-script capability, network, process execution, or file destination. Experimental API and niche features are not enabled by this workspace."
 
+[[audits.redb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.5.0 -> 4.6.0"
+notes = "Reviewed checksum-verified published source. Reviewed transaction poisoning, commit-slot checksum checks, bounded integrity traversal, and backend close and lock ordering. The vendored XXH3 loads use fixed-size arrays and feature-checked SIMD dispatch."
+
 [[audits.redis]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4486,6 +4540,12 @@ criteria = "safe-to-deploy"
 delta = "1.8.0 -> 1.8.1"
 importable = false
 notes = "Reviewed the checksum-verified published delta. Corrects XINFO radix-tree-keys decoding, skips queued RESP2 pubsub messages while unsubscribing, and excludes push messages from late-reply accounting. Cache invalidation fixes remain outside the enabled graph. No new dependencies, unsafe code, build script, endpoints, or credential behavior."
+
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.8.1 -> 1.8.2"
+notes = "Reviewed checksum-verified published source. Reviewed reply bounds and push demultiplexing, parser reset on connection failure, cache invalidation and cluster routing. No new unsafe operations or authentication paths."
 
 [[audits.redox_syscall]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5048,6 +5108,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.21.0 -> 0.22.0"
 notes = "Adds a SkipRows records iterator and CompactTable::skip; no unsafe, build, or I/O changes."
+
+[[audits.target-lexicon]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.13.5 -> 0.13.6"
+notes = "Reviewed checksum-verified published source. Adds target syntax and mappings for arm64_32, Hyperlight, and z/OS. No new build actions or unsafe operations."
 
 [[audits.tempfile]]
 who = "Chris Sellers <chris@cjdsellers.io>"

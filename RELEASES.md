@@ -136,7 +136,7 @@ Released on TBD (UTC).
 - Upgraded `cargo-audit` tool to v0.23.0
 - Upgraded `cargo-binstall` tool to v1.27.0
 - Upgraded `cargo-hack` tool to v0.6.46
-- Upgraded `cargo-nextest` tool to v0.9.151
+- Upgraded `cargo-nextest` tool to v0.9.152
 - Upgraded `flamegraph` tool to v0.6.15
 - Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.10
@@ -149,8 +149,9 @@ Released on TBD (UTC).
 - Upgraded `zizmor` pre-commit hook to v1.32.0
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `flate2` crate to v1.1.11
-- Upgraded `jiff` crate to v0.2.43
-- Upgraded `redb` crate to v4.5.0
+- Upgraded `jiff` crate to v0.2.44
+- Upgraded `redb` crate to v4.6.0
+- Upgraded `redis` crate to v1.8.2
 - Upgraded `smallvec` crate to v1.16.5
 - Upgraded `sockudo-ws` crate to v3.1.1
 - Upgraded `syn` crate to v3.0.10
@@ -159,8 +160,10 @@ Released on TBD (UTC).
 - Upgraded `uuid` crate to v1.29.2
 - Upgraded `webpki-roots` crate to v1.0.12
 - Upgraded `maturin` package (dev) to v1.16.0
+- Upgraded `myst-parser` package (dev) to v5.2.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.5
-- Upgraded `ty` package (dev) to v0.0.99
+- Upgraded `simplejson` package to v4.3.0
+- Upgraded `ty` package (dev) to v0.0.100
 
 ### Documentation Updates
 
