@@ -6067,15 +6067,7 @@ dependencies = [
 name = "nautilus-cryptography"
 version = "0.69.0"
 dependencies = [
- "anyhow",
- "aws-lc-rs",
- "base64 0.23.1",
- "ed25519-dalek",
  "log",
- "nautilus-core",
- "pem",
- "pyo3",
- "pyo3-stub-gen",
  "rstest",
  "rustls",
  "webpki-roots 1.0.12",
@@ -7044,7 +7036,6 @@ dependencies = [
  "nautilus-coinbase",
  "nautilus-common",
  "nautilus-core",
- "nautilus-cryptography",
  "nautilus-data",
  "nautilus-databento",
  "nautilus-deribit",

@@ -27,6 +27,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 - Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
+- Removed `nautilus_cryptography::signing` and Python `nautilus_trader.cryptography`; use crypto libraries directly
+- Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
 - Changed PostgreSQL option storage to add underlying, exercise, and settlement columns; run `nautilus database init`
