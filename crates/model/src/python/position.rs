@@ -527,10 +527,14 @@ impl Position {
 /// order, returning `(net_signed_qty, net_avg_px_open)`.
 ///
 /// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`. Rules follow
-/// `Position.apply`:
+/// `Position.apply`, except for inverse averaging:
 /// - Same-side legs produce a quantity-weighted average open price.
 /// - Opposite-side legs partial-close at the existing average.
 /// - A leg that crosses zero makes the residual take that leg's price.
+///
+/// The fold always averages same-side legs arithmetically. `Position.apply` averages a
+/// non-premium inverse position by base currency value, so for those instruments the folded
+/// average open price can differ from a NETTING position built from the same fills.
 ///
 /// Zero-quantity legs are skipped. Sort is stable on `ts_opened`; the caller
 /// orders ties (e.g. by `position_id`).

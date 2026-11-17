@@ -426,11 +426,15 @@ position. An account can thus hold many open sub-positions for the same instrume
 those sub-positions onto a hypothetical NETTING position in `ts_opened` order. It then runs the margin model
 once on the resulting net signed quantity and average open price.
 
-The replay follows the same rules as `Position.apply`:
+The replay follows the same rules as `Position.apply`, except for inverse averaging:
 
 - Same-side fills produce a quantity-weighted average open price.
 - Opposite-side fills partial-close at the existing average.
 - A fill that crosses zero makes the residual take the flipping fill's price.
+
+The replay always averages same-side fills arithmetically. `Position.apply` averages a non-premium inverse
+position by base currency value, so for those instruments the folded average open price can differ from a
+NETTING position built from the same fills.
 
 Sub-positions sharing a `ts_opened` fold in `(ts_opened, position_id)` order so the result does not depend on
 cache iteration order.

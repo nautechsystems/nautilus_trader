@@ -3945,7 +3945,8 @@ impl ExecutionManager {
                 OrderSide::Sell
             };
 
-            let reconciliation_px = calculate_reconciliation_price(
+            let reconciliation_px = reconciliation_fill_px(
+                &instrument,
                 cached_signed_qty,
                 cached_avg_px,
                 venue_signed_qty,
@@ -3956,14 +3957,9 @@ impl ExecutionManager {
                 venue_report
                     .as_ref()
                     .and_then(|report| report.avg_px_open_precision),
-                instrument
-                    .instrument_class()
-                    .divides_notional_by_price(instrument.is_inverse()),
             );
 
             reconciliation_px
-                .or(venue_avg_px)
-                .or(cached_avg_px)
                 .and_then(|fill_px| {
                     let quantity =
                         Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision())
@@ -4467,21 +4463,15 @@ impl ExecutionManager {
             OrderSide::Sell
         };
 
-        let reconciliation_px = calculate_reconciliation_price(
+        let fill_px = reconciliation_fill_px(
+            instrument,
             cached_signed_qty,
             current_avg_px,
             venue_signed_qty,
             report.avg_px_open,
             report.avg_px_open_reconciliation,
             report.avg_px_open_precision,
-            instrument
-                .instrument_class()
-                .divides_notional_by_price(instrument.is_inverse()),
-        );
-
-        let fill_px = reconciliation_px
-            .or(report.avg_px_open)
-            .or(current_avg_px)?;
+        )?;
 
         let ts_now = self.clock.borrow().timestamp_ns();
         let order_report = create_position_reconciliation_report(
@@ -5364,6 +5354,55 @@ impl ExecutionManager {
 
         Some((event, fill_key))
     }
+}
+
+/// Returns the price of the reconciliation fill that moves the cached position to the venue
+/// position.
+///
+/// When no price can be derived, the fill falls back to the venue average and then to the cached
+/// average. An inverse accumulation whose venue average no positive fill price can reach returns
+/// `None` instead: a fallback fill would match the venue quantity at a different average open
+/// price, and later checks would stop reconciling the position.
+fn reconciliation_fill_px(
+    instrument: &InstrumentAny,
+    cached_signed_qty: Decimal,
+    cached_avg_px: Option<Decimal>,
+    venue_signed_qty: Decimal,
+    venue_avg_px: Option<Decimal>,
+    avg_px_reconciliation: AvgPxReconciliation,
+    avg_px_precision: Option<u8>,
+) -> Option<Decimal> {
+    let divides_notional_by_price = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
+
+    let reconciliation_px = calculate_reconciliation_price(
+        cached_signed_qty,
+        cached_avg_px,
+        venue_signed_qty,
+        venue_avg_px,
+        avg_px_reconciliation,
+        avg_px_precision,
+        divides_notional_by_price,
+    );
+
+    // A same-side increase with both averages known only lacks a price when none is positive
+    if reconciliation_px.is_none()
+        && divides_notional_by_price
+        && !cached_signed_qty.is_zero()
+        && (cached_signed_qty > Decimal::ZERO) == (venue_signed_qty > Decimal::ZERO)
+        && venue_signed_qty.abs() > cached_signed_qty.abs()
+        && let Some(cached_px) = cached_avg_px.filter(|px| *px > Decimal::ZERO)
+        && let Some(venue_px) = venue_avg_px.filter(|px| *px > Decimal::ZERO)
+    {
+        let instrument_id = instrument.id();
+        log::warn!(
+            "Cannot reconcile {instrument_id}: no fill price moves the cached position {cached_signed_qty} @ {cached_px} to the venue position {venue_signed_qty} @ {venue_px}"
+        );
+        return None;
+    }
+
+    reconciliation_px.or(venue_avg_px).or(cached_avg_px)
 }
 
 fn position_fill_report_matches(
