@@ -51,7 +51,10 @@ Released on TBD (UTC).
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
 - Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
+- Changed Lighter `From<LighterTradeType>` for `LighterTradeQueryType` to `TryFrom`; handle the error
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
+- Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
+- Changed `LighterMarketConfig` literals; wrap `funding_fee_discounts_enabled` in `Some` and add `rfq_enabled`
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Security
@@ -84,6 +87,11 @@ Released on TBD (UTC).
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
+- Fixed Lighter decoding rejecting whole responses and frames on unfamiliar venue enum values
+- Fixed Lighter metadata decoding rejecting binary-options markets and settlement statuses
+- Fixed Lighter metadata decoding rejecting responses without `funding_fee_discounts_enabled`
+- Fixed Lighter order reports mapping venue time in force `Unknown` to `GTC`
+- Fixed Lighter raw WebSocket frames losing `subscribed/` types and unmodeled fields
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms

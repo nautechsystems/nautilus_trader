@@ -105,7 +105,7 @@ pub enum LighterEnvironment {
     Testnet,
 }
 
-/// Lighter product type. Markets on the venue are either perpetual futures or spot.
+/// Lighter product type reported by market metadata.
 #[derive(
     Copy,
     Clone,
@@ -120,13 +120,26 @@ pub enum LighterEnvironment {
     Serialize,
     Deserialize,
 )]
-#[serde(rename_all = "lowercase")]
-#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
+#[strum(ascii_case_insensitive, serialize_all = "snake_case")]
 pub enum LighterProductType {
     /// Perpetual futures.
     Perp,
     /// Spot markets.
     Spot,
+    /// Binary options, which the adapter does not support.
+    BinaryOptions,
+    /// Forward-compatible fallback for any value the venue adds later.
+    #[serde(other)]
+    Other,
+}
+
+impl LighterProductType {
+    /// Returns whether the adapter supports this product type.
+    #[must_use]
+    pub const fn is_supported(self) -> bool {
+        matches!(self, Self::Perp | Self::Spot)
+    }
 }
 
 /// Lighter historical candle resolution.
@@ -385,6 +398,15 @@ pub enum LighterMarketStatus {
     Inactive,
     /// Market is available for trading.
     Active,
+    /// Market is being settled.
+    InSettlement,
+    /// Market is waiting for settlement.
+    WaitingForSettlement,
+    /// Market is settled.
+    Settled,
+    /// Forward-compatible fallback for any status the venue adds later.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Numeric transaction status returned by Lighter transaction queries.
@@ -424,6 +446,9 @@ pub enum LighterOrderKind {
     Twap,
     TwapSub,
     Liquidation,
+    /// Forward-compatible fallback for any order type the venue adds later.
+    #[serde(other)]
+    Other,
 }
 
 /// String time-in-force used by REST and WebSocket order payloads.
@@ -447,8 +472,8 @@ pub enum LighterOrderTimeInForce {
     GoodTillTime,
     ImmediateOrCancel,
     PostOnly,
-    #[serde(alias = "unknown")]
-    #[serde(rename = "Unknown")]
+    /// The venue's literal `Unknown` value and any value the venue adds later.
+    #[serde(other, rename = "Unknown")]
     #[strum(serialize = "Unknown")]
     Unknown,
 }
@@ -488,6 +513,9 @@ pub enum LighterOrderStatus {
     CanceledChild,
     CanceledLiquidation,
     CanceledInvalidBalance,
+    /// Forward-compatible fallback for any status the venue adds later.
+    #[serde(other)]
+    Unknown,
 }
 
 impl LighterOrderStatus {
@@ -515,8 +543,12 @@ impl LighterOrderStatus {
         }
     }
 
+    // An unknown status is not known to be terminal, so order tracking stays in place
     pub(crate) fn is_terminal(self) -> bool {
-        !matches!(self, Self::InProgress | Self::Pending | Self::Open)
+        !matches!(
+            self,
+            Self::InProgress | Self::Pending | Self::Open | Self::Unknown
+        )
     }
 }
 
@@ -565,6 +597,9 @@ pub enum LighterTriggerStatus {
     MarkPrice,
     Twap,
     ParentOrder,
+    /// Forward-compatible fallback for any status the venue adds later.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Trade type used by REST and WebSocket trade payloads.
@@ -589,6 +624,9 @@ pub enum LighterTradeType {
     Liquidation,
     Deleverage,
     MarketSettlement,
+    /// Forward-compatible fallback for any trade type the venue adds later.
+    #[serde(other)]
+    Other,
 }
 
 /// Lighter order type as encoded in the venue's binary order payload.
@@ -954,15 +992,112 @@ mod tests {
     }
 
     #[rstest]
-    fn test_market_status_serde() {
+    #[case::perp("perp", LighterProductType::Perp)]
+    #[case::spot("spot", LighterProductType::Spot)]
+    #[case::binary_options("binary_options", LighterProductType::BinaryOptions)]
+    #[case::unfamiliar("future_kind", LighterProductType::Other)]
+    fn test_product_type_deserializes_wire_values(
+        #[case] wire: &str,
+        #[case] expected: LighterProductType,
+    ) {
         assert_eq!(
-            serde_json::from_str::<LighterMarketStatus>(r#""active""#).unwrap(),
-            LighterMarketStatus::Active,
+            serde_json::from_value::<LighterProductType>(serde_json::json!(wire)).unwrap(),
+            expected,
         );
+    }
+
+    #[rstest]
+    #[case::perp(LighterProductType::Perp, true)]
+    #[case::spot(LighterProductType::Spot, true)]
+    #[case::binary_options(LighterProductType::BinaryOptions, false)]
+    #[case::other(LighterProductType::Other, false)]
+    fn test_product_type_is_supported(
+        #[case] product_type: LighterProductType,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(product_type.is_supported(), expected);
+    }
+
+    #[rstest]
+    #[case::inactive("inactive", LighterMarketStatus::Inactive)]
+    #[case::active("active", LighterMarketStatus::Active)]
+    #[case::in_settlement("in-settlement", LighterMarketStatus::InSettlement)]
+    #[case::waiting_for_settlement(
+        "waiting-for-settlement",
+        LighterMarketStatus::WaitingForSettlement
+    )]
+    #[case::settled("settled", LighterMarketStatus::Settled)]
+    #[case::unfamiliar("future-status", LighterMarketStatus::Unknown)]
+    fn test_market_status_deserializes_wire_values(
+        #[case] wire: &str,
+        #[case] expected: LighterMarketStatus,
+    ) {
+        assert_eq!(
+            serde_json::from_value::<LighterMarketStatus>(serde_json::json!(wire)).unwrap(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn test_market_status_serializes_wire_values() {
         assert_eq!(
             serde_json::to_string(&LighterMarketStatus::Inactive).unwrap(),
             r#""inactive""#,
         );
+        assert_eq!(
+            serde_json::to_string(&LighterMarketStatus::WaitingForSettlement).unwrap(),
+            r#""waiting-for-settlement""#,
+        );
+    }
+
+    #[rstest]
+    fn test_order_enums_fall_back_on_unfamiliar_wire_values() {
+        assert_eq!(
+            serde_json::from_str::<LighterOrderKind>(r#""future-type""#).unwrap(),
+            LighterOrderKind::Other,
+        );
+        assert_eq!(
+            serde_json::from_str::<LighterOrderTimeInForce>(r#""future-tif""#).unwrap(),
+            LighterOrderTimeInForce::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<LighterOrderStatus>(r#""future-status""#).unwrap(),
+            LighterOrderStatus::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<LighterTriggerStatus>(r#""future-trigger""#).unwrap(),
+            LighterTriggerStatus::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<LighterTradeType>(r#""future-trade""#).unwrap(),
+            LighterTradeType::Other,
+        );
+    }
+
+    #[rstest]
+    #[case::buy("buy", Some(LighterOrderSide::Buy))]
+    #[case::sell("sell", Some(LighterOrderSide::Sell))]
+    #[case::unfamiliar("future-side", None)]
+    fn test_order_side_stays_closed(
+        #[case] wire: &str,
+        #[case] expected: Option<LighterOrderSide>,
+    ) {
+        assert_eq!(
+            serde_json::from_value::<LighterOrderSide>(serde_json::json!(wire)).ok(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case::in_progress(LighterOrderStatus::InProgress, false)]
+    #[case::pending(LighterOrderStatus::Pending, false)]
+    #[case::open(LighterOrderStatus::Open, false)]
+    #[case::unknown(LighterOrderStatus::Unknown, false)]
+    #[case::filled(LighterOrderStatus::Filled, true)]
+    #[case::canceled(LighterOrderStatus::Canceled, true)]
+    #[case::canceled_expired(LighterOrderStatus::CanceledExpired, true)]
+    fn test_order_status_is_terminal(#[case] status: LighterOrderStatus, #[case] expected: bool) {
+        assert_eq!(status.is_terminal(), expected);
     }
 
     #[rstest]

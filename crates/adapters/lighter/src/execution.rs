@@ -5097,6 +5097,10 @@ fn confirm_modify_order(
     context: &AckedOrderProbeContext,
     order: &crate::http::models::LighterOrder,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        order.status != LighterOrderStatus::Unknown,
+        "Lighter modified order has an unknown status"
+    );
     let (cloid, _) = acked_action_identity(pending)?;
     let mut events = context.dispatch.order_events.lock();
     if !acked_action_is_pending(pending, context) {
@@ -7749,6 +7753,7 @@ impl LighterReportClient {
         };
 
         let between_timestamps = format_between_timestamps(cmd.start, cmd.end, ts_init);
+        let mut inactive_errors = Vec::new();
 
         for market_id in inactive_markets {
             let mut cursor: Option<String> = None;
@@ -7788,10 +7793,13 @@ impl LighterReportClient {
                         ts_init,
                         &self.dispatch,
                     ) else {
-                        anyhow::bail!(
+                        let detail = format!(
                             "failed to parse Lighter inactive order {} for market_index={market_id}",
                             order.order_id,
                         );
+                        log::warn!("{detail}");
+                        inactive_errors.push(detail);
+                        continue;
                     };
 
                     if cmd.start.is_some_and(|start| report.ts_last < start)
@@ -7818,6 +7826,10 @@ impl LighterReportClient {
                 );
                 cursor = Some(next);
             }
+        }
+
+        if !inactive_errors.is_empty() {
+            anyhow::bail!(inactive_errors.join("; "));
         }
 
         Ok(())
@@ -9037,6 +9049,15 @@ fn dispatch_lighter_order(
     trader_id: TraderId,
     ts_init: UnixNanos,
 ) {
+    if order.status == LighterOrderStatus::Unknown {
+        log::warn!(
+            "Lighter order frame skipped: unknown order status, order_id={}, market_index={}",
+            order.order_id,
+            order.market_index,
+        );
+        return;
+    }
+
     let mut events = dispatch.order_events.lock();
 
     let instrument_id = match registry.instrument_id(order.market_index) {
@@ -18344,6 +18365,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::tracked(true)]
+    #[case::untracked(false)]
+    fn dispatch_lighter_order_skips_unknown_status_and_keeps_fill(#[case] tracked: bool) {
+        let mut rig = dispatcher_rig(if tracked { "UNK-T" } else { "UNK-U" });
+        if tracked {
+            register_identity(&rig);
+        }
+
+        let order = dispatcher_test_order(&rig, LighterOrderStatus::Unknown);
+
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(1),
+        );
+
+        assert!(drain_events(&mut rig.rx).is_empty());
+        assert!(!rig.dispatch.accepted_was_emitted(&rig.cloid));
+        assert!(rig.dispatch.snapshot_for(&rig.cloid).is_none());
+        assert!(rig.dispatch.order_events.lock().is_empty());
+        assert!(!rig.dispatch.venue_id_map.contains_key(&rig.cloid));
+
+        let trade = dispatcher_test_trade(&rig, true);
+        dispatch_lighter_trade(
+            &trade,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(2),
+        );
+
+        let events = drain_events(&mut rig.rx);
+
+        if tracked {
+            assert_eq!(
+                events.len(),
+                2,
+                "expected Accepted then Filled, was {events:?}"
+            );
+
+            let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[1] else {
+                panic!("expected Filled, was {:?}", events[1]);
+            };
+
+            assert_eq!(filled.client_order_id, rig.cloid);
+            assert_eq!(filled.last_qty, Quantity::from("0.1336"));
+            assert_eq!(filled.last_px, Price::from("2352.73"));
+        } else {
+            assert_eq!(events.len(), 1, "expected one fill report, was {events:?}");
+
+            let ExecutionEvent::Report(EngineExecutionReport::Fill(report)) = &events[0] else {
+                panic!("expected fill report, was {:?}", events[0]);
+            };
+
+            assert_eq!(report.last_qty, Quantity::from("0.1336"));
+            assert_eq!(report.last_px, Price::from("2352.73"));
+        }
+    }
+
+    #[rstest]
     fn dispatch_lighter_order_tracked_emits_updated_on_shape_change() {
         let mut rig = dispatcher_rig("2");
         register_identity(&rig);
@@ -18572,6 +18660,15 @@ mod tests {
             api_key_index: TEST_API_KEY_INDEX,
             tx_hash: "confirmed-trigger".to_string(),
         };
+
+        let mut unknown = triggered.clone();
+        unknown.status = LighterOrderStatus::Unknown;
+        let err = confirm_modify_order(&pending, &context, &unknown).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Lighter modified order has an unknown status"
+        );
+        assert!(drain_events(&mut rig.rx).is_empty());
 
         confirm_modify_order(&pending, &context, &triggered).unwrap();
         let events = drain_events(&mut rig.rx);
@@ -21912,13 +22009,90 @@ mod tests {
     }
 
     #[rstest]
-    fn acknowledged_create_tx_validation_requires_exact_identity() {
+    #[case::pending(LighterTxStatus::Pending, ControlFlow::Continue(false))]
+    #[case::executed(LighterTxStatus::Executed, ControlFlow::Continue(true))]
+    #[case::failed(LighterTxStatus::Failed, ControlFlow::Break(()))]
+    #[tokio::test]
+    async fn acknowledged_create_probe_handles_empty_returned_signatures(
+        #[case] status: LighterTxStatus,
+        #[case] expected: ControlFlow<(), bool>,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "PROBE-EMPTY-SIG");
+        let index = enqueue_create(&client, &order, TEST_SUBMISSION_NONCE);
+        let submission = client.dispatch.pop_pending_sendtx_head().unwrap();
+
+        let tx = LighterTx {
+            code: 200,
+            message: None,
+            hash: submission.tx_hash.clone(),
+            tx_type: LighterTxType::CreateOrder as u8,
+            info: serde_json::json!({
+                "ClientOrderIndex": index,
+                "Sig": "",
+                "L1Sig": "",
+            })
+            .to_string(),
+            event_info: serde_json::json!({"ae": ""}).to_string(),
+            status,
+            account_index: TEST_ACCOUNT_INDEX_I64,
+            nonce: TEST_SUBMISSION_NONCE,
+            api_key_index: TEST_API_KEY_INDEX,
+        };
+
+        let (http_client, server) = spawn_create_probe_server(&tx).await;
+        let mut context = acked_probe_context(&client);
+        context.http_client = http_client;
+        let probe = AckedOrderProbe::from_pending(&submission).unwrap();
+
+        let result = probe_acked_create_tx(&probe, &context, 1).await.unwrap();
+        server.abort();
+        let _ = server.await;
+
+        let cloid = order.client_order_id();
+        let events = drain_events(&mut rx);
+        assert_eq!(result, expected);
+        assert_eq!(
+            client
+                .dispatch
+                .create_submission_is_pending(&cloid, index, TEST_SUBMISSION_NONCE),
+            status != LighterTxStatus::Failed,
+        );
+        assert_eq!(events.len(), usize::from(status == LighterTxStatus::Failed));
+
+        if status == LighterTxStatus::Failed {
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = &events[0] else {
+                panic!("expected Rejected, was {:?}", events[0]);
+            };
+
+            assert_eq!(rejected.client_order_id, cloid);
+            assert_eq!(
+                rejected.reason.as_str(),
+                format!(
+                    "Lighter sequencer rejected acknowledged create transaction {}: transaction failed without an application error",
+                    submission.tx_hash,
+                ),
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::returned("returned-signature")]
+    #[case::empty("")]
+    fn acknowledged_create_tx_validation_requires_exact_identity(#[case] signature: &str) {
         let tx = LighterTx {
             code: 200,
             message: None,
             hash: "ABCDEF".to_string(),
             tx_type: LighterTxType::CreateOrder as u8,
-            info: serde_json::json!({"ClientOrderIndex": 42}).to_string(),
+            info: serde_json::json!({
+                "ClientOrderIndex": 42,
+                "Sig": signature,
+                "L1Sig": signature,
+            })
+            .to_string(),
             event_info: serde_json::json!({"ae": ""}).to_string(),
             status: LighterTxStatus::Failed,
             account_index: TEST_ACCOUNT_INDEX_I64,
@@ -22004,15 +22178,20 @@ mod tests {
     fn acknowledged_group_tx_validation_requires_membership(
         #[case] client_order_index: i64,
         #[case] expected: bool,
+        #[values("returned-signature", "")] signature: &str,
     ) {
         let tx = LighterTx {
             code: 200,
             message: None,
             hash: "ABCDEF".to_string(),
             tx_type: LighterTxType::CreateGroupedOrders as u8,
-            info: serde_json::json!({"Orders": [
-                {"ClientOrderIndex": 41}, {"ClientOrderIndex": 42}, {"ClientOrderIndex": 43}
-            ]})
+            info: serde_json::json!({
+                "Orders": [
+                    {"ClientOrderIndex": 41}, {"ClientOrderIndex": 42}, {"ClientOrderIndex": 43}
+                ],
+                "Sig": signature,
+                "L1Sig": signature,
+            })
             .to_string(),
             event_info: serde_json::json!({"ae": ""}).to_string(),
             status: LighterTxStatus::Executed,

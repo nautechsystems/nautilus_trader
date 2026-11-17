@@ -86,7 +86,7 @@ Capability matrices describe adapter support. *Not supported by Lighter* identif
 Lighter provides a [binary options API](https://apidocs.lighter.xyz/docs/binary-options-trading-and-fees).
 The adapter does not discover or map binary-options instruments; its binary-options trading and
 settlement support remain unverified. Shared transaction formats and 64-bit market IDs do not
-establish support.
+establish support. The adapter also skips unfamiliar market types in venue metadata.
 
 ## Limitations
 
@@ -327,7 +327,8 @@ Nautilus bars. Later valid rows still load.
 ### Instrument status and trades
 
 Instrument status subscriptions replay cached `orderBookDetails` status or fetch a REST snapshot.
-Lighter exposes no WebSocket status-change stream.
+Lighter exposes no WebSocket status-change stream. A venue status other than `active` or `inactive`
+produces no `InstrumentStatus`; the adapter logs a warning.
 
 Trade subscriptions use the public WebSocket stream. History uses public `/api/v1/recentTrades` without
 credentials. The adapter filters at most 100 trades to the requested time range without pagination.
@@ -1010,6 +1011,12 @@ Create, cancel, modify, grouped orders, and leverage updates include market IDs 
 - **`trades` filters**: the raw `LighterTradesQuery` also accepts `integrator_account_index` and
   `order_index_str` (Lighter Core, per [API update 184](https://t.me/lighter_api_updates/184)). The venue
   gives `order_index_str` precedence over `order_index`; use it for indexes above `i64::MAX`.
+- **Unmapped orders**: orders whose venue type, status, or time in force has no Nautilus equivalent
+  produce no order status report; the adapter logs the failure. This includes literal `Unknown`
+  time in force and unrecognized values.
+- **Report collection**: WebSocket and REST processing continue with other orders. Bulk REST order
+  report generation fails as incomplete; mass status retains the collected reports.
+- **Fill reports**: order classification does not affect fill report mapping.
 
 Authenticated inactive-order and fill pagination rejects repeated cursors and stops after 1,000 pages.
 Fill reconciliation is repeatable across calls and suppresses fills already emitted by WebSocket.
@@ -1070,6 +1077,9 @@ The adapter emits merged `account_all_assets` and `user_stats` state only after 
 It is available through `NautilusWsMessage::Raw` only without an execution context; trading nodes do
 not expose it in typed account or position reports. Frames are processed in receive order without
 timestamp filtering or deduplication, and report timestamps remain unchanged.
+
+`NautilusWsMessage::Raw` carries each frame as received, including its `subscribed/` or `update/`
+type and fields the adapter does not model.
 
 Construction allows missing credentials, but `connect()` requires `private_key`, `account_index`, and
 `api_key_index`. Private streams and nonce refresh are mandatory.
