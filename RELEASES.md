@@ -102,6 +102,7 @@ Released on TBD (UTC).
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
+- Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
 
 ### Internal Improvements
 
