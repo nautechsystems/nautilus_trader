@@ -572,8 +572,8 @@ implementation.
 
 ### Infrastructure and runtimes
 
-- `network` and `cryptography`: Networking clients, transport support, signing, and cryptographic
-  providers.
+- `network` and `cryptography`: Networking clients, transport support, TLS configuration,
+  and cryptographic providers.
 - `infrastructure`, `persistence`, and `event_store`: Database backings, data catalogs, object
   storage, and event-store integration.
 - `system`: The kernel shared by backtest, sandbox, and live

@@ -32,7 +32,7 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         enums::{TardisExchange, TardisOptionType},
-        parse::{parse_instrument_id, parse_option_kind, parse_timestamp},
+        parse::{option_terms, parse_instrument_id, parse_option_kind, parse_timestamp},
     },
     csv::{
         create_csv_reader, infer_precision, load::OptionsChainPrecision, matches_underlying_filter,
@@ -400,6 +400,7 @@ fn create_crypto_option_from_options_chain_record(
     )?;
     let expiration = parse_timestamp(record.expiration);
     let option_kind = option_kind(record.option_type);
+    let (exercise_style, settlement_type) = option_terms(record.exchange);
 
     Ok(InstrumentAny::CryptoOption(
         CryptoOption::builder()
@@ -419,6 +420,8 @@ fn create_crypto_option_from_options_chain_record(
             .size_increment(size_increment)
             .lot_size(size_increment)
             .min_quantity(size_increment)
+            .maybe_exercise_style(exercise_style)
+            .maybe_settlement_type(settlement_type)
             .ts_event(parse_timestamp(record.timestamp))
             .ts_init(parse_timestamp(record.local_timestamp))
             .build()?,
@@ -465,7 +468,7 @@ mod tests {
 
     use nautilus_model::{
         data::{OptionGreeks, QuoteTick},
-        enums::OptionKind,
+        enums::{ExerciseStyle, OptionKind},
         instruments::Instrument,
     };
     use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
@@ -568,6 +571,8 @@ mod tests {
         assert_eq!(option.id().to_string(), instrument_id);
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-9JUN20-9875-P"));
         assert_eq!(option.option_kind, OptionKind::Put);
+        assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
+        assert_eq!(option.settlement_type, None);
         assert_eq!(option.strike_price, Price::from("9875.0000"));
         assert_eq!(
             option.expiration_ns,

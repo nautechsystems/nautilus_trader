@@ -289,8 +289,9 @@ pub struct BybitExecutionClientConfig {
     pub auto_repay_spot_borrows: bool,
     /// Whether to subscribe to the lower-latency `execution.fast` channel instead of the
     /// standard `execution` channel. Fast fills derive commissions from cached account fee
-    /// rates on a best-effort basis; derived values are not venue-authoritative. Demo mode
-    /// does not support this option.
+    /// rates; derived values are not venue-authoritative. The client skips a fast fill whose
+    /// commission it cannot derive. Demo mode and the Option product type do not support
+    /// this option.
     #[builder(default)]
     pub use_ws_execution_fast: bool,
     /// Leverage configuration for futures (symbol -> leverage).
@@ -354,12 +355,20 @@ impl BybitExecutionClientConfig {
     /// Returns an error if:
     /// - `product_types` repeats a value.
     /// - Fast execution is enabled in Demo mode.
+    /// - Fast execution is enabled with the Option product type.
     /// - `load_ids` contains duplicate or invalid instruments.
     pub fn validate(&self) -> ConfigResult<()> {
         if self.use_ws_execution_fast && self.environment == BybitEnvironment::Demo {
             return Err(ConfigError::unsupported_value(
                 "use_ws_execution_fast",
                 "execution.fast is not supported in demo mode",
+            ));
+        }
+
+        if self.use_ws_execution_fast && self.product_types.contains(&BybitProductType::Option) {
+            return Err(ConfigError::unsupported_value(
+                "use_ws_execution_fast",
+                "execution.fast carries no fee inputs for the Option product type",
             ));
         }
 
@@ -539,16 +548,35 @@ mod tests {
     }
 
     #[rstest]
-    #[case::demo_fast(BybitEnvironment::Demo, true, true)]
-    #[case::demo_standard(BybitEnvironment::Demo, false, false)]
-    #[case::mainnet_fast(BybitEnvironment::Mainnet, true, false)]
-    #[case::testnet_fast(BybitEnvironment::Testnet, true, false)]
-    fn test_exec_config_fast_environment(
+    #[case::demo_fast(
+        BybitEnvironment::Demo,
+        vec![BybitProductType::Linear],
+        true,
+        Some("execution.fast is not supported in demo mode")
+    )]
+    #[case::demo_standard(BybitEnvironment::Demo, vec![BybitProductType::Linear], false, None)]
+    #[case::mainnet_fast(BybitEnvironment::Mainnet, vec![BybitProductType::Linear], true, None)]
+    #[case::testnet_fast(BybitEnvironment::Testnet, vec![BybitProductType::Linear], true, None)]
+    #[case::option_fast(
+        BybitEnvironment::Mainnet,
+        vec![BybitProductType::Linear, BybitProductType::Option],
+        true,
+        Some("execution.fast carries no fee inputs for the Option product type")
+    )]
+    #[case::option_standard(
+        BybitEnvironment::Mainnet,
+        vec![BybitProductType::Linear, BybitProductType::Option],
+        false,
+        None
+    )]
+    fn test_exec_config_fast_validation(
         #[case] environment: BybitEnvironment,
+        #[case] product_types: Vec<BybitProductType>,
         #[case] use_ws_execution_fast: bool,
-        #[case] expect_rejection: bool,
+        #[case] rejection: Option<&str>,
     ) {
         let config = BybitExecutionClientConfig {
+            product_types,
             environment,
             use_ws_execution_fast,
             ..Default::default()
@@ -556,17 +584,14 @@ mod tests {
 
         let result = config.validate();
 
-        if expect_rejection {
-            assert_eq!(
-                result,
-                Err(ConfigError::unsupported_value(
-                    "use_ws_execution_fast",
-                    "execution.fast is not supported in demo mode",
-                ))
-            );
-        } else {
-            assert_eq!(result, Ok(()));
-        }
+        let expected = rejection.map_or(Ok(()), |reason| {
+            Err(ConfigError::unsupported_value(
+                "use_ws_execution_fast",
+                reason,
+            ))
+        });
+
+        assert_eq!(result, expected);
     }
 
     #[rstest]

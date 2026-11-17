@@ -1,0 +1,31 @@
+{
+  "base": "c69e0c0ceba8c57080a6f1da69ce3a68ea5c70c7",
+  "head_parents": [
+    "15ad6f7a73392c11da897b9537762cd969648adf",
+    "c69e0c0ceba8c57080a6f1da69ce3a68ea5c70c7"
+  ],
+  "lock_sha256": "4bfd7fd3d34f6098d85f0c73f8dae67841cd6c6081f6e78e4f4b4701e95bfa37",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5\n",
+  "source_sha256": {
+    "replay_latest_comparison.rs": "095fc6b78439da6eb7e98fcd9634ff66fb04e92b007f336662fc7d621a35b42d",
+    "replay_latest_memory.rs": "b1610461c98040c8ae585e2fb868cbae0aa4bcc341077483fb3fb667798964f9"
+  },
+  "runner_sha256": "1508125d838d04338856dcc0a7f176e216fd860f6af5cfd51b83ed07d8ee7588",
+  "jobs": 2,
+  "nice": 15,
+  "profile": "bench-lto, native unmodified",
+  "binaries": {
+    "head-engine": "df706a614c899cbe68c001fa9a16699875b469a5bd5e26f5da2d98306d7a8256",
+    "head-memory": "da528ab635add45eedead29c6b3eb27d0591f5252fb679ff528da1038dbe2fda",
+    "baseline-engine": "cc76d4c5e6a5bab7fe65a95e34ad8ba89d2447d8290c5f1bd9743dcc6fea79f4",
+    "baseline-memory": "ac9ac333f253496deac8f60ba33494c754a2fb26a366b22901ee79fd99158805"
+  },
+  "indexed_source": "Merge of head_parents; production and harness sources unchanged after measurement. See the commit containing this report.",
+  "environment": {
+    "cpu": "Apple M4 Pro",
+    "os": "macOS 27.0.1",
+    "redis": "8.6.2",
+    "worker_threads": 1,
+    "measurement": "serial synchronous ExecutionEngine::process; Redis acknowledgment/durability excluded"
+  }
+}

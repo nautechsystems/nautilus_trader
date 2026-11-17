@@ -134,6 +134,9 @@ Where:
 InstrumentId.from_str("BTC-25DEC26-100000-C.DERIBIT")
 ```
 
+The adapter sets `exercise_style` to `EUROPEAN` on every option, as the Deribit contract specification
+defines. `settlement_type` stays `None`; see [Options](../concepts/options.md).
+
 ### Spot
 
 Format: `{BaseCurrency}_{QuoteCurrency}`

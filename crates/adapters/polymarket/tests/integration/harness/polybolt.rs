@@ -179,13 +179,15 @@ async fn handle_polybolt_socket(mut socket: WebSocket, state: TestServerState) {
                 let replies = if payload["op"] == "auth" {
                     state.auth_counts.lock()[connection] += 1;
                     auth_replies(&state, &payload)
-                } else {
+                } else if matches!(payload["op"].as_str(), Some("subscribe" | "unsubscribe")) {
                     state
                         .subscription_times
                         .lock()
                         .await
                         .push(std::time::Instant::now());
                     subscription_replies(&state, &payload, &mut sequences)
+                } else {
+                    Vec::new()
                 };
 
                 for reply in replies {

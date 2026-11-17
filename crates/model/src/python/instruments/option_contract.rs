@@ -27,7 +27,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    enums::{AssetClass, OptionKind, SettlementType},
+    enums::{AssetClass, ExerciseStyle, OptionKind, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::OptionContract,
     types::{Currency, Price, Quantity},
@@ -39,7 +39,7 @@ impl OptionContract {
     /// Represents a generic option contract instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, exchange=None, tick_scheme=None, info=None, underlying_instrument_id=None, settlement_type=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, exchange=None, tick_scheme=None, info=None, underlying_instrument_id=None, exercise_style=None, settlement_type=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -66,6 +66,7 @@ impl OptionContract {
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
         underlying_instrument_id: Option<InstrumentId>,
+        exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
     ) -> PyResult<Self> {
         // Convert Python dict to Params
@@ -99,6 +100,7 @@ impl OptionContract {
             .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
             .maybe_info(info_map)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .ts_event(ts_event.into())
             .ts_init(ts_init.into())
@@ -159,6 +161,12 @@ impl OptionContract {
     #[pyo3(name = "underlying_instrument_id")]
     fn py_underlying_instrument_id(&self) -> Option<InstrumentId> {
         self.underlying_instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "exercise_style")]
+    fn py_exercise_style(&self) -> Option<ExerciseStyle> {
+        self.exercise_style
     }
 
     #[getter]
@@ -319,6 +327,10 @@ impl OptionContract {
         dict.set_item(
             "underlying_instrument_id",
             self.underlying_instrument_id.map(|id| id.to_string()),
+        )?;
+        dict.set_item(
+            "exercise_style",
+            self.exercise_style.map(|style| style.to_string()),
         )?;
         dict.set_item(
             "settlement_type",

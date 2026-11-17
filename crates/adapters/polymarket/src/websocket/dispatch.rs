@@ -3361,12 +3361,14 @@ mod tests {
         trade.trader_side = PolymarketLiquiditySide::Maker;
         trade.maker_orders[0].price = wire_price;
         trade.maker_orders[0].matched_amount = matched_amount;
+        trade.size = matched_amount.to_string();
         let mut rest: PolymarketTradeReport =
             serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
                 .expect("REST trade fixture");
         rest.trader_side = PolymarketLiquiditySide::Maker;
         rest.maker_orders[0].price = wire_price;
         rest.maker_orders[0].matched_amount = matched_amount;
+        rest.size = matched_amount + rest.maker_orders[1].matched_amount;
         let token_instruments = AtomicMap::new();
         token_instruments.insert(trade.asset_id, instrument_for_trade(&trade));
         let maker_address = trade.maker_orders[0].maker_address.clone();
@@ -3681,6 +3683,7 @@ mod tests {
         trade.status = PolymarketTradeStatus::Matched;
         trade.maker_orders[0].price = dec!(0.4200001023529231);
         trade.maker_orders[0].matched_amount = dec!(1.758621);
+        trade.size = "1.758621".to_string();
         let configured_address = trade.maker_orders[0].maker_address.clone();
 
         let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
@@ -3723,9 +3726,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(dec!(-1))]
-    #[case(Decimal::MAX)]
-    fn test_dispatch_maker_numeric_failure_quarantines_trade(#[case] invalid_amount: Decimal) {
+    #[case::negative(Some(dec!(-1)))]
+    #[case::overflow(Some(Decimal::MAX))]
+    #[case::missing_owned(None)]
+    fn test_dispatch_maker_invalid_participants_quarantine_trade(
+        #[case] invalid_amount: Option<Decimal>,
+    ) {
         let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
         trade.status = PolymarketTradeStatus::Confirmed;
         trade.trader_side = PolymarketLiquiditySide::Maker;
@@ -3766,9 +3772,15 @@ mod tests {
         let second_venue_order_id = VenueOrderId::from(second_leg.order_id.as_str());
         settlement.note_order_submitted(second_venue_order_id);
         trade.maker_orders.push(second_leg);
+        trade.size = "32".to_string();
 
         let mut invalid_trade = trade.clone();
-        invalid_trade.maker_orders[1].matched_amount = invalid_amount;
+        if let Some(amount) = invalid_amount {
+            invalid_trade.maker_orders[1].matched_amount = amount;
+        } else {
+            invalid_trade.maker_orders.remove(1);
+        }
+
         dispatch_user_message(&UserWsMessage::Trade(invalid_trade), &ctx, &mut state);
         assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 0);
         assert!(
@@ -3799,6 +3811,148 @@ mod tests {
             settlement_state(&settlement, &trade.id),
             Some(SettlementState::Quarantined)
         );
+
+        let mut terminal: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+
+        for maker in &mut terminal.maker_orders {
+            maker.side = Some(PolymarketOrderSide::Sell);
+        }
+
+        let mut invalid_terminal = terminal.clone();
+        invalid_terminal.maker_orders.remove(1);
+        apply_rest_trade_evidence(&invalid_terminal, &ctx, &mut state);
+
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(SettlementState::Quarantined)
+        );
+        assert!(fill_tracker.pending_fills_for(&venue_order_id).is_empty());
+        assert!(
+            fill_tracker
+                .pending_fills_for(&second_venue_order_id)
+                .is_empty()
+        );
+
+        apply_rest_trade_evidence(&terminal, &ctx, &mut state);
+        apply_rest_trade_evidence(&terminal, &ctx, &mut state);
+        let first: Vec<_> = fill_tracker
+            .pending_fills_for(&venue_order_id)
+            .into_iter()
+            .map(|fill| fill.last_qty)
+            .collect();
+        let second: Vec<_> = fill_tracker
+            .pending_fills_for(&second_venue_order_id)
+            .into_iter()
+            .map(|fill| fill.last_qty)
+            .collect();
+
+        assert_eq!(first, vec![Quantity::from("25.000000")]);
+        assert_eq!(second, vec![Quantity::from("7.000000")]);
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(SettlementState::RestConfirmed)
+        );
+    }
+
+    #[rstest]
+    fn test_dispatch_invalid_maker_copy_preserves_applied_fill(
+        #[values(false, true)] observed_before_invalid: bool,
+    ) {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.status = PolymarketTradeStatus::Matched;
+        trade.maker_orders[0].side = Some(PolymarketOrderSide::Sell);
+        let configured_address = trade.maker_orders[0].maker_address.clone();
+        let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let instrument = instrument_for_trade(&trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Sell,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            venue_order_id,
+            instrument.id(),
+            "O-MAKER-COPY",
+        );
+        let mut order_context = order_contexts.get(&venue_order_id).unwrap();
+        order_context.identity.order_side = OrderSide::Sell;
+        order_contexts.register_context(venue_order_id, order_context);
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: &configured_address,
+            user_api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        };
+
+        let mut state = WsDispatchState::default();
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        let fill = match receiver.try_recv().expect("early maker fill") {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => fill,
+            other => panic!("expected maker fill, was {other:?}"),
+        };
+
+        if observed_before_invalid {
+            settlement.observe_fill_applied(&fill);
+        }
+
+        let mut invalid = trade.clone();
+        invalid.size = "26".to_string();
+        dispatch_user_message(&UserWsMessage::Trade(invalid), &ctx, &mut state);
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(SettlementState::Quarantined)
+        );
+
+        if !observed_before_invalid {
+            settlement.observe_fill_applied(&fill);
+        }
+
+        let mut terminal: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        terminal.status = PolymarketTradeStatus::Confirmed;
+        apply_rest_trade_evidence(&terminal, &ctx, &mut state);
+        apply_rest_trade_evidence(&terminal, &ctx, &mut state);
+
+        assert_eq!(fill.venue_order_id, venue_order_id);
+        assert_eq!(fill.last_qty, Quantity::from("25.000000"));
+        assert_eq!(fill.last_px, Price::from("0.5000"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+        assert!(receiver.try_recv().is_err());
+        assert!(fill_tracker.pending_fills_for(&venue_order_id).is_empty());
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(trade_hard_fault(&settlement, &trade.id), None);
+        assert!(settlement.ensure_submission_allowed().is_ok());
     }
 
     #[rstest]
@@ -4133,6 +4287,7 @@ mod tests {
             trade.trader_side = PolymarketLiquiditySide::Maker;
             trade.side = PolymarketOrderSide::Sell;
             trade.maker_orders[0].matched_amount = dec!(20);
+            trade.size = "20".to_string();
         }
 
         let (order_id, user_address, api_key) = if maker {
@@ -7247,7 +7402,7 @@ mod tests {
                 event_type,
             };
 
-        let make_trade = |trade_id: &str, matched_amount: f64, ts: &str| PolymarketUserTrade {
+        let make_trade = |trade_id: &str, matched_amount: Decimal, ts: &str| PolymarketUserTrade {
             asset_id,
             bucket_index: 0,
             fee_rate_bps: "1000".to_string(),
@@ -7257,8 +7412,7 @@ mod tests {
             maker_orders: vec![PolymarketMakerOrder {
                 asset_id,
                 maker_address: "0xabc".to_string(),
-                matched_amount: Decimal::from_str_exact(&matched_amount.to_string())
-                    .unwrap_or(Decimal::ZERO),
+                matched_amount,
                 order_id: order_id.clone(),
                 outcome: PolymarketOutcome::yes(),
                 owner: "xxx".to_string(),
@@ -7271,7 +7425,7 @@ mod tests {
             owner: Ustr::from("other-owner"),
             price: "0.82".to_string(),
             side: PolymarketOrderSide::Buy,
-            size: "1.219511".to_string(),
+            size: matched_amount.to_string(),
             status: PolymarketTradeStatus::Confirmed,
             taker_order_id: "0xtaker01".to_string(),
             timestamp: ts.to_string(),
@@ -7294,7 +7448,7 @@ mod tests {
         }
 
         // (B) Trade fill 1.219511
-        let msg_b = make_trade("trade-b", 1.219511, "1775074738032");
+        let msg_b = make_trade("trade-b", dec!(1.219511), "1775074738032");
         dispatch_user_message(&UserWsMessage::Trade(msg_b), &ctx, &mut state);
 
         let evt = receiver.try_recv().expect("(B) filled event");
@@ -7338,7 +7492,7 @@ mod tests {
         }
 
         // (E) Trade fill 1.341461
-        let msg_e = make_trade("trade-e", 1.341461, "1775074738036");
+        let msg_e = make_trade("trade-e", dec!(1.341461), "1775074738036");
         dispatch_user_message(&UserWsMessage::Trade(msg_e), &ctx, &mut state);
 
         let evt = receiver.try_recv().expect("(E) filled event");

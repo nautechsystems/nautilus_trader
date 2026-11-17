@@ -42,6 +42,7 @@ pub const SPOT_SUFFIX: &str = "-SPOT";
 ///
 /// The venue symbol is upper-cased and combined with the product suffix
 /// (`-PERP` or `-SPOT`) before being qualified by the Lighter venue.
+/// Unsupported product types get no suffix.
 #[must_use]
 pub fn format_instrument_id(venue_symbol: &str, product_type: LighterProductType) -> InstrumentId {
     format_instrument_id_with_venue(venue_symbol, product_type, *LIGHTER_VENUE)
@@ -90,6 +91,7 @@ const fn product_suffix(product_type: LighterProductType) -> &'static str {
     match product_type {
         LighterProductType::Perp => PERP_SUFFIX,
         LighterProductType::Spot => SPOT_SUFFIX,
+        LighterProductType::BinaryOptions | LighterProductType::Other => "",
     }
 }
 

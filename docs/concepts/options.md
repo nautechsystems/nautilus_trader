@@ -28,23 +28,60 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
-Vanilla `OptionContract` and `CryptoOption` also carry two optional contract fields:
+Vanilla `OptionContract` and `CryptoOption` also carry three optional contract fields:
 
 - `underlying_instrument_id`: the actual underlying instrument. It is independent of
   `OptionSeriesId.underlying_instrument_id`, which supplies the reference price.
-- `settlement_type`: `CASH` pays intrinsic value in the settlement currency; `PHYSICAL` delivers a position
-  in the underlying. The value is `None` when unknown or when no single type represents the settlement.
+- `exercise_style`: when the holder can exercise the option.
+- `settlement_type`: what the option delivers on exercise.
 
-The Interactive Brokers provider fills the underlying ID when it has already resolved that contract to an
-instrument; unresolved IDs remain `None`. Deribit leaves both fields `None`: its option definitions supply
-no exact underlying instrument ID, and its
-[inverse](https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options) and
-[linear](https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options) options settle
-through futures in two steps, which a single settlement type does not represent.
+See [Exercise style and settlement type](#exercise-style-and-settlement-type) for the values.
+
+Adapters set these fields as follows:
+
+- **Interactive Brokers**: fills the underlying ID when the provider has already resolved that contract
+  to an instrument; unresolved IDs remain `None`. The exercise style and settlement type remain `None`.
+- **Deribit**: sets the exercise style to `EUROPEAN` and leaves the underlying ID and settlement type
+  `None`. Its option definitions supply no exact underlying instrument ID, and its
+  [inverse](https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options) and
+  [linear](https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options) options settle
+  through futures in two steps, which a single settlement type does not represent.
+- **Derive**, **OKX**, and **Bybit**: set the exercise style to `EUROPEAN` and the settlement type to `CASH`.
+- **Tardis**: sets both fields from the
+  [source exchange](../integrations/tardis.md#option-exercise-style-and-settlement-type).
+- **Databento**: sets the exercise style and settlement type from each
+  [option definition](../integrations/databento.md#option-exercise-style-and-settlement-type).
+
+Deribit, Derive, OKX, Bybit, and Tardis instrument definitions carry neither field, so these adapters apply
+each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules and leaves both fields
+`None` for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
 preserve them; missing fields in older JSON and Arrow records load as `None`. Equality and hashing use
 only the instrument ID. The matching engine and Greeks calculator do not read these fields.
+
+### Exercise style and settlement type
+
+Exercise style and settlement type are independent of each other and of `option_kind`. For example, US
+equity options are American-style and physically settled, and S&P 500 index (SPX) options are
+European-style and cash-settled.
+
+**Exercise style** (`exercise_style`):
+
+| Value      | Exercise                                  |
+| ---------- | ----------------------------------------- |
+| `AMERICAN` | At any time up to expiration.             |
+| `EUROPEAN` | Only at expiration.                       |
+| `BERMUDAN` | Only on specified dates up to expiration. |
+| `None`     | Unknown.                                  |
+
+**Settlement type** (`settlement_type`):
+
+| Value      | Settlement                                            |
+| ---------- | ----------------------------------------------------- |
+| `CASH`     | Pays the intrinsic value in the settlement currency.  |
+| `PHYSICAL` | Delivers a position in the underlying.                |
+| `None`     | Unknown, or no single type represents the settlement. |
 
 ## Simulated spread execution
 

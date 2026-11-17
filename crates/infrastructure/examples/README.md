@@ -1,5 +1,9 @@
 # Position replay review harnesses
 
+For the newer native `bench-lto` continuing-fill/flip comparison and retained-memory probe, see
+[the combined comparison](../../../docs/developer_guide/position_replay_comparison.md). The commands
+and historical validation notes below describe the earlier harnesses.
+
 These synthetic offline examples support the replay-index review. They contain no account
 credentials and do not connect to an exchange. Run Redis cases only against a disposable,
 loopback-only Redis instance with persistence disabled, never an existing application database.

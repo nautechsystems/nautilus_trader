@@ -298,6 +298,9 @@ nonce `k` so the timed region is hash and curve work, not RNG.
 | `signing/sign_tx (CancelOrder)`         | 66.8 µs |   15.0 k/s |
 | `signing/build_auth_token_at`           | 67.8 µs |   14.7 k/s |
 
+The suite also includes `signing/fresh_k` and `signing/sign_tx (CreateOrder, fresh nonce)` to measure
+OS randomness and rejection sampling in the signing path. These cases have no published baseline yet.
+
 ## Comparison with the official Go stack
 
 | Workload                  | Go                    | Rust (`bench-lto`) | Speedup |

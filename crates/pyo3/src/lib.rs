@@ -121,11 +121,6 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
 
-    let n = "cryptography";
-    let submodule = pyo3::wrap_pymodule!(nautilus_cryptography::python::cryptography);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-
     let n = "data";
     let submodule = pyo3::wrap_pymodule!(nautilus_data::python::data);
     m.add_wrapped(submodule)?;

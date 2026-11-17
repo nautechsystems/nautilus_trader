@@ -22,9 +22,7 @@ crate-type = ["rlib"]
 [features]
 default = ["high-precision"]
 examples = [
-  "dep:nautilus-backtest",
   "dep:nautilus-execution",
-  "dep:nautilus-tardis",
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
   "nautilus-trading/examples",
@@ -93,16 +91,16 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
-nautilus-backtest = { workspace = true, optional = true }
 nautilus-execution = { workspace = true, optional = true }
-nautilus-tardis = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-backtest = { workspace = true }
 nautilus-live = { workspace = true, features = ["test-support"] }
+nautilus-tardis = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }

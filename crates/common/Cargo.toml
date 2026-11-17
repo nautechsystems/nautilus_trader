@@ -90,7 +90,6 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
-madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
@@ -100,6 +99,9 @@ tracing-subscriber = { workspace = true, optional = true }
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 libc = { workspace = true }
+
+[target.'cfg(madsim)'.dependencies]
+madsim = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }

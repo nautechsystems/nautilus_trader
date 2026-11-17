@@ -476,6 +476,7 @@ async fn cancel_all_orders(
     nonce_mgr: &NonceManager,
     chain_id: u32,
 ) -> anyhow::Result<()> {
+    let k = fresh_k()?;
     let context = build_context(credential, nonce_mgr)?;
 
     let tx = CancelAllOrdersTxInfo {
@@ -485,7 +486,7 @@ async fn cancel_all_orders(
         skip_nonce: 0,
     };
 
-    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k())?;
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, k)?;
     let tx_info =
         serde_json::value::RawValue::from_string(TxInfoJson::cancel_all_orders(&tx, &signed))?;
     ws.send_tx(LighterTxType::CancelAllOrders as u8, tx_info)
@@ -504,6 +505,7 @@ async fn close_one_position(
     is_ask: bool,
     crossing_price: u32,
 ) -> anyhow::Result<()> {
+    let k = fresh_k()?;
     let context = build_context(credential, nonce_mgr)?;
 
     let order = OrderInfo {
@@ -525,7 +527,7 @@ async fn close_one_position(
         attributes: L2TxAttributes::default(),
     };
 
-    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k())?;
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, k)?;
     let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))?;
     ws.send_tx(LighterTxType::CreateOrder as u8, tx_info)
         .await?;

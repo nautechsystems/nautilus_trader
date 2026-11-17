@@ -101,3 +101,12 @@ required-features = ["redis"]
 name = "replay_recovery"
 doc = false
 required-features = ["redis"]
+
+[[example]]
+name = "replay_latest_comparison"
+doc = false
+required-features = ["redis"]
+
+[[example]]
+name = "replay_latest_memory"
+doc = false

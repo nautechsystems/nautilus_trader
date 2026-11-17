@@ -6,17 +6,13 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Cryptographic utilities and security functions for [NautilusTrader](https://nautilustrader.io).
+TLS configuration and cryptographic provider management for [NautilusTrader](https://nautilustrader.io).
 
-The `nautilus-cryptography` crate provides essential cryptographic primitives and security utilities
-required for secure communication with trading venues and data providers. This includes
-digital signing, TLS configuration, and cryptographic provider management:
+The `nautilus-cryptography` crate supports secure communication with trading venues,
+data providers, and infrastructure services:
 
-- HMAC-based message authentication and signing.
-- Digital signatures using RSA and Ed25519 algorithms.
-- TLS client configuration with platform certificate verification.
-- Cryptographic provider management and initialization.
-- Secure encoding and decoding utilities.
+- TLS client configuration with bundled `webpki-roots` trust anchors.
+- AWS-LC `rustls` provider initialization when no default is set.
 
 ## NautilusTrader
 
@@ -25,13 +21,6 @@ engine for multi-asset, multi-venue trading systems.
 
 The system spans research, deterministic simulation, and live execution within a single
 event-driven architecture, providing research-to-live semantic parity.
-
-## Feature flags
-
-This crate provides feature flags to control source code inclusion during compilation:
-
-- `extension-module`: Builds as a Python extension module.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

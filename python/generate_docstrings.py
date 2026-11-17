@@ -50,7 +50,6 @@ ANNOTATED_CRATES = [
     "persistence",
     "serialization",
     "infrastructure",
-    "cryptography",
     "network",
     "indicators",
     "data",

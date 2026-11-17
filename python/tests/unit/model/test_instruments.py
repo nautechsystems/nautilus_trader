@@ -36,6 +36,7 @@ from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import Equity
+from nautilus_trader.model import ExerciseStyle
 from nautilus_trader.model import FuturesContract
 from nautilus_trader.model import FuturesSpread
 from nautilus_trader.model import IndexInstrument
@@ -520,9 +521,14 @@ def test_option_contract_construction() -> None:
 
 
 @pytest.mark.parametrize("known", [False, True])
+@pytest.mark.parametrize(
+    "style",
+    [None, ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+)
 @pytest.mark.parametrize("settlement", [None, SettlementType.CASH, SettlementType.PHYSICAL])
 def test_option_contract_to_dict_and_from_dict_roundtrip(
     known: bool,
+    style: ExerciseStyle | None,
     settlement: SettlementType | None,
 ) -> None:
     """
@@ -548,10 +554,15 @@ def test_option_contract_to_dict_and_from_dict_roundtrip(
         ts_event=0,
         ts_init=0,
         underlying_instrument_id=underlying_id,
+        exercise_style=style,
         settlement_type=settlement,
     )
 
-    assert (oc.underlying_instrument_id, oc.settlement_type) == (underlying_id, settlement)
+    assert (oc.underlying_instrument_id, oc.exercise_style, oc.settlement_type) == (
+        underlying_id,
+        style,
+        settlement,
+    )
 
     d = oc.to_dict()
     restored = OptionContract.from_dict(d)
@@ -561,14 +572,17 @@ def test_option_contract_to_dict_and_from_dict_roundtrip(
     assert restored.strike_price == oc.strike_price
 
     assert restored.underlying_instrument_id == oc.underlying_instrument_id
+    assert (d["option_kind"], d["exercise_style"]) == ("PUT", style.name if style else None)
     assert restored.settlement_type == oc.settlement_type
     assert restored.to_dict() == d
     assert hash(restored) == hash(oc)
 
     d.pop("underlying_instrument_id")
+    d.pop("exercise_style")
     d.pop("settlement_type")
     legacy = OptionContract.from_dict(d)
     assert legacy.underlying_instrument_id is None
+    assert legacy.exercise_style is None
     assert legacy.settlement_type is None
     assert legacy == oc
     assert hash(legacy) == hash(oc)
@@ -1046,9 +1060,14 @@ def test_crypto_option_construction() -> None:
 
 
 @pytest.mark.parametrize("known", [False, True])
+@pytest.mark.parametrize(
+    "style",
+    [None, ExerciseStyle.AMERICAN, ExerciseStyle.EUROPEAN, ExerciseStyle.BERMUDAN],
+)
 @pytest.mark.parametrize("settlement", [None, SettlementType.CASH, SettlementType.PHYSICAL])
 def test_crypto_option_to_dict_and_from_dict_roundtrip(
     known: bool,
+    style: ExerciseStyle | None,
     settlement: SettlementType | None,
 ) -> None:
     """
@@ -1074,10 +1093,15 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip(
         ts_event=0,
         ts_init=0,
         underlying_instrument_id=underlying_id,
+        exercise_style=style,
         settlement_type=settlement,
     )
 
-    assert (co.underlying_instrument_id, co.settlement_type) == (underlying_id, settlement)
+    assert (co.underlying_instrument_id, co.exercise_style, co.settlement_type) == (
+        underlying_id,
+        style,
+        settlement,
+    )
 
     d = co.to_dict()
     restored = CryptoOption.from_dict(d)
@@ -1088,14 +1112,17 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip(
     assert restored.is_inverse == co.is_inverse
 
     assert restored.underlying_instrument_id == co.underlying_instrument_id
+    assert (d["option_kind"], d["exercise_style"]) == ("CALL", style.name if style else None)
     assert restored.settlement_type == co.settlement_type
     assert restored.to_dict() == d
     assert hash(restored) == hash(co)
 
     d.pop("underlying_instrument_id")
+    d.pop("exercise_style")
     d.pop("settlement_type")
     legacy = CryptoOption.from_dict(d)
     assert legacy.underlying_instrument_id is None
+    assert legacy.exercise_style is None
     assert legacy.settlement_type is None
     assert legacy == co
     assert hash(legacy) == hash(co)

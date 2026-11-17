@@ -293,8 +293,10 @@ pub struct LighterMarketConfig {
     pub liquidation_mode: i32,
     pub force_reduce_only: bool,
     pub trading_hours: String,
-    pub funding_fee_discounts_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding_fee_discounts_enabled: Option<bool>,
     pub hidden: bool,
+    pub rfq_enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -975,5 +977,183 @@ mod tests {
 
         assert_eq!(orders.orders[0].side, None);
         assert!(orders.orders[0].is_ask);
+    }
+
+    #[rstest]
+    #[case::funding_true_rfq_false(Some(true), false)]
+    #[case::funding_false_rfq_true(Some(false), true)]
+    #[case::funding_absent_rfq_true(None, true)]
+    #[case::funding_absent_rfq_false(None, false)]
+    fn test_market_config_optional_funding_flag(
+        #[case] funding_fee_discounts_enabled: Option<bool>,
+        #[case] rfq_enabled: bool,
+    ) {
+        let mut payload: serde_json::Value = serde_json::from_str(HTTP_ORDER_BOOK_DETAILS).unwrap();
+        let config = &mut payload["order_book_details"][0]["market_config"];
+        config["rfq_enabled"] = serde_json::json!(rfq_enabled);
+        match funding_fee_discounts_enabled {
+            Some(enabled) => config["funding_fee_discounts_enabled"] = serde_json::json!(enabled),
+            None => {
+                config
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("funding_fee_discounts_enabled");
+            }
+        }
+
+        let expected = LighterMarketConfig {
+            market_margin_mode: LighterPositionMarginMode::Cross,
+            insurance_fund_account_index: 281_474_976_710_655,
+            liquidation_mode: 0,
+            force_reduce_only: false,
+            trading_hours: String::new(),
+            funding_fee_discounts_enabled,
+            hidden: false,
+            rfq_enabled,
+        };
+
+        let config: LighterMarketConfig =
+            serde_json::from_value(payload["order_book_details"][0]["market_config"].clone())
+                .unwrap();
+        let details: LighterOrderBookDetails = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(config, expected);
+        assert_eq!(details.order_book_details.len(), 1);
+        assert_eq!(details.order_book_details[0].market_config, expected);
+        assert_eq!(
+            serde_json::to_value(&expected)
+                .unwrap()
+                .get("funding_fee_discounts_enabled"),
+            funding_fee_discounts_enabled
+                .map(|enabled| serde_json::json!(enabled))
+                .as_ref(),
+        );
+    }
+
+    #[rstest]
+    fn test_market_config_requires_rfq_enabled() {
+        let mut payload: serde_json::Value = serde_json::from_str(HTTP_ORDER_BOOK_DETAILS).unwrap();
+        payload["order_book_details"][0]["market_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("rfq_enabled");
+
+        let err = serde_json::from_value::<LighterOrderBookDetails>(payload).unwrap_err();
+
+        assert!(err.to_string().contains("missing field `rfq_enabled`"));
+    }
+
+    #[rstest]
+    #[case::binary_options(
+        "binary_options",
+        "waiting-for-settlement",
+        LighterProductType::BinaryOptions,
+        LighterMarketStatus::WaitingForSettlement
+    )]
+    #[case::in_settlement(
+        "binary_options",
+        "in-settlement",
+        LighterProductType::BinaryOptions,
+        LighterMarketStatus::InSettlement
+    )]
+    #[case::settled(
+        "binary_options",
+        "settled",
+        LighterProductType::BinaryOptions,
+        LighterMarketStatus::Settled
+    )]
+    #[case::unfamiliar(
+        "future_kind",
+        "future-status",
+        LighterProductType::Other,
+        LighterMarketStatus::Unknown
+    )]
+    fn test_order_books_keeps_siblings_of_other_market_classifications(
+        #[case] market_type: &str,
+        #[case] status: &str,
+        #[case] expected_market_type: LighterProductType,
+        #[case] expected_status: LighterMarketStatus,
+    ) {
+        let mut payload: serde_json::Value = serde_json::from_str(HTTP_ORDER_BOOKS).unwrap();
+        let mut unfamiliar = payload["order_books"][0].clone();
+        unfamiliar["symbol"] = serde_json::json!("BTC-UPDOWN");
+        unfamiliar["market_id"] = serde_json::json!(7001);
+        unfamiliar["market_type"] = serde_json::json!(market_type);
+        unfamiliar["status"] = serde_json::json!(status);
+        payload["order_books"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unfamiliar);
+        let healthy: LighterOrderBooks = serde_json::from_str(HTTP_ORDER_BOOKS).unwrap();
+
+        let order_books: LighterOrderBooks = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(order_books.order_books.len(), 2);
+        assert_eq!(order_books.order_books[0].symbol, Ustr::from("BTC-UPDOWN"));
+        assert_eq!(order_books.order_books[0].market_id, 7001);
+        assert_eq!(order_books.order_books[0].market_type, expected_market_type);
+        assert_eq!(order_books.order_books[0].status, expected_status);
+        assert_eq!(order_books.order_books[1], healthy.order_books[0]);
+    }
+
+    #[rstest]
+    fn test_orders_keeps_siblings_of_unfamiliar_classifications() {
+        let mut payload: serde_json::Value = serde_json::from_str(HTTP_ORDERS).unwrap();
+        let mut unfamiliar = payload["orders"][0].clone();
+        unfamiliar["order_id"] = serde_json::json!("900");
+        unfamiliar["order_index"] = serde_json::json!(900);
+        unfamiliar["type"] = serde_json::json!("future-type");
+        unfamiliar["time_in_force"] = serde_json::json!("future-tif");
+        unfamiliar["status"] = serde_json::json!("future-status");
+        unfamiliar["trigger_status"] = serde_json::json!("future-trigger");
+        payload["orders"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unfamiliar);
+        let healthy: LighterOrders = serde_json::from_str(HTTP_ORDERS).unwrap();
+
+        let orders: LighterOrders = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(orders.orders.len(), 2);
+        assert_eq!(orders.orders[0].order_id, "900");
+        assert_eq!(orders.orders[0].order_type, LighterOrderKind::Other);
+        assert_eq!(
+            orders.orders[0].time_in_force,
+            LighterOrderTimeInForce::Unknown
+        );
+        assert_eq!(orders.orders[0].status, LighterOrderStatus::Unknown);
+        assert_eq!(
+            orders.orders[0].trigger_status,
+            LighterTriggerStatus::Unknown
+        );
+        assert_eq!(
+            orders.orders[0].filled_base_amount,
+            healthy.orders[0].filled_base_amount
+        );
+        assert_eq!(orders.orders[1], healthy.orders[0]);
+    }
+
+    #[rstest]
+    fn test_trades_keeps_fill_data_of_unfamiliar_trade_type() {
+        let mut payload: serde_json::Value = serde_json::from_str(HTTP_RECENT_TRADES).unwrap();
+        let mut unfamiliar = payload["trades"][0].clone();
+        unfamiliar["trade_id"] = serde_json::json!(900);
+        unfamiliar["trade_id_str"] = serde_json::json!("900");
+        unfamiliar["type"] = serde_json::json!("future-trade");
+        payload["trades"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unfamiliar);
+        let healthy: LighterTrades = serde_json::from_str(HTTP_RECENT_TRADES).unwrap();
+        let mut expected = healthy.trades[0].clone();
+        expected.trade_id = 900;
+        expected.trade_id_str = Some("900".to_string());
+        expected.trade_type = LighterTradeType::Other;
+
+        let trades: LighterTrades = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(trades.trades.len(), 2);
+        assert_eq!(trades.trades[0], expected);
+        assert_eq!(trades.trades[1], healthy.trades[0]);
     }
 }

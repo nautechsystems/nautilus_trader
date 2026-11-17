@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Cryptographic primitives and management for the Nautilus trading engine"
+description = "TLS configuration and cryptographic provider management for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
@@ -19,33 +19,13 @@ workspace = true
 name = "nautilus_cryptography"
 crate-type = ["rlib"]
 
-[features]
-default = []
-extension-module = [
-  "nautilus-core/extension-module",
-  "python",
-  "pyo3/extension-module",
-]
-python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
-
 [package.metadata.docs.rs]
-# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-core = { workspace = true }
-
-anyhow = { workspace = true }
-aws-lc-rs = { workspace = true }
-base64 = { workspace = true }
-ed25519-dalek = { workspace = true }
 log = { workspace = true }
-pem = { workspace = true }
 rustls = { workspace = true }
 webpki-roots = { workspace = true }
-
-pyo3 = { workspace = true, optional = true }
-pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

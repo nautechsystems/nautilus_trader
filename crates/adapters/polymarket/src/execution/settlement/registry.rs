@@ -504,6 +504,8 @@ impl SettlementRegistry {
     /// and the registry applies a leg only once. The exception is a trade already settled
     /// `FAILED` through REST, where the absent leg is the correct tombstone. A declined
     /// correction void hard-faults the trade because the applied fill cannot be reversed.
+    /// Unbound declines only log: core reconciliation and duplicate reconstructed fills can
+    /// produce them, and a client-wide fault would also stop unrelated settlement corrections.
     pub(crate) fn observe_fill_declined(&self, event: &OrderEventAny) {
         let (trade_id, pending, restored) = match event {
             OrderEventAny::Filled(fill) => (
@@ -3765,7 +3767,9 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn test_late_fill_after_rest_failed_receives_one_void() {
+    fn test_late_fill_after_rest_failed_receives_one_void(
+        #[values(false, true)] declined_void: bool,
+    ) {
         let registry = live_registry();
         let leg = taker_leg();
         registry.note_order_submitted(leg.venue_order_id);
@@ -3776,6 +3780,14 @@ pub(crate) mod tests {
             registry.admit_rest_result(&trade(PolymarketTradeStatus::Failed, vec![leg.clone()]));
         let fill = applied_fill(&leg, Some(TRADE));
 
+        let unknown = applied_fill(&maker_leg("unknown-order"), None);
+        let declined = if declined_void {
+            OrderEventAny::FillVoided(applied_void(&unknown))
+        } else {
+            OrderEventAny::Filled(unknown)
+        };
+
+        registry.observe_fill_declined(&declined);
         force_trade_fault(&registry, TRADE, "terminal contradiction");
         let first = registry.observe_fill_applied(&fill);
         let duplicate = registry.observe_fill_applied(&fill);
@@ -3790,10 +3802,18 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn test_unbound_maker_fill_binds_to_trade_evidence() {
+    fn test_unbound_maker_fill_binds_to_trade_evidence(#[values(false, true)] declined_void: bool) {
         let registry = live_registry();
         let leg = maker_leg("0xmaker-a");
-        registry.observe_fill_applied(&applied_fill(&leg, None));
+        let fill = applied_fill(&leg, None);
+        registry.observe_fill_applied(&fill);
+        let declined = if declined_void {
+            OrderEventAny::FillVoided(applied_void(&fill))
+        } else {
+            OrderEventAny::Filled(fill)
+        };
+
+        registry.observe_fill_declined(&declined);
         let unbound = leg_application(&registry, &leg.trade_id);
         let record_count = registry.record_count();
 
@@ -3805,6 +3825,29 @@ pub(crate) mod tests {
         assert_eq!(record_count, 0);
         assert_eq!(voided_trade_ids(&failed), vec![leg.trade_id]);
         assert_eq!(registry.record_count(), 1);
+    }
+
+    #[rstest]
+    fn test_unknown_declined_event_does_not_fault_settlement(
+        #[values(false, true)] declined_void: bool,
+    ) {
+        let registry = live_registry();
+        let fill = applied_fill(&maker_leg("unknown-order"), None);
+        let declined = if declined_void {
+            let mut voided = applied_void(&fill);
+            voided.trade_id = TradeId::from("VOID-unknown-order");
+            OrderEventAny::FillVoided(voided)
+        } else {
+            OrderEventAny::Filled(fill)
+        };
+
+        registry.observe_fill_declined(&declined);
+
+        assert_eq!(registry.client_fault_reason(), None);
+        assert_eq!(registry.record_count(), 0);
+        assert!(registry.pending_resolutions().is_empty());
+        assert!(registry.ensure_submission_allowed().is_ok());
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
     }
 
     #[rstest]

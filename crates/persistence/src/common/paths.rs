@@ -312,6 +312,16 @@ pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
     uri.strip_prefix("file://").unwrap_or(uri).to_string()
 }
 
+/// Escapes literal `%`, `#`, and `?` characters before parsing a local catalog URI as a URL.
+///
+/// Local catalog URIs retain filesystem names as written, including percent sequences.
+#[must_use]
+pub(crate) fn escape_local_file_uri(uri: &str) -> String {
+    uri.replace('%', "%25")
+        .replace('#', "%23")
+        .replace('?', "%3F")
+}
+
 /// Returns the catalog type staged by a Feather session path like
 /// `backtest/{run_id}/{type}/{...}/file.feather`.
 ///

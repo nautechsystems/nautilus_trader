@@ -22,7 +22,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::{models::TardisInstrumentInfo, parse::parse_settlement_currency};
-use crate::common::parse::parse_option_kind;
+use crate::common::parse::{option_terms, parse_option_kind};
 
 /// Returns a currency from the internal map or creates a new crypto currency.
 ///
@@ -231,6 +231,8 @@ pub fn create_crypto_option(
         )
     })?;
 
+    let (exercise_style, settlement_type) = option_terms(info.exchange);
+
     Ok(InstrumentAny::CryptoOption(
         CryptoOption::builder()
             .instrument_id(instrument_id)
@@ -255,6 +257,8 @@ pub fn create_crypto_option(
             .margin_init(margin_init)
             .margin_maint(margin_maint)
             .maybe_info(build_info_params(info))
+            .maybe_exercise_style(exercise_style)
+            .maybe_settlement_type(settlement_type)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()

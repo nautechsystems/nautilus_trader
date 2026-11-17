@@ -25,7 +25,7 @@ use ustr::Ustr;
 
 use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
-    enums::{AssetClass, InstrumentClass, OptionKind, SettlementType},
+    enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
@@ -106,6 +106,9 @@ pub struct CryptoOption {
     /// The actual underlying instrument, which may trade on another venue; absent when unknown.
     #[serde(default)]
     pub underlying_instrument_id: Option<InstrumentId>,
+    /// The exercise style; absent when unknown.
+    #[serde(default)]
+    pub exercise_style: Option<ExerciseStyle>,
     /// The contractual settlement type; absent when unknown or not represented by a single type.
     #[serde(default)]
     pub settlement_type: Option<SettlementType>,
@@ -144,6 +147,7 @@ impl CryptoOption {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         underlying_instrument_id: Option<InstrumentId>,
+        exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         check_equal_u8(
@@ -201,6 +205,7 @@ impl CryptoOption {
             ts_event,
             ts_init,
             underlying_instrument_id,
+            exercise_style,
             settlement_type,
         })
     }
@@ -244,6 +249,7 @@ impl CryptoOption {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         underlying_instrument_id: Option<InstrumentId>,
+        exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         Self::new_checked(
@@ -276,6 +282,7 @@ impl CryptoOption {
             ts_event,
             ts_init,
             underlying_instrument_id,
+            exercise_style,
             settlement_type,
         )
     }
@@ -439,7 +446,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        enums::{AssetClass, InstrumentClass, OptionKind, SettlementType},
+        enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
         identifiers::{InstrumentId, Symbol},
         instruments::{CryptoOption, Instrument, stubs::*},
         types::{Currency, Money, Price, Quantity},
@@ -540,6 +547,7 @@ mod tests {
             0.into(),
             None,
             None,
+            None,
         );
         assert!(result.is_err());
     }
@@ -575,6 +583,7 @@ mod tests {
             None,
             0.into(),
             0.into(),
+            None,
             None,
             None,
         );
@@ -614,6 +623,7 @@ mod tests {
             None,
             0.into(),
             0.into(),
+            None,
             None,
             None,
         );
@@ -667,6 +677,7 @@ mod tests {
             1.into(),
             2.into(),
             Some(InstrumentId::from("BTCUSDT.BINANCE")),
+            Some(ExerciseStyle::European),
             Some(SettlementType::Cash),
         )
         .unwrap();
@@ -699,6 +710,7 @@ mod tests {
             .ts_event(1.into())
             .ts_init(2.into())
             .underlying_instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .exercise_style(ExerciseStyle::European)
             .settlement_type(SettlementType::Cash)
             .build()
             .unwrap();
@@ -707,6 +719,7 @@ mod tests {
             built.underlying_instrument_id,
             Some(InstrumentId::from("BTCUSDT.BINANCE"))
         );
+        assert_eq!(built.exercise_style, Some(ExerciseStyle::European));
         assert_eq!(built.settlement_type, Some(SettlementType::Cash));
         assert_eq!(
             serde_json::to_value(&positional).unwrap(),
@@ -715,17 +728,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(OptionKind::Call, SettlementType::Cash)]
-    #[case(OptionKind::Put, SettlementType::Physical)]
+    #[case(OptionKind::Call, ExerciseStyle::American, SettlementType::Cash)]
+    #[case(OptionKind::Put, ExerciseStyle::European, SettlementType::Physical)]
+    #[case(OptionKind::Call, ExerciseStyle::European, SettlementType::Physical)]
+    #[case(OptionKind::Put, ExerciseStyle::Bermudan, SettlementType::Cash)]
     fn test_explicit_option_terms_round_trip(
         #[from(crypto_option_btc_deribit)] mut option: CryptoOption,
         #[case] kind: OptionKind,
+        #[case] style: ExerciseStyle,
         #[case] settlement: SettlementType,
     ) {
         let legacy = option.clone();
         let underlying_id = InstrumentId::from("BTCUSDT.BINANCE");
         option.option_kind = kind;
         option.underlying_instrument_id = Some(underlying_id);
+        option.exercise_style = Some(style);
         option.settlement_type = Some(settlement);
         let mut encoded = serde_json::to_value(&option).unwrap();
         let restored: CryptoOption = serde_json::from_value(encoded.clone()).unwrap();
@@ -733,11 +750,13 @@ mod tests {
         old.as_object_mut()
             .unwrap()
             .remove("underlying_instrument_id");
+        old.as_object_mut().unwrap().remove("exercise_style");
         old.as_object_mut().unwrap().remove("settlement_type");
         let restored_legacy: CryptoOption = serde_json::from_value(old).unwrap();
 
         assert_eq!(serde_json::to_value(&restored).unwrap(), encoded);
         encoded["underlying_instrument_id"] = serde_json::Value::Null;
+        encoded["exercise_style"] = serde_json::Value::Null;
         encoded["settlement_type"] = serde_json::Value::Null;
         assert_eq!(serde_json::to_value(&restored_legacy).unwrap(), encoded);
         assert_eq!(option, legacy);

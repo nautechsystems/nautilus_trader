@@ -865,7 +865,14 @@ fn emit_lighter_instrument_status(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    let action = lighter_market_status_action(status);
+    let action = match lighter_market_status_action(status) {
+        Ok(action) => action,
+        Err(e) => {
+            log::warn!("Skipping Lighter instrument status for {instrument_id}: {e}");
+            return;
+        }
+    };
+
     let is_trading = Some(matches!(action, MarketStatusAction::Trading));
     let status = InstrumentStatus::new(
         instrument_id,
@@ -884,10 +891,16 @@ fn emit_lighter_instrument_status(
     }
 }
 
-fn lighter_market_status_action(status: LighterMarketStatus) -> MarketStatusAction {
+fn lighter_market_status_action(status: LighterMarketStatus) -> anyhow::Result<MarketStatusAction> {
     match status {
-        LighterMarketStatus::Active => MarketStatusAction::Trading,
-        LighterMarketStatus::Inactive => MarketStatusAction::NotAvailableForTrading,
+        LighterMarketStatus::Active => Ok(MarketStatusAction::Trading),
+        LighterMarketStatus::Inactive => Ok(MarketStatusAction::NotAvailableForTrading),
+        LighterMarketStatus::InSettlement
+        | LighterMarketStatus::WaitingForSettlement
+        | LighterMarketStatus::Settled
+        | LighterMarketStatus::Unknown => Err(anyhow::anyhow!(
+            "Lighter market status `{status}` has no Nautilus market status action",
+        )),
     }
 }
 
@@ -1969,7 +1982,54 @@ mod tests {
         #[case] status: LighterMarketStatus,
         #[case] expected: MarketStatusAction,
     ) {
-        assert_eq!(lighter_market_status_action(status), expected);
+        assert_eq!(lighter_market_status_action(status).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(LighterMarketStatus::InSettlement, "in-settlement")]
+    #[case(LighterMarketStatus::WaitingForSettlement, "waiting-for-settlement")]
+    #[case(LighterMarketStatus::Settled, "settled")]
+    #[case(LighterMarketStatus::Unknown, "unknown")]
+    fn test_lighter_market_status_action_rejects_unmapped_status(
+        #[case] status: LighterMarketStatus,
+        #[case] label: &str,
+    ) {
+        let err = lighter_market_status_action(status).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!("Lighter market status `{label}` has no Nautilus market status action"),
+        );
+    }
+
+    #[rstest]
+    fn test_emit_lighter_instrument_status_skips_unmapped_status() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+        let instrument_id = InstrumentId::from("ETH-PERP.LIGHTER");
+
+        emit_lighter_instrument_status(
+            &sender,
+            instrument_id,
+            LighterMarketStatus::Unknown,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        emit_lighter_instrument_status(
+            &sender,
+            instrument_id,
+            LighterMarketStatus::Inactive,
+            UnixNanos::from(3),
+            UnixNanos::from(4),
+        );
+
+        let DataEvent::Data(Data::InstrumentStatus(status)) = receiver.try_recv().unwrap() else {
+            panic!("expected instrument status");
+        };
+
+        assert_eq!(status.action, MarketStatusAction::NotAvailableForTrading);
+        assert_eq!(status.ts_event, UnixNanos::from(3));
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -3217,6 +3277,7 @@ mod tests {
         let instrument = match product_type {
             LighterProductType::Perp => test_perp_instrument(instrument_id, venue_symbol),
             LighterProductType::Spot => test_spot_instrument(instrument_id, venue_symbol),
+            other => panic!("unsupported product type {other}"),
         };
 
         client.instruments.rcu(|m| {

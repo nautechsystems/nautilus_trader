@@ -496,7 +496,15 @@ pub(crate) fn should_continue_historical_tick_pagination(
             .is_none_or(|(start, end)| end > start)
 }
 
-/// Add a historical tick page and advance the next request before its earliest tick.
+/// Returns the end of the first backward historical tick request covering ticks up to `end`.
+///
+/// IB reads a historical ticks end at whole seconds and leaves out ticks in that second, so the
+/// request ends at the second after the one holding `end`.
+pub(crate) fn historical_tick_request_end(end: Timestamp) -> Timestamp {
+    truncate_to_second(end).unwrap_or(end) + SignedDuration::from_secs(1)
+}
+
+/// Add a historical tick page and move the next request's end to its earliest tick's second.
 #[allow(clippy::too_many_arguments)] // The parameters describe one pagination transition.
 pub(crate) fn extend_historical_tick_batch<T>(
     all_ticks: &mut Vec<T>,
@@ -508,52 +516,47 @@ pub(crate) fn extend_historical_tick_batch<T>(
     limit: Option<usize>,
     ts_event: impl Fn(&T) -> UnixNanos,
 ) -> bool {
-    if batch_ticks.is_empty() {
-        return false;
-    }
-
-    // The IB wire encodes the request end at second resolution and treats it as
-    // inclusive, so each page re-delivers ticks from the boundary second that a
-    // previous page already collected. Drop everything at or past the requested
-    // end before extending; an entirely re-delivered page means the end second
-    // cannot retreat (a single second holds a full page) and pagination must stop.
-    let mut batch_ticks = batch_ticks;
-
-    if let Some(end) = *current_end_date {
-        let end_bound_nanos = end.as_nanosecond();
-        batch_ticks.retain(|tick| i128::from(ts_event(tick).as_u64()) <= end_bound_nanos);
-        if batch_ticks.is_empty() {
-            tracing::warn!(
-                "Historical tick pagination pinned at {end}; a single second exceeds the page \
-                 size, earlier ticks within that second cannot be requested"
-            );
-            retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
-            return false;
-        }
-    }
-
+    // IB returns every tick of a page's earliest second and leaves out the end second of a
+    // request, so the next page ends at that earliest second without overlapping this one
     let Some(min_ts_nanos) = batch_ticks.iter().map(&ts_event).min() else {
         return false;
     };
-
-    let new_end_nanos = min_ts_nanos.as_u64().saturating_sub(1);
-
-    let Ok(new_end) = Timestamp::from_nanosecond(i128::from(new_end_nanos)) else {
+    let Some(new_end) = Timestamp::from_nanosecond(i128::from(min_ts_nanos.as_u64()))
+        .ok()
+        .and_then(truncate_to_second)
+    else {
         return false;
     };
+
+    // A page at or past the requested end cannot move the end back
+    if current_end_date.is_some_and(|end| new_end >= end) {
+        tracing::warn!(
+            "Historical tick pagination stopped: page starting {new_end} does not precede the \
+             requested end"
+        );
+        retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
+        return false;
+    }
 
     *current_end_date = Some(new_end);
 
     all_ticks.extend(batch_ticks);
-    if current_start_date
-        .zip(*current_end_date)
-        .is_some_and(|(start, end)| end <= start)
-    {
+    if current_start_date.is_some_and(|start| new_end <= start) {
         retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
         return false;
     }
 
     limit.is_none_or(|limit| all_ticks.len() < limit)
+}
+
+fn truncate_to_second(timestamp: Timestamp) -> Option<Timestamp> {
+    timestamp
+        .round(
+            TimestampRound::new()
+                .smallest(Unit::Second)
+                .mode(RoundMode::Trunc),
+        )
+        .ok()
 }
 
 /// Retain historical ticks within the inclusive requested range.
@@ -1211,18 +1214,32 @@ mod tests {
         );
     }
 
+    fn seconds(value: i64) -> UnixNanos {
+        UnixNanos::from(u64::try_from(value).unwrap() * 1_000_000_000)
+    }
+
     #[rstest]
-    fn test_extend_historical_tick_batch_retreats_one_nanosecond() {
-        let mut ticks = vec![UnixNanos::from(30)];
-        let mut end = Some(Timestamp::from_nanosecond(100).unwrap());
+    #[case::whole_second("2026-11-13T14:30:00Z", "2026-11-13T14:30:01Z")]
+    #[case::within_second("2026-11-13T14:30:00.5Z", "2026-11-13T14:30:01Z")]
+    fn test_historical_tick_request_end(#[case] end: &str, #[case] expected: &str) {
+        assert_eq!(
+            historical_tick_request_end(timestamp(end)),
+            timestamp(expected)
+        );
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_ends_next_page_at_earliest_second() {
+        let mut ticks = vec![seconds(30)];
+        let mut end = Some(Timestamp::from_second(30).unwrap());
 
         let should_continue = extend_historical_tick_batch(
             &mut ticks,
-            vec![UnixNanos::from(20), UnixNanos::from(10)],
-            Some(Timestamp::from_nanosecond(1).unwrap()),
+            vec![seconds(20), seconds(10), seconds(10)],
+            Some(Timestamp::from_second(1).unwrap()),
             &mut end,
-            Some(UnixNanos::from(1)),
-            Some(UnixNanos::from(100)),
+            Some(seconds(1)),
+            Some(seconds(100)),
             Some(10),
             |ts| *ts,
         );
@@ -1230,69 +1247,40 @@ mod tests {
         assert!(should_continue);
         assert_eq!(
             ticks,
-            vec![
-                UnixNanos::from(30),
-                UnixNanos::from(20),
-                UnixNanos::from(10)
-            ]
+            vec![seconds(30), seconds(20), seconds(10), seconds(10)]
         );
-        assert_eq!(end, Some(Timestamp::from_nanosecond(9).unwrap()));
+        assert_eq!(end, Some(Timestamp::from_second(10).unwrap()));
     }
 
     #[rstest]
     fn test_extend_historical_tick_batch_stops_and_trims_at_start() {
         let mut ticks = Vec::new();
-        let mut end = Some(Timestamp::from_nanosecond(100).unwrap());
+        let mut end = Some(Timestamp::from_second(100).unwrap());
 
         let should_continue = extend_historical_tick_batch(
             &mut ticks,
-            vec![UnixNanos::from(20), UnixNanos::from(10)],
-            Some(Timestamp::from_nanosecond(10).unwrap()),
+            vec![seconds(20), seconds(10)],
+            Some(Timestamp::from_second(10).unwrap()),
             &mut end,
-            Some(UnixNanos::from(10)),
-            Some(UnixNanos::from(15)),
+            Some(seconds(10)),
+            Some(seconds(15)),
             Some(10),
             |ts| *ts,
         );
 
         assert!(!should_continue);
-        assert_eq!(ticks, vec![UnixNanos::from(10)]);
-        assert_eq!(end, Some(Timestamp::from_nanosecond(9).unwrap()));
-    }
-
-    #[rstest]
-    fn test_extend_historical_tick_batch_drops_boundary_duplicates() {
-        let mut ticks = vec![UnixNanos::from(30)];
-        let mut end = Some(Timestamp::from_nanosecond(29).unwrap());
-
-        let should_continue = extend_historical_tick_batch(
-            &mut ticks,
-            vec![
-                UnixNanos::from(35),
-                UnixNanos::from(30),
-                UnixNanos::from(20),
-            ],
-            None,
-            &mut end,
-            None,
-            None,
-            Some(10),
-            |ts| *ts,
-        );
-
-        assert!(should_continue);
-        assert_eq!(ticks, vec![UnixNanos::from(30), UnixNanos::from(20)]);
-        assert_eq!(end, Some(Timestamp::from_nanosecond(19).unwrap()));
+        assert_eq!(ticks, vec![seconds(10)]);
+        assert_eq!(end, Some(Timestamp::from_second(10).unwrap()));
     }
 
     #[rstest]
     fn test_extend_historical_tick_batch_stops_when_end_cannot_retreat() {
-        let mut ticks = vec![UnixNanos::from(30)];
-        let mut end = Some(Timestamp::from_nanosecond(29).unwrap());
+        let mut ticks = vec![seconds(30)];
+        let mut end = Some(Timestamp::from_second(30).unwrap());
 
         let should_continue = extend_historical_tick_batch(
             &mut ticks,
-            vec![UnixNanos::from(35), UnixNanos::from(30)],
+            vec![seconds(35), seconds(30)],
             None,
             &mut end,
             None,
@@ -1302,8 +1290,8 @@ mod tests {
         );
 
         assert!(!should_continue);
-        assert_eq!(ticks, vec![UnixNanos::from(30)]);
-        assert_eq!(end, Some(Timestamp::from_nanosecond(29).unwrap()));
+        assert_eq!(ticks, vec![seconds(30)]);
+        assert_eq!(end, Some(Timestamp::from_second(30).unwrap()));
     }
 
     fn timestamp(value: &str) -> Timestamp {

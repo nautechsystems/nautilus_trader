@@ -628,10 +628,11 @@ outputs instead.
   values. Use `activation_ns` and `expiration_ns` when exact nanosecond precision is required.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
 
-`OptionContract` and `CryptoOption` add optional `underlying_instrument_id` and `settlement_type` fields:
+`OptionContract` and `CryptoOption` add optional `underlying_instrument_id`, `exercise_style`, and
+`settlement_type` fields:
 
-- **Rust**: add both fields to struct literals and direct `build_checked` calls; use `None` when unknown.
-- **Defaults**: builders and Python constructors default both fields to `None`.
+- **Rust**: add the fields to struct literals and direct `build_checked` calls; use `None` when unknown.
+- **Defaults**: builders and Python constructors default the fields to `None`.
 - **Legacy data**: missing JSON and Arrow fields load as `None`. Parquet files without the columns remain readable.
 - **Consolidation**: Parquet files with and without these columns cannot be consolidated together.
   Read the instruments and write them to a separate catalog with the current schema first.
@@ -1172,11 +1173,13 @@ Postgres-backed deployments must run `nautilus database init` before starting a 
 and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node fails at connect time
 while the old column types remain.
 
-The initialization also adds nullable `instrument.underlying_instrument_id` and
-`instrument.settlement_type` columns:
+The initialization also adds nullable `instrument.underlying_instrument_id`, `instrument.exercise_style`,
+`instrument.settlement_type`, and `instrument.tick_scheme` columns:
 
 - Existing rows keep `NULL`, which loads as `None`.
-- Cache startup rejects schemas missing either column.
+- Cache startup rejects schemas missing any of these columns.
+
+Register custom tick schemes before loading cached option spreads.
 
 Existing databases whose `AGGRESSOR_SIDE` enum still contains `BUYER` and `SELLER` also need this one-time
 migration before ingesting v2 data:

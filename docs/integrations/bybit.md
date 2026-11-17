@@ -733,6 +733,10 @@ and NVDA, settled in USDT or USDC.
 The adapter uses the `CryptoOption` instrument type and the `-OPTION` symbol
 suffix. See the [symbology section](#symbology) for the full symbol format.
 
+Option instruments carry `exercise_style` `EUROPEAN` and `settlement_type` `CASH`. Bybit definitions have
+neither field; the values follow the
+[Bybit options specification](https://www.bybit.com/en/help-center/article/Introduction-to-Bybit-Options).
+
 With `OPTION` in `product_types`, the adapter loads options for every listed base coin,
 including BTC, ETH, and SOL, on mainnet, testnet, and demo. Instrument refreshes and
 status updates cover the same base coins.
@@ -1150,19 +1154,31 @@ For all derivatives products (LINEAR, INVERSE, OPTION), fees are always charged 
 
 With `use_ws_execution_fast=True`, the adapter subscribes to `execution.fast` instead of the standard
 `execution` channel. The fast channel omits `execFee`, `feeCurrency`, `feeRate`, and execution type.
-After loading instruments, the adapter asynchronously requests account maker and taker rates from
-Bybit's `/v5/account/fee-rate` endpoint and derives fast-fill commissions on a best-effort basis:
+Before connecting the private stream, the adapter requests account maker and taker rates from
+Bybit's `/v5/account/fee-rate` endpoint and derives fast-fill commissions from the cached rates:
 
 - Spot uses base quantity times the fee rate for base-denominated fees and quote notional times the
   fee rate for quote-denominated fees. Maker rebates use the opposite fee currency and a negative
   commission amount.
 - Linear and inverse derivatives use instrument notional times the fee rate, denominated in
   settlement currency. No currency conversion is applied when quote and settlement currencies differ.
-- Option fast fills use zero commission in settlement currency because the fast payload lacks the
-  underlying/index price and cap inputs required by Bybit's Option fee formula.
-- Missing or invalid rates and failed calculations produce zero commission without dropping the fill.
-  Early fills can use this fallback while the asynchronous request is in progress. A failed refresh
-  retains the previous rates; affected fills use zero only when no previous rate is available.
+  A charged Linear fee rounds up at the settlement currency precision, as Bybit's `execFee` does.
+- The adapter rejects `use_ws_execution_fast=True` with the `OPTION` product type. The fast payload
+  lacks the underlying/index price and cap inputs required by Bybit's Option fee formula.
+
+If the fee-rate request fails and no previous rates are cached, the connection fails. On a later
+connect, a failed refresh retains the previous rates.
+
+The adapter never substitutes zero commission. When it cannot derive a commission, because the
+instrument has no cached rate or the calculation fails, it logs an error and emits no fill from the
+stream. Only execution reconciliation can then record the fill, and it does not always do so:
+
+- With `open_check_interval_secs` set, the open-order check can infer the fill from the order status
+  report while the order is still open in the system. The inferred fill has a generated trade ID and
+  no commission.
+- Without periodic checks, the fill stays unrecorded until the next reconciliation.
+- A fill skipped before the order is canceled, or during shutdown, can stay unrecorded: the order
+  closes or the session ends before a check covers it.
 
 The adapter refreshes these rates each time the execution client connects, not when an individual
 WebSocket automatically reconnects. Fast fills with an empty `orderLinkId` are correlated by venue
@@ -1171,8 +1187,8 @@ order ID and deferred until the corresponding order update when necessary.
 :::warning
 Fast-execution-derived commission is **not authoritative from the venue**. Cached rates can be stale,
 and the formula excludes special fee schedules such as RPI, `extraFees`, product-specific fee caps,
-and venue rounding. Use the standard `execution` channel or REST execution reports when authoritative
-`execFee` accounting is required.
+and rounding rules not verified against the venue. Use the standard `execution` channel or REST
+execution reports when authoritative `execFee` accounting is required.
 :::
 
 The fast channel delivers only ordinary `Trade` executions. It does not provide other execution types
@@ -1218,31 +1234,31 @@ The product types for each client must be specified in the configurations.
 
 ### Execution client configuration options
 
-| Option                      | Default    | Description                                                                                                                                |
-| --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                                           |
-| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`.                            |
-| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                                                       |
-| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                                                    |
-| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                                            |
-| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                                               |
-| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                                                 |
-| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                                                      |
-| `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                                                 |
-| `max_retries`               | `3`        | Maximum retry attempts for REST reads.                                                                                                     |
-| `retry_delay_initial_ms`    | `1,000`    | Initial REST read retry delay and cancel-all polling interval (milliseconds).                                                              |
-| `retry_delay_max_ms`        | `10,000`   | Maximum REST read retry delay (milliseconds).                                                                                              |
-| `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                                                        |
-| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                                                       |
-| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                                                |
-| `account_id`                | `None`     | Optional account ID associated with this client.                                                                                           |
-| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).                                |
-| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill on the standard execution channel.                             |
-| `use_ws_execution_fast`     | `False`    | Use `execution.fast` instead of standard `execution`; derives non-authoritative commissions on a best-effort basis. Rejected in demo mode. |
-| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                                               |
-| `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                                              |
-| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                                               |
-| `load_ids`                  | `None`     | Instrument IDs included in reconciliation. See [Reconciliation](#reconciliation).                                                          |
+| Option                      | Default    | Description                                                                                                                  |
+| --------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                             |
+| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`.              |
+| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                                         |
+| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                                      |
+| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                              |
+| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                                 |
+| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                                   |
+| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                                        |
+| `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                                   |
+| `max_retries`               | `3`        | Maximum retry attempts for REST reads.                                                                                       |
+| `retry_delay_initial_ms`    | `1,000`    | Initial REST read retry delay and cancel-all polling interval (milliseconds).                                                |
+| `retry_delay_max_ms`        | `10,000`   | Maximum REST read retry delay (milliseconds).                                                                                |
+| `heartbeat_interval_secs`   | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                                          |
+| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                                         |
+| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                                  |
+| `account_id`                | `None`     | Optional account ID associated with this client.                                                                             |
+| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).                  |
+| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill on the standard execution channel.               |
+| `use_ws_execution_fast`     | `False`    | Use `execution.fast` instead of `execution`; derives non-authoritative commissions. Rejected in demo mode and with `OPTION`. |
+| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                                 |
+| `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                                |
+| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                                 |
+| `load_ids`                  | `None`     | Instrument IDs included in reconciliation. See [Reconciliation](#reconciliation).                                            |
 
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.

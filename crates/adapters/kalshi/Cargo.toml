@@ -92,9 +92,11 @@ url = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
-madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+
+[target.'cfg(madsim)'.dependencies]
+madsim = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-data = { workspace = true }

@@ -6,23 +6,32 @@ Released on TBD (UTC).
 
 - Added per-`DataType` custom data histories to `Cache`, populated by the `DataEngine`, thanks @faysou
 - Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
+- Added `ExerciseStyle` and optional `exercise_style` to `OptionContract` and `CryptoOption`
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
+- Added Bybit option `exercise_style` and `settlement_type` from the venue contract specification
 - Added Binance Portfolio Margin balance and account response models
+- Added Databento option `exercise_style` and `settlement_type` from CFI codes, with fixed root rules for OPRA
+- Added Deribit option `exercise_style` from the venue contract specification
+- Added Derive option `exercise_style` and `settlement_type` from the venue contract specification
 - Added Kalshi market data support to the FinFeed adapter
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
 - Added optional Lighter account transaction timestamps to WebSocket wire models
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
+- Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
+- Added Tardis option `exercise_style` and `settlement_type` by source exchange
 
 ### Breaking Changes
 
 - Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
+- Removed `nautilus_cryptography::signing` and Python `nautilus_trader.cryptography`; use crypto libraries directly
+- Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
-- Changed PostgreSQL instrument storage to add option underlying and settlement columns; run `nautilus database init`
+- Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
@@ -36,20 +45,28 @@ Released on TBD (UTC).
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
+- Changed Bybit `use_ws_execution_fast` to reject the Option product type; use the standard stream
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account
 - Changed `KalshiHttpClient::amend_order`/`decrease_order` and Kalshi `execution::request`; pass `subaccount` (`0` for primary)
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
+- Changed Lighter `From<LighterTradeType>` for `LighterTradeQueryType` to `TryFrom`; handle the error
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
+- Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
+- Changed `LighterMarketConfig` literals; wrap `funding_fee_discounts_enabled` in `Some` and add `rfq_enabled`
+- Changed Lighter `fresh_k` to return `anyhow::Result<Scalar>`; propagate signing nonce errors
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Security
 
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
+- Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
 
 ### Fixes
 
+- Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
+- Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
@@ -65,11 +82,21 @@ Released on TBD (UTC).
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
 - Fixed Bybit single-order probes treating missing instrument IDs and parse failures as venue absence
+- Fixed Bybit fast-execution fills recording zero commission when it cannot be derived; they are now skipped
+- Fixed Bybit fast-execution Linear commissions rounding below the venue fee
+- Fixed Bybit fast-execution fee rates loading after the private stream connects
+- Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
+- Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
+- Fixed Lighter decoding rejecting whole responses and frames on unfamiliar venue enum values
+- Fixed Lighter metadata decoding rejecting binary-options markets and settlement statuses
+- Fixed Lighter metadata decoding rejecting responses without `funding_fee_discounts_enabled`
+- Fixed Lighter order reports mapping venue time in force `Unknown` to `GTC`
+- Fixed Lighter raw WebSocket frames losing `subscribed/` types and unmodeled fields
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms
@@ -77,6 +104,7 @@ Released on TBD (UTC).
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
+- Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
 
 ### Internal Improvements
 
@@ -96,6 +124,7 @@ Released on TBD (UTC).
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Optimized socket client framing to search only unscanned bytes on each read
 - Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
+- Optimized order fill processing for orders with many fills
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-audit` tool to v0.23.0
 - Upgraded `cargo-binstall` tool to v1.27.0

@@ -64,7 +64,7 @@ use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
         IbPriceConverter, bar_request_range, bar_type_to_ib_bar_size, extend_historical_tick_batch,
-        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
+        historical_tick_request_end, ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
         price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         should_continue_historical_tick_pagination,
@@ -1743,10 +1743,9 @@ impl DataClient for InteractiveBrokersDataClient {
         self.spawn_command(async move {
             let mut all_quotes = Vec::new();
             // Work backwards from end_date, updating end to the earliest tick received
-            let mut current_end_date = cmd_end;
-            if current_end_date.is_none() {
-                current_end_date = Some(jiff::Timestamp::now());
-            }
+            let mut current_end_date = Some(historical_tick_request_end(
+                cmd_end.unwrap_or_else(jiff::Timestamp::now),
+            ));
 
             let current_start_date = cmd_start;
 
@@ -1934,10 +1933,9 @@ impl DataClient for InteractiveBrokersDataClient {
         self.spawn_command(async move {
             let mut all_trades = Vec::new();
             // Work backwards from end_date, updating end to the earliest tick received
-            let mut current_end_date = cmd_end;
-            if current_end_date.is_none() {
-                current_end_date = Some(jiff::Timestamp::now());
-            }
+            let mut current_end_date = Some(historical_tick_request_end(
+                cmd_end.unwrap_or_else(jiff::Timestamp::now),
+            ));
 
             let current_start_date = cmd_start;
 

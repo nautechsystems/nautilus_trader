@@ -242,7 +242,7 @@ impl BybitExecutionClient {
         product_types: Vec<BybitProductType>,
         instruments: Arc<AHashMap<Ustr, InstrumentAny>>,
         state: Arc<WsDispatchState>,
-    ) {
+    ) -> anyhow::Result<()> {
         for product_type in product_types {
             match http_client
                 .request_fee_rates(product_type, None, None)
@@ -258,11 +258,24 @@ impl BybitExecutionClient {
                         cache_execution_fee_rates(&state, &instruments, product_type, fee_rates);
                     log::debug!("Cached {cached} {product_type:?} execution fee rates");
                 }
-                Err(e) => log::warn!(
-                    "Failed to refresh {product_type:?} execution fee rates, retaining previous rates when available: {e}"
-                ),
+                Err(e) => {
+                    let has_previous_rates = state.fee_rates.iter().any(|entry| {
+                        BybitProductType::from_suffix(entry.key().symbol.as_str())
+                            == Some(product_type)
+                    });
+
+                    anyhow::ensure!(
+                        has_previous_rates,
+                        "failed to request {product_type:?} execution fee rates: {e}"
+                    );
+                    log::warn!(
+                        "Failed to refresh {product_type:?} execution fee rates, retaining previous rates: {e}"
+                    );
+                }
             }
         }
+
+        Ok(())
     }
 
     async fn initialize_instruments(
@@ -304,15 +317,15 @@ impl BybitExecutionClient {
             self.core.set_instruments_initialized();
         }
 
+        // Fast fills need these rates, so load them before the private stream connects
         if self.config.use_ws_execution_fast {
-            let http_client = self.http_client.clone();
-            let instruments = Arc::clone(&self.instruments_cache);
-            let state = Arc::clone(&self.dispatch_state);
-            self.spawn_task("refresh Bybit execution fee rates", async move {
-                Self::refresh_execution_fee_rates(http_client, product_types, instruments, state)
-                    .await;
-                Ok(())
-            });
+            Self::refresh_execution_fee_rates(
+                self.http_client.clone(),
+                product_types,
+                Arc::clone(&self.instruments_cache),
+                Arc::clone(&self.dispatch_state),
+            )
+            .await?;
         }
 
         Ok(())
@@ -3235,6 +3248,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderStatus, TimeInForce},
         events::OrderEventAny,
+        fees::MakerTakerFeeRates,
         identifiers::{
             ClientOrderId, OrderListId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId,
         },
@@ -3243,6 +3257,7 @@ mod tests {
         types::Quantity,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -3253,6 +3268,13 @@ mod tests {
         },
         http::models::BybitInstrumentLinearResponse,
     };
+
+    fn cache_fee_rates(client: &BybitExecutionClient, instrument_id: InstrumentId) {
+        client.dispatch_state.fee_rates.insert(
+            instrument_id,
+            MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006)),
+        );
+    }
 
     fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -4114,6 +4136,7 @@ mod tests {
         client.emitter.set_sender(tx);
         let accepted =
             sample_order_status_report(client_order_id, instrument_id, OrderStatus::Accepted, None);
+        cache_fee_rates(&client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
             serde_json::from_str(&json).unwrap();
@@ -4266,6 +4289,7 @@ mod tests {
         client.instruments_cache = Arc::new(instruments);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
+        cache_fee_rates(&client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
             serde_json::from_str(&json).unwrap();
@@ -4300,7 +4324,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_refresh_execution_fee_rates_retains_previous_on_failure() {
+    async fn test_refresh_execution_fee_rates_failure_requires_previous_rates() {
         let fee_response: serde_json::Value = serde_json::from_str(
             &crate::common::testing::load_test_json("http_get_fee_rate.json"),
         )
@@ -4359,23 +4383,31 @@ mod tests {
         instruments.insert(instrument_id.symbol.inner(), instrument);
         let instruments = Arc::new(instruments);
 
-        BybitExecutionClient::refresh_execution_fee_rates(
-            client.http_client.clone(),
-            vec![BybitProductType::Linear],
-            Arc::clone(&instruments),
-            Arc::clone(&client.dispatch_state),
-        )
-        .await;
-        let previous = *client.dispatch_state.fee_rates.get(&instrument_id).unwrap();
-        failing.store(true, Ordering::Relaxed);
-        BybitExecutionClient::refresh_execution_fee_rates(
-            client.http_client.clone(),
-            vec![BybitProductType::Linear],
-            instruments,
-            Arc::clone(&client.dispatch_state),
-        )
-        .await;
+        let refresh = || {
+            BybitExecutionClient::refresh_execution_fee_rates(
+                client.http_client.clone(),
+                vec![BybitProductType::Linear],
+                Arc::clone(&instruments),
+                Arc::clone(&client.dispatch_state),
+            )
+        };
 
+        failing.store(true, Ordering::Relaxed);
+        let error = refresh().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("failed to request Linear execution fee rates: "),
+            "{error}"
+        );
+        assert!(client.dispatch_state.fee_rates.is_empty());
+
+        failing.store(false, Ordering::Relaxed);
+        refresh().await.unwrap();
+        let previous = *client.dispatch_state.fee_rates.get(&instrument_id).unwrap();
+
+        failing.store(true, Ordering::Relaxed);
+        refresh().await.unwrap();
         assert_eq!(
             *client.dispatch_state.fee_rates.get(&instrument_id).unwrap(),
             previous
@@ -4509,6 +4541,7 @@ mod tests {
             None,
         );
         report.client_order_id = None;
+        cache_fee_rates(&client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
             serde_json::from_str(&json).unwrap();
@@ -5793,6 +5826,7 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
+        cache_fee_rates(&client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
             serde_json::from_str(&json).unwrap();
@@ -5901,8 +5935,8 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
-
         if recover_pending {
+            cache_fee_rates(&client, instrument_id);
             let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
             let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
                 serde_json::from_str(&json).unwrap();
@@ -6089,6 +6123,7 @@ mod tests {
             instrument_id.symbol.inner(),
             instrument,
         )]));
+        cache_fee_rates(client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
             serde_json::from_str(&json).unwrap();

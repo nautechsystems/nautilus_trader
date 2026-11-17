@@ -31,7 +31,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        enums::LighterMarketStatus,
+        enums::{LighterMarketStatus, LighterProductType},
         parse::{
             funding_rate_from_percent, parse_millis_to_nanos, parse_secs_to_nanos,
             price_from_decimal, quantity_from_decimal,
@@ -71,9 +71,11 @@ pub fn register_spot_order_book_details(
 
 /// Parses Lighter order book metadata into Nautilus instruments and registers their market ids.
 ///
+/// Skips markets with an unsupported market type.
+///
 /// # Errors
 ///
-/// Returns an error if metadata is nonempty but no instrument definition can be converted.
+/// Returns an error if supported markets are present but no instrument definition can be converted.
 pub fn parse_order_book_details_instruments(
     registry: &MarketRegistry,
     perp_details: &[LighterPerpOrderBookDetail],
@@ -91,9 +93,11 @@ pub fn parse_order_book_details_instruments(
 
 /// Parses Lighter order book metadata into Nautilus instruments and market statuses.
 ///
+/// Skips markets with an unsupported market type.
+///
 /// # Errors
 ///
-/// Returns an error if metadata is nonempty but no instrument definition can be converted.
+/// Returns an error if supported markets are present but no instrument definition can be converted.
 pub fn parse_order_book_details_instruments_with_status(
     registry: &MarketRegistry,
     perp_details: &[LighterPerpOrderBookDetail],
@@ -102,8 +106,15 @@ pub fn parse_order_book_details_instruments_with_status(
 ) -> anyhow::Result<Vec<(InstrumentAny, LighterMarketStatus)>> {
     let mut instruments = Vec::with_capacity(perp_details.len() + spot_details.len());
     let mut first_error = None;
+    let mut supported_len = 0_usize;
 
     for detail in perp_details {
+        if !is_supported_product(&detail.order_book) {
+            continue;
+        }
+
+        supported_len += 1;
+
         match parse_perp_instrument(registry, detail, ts_init) {
             Ok(instrument) => instruments.push((instrument, detail.order_book.status)),
             Err(e) => {
@@ -117,6 +128,12 @@ pub fn parse_order_book_details_instruments_with_status(
     }
 
     for detail in spot_details {
+        if !is_supported_product(&detail.order_book) {
+            continue;
+        }
+
+        supported_len += 1;
+
         match parse_spot_instrument(registry, detail, ts_init) {
             Ok(instrument) => instruments.push((instrument, detail.order_book.status)),
             Err(e) => {
@@ -129,10 +146,9 @@ pub fn parse_order_book_details_instruments_with_status(
         }
     }
 
-    let input_len = perp_details.len() + spot_details.len();
-    if input_len > 0 && instruments.is_empty() {
+    if supported_len > 0 && instruments.is_empty() {
         anyhow::bail!(
-            "failed to parse any of {input_len} Lighter instruments: {}",
+            "failed to parse any of {supported_len} Lighter instruments: {}",
             first_error.as_deref().unwrap_or("unknown parse error"),
         );
     }
@@ -436,11 +452,37 @@ fn snapshot_flags(processed: usize, total_levels: usize) -> u8 {
 }
 
 fn register_order_book(registry: &MarketRegistry, order_book: &LighterOrderBook) {
+    if !is_supported_product(order_book) {
+        return;
+    }
+
     registry.insert(
         order_book.market_id,
         order_book.symbol.as_str(),
         order_book.market_type,
     );
+}
+
+fn is_supported_product(order_book: &LighterOrderBook) -> bool {
+    let market_type = order_book.market_type;
+    if market_type.is_supported() {
+        return true;
+    }
+
+    let symbol = order_book.symbol;
+    let market_id = order_book.market_id;
+
+    if market_type == LighterProductType::Other {
+        log::warn!(
+            "Skipping Lighter market `{symbol}` (market_id={market_id}): unfamiliar market type"
+        );
+    } else {
+        log::debug!(
+            "Skipping Lighter market `{symbol}` (market_id={market_id}): unsupported market type `{market_type}`"
+        );
+    }
+
+    false
 }
 
 fn parse_perp_instrument(
@@ -627,9 +669,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            LighterMarketStatus, LighterPositionMarginMode, LighterProductType, LighterTradeType,
-        },
+        common::enums::{LighterMarketStatus, LighterPositionMarginMode, LighterTradeType},
         http::models::{
             LighterCandles, LighterFunding, LighterFundingDirection, LighterMarketConfig,
             LighterOrderBookDetails, LighterSimpleOrder,
@@ -750,8 +790,9 @@ mod tests {
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
-                funding_fee_discounts_enabled: false,
+                funding_fee_discounts_enabled: Some(false),
                 hidden: false,
+                rfq_enabled: true,
             },
             strategy_index: 2,
         }
@@ -1351,8 +1392,9 @@ mod tests {
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
-                funding_fee_discounts_enabled: false,
+                funding_fee_discounts_enabled: Some(false),
                 hidden: false,
+                rfq_enabled: true,
             },
             strategy_index: 2,
         }];
@@ -1394,8 +1436,9 @@ mod tests {
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
-                funding_fee_discounts_enabled: false,
+                funding_fee_discounts_enabled: Some(false),
                 hidden: false,
+                rfq_enabled: true,
             },
             strategy_index: 2,
         }];
@@ -1591,5 +1634,94 @@ mod tests {
                 ("FUTURE/USDC-SPOT", "spot"),
             ],
         );
+    }
+
+    #[rstest]
+    #[case::binary_options(LighterProductType::BinaryOptions)]
+    #[case::other(LighterProductType::Other)]
+    fn test_register_order_books_skips_unsupported_market_type(
+        #[case] market_type: LighterProductType,
+    ) {
+        let registry = MarketRegistry::new();
+        let order_books = vec![
+            stub_order_book("BTC-UPDOWN", 7001, market_type),
+            stub_order_book("ETH", 0, LighterProductType::Perp),
+        ];
+
+        register_order_books(&registry, &order_books);
+
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.instrument_id(7001), None);
+        assert_eq!(registry.market_index(&instrument_id("ETH-PERP")), Some(0));
+    }
+
+    #[rstest]
+    #[case::binary_options("binary_options")]
+    #[case::unfamiliar("future_kind")]
+    fn test_parse_order_book_details_instruments_skips_unsupported_market_type(
+        #[case] market_type: &str,
+    ) {
+        let registry = MarketRegistry::new();
+        let mut payload: serde_json::Value =
+            serde_json::from_str(HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS).unwrap();
+        payload["order_book_details"][1]["market_type"] = serde_json::json!(market_type);
+        payload["spot_order_book_details"][1]["market_type"] = serde_json::json!(market_type);
+        let details: LighterOrderBookDetails = serde_json::from_value(payload).unwrap();
+
+        let instruments = parse_order_book_details_instruments(
+            &registry,
+            &details.order_book_details,
+            &details.spot_order_book_details,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        let mut ids: Vec<InstrumentId> = instruments.iter().map(InstrumentAny::id).collect();
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            vec![instrument_id("ETH-PERP"), instrument_id("ETH/USDC-SPOT")]
+        );
+        assert_eq!(registry.len(), 2);
+        assert_eq!(registry.instrument_id(40_000), None);
+        assert_eq!(registry.instrument_id(50_000), None);
+    }
+
+    #[rstest]
+    fn test_parse_order_book_details_instruments_returns_empty_for_only_unsupported_markets() {
+        let registry = MarketRegistry::new();
+        let mut payload: serde_json::Value =
+            serde_json::from_str(HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS).unwrap();
+
+        for key in ["order_book_details", "spot_order_book_details"] {
+            for detail in payload[key].as_array_mut().unwrap() {
+                detail["market_type"] = serde_json::json!("binary_options");
+            }
+        }
+
+        let details: LighterOrderBookDetails = serde_json::from_value(payload).unwrap();
+
+        let instruments = parse_order_book_details_instruments(
+            &registry,
+            &details.order_book_details,
+            &details.spot_order_book_details,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert!(instruments.is_empty());
+        assert!(registry.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_keeps_unfamiliar_trade_type() {
+        let instrument = create_test_instrument();
+        let mut trade = stub_trade(true);
+        let expected = parse_trade_tick(&trade, &instrument, UnixNanos::from(1)).unwrap();
+        trade.trade_type = LighterTradeType::Other;
+
+        let tick = parse_trade_tick(&trade, &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(tick, expected);
     }
 }

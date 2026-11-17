@@ -1057,9 +1057,11 @@ fn dispatch_execution_fill(
 /// Dispatches a single fast-execution (fill) message.
 ///
 /// The fast channel lacks fee and exec-type fields, so all fills route to
-/// [`FillReport`]. Commission is derived from cached account fee rates when available,
-/// with a zero fallback. Liquidity side is derived from the payload's `isMaker` flag.
-/// Subscribe to the standard `execution` channel for venue-authoritative fees.
+/// [`FillReport`]. Commission is derived from cached account fee rates. A fill whose
+/// commission cannot be derived emits no report and releases its trade ID, leaving the
+/// fill to execution reconciliation. Liquidity side is derived from
+/// the payload's `isMaker` flag. Subscribe to the standard `execution` channel for
+/// venue-authoritative fees.
 fn dispatch_execution_fill_fast(
     exec: &BybitWsAccountExecutionFast,
     instrument: &InstrumentAny,
@@ -1153,7 +1155,7 @@ fn dispatch_execution_fill_fast(
         }
         Err(e) => {
             state.remove_fast_execution(trade_id);
-            log::error!("Failed to parse fast fill report: {e}");
+            log::error!("Failed to parse fast fill report for {trade_id}: {e:#}");
         }
     }
 }
@@ -2772,6 +2774,13 @@ mod tests {
         }
     }
 
+    fn cache_fee_rates(state: &WsDispatchState, instrument: &InstrumentAny) {
+        state.fee_rates.insert(
+            instrument.id(),
+            MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006)),
+        );
+    }
+
     #[rstest]
     fn test_dispatch_tracked_fast_execution_preserves_venue_position_id() {
         let instrument = linear_instrument();
@@ -2779,6 +2788,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::default();
+        cache_fee_rates(&state, &instrument);
         let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
 
         // Taker fast fill (orderLinkId populated) so the identity lookup hits.
@@ -2865,6 +2875,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::default();
+        cache_fee_rates(&state, &instrument);
 
         let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
         let order_msg = BybitWsMessage::AccountOrder(order_msg("", "Filled", "0.5"));
@@ -2930,7 +2941,7 @@ mod tests {
         assert_eq!(report.client_order_id, None);
         assert_eq!(report.venue_position_id, None);
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(report.commission.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.commission, Money::from("2.50000000 USDT"));
         assert!(state.pending_fast_executions.is_empty());
     }
 
@@ -2941,6 +2952,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::new(true);
+        cache_fee_rates(&state, &instrument);
         let fast_msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(true, ""));
         dispatch_ws_message(
             &fast_msg,
@@ -2989,6 +3001,8 @@ mod tests {
             ..Default::default()
         };
 
+        cache_fee_rates(&state, &instrument);
+
         let client_order_id = ClientOrderId::from("link-1");
         state
             .order_identities
@@ -3032,6 +3046,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::new(true);
+        cache_fee_rates(&state, &instrument);
         let client_order_id = ClientOrderId::from("link-1");
         state
             .order_identities
@@ -3135,6 +3150,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::default();
+        cache_fee_rates(&state, &instrument);
         let mut invalid = fast_execution_msg(false, "link-1");
         invalid.data[0].exec_qty = "invalid".to_string();
         let invalid = BybitWsMessage::AccountExecutionFast(invalid);
@@ -3171,6 +3187,102 @@ mod tests {
     }
 
     #[rstest]
+    #[case::missing_rates(BybitProductType::Linear, None)]
+    #[case::failed_derivation(
+        BybitProductType::Linear,
+        Some(MakerTakerFeeRates::new(dec!(0.0001), Decimal::MAX))
+    )]
+    #[case::option(
+        BybitProductType::Option,
+        Some(MakerTakerFeeRates::new(dec!(0.0001), dec!(0.0006)))
+    )]
+    fn test_dispatch_fast_execution_without_derivable_commission_releases_trade_id(
+        #[case] category: BybitProductType,
+        #[case] fee_rates: Option<MakerTakerFeeRates>,
+    ) {
+        let instrument = if category == BybitProductType::Option {
+            option_instrument_with_distinct_settlement()
+        } else {
+            linear_instrument()
+        };
+
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(true);
+        if let Some(fee_rates) = fee_rates {
+            state.fee_rates.insert(instrument.id(), fee_rates);
+        }
+
+        let client_order_id = ClientOrderId::from("link-1");
+        state
+            .order_identities
+            .insert(client_order_id, default_identity());
+        let mut msg = fast_execution_msg(false, "link-1");
+        msg.data[0].category = category;
+        msg.data[0].symbol = instrument.raw_symbol().inner();
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecutionFast(msg),
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+        assert!(rx.try_recv().is_err());
+        assert!(!state.fast_execution_ids.contains(&TradeId::from("fast-1")));
+        assert!(!state.filled_orders.contains(&client_order_id));
+        assert!(!state.fast_filled_quantities.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_dispatch_fast_execution_replays_after_fee_rates_cached() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let msg = BybitWsMessage::AccountExecutionFast(fast_execution_msg(false, "link-1"));
+
+        dispatch_ws_message(
+            &msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+        assert!(rx.try_recv().is_err());
+
+        cache_fee_rates(&state, &instrument);
+        dispatch_ws_message(
+            &msg,
+            test_account_id(),
+            &instruments,
+            clock,
+            &state,
+            &emitter,
+        );
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.trade_id, TradeId::from("fast-1"));
+                assert_eq!(report.commission, Money::from("15.00000000 USDT"));
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+
+        assert!(rx.try_recv().is_err());
+        assert!(state.fast_execution_ids.contains(&TradeId::from("fast-1")));
+    }
+
+    #[rstest]
     fn test_recent_ids_evicts_oldest_without_clearing_history() {
         let state = WsDispatchState::default();
         let first = TradeId::from("first");
@@ -3195,6 +3307,7 @@ mod tests {
             let (emitter, mut rx) = create_emitter();
             let clock = get_atomic_clock_realtime();
             let state = Arc::new(WsDispatchState::new(true));
+            cache_fee_rates(&state, &instrument);
             let client_order_id = ClientOrderId::from("link-1");
             state
                 .order_identities
@@ -3263,6 +3376,7 @@ mod tests {
         let (emitter, mut rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::new(true);
+        cache_fee_rates(&state, &instrument);
         let client_order_id = ClientOrderId::from("link-1");
         let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
         state.order_identities.insert(
@@ -3331,6 +3445,7 @@ mod tests {
         let (emitter, _rx) = create_emitter();
         let clock = get_atomic_clock_realtime();
         let state = WsDispatchState::default();
+        cache_fee_rates(&state, &instrument);
         let client_order_id = ClientOrderId::from("link-1");
         state
             .order_identities

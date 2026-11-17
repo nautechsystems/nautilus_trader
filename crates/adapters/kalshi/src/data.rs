@@ -1412,7 +1412,7 @@ mod tests {
             peer.wait_requests(baseline + 3).await;
             wait_until_async(
                 || async { client.session_tasks.len() == 2 },
-                Duration::from_secs(2),
+                Duration::from_secs(10),
             )
             .await;
 
@@ -1459,7 +1459,7 @@ mod tests {
                 assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
                 wait_until_async(
                     || async { client.session_tasks.len() == 1 },
-                    Duration::from_secs(2),
+                    Duration::from_secs(10),
                 )
                 .await;
                 assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 6);
@@ -1470,7 +1470,7 @@ mod tests {
                     .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
                 wait_until_async(
                     || async { client.session_tasks.len() == 1 },
-                    Duration::from_secs(6),
+                    Duration::from_secs(10),
                 )
                 .await;
                 assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 15);

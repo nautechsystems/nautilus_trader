@@ -1,7 +1,6 @@
 {
-  "op": "auth",
   "success": true,
-  "retCode": 0,
-  "retMsg": "",
-  "connId": "cejreaspqfm9se7usbrg-2xh"
+  "ret_msg": "",
+  "op": "auth",
+  "conn_id": "cejreaspqfm9se7usbrg-2xh"
 }

@@ -18,7 +18,10 @@
 use anyhow::Context;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, params::Params};
 use nautilus_model::{
-    enums::{OptionKind, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ExerciseStyle, OptionKind, OrderSide, OrderStatus, OrderType, SettlementType, TimeInForce,
+        TriggerType,
+    },
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -461,6 +464,8 @@ fn parse_option_instrument(
         .lot_size(size_increment)
         .max_quantity(max_quantity)
         .info(info)
+        .exercise_style(ExerciseStyle::European)
+        .settlement_type(SettlementType::Cash)
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()?;
@@ -589,7 +594,7 @@ mod tests {
 
     use nautilus_core::{UnixNanos, serialization::ToMsgPack};
     use nautilus_model::{
-        enums::{OptionKind, OrderStatus, OrderType, TriggerType},
+        enums::{ExerciseStyle, OptionKind, OrderStatus, OrderType, SettlementType, TriggerType},
         identifiers::InstrumentId,
         instruments::{Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
@@ -907,6 +912,8 @@ mod tests {
         assert_eq!(option.quote_currency(), Currency::USDC());
         assert_eq!(option.settlement_currency(), Currency::USDC());
         assert_eq!(option.option_kind(), Some(OptionKind::Call));
+        assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
+        assert_eq!(option.settlement_type, Some(SettlementType::Cash));
         assert_eq!(option.strike_price(), Some(Price::from("3500")));
         assert_eq!(
             option.activation_ns(),

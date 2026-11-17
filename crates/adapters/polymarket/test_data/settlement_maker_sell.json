@@ -1,0 +1,73 @@
+{
+  "asset_id": "1001",
+  "bucket_index": 0,
+  "event_type": "trade",
+  "fee_rate_bps": "0",
+  "id": "settlement-maker-sell",
+  "last_update": "1735689600",
+  "maker_address": "0x0000000000000000000000000000000000000004",
+  "maker_orders": [
+    {
+      "asset_id": "1001",
+      "fee_rate_bps": "",
+      "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "matched_amount": "5",
+      "order_id": "A_ORDER_5",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "owner": "00000000-0000-0000-0000-000000000001",
+      "price": "0.37",
+      "side": "SELL"
+    },
+    {
+      "asset_id": "1001",
+      "fee_rate_bps": "",
+      "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "matched_amount": "5",
+      "order_id": "A_ORDER_6",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "owner": "00000000-0000-0000-0000-000000000001",
+      "price": "0.37",
+      "side": "SELL"
+    },
+    {
+      "asset_id": "1001",
+      "fee_rate_bps": "",
+      "maker_address": "0x0000000000000000000000000000000000000005",
+      "matched_amount": "100",
+      "order_id": "ORDER_3",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "owner": "00000000-0000-0000-0000-000000000004",
+      "price": "0.37",
+      "side": "SELL"
+    },
+    {
+      "asset_id": "1000",
+      "fee_rate_bps": "",
+      "maker_address": "0x0000000000000000000000000000000000000006",
+      "matched_amount": "100",
+      "order_id": "ORDER_4",
+      "outcome": "No",
+      "outcome_index": 0,
+      "owner": "00000000-0000-0000-0000-000000000005",
+      "price": "0.63",
+      "side": "BUY"
+    }
+  ],
+  "market": "condition",
+  "match_time": "1735689600",
+  "outcome": "Yes",
+  "owner": "00000000-0000-0000-0000-000000000006",
+  "price": "0.37",
+  "side": "BUY",
+  "size": "210",
+  "status": "MATCHED",
+  "taker_order_id": "ORDER_5",
+  "timestamp": "1735689600330",
+  "trade_owner": "00000000-0000-0000-0000-000000000006",
+  "trader_side": "MAKER",
+  "transaction_hash": "TX_2",
+  "type": "TRADE"
+}

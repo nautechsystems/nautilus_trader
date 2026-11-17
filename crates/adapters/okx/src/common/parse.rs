@@ -40,9 +40,9 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, LiquiditySide,
+        AccountType, AggregationSource, AggressorSide, AssetClass, ExerciseStyle, LiquiditySide,
         MarketStatusAction, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce,
+        SettlementType, TimeInForce,
     },
     events::AccountState,
     identifiers::{
@@ -2566,6 +2566,8 @@ pub fn parse_option_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
+        .exercise_style(ExerciseStyle::European)
+        .settlement_type(SettlementType::Cash)
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -3962,6 +3964,10 @@ mod tests {
         let instrument =
             parse_option_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
+        let InstrumentAny::CryptoOption(option) = &instrument else {
+            panic!("Expected CryptoOption, was {instrument:?}");
+        };
+
         assert_eq!(
             instrument.id(),
             InstrumentId::from("BTC-USD-241217-92000-C.OKX")
@@ -3986,6 +3992,9 @@ mod tests {
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_price(), None);
         assert_eq!(instrument.min_price(), None);
+        assert_eq!(option.option_kind, OptionKind::Call);
+        assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
+        assert_eq!(option.settlement_type, Some(SettlementType::Cash));
     }
 
     #[rstest]

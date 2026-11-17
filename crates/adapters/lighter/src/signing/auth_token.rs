@@ -42,8 +42,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use nautilus_core::string::secret::SecretString;
-use rand::RngExt;
+use rand::{TryRng, rngs::SysRng};
 use thiserror::Error;
 
 use crate::{
@@ -109,9 +110,8 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 7 * 60 * 60;
 ///
 /// # Errors
 ///
-/// Returns an error if the secret cannot be decoded by
-/// [`crate::common::credential::Credential::private_key`], or if [`build_auth_token`] fails
-/// (clock-before-epoch or, hypothetically, a breach caused by its own deadline validation).
+/// Returns an error if the private key cannot be decoded, the system clock predates the UNIX epoch,
+/// deadline computation or validation fails, or the operating system's random number source fails.
 pub fn build_auth_token_for(
     credential: &crate::common::credential::Credential,
 ) -> anyhow::Result<SecretString> {
@@ -130,23 +130,35 @@ pub fn build_auth_token_for(
         credential.account_index(),
         credential.api_key_index(),
         &sk,
-        fresh_k(),
+        fresh_k()?,
     )
     .map_err(|e| anyhow::anyhow!("failed to mint Lighter auth token: {e}"))
 }
 
-/// Draws a fresh canonical [`Scalar`] from the thread-local CSPRNG suitable
-/// for the per-signature `k` nonce.
+/// Draws a fresh nonzero canonical [`Scalar`] from the operating system's
+/// cryptographic random number source for the per-signature `k` nonce.
 ///
 /// The Schnorr binding requires `k` to be drawn from a cryptographic RNG and
 /// used at most once per signature; see [`PrivateKey::sign`] for the full
-/// contract. The 40-byte draw is reduced modulo the curve order, so the
-/// returned scalar is always canonical.
-#[must_use]
-pub fn fresh_k() -> Scalar {
+/// contract. Rejection sampling gives a uniform scalar in `[1, n)`, where
+/// `n` is the curve order. Direct OS randomness avoids duplicating a userspace RNG's state
+/// across a process fork.
+///
+/// # Errors
+///
+/// Returns an error if the operating system's random number source fails.
+pub fn fresh_k() -> anyhow::Result<Scalar> {
     let mut bytes = [0u8; SCALAR_BYTES];
-    rand::rng().fill(&mut bytes[..]);
-    Scalar::from_le_bytes_reduce(bytes)
+
+    loop {
+        SysRng
+            .try_fill_bytes(&mut bytes)
+            .context("failed to draw Lighter signing nonce")?;
+        let k = Scalar::from_le_bytes_reduce(bytes);
+        if !k.is_zero() && k.to_le_bytes() == bytes {
+            return Ok(k);
+        }
+    }
 }
 
 /// Build a Lighter auth token using the system clock as the `now` reference.
@@ -639,30 +651,27 @@ mod tests {
     }
 
     #[rstest]
-    fn fresh_k_returns_canonical_scalar() {
-        // The CSPRNG draw is reduced modulo the curve order, so every call
-        // returns a canonical scalar regardless of the raw byte values.
+    fn fresh_k_returns_canonical_nonzero_scalar() {
         for _ in 0..16 {
-            let k = fresh_k();
+            let k = fresh_k().unwrap();
             assert!(
                 k.is_canonical(),
                 "fresh_k must return a canonical scalar, was {k:?}",
             );
+            assert!(!k.is_zero(), "fresh_k must return a nonzero scalar");
         }
     }
 
     #[rstest]
     fn fresh_k_yields_distinct_scalars() {
-        // With 320 bits of entropy a collision in three draws is unreachable
-        // in any realistic execution; this guards against a hard-coded
-        // constant or a misconfigured RNG.
-        let a = fresh_k();
-        let b = fresh_k();
-        let c = fresh_k();
-        assert!(
-            !(a == b && b == c),
-            "fresh_k must vary across calls (a={a:?}, b={b:?}, c={c:?})",
-        );
+        // A collision in three draws from the 319-bit scalar field is negligible
+        let a = fresh_k().unwrap();
+        let b = fresh_k().unwrap();
+        let c = fresh_k().unwrap();
+
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(b, c);
     }
 
     #[rstest]
