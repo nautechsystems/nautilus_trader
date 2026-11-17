@@ -64,6 +64,8 @@
 //!
 //! Buffered requests advertise gzip unless default or per-request headers set `Accept-Encoding`.
 //! Gzip responses are decoded before return; unsupported encodings and corrupt bodies are errors.
+//! A `Content-Encoding: gzip` response with zero wire bytes is returned without decoding, preserving
+//! its status and headers selected through `header_keys`.
 //! The request deadline includes gzip decoding. Responses whose method or status forbids content
 //! preserve their encoding metadata. Decoded responses omit `Content-Encoding` and `Content-Length`,
 //! even when selected through `header_keys`.

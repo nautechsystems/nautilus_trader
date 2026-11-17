@@ -914,6 +914,11 @@ async fn decode_content_encoding(
     }
 
     check_deadline(deadline)?;
+
+    if body.is_empty() {
+        return Ok((body.freeze(), false));
+    }
+
     let body = body.freeze();
     let mut out = Vec::new();
 
