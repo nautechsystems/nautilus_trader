@@ -55,11 +55,13 @@ Released on TBD (UTC).
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
 - Changed `LighterMarketConfig` literals; wrap `funding_fee_discounts_enabled` in `Some` and add `rfq_enabled`
+- Changed Lighter `fresh_k` to return `anyhow::Result<Scalar>`; propagate signing nonce errors
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 
 ### Security
 
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
+- Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
 
 ### Fixes
 

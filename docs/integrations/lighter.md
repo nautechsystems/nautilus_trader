@@ -7,6 +7,15 @@ sequencing. The adapter supports both Lighter and its Robinhood Chain deployment
 The `nautilus-lighter` crate provides Rust data and execution clients, typed REST and WebSocket
 models, and an in-tree L2 signer using Schnorr signatures over ECgFp5.
 
+:::warning[Signing safety]
+Do not create NautilusTrader instances with Python `os.fork()` or the `multiprocessing` `fork` start
+method, including when it is the default. Start each instance in a fresh interpreter, for example with
+the `spawn` start method. A forked child inherits runtime state that is unsafe to reuse.
+
+Do not modify the adapter's signing path, including generation of the secret per-signature nonce.
+Reusing or predicting that nonce can expose your API private key and put your funds at risk.
+:::
+
 For L2 signing benchmarks and the official Go SDK comparison, see
 [`crates/adapters/lighter/benches/BENCHMARKS.md`](../../crates/adapters/lighter/benches/BENCHMARKS.md).
 Compare benchmark deltas only on the same machine; absolute timings vary.

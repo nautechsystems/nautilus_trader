@@ -133,6 +133,7 @@ use crate::{
     },
     signing::{
         auth_token::{build_auth_token_for, fresh_k},
+        curve::Scalar,
         nonce::NonceError,
         tx::{
             ApproveIntegratorTxInfo, CancelAllOrdersTxInfo, CancelOrderTxInfo,
@@ -1111,6 +1112,7 @@ impl LighterExecutionClient {
         credential: &Credential,
         integrator_account_index: u64,
     ) -> anyhow::Result<PreparedIntegratorApproval> {
+        let k = fresh_k()?;
         let ReservedTxContext {
             context,
             send_reservation,
@@ -1132,12 +1134,7 @@ impl LighterExecutionClient {
             skip_nonce: 0,
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.config.chain_id(),
-            &credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.config.chain_id(), &credential.private_key()?, k)?;
 
         let tx_info = TxInfoJson::approve_integrator(&tx, &signed, "");
 
@@ -2132,7 +2129,7 @@ impl LighterExecutionClient {
         {
             Ok(prepared) => prepared,
             Err(e) => {
-                let reason = format!("Lighter cancel_order failed: {e}");
+                let reason = format!("Lighter cancel_order failed: {e:#}");
 
                 log::warn!("{reason} for {}", cmd.client_order_id);
                 self.emitter.emit_order_cancel_denied_event(
@@ -2383,7 +2380,7 @@ impl LighterExecutionClient {
                 let mut events = self.dispatch.order_events.lock();
                 self.dispatch
                     .clear_pending_modify_if_command(&cmd.client_order_id, cmd.command_id);
-                let reason = format!("Lighter modify_order failed: {e}");
+                let reason = format!("Lighter modify_order failed: {e:#}");
                 log::warn!("{reason} for {}", cmd.client_order_id);
                 self.emitter.emit_order_modify_denied_event(
                     cmd.strategy_id,
@@ -2517,8 +2514,9 @@ impl LighterExecutionClient {
     ) -> anyhow::Result<PreparedModifyOrder> {
         let plan = self.prepare_modify_order_plan(cmd)?;
         let context = self.fanout_dispatch_context(credential)?;
+        let k = fresh_k()?;
         let reserved = self.build_tx_context(credential)?;
-        context.sign_modify_order(&plan, reserved)
+        context.sign_modify_order(&plan, reserved, k)
     }
 
     fn prepare_modify_order_plan(&self, cmd: &ModifyOrder) -> anyhow::Result<ModifyOrderPlan> {
@@ -2710,6 +2708,7 @@ impl LighterExecutionClient {
             "initial_margin_fraction must be in 1..=10_000, was {initial_margin_fraction}",
         );
 
+        let k = fresh_k()?;
         let ReservedTxContext {
             context,
             mut send_reservation,
@@ -2730,12 +2729,7 @@ impl LighterExecutionClient {
             skip_nonce: 0,
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.config.chain_id(),
-            &credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.config.chain_id(), &credential.private_key()?, k)?;
 
         let tx_info_str = TxInfoJson::update_leverage(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
@@ -3363,6 +3357,7 @@ impl FanoutDispatchContext {
         cancellation: CancellationToken,
     ) -> anyhow::Result<String> {
         let credential = &self.credential;
+        let k = fresh_k()?;
         let ReservedTxContext {
             context,
             mut send_reservation,
@@ -3377,7 +3372,7 @@ impl FanoutDispatchContext {
             skip_nonce: 0,
         };
 
-        let signed = sign_tx(&tx, self.chain_id, &credential.private_key()?, fresh_k())?;
+        let signed = sign_tx(&tx, self.chain_id, &credential.private_key()?, k)?;
         let tx_info = TxInfoJson::cancel_all_orders(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info)
             .context("failed to wrap signed Lighter account cancellation JSON")?;
@@ -3538,7 +3533,7 @@ impl FanoutDispatchContext {
                         retry_delay = (retry_delay * 2).min(NONCE_REFRESH_RETRY_MAX_DELAY);
                         continue;
                     }
-                    Err(e) => self.reject_batch_plan(plan, &e.to_string()),
+                    Err(e) => self.reject_batch_plan(plan, &format!("{e:#}")),
                 }
 
                 remaining.next();
@@ -3568,8 +3563,9 @@ impl FanoutDispatchContext {
             BatchOrderPlan::Create(plan) => self.sign_create_order(plan).map(PreparedBatchTx::from),
             BatchOrderPlan::CreateGroup(plan) => self.sign_create_group(plan),
             BatchOrderPlan::Modify(plan) => {
+                let k = fresh_k()?;
                 let reserved = self.build_tx_context()?;
-                self.sign_modify_order(plan, reserved)
+                self.sign_modify_order(plan, reserved, k)
                     .map(PreparedBatchTx::from)
             }
             BatchOrderPlan::Cancel(plan, emit) => self
@@ -3743,6 +3739,7 @@ impl FanoutDispatchContext {
     }
 
     fn sign_create_order(&self, plan: &CreateOrderPlan) -> anyhow::Result<PreparedCreateOrder> {
+        let k = fresh_k()?;
         let cloid = plan.order.client_order_id();
         let client_order_index = self.dispatch.register_create_identity(&plan.order)?;
 
@@ -3774,12 +3771,7 @@ impl FanoutDispatchContext {
             attributes: plan.attributes,
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.chain_id,
-            &self.credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.chain_id, &self.credential.private_key()?, k)?;
 
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))
@@ -3799,6 +3791,7 @@ impl FanoutDispatchContext {
     }
 
     fn sign_create_group(&self, plan: &CreateGroupPlan) -> anyhow::Result<PreparedBatchTx> {
+        let k = fresh_k()?;
         let reserved = self.build_tx_context()?;
         let mut guards = Vec::with_capacity(plan.orders.len());
         let mut orders = Vec::with_capacity(plan.orders.len());
@@ -3833,12 +3826,7 @@ impl FanoutDispatchContext {
             attributes: plan.orders[0].attributes,
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.chain_id,
-            &self.credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.chain_id, &self.credential.private_key()?, k)?;
         let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::create_grouped_orders(
             &tx, &signed,
         ))
@@ -3929,6 +3917,7 @@ impl FanoutDispatchContext {
         &self,
         plan: &ModifyOrderPlan,
         reserved: ReservedTxContext,
+        k: Scalar,
     ) -> anyhow::Result<PreparedModifyOrder> {
         let ReservedTxContext {
             context,
@@ -3955,12 +3944,7 @@ impl FanoutDispatchContext {
             attributes: integrator_attributes(self.integrator_account_index),
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.chain_id,
-            &self.credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.chain_id, &self.credential.private_key()?, k)?;
 
         let tx_info_str = TxInfoJson::modify_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
@@ -3989,6 +3973,7 @@ impl FanoutDispatchContext {
     }
 
     fn sign_cancel_order(&self, plan: &CancelOrderPlan) -> anyhow::Result<PreparedCancelOrder> {
+        let k = fresh_k()?;
         let ReservedTxContext {
             context,
             send_reservation,
@@ -4006,12 +3991,7 @@ impl FanoutDispatchContext {
             skip_nonce: 0,
         };
 
-        let signed = sign_tx(
-            &tx,
-            self.chain_id,
-            &self.credential.private_key()?,
-            fresh_k(),
-        )?;
+        let signed = sign_tx(&tx, self.chain_id, &self.credential.private_key()?, k)?;
 
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::cancel_order(&tx, &signed))
@@ -6359,7 +6339,7 @@ impl ExecutionClient for LighterExecutionClient {
 
         if let Err(e) = self.dispatch_create_order_plan(&plan, credential) {
             let reason = OrderDeniedReason::SubmitFailed {
-                detail: format!("Lighter submit_order failed: {e}"),
+                detail: format!("Lighter submit_order failed: {e:#}"),
             };
             self.emitter.emit_order_denied(&order, &reason.to_string());
         }
