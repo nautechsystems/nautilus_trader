@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide},
+    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
     events::{OrderDeniedReason, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -4019,6 +4019,96 @@ fn test_report_contract_resolution_uses_cached_bag_spread_id() {
         .unwrap();
 
     assert_eq!(resolved, instrument_id);
+}
+
+// A completed order left out for its contract keeps a bounded mass status from claiming to be
+// complete, while the usable reports still come back
+#[rstest]
+#[case::bounded(Some(UnixNanos::new(1)), false, true)]
+#[case::bounded_with_skipped_order(Some(UnixNanos::new(1)), true, false)]
+#[case::unbounded(None, false, false)]
+fn test_mass_status_completeness_reflects_skipped_completed_orders(
+    #[case] start: Option<UnixNanos>,
+    #[case] skipped: bool,
+    #[case] complete: bool,
+) {
+    let (client, _, _) = create_test_execution_client();
+    let report = OrderStatusReport::new(
+        AccountId::from("IB-001"),
+        InstrumentId::from("AAPL.NASDAQ"),
+        Some(ClientOrderId::from("O-STOP")),
+        VenueOrderId::from("PERM-11"),
+        OrderSide::Sell.into(),
+        OrderType::StopMarket,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from(1),
+        Quantity::from(0),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let unresolved = if skipped {
+        vec![(
+            Some(ClientOrderId::from("O-ENTRY")),
+            VenueOrderId::from("PERM-10"),
+        )]
+    } else {
+        Vec::new()
+    };
+
+    let mass_status = client.assemble_mass_status(
+        UnixNanos::new(2),
+        start,
+        OrderStatusCollection {
+            reports: vec![report],
+            unresolved,
+        },
+        FillEvidence::default(),
+        Vec::new(),
+    );
+
+    assert_eq!(mass_status.reports_complete(), complete);
+    assert_eq!(mass_status.lookback_start(), start);
+    assert_eq!(
+        mass_status.order_reports().keys().collect::<Vec<_>>(),
+        vec![&VenueOrderId::from("PERM-11")]
+    );
+}
+
+// A fresh node sees the BAG orders other nodes filled today, with its legs known from positions
+// but the spread never loaded; one such completed order must not fail every order report
+#[rstest]
+#[case::spread_not_cached(false, None)]
+#[case::spread_cached(true, Some(create_test_spread_instrument()))]
+fn test_completed_order_instrument_resolution_skips_unresolved_bag(
+    #[case] spread_cached: bool,
+    #[case] expected: Option<InstrumentId>,
+) {
+    let (client, _, _) = create_test_execution_client();
+    client
+        .instrument_provider
+        .insert_test_contract_id_mapping(12345, create_test_leg_instrument());
+    client.instrument_provider.insert_test_contract_id_mapping(
+        67890,
+        InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART")),
+    );
+
+    if spread_cached {
+        client.instrument_provider.insert_test_instrument(
+            InstrumentAny::from(create_test_option_spread()),
+            54321,
+            1,
+        );
+    }
+    let mut order = create_test_completed_order(7001, NATIVE_CLIENT_ID);
+    order.contract = create_test_bag_execution_data(7001, "exec-spread-001").contract;
+    order.contract.contract_id = 28_812_380;
+
+    let resolved = report_context(&client).resolve_completed_order_instrument_id(&order);
+
+    assert_eq!(resolved, expected);
 }
 
 #[tokio::test]

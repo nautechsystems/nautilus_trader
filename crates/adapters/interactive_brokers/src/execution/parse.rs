@@ -629,9 +629,10 @@ pub fn parse_order_status_to_report(
 
     let venue_order_id = ib_venue_order_id(order_status.order_id, order_status.perm_id);
 
+    // An order ref that is not a valid client order ID leaves the report with the venue ID only
     let client_order_id = order
         .and_then(|order| normalized_order_ref(&order.order_ref))
-        .map(ClientOrderId::new);
+        .and_then(|order_ref| ClientOrderId::new_checked(order_ref).ok());
 
     // Map order type from IB order if available
     let order_type = order.map_or(OrderType::Market, |order| {
@@ -1918,6 +1919,44 @@ mod tests {
             report.client_order_id,
             Some(ClientOrderId::from("O-20260527-001"))
         );
+    }
+
+    #[rstest]
+    #[case::whitespace("   ")]
+    #[case::non_ascii("O-É:7")]
+    #[case::empty_base(":7")]
+    fn test_parse_order_status_to_report_drops_invalid_order_ref(#[case] order_ref: &str) {
+        let order_status = OrderStatus {
+            order_id: 0,
+            status: OrderStatusKind::Filled,
+            filled: 10.0,
+            remaining: 0.0,
+            average_fill_price: Some(150.25),
+            perm_id: 123_456,
+            parent_id: 0,
+            last_fill_price: Some(150.25),
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: Some(0.0),
+        };
+        let order = Order {
+            total_quantity: 10.0,
+            order_ref: order_ref.to_string(),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            Some(&order),
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_order_id.to_string(), "PERM-123456");
     }
 
     #[rstest]

@@ -23,7 +23,10 @@ use nautilus_live::execution::reports::retain_order_status_reports;
 
 use super::{
     core::*,
-    parse::{FillEvidence, link_order_contingencies, parse_order_data_to_report},
+    parse::{
+        FillEvidence, ib_venue_order_id, link_order_contingencies, normalized_order_ref,
+        parse_order_data_to_report,
+    },
 };
 
 /// Inputs for turning IB report data into reports, with no venue access.
@@ -104,6 +107,30 @@ impl IbReportContext {
             .context("Failed to resolve IBKR report contract to instrument ID")
     }
 
+    // Returns `None` for a completed order whose contract does not resolve, such as a BAG whose
+    // spread this node never loaded, so the order is left out of the reports instead of failing
+    // them all. An unresolved open order still fails them.
+    pub(super) fn resolve_completed_order_instrument_id(
+        &self,
+        data: &ibapi::orders::OrderData,
+    ) -> Option<InstrumentId> {
+        match self.resolve_report_contract_instrument_id(&data.contract) {
+            Ok(instrument_id) => Some(instrument_id),
+            Err(e) => {
+                tracing::warn!(
+                    order_id = data.order.order_id,
+                    perm_id = data.order.perm_id,
+                    order_ref = data.order.order_ref.as_str(),
+                    con_id = data.contract.contract_id,
+                    sec_type = ?data.contract.security_type,
+                    error = %format_args!("{e:#}"),
+                    "Skipping completed IB order report for unresolved contract",
+                );
+                None
+            }
+        }
+    }
+
     /// IB's average cost is a price in the contract's currency times the multiplier.
     pub(super) fn position_avg_px_open(
         instrument: &InstrumentAny,
@@ -139,6 +166,14 @@ impl IbReportContext {
     }
 }
 
+/// Order status reports, with the completed orders left out because their contract did not resolve.
+#[derive(Debug, Default)]
+pub(super) struct OrderStatusCollection {
+    pub(super) reports: Vec<OrderStatusReport>,
+    /// Client and venue order IDs of the completed orders left out of `reports`.
+    pub(super) unresolved: Vec<(Option<ClientOrderId>, VenueOrderId)>,
+}
+
 /// Owned Interactive Brokers report collection.
 pub(super) struct IbReportClient {
     client: Arc<Client>,
@@ -162,6 +197,10 @@ impl IbReportClient {
         }
     }
 
+    // A completed order whose contract does not resolve is left out of the reports, so an empty
+    // answer could only say the order was not found. When the queried order may be one of those,
+    // returning an error defers resolution instead of letting the engine close an order the
+    // venue still holds.
     pub(super) async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
@@ -179,10 +218,10 @@ impl IbReportClient {
             causation_id: cmd.causation_id,
         };
 
-        let reports = self.generate_order_status_reports(&plural_cmd).await?;
+        let collection = self.collect_order_status_reports(&plural_cmd).await?;
 
         // Filter by client_order_id and venue_order_id
-        let report = reports.into_iter().find(|r| {
+        let report = collection.reports.into_iter().find(|r| {
             let matches_client = if let Some(filter_client_id) = cmd.client_order_id {
                 r.client_order_id == Some(filter_client_id)
             } else {
@@ -198,6 +237,27 @@ impl IbReportClient {
             matches_client && matches_venue
         });
 
+        if report.is_none()
+            && let Some((client_order_id, venue_order_id)) =
+                collection
+                    .unresolved
+                    .iter()
+                    .find(|(client_order_id, venue_order_id)| {
+                        match (cmd.client_order_id, cmd.venue_order_id) {
+                            (None, None) => true,
+                            (client_filter, venue_filter) => {
+                                client_filter.is_some_and(|id| *client_order_id == Some(id))
+                                    || venue_filter.is_some_and(|id| *venue_order_id == id)
+                            }
+                        }
+                    })
+        {
+            anyhow::bail!(
+                "IB order {venue_order_id} (client order ID {client_order_id:?}) has a contract \
+                 that does not resolve to an instrument"
+            );
+        }
+
         Ok(report)
     }
 
@@ -205,6 +265,13 @@ impl IbReportClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        Ok(self.collect_order_status_reports(cmd).await?.reports)
+    }
+
+    pub(super) async fn collect_order_status_reports(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<OrderStatusCollection> {
         let client = self.client.as_ref();
 
         let timeout_dur = self.request_timeout;
@@ -224,7 +291,8 @@ impl IbReportClient {
                         continue;
                     }
 
-                    // Convert IB contract to instrument ID
+                    // An open order may be one this node holds, so an unresolved one fails the
+                    // reports rather than reading as absent at the venue
                     let instrument_id = self
                         .context
                         .resolve_report_contract_instrument_id(&data.contract)
@@ -264,9 +332,17 @@ impl IbReportClient {
             }
         }
 
+        let mut unresolved = Vec::new();
+
         if !cmd.open_only {
-            self.collect_completed_orders(cmd, &mut reports, &mut ib_orders, ts_init)
-                .await?;
+            self.collect_completed_orders(
+                cmd,
+                &mut reports,
+                &mut ib_orders,
+                &mut unresolved,
+                ts_init,
+            )
+            .await?;
         }
 
         link_order_contingencies(&mut reports, &ib_orders);
@@ -274,7 +350,10 @@ impl IbReportClient {
             retain_order_status_reports(&mut reports, cmd);
         }
 
-        Ok(reports)
+        Ok(OrderStatusCollection {
+            reports,
+            unresolved,
+        })
     }
 
     async fn collect_completed_orders(
@@ -282,6 +361,7 @@ impl IbReportClient {
         cmd: &GenerateOrderStatusReports,
         reports: &mut Vec<OrderStatusReport>,
         ib_orders: &mut Vec<IBOrder>,
+        unresolved: &mut Vec<(Option<ClientOrderId>, VenueOrderId)>,
         ts_init: UnixNanos,
     ) -> anyhow::Result<()> {
         let client = self.client.as_ref();
@@ -311,15 +391,25 @@ impl IbReportClient {
                 continue;
             }
 
-            let instrument_id = self
-                .context
-                .resolve_report_contract_instrument_id(&data.contract)
-                .with_context(|| {
-                    format!(
-                        "Failed to resolve completed IB order contract ID {} ({:?})",
-                        data.contract.contract_id, data.contract.security_type
-                    )
-                })?;
+            let Some(instrument_id) = self.context.resolve_completed_order_instrument_id(&data)
+            else {
+                // An order completed outside the window would be filtered out anyway
+                let completed_at = parse_execution_time(&data.order_state.completed_time).ok();
+                let in_window = completed_at.is_none_or(|completed_at| {
+                    cmd.start.is_none_or(|start| completed_at >= start)
+                        && cmd.end.is_none_or(|end| completed_at <= end)
+                });
+
+                if in_window {
+                    unresolved.push((
+                        // An order ref that is not a valid client order ID leaves the venue ID
+                        normalized_order_ref(&data.order.order_ref)
+                            .and_then(|order_ref| ClientOrderId::new_checked(order_ref).ok()),
+                        ib_venue_order_id(data.order.order_id, data.order.perm_id),
+                    ));
+                }
+                continue;
+            };
 
             if cmd
                 .instrument_id
@@ -934,16 +1024,30 @@ mod tests {
                 );
                 let mut reports = Vec::new();
                 let mut orders = Vec::new();
+                let mut unresolved = Vec::new();
                 report_client
-                    .collect_completed_orders(&command, &mut reports, &mut orders, command.ts_init)
+                    .collect_completed_orders(
+                        &command,
+                        &mut reports,
+                        &mut orders,
+                        &mut unresolved,
+                        command.ts_init,
+                    )
                     .await
                     .unwrap();
                 let reports_first = reports.clone();
                 let orders_first = orders.clone();
                 report_client
-                    .collect_completed_orders(&command, &mut reports, &mut orders, command.ts_init)
+                    .collect_completed_orders(
+                        &command,
+                        &mut reports,
+                        &mut orders,
+                        &mut unresolved,
+                        command.ts_init,
+                    )
                     .await
                     .unwrap();
+                assert!(unresolved.is_empty());
                 client.disconnect().await;
                 done_tx.send(()).unwrap();
                 server.await.unwrap();
@@ -974,6 +1078,199 @@ mod tests {
                 parse_execution_time("20260924 12:02:04 UTC").unwrap()
             );
         }
+    }
+
+    // A completed BAG whose spread this node never loaded is left out, and the open orders are
+    // still reported alongside it. One completed before the window is not recorded as skipped.
+    #[rstest]
+    #[case::unbounded(None, true)]
+    #[case::after_start(Some("20260924 12:02:03 UTC"), true)]
+    #[case::before_start(Some("20260924 12:02:05 UTC"), false)]
+    #[tokio::test]
+    async fn test_order_status_reports_skip_unresolved_completed_order(
+        #[case] start: Option<&str>,
+        #[case] recorded: bool,
+    ) {
+        let mut exchanges = report_exchanges();
+        make_unresolved_bag(&mut exchanges[2].responses[0]);
+        let command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(1))
+            .open_only(false)
+            .start(start.map(|value| parse_execution_time(value).unwrap()))
+            .build()
+            .unwrap();
+
+        let collection = with_report_client(exchanges, async |report_client| {
+            report_client.collect_order_status_reports(&command).await
+        })
+        .await
+        .unwrap();
+
+        let venue_order_ids = collection
+            .reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            venue_order_ids,
+            vec![VenueOrderId::from("PERM-11"), VenueOrderId::from("PERM-12")]
+        );
+        let expected_unresolved = if recorded {
+            vec![(
+                Some(ClientOrderId::from("O-ENTRY")),
+                VenueOrderId::from("PERM-10"),
+            )]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(collection.unresolved, expected_unresolved);
+    }
+
+    // An order ref that is not a valid client order ID is recorded without one, keeping the venue
+    // order ID, rather than panicking
+    #[rstest]
+    #[case::whitespace("       ")]
+    #[case::non_ascii("O-ÉNTR")]
+    #[tokio::test]
+    async fn test_order_status_reports_skip_unresolved_order_with_invalid_order_ref(
+        #[case] order_ref: &str,
+    ) {
+        let mut exchanges = report_exchanges();
+        let completed = &mut exchanges[2].responses[0];
+        make_unresolved_bag(completed);
+        replace_frame_bytes(completed, b"O-ENTRY", order_ref.as_bytes());
+        let command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(1))
+            .open_only(false)
+            .build()
+            .unwrap();
+
+        let collection = with_report_client(exchanges, async |report_client| {
+            report_client.collect_order_status_reports(&command).await
+        })
+        .await
+        .unwrap();
+
+        let venue_order_ids = collection
+            .reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            venue_order_ids,
+            vec![VenueOrderId::from("PERM-11"), VenueOrderId::from("PERM-12")]
+        );
+        assert_eq!(
+            collection.unresolved,
+            vec![(None, VenueOrderId::from("PERM-10"))]
+        );
+    }
+
+    // An open order may be one this node holds, so an unresolved one fails the reports rather
+    // than reading as absent at the venue
+    #[rstest]
+    #[tokio::test]
+    async fn test_order_status_reports_fail_on_unresolved_open_order(
+        #[values(true, false)] open_only: bool,
+    ) {
+        let mut exchanges = report_exchanges();
+        make_unresolved_bag(&mut exchanges[1].responses[0]);
+        exchanges.truncate(2);
+        let command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(1))
+            .open_only(open_only)
+            .build()
+            .unwrap();
+
+        let result = with_report_client(exchanges, async |report_client| {
+            report_client.generate_order_status_reports(&command).await
+        })
+        .await;
+
+        let error = result.unwrap_err();
+        assert!(
+            format!("{error:#}").contains("Failed to resolve IB order"),
+            "{error:#}"
+        );
+    }
+
+    // The engine reads `Ok(None)` as the order being absent at the venue, so a query that may
+    // target an order left out for its contract returns an error instead
+    #[rstest]
+    #[case::unresolved_by_client_id(Some("O-ENTRY"), None, None)]
+    #[case::unresolved_by_venue_id(None, Some("PERM-10"), None)]
+    #[case::resolved_order(Some("O-STOP"), None, Some("PERM-11"))]
+    #[tokio::test]
+    async fn test_order_status_report_defers_unresolved_completed_order(
+        #[case] client_order_id: Option<&str>,
+        #[case] venue_order_id: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut exchanges = report_exchanges();
+        make_unresolved_bag(&mut exchanges[2].responses[0]);
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::new(1),
+            None,
+            client_order_id.map(ClientOrderId::from),
+            venue_order_id.map(VenueOrderId::from),
+            None,
+            None,
+        );
+
+        let result = with_report_client(exchanges, async |report_client| {
+            report_client.generate_order_status_report(&command).await
+        })
+        .await;
+
+        match expected {
+            Some(venue_order_id) => assert_eq!(
+                result.unwrap().map(|report| report.venue_order_id),
+                Some(VenueOrderId::from(venue_order_id))
+            ),
+            None => {
+                let error = result.unwrap_err();
+                assert!(error.to_string().contains("does not resolve"), "{error:#}");
+            }
+        }
+    }
+
+    // Turns an order's AAPL stock contract into a BAG with no legs under an unknown contract ID,
+    // which resolves to no instrument
+    fn make_unresolved_bag(frame: &mut [u8]) {
+        replace_frame_bytes(frame, b"\x08\xfe\x9a\x10", b"\x08\xff\x9a\x10");
+        replace_frame_bytes(frame, b"\x1a\x03STK", b"\x1a\x03BAG");
+    }
+
+    async fn with_report_client<T>(
+        exchanges: Vec<ReportExchange>,
+        run: impl AsyncFnOnce(&IbReportClient) -> T,
+    ) -> T {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+        let config = InteractiveBrokersInstrumentProviderConfig::default();
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+        provider.insert_test_instrument(equity_aapl().into(), 265598, 1);
+        let context = IbReportContext::new(Arc::new(provider), AccountId::from("IB-DU123"));
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let client = Arc::new(Client::connect(&address.to_string(), 7).await.unwrap());
+            let report_client = IbReportClient::new(
+                Arc::clone(&client),
+                context,
+                Ustr::from("DU123"),
+                Duration::from_secs(2),
+            );
+            let result = run(&report_client).await;
+            client.disconnect().await;
+            done_tx.send(()).unwrap();
+            server.await.unwrap();
+            result
+        })
+        .await
+        .unwrap()
     }
 
     #[derive(Debug, Clone, Copy)]

@@ -726,6 +726,10 @@ combo order, so startup reconciliation restores those orders even when the node 
 itself. Startup fill reports hold each combo order's combo-level fills. Its leg executions are left out, and
 the leg positions reconcile from IB's position reports.
 
+That load is best effort. A completed order whose contract still does not resolve is left out of the order
+status reports with a warning, and a bounded mass status whose lookback covers it is marked incomplete. An
+open order whose contract does not resolve fails the reports, since the node may hold it.
+
 ### Price magnifier
 
 IB prices some contracts in a sub-unit of their currency, such as CBOT grains in cents and LSE
