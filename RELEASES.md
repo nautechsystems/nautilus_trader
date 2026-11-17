@@ -61,6 +61,7 @@ Released on TBD (UTC).
 ### Security
 
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
+- Fixed Coinbase authentication errors exposing private key data from malformed PEM credentials
 - Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
 
 ### Fixes
