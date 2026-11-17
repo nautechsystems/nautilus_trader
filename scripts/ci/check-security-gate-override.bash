@@ -14,7 +14,7 @@ ignore_override() {
 
 if [[ "${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}" != "push" ]] ||
   [[ "${GITHUB_REF:?GITHUB_REF is required}" != "refs/heads/develop" &&
-    "$GITHUB_REF" != "refs/heads/nightly" ]]; then
+    "$GITHUB_REF" != "refs/heads/nightly" && "$GITHUB_REF" != "refs/heads/master" ]]; then
   ignore_override
 fi
 

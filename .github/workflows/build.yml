@@ -1082,6 +1082,7 @@ jobs:
   cargo-deny:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
+    environment: release
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -1097,17 +1098,29 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check security gate override
+        id: override
+        env:
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+        run: bash scripts/ci/check-security-gate-override.bash
+
       - name: Install cargo-deny
         uses: $/.github/actions/cargo-tool-install
         with:
           tool-name: cargo-deny
 
       - name: Run cargo-deny (advisories, licenses, sources, bans)
+        env:
+          OVERRIDE_ACTIVE: ${{ steps.override.outputs.override_active }}
         run: |
-          cargo deny --all-features check advisories licenses sources bans
+          checks=(licenses sources bans)
+          if [[ "$OVERRIDE_ACTIVE" != 'true' ]]; then
+            checks=(advisories "${checks[@]}")
+          fi
+          cargo deny --all-features check "${checks[@]}"
           cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --config .cargo/deny-fuzz.toml --locked --all-features check \
-            advisories licenses sources bans
+            "${checks[@]}"
 
   cargo-vet:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

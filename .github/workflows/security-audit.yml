@@ -6,7 +6,7 @@ name: security-audit
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
 #   - Calls from build.yml: audit jobs run for audit-relevant changes, while
 #     test-ci and test-pre-commit force every audit job and nightly skips them.
-#     A valid development override skips the audit jobs and leaves the gate green.
+#     A valid development or release override skips the audit jobs and leaves the gate green.
 #   - Pull requests not targeting develop: GitHub path filters create a workflow
 #     run only when audit-relevant paths change.
 #   - Pushes to test-security: GitHub path filters create a workflow run only
@@ -89,9 +89,11 @@ on:
 jobs:
   override:
     name: security override
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-22.04
-    environment: r2-develop
+    environment: ${{ github.ref == 'refs/heads/master' && 'release' || 'r2-develop' }}
     outputs:
       override_active: ${{ steps.override.outputs.override_active }}
     steps:
