@@ -35,7 +35,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
             GenerateOrderStatusReportBuilder, GenerateOrderStatusReportsBuilder, ModifyOrder,
-            SubmitOrder, SubmitOrderList, TradingCommand,
+            QueryAccount, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -98,7 +98,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::OrderStatusReport,
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_sandbox::{
     SandboxExecutionClient, SandboxExecutionClientConfig, SandboxExecutionClientFactory,
@@ -2834,6 +2834,139 @@ async fn test_client_connect(mut execution_client: SandboxExecutionClient) {
 
     assert!(result.is_ok());
     assert!(execution_client.is_connected());
+}
+
+/// A margin account restored from the cache, as after a restart with `load_cache=True`:
+/// fees have been paid and an open order holds margin.
+fn restored_margin_account_state(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+) -> AccountState {
+    let usd = Currency::USD();
+    AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::new(99_960.5, usd),
+            Money::new(7_899.4, usd),
+            Money::new(92_061.1, usd),
+        )],
+        vec![MarginBalance::new(
+            Money::new(7_899.4, usd),
+            Money::new(3_949.7, usd),
+            Some(instrument_id),
+        )],
+        false,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        Some(usd),
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_without_cached_account_uses_starting_balances(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let context = create_test_context(trader_id, account_id, venue);
+    setup_account_state_handler(context.cache.clone());
+
+    let mut client = context.client;
+    client.connect().await.unwrap();
+
+    let account = context.cache.borrow().account(&account_id).unwrap().clone();
+    let usd = Currency::USD();
+    let balance = account.balances()[&usd];
+    assert_eq!(balance.total, Money::new(100_000.0, usd));
+    assert_eq!(balance.locked, Money::zero(usd));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_resumes_cached_account_state(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let context = create_test_context(trader_id, account_id, venue);
+    let restored = restored_margin_account_state(account_id, instrument.id());
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(restored.clone(), false).into())
+        .unwrap();
+    setup_account_state_handler(context.cache.clone());
+
+    let mut client = context.client;
+    client.connect().await.unwrap();
+
+    let account = context.cache.borrow().account(&account_id).unwrap().clone();
+    let usd = Currency::USD();
+    assert_eq!(
+        account.events().len(),
+        2,
+        "connect should emit one account state"
+    );
+    assert_eq!(account.balances()[&usd], restored.balances[0]);
+    let AccountAny::Margin(margin) = account else {
+        panic!("expected margin account");
+    };
+    assert_eq!(
+        margin.margins.values().copied().collect::<Vec<_>>(),
+        restored.margins
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_query_account_keeps_cached_margins(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let context = create_test_context(trader_id, account_id, venue);
+    let restored = restored_margin_account_state(account_id, instrument.id());
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(restored.clone(), false).into())
+        .unwrap();
+    setup_account_state_handler(context.cache.clone());
+
+    let client = context.client;
+    client
+        .query_account(QueryAccount::new(
+            trader_id,
+            Some(ClientId::new("SANDBOX")),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let account = context.cache.borrow().account(&account_id).unwrap().clone();
+    assert_eq!(
+        account.events().len(),
+        2,
+        "query should emit one account state"
+    );
+    let AccountAny::Margin(margin) = account else {
+        panic!("expected margin account");
+    };
+    assert_eq!(
+        margin.margins.values().copied().collect::<Vec<_>>(),
+        restored.margins
+    );
 }
 
 #[rstest]
