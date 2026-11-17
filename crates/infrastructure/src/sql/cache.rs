@@ -514,6 +514,7 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('yield_curve', 'curve_name'),
             ('yield_curve', 'value'),
             ('instrument', 'info'),
+            ('instrument', 'tick_scheme'),
             ('instrument', 'underlying_instrument_id'),
             ('instrument', 'exercise_style'),
             ('instrument', 'settlement_type'),

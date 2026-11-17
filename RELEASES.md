@@ -31,7 +31,7 @@ Released on TBD (UTC).
 - Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
-- Changed PostgreSQL option storage to add underlying, exercise, and settlement columns; run `nautilus database init`
+- Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
@@ -65,6 +65,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
