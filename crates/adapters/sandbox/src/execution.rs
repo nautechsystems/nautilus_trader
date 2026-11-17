@@ -435,15 +435,29 @@ impl SandboxExecutionClient {
             .cancel_timer(&inbound_alert_name(client_id));
     }
 
-    fn get_current_account_balances(&self) -> Vec<AccountBalance> {
+    // Prefers the cached account, which holds the state restored from a durable cache
+    // on restart, so fees, realized PnL and locked margin survive a reconnect. Margins
+    // are included because applying an event replaces a margin account's margins.
+    fn get_current_account_state(&self) -> (Vec<AccountBalance>, Vec<MarginBalance>) {
         let account_id = self.core.borrow().account_id;
         let cache = self.cache.borrow();
 
-        if let Some(account) = cache.account(&account_id) {
-            return account.balances().into_values().collect();
-        }
+        let Some(account) = cache.account(&account_id) else {
+            return (self.get_account_balances(), Vec::new());
+        };
 
-        self.get_account_balances()
+        let balances = account.balances().into_values().collect();
+        let margins = match &*account {
+            AccountAny::Margin(margin) => margin
+                .margins
+                .values()
+                .chain(margin.account_margins.values())
+                .copied()
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        (balances, margins)
     }
 
     fn sync_cached_account_config(&self) -> anyhow::Result<()> {
@@ -747,9 +761,9 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
-        let balances = self.get_account_balances();
+        let (balances, margins) = self.get_current_account_state();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event, None)?;
+        self.generate_account_state(balances, margins, false, ts_event, None)?;
 
         self.core.borrow().set_connected();
         log::info!(
@@ -871,9 +885,9 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
-        let balances = self.get_current_account_balances();
+        let (balances, margins) = self.get_current_account_state();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event, None)?;
+        self.generate_account_state(balances, margins, false, ts_event, None)?;
         Ok(())
     }
 
