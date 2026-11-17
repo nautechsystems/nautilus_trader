@@ -667,6 +667,9 @@ impl KrakenSpotHttpClient {
     /// Uses the AmendOrder endpoint which modifies the order in-place,
     /// keeping the same order ID and queue position.
     ///
+    /// Returns the supplied `venue_order_id` as `Some`, or `None` when amending
+    /// by `client_order_id` alone.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
