@@ -84,6 +84,7 @@ Released on TBD (UTC).
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
 - Fixed socket client sending a superseded replayable command after its replacement on reconnect
 - Fixed HTTP client rejecting zero-length `Content-Encoding: gzip` responses, losing their status and headers
+- Fixed an extra `&` when the HTTP client appends query parameters from a map after a trailing `?` or `&`
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports

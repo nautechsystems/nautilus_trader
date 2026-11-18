@@ -1035,7 +1035,7 @@ fn http2_adaptive_window() -> Result<bool, HttpClientError> {
 ///
 /// Returns `Cow::Borrowed` when no parameters need appending (zero-alloc fast path).
 /// Parameters can have multiple values per key (for doseq=True behavior).
-/// Preserves existing query strings in the URL by appending with '&' instead of '?'.
+/// Preserves the existing query and reuses a trailing query separator.
 /// The query is inserted before any fragment, which is preserved unchanged.
 fn encode_url_params<'a>(
     url: &'a str,
@@ -1068,7 +1068,11 @@ fn encode_url_params<'a>(
         None => (url, None),
     };
 
-    let separator = if base.contains('?') { '&' } else { '?' };
+    let separator = match base.split_once('?') {
+        None => "?",
+        Some((_, query)) if query.is_empty() || query.ends_with('&') => "",
+        Some(_) => "&",
+    };
 
     Ok(Cow::Owned(match fragment {
         Some(fragment) => format!("{base}{separator}{query_string}#{fragment}"),
@@ -1097,7 +1101,11 @@ mod encode_url_params_tests {
 
     #[rstest]
     #[case("https://x/y", "https://x/y?a=b")]
+    #[case("https://x/y&", "https://x/y&?a=b")]
+    #[case("https://x/y?", "https://x/y?a=b")]
     #[case("https://x/y?old=1", "https://x/y?old=1&a=b")]
+    #[case("https://x/y?old=?", "https://x/y?old=?&a=b")]
+    #[case("https://x/y?old=1&", "https://x/y?old=1&a=b")]
     #[case("https://x/y#frag", "https://x/y?a=b#frag")]
     #[case("https://x/y?old=1#frag", "https://x/y?old=1&a=b#frag")]
     #[case(
@@ -1105,7 +1113,7 @@ mod encode_url_params_tests {
         "https://x/y?a=b#section?display=full"
     )]
     #[case("https://x/y#", "https://x/y?a=b#")]
-    fn test_query_is_inserted_before_the_fragment(#[case] url: &str, #[case] expected: &str) {
+    fn test_appends_params_to_query(#[case] url: &str, #[case] expected: &str) {
         let params = params(&[("a", "b")]);
 
         assert_eq!(encode_url_params(url, Some(&params)).unwrap(), expected);
