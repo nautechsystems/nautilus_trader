@@ -952,9 +952,20 @@ impl Cache {
         }
 
         self.index_position_oms();
+        self.index_position_order_links();
+    }
+
+    fn index_position_order_links(&mut self) {
         let client_order_ids: Vec<_> = self.orders.keys().copied().collect();
         for client_order_id in client_order_ids {
             self.reindex_hedging_position(client_order_id);
+        }
+
+        // Include linked orders independently of the position's fill history
+        for (client_order_id, position_id) in &self.index.order_position {
+            if let Some(position_orders) = self.index.position_orders.get_mut(position_id) {
+                position_orders.insert(*client_order_id);
+            }
         }
     }
 
@@ -3746,9 +3757,24 @@ impl Cache {
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) {
-        self.index
+        let old_position_id = self
+            .index
             .order_position
             .insert(*client_order_id, *position_id);
+        if let Some(old_position_id) = old_position_id
+            && old_position_id != *position_id
+            && let Some(orders) = self.index.position_orders.get_mut(&old_position_id)
+            && self.positions.get(&old_position_id).is_none_or(|position| {
+                position
+                    .borrow()
+                    .events
+                    .iter()
+                    .all(|fill| fill.client_order_id != *client_order_id)
+            })
+        {
+            orders.remove(client_order_id);
+        }
+
         self.index_position(position_id, venue, strategy_id);
         self.index
             .position_orders
