@@ -42,12 +42,17 @@ use nautilus_live::{
     runner::AsyncRunner,
 };
 use nautilus_model::{
+    accounts::{AccountAny, stubs::cash_account_million_usd},
     enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    events::account::stubs::cash_account_state_million_usd,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    instruments::{
+        Instrument, InstrumentAny,
+        stubs::{crypto_perpetual_ethusdt, equity_aapl},
+    },
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -68,13 +73,17 @@ use startup::{
     StartupMassStatusExecutionClientFactory, add_reconciliation_test_account,
 };
 
+const AAPL_ACCOUNT_ID: &str = "XNAS-001";
+const AAPL_STRATEGY_ID: &str = "AAPL-001";
+
 #[derive(Debug, World)]
 #[world(init = Self::new)]
 struct StartupWorld {
     config: LiveNodeConfig,
-    setup_requested: bool,
+    instrument: Option<InstrumentAny>,
     behavior: StartupMassStatusBehavior,
     oms_type: OmsType,
+    order_report: Option<OrderStatusReport>,
     position_report: Option<PositionStatusReport>,
     delayed_report: Option<OrderStatusReport>,
     delayed_observation: Option<DelayedReportObservation>,
@@ -101,9 +110,10 @@ impl StartupWorld {
                 timeout_disconnection: Duration::from_secs(1),
                 ..Default::default()
             },
-            setup_requested: false,
+            instrument: None,
             behavior: StartupMassStatusBehavior::Available,
             oms_type: OmsType::Hedging,
+            order_report: None,
             position_report: None,
             delayed_report: None,
             delayed_observation: None,
@@ -165,11 +175,55 @@ fn generation_disabled(world: &mut StartupWorld) {
     world.config.exec_engine.generate_missing_orders = false;
 }
 
-#[given(
-    "the cache has an ETH/USDT perpetual instrument and margin account but no orders or positions"
-)]
+#[given("the cache has a trading instrument and account but no orders or positions")]
 fn cache_initialized(world: &mut StartupWorld) {
-    world.setup_requested = true;
+    world.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
+}
+
+#[given("the cache has AAPL equity on NASDAQ and a USD cash account")]
+fn aapl_instrument(world: &mut StartupWorld) {
+    world.instrument = Some(InstrumentAny::Equity(equity_aapl()));
+}
+
+#[given("unclaimed external orders are filtered")]
+fn filter_unclaimed_orders(world: &mut StartupWorld) {
+    world.config.exec_engine.filter_unclaimed_external_orders = true;
+}
+
+#[given(
+    regex = "^the venue reports an accepted buy limit order ([A-Z0-9-]+) for ([0-9]+) AAPL shares at ([0-9.]+) USD$"
+)]
+fn aapl_open_order(world: &mut StartupWorld, venue_order_id: String, qty: Quantity, price: Price) {
+    let ts = UnixNanos::from(1_000_000);
+    world.order_report = Some(
+        OrderStatusReport::new(
+            AccountId::from(AAPL_ACCOUNT_ID),
+            equity_aapl().id(),
+            None,
+            VenueOrderId::from(venue_order_id.as_str()),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            qty,
+            Quantity::zero(0),
+            ts,
+            ts,
+            ts,
+            None,
+        )
+        .with_price(price),
+    );
+}
+
+#[given("the strategy claims external orders for AAPL on NASDAQ")]
+fn claim_aapl_orders(world: &mut StartupWorld) {
+    world.claim_external_orders = true;
+}
+
+#[given("no strategy claims external orders for AAPL on NASDAQ")]
+fn leave_aapl_orders_unclaimed(world: &mut StartupWorld) {
+    world.claim_external_orders = false;
 }
 
 #[given("the execution client uses NETTING accounting")]
@@ -281,19 +335,30 @@ fn mass_status_pending(world: &mut StartupWorld) {
 
 #[when(regex = "^the live node starts using (start|run)$")]
 async fn start_node(world: &mut StartupWorld, entrypoint: String) {
-    assert!(world.setup_requested);
-    let instrument = crypto_perpetual_ethusdt();
-    let account_id = AccountId::from("BLOCKING-REPORT-001");
+    let instrument = world
+        .instrument
+        .clone()
+        .expect("scenario requires an instrument");
+    let instrument_id = instrument.id();
+    let equity = matches!(instrument, InstrumentAny::Equity(_));
+
+    let account_id = AccountId::from(if equity {
+        AAPL_ACCOUNT_ID
+    } else {
+        "BLOCKING-REPORT-001"
+    });
+
     let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
 
     let mut mass_status = ExecutionMassStatus::new(
         client_id,
         account_id,
-        instrument.id().venue,
+        instrument_id.venue,
         UnixNanos::default(),
         None,
     );
 
+    mass_status.add_order_reports(world.order_report.iter().cloned().collect());
     mass_status.add_position_reports(world.position_report.iter().cloned().collect());
     if let Some(closing) = &world.closing {
         closing.add_reports(&mut mass_status);
@@ -302,7 +367,7 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     *world.client_state.mass_status.lock() = Some(mass_status);
     let factory =
         StartupMassStatusExecutionClientFactory::new(world.client_state.clone(), world.behavior)
-            .with_identity(client_id, account_id, instrument.id().venue)
+            .with_identity(client_id, account_id, instrument_id.venue)
             .with_oms_type(world.oms_type)
             .with_handles_all_order_venues();
     let node = LiveNodeBuilder::from_config(world.config.clone())
@@ -321,9 +386,23 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     node.kernel()
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+        .add_instrument(instrument)
         .unwrap();
-    add_reconciliation_test_account(node);
+
+    if equity {
+        let mut account_state =
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
+        account_state.account_id = account_id;
+        let account = cash_account_million_usd(account_state);
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_account(AccountAny::Cash(account))
+            .unwrap();
+    } else {
+        add_reconciliation_test_account(node);
+    }
+
     assert_eq!(
         node.kernel()
             .cache()
@@ -359,32 +438,34 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
             .as_ref()
             .is_some_and(|closing| closing.source == ClosingSource::Claimed);
 
-    let strategy_config = if world.retained_position {
-        StrategyConfig {
-            strategy_id: Some(closing_strategy_id()),
-            oms_type: Some(OmsType::Netting),
-            external_order_instrument_ids: claims_external_orders
-                .then(|| vec![crypto_perpetual_ethusdt().id()]),
-            ..Default::default()
-        }
+    let strategy_id = if world.retained_position {
+        Some(closing_strategy_id())
     } else {
-        StrategyConfig::default()
+        equity.then(|| StrategyId::from(AAPL_STRATEGY_ID))
+    };
+
+    let strategy_config = StrategyConfig {
+        strategy_id,
+        oms_type: world.retained_position.then_some(OmsType::Netting),
+        external_order_instrument_ids: claims_external_orders.then(|| vec![instrument_id]),
+        ..Default::default()
     };
 
     node.add_strategy(StartupStrategy {
         core: StrategyCore::new(strategy_config),
         handle: node.handle(),
+        instrument_id,
         observation: world.observation.clone(),
         stop_on_start: world.delayed_report.is_none(),
     })
     .unwrap();
 
-    let expected_claim = claims_external_orders.then(closing_strategy_id);
+    let expected_claim = strategy_id.filter(|_| claims_external_orders);
     assert_eq!(
         node.kernel()
             .cache()
             .borrow()
-            .external_order_claim(&crypto_perpetual_ethusdt().id()),
+            .external_order_claim(&instrument_id),
         expected_claim
     );
 
@@ -675,7 +756,7 @@ fn retained_position_at_start(world: &mut StartupWorld, side: String, qty: Quant
     assert_eq!(position.quantity, qty);
     assert_eq!(position.quantity.precision, qty.precision);
     assert_eq!(position.avg_px_open, Decimal::from(3000));
-    assert_eq!(observation.orders_open, 0);
+    assert!(observation.orders_open.is_empty());
     assert_eq!(
         observation.positions.len(),
         usize::from(expected_side != PositionSide::Flat)
@@ -869,7 +950,7 @@ fn reconciled_position(world: &mut StartupWorld, side: String, qty: Quantity, pr
     let observation = observation.as_ref().expect("strategy must start");
     let positions = &observation.positions;
     assert_eq!(positions.len(), 1);
-    assert_eq!(observation.orders_open, 0);
+    assert!(observation.orders_open.is_empty());
     let instrument_id = crypto_perpetual_ethusdt().id();
 
     let position_id = if world.oms_type == OmsType::Netting {
@@ -922,12 +1003,55 @@ fn flat_startup(world: &mut StartupWorld) {
     assert_eq!(
         *world.observation.borrow(),
         Some(StartupObservation {
-            orders_open: 0,
+            orders_open: Vec::new(),
+            orders_total: 0,
             positions: Vec::new(),
             net_qty: Decimal::ZERO,
             retained_position: None,
         })
     );
+}
+
+#[then(
+    regex = "^the strategy owns one open AAPL buy limit order ([A-Z0-9-]+) for ([0-9]+) shares at ([0-9.]+) USD when it starts$"
+)]
+fn claimed_aapl_order(
+    world: &mut StartupWorld,
+    venue_order_id: String,
+    qty: Quantity,
+    price: Price,
+) {
+    let observation = world.observation.borrow();
+    let observation = observation.as_ref().expect("strategy must start");
+    assert_eq!(observation.orders_total, 1);
+    assert_eq!(observation.orders_open.len(), 1);
+    let order = &observation.orders_open[0];
+    assert_eq!(order.strategy_id(), StrategyId::from(AAPL_STRATEGY_ID));
+    assert_eq!(order.instrument_id(), equity_aapl().id());
+    assert_eq!(order.account_id(), Some(AccountId::from(AAPL_ACCOUNT_ID)));
+    assert_eq!(
+        order.client_order_id(),
+        ClientOrderId::from(venue_order_id.as_str())
+    );
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str()))
+    );
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.order_side(), OrderSide::Buy);
+    assert_eq!(order.order_type(), OrderType::Limit);
+    assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+    assert_eq!(order.price(), Some(price));
+    assert_eq!(order.quantity(), qty);
+    assert_eq!(order.filled_qty(), Quantity::zero(0));
+}
+
+#[then("the strategy observes an empty order cache when it starts")]
+fn empty_order_cache_at_start(world: &mut StartupWorld) {
+    let observation = world.observation.borrow();
+    let observation = observation.as_ref().expect("strategy must start");
+    assert_eq!(observation.orders_total, 0);
+    assert!(observation.orders_open.is_empty());
 }
 
 #[then("the venue receives a startup mass-status request")]
@@ -972,7 +1096,8 @@ fn position_side(side: &str) -> PositionSide {
 
 #[derive(Debug, PartialEq)]
 struct StartupObservation {
-    orders_open: usize,
+    orders_open: Vec<OrderAny>,
+    orders_total: usize,
     positions: Vec<PositionObservation>,
     net_qty: Decimal,
     retained_position: Option<Position>,
@@ -1009,6 +1134,7 @@ impl PositionObservation {
 struct StartupStrategy {
     core: StrategyCore,
     handle: LiveNodeHandle,
+    instrument_id: InstrumentId,
     observation: Rc<RefCell<Option<StartupObservation>>>,
     stop_on_start: bool,
 }
@@ -1021,17 +1147,18 @@ impl DataActor for StartupStrategy {
         );
 
         let cache = self.cache();
-        let orders_open = cache.orders_open_count(None, None, None, None, None);
+        let orders_open = cache.orders_open(None, None, None, None, None);
+        let orders_total = cache.orders_total_count(None, None, None, None, None);
         let positions = cache
             .positions_open(None, None, None, None, None)
             .iter()
             .map(|position| PositionObservation::new(position, cache.oms_type(&position.id)))
             .collect();
 
-        let instrument_id = crypto_perpetual_ethusdt().id();
-        let net_qty = self.portfolio().net_position(&instrument_id);
+        let net_qty = self.portfolio().net_position(&self.instrument_id);
         *self.observation.borrow_mut() = Some(StartupObservation {
             orders_open,
+            orders_total,
             positions,
             net_qty,
             retained_position: cache.position(&closing_position_id()),

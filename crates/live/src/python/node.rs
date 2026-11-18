@@ -5219,6 +5219,7 @@ class ClaimsStrategy(Strategy):
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
             .build()
             .unwrap();
 
