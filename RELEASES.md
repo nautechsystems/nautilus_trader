@@ -43,6 +43,10 @@ Released on TBD (UTC).
 - Changed WebSocket SOCKS `proxy_url` to return an error instead of connecting directly; use an HTTP(S) proxy
 - Changed followed HTTP redirects to fail on HTTPS-to-HTTP downgrades and on cross-origin requests with a body
 - Changed cross-origin HTTP redirects to drop custom headers; request the final URL when they are required
+- Changed book delta start snapshots to exclude deltas at or after `start`, unlike v1, thanks @faysou
+- Changed book delta requests to fail when a source that sets `F_LAST` leaves an event open
+- Changed book delta requests to fail when the start snapshot cannot be rebuilt
+- Changed time-range book delta requests to rebuild the start snapshot for the first window only
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
@@ -91,6 +95,7 @@ Released on TBD (UTC).
 - Fixed Redis and PostgreSQL restoring a prior NETTING cycle after a position ID is reused
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
 - Fixed own order books retaining stale orders after cache reload
+- Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports

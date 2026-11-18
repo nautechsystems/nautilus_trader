@@ -799,6 +799,20 @@ pub(super) fn split_delta(instrument_id: InstrumentId, ts: u64) -> OrderBookDelt
         .build()
 }
 
+// A terminal envelope without a payload yields an empty entry
+pub(super) fn delivered_book_deltas(
+    saver: &TypedMessageSavingHandler<DataResponseEnvelope>,
+) -> Vec<Vec<OrderBookDelta>> {
+    saver
+        .get_messages()
+        .iter()
+        .map(|envelope| match envelope.response() {
+            Some(DataResponse::BookDeltas(response)) => response.data.to_vec(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
 #[cfg(feature = "streaming")]
 pub(super) fn register_deltas_catalog_with_deltas(
     data_engine: &mut DataEngine,

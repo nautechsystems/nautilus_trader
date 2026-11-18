@@ -68,7 +68,7 @@ pub use bar::BarAggregatorSubscription;
 use bar::{BarAggregationSubscription, BarAggregatorKey, BarAggregatorWarmup, bar_aggregator_key};
 use book::{
     BookDeltasKey, BookSnapshotInfos, BookSnapshotKey, BookSnapshotSource, BookSnapshotter,
-    BookSubscription, BookSubscriptionOwner, BookUpdater,
+    BookSubscription, BookSubscriptionOwner, BookUpdater, RequestBookEvents,
 };
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
@@ -140,7 +140,7 @@ use requests::{
     request_bar_aggregation_from_params, request_params, response_params,
 };
 use responses::{
-    log_if_empty_response, parent_request_window, rebind_response_correlation,
+    append_failure, log_if_empty_response, parent_request_window, rebind_response_correlation,
     rebuild_pipeline_response, same_instrument,
 };
 use serde_json::Value;
@@ -199,6 +199,7 @@ pub struct DataEngine {
     bar_aggregators_pending_stop: AHashSet<BarAggregatorKey>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    request_book_events: AHashMap<(UUID4, InstrumentId), RequestBookEvents>,
     inflight_requests: AHashMap<UUID4, RequestCommand>,
     request_pipeline_parent_request: AHashMap<UUID4, RequestCommand>,
     request_pipeline_n_components: AHashMap<UUID4, usize>,
@@ -280,6 +281,7 @@ impl DataEngine {
             bar_aggregators_pending_stop: AHashSet::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
+            request_book_events: AHashMap::new(),
             inflight_requests: AHashMap::new(),
             request_pipeline_parent_request: AHashMap::new(),
             request_pipeline_n_components: AHashMap::new(),
@@ -577,6 +579,7 @@ impl DataEngine {
 
     fn clear_request_state(&mut self) {
         self.request_bar_aggregations.clear();
+        self.request_book_events.clear();
         self.inflight_requests.clear();
         self.request_pipeline_parent_request.clear();
         self.request_pipeline_n_components.clear();
@@ -1998,7 +2001,7 @@ impl DataEngine {
             return;
         };
 
-        self.route_response_payload(resp, &envelope);
+        self.route_response_payload(resp, envelope);
     }
 
     fn finish_empty_response(&mut self, envelope: &DataResponseEnvelope) {
@@ -2023,10 +2026,10 @@ impl DataEngine {
         }
 
         self.cleanup_request_bar_aggregators(envelope.correlation_id());
-        msgbus::send_response_envelope(envelope);
+        self.deliver_response_envelope(envelope);
     }
 
-    fn route_response_payload(&mut self, resp: DataResponse, envelope: &DataResponseEnvelope) {
+    fn route_response_payload(&mut self, resp: DataResponse, mut envelope: DataResponseEnvelope) {
         let resp = rebind_response_correlation(resp, *envelope.correlation_id());
         if log::log_enabled!(log::Level::Debug) {
             let correlation_id = resp.correlation_id();
@@ -2058,6 +2061,20 @@ impl DataEngine {
         }
 
         self.process_request_bar_aggregation_response(&resp, envelope.completed());
+        if self.handle_book_deltas_envelope(&mut envelope) {
+            self.deliver_response_envelope(&envelope);
+        }
+    }
+
+    // Completes the request's book events before its final envelope reaches the requester
+    fn deliver_response_envelope(&mut self, envelope: &DataResponseEnvelope) {
+        if envelope.completed()
+            && let Some(reason) = self.complete_request_book_events(envelope.correlation_id())
+        {
+            let failed = append_failure(envelope.clone(), reason);
+            msgbus::send_response_envelope(&failed);
+            return;
+        }
 
         msgbus::send_response_envelope(envelope);
     }
@@ -2096,11 +2113,6 @@ impl DataEngine {
                 }
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
-            DataResponse::BookDeltas(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
-                    self.handle_book_deltas_response(r);
-                }
-            }
             DataResponse::BookDepth(r) => {
                 if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
                     self.handle_book_depth_response(r);
@@ -2111,7 +2123,8 @@ impl DataEngine {
                 self.handle_option_chain_reference_price_response(&correlation_id, r);
                 return false;
             }
-            DataResponse::Data(_) => {}
+            // Book deltas are handled with their envelope, which holds an open event back
+            DataResponse::BookDeltas(_) | DataResponse::Data(_) => {}
         }
 
         true
@@ -2146,7 +2159,7 @@ impl DataEngine {
 
     fn handle_request_pipeline_response(
         &mut self,
-        envelope: DataResponseEnvelope,
+        mut envelope: DataResponseEnvelope,
     ) -> Option<DataResponseEnvelope> {
         let leg_id = *envelope.correlation_id();
 
@@ -2155,6 +2168,10 @@ impl DataEngine {
         };
 
         let completed = envelope.completed();
+        if completed && let Some(reason) = self.complete_request_book_events(&leg_id) {
+            envelope = append_failure(envelope, reason);
+        }
+
         let slots = self.request_pipeline_responses.get_mut(&parent_id)?;
         slots[index].get_or_insert_with(Vec::new).push(envelope);
 
@@ -2197,8 +2214,12 @@ impl DataEngine {
         }
 
         let (parent_start, parent_end) = parent_request_window(parent.as_ref());
-        if self.emit_partitioned_book_responses(parent_id, parent.as_ref(), &legs) {
-            return Some(DataResponseEnvelope::terminal(parent_id, failure_reason));
+
+        if let Some(replay_failures) =
+            self.emit_partitioned_book_responses(parent_id, parent.as_ref(), &legs)
+        {
+            let terminal = DataResponseEnvelope::terminal(parent_id, failure_reason);
+            return Some(replay_failures.into_iter().fold(terminal, append_failure));
         }
 
         let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
@@ -2210,8 +2231,13 @@ impl DataEngine {
             return Some(DataResponseEnvelope::terminal(parent_id, Some(reason)));
         };
 
-        if let DataResponse::BookDeltas(r) = &mut rebuilt {
-            self.book_deltas_snapshot_replay(r);
+        // A book without its snapshot is unusable, so the request fails with no payload
+        if let DataResponse::BookDeltas(r) = &mut rebuilt
+            && !self.is_later_time_range_join_window(&parent_id)
+            && let Err(e) = self.book_deltas_snapshot_replay(r)
+        {
+            let terminal = DataResponseEnvelope::terminal(parent_id, failure_reason);
+            return Some(append_failure(terminal, e.to_string()));
         }
 
         // Client definitions can have a newer ts_init than the requested history
@@ -2229,14 +2255,16 @@ impl DataEngine {
         })
     }
 
+    // Returns the snapshot replay failures of the legs it withheld, or `None` when the legs
+    // share one instrument and so rebuild into a single response
     fn emit_partitioned_book_responses(
         &mut self,
         parent_id: UUID4,
         parent: Option<&RequestCommand>,
         legs: &[DataResponse],
-    ) -> bool {
+    ) -> Option<Vec<String>> {
         if !matches!(parent, Some(RequestCommand::BookDeltas(_))) {
-            return false;
+            return None;
         }
 
         let mut ids = legs.iter().filter_map(|r| match r {
@@ -2244,23 +2272,39 @@ impl DataEngine {
             _ => None,
         });
 
-        let Some(first) = ids.next() else {
-            return false;
-        };
-
+        let first = ids.next()?;
         if !ids.any(|id| !same_instrument(id, first)) {
-            return false;
+            return None;
         }
 
         let (start, end) = parent_request_window(parent);
-
+        let mut replay_failures = Vec::new();
+        let mut withheld: Vec<InstrumentId> = Vec::new();
+        let mut partitions = Vec::with_capacity(legs.len());
         for response in legs {
             let child_id = *response.correlation_id();
             let mut response = rebind_response_correlation(response.clone(), parent_id);
             if let DataResponse::BookDeltas(r) = &mut response {
                 r.start = start.or(r.start);
                 r.end = end.or(r.end);
-                self.book_deltas_snapshot_replay(r);
+                if let Err(e) = self.book_deltas_snapshot_replay(r) {
+                    replay_failures.push(e.to_string());
+                    withheld.push(r.instrument_id);
+                    continue;
+                }
+            }
+
+            partitions.push((child_id, response));
+        }
+
+        for (child_id, mut response) in partitions {
+            // A book without its snapshot is unusable, so none of its instrument's deltas go out
+            if let DataResponse::BookDeltas(r) = &response
+                && withheld
+                    .iter()
+                    .any(|id| same_instrument(*id, r.instrument_id))
+            {
+                continue;
             }
 
             response.trim_to_bounds();
@@ -2271,7 +2315,7 @@ impl DataEngine {
             ));
         }
 
-        true
+        Some(replay_failures)
     }
 
     fn handle_request_join(&mut self, req: RequestJoin) -> anyhow::Result<()> {

@@ -605,6 +605,8 @@ fn test_book_deltas_response_publishes_frames_by_f_last(
         get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("deltas-by-f-last")));
     msgbus::subscribe_book_deltas(pipeline_topic.into(), handler, None);
 
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
     let f_last = RecordFlag::F_LAST as u8;
     let payload = vec![
         delta_with_flag(instrument_id, 1_000, 0),
@@ -615,10 +617,10 @@ fn test_book_deltas_response_publishes_frames_by_f_last(
     ];
 
     data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
-        UUID4::new(),
+        request_id,
         client_id,
         instrument_id,
-        payload,
+        payload.clone(),
         None,
         None,
         UnixNanos::default(),
@@ -626,22 +628,837 @@ fn test_book_deltas_response_publishes_frames_by_f_last(
     )));
 
     let batches = saver.get_messages();
-    assert_eq!(
-        batches.len(),
-        3,
-        "two F_LAST-terminated frames plus a trailing partial must publish as three batches"
-    );
     let frame_sizes: Vec<usize> = batches.iter().map(|b| b.deltas.len()).collect();
-    assert_eq!(frame_sizes, vec![2, 2, 1]);
+    assert_eq!(frame_sizes, vec![2, 2]);
     let frame_end_ts: Vec<u64> = batches
         .iter()
         .map(|b| b.deltas.last().unwrap().ts_event.as_u64())
         .collect();
     assert_eq!(
         frame_end_ts,
-        vec![2_000, 4_000, 5_000],
-        "each batch must close on the F_LAST delta of its frame (or the trailing delta)"
+        vec![2_000, 4_000],
+        "each batch must close on the F_LAST delta of its frame"
     );
+    assert_eq!(
+        failure_reasons(&envelopes),
+        vec![Some(
+            "Order book deltas end without an `F_LAST` delta for AUD/USD.SIM \
+             (1 pending, ts_init 5000 to 5000)"
+                .to_owned()
+        )],
+        "a trailing partial event fails the request and stays unpublished"
+    );
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![payload[..4].to_vec()],
+        "the requester receives only the complete events"
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_carries_open_event_across_envelopes(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-envelopes");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let f_last = RecordFlag::F_LAST as u8;
+    let first = delta_with_flag(instrument_id, 1_000, 0);
+    let second = delta_with_flag(instrument_id, 2_000, f_last);
+    let third = delta_with_flag(instrument_id, 3_000, f_last);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![first],
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![second, third],
+        true,
+    ));
+
+    assert_eq!(
+        published_events(&saver),
+        vec![vec![first, second], vec![third]],
+        "an open event must wait for its F_LAST delta"
+    );
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![first, second, third]],
+        "the requester receives the open event with the envelope that closes it"
+    );
+    assert_eq!(failure_reasons(&envelopes), vec![None]);
+}
+
+#[rstest]
+fn test_book_deltas_response_carries_open_events_per_instrument(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let first_id = audusd_sim.id;
+    let second_id = InstrumentId::from("GBP/USD.SIM");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let first_saver = subscribe_pipeline_book_deltas(first_id, "deltas-carry-first");
+    let second_saver = subscribe_pipeline_book_deltas(second_id, "deltas-carry-second");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let f_last = RecordFlag::F_LAST as u8;
+    let first_open = delta_with_flag(first_id, 1_000, 0);
+    let second_event = delta_with_flag(second_id, 2_000, f_last);
+    let second_open = delta_with_flag(second_id, 3_000, 0);
+    let first_close = delta_with_flag(first_id, 4_000, f_last);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        first_id,
+        vec![first_open],
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        second_id,
+        vec![second_event, second_open],
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        first_id,
+        vec![first_close],
+        true,
+    ));
+
+    assert_eq!(
+        published_events(&first_saver),
+        vec![vec![first_open, first_close]]
+    );
+    assert_eq!(published_events(&second_saver), vec![vec![second_event]]);
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![second_event], vec![first_open, first_close]]
+    );
+    assert_eq!(
+        failure_reasons(&envelopes),
+        vec![
+            None,
+            Some(
+                "Order book deltas end without an `F_LAST` delta for GBP/USD.SIM \
+                 (1 pending, ts_init 3000 to 3000)"
+                    .to_owned()
+            ),
+        ],
+        "completion fails on the event the other instrument left open"
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_keeps_open_events_per_request(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-requests");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let f_last = RecordFlag::F_LAST as u8;
+    let open = delta_with_flag(instrument_id, 1_000, 0);
+    let other_request_event = delta_with_flag(instrument_id, 2_000, f_last);
+    let close = delta_with_flag(instrument_id, 3_000, f_last);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![open],
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        vec![other_request_event],
+        true,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![close],
+        true,
+    ));
+
+    assert_eq!(
+        published_events(&saver),
+        vec![vec![other_request_event], vec![open, close]]
+    );
+    assert_eq!(delivered_book_deltas(&envelopes), vec![vec![open, close]]);
+}
+
+#[rstest]
+#[case::completed(
+    None,
+    "Order book deltas end without an `F_LAST` delta for AUD/USD.SIM \
+     (1 pending, ts_init 2000 to 2000)"
+)]
+#[case::failed(
+    Some("Dataset unavailable"),
+    "Dataset unavailable; Order book deltas end without an `F_LAST` delta for AUD/USD.SIM \
+     (1 pending, ts_init 2000 to 2000)"
+)]
+fn test_book_deltas_response_fails_request_ending_mid_event(
+    #[case] reason: Option<&str>,
+    #[case] expected: &str,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-strict");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let closed = delta_with_flag(instrument_id, 1_000, RecordFlag::F_LAST as u8);
+    let open = delta_with_flag(instrument_id, 2_000, 0);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![closed, open],
+        false,
+    ));
+    data_engine.response_envelope(DataResponseEnvelope::terminal(
+        request_id,
+        reason.map(str::to_owned),
+    ));
+
+    assert_eq!(published_events(&saver), vec![vec![closed]]);
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![closed], vec![]],
+        "the open event never reaches the requester"
+    );
+    assert_eq!(
+        failure_reasons(&envelopes),
+        vec![None, Some(expected.to_owned())]
+    );
+}
+
+#[rstest]
+#[case::split_before_snapshot(true)]
+#[case::single_payload(false)]
+fn test_book_deltas_response_publishes_open_event_before_snapshot(
+    #[case] split: bool,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-snapshot");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let open = delta_with_flag(instrument_id, 1_000, 0);
+    let snapshot_clear = OrderBookDelta::clear(
+        instrument_id,
+        0,
+        UnixNanos::from(2_000),
+        UnixNanos::from(2_000),
+    );
+    let snapshot_add = delta_with_flag(
+        instrument_id,
+        2_000,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+    );
+
+    if split {
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![open],
+            false,
+        ));
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![snapshot_clear, snapshot_add],
+            true,
+        ));
+    } else {
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![open, snapshot_clear, snapshot_add],
+            true,
+        ));
+    }
+
+    assert_eq!(
+        published_events(&saver),
+        vec![vec![open], vec![snapshot_clear, snapshot_add]]
+    );
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![open, snapshot_clear, snapshot_add]]
+    );
+    assert_eq!(failure_reasons(&envelopes), vec![None]);
+}
+
+#[rstest]
+#[case::split_before_snapshot(true)]
+#[case::single_payload(false)]
+fn test_book_deltas_response_withholds_open_event_before_snapshot_after_f_last(
+    #[case] split: bool,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-withhold-snapshot");
+
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+        .unwrap();
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let closed = delta_with_flag(instrument_id, 1_000, RecordFlag::F_LAST as u8);
+    let open = delta_with_flag(instrument_id, 2_000, 0);
+    let snapshot_clear = OrderBookDelta::clear(
+        instrument_id,
+        0,
+        UnixNanos::from(3_000),
+        UnixNanos::from(3_000),
+    );
+    let snapshot_add = delta_with_flag(
+        instrument_id,
+        3_000,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+    );
+    let after = delta_with_flag(instrument_id, 4_000, RecordFlag::F_LAST as u8);
+
+    if split {
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![closed, open],
+            false,
+        ));
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![snapshot_clear, snapshot_add, after],
+            true,
+        ));
+    } else {
+        data_engine.response_envelope(book_deltas_envelope(
+            request_id,
+            client_id,
+            instrument_id,
+            vec![closed, open, snapshot_clear, snapshot_add, after],
+            true,
+        ));
+    }
+
+    let mut reasons = failure_reasons(&envelopes);
+    let reason = reasons.pop();
+
+    assert_eq!(
+        published_events(&saver),
+        vec![
+            vec![closed],
+            vec![snapshot_clear, snapshot_add],
+            vec![after]
+        ]
+    );
+    assert_eq!(
+        delivered_book_deltas(&envelopes).concat(),
+        vec![closed, snapshot_clear, snapshot_add, after],
+        "the open event never reaches the requester"
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&instrument_id)
+            .expect("seeded book")
+            .update_count,
+        4,
+        "the open event must not reach the cache book"
+    );
+    assert_eq!(
+        reason,
+        Some(Some(
+            "Order book deltas reach a snapshot without an `F_LAST` delta for AUD/USD.SIM \
+             (1 pending, ts_init 2000 to 2000)"
+                .to_owned()
+        ))
+    );
+    assert_eq!(reasons, vec![None; usize::from(split)]);
+}
+
+#[rstest]
+fn test_book_deltas_response_reports_events_open_at_snapshot_and_at_end(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-withhold-both");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let closed = delta_with_flag(instrument_id, 1_000, RecordFlag::F_LAST as u8);
+
+    let open_at_snapshot = [
+        delta_with_flag(instrument_id, 2_000, 0),
+        delta_with_flag(instrument_id, 2_500, 0),
+    ];
+
+    let snapshot_clear = OrderBookDelta::clear(
+        instrument_id,
+        0,
+        UnixNanos::from(3_000),
+        UnixNanos::from(3_000),
+    );
+    let snapshot_add = delta_with_flag(
+        instrument_id,
+        3_000,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+    );
+    let open_at_end = delta_with_flag(instrument_id, 4_000, 0);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![
+            closed,
+            open_at_snapshot[0],
+            open_at_snapshot[1],
+            snapshot_clear,
+            snapshot_add,
+            open_at_end,
+        ],
+        true,
+    ));
+
+    assert_eq!(
+        published_events(&saver),
+        vec![vec![closed], vec![snapshot_clear, snapshot_add]]
+    );
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![closed, snapshot_clear, snapshot_add]]
+    );
+    assert_eq!(
+        failure_reasons(&envelopes),
+        vec![Some(
+            "Order book deltas reach a snapshot without an `F_LAST` delta for AUD/USD.SIM \
+             (2 pending, ts_init 2000 to 2500); Order book deltas end without an `F_LAST` delta \
+             for AUD/USD.SIM (1 pending, ts_init 4000 to 4000)"
+                .to_owned()
+        )]
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_keeps_open_event_through_book_clear(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-book-clear");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let open = delta_with_flag(instrument_id, 1_000, 0);
+    let mut book_clear = OrderBookDelta::clear(
+        instrument_id,
+        0,
+        UnixNanos::from(2_000),
+        UnixNanos::from(2_000),
+    );
+    book_clear.flags = RecordFlag::F_LAST as u8;
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![open],
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![book_clear],
+        true,
+    ));
+
+    assert_eq!(published_events(&saver), vec![vec![open, book_clear]]);
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![open, book_clear]]
+    );
+    assert_eq!(failure_reasons(&envelopes), vec![None]);
+}
+
+#[rstest]
+#[case::populated_snapshot(RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8)]
+#[case::empty_snapshot(RecordFlag::F_LAST as u8)]
+fn test_book_deltas_response_publishes_open_event_after_snapshot_without_other_f_last(
+    #[case] snapshot_end_flags: u8,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-unflagged");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let mut snapshot_clear = OrderBookDelta::clear(
+        instrument_id,
+        0,
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+
+    let snapshot: Vec<OrderBookDelta> = if RecordFlag::F_SNAPSHOT.matches(snapshot_end_flags) {
+        vec![
+            snapshot_clear,
+            delta_with_flag(instrument_id, 1_000, snapshot_end_flags),
+        ]
+    } else {
+        snapshot_clear.flags = snapshot_end_flags;
+        vec![snapshot_clear]
+    };
+
+    let first = delta_with_flag(instrument_id, 2_000, 0);
+    let second = delta_with_flag(instrument_id, 3_000, 0);
+    let mut payload = snapshot.clone();
+    payload.extend([first, second]);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        payload.clone(),
+        true,
+    ));
+
+    assert_eq!(
+        published_events(&saver),
+        vec![snapshot, vec![first, second]]
+    );
+    assert_eq!(delivered_book_deltas(&envelopes), vec![payload]);
+    assert_eq!(failure_reasons(&envelopes), vec![None]);
+}
+
+#[rstest]
+fn test_book_deltas_response_drops_open_event_on_reset(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-reset");
+
+    let request_id = UUID4::new();
+    let open = delta_with_flag(instrument_id, 1_000, 0);
+    let close = delta_with_flag(instrument_id, 2_000, RecordFlag::F_LAST as u8);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![open],
+        false,
+    ));
+    data_engine.reset();
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![close],
+        true,
+    ));
+
+    assert_eq!(published_events(&saver), vec![vec![close]]);
+}
+
+#[rstest]
+#[case::below_limit(9_999, false)]
+#[case::at_limit(10_000, true)]
+#[case::above_limit(10_001, true)]
+fn test_book_deltas_response_bounds_open_event_without_f_last(
+    #[case] held: u64,
+    #[case] releases_before_completion: bool,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-limit");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let mut deltas: Vec<OrderBookDelta> = (1..=held)
+        .map(|ts| delta_with_flag(instrument_id, ts, 0))
+        .collect();
+    let last = delta_with_flag(instrument_id, held + 1, 0);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        deltas.clone(),
+        false,
+    ));
+    let published_before_completion = published_events(&saver);
+    let delivered_before_completion = delivered_book_deltas(&envelopes);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![last],
+        true,
+    ));
+
+    let expected = if releases_before_completion {
+        vec![deltas, vec![last]]
+    } else {
+        deltas.push(last);
+        vec![deltas]
+    };
+
+    let expected_before_completion = &expected[..usize::from(releases_before_completion)];
+    assert_eq!(published_before_completion, expected_before_completion);
+    assert_eq!(delivered_before_completion, expected_before_completion);
+    assert_eq!(published_events(&saver), expected);
+    assert_eq!(delivered_book_deltas(&envelopes), expected);
+}
+
+#[rstest]
+fn test_book_deltas_response_holds_open_event_past_limit_after_f_last(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-past-limit");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let f_last = RecordFlag::F_LAST as u8;
+    let mut deltas = vec![delta_with_flag(instrument_id, 1, f_last)];
+    deltas.extend((2..=10_001).map(|ts| delta_with_flag(instrument_id, ts, 0)));
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        deltas,
+        false,
+    ));
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![delta_with_flag(instrument_id, 10_002, f_last)],
+        true,
+    ));
+
+    let sizes: Vec<usize> = saver
+        .get_messages()
+        .iter()
+        .map(|b| b.deltas.len())
+        .collect();
+    let delivered_sizes: Vec<usize> = delivered_book_deltas(&envelopes)
+        .iter()
+        .map(Vec::len)
+        .collect();
+    assert_eq!(sizes, vec![1, 10_001]);
+    assert_eq!(delivered_sizes, vec![1, 10_001]);
+    assert_eq!(failure_reasons(&envelopes), vec![None, None]);
+}
+
+#[rstest]
+#[case::completed(None)]
+#[case::failed(Some("Dataset unavailable"))]
+fn test_book_deltas_response_publishes_open_event_on_terminal_envelope(
+    #[case] reason: Option<&str>,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-carry-terminal");
+
+    let request_id = UUID4::new();
+    let envelopes = save_response_envelopes(&request_id);
+    let open = delta_with_flag(instrument_id, 1_000, 0);
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![open],
+        false,
+    ));
+    let published_before_terminal = saver.get_messages().len();
+
+    data_engine.response_envelope(DataResponseEnvelope::terminal(
+        request_id,
+        reason.map(str::to_owned),
+    ));
+
+    let completed: Vec<bool> = envelopes
+        .get_messages()
+        .iter()
+        .map(DataResponseEnvelope::completed)
+        .collect();
+    assert_eq!(published_before_terminal, 0);
+    assert_eq!(published_events(&saver), vec![vec![open]]);
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![open], vec![]],
+        "the open event reaches the requester ahead of the terminal envelope"
+    );
+    assert_eq!(completed, vec![false, true]);
+    assert_eq!(
+        failure_reasons(&envelopes),
+        vec![None, reason.map(str::to_owned)]
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_holds_open_event_from_cache(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+        .unwrap();
+
+    let cache_update_count = || {
+        cache
+            .borrow()
+            .order_book(&instrument_id)
+            .expect("seeded book")
+            .update_count
+    };
+
+    let request_id = UUID4::new();
+    let f_last = RecordFlag::F_LAST as u8;
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![
+            delta_with_flag(instrument_id, 1_000, f_last),
+            delta_with_flag(instrument_id, 2_000, 0),
+        ],
+        false,
+    ));
+    let count_while_open = cache_update_count();
+
+    data_engine.response_envelope(book_deltas_envelope(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![delta_with_flag(instrument_id, 3_000, f_last)],
+        true,
+    ));
+
+    assert_eq!(
+        count_while_open, 1,
+        "an open event must not reach the cache book"
+    );
+    assert_eq!(cache_update_count(), 3);
 }
 
 #[rstest]
@@ -712,14 +1529,16 @@ fn test_book_deltas_request_replays_day_start_snapshot(
 
     let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
     let f_last = RecordFlag::F_LAST as u8;
+    let next_event = book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 3);
+    let later_event = book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 4);
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
         "deltas-replay-assemble",
         &[
             book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
-            book_replay_delta(instrument_id, 500, 0, "1.00010", 2),
-            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 3),
-            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 4),
+            book_replay_delta(instrument_id, 500, f_last, "1.00010", 2),
+            next_event,
+            later_event,
         ],
         Some((0, 2_000)),
     );
@@ -746,27 +1565,203 @@ fn test_book_deltas_request_replays_day_start_snapshot(
     assert_eq!(received.len(), 1);
     let data = &received[0].data;
 
-    // Pre-start deltas (ts 0, 500, 1500) collapse into one synthesized snapshot keyed at the
-    // crossing delta (ts 1500); the post-start delta (ts 2000) is forwarded unchanged.
+    // Pre-start events (ts 0, 500) collapse into one synthesized snapshot keyed at the start
+    // (ts 1000); the events from the start (ts 1500, 2000) are forwarded unchanged.
     let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
-    assert!(
-        ts_inits.iter().all(|&t| t >= 1_000),
-        "no pre-start deltas survive the replay, was {ts_inits:?}"
-    );
+    let ts_events: Vec<u64> = data.iter().map(|d| d.ts_event.as_u64()).collect();
+    let snapshot_prices: Vec<Price> = data[1..3].iter().map(|d| d.order.price).collect();
+    assert_eq!(ts_inits, vec![1_000, 1_000, 1_000, 1_500, 2_000]);
+    assert_eq!(ts_events, ts_inits);
     assert_eq!(
-        ts_inits[0], 1_500,
-        "snapshot keyed at the crossing delta ts"
+        snapshot_prices,
+        vec![Price::from("1.00000"), Price::from("1.00010")]
     );
-    assert_eq!(*ts_inits.last().unwrap(), 2_000);
     assert_eq!(
         data[0].action,
         BookAction::Clear,
         "snapshot opens with a clear"
     );
-    assert!(
-        RecordFlag::F_SNAPSHOT.matches(data[1].flags),
+    assert_eq!(
+        data[1].flags, f_snapshot,
         "synthesized adds carry F_SNAPSHOT"
     );
+    assert_eq!(
+        data[2].flags,
+        f_snapshot | f_last,
+        "snapshot closes as one event"
+    );
+    assert_eq!(data[3], next_event);
+    assert_eq!(data[4], later_event);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::start_between_events(1_000)]
+#[case::start_at_event(1_500)]
+fn test_book_deltas_request_forwards_events_from_start_unchanged(
+    #[case] start: u64,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let event_open = book_replay_delta(instrument_id, 1_500, 0, "1.00020", 3);
+    let event_close = book_replay_delta(instrument_id, 1_500, f_last, "1.00030", 4);
+    let later_event = book_replay_delta(instrument_id, 2_000, f_last, "1.00040", 5);
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-whole-event",
+        &[
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500, f_last, "1.00010", 2),
+            event_open,
+            event_close,
+            later_event,
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-whole-event",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(start).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // The snapshot holds only the events before the start; the two-delta event at ts 1500 is
+    // forwarded whole, including when the request starts exactly on it.
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    let snapshot_prices: Vec<Price> = data[1..3].iter().map(|d| d.order.price).collect();
+    assert_eq!(ts_inits, vec![start, start, start, 1_500, 1_500, 2_000]);
+    assert_eq!(
+        snapshot_prices,
+        vec![Price::from("1.00000"), Price::from("1.00010")]
+    );
+    let suffix = [event_open, event_close, later_event];
+    assert_eq!(data[3..], suffix);
+
+    for (actual, expected) in data[3..].iter().zip(suffix) {
+        assert_eq!(actual.order.side, expected.order.side);
+        assert_eq!(actual.order.price, expected.order.price);
+        assert_eq!(actual.order.size, expected.order.size);
+    }
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_time_range_request_replays_snapshot_for_first_window_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let event_open = book_replay_delta(instrument_id, 1_500_000_000, 0, "1.00020", 3);
+    let event_close = book_replay_delta(instrument_id, 2_500_000_000, f_last, "1.00030", 4);
+    let later_event = book_replay_delta(instrument_id, 2_800_000_000, f_last, "1.00040", 5);
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-windows",
+        &[
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500_000_000, f_last, "1.00010", 2),
+            event_open,
+            event_close,
+            later_event,
+        ],
+        Some((0, 3_000_000_000)),
+    );
+    let saver = subscribe_pipeline_book_deltas(instrument_id, "deltas-replay-windows");
+
+    let parent_id = UUID4::new();
+    let envelopes = save_response_envelopes(&parent_id);
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1],
+    }))
+    .unwrap();
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    // The first window opens with the snapshot stamped at the request start; the second window
+    // continues its deltas, so the event straddling the window boundary publishes whole and
+    // reaches the requester with the window that closes it.
+    let payload_ts: Vec<Vec<u64>> = envelopes
+        .get_messages()
+        .iter()
+        .filter_map(|envelope| match envelope.response() {
+            Some(DataResponse::BookDeltas(r)) => {
+                Some(r.data.iter().map(|d| d.ts_init.as_u64()).collect())
+            }
+            _ => None,
+        })
+        .collect();
+
+    let events = published_events(&saver);
+    let snapshot_ts: Vec<u64> = events[0].iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(
+        payload_ts,
+        vec![
+            vec![1_000_000_000, 1_000_000_000, 1_000_000_000],
+            vec![1_500_000_000, 2_500_000_000, 2_800_000_000],
+            vec![],
+        ]
+    );
+    assert_eq!(snapshot_ts, vec![1_000_000_000; 3]);
+    assert_eq!(
+        events[1..],
+        [vec![event_open, event_close], vec![later_event]]
+    );
+    assert_eq!(failure_reasons(&envelopes), vec![None, None, None]);
 }
 
 #[cfg(feature = "streaming")]
@@ -1233,6 +2228,62 @@ fn test_book_deltas_replay_respects_cache_ownership(
         after_count, owned_count,
         "replayed snapshot must not mutate a cache book owned by a live subscription"
     );
+}
+
+fn subscribe_pipeline_book_deltas(
+    instrument_id: InstrumentId,
+    handler_id: &str,
+) -> TypedMessageSavingHandler<OrderBookDeltas> {
+    let topic =
+        switchboard::MessagingSwitchboard::default().get_pipeline_book_deltas_topic(instrument_id);
+    let (handler, saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from(handler_id)));
+    msgbus::subscribe_book_deltas(topic.into(), handler, None);
+    saver
+}
+
+fn published_events(
+    saver: &TypedMessageSavingHandler<OrderBookDeltas>,
+) -> Vec<Vec<OrderBookDelta>> {
+    saver
+        .get_messages()
+        .iter()
+        .map(|batch| batch.deltas.clone())
+        .collect()
+}
+
+fn save_response_envelopes(request_id: &UUID4) -> TypedMessageSavingHandler<DataResponseEnvelope> {
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(request_id, handler);
+    saver
+}
+
+fn failure_reasons(saver: &TypedMessageSavingHandler<DataResponseEnvelope>) -> Vec<Option<String>> {
+    saver
+        .get_messages()
+        .iter()
+        .map(|envelope| envelope.failure_reason().map(str::to_owned))
+        .collect()
+}
+
+fn book_deltas_envelope(
+    request_id: UUID4,
+    client_id: ClientId,
+    instrument_id: InstrumentId,
+    deltas: Vec<OrderBookDelta>,
+    completed: bool,
+) -> DataResponseEnvelope {
+    let response = DataResponse::BookDeltas(BookDeltasResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        deltas,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    ));
+    DataResponseEnvelope::new(response, completed, None)
 }
 
 fn book_response_for(
