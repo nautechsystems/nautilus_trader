@@ -35,8 +35,6 @@ use nautilus_core::{
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
 };
-#[cfg(test)]
-use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_live::book::{
     BookSequenceOutcome,
     recovery::{BookRecoveryOutcome, BookRecoveryState},
@@ -305,25 +303,6 @@ enum CompletionKind {
 }
 
 impl FeedHandler {
-    #[cfg(test)]
-    pub(super) fn new(
-        signal: Arc<AtomicBool>,
-        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
-        out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-        subscriptions: SubscriptionState,
-    ) -> Self {
-        Self::new_with_settlement_currency(
-            signal,
-            cmd_rx,
-            raw_rx,
-            out_tx,
-            subscriptions,
-            Currency::get_or_create_crypto("USDC"),
-            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
-        )
-    }
-
     pub(super) fn new_with_settlement_currency(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -2411,6 +2390,7 @@ mod tests {
 
     use futures_util::FutureExt;
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
     use nautilus_model::{
         enums::{AccountType, BookAction, RecordFlag},
         identifiers::{InstrumentId, Symbol, Venue},
@@ -2427,6 +2407,26 @@ mod tests {
         common::enums::{LighterCandleResolution, LighterTxStatus, LighterTxType},
         websocket::messages::{LighterMarketSelection, LighterWsCandle, LighterWsChannel},
     };
+
+    impl FeedHandler {
+        fn new(
+            signal: Arc<AtomicBool>,
+            cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+            raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
+            out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+            subscriptions: SubscriptionState,
+        ) -> Self {
+            Self::new_with_settlement_currency(
+                signal,
+                cmd_rx,
+                raw_rx,
+                out_tx,
+                subscriptions,
+                Currency::get_or_create_crypto("USDC"),
+                Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+            )
+        }
+    }
 
     const SECRET_MARKER: &str = "426426426";
 

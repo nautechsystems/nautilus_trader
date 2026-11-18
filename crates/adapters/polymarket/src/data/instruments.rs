@@ -90,11 +90,6 @@ impl InstrumentUpdateState {
         );
     }
 
-    #[cfg(test)]
-    pub(super) fn contains_live_tick(&self, token_id: &Ustr) -> bool {
-        self.live_ticks.contains_key(token_id)
-    }
-
     pub(super) fn compose_instrument(
         &self,
         instrument: &InstrumentAny,
@@ -671,6 +666,12 @@ mod tests {
         },
         websocket::pool::PolymarketMarketConnectionPool,
     };
+
+    impl InstrumentUpdateState {
+        pub(in crate::data) fn contains_live_tick(&self, token_id: &Ustr) -> bool {
+            self.live_ticks.contains_key(token_id)
+        }
+    }
 
     fn make_client(config: PolymarketDataClientConfig) -> PolymarketDataClient {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();

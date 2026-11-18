@@ -294,26 +294,6 @@ impl PolymarketDataClient {
         &self.provider
     }
 
-    #[cfg(test)]
-    pub(crate) fn clob_public_client(&self) -> &PolymarketClobPublicClient {
-        &self.clob_public_client
-    }
-
-    #[cfg(test)]
-    pub(crate) fn data_api_client(&self) -> &PolymarketDataApiHttpClient {
-        &self.data_api_client
-    }
-
-    #[cfg(test)]
-    pub(crate) fn ws_client(&self) -> &PolymarketMarketConnectionPool {
-        &self.ws_client
-    }
-
-    #[cfg(test)]
-    pub(crate) fn polybolt_feed(&self) -> &PolymarketPolyBoltFeed {
-        &self.polybolt_feed
-    }
-
     /// Adds an instrument filter on the underlying provider.
     pub fn add_instrument_filter(&mut self, filter: Arc<dyn InstrumentFilter>) {
         self.provider.add_filter(filter);
@@ -851,5 +831,28 @@ where
 {
     if let Err(e) = tasks.spawn(future) {
         log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl PolymarketDataClient {
+        pub(crate) fn clob_public_client(&self) -> &PolymarketClobPublicClient {
+            &self.clob_public_client
+        }
+
+        pub(crate) fn data_api_client(&self) -> &PolymarketDataApiHttpClient {
+            &self.data_api_client
+        }
+
+        pub(crate) fn ws_client(&self) -> &PolymarketMarketConnectionPool {
+            &self.ws_client
+        }
+
+        pub(crate) fn polybolt_feed(&self) -> &PolymarketPolyBoltFeed {
+            &self.polybolt_feed
+        }
     }
 }

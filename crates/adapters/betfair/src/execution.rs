@@ -3846,12 +3846,6 @@ impl ReconciliationGate {
         }
     }
 
-    #[cfg(test)]
-    fn try_resume(&self, generation: u64) -> bool {
-        let _commit = self.commit_lock.lock();
-        self.try_resume_locked(generation)
-    }
-
     fn try_resume_locked(&self, generation: u64) -> bool {
         generation != u64::MAX
             && generation & 1 == 1
@@ -8758,7 +8752,11 @@ mod tests {
 
         assert_ne!(current, stale);
         assert_eq!(reconciliation_gate.current_generation(), current);
-        assert!(!reconciliation_gate.try_resume(stale));
+        assert!(
+            !reconciliation_gate
+                .commit(stale, || panic!("stale reconciliation must not publish"))
+                .unwrap()
+        );
 
         handler(stream_decode(br#"{"op":"ocm","id":2,"pt":1004,"ct":"HEARTBEAT"}"#).unwrap());
         assert_eq!(reconnect_rx.try_recv().unwrap(), current);
@@ -8802,9 +8800,13 @@ mod tests {
         let current = gate.halt();
 
         assert!(gate.is_halted());
-        assert!(!gate.try_resume(stale));
+        assert!(
+            !gate
+                .commit(stale, || panic!("stale reconciliation must not publish"))
+                .unwrap()
+        );
         assert!(gate.is_halted());
-        assert!(gate.try_resume(current));
+        assert!(gate.commit(current, || Ok(())).unwrap());
         assert!(!gate.is_halted());
     }
 

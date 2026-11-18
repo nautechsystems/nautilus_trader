@@ -245,14 +245,6 @@ impl SlidingWindows {
             .or_insert_with(|| Window::new(limit, period));
         window.blocked_until = Some(now + duration);
     }
-
-    #[cfg(test)]
-    fn observed_limit(&self, key: &LimitKey) -> Option<u32> {
-        self.windows
-            .lock()
-            .get(key)
-            .and_then(|window| window.observed_limit)
-    }
 }
 
 type ConnectionLimiter = RateLimiter<Ustr, MonotonicClock>;
@@ -756,7 +748,12 @@ mod tests {
         let windows = SlidingWindows::default();
         let key = test_key("authoritative-orders");
         windows.observe(&key, 10, Duration::from_secs(1), 20, 19, None);
-        assert_eq!(windows.observed_limit(&key), Some(20));
+        let observed_limit = windows
+            .windows
+            .lock()
+            .get(&key)
+            .and_then(|window| window.observed_limit);
+        assert_eq!(observed_limit, Some(20));
     }
 
     #[rstest::rstest]

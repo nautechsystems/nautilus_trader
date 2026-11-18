@@ -205,16 +205,6 @@ impl KalshiExecutionClient {
         })
     }
 
-    #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-    pub(crate) fn config(&self) -> &KalshiExecutionClientConfig {
-        &self.config
-    }
-
-    #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-    pub(crate) fn core(&self) -> &ExecutionClientCore {
-        &self.core
-    }
-
     async fn finish_shutdown(&self) -> anyhow::Result<()> {
         let (session, commands) = tokio::join!(
             self.session_tasks
@@ -1958,6 +1948,17 @@ mod tests {
     };
 
     use super::*;
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    impl KalshiExecutionClient {
+        pub(crate) fn config(&self) -> &KalshiExecutionClientConfig {
+            &self.config
+        }
+
+        pub(crate) fn core(&self) -> &ExecutionClientCore {
+            &self.core
+        }
+    }
 
     #[allow(dead_code, reason = "shared key fixtures serve multiple suites")]
     mod keys {

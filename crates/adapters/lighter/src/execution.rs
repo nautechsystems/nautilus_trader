@@ -3218,27 +3218,6 @@ impl Drop for TxSendReservation {
     }
 }
 
-#[cfg(test)]
-async fn wait_for_tx_send_reservations(reservations: &[&TxSendReservation]) {
-    let Some(first) = reservations.first() else {
-        return;
-    };
-
-    debug_assert!(
-        reservations
-            .iter()
-            .all(|reservation| reservation.key == first.key),
-        "batch send reservations must share one nonce stream",
-    );
-
-    let nonce = reservations
-        .iter()
-        .map(|reservation| reservation.nonce)
-        .min()
-        .expect("reservations is non-empty");
-    first.sequencer.wait_for_turn(first.key, nonce).await;
-}
-
 struct PreparedCreateOrder {
     order: OrderAny,
     client_order_index: i64,
@@ -12518,15 +12497,9 @@ mod tests {
             "higher nonce must wait while the lower batch is pending",
         );
 
-        {
-            let lower_reservations = [&lower_a, &lower_b];
-            tokio::time::timeout(
-                Duration::from_millis(50),
-                wait_for_tx_send_reservations(&lower_reservations),
-            )
+        tokio::time::timeout(Duration::from_millis(50), lower_a.wait_for_turn())
             .await
-            .expect("lower batch must already have the send turn");
-        }
+            .expect("first reservation must already have the send turn");
 
         lower_a.release();
         lower_b.release();

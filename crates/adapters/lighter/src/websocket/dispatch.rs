@@ -865,11 +865,6 @@ impl TradeDedupCache {
         }
         None
     }
-
-    #[cfg(test)]
-    pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
-        self.inner.lock().entries.contains_key(trade_id)
-    }
 }
 
 #[derive(Debug, Default)]
@@ -1183,15 +1178,6 @@ impl WsDispatchState {
         self.pending_sendtx.lock().push_back(pending);
     }
 
-    /// Pop the oldest pending entry unconditionally.
-    ///
-    /// Tests and reconnect cleanup use this directly. Live hashless response
-    /// attribution must use [`Self::pop_pending_sendtx_if_only`].
-    #[cfg(test)]
-    pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
-        self.pending_sendtx.lock().pop_front()
-    }
-
     /// Pop a pending entry only when it is the sole possible match.
     ///
     /// Lighter does not always echo `tx_hash`. With two or more transactions
@@ -1277,12 +1263,6 @@ impl WsDispatchState {
 
     pub(crate) fn take_pending_sendtx(&self) -> Vec<PendingSendTx> {
         std::mem::take(&mut *self.pending_sendtx.lock()).into()
-    }
-
-    /// Returns the current pending-sendTx queue length for tests.
-    #[cfg(test)]
-    pub(crate) fn pending_sendtx_len(&self) -> usize {
-        self.pending_sendtx.lock().len()
     }
 
     /// First-time check for an `OrderTriggered` event for `cloid`. Returns
@@ -3290,7 +3270,21 @@ mod tests {
 
     use super::*;
 
+    impl TradeDedupCache {
+        pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
+            self.inner.lock().entries.contains_key(trade_id)
+        }
+    }
+
     impl WsDispatchState {
+        pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
+            self.pending_sendtx.lock().pop_front()
+        }
+
+        pub(crate) fn pending_sendtx_len(&self) -> usize {
+            self.pending_sendtx.lock().len()
+        }
+
         pub(crate) fn set_pending_order_action(
             &self,
             cloid: ClientOrderId,

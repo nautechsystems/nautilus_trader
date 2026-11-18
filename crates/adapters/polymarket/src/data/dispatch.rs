@@ -4838,13 +4838,17 @@ mod tests {
             .insert(yes.id());
         ctx.subscriptions.active_quote_subs.insert(no.id());
         ctx.subscriptions.active_delta_subs.insert(no.id());
-        let closed_recovery = ctx.subscriptions.book_sync.claim_recovery(no.id()).unwrap();
+        let closed_recovery = ctx
+            .subscriptions
+            .book_sync
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, no.id())
+            .unwrap();
         let other_id = InstrumentId::from("0xOTHER-0xTOKEN.POLYMARKET");
         ctx.subscriptions.active_delta_subs.insert(other_id);
         let other_recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(other_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, other_id)
             .unwrap();
         ctx.subscriptions
             .book_integrity
@@ -6325,7 +6329,11 @@ mod tests {
         client
             .subscriptions
             .book_sync
-            .request_recovery(sibling_id, Instant::now());
+            .request_recovery_if_subscribed(
+                &client.subscriptions.active_delta_subs,
+                sibling_id,
+                Instant::now(),
+            );
         client
             .subscriptions
             .order_books
@@ -11519,7 +11527,11 @@ mod tests {
             client
                 .subscriptions
                 .book_sync
-                .request_recovery(id, Instant::now());
+                .request_recovery_if_subscribed(
+                    &client.subscriptions.active_delta_subs,
+                    id,
+                    Instant::now(),
+                );
             client
                 .subscriptions
                 .order_books
@@ -12157,9 +12169,11 @@ mod tests {
             ),
             &ctx,
         );
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
         ctx.subscriptions.last_quotes.insert(
             instrument_id,
             QuoteTick::new(
@@ -12858,7 +12872,7 @@ mod tests {
         let recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .unwrap();
 
         let mut pc = make_price_change(market, asset_id_str, "0.50", "20");
@@ -12945,7 +12959,7 @@ mod tests {
             let recovery = ctx
                 .subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .unwrap();
             handle_market_message(message, &ctx);
             assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
@@ -13350,9 +13364,11 @@ mod tests {
         let instrument_id = inst.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
         ctx.subscriptions.active_quote_subs.insert(instrument_id);
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
 
         let snap = MarketWsMessage::Book(PolymarketBookSnapshot {
             market: Ustr::from("0xMARKET"),
@@ -13404,9 +13420,11 @@ mod tests {
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
         ctx.subscriptions.active_quote_subs.insert(instrument_id);
         if already_pending {
-            ctx.subscriptions
-                .book_sync
-                .request_recovery(instrument_id, Instant::now());
+            ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+                &ctx.subscriptions.active_delta_subs,
+                instrument_id,
+                Instant::now(),
+            );
         }
 
         // The mismatch-triggered recovery resubscribes the token; keep it owned
@@ -14448,7 +14466,7 @@ mod tests {
         let recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .unwrap();
         assert!(recovery.begin_replacement());
         recovery.gate.open();
@@ -14496,9 +14514,12 @@ mod tests {
         let instrument_id = instrument.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
         ctx.subscriptions.active_quote_subs.insert(instrument_id);
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
+
         // Polymarket sends bids ascending and asks descending, so best-of-book is last
         let expected_top = (
             snapshot
@@ -15267,9 +15288,11 @@ mod tests {
         let instrument_id = inst.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
         ctx.subscriptions.active_quote_subs.insert(instrument_id);
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
 
         let prior = QuoteTick::new(
             instrument_id,
@@ -15409,9 +15432,11 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
 
         // An empty book is a usable snapshot; use an unparsable level so the
         // snapshot still fails to seed.
@@ -15458,10 +15483,11 @@ mod tests {
         handle_market_message(unusable(), &ctx);
 
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_none(),
             "first unusable snapshot must own recovery"
         );
@@ -15499,10 +15525,11 @@ mod tests {
             "repeat unusable snapshot must not resubscribe again"
         );
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_none(),
             "original episode must still own recovery"
         );
@@ -16410,11 +16437,14 @@ mod tests {
 
         while data_rx.try_recv().is_ok() {}
 
-        // Simulate a recovery in flight: the replayed snapshot diffs to
-        // nothing, but it is still the current book and must open the gate.
-        ctx.subscriptions
-            .book_sync
-            .request_recovery(instrument_id, Instant::now());
+        assert_eq!(
+            ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+                &ctx.subscriptions.active_delta_subs,
+                instrument_id,
+                Instant::now(),
+            ),
+            BookSequenceOutcome::Recover
+        );
 
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
 
@@ -16455,7 +16485,7 @@ mod tests {
         let recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .unwrap();
         assert!(recovery.begin_replacement());
 
@@ -16509,7 +16539,7 @@ mod tests {
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_some(),
             "empty snapshot must not own recovery",
         );
@@ -16535,7 +16565,7 @@ mod tests {
         let recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .unwrap();
         assert!(recovery.begin_replacement());
 
@@ -16998,7 +17028,7 @@ mod tests {
         // that same episode.
         ctx.subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .expect("pre-claim recovery");
 
         handle_market_message(
@@ -17153,10 +17183,11 @@ mod tests {
             "deltas before snapshot must be suppressed"
         );
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_none(),
             "first delta must own recovery"
         );
@@ -17192,7 +17223,7 @@ mod tests {
         let recovery = ctx
             .subscriptions
             .book_sync
-            .claim_recovery(instrument_id)
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
             .unwrap();
         assert!(recovery.begin_replacement());
 
@@ -17430,10 +17461,11 @@ mod tests {
             crate::websocket::handler::HandlerCommand::CycleMarketSubscription { asset_ids: ids, .. }
             if ids == vec![asset_id.to_string()]
         ));
+        assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_none()
         );
     }
@@ -17464,10 +17496,11 @@ mod tests {
         handle_market_message(make_tick_change(market, asset_id, "0.001", "0.01"), &ctx);
 
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
             ctx.subscriptions
                 .book_sync
-                .claim_recovery(instrument_id)
+                .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
                 .is_none(),
             "tick size change must own recovery"
         );

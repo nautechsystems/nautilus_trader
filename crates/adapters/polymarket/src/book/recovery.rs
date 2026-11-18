@@ -45,10 +45,6 @@ pub(crate) type BookRecovery = Recovery<PolymarketWsError>;
 
 /// Spawns a one-shot monitor that retries recovery for every listed instrument
 /// whose armed snapshot deadline expires.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "monitor needs shared adapter state"
-)]
 pub(crate) fn spawn_recovery_monitor(
     book_sync: BookSyncTracker,
     pool: PolymarketMarketPoolHandle,
@@ -91,10 +87,6 @@ pub(crate) fn spawn_recovery_monitor(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "recovery needs shared adapter state"
-)]
 pub(crate) fn start_recovery(
     instrument_id: InstrumentId,
     token_id: Option<String>,
@@ -128,7 +120,7 @@ pub(crate) fn start_recovery(
     );
 }
 
-pub(crate) fn spawn_recovery_task(
+fn spawn_recovery_task(
     instrument_id: InstrumentId,
     token_id: String,
     recovery: Arc<BookRecovery>,
@@ -249,8 +241,11 @@ mod tests {
         );
 
         assert!(!book_sync.book_gated(instrument_id));
+        active_delta_subs.insert(instrument_id);
         assert!(
-            book_sync.claim_recovery(instrument_id).is_some(),
+            book_sync
+                .claim_recovery_if_subscribed(&active_delta_subs, instrument_id)
+                .is_some(),
             "unsubscribed instrument must not consume recovery ownership"
         );
     }
@@ -285,7 +280,11 @@ mod tests {
             ),
             "missing token must not suppress book output"
         );
-        assert!(book_sync.claim_recovery(instrument_id).is_some());
+        assert!(
+            book_sync
+                .claim_recovery_if_subscribed(&active_delta_subs, instrument_id)
+                .is_some()
+        );
     }
 
     #[rstest]
@@ -298,7 +297,9 @@ mod tests {
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
         let (tasks, spawner) = test_tasks();
         let instrument_id = instrument_id();
-        let owned = book_sync.claim_recovery(instrument_id).unwrap();
+        let owned = book_sync
+            .claim_recovery_if_subscribed(&active_delta_subs, instrument_id)
+            .unwrap();
 
         start_recovery(
             instrument_id,
@@ -323,7 +324,11 @@ mod tests {
             "owned recovery must not resubscribe"
         );
         assert!(!owned.cancellation.is_cancelled());
-        assert!(book_sync.claim_recovery(instrument_id).is_none());
+        assert!(
+            book_sync
+                .claim_recovery_if_subscribed(&active_delta_subs, instrument_id)
+                .is_none()
+        );
     }
 
     #[rstest]
@@ -338,7 +343,9 @@ mod tests {
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
         let (tasks, spawner) = test_tasks();
         let instrument_id = instrument_id();
-        let recovery = book_sync.claim_recovery(instrument_id).unwrap();
+        let recovery = book_sync
+            .claim_recovery_if_subscribed(&active_delta_subs, instrument_id)
+            .unwrap();
 
         spawn_recovery_task(
             instrument_id,
@@ -357,7 +364,8 @@ mod tests {
         tokio::time::sleep(StdDuration::from_millis(200)).await;
 
         let running = recovery.is_running();
-        let second_owner = book_sync.claim_recovery(instrument_id);
+        let second_owner =
+            book_sync.claim_recovery_if_subscribed(&active_delta_subs, instrument_id);
         recovery.gate.open();
         let accepted = book_sync.record_snapshot_if_subscribed(
             &active_delta_subs,

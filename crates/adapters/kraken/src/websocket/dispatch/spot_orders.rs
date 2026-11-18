@@ -814,13 +814,6 @@ fn pending_op_to_method(op: PendingOperation) -> KrakenWsMethod {
 }
 
 #[cfg(test)]
-impl OrderRequestState {
-    pub(crate) fn pending_len(&self) -> usize {
-        self.pending.len()
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicU64;
 
@@ -846,6 +839,12 @@ mod tests {
             },
         },
     };
+
+    impl OrderRequestState {
+        pub(super) fn pending_len(&self) -> usize {
+            self.pending.len()
+        }
+    }
 
     const CLIENT_ORDER_ID: &str = "O-1";
     const VENUE_ORDER_ID: &str = "O-VENUE";

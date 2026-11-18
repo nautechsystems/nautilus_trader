@@ -232,11 +232,6 @@ impl PolymarketMarketConnectionPool {
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
-        self.inner.proxy_url.as_ref()
-    }
-
     /// Returns a cloneable routing handle for use in spawned subscription tasks.
     #[must_use]
     pub fn handle(&self) -> PolymarketMarketPoolHandle {
@@ -538,22 +533,6 @@ impl PoolInner {
 }
 
 impl PoolInner {
-    #[cfg(test)]
-    fn new(
-        base_url: Option<String>,
-        transport_backend: TransportBackend,
-        subscribe_new_markets: bool,
-        max_subscriptions: usize,
-    ) -> Self {
-        Self::new_with_proxy(
-            base_url,
-            transport_backend,
-            subscribe_new_markets,
-            max_subscriptions,
-            None,
-        )
-    }
-
     fn new_with_proxy(
         base_url: Option<String>,
         transport_backend: TransportBackend,
@@ -923,11 +902,6 @@ impl PoolInner {
             anyhow::bail!(errors.join("; "))
         }
     }
-
-    #[cfg(test)]
-    fn subscription_count_for_test(&self) -> usize {
-        self.state.lock().assignments.len()
-    }
 }
 
 fn should_forward_from_shard(message: &PolymarketWsMessage, is_primary: bool) -> bool {
@@ -958,49 +932,6 @@ fn available_shard_id(state: &PoolState) -> usize {
 }
 
 #[cfg(test)]
-impl PolymarketMarketPoolHandle {
-    /// In-memory single-shard handle backed by `sender`, `assigned` tokens
-    /// pre-owned. Never connected, so growth is never triggered.
-    pub(crate) fn test_single_shard(
-        sender: tokio::sync::mpsc::UnboundedSender<super::handler::HandlerCommand>,
-        assigned: &[&str],
-    ) -> Self {
-        let inner = PoolInner::new(
-            None,
-            TransportBackend::default(),
-            false,
-            WS_DEFAULT_SUBSCRIPTIONS,
-        );
-        {
-            let mut state = inner.state.lock();
-            state.shards.insert(
-                PRIMARY_SHARD_ID,
-                ShardEntry {
-                    client: PolymarketWebSocketClient::new_market(
-                        None,
-                        false,
-                        TransportBackend::default(),
-                    ),
-                    handle: WsSubscriptionHandle::from_sender(sender),
-                    forwarder: TaskSlot::new(),
-                    owned: assigned.len(),
-                    closing: false,
-                },
-            );
-
-            for token in assigned {
-                state
-                    .assignments
-                    .insert(Ustr::from(token), PRIMARY_SHARD_ID);
-            }
-        }
-        Self {
-            inner: Arc::new(inner),
-        }
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::{sync::Arc as StdArc, time::Duration};
 
@@ -1012,6 +943,77 @@ mod tests {
 
     use super::*;
     use crate::websocket::handler::HandlerCommand;
+
+    impl PolymarketMarketConnectionPool {
+        pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
+            self.inner.proxy_url.as_ref()
+        }
+    }
+
+    impl PoolInner {
+        fn new(
+            base_url: Option<String>,
+            transport_backend: TransportBackend,
+            subscribe_new_markets: bool,
+            max_subscriptions: usize,
+        ) -> Self {
+            Self::new_with_proxy(
+                base_url,
+                transport_backend,
+                subscribe_new_markets,
+                max_subscriptions,
+                None,
+            )
+        }
+
+        fn subscription_count_for_test(&self) -> usize {
+            self.state.lock().assignments.len()
+        }
+    }
+
+    impl PolymarketMarketPoolHandle {
+        /// In-memory single-shard handle backed by `sender`, `assigned` tokens
+        /// pre-owned. Never connected, so growth is never triggered.
+        pub(crate) fn test_single_shard(
+            sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+            assigned: &[&str],
+        ) -> Self {
+            let inner = PoolInner::new(
+                None,
+                TransportBackend::default(),
+                false,
+                WS_DEFAULT_SUBSCRIPTIONS,
+            );
+
+            {
+                let mut state = inner.state.lock();
+                state.shards.insert(
+                    PRIMARY_SHARD_ID,
+                    ShardEntry {
+                        client: PolymarketWebSocketClient::new_market(
+                            None,
+                            false,
+                            TransportBackend::default(),
+                        ),
+                        handle: WsSubscriptionHandle::from_sender(sender),
+                        forwarder: TaskSlot::new(),
+                        owned: assigned.len(),
+                        closing: false,
+                    },
+                );
+
+                for token in assigned {
+                    state
+                        .assignments
+                        .insert(Ustr::from(token), PRIMARY_SHARD_ID);
+                }
+            }
+
+            Self {
+                inner: Arc::new(inner),
+            }
+        }
+    }
 
     struct BlockingDrop(StdArc<(TestMutex<(bool, bool)>, Condvar)>);
 
