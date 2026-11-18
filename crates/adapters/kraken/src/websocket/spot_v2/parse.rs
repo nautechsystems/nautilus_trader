@@ -379,6 +379,7 @@ fn parse_order_type(order_type: Option<KrakenOrderType>) -> OrderType {
         Some(KrakenOrderType::TrailingStop) => OrderType::StopMarket,
         Some(KrakenOrderType::TrailingStopLimit) => OrderType::StopLimit,
         Some(KrakenOrderType::SettlePosition) => OrderType::Market,
+        Some(KrakenOrderType::Iceberg) => OrderType::Limit,
         None => OrderType::Limit,
     }
 }
@@ -932,6 +933,32 @@ mod tests {
 
         assert_eq!(report.price, expected_price.map(Price::from));
         assert_eq!(report.avg_px, expected_avg_px);
+    }
+
+    /// Kraken documents `iceberg` among the executions channel's order types, and an iceberg
+    /// order is a limit order showing part of its quantity, so its frame reports a limit. The input
+    /// is synthetic: Kraken's `pending_new` example with its order type replaced.
+    #[rstest]
+    fn test_parse_ws_order_status_report_reads_an_iceberg_frame_as_a_limit_order() {
+        let message: KrakenWsRawMessage = serde_json::from_str(&load_test_json(
+            "ws_executions_pending_new_doc_example.json",
+        ))
+        .unwrap();
+        let mut frame: serde_json::Value = serde_json::from_str(message.data[0].get()).unwrap();
+        frame["order_type"] = "iceberg".into();
+        let execution: KrakenWsExecutionData = serde_json::from_value(frame).unwrap();
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.price, Some(Price::from("26500.0")));
     }
 
     #[rstest]

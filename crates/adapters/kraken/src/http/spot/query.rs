@@ -111,6 +111,7 @@ impl KrakenSpotAddOrderParamsBuilder {
         // Validate price is present for limit-type orders
         if let Some(
             KrakenOrderType::Limit
+            | KrakenOrderType::Iceberg
             | KrakenOrderType::StopLossLimit
             | KrakenOrderType::TakeProfitLimit,
         ) = self.order_type
@@ -414,11 +415,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_order_params_limit_requires_price() {
+    #[case::limit(KrakenOrderType::Limit)]
+    #[case::iceberg(KrakenOrderType::Iceberg)]
+    fn test_add_order_params_limit_requires_price(#[case] order_type: KrakenOrderType) {
         let result = KrakenSpotAddOrderParamsBuilder::default()
             .pair("XXBTZUSD")
             .side(KrakenOrderSide::Buy)
-            .order_type(KrakenOrderType::Limit)
+            .order_type(order_type)
             .volume("0.01")
             .build();
 
