@@ -24969,19 +24969,10 @@ fn poll_to_completion<F: Future>(fut: F) -> F::Output {
     }
 }
 
-// Regression: the original `load_cache` panicked at the first nested
-// `self.cache.borrow_mut().cache_all()` call before any later code could run.
-// This test triggers that path and verifies the function now completes.
-// Parameterized over `manage_own_order_books` so both config branches run.
-//
-// The second nested-borrow path (iterating `cache.orders(...)` while invoking
-// `get_or_init_own_order_book`) is not exercised here: with `database: None`,
-// `cache_all` clears `self.orders`, so the loop sees an empty cache.
-// `test_load_cache_rebuilds_own_books_from_persisted_orders` covers that path.
 #[rstest]
 #[case::own_books_enabled(true)]
 #[case::own_books_disabled(false)]
-fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
+fn test_load_cache_without_database(#[case] manage_own_order_books: bool) {
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
@@ -25000,30 +24991,34 @@ fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument.id)
         .client_order_id(ClientOrderId::from("O-20240101-000000-001-001-1"))
+        .side(OrderSide::Buy)
         .price(Price::from("1.00000"))
         .quantity(Quantity::from(100_000))
         .build();
+    let order_id = order.client_order_id();
 
-    engine
-        .cache()
-        .borrow_mut()
-        .add_order(order, None, None, true)
-        .unwrap();
+    {
+        let mut cache = engine.cache().borrow_mut();
+        cache.update_own_order_book(&order);
+        cache.add_order(order, None, None, true).unwrap();
+    }
 
     poll_to_completion(engine.load_cache()).expect("load_cache should not panic");
 
-    // With `database: None`, `cache_all` replaces all orders/positions with empty
-    // maps, so the staged order is wiped and the own-book loop has nothing to
-    // process. Verify the full flow ran end-to-end (the original bug
-    // short-circuited before `cache_all` could clear) and the optional own-book
-    // branch did not produce a book for this instrument.
     let cache = engine.cache().borrow();
     assert!(cache.orders(None, None, None, None, None).is_empty());
-    assert!(cache.own_order_book(&instrument.id).is_none());
+    assert_eq!(
+        cache
+            .own_order_book(&instrument.id)
+            .map(|book| book.bid_client_order_ids()),
+        (!manage_own_order_books).then(|| vec![order_id])
+    );
 }
 
 #[rstest]
-fn test_load_cache_rebuilds_own_books_from_persisted_orders() {
+#[case::fresh_start(false)]
+#[case::reload(true)]
+fn test_load_cache_rebuilds_own_books_from_persisted_orders(#[case] seed_own_books: bool) {
     let instrument = audusd_sim();
     let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
     let account_id = AccountId::test_default();
@@ -25054,6 +25049,16 @@ fn test_load_cache_rebuilds_own_books_from_persisted_orders() {
         .build();
     open_limit.apply(partial_fill).unwrap();
 
+    let open_ask = accept(
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from("O-ASK"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00030"))
+            .quantity(Quantity::from(80_000))
+            .build(),
+        "V-ASK",
+    );
     let mut closed_limit = accept(
         OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument.id)
@@ -25089,7 +25094,6 @@ fn test_load_cache_rebuilds_own_books_from_persisted_orders() {
     );
 
     let (database, control) = FailNthAddOrderDatabase::create();
-    control.set_orders([open_limit, closed_limit, ioc_limit, market]);
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
 
@@ -25099,25 +25103,70 @@ fn test_load_cache_rebuilds_own_books_from_persisted_orders() {
     };
 
     let mut engine = ExecutionEngine::new(clock, cache, Some(config));
+    let stale_instrument_id = gbpusd_sim().id;
+    if seed_own_books {
+        let stale_orders = [instrument.id, stale_instrument_id].map(|instrument_id| {
+            let id = format!("STALE-{instrument_id}");
+            accept(
+                OrderTestBuilder::new(OrderType::Limit)
+                    .instrument_id(instrument_id)
+                    .client_order_id(ClientOrderId::from(id.as_str()))
+                    .side(OrderSide::Buy)
+                    .price(Price::from("0.99900"))
+                    .quantity(Quantity::from(25_000))
+                    .build(),
+                &id,
+            )
+        });
 
-    poll_to_completion(engine.load_cache()).unwrap();
+        let stale_order_ids = stale_orders.each_ref().map(|order| order.client_order_id());
+        control.set_orders(stale_orders);
+        poll_to_completion(engine.load_cache()).unwrap();
 
-    let cache = engine.cache().borrow();
-    let own_book = cache
-        .own_order_book(&instrument.id)
-        .expect("own book should be rebuilt from the open limit order");
-    let bids = own_book.bids_as_map(None, None, None);
-    let rebuilt = &bids[&dec!(1.00000)];
-    assert_eq!(
-        own_book.bid_client_order_ids(),
-        vec![ClientOrderId::from("O-OPEN")]
-    );
-    assert!(own_book.ask_client_order_ids().is_empty());
-    assert_eq!(bids.len(), 1);
-    assert_eq!(rebuilt.len(), 1);
-    assert_eq!(rebuilt[0].price, Price::from("1.00000"));
-    assert_eq!(rebuilt[0].size, Quantity::from(60_000));
-    assert_eq!(rebuilt[0].status, OrderStatus::PartiallyFilled);
+        let cache = engine.cache().borrow();
+        for (instrument_id, order_id) in [instrument.id, stale_instrument_id]
+            .into_iter()
+            .zip(stale_order_ids)
+        {
+            let book = cache.try_own_order_book(&instrument_id).unwrap();
+            assert_eq!(book.bid_client_order_ids(), vec![order_id]);
+        }
+    }
+
+    control.set_orders([open_limit, open_ask, closed_limit, ioc_limit, market]);
+
+    for _ in 0..2 {
+        poll_to_completion(engine.load_cache()).unwrap();
+
+        let cache = engine.cache().borrow();
+        let own_book = cache.try_own_order_book(&instrument.id).unwrap();
+        assert_eq!(
+            own_book.bid_client_order_ids(),
+            vec![ClientOrderId::from("O-OPEN")]
+        );
+        assert_eq!(
+            own_book.ask_client_order_ids(),
+            vec![ClientOrderId::from("O-ASK")]
+        );
+
+        let bids = own_book.bids_as_map(None, None, None);
+        assert_eq!(bids.len(), 1);
+        let bid = &bids[&dec!(1.00000)];
+        assert_eq!(bid.len(), 1);
+        assert_eq!(bid[0].price, Price::from("1.00000"));
+        assert_eq!(bid[0].size, Quantity::from(60_000));
+        assert_eq!(bid[0].status, OrderStatus::PartiallyFilled);
+
+        let asks = own_book.asks_as_map(None, None, None);
+        assert_eq!(asks.len(), 1);
+        let ask = &asks[&dec!(1.00030)];
+        assert_eq!(ask.len(), 1);
+        assert_eq!(ask[0].price, Price::from("1.00030"));
+        assert_eq!(ask[0].size, Quantity::from(80_000));
+        assert_eq!(ask[0].status, OrderStatus::Accepted);
+
+        assert!(cache.own_order_book(&stale_instrument_id).is_none());
+    }
 }
 
 #[rstest]

@@ -90,6 +90,7 @@ Released on TBD (UTC).
 - Fixed an extra `&` when the HTTP client appends query parameters from a map after a trailing `?` or `&`
 - Fixed Redis and PostgreSQL restoring a prior NETTING cycle after a position ID is reused
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
+- Fixed own order books retaining stale orders after cache reload
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports

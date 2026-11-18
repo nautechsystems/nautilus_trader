@@ -2391,6 +2391,11 @@ impl Cache {
         log::debug!("Cleared index");
     }
 
+    /// Removes all own order books from the cache.
+    pub fn clear_own_order_books(&mut self) {
+        self.own_books.clear();
+    }
+
     /// Resets the cache.
     ///
     /// All stateful fields are reset to their initial value. Instruments,
