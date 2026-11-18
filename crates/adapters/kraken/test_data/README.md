@@ -53,6 +53,14 @@ not venue responses.
 retrieved on 2026-10-13 and unchanged apart from whitespace. A test replaces the `pending_new`
 frame's `order_type` with `iceberg`; that variant is not a venue response.
 
+`ws_executions_external_orders.json` holds the nine `update` frames of two USDC/EUR orders another
+client placed on a live account: a stop-loss-limit buy of 5 that triggered and filled, then a market
+sell of 5. They were captured on a second executions subscription through Kraken's CLI, which
+re-serializes frames. Order IDs, execution IDs, `trade_id` values and timestamps are replaced; every
+other value is as received. The CLI printed the second frame's `order_status` as `unknown`, which it
+prints for any value outside its catalog. The file has `triggered`, inferred because the node logged
+no deserialization error for that frame.
+
 ## Futures edit response
 
 `http_edit_order_futures.json` is the response example from Kraken's

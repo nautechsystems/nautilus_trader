@@ -22,7 +22,7 @@ use nautilus_model::{
     data::{Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, QuoteTick, TradeTick},
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
-        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce, TriggerType,
+        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
@@ -39,8 +39,8 @@ use super::{
     },
 };
 use crate::common::{
-    enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
-    parse::{get_currency, parse_venue_order_id},
+    enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
+    parse::{get_currency, parse_trigger_type, parse_venue_order_id},
 };
 
 /// Parses Kraken WebSocket ticker data into a Nautilus quote tick.
@@ -516,17 +516,36 @@ pub fn parse_ws_order_status_report(
         report = report.with_cancel_reason(reason.clone());
     }
 
-    // Set trigger type for conditional orders (WebSocket doesn't provide trigger field)
-    let is_conditional = matches!(
-        order_type,
-        OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched
+    let triggers = exec.triggers.as_ref();
+    let reference = triggers
+        .and_then(|t| t.reference.as_deref())
+        .and_then(|r| r.parse::<KrakenSpotTrigger>().ok());
+
+    if let Some(trigger_type) = parse_trigger_type(order_type, reference) {
+        report = report.with_trigger_type(trigger_type);
+    }
+
+    // Kraken's trigger price is absolute only when `price_type` is `static`: `pct` and `quote` are
+    // offsets from the reference price, and a trailing order's price is always one.
+    let is_fixed_trigger = matches!(
+        exec.order_type,
+        Some(
+            KrakenOrderType::StopLoss
+                | KrakenOrderType::StopLossLimit
+                | KrakenOrderType::TakeProfit
+                | KrakenOrderType::TakeProfitLimit
+        )
     );
 
-    if is_conditional {
-        report = report.with_trigger_type(TriggerType::Default);
+    if is_fixed_trigger
+        && let Some(px) = triggers
+            .filter(|t| t.price_type.as_deref() == Some("static"))
+            .and_then(|t| t.price)
+            .filter(|p| *p > Decimal::ZERO)
+    {
+        let trigger_price =
+            Price::from_decimal_dp(px, price_precision).context("Failed to parse trigger price")?;
+        report = report.with_trigger_price(trigger_price);
     }
 
     Ok(report)
@@ -648,7 +667,7 @@ pub fn parse_order_response(text: &str) -> anyhow::Result<Option<KrakenSpotWsMes
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{identifiers::Symbol, types::Currency};
+    use nautilus_model::{enums::TriggerType, identifiers::Symbol, types::Currency};
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -688,6 +707,26 @@ mod tests {
                 .price_precision(1)
                 .size_precision(8)
                 .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn create_usdc_eur_instrument() -> InstrumentAny {
+        use nautilus_model::instruments::currency_pair::CurrencyPair;
+
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(Symbol::new("USDC/EUR"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("USDCEUR"))
+                .base_currency(Currency::USDC())
+                .quote_currency(Currency::EUR())
+                .price_precision(4)
+                .size_precision(8)
+                .price_increment(Price::from("0.0001"))
                 .size_increment(Quantity::from("0.00000001"))
                 .ts_event(TS)
                 .ts_init(TS)
@@ -964,6 +1003,89 @@ mod tests {
         assert_eq!(report.price, Some(Price::from("26500.0")));
     }
 
+    /// A conditional order's trigger price is `triggers.price` only when `price_type` is `static`
+    /// and the order is not trailing, and its trigger type follows `triggers.reference`.
+    #[rstest]
+    #[case::captured(
+        KrakenOrderType::StopLossLimit,
+        r#"{"reference":"last","price":0.9121,"price_type":"static","status":"untriggered"}"#,
+        Some("0.9121"),
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::index_reference(
+        KrakenOrderType::StopLossLimit,
+        r#"{"reference":"index","price":0.9121,"price_type":"static"}"#,
+        Some("0.9121"),
+        Some(TriggerType::IndexPrice)
+    )]
+    #[case::stop_loss(
+        KrakenOrderType::StopLoss,
+        r#"{"reference":"last","price":0.9121,"price_type":"static"}"#,
+        Some("0.9121"),
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::take_profit_limit(
+        KrakenOrderType::TakeProfitLimit,
+        r#"{"reference":"last","price":0.9121,"price_type":"static"}"#,
+        Some("0.9121"),
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::pct(
+        KrakenOrderType::StopLossLimit,
+        r#"{"reference":"last","price":5.0,"price_type":"pct"}"#,
+        None,
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::price_type_absent(
+        KrakenOrderType::StopLossLimit,
+        r#"{"reference":"last","price":0.9121}"#,
+        None,
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::trailing_stop(
+        KrakenOrderType::TrailingStop,
+        r#"{"reference":"last","price":0.9121,"price_type":"static"}"#,
+        None,
+        Some(TriggerType::LastPrice)
+    )]
+    #[case::status_only(
+        KrakenOrderType::StopLossLimit,
+        r#"{"status":"triggered"}"#,
+        None,
+        Some(TriggerType::Default)
+    )]
+    #[case::limit(KrakenOrderType::Limit, "null", None, None)]
+    fn test_parse_ws_order_status_report_reads_a_static_trigger(
+        #[case] order_type: KrakenOrderType,
+        #[case] triggers: &str,
+        #[case] expected_trigger_price: Option<&str>,
+        #[case] expected_trigger_type: Option<TriggerType>,
+    ) {
+        let messages: Vec<KrakenWsRawMessage> =
+            serde_json::from_str(&load_test_json("ws_executions_external_orders.json")).unwrap();
+        let mut execution: KrakenWsExecutionData =
+            serde_json::from_str(messages[0].data[0].get()).unwrap();
+        execution.order_type = Some(order_type);
+        execution.triggers = serde_json::from_str(triggers).unwrap();
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_usdc_eur_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(
+            (report.trigger_price, report.trigger_type),
+            (
+                expected_trigger_price.map(Price::from),
+                expected_trigger_type
+            )
+        );
+    }
+
     #[rstest]
     fn test_parse_ws_order_status_report_fails_on_an_invalid_order_id() {
         let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
@@ -1045,6 +1167,7 @@ mod tests {
             time_in_force: Some(KrakenTimeInForce::GoodTilCancelled),
             post_only: Some(false),
             reduce_only: Some(false),
+            triggers: None,
             timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
             exec_id: None,
             last_qty: None,

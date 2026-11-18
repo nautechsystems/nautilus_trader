@@ -612,6 +612,9 @@ pub struct KrakenWsExecutionData {
     /// Reduce only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    /// Trigger of a stop, take-profit or trailing order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<KrakenWsExecutionTriggers>,
     /// Event timestamp.
     pub timestamp: Timestamp,
     /// Execution/trade ID.
@@ -654,6 +657,25 @@ pub struct KrakenWsExecutionData {
     /// Cancel reason (when exec_type is Canceled/Expired).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// Trigger of a stop, take-profit or trailing order on an executions frame. A frame after the
+/// order's first can carry only some of these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KrakenWsExecutionTriggers {
+    /// Reference price the trigger tracks, as Kraken names it (`last` or `index`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Trigger price, in the units `price_type` names.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub price: Option<Decimal>,
+    /// `static` for a market price; `pct` and `quote` are offsets from the reference price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_type: Option<String>,
 }
 
 /// Fee information from execution messages.
@@ -807,6 +829,40 @@ mod tests {
         assert_eq!(
             (amend.order_qty, amend.limit_price, amend.trigger_price),
             (None, None, None)
+        );
+    }
+
+    /// An executions frame decodes whichever trigger fields it states, and a `reference` outside
+    /// Kraken's catalog decodes rather than failing the frame.
+    #[rstest]
+    fn test_execution_frame_decodes_partial_triggers() {
+        let messages: Vec<KrakenWsRawMessage> =
+            serde_json::from_str(&load_test_data("ws_executions_external_orders.json")).unwrap();
+        let execution = |index: usize| -> KrakenWsExecutionData {
+            serde_json::from_str(messages[index].data[0].get()).unwrap()
+        };
+        let fields = |triggers: KrakenWsExecutionTriggers| {
+            (triggers.reference, triggers.price, triggers.price_type)
+        };
+
+        assert_eq!(
+            fields(execution(0).triggers.unwrap()),
+            (
+                Some("last".to_string()),
+                Some(dec!(0.9121)),
+                Some("static".to_string())
+            )
+        );
+        assert_eq!(fields(execution(1).triggers.unwrap()), (None, None, None));
+        assert_eq!(fields(execution(4).triggers.unwrap()), (None, None, None));
+        assert!(execution(5).triggers.is_none());
+
+        let mut unknown: Value = serde_json::from_str(messages[0].data[0].get()).unwrap();
+        unknown["triggers"]["reference"] = Value::from("mark");
+        let execution: KrakenWsExecutionData = serde_json::from_str(&unknown.to_string()).unwrap();
+        assert_eq!(
+            execution.triggers.unwrap().reference.as_deref(),
+            Some("mark")
         );
     }
 
