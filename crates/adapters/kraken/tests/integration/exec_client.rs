@@ -64,6 +64,7 @@ use nautilus_kraken::{
     config::KrakenExecutionClientConfig,
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
     http::spot::models::{AssetPairInfo, AssetPairsResponse, KrakenResponse},
+    websocket::dispatch::WsDispatchState,
 };
 use nautilus_live::{
     ExecutionClientCore,
@@ -98,6 +99,11 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+use crate::common::{
+    CAPTURED_MARKET_ORDER_ID, CAPTURED_STOP_ORDER_ID, captured_spot_frames, dispatch_spot_frames,
+    usdc_eur_pair,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 enum SingleCancelResponse {
@@ -11406,4 +11412,126 @@ async fn test_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
         matches!(event, OrderEventAny::CancelRejected(_))
     })
     .await;
+}
+
+/// An order another client places while the node runs reconciles from its executions frames: the
+/// engine creates it, fills it with its own trade's ID and fee, and books it to the EXTERNAL
+/// position. An amendment to a trigger the adapter cannot read leaves the fill applied once.
+#[rstest]
+#[case::market_sell(
+    CAPTURED_MARKET_ORDER_ID,
+    None,
+    OrderType::Market,
+    None,
+    "TCAP15-MARKT-000015",
+    dec!(0.009121),
+    PositionSide::Short
+)]
+#[case::stop_loss_limit_buy(
+    CAPTURED_STOP_ORDER_ID,
+    None,
+    OrderType::StopLimit,
+    Some(true),
+    "TCAP14-STLMT-000014",
+    dec!(0.009122),
+    PositionSide::Long
+)]
+#[case::stop_loss_limit_buy_amended_to_relative_trigger(
+    CAPTURED_STOP_ORDER_ID,
+    Some(json!({"reference": "last", "price": 1.0, "price_type": "pct"})),
+    OrderType::StopLimit,
+    Some(true),
+    "TCAP14-STLMT-000014",
+    dec!(0.009122),
+    PositionSide::Long
+)]
+fn test_spot_external_orders_reconcile_filled_with_their_fills(
+    #[case] order_id: &str,
+    #[case] amended_triggers: Option<Value>,
+    #[case] order_type: OrderType,
+    #[case] triggered: Option<bool>,
+    #[case] trade_id: &str,
+    #[case] fee: Decimal,
+    #[case] position_side: PositionSide,
+) {
+    let instrument = usdc_eur_pair();
+    let harness = ExecutionHarness::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        test_account_id(),
+        instrument.clone(),
+    );
+    let balance = |currency: &str| {
+        let total = Money::from(format!("100 {currency}").as_str());
+        AccountBalance::new(total, Money::new(0.0, total.currency), total)
+    };
+    let account_state = AccountState::new(
+        test_account_id(),
+        AccountType::Cash,
+        vec![balance("EUR"), balance("USDC")],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let account = AccountAny::from_events(&[account_state]).unwrap();
+    harness.cache().borrow_mut().add_account(account).unwrap();
+
+    let mut frames = captured_spot_frames(order_id);
+
+    if let Some(triggers) = amended_triggers {
+        let mut amended = serde_json::to_value(&frames[0]).unwrap();
+        amended["exec_type"] = json!("amended");
+        amended["order_status"] = json!("new");
+        amended["triggers"] = triggers;
+        frames.insert(1, serde_json::from_value(amended).unwrap());
+    }
+    let events = dispatch_spot_frames(&frames, &WsDispatchState::new(), &instrument);
+    for event in events.into_iter().flatten() {
+        let ExecutionEvent::Report(report) = event else {
+            panic!("expected a report for an external order, received {event:?}");
+        };
+        harness
+            .exec_engine()
+            .borrow_mut()
+            .reconcile_execution_report(&report);
+    }
+
+    let cache = harness.cache().borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    assert_eq!(orders.len(), 1);
+    let order = &orders[0];
+    assert_eq!(
+        (
+            order.client_order_id(),
+            order.order_type(),
+            order.status(),
+            order.filled_qty(),
+            order.is_triggered(),
+            order.tags(),
+        ),
+        (
+            ClientOrderId::from(order_id),
+            order_type,
+            OrderStatus::Filled,
+            Quantity::from("5.00000000"),
+            triggered,
+            None,
+        ),
+    );
+    assert_eq!(order.trade_ids(), vec![&TradeId::from(trade_id)]);
+    assert_eq!(
+        order.commissions().values().copied().collect::<Vec<_>>(),
+        vec![Money::from_decimal(fee, Currency::EUR()).unwrap()],
+    );
+
+    let position = cache
+        .position(&PositionId::from("USDC/EUR.KRAKEN-EXTERNAL"))
+        .expect("external position");
+    assert_eq!(
+        (position.is_open(), position.side, position.quantity),
+        (true, position_side, Quantity::from("5.00000000")),
+    );
 }
