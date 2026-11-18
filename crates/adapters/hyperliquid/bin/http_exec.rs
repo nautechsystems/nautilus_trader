@@ -88,6 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check account state before placing order
     log::info!("Fetching account state...");
+
     match client.info_clearinghouse_state(&wallet_address).await {
         Ok(state) => {
             let state_json =

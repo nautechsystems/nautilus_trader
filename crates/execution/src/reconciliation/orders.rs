@@ -1491,6 +1491,7 @@ fn reconcile_fill_quantity_mismatch(
         // Venue cumulative below cached: apply no event so cached state is
         // preserved. Suppress sub-unit gaps as precision noise.
         let precision = order_filled_qty.precision.max(report_filled_qty.precision);
+
         if is_within_single_unit_tolerance(
             report_filled_qty.as_decimal(),
             order_filled_qty.as_decimal(),

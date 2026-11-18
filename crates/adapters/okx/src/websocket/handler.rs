@@ -3069,6 +3069,7 @@ mod tests {
 
         let mut response =
             json!({"id":"17", "op":op, "code":code, "msg":"Venue reason", "data":[]});
+
         if omit_data {
             response.as_object_mut().unwrap().remove("data");
         }

@@ -573,6 +573,7 @@ pub(crate) fn create_config_instance<'py>(
             match config_class.call0() {
                 Ok(instance) => {
                     log::debug!("Created default config instance, setting attributes");
+
                     for (key, value) in config {
                         let py_value = config_value_to_py(py, key, value)?;
 

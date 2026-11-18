@@ -604,6 +604,7 @@ impl InteractiveBrokersExecutionClient {
                 let unsent = &orders[index + 1..];
                 for sibling in unsent {
                     let sibling_id = sibling.client_order_id();
+
                     if let Err(tracking_error) = Self::remove_order_tracking(
                         ib_order_ids[&sibling_id],
                         sibling_id,

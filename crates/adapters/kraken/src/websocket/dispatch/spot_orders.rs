@@ -1775,6 +1775,7 @@ mod tests {
             .event_rx
             .try_recv()
             .expect("matching response event");
+
         match event {
             OrderEventAny::Accepted(e) => {
                 assert_eq!(e.client_order_id, cl_ord_id);

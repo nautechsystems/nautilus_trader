@@ -51,6 +51,7 @@ impl StreamType {
     #[must_use]
     pub fn stream_name(&self, symbol: &str) -> String {
         let symbol_lower = symbol.to_lowercase();
+
         match self {
             Self::Trade => format!("{symbol_lower}@trade"),
             Self::BestBidAsk => format!("{symbol_lower}@bestBidAsk"),

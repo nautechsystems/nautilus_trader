@@ -489,6 +489,7 @@ fn validate_client_bound_order_row(
         .expire_time()
         .filter(|value| !value.is_zero())
         .map(|value| value.as_seconds());
+
     if cached_order.time_in_force() == TimeInForce::Gtd {
         anyhow::ensure!(
             cached_expire_seconds == provider_expire_seconds,

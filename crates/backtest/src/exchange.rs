@@ -2943,6 +2943,7 @@ mod tests {
 
         assert!(error.to_string().contains("Cannot change expiration"));
         let cache = exchange.cache.borrow();
+
         for instrument in [
             &exchange.instruments[&original.id()],
             &exchange.matching_engines[&original.id()].instrument,

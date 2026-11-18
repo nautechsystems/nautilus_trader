@@ -1762,6 +1762,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(instruments.len(), 2);
+
         for (instrument, expected_symbol, expected_expiration) in [
             (&instruments[0], "XAU-2026-SEP", "2026-09-30T15:00:00Z"),
             (&instruments[1], "XAU-2026-DEC", "2026-12-31T16:00:00Z"),

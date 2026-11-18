@@ -7501,6 +7501,7 @@ impl Cache {
                 }
             } else {
                 let quotes = bar_quotes.get_or_insert_with(|| self.build_bar_quote_table(venue));
+
                 match (
                     quotes.get(&(*instrument_id, PriceType::Bid)),
                     quotes.get(&(*instrument_id, PriceType::Ask)),

@@ -2446,6 +2446,7 @@ impl KrakenSpotHttpClient {
 
             for (trade_id, trade) in &trades {
                 let resolved = self.get_instrument_by_raw_symbol(trade.pair.as_str());
+
                 if let Some(ref target_id) = instrument_id
                     && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
                 {

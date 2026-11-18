@@ -8281,6 +8281,7 @@ fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
             Some((max - 1, precision)),
         );
         assert_eq!(max % 10, 0);
+
         for (bid_raw, ask_raw, expected_raw) in [
             (max - 1, max, max),
             (max - 2, max - 1, max - 2),
@@ -14152,6 +14153,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
             .lock()
             .actor_updates
             .push((*actor_id, state.clone()));
+
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
         }
@@ -14167,6 +14169,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
             .lock()
             .strategy_updates
             .push((*strategy_id, state.clone()));
+
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
         }

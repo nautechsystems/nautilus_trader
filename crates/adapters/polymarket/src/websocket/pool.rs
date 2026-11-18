@@ -328,6 +328,7 @@ impl PolymarketMarketConnectionPool {
                     async move {
                         let mut failed = false;
                         shard.forwarder.abort();
+
                         if let Some(outcome) = finish_task(
                             &mut shard.forwarder,
                             std::time::Duration::ZERO,

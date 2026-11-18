@@ -1093,6 +1093,7 @@ async fn broadcast_partitioned_cancels(
         match order_builder.build_batch_cancel_short_term(&st_pairs, block_height) {
             Ok(msg) => {
                 let operation = format!("BatchCancel {} short-term orders", st_pairs.len());
+
                 match broadcaster
                     .broadcast_short_term(&tx_manager, vec![msg], &operation)
                     .await
@@ -1150,6 +1151,7 @@ async fn broadcast_partitioned_cancels(
         match order_builder.build_cancel_orders_batch_with_flags(&lt_tuples, block_height) {
             Ok(cancel_msgs) => {
                 let operation = format!("BatchCancel {} long-term orders", long_term_orders.len());
+
                 match broadcaster
                     .broadcast_with_retry(&tx_manager, cancel_msgs, &operation)
                     .await
@@ -1639,6 +1641,7 @@ impl ExecutionClient for DydxExecutionClient {
         if current_block == 0 {
             let reason = "Block height not initialized";
             log::warn!("Cannot submit order list: {reason}");
+
             for order in &orders {
                 self.emitter.emit_order_denied(order, reason);
             }
@@ -1649,6 +1652,7 @@ impl ExecutionClient for DydxExecutionClient {
             Ok(components) => components,
             Err(e) => {
                 log::error!("Failed to get execution components for batch: {e}");
+
                 for order in &orders {
                     self.emitter.emit_order_denied(order, &e.to_string());
                 }

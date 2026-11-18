@@ -1040,6 +1040,7 @@ impl PolymarketExecutionClient {
 
         if let Err(e) = post_ws.await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
+
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Polymarket startup teardown failed: {teardown_error}"

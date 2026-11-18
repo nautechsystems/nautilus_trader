@@ -893,6 +893,7 @@ impl Trader {
 
         for exec_algorithm_id in exec_algorithm_ids {
             log::debug!("Starting execution algorithm {exec_algorithm_id}");
+
             match self.start_exec_algorithm_if_not_running(exec_algorithm_id) {
                 Ok(true) => restored_exec_algorithm_ids.push(exec_algorithm_id),
                 Ok(false) => {}
@@ -1159,6 +1160,7 @@ impl Trader {
 
         for actor_id in &self.actor_ids {
             log::debug!("Stopping actor {actor_id} after startup failure");
+
             if let Err(e) = Self::stop_component_if_active(actor_id.inner()) {
                 errors.push(format!("actor {actor_id}: {e:#}"));
             }
@@ -1166,6 +1168,7 @@ impl Trader {
 
         for exec_algorithm_id in self.exec_algorithm_ids.clone() {
             log::debug!("Stopping execution algorithm {exec_algorithm_id} after startup failure");
+
             if let Err(e) = Self::stop_component_if_active(exec_algorithm_id.inner()) {
                 errors.push(format!("execution algorithm {exec_algorithm_id}: {e:#}"));
             }
@@ -1179,6 +1182,7 @@ impl Trader {
 
         for strategy_id in &self.strategy_ids {
             log::debug!("Stopping strategy {strategy_id} after startup failure");
+
             if let Err(e) = Self::stop_component_if_active(strategy_id.inner()) {
                 errors.push(format!("strategy {strategy_id}: {e:#}"));
             }

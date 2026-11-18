@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "bc7122d3712919d0d5fb91fbce1711dcc62f4c6a"
-manifest_sha256 = "e4b3be265c62ccd21a5655dc5b68e98e9e69549acc767310c0d9d9d59f813961"
+revision = "2bfa4e5b132648226c0a280d8b5d2fba07fc976c"
+manifest_sha256 = "8689b59a2c9458bdf1a6141a7d95d30934fbd5892c78d6430c055f464b62e471"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -99,6 +99,12 @@ executable = true
 artifact = "no-build-package-check"
 path = "scripts/check-no-build-packages.sh"
 sha256 = "e3a0ba4a63ab95b8634ea39c19d98c255180e8118d0de9fcfcbb92ff2bde2263"
+executable = true
+
+[[file]]
+artifact = "check-rust-formatting"
+path = "scripts/check-rust-formatting.bash"
+sha256 = "62b8313d17211eba1be6dad34e768aabc15b94ea199a8aa00c45e847de59857e"
 executable = true
 
 [[file]]

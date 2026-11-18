@@ -1344,6 +1344,7 @@ mod tests {
                 }
             }
         });
+
         let result = task::spawn_blocking(move || {
             let cfg = RetryConfig {
                 max_retries: 0,

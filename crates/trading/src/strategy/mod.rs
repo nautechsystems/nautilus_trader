@@ -1504,6 +1504,7 @@ pub trait Strategy: DataActor {
                 }
                 OrderManagerAction::ModifyLocalQuantity { order, quantity } => {
                     let client_order_id = order.client_order_id();
+
                     if let Err(e) =
                         self.modify_order(client_order_id, Some(quantity), None, None, None, None)
                     {

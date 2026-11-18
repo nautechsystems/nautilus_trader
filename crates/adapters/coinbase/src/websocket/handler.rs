@@ -1120,6 +1120,7 @@ mod tests {
         let msg = handler
             .handle_text(json)
             .expect("handler should emit a futures balance summary");
+
         match msg {
             NautilusWsMessage::FuturesBalanceSummary(summary) => {
                 assert_eq!(summary.futures_buying_power, Decimal::from(100));

@@ -1371,6 +1371,7 @@ impl OKXRawHttpClient {
                     let status = StatusCode::from_u16(resp.status.as_u16())
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                     let error_body = String::from_utf8_lossy(&resp.body);
+
                     if status == StatusCode::NOT_FOUND {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {

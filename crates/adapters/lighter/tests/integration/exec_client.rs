@@ -2837,6 +2837,7 @@ async fn test_order_list_batch_precedes_later_single_sendtx() {
     let submitted_single = next_order_event(&mut rx, Duration::from_secs(2))
         .await
         .expect("OrderSubmitted single");
+
     match submitted_single {
         OrderEventAny::Submitted(e) => assert_eq!(e.client_order_id, single.client_order_id()),
         other => panic!("expected Submitted, was {other:?}"),
@@ -3408,6 +3409,7 @@ async fn test_acknowledged_create_allows_delayed_active_order() {
     })
     .await
     .expect("delayed order status report");
+
     match report {
         ExecutionEvent::Report(ExecutionReport::Order(report)) => {
             assert_eq!(report.client_order_id, Some(order.client_order_id()));

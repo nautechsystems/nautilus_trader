@@ -279,6 +279,7 @@ fn test_expiration_bar_settles_at_first_trade_tick() {
 
     // No orders are working, but expiration still settles on the bar's first trade tick
     let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()).as_str());
+
     for (open, high, low, close, ts) in [
         ("5.00", "5.50", "4.50", "5.25", UnixNanos::from(2)),
         ("6.00", "8.00", "5.00", "7.00", expiry),

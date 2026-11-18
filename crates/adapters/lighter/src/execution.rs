@@ -20127,6 +20127,7 @@ mod tests {
             .iter()
             .find(|e| matches!(e, ExecutionEvent::Order(OrderEventAny::Canceled(_))))
             .expect("expected a Canceled event");
+
         if let ExecutionEvent::Order(OrderEventAny::Canceled(e)) = canceled {
             assert_eq!(e.client_order_id, rig.cloid);
         }

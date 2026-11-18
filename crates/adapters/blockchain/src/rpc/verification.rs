@@ -653,6 +653,7 @@ impl VerificationCoordinator {
                 let slot = B256::from_str(&proxy.storage_slot).expect("validated proxy slot");
                 let expected =
                     B256::from_str(&proxy.storage_value).expect("validated proxy storage value");
+
                 match self.verify_storage(&address, &slot, block).await {
                     VerificationOutcome::Verified(verified) if verified.value == expected => {}
                     VerificationOutcome::Verified(_) => {
@@ -677,6 +678,7 @@ impl VerificationCoordinator {
                     Address::from_str(&proxy.target_address).expect("validated proxy target");
                 let target_hash =
                     B256::from_str(&proxy.target_code_hash).expect("validated proxy target hash");
+
                 match self.verify_code(&target, block).await {
                     VerificationOutcome::Verified(verified)
                         if !verified.value.is_empty()

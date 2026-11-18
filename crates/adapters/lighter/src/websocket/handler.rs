@@ -947,6 +947,7 @@ impl FeedHandler {
             .subscription_attempts
             .remove(&topic)
             .expect("matching subscription attempt disappeared");
+
         for response_tx in std::mem::take(&mut attempt.response_txs) {
             let _ = response_tx.send(Ok(()));
         }
@@ -4120,6 +4121,7 @@ mod tests {
                 .iter()
                 .find(|m| matches!(m, NautilusWsMessage::AccountStreamFirstFrame(_)))
                 .unwrap_or_else(|| panic!("missing marker for {expected:?}"));
+
             match marker {
                 NautilusWsMessage::AccountStreamFirstFrame(stream) => {
                     assert_eq!(*stream, expected);

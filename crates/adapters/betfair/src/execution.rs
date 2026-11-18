@@ -1431,6 +1431,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 .stream_client
                 .as_ref()
                 .is_some_and(|client| client.is_order_ready());
+
         if !connected {
             return false;
         }
@@ -4823,6 +4824,7 @@ fn replaced_leg_fills_from_candidates(
             .resolve_order_owner(candidate.customer_order_ref.as_deref(), &candidate.bet_id)
             .and_then(CustomerOrderRefResolution::client_order_id)
             .is_some_and(|client_order_id| client_order_id == owner_client_order_id);
+
         if !resolves_to_owner {
             continue;
         }
@@ -10483,6 +10485,7 @@ mod tests {
         let fills = replaced_leg_fills_from_candidates(&candidates, &candidates[1], &state);
         assert!(!fills.matched.is_zero());
         let reduced_quantity = state.reduced_quantity(&new_order.bet_id);
+
         if !fills.matched.is_zero()
             && let Some(quantity) = reduced_quantity
         {

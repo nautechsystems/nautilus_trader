@@ -387,6 +387,7 @@ impl Stochastics {
                         .slowing_ma
                         .as_ref()
                         .is_none_or(|slowing_ma| slowing_ma.initialized());
+
                     if k_ready && slowing_ready {
                         ma.update_raw(slowed_k);
                     }

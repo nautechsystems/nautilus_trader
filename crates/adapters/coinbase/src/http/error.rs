@@ -106,6 +106,7 @@ impl Error {
     /// Creates an error from HTTP status code and body.
     pub fn from_http_status(status: u16, body: &[u8]) -> Self {
         let message = String::from_utf8_lossy(body).to_string();
+
         match status {
             401 | 403 => Self::auth(format!("HTTP {status}: {message}")),
             400 => Self::bad_request(format!("HTTP {status}: {message}")),

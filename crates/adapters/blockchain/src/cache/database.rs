@@ -4283,6 +4283,7 @@ impl BlockchainCacheDatabase {
                         .execute(&mut *transaction)
                         .await
                         .map_err(|e| anyhow::anyhow!("Failed to reconstruct migrated intent: {e}"))?;
+
                         if current_status != status.as_str() {
                             sqlx::query(
                                 "
@@ -4797,6 +4798,7 @@ impl BlockchainCacheDatabase {
         .fetch_optional(&mut *transaction)
         .await
         .context("failed to recheck execution payload marker")?;
+
         if marker.is_some() {
             transaction
                 .rollback()
@@ -6372,6 +6374,7 @@ impl BlockchainCacheDatabase {
         .fetch_one(&mut *transaction)
         .await
         .context("failed to number replacement scan evidence")?;
+
         for (index, decision) in scan.decisions.iter().enumerate() {
             let height_start = decision
                 .height_start

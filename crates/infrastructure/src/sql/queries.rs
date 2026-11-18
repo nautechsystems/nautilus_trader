@@ -1671,6 +1671,7 @@ impl DatabaseQueries {
                 .collect()
         })
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
+
         for id in client_order_ids {
             let order = Self::load_order(pool, &id, trader_id).await?;
             if let Some(order) = order {
@@ -2176,6 +2177,7 @@ impl DatabaseQueries {
                 .collect()
         })
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
+
         for id in account_ids {
             let account = Self::load_account(pool, &id, trader_id).await?;
             if let Some(account) = account {

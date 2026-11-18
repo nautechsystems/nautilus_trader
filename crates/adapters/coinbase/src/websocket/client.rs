@@ -826,6 +826,7 @@ fn resubscribe_all(
                             "JWT required for {channel} but build failed: {e}; topic {topic} not restored"
                         );
                         log::error!("{msg}");
+
                         if let Some(tx) = out_tx {
                             let _ = tx.send(NautilusWsMessage::Error(msg));
                         }
@@ -840,6 +841,7 @@ fn resubscribe_all(
                         "JWT required for {channel} but no credentials configured; topic {topic} not restored"
                     );
                     log::error!("{msg}");
+
                     if let Some(tx) = out_tx {
                         let _ = tx.send(NautilusWsMessage::Error(msg));
                     }
@@ -1285,6 +1287,7 @@ mod tests {
         let msg = out_rx
             .try_recv()
             .expect("Error event must be emitted when auth channel cannot resubscribe");
+
         match msg {
             NautilusWsMessage::Error(text) => {
                 assert!(
@@ -1321,6 +1324,7 @@ mod tests {
         let msg = out_rx
             .try_recv()
             .expect("Error event must be emitted when JWT build fails for an auth channel");
+
         match msg {
             NautilusWsMessage::Error(text) => {
                 assert!(text.contains("user"), "error must mention channel: {text}");

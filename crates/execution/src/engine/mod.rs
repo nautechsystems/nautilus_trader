@@ -4008,6 +4008,7 @@ impl ExecutionEngine {
     ) -> PositionId {
         let position_id = PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
         let cache = self.cache.borrow();
+
         if order.is_none_or(|order| !order.is_reduce_only())
             || cache
                 .position_ref(&position_id)

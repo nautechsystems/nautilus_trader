@@ -5220,6 +5220,7 @@ async fn test_connect_unified_account_emits_spot_usdc() {
             .await
             .expect("timed out waiting for account event")
             .expect("channel closed without event");
+
         if let ExecutionEvent::Account(account_state) = event {
             break account_state;
         }
@@ -9656,6 +9657,7 @@ async fn test_submit_order_after_stop_emits_denied() {
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
+
     while rx.try_recv().is_ok() {}
     client.stop().unwrap();
 
@@ -9693,6 +9695,7 @@ async fn test_submit_order_list_after_stop_emits_denied() {
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
+
     while rx.try_recv().is_ok() {}
     client.stop().unwrap();
 
