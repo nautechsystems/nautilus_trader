@@ -38,6 +38,10 @@ use crate::{
 pub(crate) fn quote(source: &Quote, instrument: &BinaryOption) -> anyhow::Result<QuoteTick> {
     let bid = price(source.bid, instrument)?;
     let ask = price(source.ask, instrument)?;
+    anyhow::ensure!(
+        bid <= ask,
+        "crossed FinFeed quote: bid {bid} exceeds ask {ask}"
+    );
     let bid_qty = qty(source.bid_volume, instrument)?;
     let ask_qty = qty(source.ask_volume, instrument)?;
     let ts_event = timestamp(source.entry_time)?;
@@ -285,6 +289,32 @@ mod tests {
 
     use super::*;
     use crate::http::parse::parse_instrument;
+
+    #[rstest]
+    #[case("0.10", "0.20", true)]
+    #[case("0.20", "0.20", true)]
+    #[case("0.21", "0.20", false)]
+    fn quote_accepts_ordered_prices(#[case] bid: &str, #[case] ask: &str, #[case] valid: bool) {
+        let market =
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
+        let instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
+        let mut rows: Vec<Quote> =
+            serde_json::from_str(include_str!("../test_data/client-quotes.json")).unwrap();
+        rows[0].bid = Decimal::from_str_exact(bid).unwrap();
+        rows[0].ask = Decimal::from_str_exact(ask).unwrap();
+
+        let result = quote(&rows[0], &instrument);
+        if valid {
+            let quote = result.unwrap();
+            assert_eq!(quote.bid_price.as_decimal(), rows[0].bid);
+            assert_eq!(quote.ask_price.as_decimal(), rows[0].ask);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "crossed FinFeed quote: bid 0.2100 exceeds ask 0.2000"
+            );
+        }
+    }
 
     #[rstest]
     #[case(None)]

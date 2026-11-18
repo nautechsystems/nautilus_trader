@@ -17,7 +17,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -29,6 +32,7 @@ use nautilus_network::{
     http::{HttpClient, HttpRedirectPolicy, Method},
     retry::{RetryConfig, RetryManager},
 };
+use parking_lot::Mutex;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{DeserializeOwned, Error as SerdeError},
@@ -138,6 +142,7 @@ pub struct FinFeedHttpClient {
     api_key: SecretString,
     concurrency: tokio::sync::Semaphore,
     next_request: tokio::sync::Mutex<Option<time::Instant>>,
+    cooldown: Arc<Mutex<Option<time::Instant>>>,
     interval: Duration,
     attempts_remaining: AtomicU64,
     retry: RetryManager<Error>,
@@ -202,12 +207,19 @@ impl FinFeedHttpClient {
             api_key,
             concurrency: tokio::sync::Semaphore::new(config.max_concurrent_requests),
             next_request: tokio::sync::Mutex::new(None),
+            cooldown: Arc::default(),
             interval: Duration::from_millis(config.min_request_interval_ms),
             attempts_remaining: AtomicU64::new(config.attempt_budget),
             retry: RetryManager::new(config.retry),
             cancellation: CancellationToken::new(),
             kalshi_base_url: kalshi_base_url.as_str().into(),
         })
+    }
+
+    pub(crate) fn new_generation(&self, config: FinFeedHttpConfig) -> Result<Self, Error> {
+        let mut client = Self::new(Some(self.api_key.clone()), config)?;
+        client.cooldown = Arc::clone(&self.cooldown);
+        Ok(client)
     }
 
     /// Permanently cancels pending and future requests, including local admission and retry waits.
@@ -692,26 +704,8 @@ impl FinFeedHttpClient {
                     "Public Kalshi metadata GET"
                 },
                 || async {
-                    let _permit = self
-                        .concurrency
-                        .acquire()
-                        .await
-                        .map_err(|_| Error::Response("admission closed"))?;
-                    let mut next = self.next_request.lock().await;
-                    if let Some(deadline) = *next {
-                        time::sleep_until(deadline).await;
-                    }
-
-                    if finfeed {
-                        self.attempts_remaining
-                            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                                remaining.checked_sub(1)
-                            })
-                            .map_err(|_| Error::AttemptBudget)?;
-                    }
-
-                    *next = Some(time::Instant::now() + self.interval);
-                    drop(next);
+                    let queued = log::log_enabled!(log::Level::Debug).then(time::Instant::now);
+                    let _permit = self.admit(finfeed).await?;
                     let mut headers = HashMap::from([("Accept".into(), "application/json".into())]);
                     if finfeed {
                         headers.insert(
@@ -721,6 +715,7 @@ impl FinFeedHttpClient {
                         headers.insert("X-Referrer".into(), "nautilus".into());
                     }
 
+                    let started = queued.map(|_| time::Instant::now());
                     let response = self
                         .client
                         .request_with_params(
@@ -732,15 +727,34 @@ impl FinFeedHttpClient {
                             None,
                             None,
                         )
-                        .await?;
+                        .await;
+                    let elapsed = started.map(|started| started.elapsed());
+                    let status = response.as_ref().ok().map(|response| response.status.as_u16());
 
+                    let retry_after_secs = response.as_ref().ok().and_then(|response| {
+                        response.headers.get("retry-after").and_then(|value| value.parse().ok())
+                    });
+
+                    if finfeed && status == Some(429) {
+                        self.apply_cooldown(retry_after_secs);
+                    }
+
+                    if let (Some(queued), Some(started), Some(elapsed)) = (queued, started, elapsed) {
+                        log::debug!(
+                            "GET provider={} endpoint={} admission_wait_ms={} http_elapsed_ms={} status={status:?} attempts_remaining={}",
+                            if finfeed { "FinFeed" } else { "Kalshi" },
+                            endpoint_name(path),
+                            started.duration_since(queued).as_millis(),
+                            elapsed.as_millis(),
+                            self.attempts_remaining(),
+                        );
+                    }
+
+                    let response = response?;
                     if !response.status.is_success() {
                         return Err(Error::Http {
                             status: response.status.as_u16(),
-                            retry_after_secs: response
-                                .headers
-                                .get("retry-after")
-                                .and_then(|value| value.parse().ok()),
+                            retry_after_secs,
                         });
                     }
 
@@ -753,6 +767,81 @@ impl FinFeedHttpClient {
             .cancellation_token(&self.cancellation)
             .execute()
             .await
+    }
+
+    async fn admit(&self, finfeed: bool) -> Result<tokio::sync::SemaphorePermit<'_>, Error> {
+        loop {
+            let wait = {
+                let permit = self
+                    .concurrency
+                    .acquire()
+                    .await
+                    .map_err(|_| Error::Response("admission closed"))?;
+                let mut next = self.next_request.lock().await;
+                if let Some(deadline) = *next {
+                    time::sleep_until(deadline).await;
+                }
+
+                let cooldown = finfeed.then(|| self.cooldown.lock());
+                let now = time::Instant::now();
+                let deadline = cooldown.as_deref().copied().flatten();
+                if let Some(deadline) = deadline.filter(|deadline| *deadline > now) {
+                    if self.attempts_remaining() == 0 {
+                        return Err(Error::AttemptBudget);
+                    }
+
+                    deadline
+                } else {
+                    if finfeed {
+                        self.attempts_remaining
+                            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                                remaining.checked_sub(1)
+                            })
+                            .map_err(|_| Error::AttemptBudget)?;
+                    }
+
+                    *next = Some(now + self.interval);
+                    return Ok(permit);
+                }
+            };
+
+            time::sleep_until(wait).await;
+        }
+    }
+
+    fn apply_cooldown(&self, retry_after_secs: Option<u64>) {
+        let deadline = retry_after_secs
+            .and_then(|seconds| time::Instant::now().checked_add(Duration::from_secs(seconds)));
+
+        if let Some(deadline) = deadline {
+            let mut cooldown = self.cooldown.lock();
+            *cooldown = (*cooldown).max(Some(deadline));
+        }
+
+        log::warn!("FinFeed received HTTP 429, retry_after_secs={retry_after_secs:?}");
+    }
+}
+
+fn endpoint_name(path: &[&str]) -> &'static str {
+    match path {
+        ["exchanges", ..] => "exchanges",
+        ["markets", _, "active"] => "active",
+        ["markets", _, "history"] => "listings",
+        ["markets", ..] => "market",
+        ["events", ..] => "event",
+        ["historical", "markets", _] => "historical-market",
+        ["activity", _, _, "history", "quotes"] => "quote-history",
+        ["activity", _, _, "history", "trades"] => "trade-history",
+        ["activity", _, _, "history", "ohlcv"] => "flat-file-ohlcv",
+        ["activity", _, _, "current"] => "current-activity",
+        ["activity", ..] => "latest-activity",
+        ["orderbook", _, _, "history"] => "book-history",
+        ["orderbook", ..] => "current-book",
+        ["ohlcv", "periods"] => "ohlcv-periods",
+        ["ohlcv", _, "history"] => "exchange-ohlcv",
+        ["ohlcv", _, _, "history"] => "market-ohlcv",
+        ["ohlcv", ..] => "latest-ohlcv",
+        _ => "unknown",
     }
 }
 
@@ -863,4 +952,47 @@ fn check_page(records: usize, limit: u32) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{future::poll_fn, task::Poll};
+
+    use super::*;
+
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    async fn waiting_for_finfeed_cooldown_leaves_transport_free_for_kalshi() {
+        let client = FinFeedHttpClient::new(
+            Some("test-api-key".into()),
+            FinFeedHttpConfig {
+                attempt_budget: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        client.apply_cooldown(Some(10));
+
+        let finfeed = client.admit(true);
+        tokio::pin!(finfeed);
+        poll_fn(|cx| {
+            assert!(finfeed.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        let kalshi = time::timeout(Duration::from_millis(100), client.admit(false))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(client.attempts_remaining(), 1);
+        drop(kalshi);
+
+        let _finfeed = finfeed.await.unwrap();
+        assert_eq!(client.attempts_remaining(), 0);
+    }
 }
