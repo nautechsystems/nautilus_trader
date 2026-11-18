@@ -15,16 +15,20 @@
 
 //! Data transfer objects for deserializing OKX HTTP API payloads.
 
-use nautilus_core::serialization::deserialize_optional_decimal;
+use nautilus_core::serialization::{
+    deserialize_optional_decimal, deserialize_optional_decimal_from_str,
+    serialize_optional_decimal_as_str,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer};
 use ustr::Ustr;
 
 use crate::common::{
-    models::OKXRpiBookLevel,
+    models::{OKXChaseParams, OKXRpiBookLevel},
     parse::{
         deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
-        deserialize_optional_string_to_u64, deserialize_target_currency_as_none,
+        deserialize_optional_order_enum, deserialize_optional_string_to_u64,
+        deserialize_target_currency_as_none,
     },
 };
 
@@ -76,10 +80,11 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAccountLevel, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXApiKeyPermission, OKXExecType,
-        OKXFeeType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus,
-        OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide, OKXSpreadState, OKXSpreadType,
-        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+        OKXAccountLevel, OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXAlgoOrderType,
+        OKXApiKeyPermission, OKXExecType, OKXFeeType, OKXInstrumentType, OKXMarginMode,
+        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide,
+        OKXSpreadState, OKXSpreadType, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+        OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -1296,7 +1301,7 @@ pub struct OKXOrderAlgo {
     /// Regular order IDs created after the algo order triggers.
     #[serde(default)]
     pub ord_id_list: Vec<String>,
-    /// Child algo order IDs created for split take-profit orders.
+    /// Spawned algo order IDs, including the chase algo ID after a chase trigger fires.
     #[serde(default)]
     pub sub_algo_id_list: Vec<String>,
     /// Instrument ID, e.g. `ETH-USDT-SWAP`.
@@ -1382,6 +1387,12 @@ pub struct OKXOrderAlgo {
     /// Activation price for trailing stop.
     #[serde(default)]
     pub active_px: String,
+    /// Execution type selected by the trigger.
+    #[serde(default, deserialize_with = "deserialize_optional_order_enum")]
+    pub advance_ord_type: Option<OKXAdvanceOrderType>,
+    /// Chase parameters for a trigger that spawns a chase order.
+    #[serde(default)]
+    pub adv_chase_params: Vec<OKXChaseParams>,
 }
 
 /// Represents a transaction detail (fill) from `GET /api/v5/trade/fills`.
@@ -1517,7 +1528,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Trigger price.
     #[serde(rename = "triggerPx", skip_serializing_if = "Option::is_none")]
     pub trigger_px: Option<String>,
-    /// Order price (for limit orders).
+    /// Order price when the trigger fires. Omit for a chase.
     #[serde(rename = "orderPx", skip_serializing_if = "Option::is_none")]
     pub order_px: Option<String>,
     /// Trigger type (last, mark, index).
@@ -1574,6 +1585,12 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Margin currency for spot margin orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ccy: Option<String>,
+    /// Execution type selected by the trigger. Chase is available for FUTURES and SWAP.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advance_ord_type: Option<OKXAdvanceOrderType>,
+    /// Chase parameters required when the trigger selects chase execution.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adv_chase_params: Vec<OKXChaseParams>,
 }
 
 /// Represents the response from `POST /api/v5/trade/order-algo` (place algo order).
@@ -1680,6 +1697,31 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New activation price for trailing stop.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_active_px: Option<String>,
+    /// Chase parameters to amend while the trigger is pending.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adv_chase_params: Vec<OKXAmendChaseParams>,
+}
+
+/// Changes to the chase distances of a pending FUTURES or SWAP chase trigger.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAmendChaseParams {
+    /// Distance in the existing unit. The new value must preserve the zero or nonzero mode.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub new_chase_val: Option<Decimal>,
+    /// Positive distance in the existing maximum distance unit, if a maximum is configured.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub new_max_chase_val: Option<Decimal>,
 }
 
 /// Represents the response from `POST /api/v5/trade/amend-algos` (amend algo order).
@@ -1829,6 +1871,109 @@ mod tests {
     use serde_json;
 
     use super::*;
+    use crate::common::enums::OKXChaseType;
+
+    #[rstest]
+    fn test_place_chase_trigger_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            inst_id_code: None,
+            td_mode: OKXTradeMode::Cross,
+            side: OKXSide::Buy,
+            ord_type: OKXAlgoOrderType::Trigger,
+            sz: Some("0.01".to_string()),
+            algo_cl_ord_id: Some("ChaseTrigger001".to_string()),
+            trigger_px: Some("96000".to_string()),
+            order_px: None,
+            trigger_px_type: Some(OKXTriggerType::Mark),
+            sl_trigger_px: None,
+            sl_ord_px: None,
+            sl_trigger_px_type: None,
+            tp_trigger_px: None,
+            tp_ord_px: None,
+            tp_trigger_px_type: None,
+            tgt_ccy: None,
+            pos_side: None,
+            close_position: None,
+            tag: None,
+            reduce_only: None,
+            close_fraction: None,
+            callback_ratio: None,
+            callback_spread: None,
+            active_px: None,
+            ccy: None,
+            advance_ord_type: Some(OKXAdvanceOrderType::Chase),
+            adv_chase_params: vec![OKXChaseParams {
+                chase_type: Some(OKXChaseType::Ratio),
+                chase_val: Some(Decimal::new(2, 3)),
+                max_chase_type: Some(OKXChaseType::Distance),
+                max_chase_val: Some(Decimal::new(12550, 2)),
+            }],
+        };
+
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/http_place_algo_chase_request.json"
+        ))
+        .unwrap();
+
+        assert_eq!(serde_json::to_value(request).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_amend_chase_trigger_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "BTC-USD-261225".to_string(),
+            algo_id: "706620792746729473".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: None,
+            new_trigger_px: None,
+            new_trigger_px_type: None,
+            new_tp_trigger_px: None,
+            new_tp_ord_px: None,
+            new_tp_trigger_px_type: None,
+            new_sl_trigger_px: None,
+            new_sl_ord_px: None,
+            new_sl_trigger_px_type: None,
+            new_order_px: None,
+            new_callback_ratio: None,
+            new_callback_spread: None,
+            new_active_px: None,
+            adv_chase_params: vec![OKXAmendChaseParams {
+                new_chase_val: Some(Decimal::new(4, 3)),
+                new_max_chase_val: Some(Decimal::new(16525, 2)),
+            }],
+        };
+
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/http_amend_algo_chase_request.json"
+        ))
+        .unwrap();
+
+        assert_eq!(serde_json::to_value(request).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_chase_trigger_rest_response_preserves_spawned_algo_id() {
+        let response: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_orders_algo_chase.json"))
+                .unwrap();
+        let order: OKXOrderAlgo = serde_json::from_value(response["data"][1].clone()).unwrap();
+
+        assert_eq!(order.algo_id, "706620792746729473");
+        assert_eq!(order.advance_ord_type, Some(OKXAdvanceOrderType::Chase));
+        assert_eq!(order.ord_id, "");
+        assert!(order.ord_id_list.is_empty());
+        assert_eq!(order.sub_algo_id_list, ["706620792746729999"]);
+        assert_eq!(
+            order.adv_chase_params,
+            [OKXChaseParams {
+                chase_type: Some(OKXChaseType::Ratio),
+                chase_val: Some(Decimal::new(4, 3)),
+                max_chase_type: Some(OKXChaseType::Distance),
+                max_chase_val: Some(Decimal::new(16525, 2)),
+            }],
+        );
+    }
 
     #[rstest]
     fn test_algo_order_deserializes_current_child_identifier_lists() {
@@ -1884,6 +2029,8 @@ mod tests {
             callback_spread: None,
             active_px: None,
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -1926,6 +2073,7 @@ mod tests {
             new_callback_ratio: None,
             new_callback_spread: None,
             new_active_px: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -1957,6 +2105,7 @@ mod tests {
             new_callback_ratio: None,
             new_callback_spread: None,
             new_active_px: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2000,6 +2149,8 @@ mod tests {
             callback_spread: None,
             active_px: None,
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2043,6 +2194,8 @@ mod tests {
             callback_spread: None,
             active_px: None,
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         // OKX expects an array of requests
@@ -2118,6 +2271,7 @@ mod tests {
             new_callback_ratio: None,
             new_callback_spread: None,
             new_active_px: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2150,6 +2304,7 @@ mod tests {
             new_callback_ratio: Some("0.02".to_string()),
             new_callback_spread: None,
             new_active_px: Some("50000".to_string()),
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2193,6 +2348,8 @@ mod tests {
             callback_spread: None,
             active_px: None,
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2232,6 +2389,8 @@ mod tests {
             callback_spread: Some("50.5".to_string()),
             active_px: None,
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2270,6 +2429,8 @@ mod tests {
             callback_spread: None,
             active_px: Some("65000".to_string()),
             ccy: None,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2298,6 +2459,7 @@ mod tests {
             new_callback_ratio: None,
             new_callback_spread: Some("25.0".to_string()),
             new_active_px: Some("4000".to_string()),
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2328,6 +2490,7 @@ mod tests {
             new_callback_ratio: None,
             new_callback_spread: None,
             new_active_px: None,
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2359,6 +2522,7 @@ mod tests {
             new_callback_ratio: Some("0.015".to_string()),
             new_callback_spread: Some("100".to_string()),
             new_active_px: Some("62000".to_string()),
+            adv_chase_params: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();

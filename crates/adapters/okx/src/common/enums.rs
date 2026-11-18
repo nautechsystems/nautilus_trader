@@ -1394,6 +1394,28 @@ pub enum OKXAlgoOrderType {
     Other,
 }
 
+/// Execution type selected by an OKX trigger order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OKXAdvanceOrderType {
+    Fok,
+    Ioc,
+    Chase,
+    /// An unrecognized execution type, preserved as received from OKX.
+    #[serde(untagged)]
+    Other(String),
+}
+
+/// Unit for a chase order's distance from the best bid or ask.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OKXChaseType {
+    /// Absolute price distance.
+    Distance,
+    /// Fractional distance, where `0.1` represents 10%.
+    Ratio,
+}
+
 /// Returns whether an order type requires algo order handling.
 pub fn is_conditional_order(order_type: OrderType) -> bool {
     OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)

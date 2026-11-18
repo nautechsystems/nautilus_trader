@@ -689,6 +689,8 @@ so the generated value fits within the OKX limit.
 requires the `cancel-advance-algos` endpoint for cancellation.
 :::
 
+See [chase trigger orders](#chase-trigger-orders) for futures and swaps.
+
 ### Spread orders
 
 OKX spread instruments use a separate spread trading order book and API family. The
@@ -1066,8 +1068,10 @@ Conditional orders (OKX algo orders) use HTTP for commands and WebSocket for sta
   `orders-algo`. Trailing stops use `algo-advance`. Both deliver real-time updates.
 - **Cancellation**: HTTP while the algo parent is active.
 
-Once a triggered child becomes authoritative, cancellation and modification use its order ID and
-the regular WebSocket route. The Nautilus order identity stays unchanged.
+For standard algo orders, cancellation and modification use the regular child's order ID and the
+regular WebSocket route once the child becomes authoritative. For a [chase trigger](#chase-trigger-orders),
+the adapter cancels the spawned chase algo through HTTP and denies modification after the chase
+spawns. The Nautilus order identity stays unchanged in both cases.
 
 The `orders-algo` channel sends updates only, while `algo-advance` also sends a snapshot on
 subscription. The adapter keeps tracked order context across transport reconnects and deduplicates
@@ -1091,6 +1095,47 @@ OKX's `close_fraction` conditional-order parameter is not normalized to the gene
 contract. Do not add `OKX` to `full_position_exit_venues` based on `close_fraction`. Leave the venue unlisted
 so ordinary quantity and notional checks apply.
 :::
+
+#### Chase trigger orders
+
+Set `chase_params` when submitting a native `STOP_MARKET` order from a live OKX strategy. Use
+`GTC` and a contract quantity on a dated future (`FUTURES`) or perpetual swap (`SWAP`). When the
+trigger fires, OKX creates a chase algo that maintains a post-only order. The strategy keeps its
+original client order ID for fills and cancellation.
+
+Use decimal strings for the chase values. In this example, the working price follows the best bid
+or ask with a 0.2% offset.
+
+```python
+self.submit_order(
+    order,
+    params={"chase_params": {"chase_type": "ratio", "chase_val": "0.002"}},
+)
+```
+
+```rust
+use nautilus_core::params::Params;
+use serde_json::json;
+
+let params: Params = serde_json::from_value(json!({
+    "chase_params": {"chase_type": "ratio", "chase_val": "0.002"},
+}))?;
+self.submit_order(order, None, None, Some(params))?;
+```
+
+Set `chase_val` to `"0"` to follow the best bid or ask directly. The default `chase_type` is
+`"distance"`, an absolute price offset. Supply both `max_chase_type` and a positive `max_chase_val`
+to have OKX cancel when the chase reaches that maximum deviation.
+
+The low-level Rust HTTP client exposes the venue request fields directly.
+
+- **Place a trigger.** Call `OKXHttpClient::place_algo_order` with `ord_type` set to
+  `OKXAlgoOrderType::Trigger` and `advance_ord_type` set to `Some(OKXAdvanceOrderType::Chase)`.
+  Supply `adv_chase_params` and leave `order_px` unset.
+- **Amend a pending trigger.** Call `OKXHttpClient::amend_algo_order` and supply the new chase
+  distances in `adv_chase_params`.
+- **Find the spawned order.** After the trigger fires, REST algo-order reads and WebSocket
+  `orders-algo` updates report the spawned chase algo ID in `sub_algo_id_list`.
 
 #### Algo sizing
 

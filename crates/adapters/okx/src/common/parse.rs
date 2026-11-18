@@ -56,7 +56,10 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use serde::{
+    Deserialize, Deserializer,
+    de::{DeserializeOwned, IntoDeserializer},
+};
 use ustr::Ustr;
 
 use super::enums::OKXContractType;
@@ -176,6 +179,18 @@ where
     } else {
         s.parse().map(Some).map_err(serde::de::Error::custom)
     }
+}
+
+pub(crate) fn deserialize_optional_order_enum<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    deserialize_empty_string_as_none(deserializer)?
+        .map(|value| T::deserialize(value.into_deserializer()))
+        .transpose()
 }
 
 /// Deserializes an OKX VIP level string into [`OKXVipLevel`].

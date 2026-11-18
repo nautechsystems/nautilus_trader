@@ -1,0 +1,19 @@
+{
+  "instId": "BTC-USDT-SWAP",
+  "tdMode": "cross",
+  "side": "buy",
+  "ordType": "trigger",
+  "sz": "0.01",
+  "algoClOrdId": "ChaseTrigger001",
+  "triggerPx": "96000",
+  "triggerPxType": "mark",
+  "advanceOrdType": "chase",
+  "advChaseParams": [
+    {
+      "chaseType": "ratio",
+      "chaseVal": "0.002",
+      "maxChaseType": "distance",
+      "maxChaseVal": "125.50"
+    }
+  ]
+}

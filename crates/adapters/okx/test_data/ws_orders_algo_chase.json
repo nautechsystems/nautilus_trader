@@ -1,0 +1,71 @@
+{
+  "arg": {
+    "channel": "orders-algo",
+    "instType": "SWAP",
+    "instId": "BTC-USDT-SWAP"
+  },
+  "data": [
+    {
+      "algoId": "706620792746729472",
+      "algoClOrdId": "ChaseTrigger001",
+      "clOrdId": "",
+      "ordId": "",
+      "ordIdList": [],
+      "subAlgoIdList": [],
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "trigger",
+      "state": "live",
+      "side": "buy",
+      "posSide": "net",
+      "sz": "0.01",
+      "triggerPx": "96000",
+      "triggerPxType": "mark",
+      "ordPx": "",
+      "advanceOrdType": "chase",
+      "advChaseParams": [
+        {
+          "chaseType": "distance",
+          "chaseVal": "0",
+          "maxChaseType": "",
+          "maxChaseVal": ""
+        }
+      ],
+      "tdMode": "cross",
+      "lever": "2",
+      "cTime": "1737400000000",
+      "uTime": "1737400000000"
+    },
+    {
+      "algoId": "706620792746729473",
+      "algoClOrdId": "ChaseTrigger002",
+      "clOrdId": "",
+      "ordId": "",
+      "ordIdList": [],
+      "subAlgoIdList": ["706620792746729999"],
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "trigger",
+      "state": "effective",
+      "side": "buy",
+      "posSide": "net",
+      "sz": "0.01",
+      "triggerPx": "96010",
+      "triggerPxType": "mark",
+      "ordPx": "",
+      "advanceOrdType": "chase",
+      "advChaseParams": [
+        {
+          "chaseType": "ratio",
+          "chaseVal": "0.004",
+          "maxChaseType": "distance",
+          "maxChaseVal": "165.25"
+        }
+      ],
+      "tdMode": "cross",
+      "lever": "2",
+      "cTime": "1737400000000",
+      "uTime": "1737400200000"
+    }
+  ]
+}

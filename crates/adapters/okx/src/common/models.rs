@@ -26,11 +26,50 @@ use ustr::Ustr;
 use super::enums::{OKXOptionType, OKXTriggerType};
 use crate::common::{
     enums::{
-        OKXContractType, OKXInstrumentCategory, OKXInstrumentStatus, OKXInstrumentType,
-        OKXRpiPermission,
+        OKXChaseType, OKXContractType, OKXInstrumentCategory, OKXInstrumentStatus,
+        OKXInstrumentType, OKXRpiPermission,
     },
-    parse::{deserialize_empty_ustr_as_none, deserialize_optional_string_to_u64},
+    parse::{
+        deserialize_empty_ustr_as_none, deserialize_optional_order_enum,
+        deserialize_optional_string_to_u64,
+    },
 };
+
+/// Placement parameters for the chase order spawned by a FUTURES or SWAP trigger.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXChaseParams {
+    /// Distance unit. OKX defaults to an absolute price distance.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_order_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub chase_type: Option<OKXChaseType>,
+    /// Distance from the best bid or ask. Zero tracks that price directly.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub chase_val: Option<Decimal>,
+    /// Maximum distance unit. Supply it together with `max_chase_val`.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_order_enum",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_chase_type: Option<OKXChaseType>,
+    /// Positive distance at which OKX cancels the chase order.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_chase_val: Option<Decimal>,
+}
 
 /// Attached TP/SL child order metadata returned by OKX on parent orders.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

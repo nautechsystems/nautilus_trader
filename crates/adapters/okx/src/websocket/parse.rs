@@ -54,9 +54,10 @@ use crate::{
     common::{
         consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
         enums::{
-            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXGreeksType,
-            OKXInstrumentStatus, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
-            OKXSide, OKXTargetCurrency, OKXTriggerType,
+            OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction,
+            OKXCandleConfirm, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXSide, OKXTargetCurrency,
+            OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -1749,6 +1750,14 @@ fn parse_algo_order_fields(msg: &OKXAlgoOrderMsg) -> anyhow::Result<AlgoOrderFie
                     ord_px,
                 })
             }
+        }
+        OKXAlgoOrderType::Trigger if msg.advance_ord_type == Some(OKXAdvanceOrderType::Chase) => {
+            Ok(AlgoOrderFields {
+                order_type: OrderType::StopMarket,
+                trigger_px: msg.trigger_px.as_str(),
+                trigger_px_type: msg.trigger_px_type,
+                ord_px: "",
+            })
         }
         OKXAlgoOrderType::Trigger => Ok(AlgoOrderFields {
             order_type: if is_market_price(&msg.ord_px) {
@@ -6361,6 +6370,8 @@ mod tests {
             fee: None,
             fee_ccy: None,
             advance_ord_type: None,
+            adv_chase_params: Vec::new(),
+            sub_algo_id_list: Vec::new(),
         };
 
         let report = parse_algo_order_status_report(&msg, &inst, account_id, ts_init).unwrap();
@@ -6415,6 +6426,8 @@ mod tests {
             fee: None,
             fee_ccy: None,
             advance_ord_type: None,
+            adv_chase_params: Vec::new(),
+            sub_algo_id_list: Vec::new(),
         }
     }
 

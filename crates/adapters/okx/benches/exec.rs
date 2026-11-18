@@ -151,6 +151,8 @@ fn build_place_algo_stop() -> OKXPlaceAlgoOrderRequest {
         callback_spread: None,
         active_px: None,
         ccy: None,
+        advance_ord_type: None,
+        adv_chase_params: Vec::new(),
     }
 }
 

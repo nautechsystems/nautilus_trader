@@ -128,9 +128,10 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment, OKXInstrumentStatus,
-            OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXPositionMode,
-            OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
+            OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment,
+            OKXInstrumentStatus, OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType,
+            OKXPositionMode, OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType,
+            conditional_order_to_algo_type,
         },
         models::OKXInstrument,
         parse::{
@@ -172,6 +173,10 @@ impl OKXInstrumentDefinitionError {
 #[derive(Debug, Error)]
 #[error("Failed to parse active order report: {0}")]
 pub(crate) struct OKXActiveOrderReportError(#[source] anyhow::Error);
+
+#[derive(Debug, Error)]
+#[error("Could not resolve OKX chase trigger status for {0:?}")]
+pub(crate) struct OKXUnresolvedChaseOrderError(Option<InstrumentId>);
 
 #[derive(Debug, Error)]
 #[error("Failed to fetch pending algo order reports: {source}")]
@@ -778,6 +783,7 @@ const OKX_PAGE_SIZE: usize = 100;
 
 // Safety cap on paginated reconciliation fetches to avoid unbounded loops
 const MAX_RECONCILIATION_PAGES: usize = 50;
+const MAX_CHASE_DETAIL_LOOKUPS: usize = 100;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ReportInstrumentScope<'a> {
@@ -817,6 +823,17 @@ pub(crate) struct ReportSweep<T> {
     pub complete: bool,
 }
 
+pub(crate) struct RegularOrderReportSweep {
+    pub reports: Vec<OrderStatusReport>,
+    pub complete: bool,
+    regular_by_algo_id: AHashMap<VenueOrderId, RegularAlgoOrderLink>,
+}
+
+struct RegularAlgoOrderLink {
+    venue_order_id: Option<VenueOrderId>,
+    has_open_order: bool,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum FillHistory {
     Recent,
@@ -828,6 +845,15 @@ pub(crate) struct AlgoOrderReportSweep {
     pub reports: Vec<OrderStatusReport>,
     pub complete: bool,
     pub ambiguous_triggered_child_ids: AHashSet<VenueOrderId>,
+    pub chase_orders: AHashMap<ClientOrderId, ChaseOrderLink>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ChaseOrderLink {
+    pub instrument_id: InstrumentId,
+    pub parent: VenueOrderId,
+    pub chase: Option<VenueOrderId>,
+    pub regular: Option<VenueOrderId>,
 }
 
 struct PageSweep<T> {
@@ -4827,11 +4853,11 @@ impl OKXHttpClient {
         allow_history_failure: bool,
         scope: Option<ReportInstrumentScope<'_>>,
         max_history_pages: Option<u32>,
-    ) -> anyhow::Result<ReportSweep<OrderStatusReport>> {
+    ) -> anyhow::Result<RegularOrderReportSweep> {
         if instrument_id.as_ref().is_some_and(|id| self.is_spread(*id))
             || (instrument_id.is_none() && instrument_type.is_none())
         {
-            return self
+            let sweep = self
                 .request_spread_order_status_reports_scoped(
                     account_id,
                     instrument_id,
@@ -4843,7 +4869,12 @@ impl OKXHttpClient {
                     scope,
                     max_history_pages,
                 )
-                .await;
+                .await?;
+            return Ok(RegularOrderReportSweep {
+                reports: sweep.reports,
+                complete: sweep.complete,
+                regular_by_algo_id: AHashMap::new(),
+            });
         }
 
         let instrument_type = if let Some(instrument_type) = instrument_type {
@@ -4923,12 +4954,19 @@ impl OKXHttpClient {
 
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::with_capacity(capacity);
+        let mut regular_by_algo_id = AHashMap::new();
 
         // Use a seen filter in case pending orders are within the histories "2hr reserve window"
         let mut seen: AHashSet<String> = AHashSet::new();
 
         for (order, from_pending_source) in orders {
             let active = is_open_okx_order(order.state, from_pending_source);
+            // Open orders are authoritative regardless of age; only closed history respects the window.
+            if report_ts_outside_window(order.u_time, start_ns, end_ns) && !active {
+                continue;
+            }
+
+            record_regular_algo_order(&mut regular_by_algo_id, &order, active);
             let seen_key = [
                 Some(order.cl_ord_id.as_str()),
                 order.algo_cl_ord_id.as_ref().map(Ustr::as_str),
@@ -4943,12 +4981,6 @@ impl OKXHttpClient {
 
             if !seen.insert(seen_key) {
                 continue; // Reserved pending already reported
-            }
-
-            // Open orders are authoritative regardless of age; only closed
-            // history respects the report window.
-            if report_ts_outside_window(order.u_time, start_ns, end_ns) && !active {
-                continue;
             }
 
             let inst = match self
@@ -4984,7 +5016,11 @@ impl OKXHttpClient {
             reports.push(report);
         }
 
-        Ok(ReportSweep { reports, complete })
+        Ok(RegularOrderReportSweep {
+            reports,
+            complete,
+            regular_by_algo_id,
+        })
     }
 
     /// Requests a regular order status report by client order identifier.
@@ -6827,6 +6863,7 @@ impl OKXHttpClient {
             new_callback_ratio,
             new_callback_spread,
             new_active_px: new_activation_price.map(|p| p.to_string()),
+            adv_chase_params: Vec::new(),
         };
 
         self.amend_algo_order(request).await
@@ -7142,6 +7179,46 @@ impl OKXHttpClient {
         callback_spread: Option<String>,
         activation_price: Option<Price>,
     ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
+        let request = Self::algo_order_request(
+            instrument_id,
+            td_mode,
+            client_order_id,
+            order_side,
+            order_type,
+            quantity,
+            quote_quantity,
+            trigger_price,
+            trigger_type,
+            limit_price,
+            reduce_only,
+            position_side,
+            close_fraction,
+            callback_ratio,
+            callback_spread,
+            activation_price,
+        )?;
+        self.place_algo_order(request).await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn algo_order_request(
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        quote_quantity: bool,
+        trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        limit_price: Option<Price>,
+        reduce_only: Option<bool>,
+        position_side: Option<PositionSide>,
+        close_fraction: Option<String>,
+        callback_ratio: Option<String>,
+        callback_spread: Option<String>,
+        activation_price: Option<Price>,
+    ) -> Result<OKXPlaceAlgoOrderRequest, OKXHttpError> {
         if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
             return Err(OKXHttpError::ValidationError(
                 "Invalid order side".to_string(),
@@ -7172,164 +7249,39 @@ impl OKXHttpClient {
             None
         };
 
-        let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
-
-        let uses_close_fraction = close_fraction.is_some();
-
-        let (
-            algo_type,
-            sz,
-            trigger_px,
-            order_px,
-            trigger_px_type,
-            sl_trigger_px,
-            sl_ord_px,
-            sl_trigger_px_type,
-            tp_trigger_px,
-            tp_ord_px,
-            tp_trigger_px_type,
-            pos_side,
-            reduce_only,
-        ) = if uses_close_fraction || tgt_ccy.is_some() {
-            if order_type == OrderType::TrailingStopMarket {
-                return Err(OKXHttpError::ValidationError(
-                    "OKX close_fraction does not support TrailingStopMarket".to_string(),
-                ));
-            }
-
-            let trigger_px = trigger_price.map(|p| p.to_string()).ok_or_else(|| {
-                OKXHttpError::ValidationError(
-                    "OKX conditional orders require trigger_price".to_string(),
-                )
-            })?;
-
-            let close_order_px =
-                if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
-                    limit_price.map(|p| p.to_string()).ok_or_else(|| {
-                        OKXHttpError::ValidationError(format!(
-                            "OKX {order_type:?} close_fraction orders require limit_price"
-                        ))
-                    })?
-                } else {
-                    "-1".to_string()
-                };
-
-            let (
-                sl_trigger_px,
-                sl_ord_px,
-                sl_trigger_px_type,
-                tp_trigger_px,
-                tp_ord_px,
-                tp_trigger_px_type,
-            ) = match order_type {
-                OrderType::StopMarket | OrderType::StopLimit => (
-                    Some(trigger_px),
-                    Some(close_order_px),
-                    Some(trigger_px_type_enum),
-                    None,
-                    None,
-                    None,
-                ),
-                OrderType::MarketIfTouched | OrderType::LimitIfTouched => (
-                    None,
-                    None,
-                    None,
-                    Some(trigger_px),
-                    Some(close_order_px),
-                    Some(trigger_px_type_enum),
-                ),
-                _ => {
-                    return Err(OKXHttpError::ValidationError(format!(
-                        "OKX close_fraction is only supported for stop/touched conditional orders, received {order_type:?}"
-                    )));
-                }
-            };
-
-            (
-                OKXAlgoOrderType::Conditional,
-                (!uses_close_fraction).then(|| quantity.to_string()),
-                None,
-                None,
-                None,
-                sl_trigger_px,
-                sl_ord_px,
-                sl_trigger_px_type,
-                tp_trigger_px,
-                tp_ord_px,
-                tp_trigger_px_type,
-                if uses_close_fraction {
-                    Some(position_side.map_or(OKXPositionSide::Net, Into::into))
-                } else {
-                    position_side.map(Into::into)
-                },
-                if uses_close_fraction {
-                    Some(true)
-                } else {
-                    reduce_only
-                },
-            )
+        let uses_conditional_leg = close_fraction.is_some() || tgt_ccy.is_some();
+        let ord_type = if uses_conditional_leg {
+            OKXAlgoOrderType::Conditional
         } else {
-            let algo_type = conditional_order_to_algo_type(order_type)
-                .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
-
-            let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
-            {
-                limit_price.map(|p| p.to_string())
-            } else if order_type == OrderType::TrailingStopMarket {
-                None
-            } else {
-                Some("-1".to_string())
-            };
-
-            (
-                algo_type,
-                Some(quantity.to_string()),
-                trigger_price.map(|p| p.to_string()),
-                order_px,
-                Some(trigger_px_type_enum),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                position_side.map(Into::into),
-                reduce_only,
-            )
+            conditional_order_to_algo_type(order_type)
+                .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?
         };
 
-        let reduce_only = if position_side.is_some() {
-            okx_reduce_only_wire_value(
-                instrument_type,
-                td_mode,
-                order_side,
-                position_side,
-                reduce_only,
-            )
-            .map_err(OKXHttpError::ValidationError)?
-        } else {
-            reduce_only
+        let order_px = match order_type {
+            OrderType::StopLimit | OrderType::LimitIfTouched => limit_price.map(|p| p.to_string()),
+            OrderType::TrailingStopMarket => None,
+            _ => Some("-1".to_string()),
         };
 
-        let request = OKXPlaceAlgoOrderRequest {
+        let mut request = OKXPlaceAlgoOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
             inst_id_code: None,
             td_mode,
             side: okx_side,
-            ord_type: algo_type,
-            sz,
+            ord_type,
+            sz: Some(quantity.to_string()),
             algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
-            trigger_px,
+            trigger_px: trigger_price.map(|p| p.to_string()),
             order_px,
-            trigger_px_type,
-            sl_trigger_px,
-            sl_ord_px,
-            sl_trigger_px_type,
-            tp_trigger_px,
-            tp_ord_px,
-            tp_trigger_px_type,
+            trigger_px_type: Some(trigger_type.map_or(OKXTriggerType::Last, Into::into)),
+            sl_trigger_px: None,
+            sl_ord_px: None,
+            sl_trigger_px_type: None,
+            tp_trigger_px: None,
+            tp_ord_px: None,
+            tp_trigger_px_type: None,
             tgt_ccy,
-            pos_side,
+            pos_side: position_side.map(Into::into),
             close_position: None,
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
             reduce_only,
@@ -7338,9 +7290,77 @@ impl OKXHttpClient {
             callback_spread,
             active_px: activation_price.map(|p| p.to_string()),
             ccy,
+            advance_ord_type: None,
+            adv_chase_params: Vec::new(),
         };
 
-        self.place_algo_order(request).await
+        if uses_conditional_leg {
+            Self::apply_conditional_algo_leg(&mut request, order_type)?;
+        }
+
+        if position_side.is_some() {
+            request.reduce_only = okx_reduce_only_wire_value(
+                instrument_type,
+                td_mode,
+                order_side,
+                position_side,
+                request.reduce_only,
+            )
+            .map_err(OKXHttpError::ValidationError)?;
+        }
+
+        Ok(request)
+    }
+
+    fn apply_conditional_algo_leg(
+        request: &mut OKXPlaceAlgoOrderRequest,
+        order_type: OrderType,
+    ) -> Result<(), OKXHttpError> {
+        if order_type == OrderType::TrailingStopMarket {
+            return Err(OKXHttpError::ValidationError(
+                "OKX close_fraction does not support TrailingStopMarket".to_string(),
+            ));
+        }
+
+        let trigger_px = request.trigger_px.take().ok_or_else(|| {
+            OKXHttpError::ValidationError(
+                "OKX conditional orders require trigger_price".to_string(),
+            )
+        })?;
+
+        let order_px = request.order_px.take().ok_or_else(|| {
+            OKXHttpError::ValidationError(format!(
+                "OKX {order_type:?} close_fraction orders require limit_price"
+            ))
+        })?;
+
+        let trigger_px_type = request.trigger_px_type.take();
+
+        match order_type {
+            OrderType::StopMarket | OrderType::StopLimit => {
+                request.sl_trigger_px = Some(trigger_px);
+                request.sl_ord_px = Some(order_px);
+                request.sl_trigger_px_type = trigger_px_type;
+            }
+            OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
+                request.tp_trigger_px = Some(trigger_px);
+                request.tp_ord_px = Some(order_px);
+                request.tp_trigger_px_type = trigger_px_type;
+            }
+            _ => {
+                return Err(OKXHttpError::ValidationError(format!(
+                    "OKX close_fraction is only supported for stop/touched conditional orders, received {order_type:?}"
+                )));
+            }
+        }
+
+        if request.close_fraction.is_some() {
+            request.sz = None;
+            request.pos_side = request.pos_side.or(Some(OKXPositionSide::Net));
+            request.reduce_only = Some(true);
+        }
+
+        Ok(())
     }
 
     /// Cancels an algo order using domain types.
@@ -7395,9 +7415,34 @@ impl OKXHttpClient {
                 None,
                 false,
                 None,
+                None,
             )
             .await?
             .reports)
+    }
+
+    pub(crate) async fn request_targeted_algo_order_status_reports(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        algo_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> anyhow::Result<AlgoOrderReportSweep> {
+        self.request_algo_order_status_reports_sweep(
+            account_id,
+            None,
+            Some(instrument_id),
+            algo_id.map(|id| id.to_string()),
+            client_order_id,
+            None,
+            Some(1),
+            None,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -7414,9 +7459,12 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         require_complete_active_coverage: bool,
         max_history_pages: Option<u32>,
+        regular_orders: Option<&RegularOrderReportSweep>,
     ) -> anyhow::Result<AlgoOrderReportSweep> {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         let mut ambiguous_triggered_child_ids = AHashSet::new();
+        let mut chase_orders = AHashMap::new();
+        let mut remaining_chase_recoveries = MAX_CHASE_DETAIL_LOOKUPS;
         let has_specific_lookup = algo_id.is_some() || algo_client_order_id.is_some();
         let start_ns = start.map(UnixNanos::from);
         let end_ns = end.map(UnixNanos::from);
@@ -7459,6 +7507,7 @@ impl OKXHttpClient {
                         reports,
                         complete,
                         ambiguous_triggered_child_ids,
+                        chase_orders,
                     });
                 }
                 Err(e) => return Err(e.into()),
@@ -7482,8 +7531,19 @@ impl OKXHttpClient {
                     &mut seen,
                     &mut reports,
                     &mut ambiguous_triggered_child_ids,
+                    &mut chase_orders,
+                    &mut remaining_chase_recoveries,
+                    regular_orders,
                 )
                 .await?;
+
+            if !complete
+                && orders
+                    .iter()
+                    .any(|order| order.advance_ord_type == Some(OKXAdvanceOrderType::Chase))
+            {
+                return Err(OKXUnresolvedChaseOrderError(instrument_id).into());
+            }
 
             if let Some(limit) = limit {
                 reports.truncate(limit as usize);
@@ -7493,6 +7553,7 @@ impl OKXHttpClient {
                 reports,
                 complete,
                 ambiguous_triggered_child_ids,
+                chase_orders,
             });
         }
 
@@ -7582,6 +7643,9 @@ impl OKXHttpClient {
                         &mut seen,
                         &mut reports,
                         &mut ambiguous_triggered_child_ids,
+                        &mut chase_orders,
+                        &mut remaining_chase_recoveries,
+                        regular_orders,
                     )
                     .await
                 {
@@ -7608,6 +7672,7 @@ impl OKXHttpClient {
                         reports,
                         complete,
                         ambiguous_triggered_child_ids,
+                        chase_orders,
                     });
                 }
             }
@@ -7654,6 +7719,9 @@ impl OKXHttpClient {
                         &mut seen,
                         &mut reports,
                         &mut ambiguous_triggered_child_ids,
+                        &mut chase_orders,
+                        &mut remaining_chase_recoveries,
+                        regular_orders,
                     )
                     .await?;
 
@@ -7665,6 +7733,7 @@ impl OKXHttpClient {
                         reports,
                         complete,
                         ambiguous_triggered_child_ids,
+                        chase_orders,
                     });
                 }
             }
@@ -7674,6 +7743,7 @@ impl OKXHttpClient {
             reports,
             complete,
             ambiguous_triggered_child_ids,
+            chase_orders,
         })
     }
 
@@ -7770,25 +7840,26 @@ impl OKXHttpClient {
         seen: &mut AHashMap<(String, String), usize>,
         reports: &mut Vec<OrderStatusReport>,
         ambiguous_triggered_child_ids: &mut AHashSet<VenueOrderId>,
+        chase_orders: &mut AHashMap<ClientOrderId, ChaseOrderLink>,
+        remaining_chase_recoveries: &mut usize,
+        regular_orders: Option<&RegularOrderReportSweep>,
     ) -> anyhow::Result<bool> {
         let mut complete = true;
 
         for order in orders {
             let key = (order.algo_id.clone(), order.algo_cl_ord_id.clone());
 
-            let has_ambiguous_children = order.ord_id_list.len() > 1
-                || !order.sub_algo_id_list.is_empty()
-                || matches!(
-                    order.ord_id_list.as_slice(),
-                    [child_order_id]
-                        if !order.ord_id.is_empty() && child_order_id != &order.ord_id
-                );
+            let has_swept_open_child = order.advance_ord_type == Some(OKXAdvanceOrderType::Chase)
+                && matches!(order.sub_algo_id_list.as_slice(), [chase_id] if !chase_id.is_empty()
+                    && regular_orders.and_then(|sweep| sweep.regular_by_algo_id.get(&VenueOrderId::new(chase_id)))
+                        .is_some_and(|link| link.has_open_order));
+
+            let active = is_open_okx_algo(order.state) || has_swept_open_child;
 
             // An unknown pending state cannot establish that the order is terminal
-            if !(from_pending_source && order.state == OKXAlgoOrderStatus::Unknown)
-                && report_ts_outside_window(order.u_time, start_ns, end_ns)
-                && !is_open_okx_algo(order.state)
-            {
+            let may_be_open =
+                active || (from_pending_source && order.state == OKXAlgoOrderStatus::Unknown);
+            if !may_be_open && report_ts_outside_window(order.u_time, start_ns, end_ns) {
                 continue;
             }
 
@@ -7796,19 +7867,17 @@ impl OKXHttpClient {
                 instrument.clone()
             } else {
                 match self
-                    .resolve_report_instrument(
-                        order.inst_id,
-                        order.inst_type,
-                        false,
-                        is_open_okx_algo(order.state),
-                        None,
-                    )
+                    .resolve_report_instrument(order.inst_id, order.inst_type, false, active, None)
                     .await?
                 {
                     InstrumentResolution::Found(instrument) => {
                         instruments_cache.insert(order.inst_id, (*instrument).clone());
                         *instrument
                     }
+                    _ if has_swept_open_child => anyhow::bail!(
+                        "Could not resolve instrument for active OKX chase order {}",
+                        order.algo_id,
+                    ),
                     InstrumentResolution::Skip => continue,
                     InstrumentResolution::Incomplete => {
                         complete = false;
@@ -7817,9 +7886,11 @@ impl OKXHttpClient {
                 }
             };
 
-            let report = match parse_http_algo_order(order, account_id, &instrument, ts_init) {
+            let mut report = match parse_http_algo_order(order, account_id, &instrument, ts_init) {
                 Ok(report) => report,
-                Err(e) if !from_pending_source && is_open_okx_algo(order.state) => return Err(e),
+                Err(e) if has_swept_open_child || (!from_pending_source && active) => {
+                    return Err(e);
+                }
                 Err(e) => {
                     log::warn!("Failed to parse algo order report: {e}");
                     complete = false;
@@ -7827,13 +7898,22 @@ impl OKXHttpClient {
                 }
             };
 
-            if has_ambiguous_children && report.order_status == OrderStatus::Triggered {
-                log::warn!(
-                    "Algo order {} has ambiguous child order identifiers",
-                    order.algo_id,
-                );
-                ambiguous_triggered_child_ids.insert(report.venue_order_id);
-            }
+            let resolved = self
+                .apply_algo_report_links(
+                    order,
+                    &mut report,
+                    ambiguous_triggered_child_ids,
+                    chase_orders,
+                    remaining_chase_recoveries,
+                    regular_orders,
+                )
+                .await;
+            anyhow::ensure!(
+                resolved || !has_swept_open_child,
+                "Could not resolve OKX chase ownership for algo order {}",
+                order.algo_id,
+            );
+            complete &= resolved;
 
             match seen.get(&key).copied() {
                 Some(index) if is_order_status_report_more_advanced(&report, &reports[index]) => {
@@ -7848,6 +7928,245 @@ impl OKXHttpClient {
         }
 
         Ok(complete)
+    }
+
+    async fn apply_algo_report_links(
+        &self,
+        order: &OKXOrderAlgo,
+        report: &mut OrderStatusReport,
+        ambiguous_triggered_child_ids: &mut AHashSet<VenueOrderId>,
+        chase_orders: &mut AHashMap<ClientOrderId, ChaseOrderLink>,
+        remaining_chase_recoveries: &mut usize,
+        regular_orders: Option<&RegularOrderReportSweep>,
+    ) -> bool {
+        if order.advance_ord_type == Some(OKXAdvanceOrderType::Chase)
+            && let Some(client_order_id) = report.client_order_id
+        {
+            match Box::pin(self.recover_chase_report(
+                order,
+                report,
+                remaining_chase_recoveries,
+                regular_orders,
+            ))
+            .await
+            {
+                Ok(link) => {
+                    chase_orders.insert(client_order_id, link);
+                    return true;
+                }
+                Err(e) => {
+                    log::warn!("Failed to recover OKX chase trigger {}: {e}", order.algo_id);
+
+                    if report.order_status == OrderStatus::Triggered {
+                        ambiguous_triggered_child_ids.insert(report.venue_order_id);
+                    }
+
+                    return false;
+                }
+            }
+        }
+
+        let ambiguous = order.ord_id_list.len() > 1
+            || !order.sub_algo_id_list.is_empty()
+            || matches!(order.ord_id_list.as_slice(), [id] if !order.ord_id.is_empty() && id != &order.ord_id);
+
+        if ambiguous && report.order_status == OrderStatus::Triggered {
+            log::warn!(
+                "Algo order {} has ambiguous child order identifiers",
+                order.algo_id
+            );
+            ambiguous_triggered_child_ids.insert(report.venue_order_id);
+        }
+
+        true
+    }
+
+    async fn recover_chase_report(
+        &self,
+        parent: &OKXOrderAlgo,
+        report: &mut OrderStatusReport,
+        remaining: &mut usize,
+        regular_orders: Option<&RegularOrderReportSweep>,
+    ) -> anyhow::Result<ChaseOrderLink> {
+        let mut link = ChaseOrderLink {
+            instrument_id: report.instrument_id,
+            parent: VenueOrderId::new(&parent.algo_id),
+            chase: None,
+            regular: None,
+        };
+
+        if parent.sub_algo_id_list.is_empty() && report.order_status != OrderStatus::Triggered {
+            return Ok(link);
+        }
+
+        let [chase_id] = parent.sub_algo_id_list.as_slice() else {
+            anyhow::bail!("Expected a single spawned OKX chase algo ID");
+        };
+
+        anyhow::ensure!(!chase_id.is_empty(), "OKX returned an empty chase algo ID");
+        anyhow::ensure!(*remaining > 0, "OKX chase lookup limit reached");
+        *remaining -= 1;
+
+        let chase_orders = self
+            .inner
+            .get_algo_order(GetAlgoOrderParams {
+                algo_id: Some(chase_id.clone()),
+                algo_cl_ord_id: None,
+            })
+            .await?;
+
+        let [chase] = chase_orders.as_slice() else {
+            anyhow::bail!("Expected one OKX chase order for {chase_id}");
+        };
+
+        anyhow::ensure!(
+            chase.algo_id == *chase_id
+                && chase.inst_id == parent.inst_id
+                && chase.ord_type == OKXAlgoOrderType::Chase
+                && chase.side == parent.side,
+            "OKX chase order does not match trigger {}",
+            parent.algo_id,
+        );
+
+        let chase_id = VenueOrderId::new(chase_id);
+        link.chase = Some(chase_id);
+        let mut regular_ids = chase
+            .ord_id_list
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once(chase.ord_id.as_str()))
+            .filter(|id| !id.is_empty());
+        let regular_id = regular_ids.next();
+        anyhow::ensure!(
+            regular_ids.all(|id| Some(id) == regular_id),
+            "OKX chase order has multiple regular order IDs"
+        );
+
+        let regular_id = if let Some(regular_id) = regular_id {
+            Some(VenueOrderId::new(regular_id))
+        } else if let Some(regular_orders) = regular_orders {
+            // OKX may only surface the link on the regular order's algoId.
+            linked_regular_order_id(&regular_orders.regular_by_algo_id, chase_id)?
+        } else {
+            self.lookup_chase_regular_order(chase, chase_id).await?
+        };
+
+        let chase_ts = parse_millisecond_timestamp(chase.u_time);
+
+        if let Some(venue_order_id) = regular_id {
+            let chase_closed = matches!(
+                chase.state,
+                OKXAlgoOrderStatus::Canceled
+                    | OKXAlgoOrderStatus::OrderFailed
+                    | OKXAlgoOrderStatus::Filled
+            );
+
+            let swept_report = regular_orders.and_then(|sweep| {
+                sweep.reports.iter().find(|regular| {
+                    regular.venue_order_id == venue_order_id
+                        && regular.instrument_id == report.instrument_id
+                        && regular.order_side == report.order_side
+                })
+            });
+
+            let conflicting_snapshot = swept_report.is_some_and(|regular| {
+                chase_closed && regular.order_status.is_open() && chase_ts > regular.ts_last
+            });
+
+            let regular_report =
+                if let Some(regular_report) = swept_report.filter(|_| !conflicting_snapshot) {
+                    regular_report.clone()
+                } else {
+                    self.request_order_status_report_by_venue_order_id(
+                        report.account_id,
+                        report.instrument_id,
+                        venue_order_id,
+                    )
+                    .await?
+                    .context("OKX chase regular order details are missing")?
+                };
+
+            anyhow::ensure!(
+                !chase_closed || regular_report.order_status.is_closed(),
+                "OKX chase {chase_id} is terminal but its regular order still reports as open",
+            );
+
+            link.regular = Some(venue_order_id);
+            report.venue_order_id = venue_order_id;
+
+            report.order_status = if regular_report.order_status == OrderStatus::Rejected {
+                OrderStatus::Canceled
+            } else {
+                regular_report.order_status
+            };
+
+            report.quantity = regular_report.quantity;
+            report.filled_qty = regular_report.filled_qty;
+            report.avg_px = regular_report.avg_px;
+            report.cancel_reason = regular_report.cancel_reason;
+            report.ts_last = report.ts_last.max(regular_report.ts_last);
+        } else {
+            report.order_status = match chase.state {
+                OKXAlgoOrderStatus::Live
+                | OKXAlgoOrderStatus::Pause
+                | OKXAlgoOrderStatus::OrderPlaced => OrderStatus::Accepted,
+                OKXAlgoOrderStatus::Canceled | OKXAlgoOrderStatus::OrderFailed => {
+                    OrderStatus::Canceled
+                }
+                status => {
+                    anyhow::bail!("OKX chase order has state {status:?} without a regular order ID")
+                }
+            };
+
+            report.venue_order_id = chase_id;
+        }
+
+        report.ts_last = report.ts_last.max(chase_ts);
+        Ok(link)
+    }
+
+    async fn lookup_chase_regular_order(
+        &self,
+        order: &OKXOrderAlgo,
+        chase_id: VenueOrderId,
+    ) -> anyhow::Result<Option<VenueOrderId>> {
+        let inst_id = order.inst_id.to_string();
+
+        let pending_params = GetOrderListParams {
+            inst_type: Some(order.inst_type),
+            inst_id: Some(inst_id.clone()),
+            ..Default::default()
+        };
+
+        let history_params = GetOrderHistoryParams {
+            inst_type: order.inst_type,
+            inst_id: Some(inst_id),
+            ord_type: Some(OKXOrderType::PostOnly),
+            ..Default::default()
+        };
+
+        let (pending, history) = Box::pin(async {
+            tokio::try_join!(
+                self.paginate_orders_pending(&pending_params, None),
+                self.paginate_orders_history(&history_params, None, MAX_RECONCILIATION_PAGES),
+            )
+        })
+        .await?;
+
+        let mut regular_by_algo_id = AHashMap::new();
+
+        for (orders, from_pending) in [(&pending.items, true), (&history.items, false)] {
+            for regular in orders {
+                let active = is_open_okx_order(regular.state, from_pending);
+                record_regular_algo_order(&mut regular_by_algo_id, regular, active);
+            }
+        }
+
+        anyhow::ensure!(
+            pending.complete && history.complete,
+            "OKX order pages did not establish a unique regular order for chase algo {chase_id}",
+        );
+        linked_regular_order_id(&regular_by_algo_id, chase_id)
     }
 
     pub(crate) async fn resolve_instrument(
@@ -8115,10 +8434,46 @@ fn parse_http_algo_order(
         tgt_ccy: None,
         fee: None,
         fee_ccy: None,
-        advance_ord_type: None,
+        advance_ord_type: order.advance_ord_type.clone(),
+        adv_chase_params: order.adv_chase_params.clone(),
+        sub_algo_id_list: order.sub_algo_id_list.clone(),
     };
 
     parse_algo_order_status_report(&msg, instrument, account_id, ts_init)
+}
+
+fn record_regular_algo_order(
+    by_algo_id: &mut AHashMap<VenueOrderId, RegularAlgoOrderLink>,
+    order: &OKXOrderHistory,
+    active: bool,
+) {
+    if let Some(algo_id) = order.algo_id.filter(|id| !id.is_empty()) {
+        let ord_id = VenueOrderId::new(order.ord_id);
+        by_algo_id
+            .entry(VenueOrderId::new(algo_id))
+            .and_modify(|link| {
+                if link.venue_order_id != Some(ord_id) {
+                    link.venue_order_id = None;
+                }
+
+                link.has_open_order |= active;
+            })
+            .or_insert(RegularAlgoOrderLink {
+                venue_order_id: Some(ord_id),
+                has_open_order: active,
+            });
+    }
+}
+
+fn linked_regular_order_id(
+    by_algo_id: &AHashMap<VenueOrderId, RegularAlgoOrderLink>,
+    chase_id: VenueOrderId,
+) -> anyhow::Result<Option<VenueOrderId>> {
+    match by_algo_id.get(&chase_id).map(|link| link.venue_order_id) {
+        Some(Some(id)) => Ok(Some(id)),
+        None => Ok(None),
+        Some(None) => anyhow::bail!("Multiple regular orders link to OKX chase algo {chase_id}"),
+    }
 }
 
 fn reconciliation_history_page_limit(max_pages: Option<u32>) -> usize {

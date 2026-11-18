@@ -1171,6 +1171,7 @@ mod tests {
         },
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use serde_json::json;
 
     use super::*;
@@ -1178,12 +1179,17 @@ mod tests {
         book::{BookChannelScope, BookSequenceOutcome, sync::BookSyncTracker},
         common::{
             consts::OKX_WS_TOPIC_DELIMITER,
-            enums::{OKXBookAction, OKXBookChannel, OKXRpiPermission},
+            enums::{
+                OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXBookAction, OKXBookChannel,
+                OKXChaseType, OKXRpiPermission,
+            },
+            models::OKXChaseParams,
             testing::load_test_json,
         },
         websocket::{
             client::PendingOrderInfo,
             dispatch::{WsDispatchState, dispatch_ws_message},
+            messages::OKXAlgoOrderMsg,
             parse::{FeeCache, FilledQtyCache},
         },
     };
@@ -2196,6 +2202,79 @@ mod tests {
         let data = json!([{"value": "bad"}]);
         let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test", false);
         assert!(parsed.is_none());
+    }
+
+    #[rstest]
+    #[case::absent(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::fok(Some("fok"), Some(OKXAdvanceOrderType::Fok))]
+    #[case::ioc(Some("ioc"), Some(OKXAdvanceOrderType::Ioc))]
+    #[case::unknown(Some("newType"), Some(OKXAdvanceOrderType::Other("newType".to_string())))]
+    fn test_decode_algo_order_legacy_advance_type(
+        #[case] wire_type: Option<&str>,
+        #[case] expected: Option<OKXAdvanceOrderType>,
+    ) {
+        let frame: Value = serde_json::from_str(&load_test_json("ws_orders_algo.json")).unwrap();
+        let mut value = frame["data"][0].clone();
+        if let Some(wire_type) = wire_type {
+            value["advanceOrdType"] = json!(wire_type);
+        }
+
+        let order: OKXAlgoOrderMsg = serde_json::from_value(value).unwrap();
+
+        assert_eq!(order.advance_ord_type, expected);
+        assert!(order.adv_chase_params.is_empty());
+        assert!(order.sub_algo_id_list.is_empty());
+    }
+
+    #[rstest]
+    fn test_route_chase_trigger_preserves_spawned_algo_id() {
+        let handler = create_handler();
+        let text = load_test_json("ws_orders_algo_chase.json");
+        let frame = OKXWsFeedHandler::parse_raw_message(
+            tokio_tungstenite::tungstenite::Message::text(text),
+        );
+
+        let Some(OKXWsFrame::Data { arg, data }) = frame else {
+            panic!("Expected an algo orders data frame");
+        };
+
+        let Some(OKXWsMessage::AlgoOrders(orders)) = handler.route_data_message(arg, data) else {
+            panic!("Expected routed algo orders");
+        };
+
+        let [pending, triggered] = orders.as_slice() else {
+            panic!("Expected both algo orders, received {}", orders.len());
+        };
+
+        assert_eq!(pending.state, OKXAlgoOrderStatus::Live);
+        assert_eq!(pending.advance_ord_type, Some(OKXAdvanceOrderType::Chase));
+        assert!(pending.sub_algo_id_list.is_empty());
+        assert_eq!(
+            pending.adv_chase_params,
+            [OKXChaseParams {
+                chase_type: Some(OKXChaseType::Distance),
+                chase_val: Some(Decimal::ZERO),
+                max_chase_type: None,
+                max_chase_val: None,
+            }],
+        );
+
+        assert_eq!(triggered.algo_id, "706620792746729473");
+        assert_eq!(triggered.state, OKXAlgoOrderStatus::Effective);
+        assert_eq!(triggered.advance_ord_type, Some(OKXAdvanceOrderType::Chase));
+        assert_eq!(triggered.ord_id, "");
+        assert!(triggered.ord_id_list.is_empty());
+        assert_eq!(triggered.sub_algo_id_list, ["706620792746729999"]);
+        assert_eq!(
+            triggered.adv_chase_params,
+            [OKXChaseParams {
+                chase_type: Some(OKXChaseType::Ratio),
+                chase_val: Some(Decimal::new(4, 3)),
+                max_chase_type: Some(OKXChaseType::Distance),
+                max_chase_val: Some(Decimal::new(16525, 2)),
+            }],
+        );
     }
 
     #[rstest]

@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
 - Added optional Lighter account transaction timestamps to WebSocket wire models
+- Added OKX low-level chase-trigger placement, amendment, and typed reads for `FUTURES` and `SWAP`
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 - Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
 - Added OKX `use_spot_position_reports` option to report net spot wallet balances as positions
@@ -76,6 +77,8 @@ Released on TBD (UTC).
 - Changed Lighter `AuthTokenError` to include `InvalidSigningNonce`, which exhaustive matches must handle
 - Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
 - Removed `OKXHttpClient::request_spot_margin_position_reports` and `parse_spot_margin_position_from_balance`
+- Changed OKX algo order models to require chase and spawned-ID fields in struct literals
+- Changed `OKXAlgoOrderMsg::advance_ord_type` to `Option<OKXAdvanceOrderType>`
 - Changed `OKXExecutionClientConfig` literals; add `use_spot_position_reports` and `spot_positions_quote_currency`
 - Changed Polymarket `UserWsMessage`; handle the new `AutoRedeem` variant in exhaustive matches
 

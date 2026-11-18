@@ -1,0 +1,10 @@
+{
+  "instId": "BTC-USD-261225",
+  "algoId": "706620792746729473",
+  "advChaseParams": [
+    {
+      "newChaseVal": "0.004",
+      "newMaxChaseVal": "165.25"
+    }
+  ]
+}

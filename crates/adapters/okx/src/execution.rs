@@ -73,6 +73,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use ustr::Ustr;
 
 mod stream;
@@ -89,10 +90,12 @@ use crate::{
             validate_regular_order_params,
         },
         enums::{
-            OKXAlgoOrderType, OKXInstrumentType, OKXMarginMode, OKXPositionMode, OKXPositionSide,
-            OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type, is_advance_algo_order,
+            OKXAdvanceOrderType, OKXAlgoOrderType, OKXChaseType, OKXInstrumentType, OKXMarginMode,
+            OKXPositionMode, OKXPositionSide, OKXTradeMode, OKXTriggerType,
+            conditional_order_to_algo_type, is_advance_algo_order,
         },
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
+        models::OKXChaseParams,
         parse::{
             is_order_status_report_more_advanced, nanos_to_datetime, okx_instrument_type,
             okx_instrument_type_from_symbol, venue_position_id,
@@ -102,10 +105,10 @@ use crate::{
     config::OKXExecutionClientConfig,
     http::{
         client::{
-            AlgoOrderReportSweep, FillHistory, OKXActiveOrderReportError, OKXHttpClient,
-            ReportInstrumentScope,
+            AlgoOrderReportSweep, ChaseOrderLink, FillHistory, OKXActiveOrderReportError,
+            OKXHttpClient, OKXUnresolvedChaseOrderError, ReportInstrumentScope,
         },
-        models::{OKXAmendAlgoOrderRequest, OKXCancelAlgoOrderRequest},
+        models::{OKXAmendAlgoOrderRequest, OKXCancelAlgoOrderRequest, OKXPlaceAlgoOrderRequest},
         query::GetPositionsParams,
     },
     websocket::{
@@ -325,6 +328,7 @@ impl OKXExecutionClient {
             http_client: self.http_client.clone(),
             ws_private: self.ws_private.clone(),
             ws_business: self.ws_business.clone(),
+            ws_dispatch_state: Arc::clone(&self.ws_dispatch_state),
         }
     }
 
@@ -369,8 +373,9 @@ impl OKXExecutionClient {
             .report_client()
             .collect_order_status_reports(cmd, max_history_pages)
             .await?;
-        self.report_context()
-            .register(sweep.reports.iter().map(|report| report.instrument_id));
+        let context = self.report_context();
+        context.register(sweep.reports.iter().map(|report| report.instrument_id));
+        context.restore_chase_orders(&sweep.reports, &sweep.chase_orders);
         Ok(finish_order_report_sweep(&self.core, sweep, cmd))
     }
 
@@ -380,10 +385,11 @@ impl OKXExecutionClient {
         history: FillHistory,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<(Vec<FillReport>, bool)> {
-        let result = self
+        let mut result = self
             .report_client()
             .collect_fill_reports(cmd, history, max_history_pages)
             .await?;
+        self.ws_dispatch_state.attribute_chase_fills(&mut result.0);
         self.report_context()
             .register(result.0.iter().map(|report| report.instrument_id));
         Ok(result)
@@ -672,6 +678,7 @@ impl OKXExecutionClient {
         &self,
         cmd: &SubmitOrder,
         position_side: Option<PositionSide>,
+        algo_execution: AlgoOrderExecution,
     ) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
@@ -748,6 +755,7 @@ impl OKXExecutionClient {
             AlgoOrderState {
                 order_type: algo_order_type,
                 ts_last: UnixNanos::default(),
+                advance_ord_type: algo_execution.advance_ord_type(),
             },
         );
 
@@ -755,26 +763,30 @@ impl OKXExecutionClient {
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
 
         self.spawn_task("submit_algo_order", async move {
-            let result = http_client
-                .place_algo_order_with_domain_types(
-                    instrument_id,
-                    trade_mode,
-                    client_order_id,
-                    order_side,
-                    order_type,
-                    quantity,
-                    context.is_quote_quantity,
-                    trigger_price,
-                    trigger_type,
-                    price,
-                    reduce_only,
-                    position_side,
-                    close_fraction,
-                    callback_ratio,
-                    callback_spread,
-                    activation_price,
-                )
-                .await;
+            let result = match OKXHttpClient::algo_order_request(
+                instrument_id,
+                trade_mode,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                context.is_quote_quantity,
+                trigger_price,
+                trigger_type,
+                price,
+                reduce_only,
+                position_side,
+                close_fraction,
+                callback_ratio,
+                callback_spread,
+                activation_price,
+            ) {
+                Ok(mut request) => {
+                    algo_execution.apply_to(&mut request);
+                    http_client.place_algo_order(request).await
+                }
+                Err(e) => Err(e),
+            };
 
             match result {
                 Ok(response) => {
@@ -1856,14 +1868,19 @@ impl ExecutionClient for OKXExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
-        let order_state = {
+
+        let (order_state, order_context) = {
             let cache = self.core.cache();
-            cache
-                .order(&client_order_id)
-                .map(|order| CachedQueryOrderState {
+            cache.order(&client_order_id).map_or((None, None), |order| {
+                let state = CachedQueryOrderState {
                     order_type: order.order_type(),
                     venue_order_id: order.venue_order_id(),
-                })
+                };
+
+                let context = (state.order_type == OrderType::StopMarket && !order.is_closed())
+                    .then(|| OrderContext::from(&*order));
+                (Some(state), context)
+            })
         };
 
         let venue_binding = self.ws_dispatch_state.order_venue_binding(client_order_id);
@@ -1891,8 +1908,14 @@ impl ExecutionClient for OKXExecutionClient {
             regular_venue_order_id.is_some(),
             self.http_client.is_spread(instrument_id),
         );
+        let regular_child_route = self
+            .ws_dispatch_state
+            .allows_regular_child_query(client_order_id)
+            .then_some(route);
+        let dispatch_state = Arc::clone(&self.ws_dispatch_state);
         self.spawn_task("query_order", async move {
             let mut reports = Vec::with_capacity(1);
+            let mut chase_link = None;
             let mut query_algo = matches!(
                 route,
                 QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
@@ -1958,22 +1981,23 @@ impl ExecutionClient for OKXExecutionClient {
                 let mut regular_child_venue_order_id = None;
 
                 match http_client
-                    .request_algo_order_status_reports(
+                    .request_targeted_algo_order_status_reports(
                         account_id,
-                        None,
-                        Some(instrument_id),
+                        instrument_id,
                         None,
                         Some(client_order_id),
-                        None,
-                        Some(1),
                     )
                     .await
                 {
-                    Ok(algo_reports) => {
-                        if matches!(
-                            route,
-                            QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
-                        ) {
+                    Ok(sweep) => {
+                        chase_link = sweep.chase_orders.get(&client_order_id).copied();
+                        let algo_reports = sweep.reports;
+                        if chase_link.is_none()
+                            && matches!(
+                                regular_child_route,
+                                Some(QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo)
+                            )
+                        {
                             regular_child_venue_order_id = algo_reports
                                 .iter()
                                 .find(|report| {
@@ -1995,7 +2019,9 @@ impl ExecutionClient for OKXExecutionClient {
                         merge_order_status_reports(&mut reports, algo_reports);
                     }
                     Err(e) => {
-                        if route == QueryOrderRoute::RegularAndAlgo {
+                        if regular_child_route == Some(QueryOrderRoute::RegularAndAlgo)
+                            && !e.is::<OKXUnresolvedChaseOrderError>()
+                        {
                             regular_child_venue_order_id = regular_venue_order_id;
                         }
 
@@ -2035,6 +2061,10 @@ impl ExecutionClient for OKXExecutionClient {
                 );
                 return Ok(());
             };
+
+            if let (Some(context), Some(link)) = (order_context, chase_link) {
+                dispatch_state.restore_chase_order(context, link, &report);
+            }
 
             emitter.send_order_status_report(report);
             Ok(())
@@ -2118,10 +2148,7 @@ impl ExecutionClient for OKXExecutionClient {
                     .generate_order_status_report(&command, order_state)
                     .await
             },
-            move |report: Option<OrderStatusReport>| {
-                context.register(report.iter().map(|report| report.instrument_id));
-                Ok(report)
-            },
+            move |(report, link)| Ok(context.finish_targeted_order_report(report, link)),
         ))
     }
 
@@ -2145,6 +2172,7 @@ impl ExecutionClient for OKXExecutionClient {
             },
             move |sweep| {
                 context.register(sweep.reports.iter().map(|report| report.instrument_id));
+                context.restore_chase_orders(&sweep.reports, &sweep.chase_orders);
                 Ok(finish_order_report_sweep(&core, sweep, &command).reports)
             },
         ))
@@ -2163,7 +2191,10 @@ impl ExecutionClient for OKXExecutionClient {
                     .collect_fill_reports(command, FillHistory::Recent, None)
                     .await
             },
-            move |(reports, _)| {
+            move |(mut reports, _)| {
+                context
+                    .ws_dispatch_state
+                    .attribute_chase_fills(&mut reports);
                 context.register(reports.iter().map(|report| report.instrument_id));
                 Ok(reports)
             },
@@ -2190,13 +2221,13 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let report = self
+        let (report, link) = self
             .report_client()
             .generate_order_status_report(cmd, self.query_order_state(cmd))
             .await?;
-        self.report_context()
-            .register(report.iter().map(|report| report.instrument_id));
-        Ok(report)
+        Ok(self
+            .report_context()
+            .finish_targeted_order_report(report, link))
     }
 
     async fn generate_order_status_reports(
@@ -2264,7 +2295,7 @@ impl ExecutionClient for OKXExecutionClient {
         let client = self.report_client();
         let (
             order_sweep,
-            (fill_reports, fills_complete),
+            (mut fill_reports, fills_complete),
             (mut position_reports, positions_complete),
         ) = tokio::try_join!(
             client.collect_order_status_reports(
@@ -2285,6 +2316,7 @@ impl ExecutionClient for OKXExecutionClient {
             complete: mut orders_complete,
             ambiguous_triggered_child_ids,
             regular_by_venue_order_id,
+            chase_orders,
         } = order_sweep;
         orders_complete &= self
             .recover_triggered_child_order_reports(
@@ -2304,17 +2336,33 @@ impl ExecutionClient for OKXExecutionClient {
         }
         let reports_complete = orders_complete && fills_complete && positions_complete;
 
+        let mut chase_client_ids = AHashMap::new();
+
+        for (&client_order_id, link) in &chase_orders {
+            if let Some(regular_id) = link.regular {
+                chase_client_ids.insert(regular_id, client_order_id);
+            }
+        }
+
+        for fill in &mut fill_reports {
+            if let Some(&client_order_id) = chase_client_ids.get(&fill.venue_order_id) {
+                fill.client_order_id = Some(client_order_id);
+            }
+        }
+
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
 
-        self.report_context().register(
+        let context = self.report_context();
+        context.register(
             order_reports
                 .iter()
                 .map(|report| report.instrument_id)
                 .chain(fill_reports.iter().map(|report| report.instrument_id))
                 .chain(position_reports.iter().map(|report| report.instrument_id)),
         );
+        context.restore_chase_orders(&order_reports, &chase_orders);
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -2332,7 +2380,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let (route, position_side) = {
+        let (route, position_side, algo_execution) = {
             let cache = self.core.cache();
             let order = cache.try_order(&cmd.client_order_id)?;
 
@@ -2343,15 +2391,19 @@ impl ExecutionClient for OKXExecutionClient {
 
             let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
-            if let Err(reason) = self.validate_order(
-                &*order,
-                trade_mode,
-                OrderSubmission::Single,
-                cmd.params.as_ref(),
-            ) {
-                self.emitter.emit_order_denied(&order, &reason.to_string());
-                return Ok(());
-            }
+            let params = cmd.params.as_ref();
+
+            let algo_execution = match self
+                .validate_order(&*order, trade_mode, OrderSubmission::Single, params)
+                .and_then(|()| {
+                    AlgoOrderExecution::from_params(&*order, OrderSubmission::Single, params)
+                }) {
+                Ok(algo_execution) => algo_execution,
+                Err(reason) => {
+                    self.emitter.emit_order_denied(&order, &reason.to_string());
+                    return Ok(());
+                }
+            };
 
             let position_side = self.order_position_side(&*order, cmd.params.as_ref());
             if let Err(reason) = self
@@ -2370,12 +2422,14 @@ impl ExecutionClient for OKXExecutionClient {
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(&order);
 
-            (route, position_side)
+            (route, position_side, algo_execution)
         };
 
         match route {
             OrderCommandRoute::RegularWs => self.submit_regular_order(&cmd, position_side),
-            OrderCommandRoute::AlgoHttp => self.submit_conditional_order(&cmd, position_side),
+            OrderCommandRoute::AlgoHttp => {
+                self.submit_conditional_order(&cmd, position_side, algo_execution)
+            }
             OrderCommandRoute::SpreadHttp => self.submit_order_http(&cmd, position_side),
         }
     }
@@ -2406,28 +2460,27 @@ impl ExecutionClient for OKXExecutionClient {
         let invalid: Vec<(ClientOrderId, OrderDeniedReason)> = orders
             .iter()
             .filter_map(|order| {
-                self.validate_order(
-                    order,
-                    trade_mode,
-                    OrderSubmission::List,
-                    cmd.params.as_ref(),
-                )
-                .and_then(|()| {
-                    self.validate_trade_mode(
-                        cmd.instrument_id,
-                        self.order_position_side(order, cmd.params.as_ref()),
-                        trade_mode,
-                    )
-                })
-                .and_then(|()| {
-                    validate_submit_position_id(
-                        cmd.instrument_id,
-                        self.order_position_side(order, cmd.params.as_ref()),
-                        cmd.position_id,
-                    )
-                })
-                .err()
-                .map(|reason| (order.client_order_id(), reason))
+                let params = cmd.params.as_ref();
+                self.validate_order(order, trade_mode, OrderSubmission::List, params)
+                    .and_then(|()| {
+                        AlgoOrderExecution::from_params(order, OrderSubmission::List, params)
+                    })
+                    .and_then(|_| {
+                        self.validate_trade_mode(
+                            cmd.instrument_id,
+                            self.order_position_side(order, cmd.params.as_ref()),
+                            trade_mode,
+                        )
+                    })
+                    .and_then(|()| {
+                        validate_submit_position_id(
+                            cmd.instrument_id,
+                            self.order_position_side(order, cmd.params.as_ref()),
+                            cmd.position_id,
+                        )
+                    })
+                    .err()
+                    .map(|reason| (order.client_order_id(), reason))
             })
             .collect();
 
@@ -2532,6 +2585,35 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        let reason = if self
+            .ws_dispatch_state
+            .spawned_chase_id(cmd.client_order_id)
+            .is_some()
+        {
+            Some("OKX does not amend a spawned chase order")
+        } else if cmd
+            .params
+            .as_ref()
+            .is_some_and(|params| params.contains_key("chase_params"))
+        {
+            Some("OKX strategy chase_params applies to submission")
+        } else {
+            None
+        };
+
+        if let Some(reason) = reason {
+            self.emitter.emit_order_modify_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                reason,
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+            return Ok(());
+        }
+
         if self.http_client.is_spread(cmd.instrument_id) {
             self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
@@ -2624,25 +2706,15 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn cancel_order(&self, mut cmd: CancelOrder) -> anyhow::Result<()> {
-        let venue_binding = self
-            .ws_dispatch_state
-            .order_venue_binding(cmd.client_order_id);
-        let route = {
+        let (route, venue_order_id) = {
             let cache = self.core.cache();
             let order_state = cache
                 .order(&cmd.client_order_id)
                 .map(|order| (order.order_type(), order.is_triggered()));
-            self.order_command_route(
-                cmd.instrument_id,
-                order_state,
-                venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
-            )
+            self.cancel_route(&cmd, order_state)
         };
 
-        cmd.venue_order_id = venue_binding
-            .map(|(venue_order_id, _)| venue_order_id)
-            .or(cmd.venue_order_id);
-
+        cmd.venue_order_id = venue_order_id;
         match route {
             OrderCommandRoute::RegularWs => self.cancel_ws_order(&cmd),
             OrderCommandRoute::AlgoHttp => self.cancel_algo_order(&cmd),
@@ -2712,19 +2784,8 @@ impl ExecutionClient for OKXExecutionClient {
             let order_state = cache
                 .order(&cancel.client_order_id)
                 .map(|order| (order.order_type(), order.is_triggered()));
-
-            let venue_binding = self
-                .ws_dispatch_state
-                .order_venue_binding(cancel.client_order_id);
-            let authoritative_venue_order_id = venue_binding
-                .map(|(venue_order_id, _)| venue_order_id)
-                .or(cancel.venue_order_id);
-
-            match self.order_command_route(
-                cancel.instrument_id,
-                order_state,
-                venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
-            ) {
+            let (route, authoritative_venue_order_id) = self.cancel_route(cancel, order_state);
+            match route {
                 OrderCommandRoute::RegularWs => {
                     self.ensure_order_identity(
                         cancel.client_order_id,
@@ -2881,9 +2942,29 @@ struct OrderReportSweep {
     complete: bool,
     ambiguous_triggered_child_ids: AHashSet<VenueOrderId>,
     regular_by_venue_order_id: AHashMap<VenueOrderId, OrderStatusReport>,
+    chase_orders: AHashMap<ClientOrderId, ChaseOrderLink>,
 }
 
 impl OKXExecutionClient {
+    fn cancel_route(
+        &self,
+        cmd: &CancelOrder,
+        order_state: Option<(OrderType, Option<bool>)>,
+    ) -> (OrderCommandRoute, Option<VenueOrderId>) {
+        let binding = self.ws_dispatch_state.order_binding(cmd.client_order_id);
+        if let Some(chase_id) = binding.and_then(|binding| binding.chase) {
+            return (OrderCommandRoute::AlgoHttp, Some(chase_id));
+        }
+
+        let route = self.order_command_route(
+            cmd.instrument_id,
+            order_state,
+            binding.is_some_and(|binding| binding.child.is_some()),
+        );
+        let venue_order_id = binding.map(|binding| binding.child.unwrap_or(binding.parent));
+        (route, venue_order_id.or(cmd.venue_order_id))
+    }
+
     fn order_position_side(
         &self,
         order: &impl Order,
@@ -3196,9 +3277,57 @@ struct ReportContext {
     http_client: OKXHttpClient,
     ws_private: OKXWebSocketClient,
     ws_business: OKXWebSocketClient,
+    ws_dispatch_state: Arc<WsDispatchState>,
 }
 
 impl ReportContext {
+    fn finish_targeted_order_report(
+        &self,
+        report: Option<OrderStatusReport>,
+        link: Option<ChaseOrderLink>,
+    ) -> Option<OrderStatusReport> {
+        self.register(report.iter().map(|report| report.instrument_id));
+        if let (Some(report), Some(link)) = (&report, link) {
+            self.restore_chase_order(report, link);
+        }
+
+        report
+    }
+
+    fn restore_chase_orders(
+        &self,
+        reports: &[OrderStatusReport],
+        links: &AHashMap<ClientOrderId, ChaseOrderLink>,
+    ) {
+        if links.is_empty() {
+            return;
+        }
+
+        for report in reports
+            .iter()
+            .filter(|report| report.order_status.is_open())
+        {
+            if let Some(link) = report.client_order_id.and_then(|id| links.get(&id)) {
+                self.restore_chase_order(report, *link);
+            }
+        }
+    }
+
+    fn restore_chase_order(&self, report: &OrderStatusReport, link: ChaseOrderLink) {
+        let context = report.client_order_id.and_then(|id| {
+            self.core
+                .cache()
+                .order(&id)
+                .filter(|order| !order.is_closed())
+                .map(|order| OrderContext::from(&*order))
+        });
+
+        if let Some(context) = context {
+            self.ws_dispatch_state
+                .restore_chase_order(context, link, report);
+        }
+    }
+
     fn register(&self, instrument_ids: impl IntoIterator<Item = InstrumentId>) {
         let mut seen = AHashSet::new();
         for instrument_id in instrument_ids {
@@ -3254,7 +3383,7 @@ impl OKXReportClient {
         &self,
         cmd: &GenerateOrderStatusReport,
         order_state: Option<CachedQueryOrderState>,
-    ) -> anyhow::Result<Option<OrderStatusReport>> {
+    ) -> anyhow::Result<(Option<OrderStatusReport>, Option<ChaseOrderLink>)> {
         let Some(instrument_id) = cmd.instrument_id else {
             anyhow::bail!("generate_order_status_report requires instrument_id");
         };
@@ -3293,6 +3422,7 @@ impl OKXReportClient {
             QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
         );
         let mut lookup_error = None;
+        let mut chase_orders = AHashMap::new();
 
         match route {
             QueryOrderRoute::Spread => {
@@ -3357,23 +3487,23 @@ impl OKXReportClient {
         if query_algo {
             let (algo_id, algo_client_order_id) = match cmd.client_order_id {
                 Some(client_order_id) => (None, Some(client_order_id)),
-                None => (cmd.venue_order_id.map(|id| id.as_str().to_string()), None),
+                None => (cmd.venue_order_id, None),
             };
 
             match self
                 .http_client
-                .request_algo_order_status_reports(
+                .request_targeted_algo_order_status_reports(
                     self.account_id,
-                    None,
-                    Some(instrument_id),
+                    instrument_id,
                     algo_id,
                     algo_client_order_id,
-                    None,
-                    Some(1),
                 )
                 .await
             {
-                Ok(algo_reports) => merge_order_status_reports(&mut reports, algo_reports),
+                Ok(sweep) => {
+                    chase_orders = sweep.chase_orders;
+                    merge_order_status_reports(&mut reports, sweep.reports);
+                }
                 Err(e) => {
                     if lookup_error.is_none() {
                         lookup_error = Some(e);
@@ -3387,18 +3517,23 @@ impl OKXReportClient {
                 return Err(e);
             }
 
-            return Ok(None);
+            return Ok((None, None));
         }
 
-        if let Some(client_order_id) = cmd.client_order_id {
-            Ok(select_query_order_report(
-                reports,
-                client_order_id,
-                selection_venue_order_id,
-            ))
+        let report = if let Some(client_order_id) = cmd.client_order_id {
+            select_query_order_report(reports, client_order_id, selection_venue_order_id)
         } else {
-            Ok(Some(reports.remove(0)))
-        }
+            Some(reports.remove(0))
+        };
+
+        let link = report.as_ref().and_then(|report| {
+            report
+                .client_order_id
+                .and_then(|id| chase_orders.get(&id))
+                .copied()
+        });
+
+        Ok((report, link))
     }
 
     fn instrument_types(instrument_types: &[OKXInstrumentType]) -> Vec<OKXInstrumentType> {
@@ -3433,6 +3568,7 @@ impl OKXReportClient {
         let mut reports = Vec::new();
         let mut regular_by_venue_order_id = AHashMap::new();
         let mut ambiguous_triggered_child_ids = AHashSet::new();
+        let mut chase_orders = AHashMap::new();
         let mut complete = true;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -3459,15 +3595,13 @@ impl OKXReportClient {
                     .map(|report| (report.venue_order_id, report.clone())),
             );
 
-            reports.extend(sweep.reports);
             complete &= sweep.complete;
 
-            if !self.http_client.is_spread(instrument_id)
+            let algo = if !self.http_client.is_spread(instrument_id)
                 && supports_algo_orders(okx_instrument_type_from_symbol(
                     instrument_id.symbol.as_str(),
-                ))
-            {
-                let sweep = self
+                )) {
+                let algo = self
                     .http_client
                     .request_algo_order_status_reports_sweep(
                         self.account_id,
@@ -3481,12 +3615,22 @@ impl OKXReportClient {
                         end,
                         true,
                         max_history_pages,
+                        Some(&sweep),
                     )
                     .await?;
+                Some(algo)
+            } else {
+                None
+            };
+
+            reports.extend(sweep.reports);
+
+            if let Some(sweep) = algo {
                 merge_algo_order_status_reports(
                     &mut reports,
                     sweep,
                     &mut ambiguous_triggered_child_ids,
+                    &mut chase_orders,
                     &mut complete,
                 );
             }
@@ -3515,11 +3659,10 @@ impl OKXReportClient {
                         .map(|report| (report.venue_order_id, report.clone())),
                 );
 
-                reports.extend(sweep.reports);
                 complete &= sweep.complete;
 
-                if supports_algo_orders(*inst_type) {
-                    let sweep = self
+                let algo = if supports_algo_orders(*inst_type) {
+                    let algo = self
                         .http_client
                         .request_algo_order_status_reports_sweep(
                             self.account_id,
@@ -3533,12 +3676,22 @@ impl OKXReportClient {
                             end,
                             true,
                             max_history_pages,
+                            Some(&sweep),
                         )
                         .await?;
+                    Some(algo)
+                } else {
+                    None
+                };
+
+                reports.extend(sweep.reports);
+
+                if let Some(sweep) = algo {
                     merge_algo_order_status_reports(
                         &mut reports,
                         sweep,
                         &mut ambiguous_triggered_child_ids,
+                        &mut chase_orders,
                         &mut complete,
                     );
                 }
@@ -3564,6 +3717,15 @@ impl OKXReportClient {
             reports.extend(sweep.reports);
             complete &= sweep.complete;
         }
+
+        reports.retain(|report| {
+            !report.order_status.is_closed()
+                || !report
+                    .client_order_id
+                    .is_some_and(|id| chase_orders.contains_key(&id))
+                || (cmd.start.is_none_or(|start| report.ts_last >= start)
+                    && cmd.end.is_none_or(|end| report.ts_last <= end))
+        });
 
         let mut fallback_parents = AHashMap::new();
 
@@ -3591,6 +3753,7 @@ impl OKXReportClient {
             complete,
             ambiguous_triggered_child_ids,
             regular_by_venue_order_id,
+            chase_orders,
         })
     }
 
@@ -4016,6 +4179,109 @@ enum OrderSubmission {
     List,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AlgoOrderExecution {
+    Standard,
+    Chase(OKXChaseParams),
+}
+
+impl AlgoOrderExecution {
+    fn from_params(
+        order: &impl Order,
+        submission: OrderSubmission,
+        params: Option<&Params>,
+    ) -> Result<Self, OrderDeniedReason> {
+        parse_chase_params(order, submission, params)
+            .map(|params| params.map_or(Self::Standard, Self::Chase))
+            .map_err(|e| OrderDeniedReason::ValidationFailed {
+                detail: e.to_string(),
+            })
+    }
+
+    fn apply_to(self, request: &mut OKXPlaceAlgoOrderRequest) {
+        request.advance_ord_type = self.advance_ord_type();
+
+        match self {
+            Self::Standard => {}
+            Self::Chase(params) => {
+                request.adv_chase_params.push(params);
+                request.order_px = None;
+            }
+        }
+    }
+
+    fn advance_ord_type(&self) -> Option<OKXAdvanceOrderType> {
+        match self {
+            Self::Standard => None,
+            Self::Chase(_) => Some(OKXAdvanceOrderType::Chase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChaseParams {
+    chase_type: Option<OKXChaseType>,
+    chase_val: String,
+    max_chase_type: Option<OKXChaseType>,
+    max_chase_val: Option<String>,
+}
+
+fn parse_chase_params(
+    order: &impl Order,
+    submission: OrderSubmission,
+    params: Option<&Params>,
+) -> anyhow::Result<Option<OKXChaseParams>> {
+    let Some(value) = params.and_then(|params| params.get("chase_params")) else {
+        return Ok(None);
+    };
+
+    anyhow::ensure!(
+        matches!(submission, OrderSubmission::Single)
+            && order.order_type() == OrderType::StopMarket
+            && order.emulation_trigger().is_none()
+            && order.time_in_force() == TimeInForce::Gtc
+            && matches!(
+                okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+                OKXInstrumentType::Futures | OKXInstrumentType::Swap
+            ),
+        "OKX chase_params requires a single native GTC STOP_MARKET on FUTURES or SWAP",
+    );
+    anyhow::ensure!(
+        !params.is_some_and(|params| params.contains_key("close_fraction")),
+        "OKX chase_params cannot be combined with close_fraction",
+    );
+
+    let chase = ChaseParams::deserialize(value).context("Invalid OKX chase_params")?;
+    let chase_val = Decimal::from_str_exact(&chase.chase_val).context("Invalid OKX chase_val")?;
+    let max_chase_val = chase
+        .max_chase_val
+        .as_deref()
+        .map(Decimal::from_str_exact)
+        .transpose()
+        .context("Invalid OKX max_chase_val")?;
+
+    anyhow::ensure!(
+        chase_val >= Decimal::ZERO,
+        "OKX chase_val must be nonnegative"
+    );
+    anyhow::ensure!(
+        chase.max_chase_type.is_some() == max_chase_val.is_some(),
+        "OKX max_chase_type and max_chase_val must be supplied together",
+    );
+    anyhow::ensure!(
+        max_chase_val.is_none_or(|value| value > Decimal::ZERO),
+        "OKX max_chase_val must be positive",
+    );
+
+    Ok(Some(OKXChaseParams {
+        chase_type: chase.chase_type,
+        chase_val: Some(chase_val),
+        max_chase_type: chase.max_chase_type,
+        max_chase_val,
+    }))
+}
+
 fn emit_submit_failure(
     failure: CommandFailure,
     emitter: &ExecutionEventEmitter,
@@ -4125,6 +4391,7 @@ fn algo_amend_request(
         new_callback_ratio: None,
         new_callback_spread: None,
         new_active_px: None,
+        adv_chase_params: Vec::new(),
     };
 
     match (algo_type, context.identity.order_type) {
@@ -4349,16 +4616,43 @@ fn merge_algo_order_status_reports(
     reports: &mut Vec<OrderStatusReport>,
     sweep: AlgoOrderReportSweep,
     ambiguous_triggered_child_ids: &mut AHashSet<VenueOrderId>,
+    chase_orders: &mut AHashMap<ClientOrderId, ChaseOrderLink>,
     complete: &mut bool,
 ) {
     let AlgoOrderReportSweep {
-        reports: incoming,
+        reports: mut incoming,
         complete: sweep_complete,
         ambiguous_triggered_child_ids: ambiguous,
+        chase_orders: incoming_chases,
     } = sweep;
 
     *complete &= sweep_complete && ambiguous.is_empty();
     ambiguous_triggered_child_ids.extend(ambiguous);
+
+    for report in &mut incoming {
+        if let Some(link) = report
+            .client_order_id
+            .and_then(|id| incoming_chases.get(&id))
+            && link.regular == Some(report.venue_order_id)
+            && let Some(index) = reports
+                .iter()
+                .position(|other| other.venue_order_id == report.venue_order_id)
+        {
+            let existing = reports.swap_remove(index);
+            if (!report.order_status.is_closed() || !existing.order_status.is_open())
+                && is_order_status_report_more_advanced(&existing, report)
+            {
+                report.order_status = existing.order_status;
+                report.quantity = existing.quantity;
+                report.filled_qty = existing.filled_qty;
+                report.avg_px = existing.avg_px;
+                report.cancel_reason = existing.cancel_reason;
+                report.ts_last = existing.ts_last;
+            }
+        }
+    }
+
+    chase_orders.extend(incoming_chases);
     merge_order_status_reports(reports, incoming);
 }
 
@@ -4434,7 +4728,10 @@ mod tests {
 
     use axum::{
         Json, Router,
-        extract::ws::{Message, WebSocketUpgrade},
+        extract::{
+            Query,
+            ws::{Message, WebSocketUpgrade},
+        },
         routing::{get, post},
     };
     use futures_util::StreamExt;
@@ -4627,6 +4924,45 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({"chase_val": "0.002"}), None)]
+    #[case(serde_json::json!({"chase_val": 0.002}), Some("Invalid OKX chase_params"))]
+    #[case(serde_json::json!({"chase_val": "-0.002"}), Some("OKX chase_val must be nonnegative"))]
+    #[case(serde_json::json!({"chase_val": "0", "max_chase_val": "2"}), Some("OKX max_chase_type and max_chase_val must be supplied together"))]
+    #[case(serde_json::json!({"chase_val": "0", "chase_value": "1"}), Some("Invalid OKX chase_params"))]
+    fn test_strategy_chase_params_require_exact_values(
+        #[case] value: Value,
+        #[case] denied: Option<&str>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OCHASEPARAMS"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("2000.0"))
+            .build();
+        let params = serde_json::from_value(serde_json::json!({"chase_params": value})).unwrap();
+        let result =
+            AlgoOrderExecution::from_params(&order, OrderSubmission::Single, Some(&params));
+
+        if let Some(detail) = denied {
+            assert_eq!(
+                result,
+                Err(OrderDeniedReason::ValidationFailed {
+                    detail: detail.to_string()
+                })
+            );
+        } else {
+            assert_eq!(
+                result,
+                Ok(AlgoOrderExecution::Chase(OKXChaseParams {
+                    chase_val: Some(Decimal::new(2, 3)),
+                    ..Default::default()
+                }))
+            );
+        }
     }
 
     #[rstest]
@@ -5874,6 +6210,7 @@ mod tests {
                 AlgoOrderState {
                     order_type,
                     ts_last: UnixNanos::default(),
+                    advance_ord_type: None,
                 },
             );
         }
@@ -7986,6 +8323,739 @@ mod tests {
                 "px":"12.34"
             })
         );
+    }
+
+    #[rstest]
+    #[case::private_fill_precedes_trigger(true)]
+    #[case::cancel_spawned_chase(false)]
+    #[tokio::test]
+    async fn test_strategy_chase_trigger_lifecycle(#[case] fill_before_trigger: bool) {
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let place_tx = request_tx.clone();
+        let router = Router::new()
+            .route("/api/v5/trade/order-algo", post(move |Json(request): Json<Value>| {
+                place_tx.send(request).unwrap();
+                async { Json(serde_json::json!({"code":"0", "msg":"", "data":[{"algoId":"7003", "sCode":"0"}]})) }
+            }))
+            .route("/api/v5/trade/cancel-algos", post(move |Json(request): Json<Value>| {
+                request_tx.send(request).unwrap();
+                async { Json(serde_json::json!({"code":"0", "msg":"", "data":[{"algoId":"7004", "sCode":"0"}]})) }
+            }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("test_key".into()),
+            Some("test_secret".into()),
+            Some("test_pass".into()),
+            Some(base_url),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+        let instrument = swap_instrument();
+        let instrument_id = instrument.id();
+        let instruments = AtomicMap::new();
+        instruments.insert(instrument_id.symbol.inner(), instrument);
+        let client_order_id = ClientOrderId::from("OCHASESTRATEGY");
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("96010.0"))
+            .trigger_type(TriggerType::MarkPrice)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let mut submit = SubmitOrder::from_order(
+            &order,
+            client.core.trader_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        submit.params = Some(
+            serde_json::from_value(serde_json::json!({
+                "td_mode": "cross",
+                "chase_params": {"chase_type":"ratio", "chase_val":"0.002"},
+            }))
+            .unwrap(),
+        );
+        client.submit_order(submit).unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            request,
+            serde_json::json!({
+                "instId": instrument_id.symbol.as_str(), "tdMode": "cross", "side": "buy", "ordType": "trigger",
+                "sz": "1", "algoClOrdId": "OCHASESTRATEGY", "triggerPx": "96010.0", "triggerPxType": "mark",
+                "tag": crate::common::consts::OKX_NAUTILUS_BROKER_ID, "reduceOnly": false, "advanceOrdType": "chase",
+                "advChaseParams": [{"chaseType": "ratio", "chaseVal": "0.002"}],
+            })
+        );
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let mut algo: Value =
+            serde_json::from_str(include_str!("../test_data/ws_orders_algo_chase.json")).unwrap();
+
+        for row in algo["data"].as_array_mut().unwrap() {
+            row["algoId"] = Value::from("7003");
+            row["algoClOrdId"] = Value::from(client_order_id.as_str());
+            row["instId"] = Value::from(instrument_id.symbol.as_str());
+            row["sz"] = Value::from("1");
+            row["triggerPx"] = Value::from("96010.0");
+            row["triggerPxType"] = Value::from("mark");
+        }
+
+        algo["data"][1]["subAlgoIdList"] = serde_json::json!(["7004"]);
+        algo["data"][1]["ordIdList"] = serde_json::json!([""]);
+        if fill_before_trigger {
+            algo["data"][0]["advanceOrdType"] = Value::from("");
+            algo["data"][1]
+                .as_object_mut()
+                .unwrap()
+                .remove("advanceOrdType");
+        }
+
+        let mut regular: Value = serde_json::from_str(include_str!(
+            "../test_data/ws_orders_algo_child_filled_empty_cl_ord_id.json"
+        ))
+        .unwrap();
+        let row = &mut regular["data"][0];
+        for (key, value) in [
+            ("algoId", "7004"),
+            ("algoClOrdId", ""),
+            ("ordId", "7005"),
+            ("ordType", "post_only"),
+            ("source", "34"),
+            ("instId", instrument_id.symbol.as_str()),
+            ("instType", "SWAP"),
+            ("sz", "1"),
+            ("accFillSz", "1"),
+            ("fillSz", "1"),
+            ("execType", "M"),
+            ("avgPx", "96015.0"),
+            ("fillPx", "96015.0"),
+            ("px", "96015.0"),
+        ] {
+            row[key] = Value::from(value);
+        }
+
+        row["linkedAlgoOrd"] = serde_json::json!({"algoId": "7004"});
+
+        let mut fee_cache = FeeCache::new();
+        let mut fills = FilledQtyCache::new();
+        let mut snapshots = AHashMap::new();
+
+        let mut dispatch = |message| {
+            dispatch_ws_message(
+                message,
+                &client.emitter,
+                &client.ws_dispatch_state,
+                client.core.account_id,
+                client.core.account_type,
+                &instruments,
+                &mut fee_cache,
+                &mut fills,
+                &mut snapshots,
+                client.clock,
+            );
+        };
+
+        let pending = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([algo["data"][0]])).unwrap(),
+        );
+        dispatch(pending);
+
+        if fill_before_trigger {
+            dispatch(OKXWsMessage::Orders(
+                serde_json::from_value(regular["data"].clone()).unwrap(),
+            ));
+        }
+
+        dispatch(OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([algo["data"][1]])).unwrap(),
+        ));
+        assert_eq!(
+            client.ws_dispatch_state.spawned_chase_id(client_order_id),
+            Some(VenueOrderId::from("7004"))
+        );
+
+        if fill_before_trigger {
+            dispatch(OKXWsMessage::Orders(Vec::new()));
+        } else {
+            client
+                .cancel_order(CancelOrder::new(
+                    client.core.trader_id,
+                    Some(*OKX_CLIENT_ID),
+                    order.strategy_id(),
+                    instrument_id,
+                    client_order_id,
+                    Some(VenueOrderId::from("7003")),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                request,
+                serde_json::json!([{"instId": instrument_id.symbol.as_str(), "algoId": "7004"}])
+            );
+            let mut chase = algo["data"][1].clone();
+            chase["algoId"] = Value::from("7004");
+            chase["algoClOrdId"] = Value::from("");
+            chase["state"] = Value::from("canceled");
+            chase["ordType"] = Value::from("chase");
+            dispatch(OKXWsMessage::AlgoOrders(
+                serde_json::from_value(serde_json::json!([chase])).unwrap(),
+            ));
+        }
+
+        server.abort();
+
+        let mut applied = order;
+        let mut event_venue_ids = Vec::new();
+
+        while let Ok(event) = event_rx.try_recv() {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("Expected strategy order event, received {event:?}");
+            };
+
+            assert_eq!(event.client_order_id(), client_order_id);
+            event_venue_ids.push(event.venue_order_id());
+            applied.apply(event).unwrap();
+        }
+
+        let parent = Some(VenueOrderId::from("7003"));
+        let chase = Some(VenueOrderId::from("7004"));
+        let child = Some(VenueOrderId::from("7005"));
+        assert_eq!(applied.price(), None);
+        assert_eq!(applied.trigger_price(), Some(Price::from("96010.0")));
+
+        if fill_before_trigger {
+            assert_eq!(event_venue_ids, [None, parent, chase, child, child]);
+            assert_eq!(applied.status(), OrderStatus::Filled);
+            assert_eq!(applied.filled_qty(), Quantity::from("1"));
+        } else {
+            assert_eq!(event_venue_ids, [None, parent, chase, chase]);
+            assert_eq!(applied.status(), OrderStatus::Canceled);
+        }
+
+        assert_eq!(
+            client.ws_dispatch_state.spawned_chase_id(client_order_id),
+            None
+        );
+    }
+
+    #[rstest]
+    #[case::resting_post_only(Some("live"), "live", OrderStatus::Accepted, "7005", None)]
+    #[case::canceled_post_only(Some("canceled"), "canceled", OrderStatus::Canceled, "7005", None)]
+    #[case::canceled_before_regular_order(None, "canceled", OrderStatus::Canceled, "7004", None)]
+    #[case::refresh_canceled_child(
+        Some("live"),
+        "canceled",
+        OrderStatus::Canceled,
+        "7005",
+        Some("newer_terminal")
+    )]
+    #[case::failed_child_refresh(
+        Some("live"),
+        "canceled",
+        OrderStatus::Canceled,
+        "7005",
+        Some("failed_refresh")
+    )]
+    #[case::malformed_active_parent(
+        Some("live"),
+        "live",
+        OrderStatus::Accepted,
+        "7005",
+        Some("malformed_parent")
+    )]
+    #[case::unresolved_active_chase(
+        Some("live"),
+        "live",
+        OrderStatus::Accepted,
+        "7005",
+        Some("missing_chase")
+    )]
+    #[case::unresolved_closed_history(
+        Some("canceled"),
+        "canceled",
+        OrderStatus::Canceled,
+        "7005",
+        Some("missing_chase")
+    )]
+    #[tokio::test]
+    async fn test_strategy_chase_trigger_recovery(
+        #[case] regular_state: Option<&str>,
+        #[case] chase_state: &str,
+        #[case] expected_status: OrderStatus,
+        #[case] expected_venue_id: &str,
+        #[case] fault: Option<&'static str>,
+        #[values("bulk", "query", "direct", "task")] lookup: &'static str,
+    ) {
+        let instrument = swap_instrument();
+        let instrument_id = instrument.id();
+        let client_order_id = ClientOrderId::from("OCHASERECOVERY");
+        let mut response: Value =
+            serde_json::from_str(include_str!("../test_data/ws_orders_algo_chase.json")).unwrap();
+        let parent = &mut response["data"][1];
+        parent["instId"] = Value::from(instrument_id.symbol.as_str());
+        parent["algoId"] = Value::from("7003");
+        parent["algoClOrdId"] = Value::from(client_order_id.as_str());
+        parent["subAlgoIdList"] = serde_json::json!(["7004"]);
+        parent["sz"] = Value::from("1");
+        parent["ordPx"] = Value::from("0.0");
+        let mut chase = parent.clone();
+        chase["algoId"] = Value::from("7004");
+        chase["algoClOrdId"] = Value::from("");
+        chase["ordType"] = Value::from("chase");
+        chase["state"] = Value::from(chase_state);
+        chase["ordIdList"] = serde_json::json!([]);
+        if matches!(fault, Some("newer_terminal" | "failed_refresh")) {
+            chase["uTime"] = Value::from("1746947318000");
+        }
+
+        if fault == Some("malformed_parent") {
+            parent["sz"] = Value::from("");
+        }
+
+        let mut regular: Value =
+            serde_json::from_str(include_str!("../test_data/http_get_orders_pending.json"))
+                .unwrap();
+        regular["data"][0]["instId"] = Value::from(instrument_id.symbol.as_str());
+        regular["data"][0]["ordId"] = Value::from("7005");
+        regular["data"][0]["algoId"] = Value::from("7004");
+        regular["data"][0]["clOrdId"] = Value::from("VENUEPOSTONLY");
+        regular["data"][0]["ordType"] = Value::from("post_only");
+        regular["data"][0]["sz"] = Value::from("1");
+        regular["data"][0]["state"] = Value::from(regular_state.unwrap_or_default());
+        let parent = parent.clone();
+        let parent_history = parent.clone();
+        let empty = || async { Json(serde_json::json!({"code":"0", "msg":"", "data":[]})) };
+        let (queries, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let algo_queries = queries.clone();
+        let (cancels, mut canceled) = tokio::sync::mpsc::unbounded_channel();
+        let regular_pending = (regular_state == Some("live")).then(|| regular.clone());
+        let regular_history = (regular_state == Some("canceled")).then(|| regular.clone());
+        if fault == Some("newer_terminal") {
+            regular["data"][0]["state"] = Value::from("canceled");
+            regular["data"][0]["uTime"] = Value::from("1746947318001");
+        }
+
+        let mut fill: Value = serde_json::from_str(include_str!(
+            "../test_data/ws_orders_algo_child_filled_empty_cl_ord_id.json"
+        ))
+        .unwrap();
+        fill["code"] = Value::from("0");
+        fill["msg"] = Value::from("");
+        let row = &mut fill["data"][0];
+        for (key, value) in [
+            ("instId", instrument_id.symbol.as_str()),
+            ("instType", "SWAP"),
+            ("side", "buy"),
+            ("ordId", "7005"),
+            ("clOrdId", "VENUEPOSTONLY"),
+            ("billId", "bill7005"),
+            ("fillSz", "1"),
+            ("ts", "1746947317000"),
+        ] {
+            row[key] = Value::from(value);
+        }
+
+        let router = Router::new()
+            .route(
+                "/api/v5/trade/orders-pending",
+                get(move || {
+                    let response = regular_pending
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"code":"0","msg":"","data":[]}));
+                    async { Json(response) }
+                }),
+            )
+            .route(
+                "/api/v5/trade/orders-history",
+                get(move || {
+                    let response = regular_history
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"code":"0","msg":"","data":[]}));
+                    async { Json(response) }
+                }),
+            )
+            .route("/api/v5/trade/orders-algo-pending", get(empty))
+            .route(
+                "/api/v5/trade/orders-algo-history",
+                get(move |Query(params): Query<AHashMap<String, String>>| {
+                    let rows = if params.get("ordType").map(String::as_str) == Some("trigger")
+                        && params.get("state").map(String::as_str) == Some("effective")
+                    {
+                        vec![parent_history.clone()]
+                    } else {
+                        vec![]
+                    };
+
+                    async move { Json(serde_json::json!({"code":"0", "msg":"", "data":rows})) }
+                }),
+            )
+            .route(
+                "/api/v5/trade/order-algo",
+                get(move |Query(params): Query<AHashMap<String, String>>| {
+                    let algo_id = params.get("algoId").cloned();
+                    let order = if algo_id.is_some() {
+                        chase.clone()
+                    } else {
+                        parent.clone()
+                    };
+
+                    let detail_unavailable = algo_id.is_some() && fault == Some("missing_chase");
+                    algo_queries.send(("algoId", algo_id)).unwrap();
+
+                    let response = if detail_unavailable {
+                        serde_json::json!({"code":"50004", "msg":"chase detail timed out", "data":[]})
+                    } else {
+                        serde_json::json!({"code":"0", "msg":"", "data":[order]})
+                    };
+
+                    async { Json(response) }
+                }),
+            )
+            .route(
+                "/api/v5/trade/order",
+                get(move |Query(params): Query<AHashMap<String, String>>| {
+                    queries
+                        .send(("ordId", params.get("ordId").cloned()))
+                        .unwrap();
+
+                    let response = if fault == Some("failed_refresh")
+                        || (lookup == "bulk" && fault.is_none())
+                    {
+                        serde_json::json!({"code":"50004", "msg":"detail request timed out", "data":[]})
+                    } else {
+                        regular.clone()
+                    };
+
+                    async { Json(response) }
+                }),
+            )
+            .route(
+                "/api/v5/trade/fills",
+                get(move || {
+                    let response = fill.clone();
+                    async { Json(response) }
+                }),
+            )
+            .route(
+                "/api/v5/trade/cancel-algos",
+                post(move |Json(request): Json<Value>| {
+                    cancels.send(request).unwrap();
+                    async { Json(serde_json::json!({"code":"0", "msg":"", "data":[{"algoId":"7004", "sCode":"0"}]})) }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("test_key".into()),
+            Some("test_secret".into()),
+            Some("test_pass".into()),
+            Some(base_url),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+        client.config.instrument_types = vec![OKXInstrumentType::Swap];
+        client.on_instrument(instrument);
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("96010.0"))
+            .build();
+        let strategy_id = order.strategy_id();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let parent_id = VenueOrderId::from("7003");
+        client
+            .ws_dispatch_state
+            .bind_order(client_order_id, parent_id);
+        let (event_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(instrument_id),
+            Some(client_order_id),
+            Some(parent_id),
+            None,
+            None,
+        );
+
+        let unresolved = matches!(
+            fault,
+            Some("missing_chase" | "malformed_parent" | "failed_refresh")
+        );
+
+        let report = match lookup {
+            "bulk" => {
+                let start = (regular_state == Some("live"))
+                    .then_some(UnixNanos::from(1_737_400_200_001_000_000_u64));
+                let command = GenerateOrderStatusReportsBuilder::default()
+                    .ts_init(UnixNanos::default())
+                    .open_only(false)
+                    .instrument_id(Some(instrument_id))
+                    .start(start)
+                    .build()
+                    .unwrap();
+                let result = client.collect_order_status_reports(&command, None).await;
+
+                if unresolved {
+                    if regular_state == Some("canceled") {
+                        assert!(!result.unwrap().complete);
+                    } else {
+                        assert!(result.is_err(), "active chase ownership remains unresolved");
+                    }
+
+                    assert_eq!(
+                        client.ws_dispatch_state.spawned_chase_id(client_order_id),
+                        None
+                    );
+                    server.abort();
+                    return;
+                }
+
+                let mut sweep = result.unwrap();
+                assert!(sweep.complete);
+                assert_eq!(sweep.reports.len(), 1);
+                sweep.reports.pop().unwrap()
+            }
+            "query" => {
+                client
+                    .query_order(QueryOrder::new(
+                        client.core.trader_id,
+                        Some(*OKX_CLIENT_ID),
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(if unresolved {
+                            VenueOrderId::from("7005")
+                        } else {
+                            parent_id
+                        }),
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+
+                if unresolved {
+                    wait_until_async(
+                        || async { client.pending_tasks.all_finished() },
+                        Duration::from_secs(5),
+                    )
+                    .await;
+                    assert_eq!(
+                        events.try_recv().unwrap_err(),
+                        tokio::sync::mpsc::error::TryRecvError::Empty
+                    );
+                    assert_eq!(
+                        client.ws_dispatch_state.spawned_chase_id(client_order_id),
+                        None
+                    );
+
+                    if fault == Some("missing_chase") {
+                        let requests =
+                            std::iter::from_fn(|| received.try_recv().ok()).collect::<Vec<_>>();
+                        assert_eq!(
+                            requests,
+                            [("algoId", None), ("algoId", Some("7004".to_string()))]
+                        );
+                    }
+
+                    server.abort();
+                    return;
+                }
+
+                let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+                let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event else {
+                    panic!("Expected one order report, received {event:?}");
+                };
+
+                *report
+            }
+            "direct" | "task" => {
+                let result = if lookup == "direct" {
+                    client.generate_order_status_report(&command).await
+                } else {
+                    let task = client.generate_order_status_report_task(&command).unwrap();
+                    task.collection.await;
+                    (task.finish)()
+                };
+
+                if unresolved {
+                    let error = result.expect_err("exact chase status remains unresolved");
+                    assert!(error.is::<OKXUnresolvedChaseOrderError>());
+                    assert_eq!(
+                        client.ws_dispatch_state.spawned_chase_id(client_order_id),
+                        None
+                    );
+                    server.abort();
+                    return;
+                }
+
+                result.unwrap().unwrap()
+            }
+            _ => unreachable!(),
+        };
+
+        if lookup != "bulk" {
+            assert_eq!(received.try_recv().unwrap(), ("algoId", None));
+        }
+
+        assert_eq!(
+            received.try_recv().unwrap(),
+            ("algoId", Some("7004".to_string()))
+        );
+
+        if (lookup != "bulk" && regular_state.is_some()) || fault == Some("newer_terminal") {
+            assert_eq!(
+                received.try_recv().unwrap(),
+                ("ordId", Some("7005".to_string()))
+            );
+        }
+
+        assert!(received.try_recv().is_err());
+
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.venue_order_id, VenueOrderId::from(expected_venue_id));
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from("1"));
+        assert_eq!(report.price, None);
+        assert_eq!(report.trigger_price, Some(Price::from("96010.0")));
+        assert_eq!(
+            client.ws_dispatch_state.spawned_chase_id(client_order_id),
+            (expected_status == OrderStatus::Accepted).then(|| VenueOrderId::from("7004"))
+        );
+
+        if lookup == "bulk" {
+            let exact = client
+                .http_client
+                .request_algo_order_status_report(
+                    client.core.account_id,
+                    instrument_id,
+                    client_order_id,
+                )
+                .await;
+
+            if regular_state.is_some() && fault.is_none() {
+                let error =
+                    exact.expect_err("a targeted detail failure leaves the chase unresolved");
+                assert!(
+                    error
+                        .to_string()
+                        .contains("Could not resolve OKX chase trigger status")
+                );
+            } else {
+                let exact = exact.unwrap().unwrap();
+                assert_eq!(exact.client_order_id, report.client_order_id);
+                assert_eq!(exact.venue_order_id, report.venue_order_id);
+                assert_eq!(exact.order_status, report.order_status);
+                assert_eq!(exact.order_type, report.order_type);
+                assert_eq!(exact.price, report.price);
+            }
+        }
+
+        if expected_status == OrderStatus::Accepted {
+            client
+                .cancel_order(CancelOrder::new(
+                    client.core.trader_id,
+                    Some(*OKX_CLIENT_ID),
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    Some(parent_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            let request = tokio::time::timeout(Duration::from_secs(5), canceled.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                request,
+                serde_json::json!([{"instId": instrument_id.symbol.as_str(), "algoId": "7004"}])
+            );
+
+            if lookup == "query" {
+                let command = GenerateFillReports::new(
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    Some(instrument_id),
+                    Some(VenueOrderId::from("7005")),
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+
+                let direct = client.generate_fill_reports(command.clone()).await.unwrap();
+                let task = client.generate_fill_reports_task(&command).unwrap();
+                task.collection.await;
+                let worker = (task.finish)().unwrap();
+                for fills in [direct, worker] {
+                    assert_eq!(fills.len(), 1);
+                    assert_eq!(fills[0].client_order_id, Some(client_order_id));
+                    assert_eq!(fills[0].venue_order_id, VenueOrderId::from("7005"));
+                    assert_eq!(fills[0].last_qty, Quantity::from("1"));
+                }
+            }
+        }
+
+        server.abort();
     }
 
     fn swap_instrument() -> InstrumentAny {

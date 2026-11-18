@@ -39,15 +39,17 @@ use super::enums::{OKXWsChannel, OKXWsOperation};
 use crate::{
     common::{
         enums::{
-            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType,
-            OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
-            OKXPositionSide, OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode,
-            OKXSettlementState, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction,
+            OKXCandleConfirm, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory,
+            OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXPriceType, OKXQuickMarginType,
+            OKXSelfTradePreventionMode, OKXSettlementState, OKXSide, OKXTargetCurrency,
+            OKXTradeMode, OKXTriggerType,
         },
-        models::{OKXInstrument, OKXRpiBookLevel},
+        models::{OKXChaseParams, OKXInstrument, OKXRpiBookLevel},
         parse::{
             deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
-            deserialize_string_to_u64, deserialize_target_currency_as_none,
+            deserialize_optional_order_enum, deserialize_string_to_u64,
+            deserialize_target_currency_as_none,
         },
     },
     http::models::OKXSpreadOrder,
@@ -1358,9 +1360,15 @@ pub struct OKXAlgoOrderMsg {
     /// Fee currency.
     #[serde(default, deserialize_with = "deserialize_empty_ustr_as_none")]
     pub fee_ccy: Option<Ustr>,
-    /// Trigger order type (fok, ioc).
-    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
-    pub advance_ord_type: Option<String>,
+    /// Execution type selected by the trigger.
+    #[serde(default, deserialize_with = "deserialize_optional_order_enum")]
+    pub advance_ord_type: Option<OKXAdvanceOrderType>,
+    /// Chase parameters for a trigger that spawns a chase order.
+    #[serde(default)]
+    pub adv_chase_params: Vec<OKXChaseParams>,
+    /// Spawned algo order IDs, including the chase algo ID after a chase trigger fires.
+    #[serde(default)]
+    pub sub_algo_id_list: Vec<String>,
 }
 
 /// Parameters for WebSocket place order operation.

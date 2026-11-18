@@ -24,7 +24,10 @@ use std::{collections::VecDeque, fmt::Debug, hash::Hash, sync::Arc};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
+use nautilus_common::{
+    cache::fifo::{FifoCache, FifoCacheMap},
+    live::dst::time::{self, Duration, Instant},
+};
 use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::{
     ExecutionEventEmitter,
@@ -57,14 +60,19 @@ use crate::{
             OKX_FIELD_SUBCODE, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_SUCCESS_CODE,
         },
-        enums::{OKXAlgoOrderStatus, OKXAlgoOrderType, OKXOrderStatus, OKXOrderType},
+        enums::{
+            OKXAdvanceOrderType, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXOrderStatus, OKXOrderType,
+        },
         failure::{classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
             is_market_price, parse_client_order_id, parse_millisecond_timestamp, parse_price,
             parse_quantity,
         },
     },
-    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition, OKXSpreadOrder},
+    http::{
+        client::ChaseOrderLink,
+        models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition, OKXSpreadOrder},
+    },
     websocket::{
         client::PendingOrderInfo,
         enums::OKXWsOperation,
@@ -81,11 +89,20 @@ use crate::{
 
 /// Maximum entries held by the dedup sets before the oldest is evicted.
 const DEDUP_CAPACITY: usize = 10_000;
+const CHASE_CHILD_BIND_TIMEOUT: Duration = Duration::from_secs(2);
+const CHASE_ORDER_SOURCE: &str = "34";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct OrderVenueBinding {
-    parent: VenueOrderId,
-    child: Option<VenueOrderId>,
+pub(crate) struct OrderVenueBinding {
+    pub(crate) parent: VenueOrderId,
+    pub(crate) chase: Option<VenueOrderId>,
+    pub(crate) child: Option<VenueOrderId>,
+}
+
+impl OrderVenueBinding {
+    fn has_spawned_order(&self) -> bool {
+        self.chase.is_some() || self.child.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -114,10 +131,19 @@ impl OrderLifecycleBindings {
     }
 
     fn finish(&mut self, client_order_id: ClientOrderId, binding: OrderVenueBinding) {
-        self.client_by_parent.remove(&binding.parent);
         self.venue_by_client.remove(&client_order_id);
-        self.terminal_client_by_parent
-            .insert(binding.parent, client_order_id);
+
+        for id in [
+            Some(binding.parent),
+            binding.chase,
+            binding.child.filter(|_| binding.chase.is_some()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            self.client_by_parent.remove(&id);
+            self.terminal_client_by_parent.insert(id, client_order_id);
+        }
     }
 }
 
@@ -140,6 +166,7 @@ struct PendingLinkedChild {
     parent_venue_order_id: VenueOrderId,
     candidate_client_order_ids: Vec<ClientOrderId>,
     message: OKXOrderMsg,
+    chase_deadline: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -195,10 +222,11 @@ pub struct WsDispatchState {
     linked_child_notify: tokio::sync::Notify,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(crate) struct AlgoOrderState {
     pub(crate) order_type: OKXAlgoOrderType,
     pub(crate) ts_last: UnixNanos,
+    pub(crate) advance_ord_type: Option<OKXAdvanceOrderType>,
 }
 
 impl Default for WsDispatchState {
@@ -258,6 +286,90 @@ impl WsDispatchState {
         self.insert_accepted(client_order_id, venue_order_id);
     }
 
+    pub(crate) fn restore_chase_order(
+        &self,
+        mut context: OrderContext,
+        link: ChaseOrderLink,
+        report: &OrderStatusReport,
+    ) {
+        let client_order_id = context.identity.client_order_id;
+        let venue_order_id = link.regular.or(link.chase).unwrap_or(link.parent);
+
+        if !report.order_status.is_open()
+            || context.identity.order_type != OrderType::StopMarket
+            || report.order_type != context.identity.order_type
+            || report.order_side != Some(context.identity.order_side)
+            || report.client_order_id != Some(client_order_id)
+            || report.venue_order_id != venue_order_id
+            || report.instrument_id != link.instrument_id
+            || context.identity.instrument_id != link.instrument_id
+        {
+            return;
+        }
+
+        let ts_last = report.ts_last;
+        let mut bindings = self.lifecycle_bindings.lock();
+
+        if self.contains_terminal(&client_order_id) {
+            return;
+        }
+
+        if let Some(current) = bindings.venue_by_client.get(&client_order_id)
+            && (current.parent != link.parent
+                || current.chase.is_some_and(|id| link.chase != Some(id))
+                || current.child.is_some_and(|id| link.regular != Some(id))
+                || self
+                    .algo_order_states
+                    .get(&client_order_id)
+                    .is_some_and(|state| state.ts_last > ts_last))
+        {
+            return;
+        }
+
+        let ids = [Some(link.parent), link.chase, link.regular];
+        if ids.iter().flatten().any(|id| {
+            bindings
+                .client_order_id(id)
+                .is_some_and(|id| id != client_order_id)
+        }) {
+            log::warn!("Ignoring conflicting recovered OKX chase binding for {client_order_id}");
+            return;
+        }
+
+        context.quantity = report.quantity;
+        context.trigger_price = report.trigger_price;
+        context.trigger_type = report.trigger_type;
+        self.track_order_context(context);
+        self.algo_order_states.insert(
+            client_order_id,
+            AlgoOrderState {
+                order_type: OKXAlgoOrderType::Trigger,
+                ts_last,
+                advance_ord_type: Some(OKXAdvanceOrderType::Chase),
+            },
+        );
+
+        for id in ids.into_iter().flatten() {
+            bindings.client_by_parent.insert(id, client_order_id);
+        }
+
+        bindings.venue_by_client.insert(
+            client_order_id,
+            OrderVenueBinding {
+                parent: link.parent,
+                chase: link.chase,
+                child: link.regular,
+            },
+        );
+
+        self.insert_accepted(client_order_id, venue_order_id);
+        if link.chase.is_some() {
+            self.insert_triggered(client_order_id);
+        }
+
+        self.linked_child_notify.notify_one();
+    }
+
     pub(crate) fn bind_order(&self, client_order_id: ClientOrderId, venue_order_id: VenueOrderId) {
         let mut bindings = self.lifecycle_bindings.lock();
         let binding = bindings.venue_by_client.get(&client_order_id).copied();
@@ -276,6 +388,7 @@ impl WsDispatchState {
             client_order_id,
             binding.unwrap_or(OrderVenueBinding {
                 parent: venue_order_id,
+                chase: None,
                 child: None,
             }),
         );
@@ -286,16 +399,56 @@ impl WsDispatchState {
         &self,
         client_order_id: ClientOrderId,
     ) -> Option<(VenueOrderId, bool)> {
+        self.order_binding(client_order_id).map(|binding| {
+            (
+                binding.child.or(binding.chase).unwrap_or(binding.parent),
+                binding.child.is_some(),
+            )
+        })
+    }
+
+    pub(crate) fn spawned_chase_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
+        self.order_binding(client_order_id)
+            .and_then(|binding| binding.chase)
+    }
+
+    pub(crate) fn attribute_chase_fills(&self, reports: &mut [FillReport]) {
         let bindings = self.lifecycle_bindings.lock();
-        bindings
+        for report in reports {
+            if let Some(id) = bindings.client_by_parent.get(&report.venue_order_id)
+                && bindings.venue_by_client.get(id).is_some_and(|binding| {
+                    binding.chase.is_some() && binding.child == Some(report.venue_order_id)
+                })
+                && self.order_context(*id).is_some_and(|context| {
+                    context.identity.instrument_id == report.instrument_id
+                        && context.identity.order_side == report.order_side
+                })
+            {
+                report.client_order_id = Some(*id);
+            }
+        }
+    }
+
+    pub(crate) fn order_binding(
+        &self,
+        client_order_id: ClientOrderId,
+    ) -> Option<OrderVenueBinding> {
+        self.lifecycle_bindings
+            .lock()
             .venue_by_client
             .get(&client_order_id)
-            .map(|binding| {
-                (
-                    binding.child.unwrap_or(binding.parent),
-                    binding.child.is_some(),
-                )
-            })
+            .copied()
+    }
+
+    pub(crate) fn allows_regular_child_query(&self, client_order_id: ClientOrderId) -> bool {
+        // The algo status lookup already follows the chase and its regular child
+        !self.is_chase_trigger(client_order_id)
+    }
+
+    fn is_chase_trigger(&self, client_order_id: ClientOrderId) -> bool {
+        self.algo_order_states
+            .get(&client_order_id)
+            .is_some_and(|state| state.advance_ord_type == Some(OKXAdvanceOrderType::Chase))
     }
 
     pub(crate) fn order_identity(&self, client_order_id: ClientOrderId) -> Option<OrderIdentity> {
@@ -358,7 +511,22 @@ impl WsDispatchState {
     }
 
     pub(crate) async fn wait_for_linked_child_route(&self) {
-        self.linked_child_notify.notified().await;
+        let deadline = self
+            .pending_linked_children
+            .lock()
+            .iter()
+            .filter_map(|child| child.chase_deadline)
+            .min();
+
+        if let Some(deadline) = deadline {
+            tokio::select! {
+                biased;
+                () = self.linked_child_notify.notified() => {},
+                () = time::sleep_until(deadline) => {},
+            }
+        } else {
+            self.linked_child_notify.notified().await;
+        }
     }
 
     fn resolve_or_hold_linked_child(
@@ -366,6 +534,7 @@ impl WsDispatchState {
         parent_venue_order_id: VenueOrderId,
         instrument_id: InstrumentId,
         message: &OKXOrderMsg,
+        allow_chase_hold: bool,
     ) -> LinkedChildResolution {
         let candidate_client_order_ids = self
             .order_contexts
@@ -382,11 +551,18 @@ impl WsDispatchState {
         }
 
         let mut pending = self.pending_linked_children.lock();
+        let is_chase_order = message.source.as_deref() == Some(CHASE_ORDER_SOURCE);
+        let can_hold_chase = allow_chase_hold && is_chase_order;
+
         let candidate_client_order_ids = candidate_client_order_ids
             .iter()
             .filter(|client_order_id| {
                 self.order_contexts.contains_key(client_order_id)
-                    && !bindings.venue_by_client.contains_key(client_order_id)
+                    && if is_chase_order {
+                        can_hold_chase && self.awaiting_chase_binding(**client_order_id, &bindings)
+                    } else {
+                        !bindings.venue_by_client.contains_key(client_order_id)
+                    }
             })
             .copied()
             .collect::<Vec<_>>();
@@ -399,8 +575,21 @@ impl WsDispatchState {
             parent_venue_order_id,
             candidate_client_order_ids,
             message: message.clone(),
+            chase_deadline: can_hold_chase.then(|| Instant::now() + CHASE_CHILD_BIND_TIMEOUT),
         });
         LinkedChildResolution::Held
+    }
+
+    fn awaiting_chase_binding(
+        &self,
+        client_order_id: ClientOrderId,
+        bindings: &OrderLifecycleBindings,
+    ) -> bool {
+        self.is_chase_trigger(client_order_id)
+            && bindings
+                .venue_by_client
+                .get(&client_order_id)
+                .is_none_or(|binding| binding.chase.is_none())
     }
 
     fn take_routable_linked_children(&self) -> Vec<OKXOrderMsg> {
@@ -412,6 +601,7 @@ impl WsDispatchState {
         let mut pending = self.pending_linked_children.lock();
         let mut held = VecDeque::with_capacity(pending.len());
         let mut routable = Vec::new();
+        let now = Instant::now();
 
         while let Some(child) = pending.pop_front() {
             let is_bound = bindings
@@ -422,10 +612,17 @@ impl WsDispatchState {
                 .iter()
                 .any(|client_order_id| {
                     self.order_contexts.contains_key(client_order_id)
-                        && !bindings.venue_by_client.contains_key(client_order_id)
+                        && if child.chase_deadline.is_some() {
+                            self.awaiting_chase_binding(*client_order_id, &bindings)
+                        } else {
+                            !bindings.venue_by_client.contains_key(client_order_id)
+                        }
                 });
 
-            if is_bound || !is_pending {
+            if is_bound
+                || !is_pending
+                || child.chase_deadline.is_some_and(|deadline| now >= deadline)
+            {
                 routable.push(child.message);
             } else {
                 held.push_back(child);
@@ -557,6 +754,7 @@ pub fn dispatch_ws_message(
                     filled_qty_cache,
                     order_state_cache,
                     ts_init,
+                    false,
                 );
             }
             dispatch_order_messages(
@@ -569,6 +767,7 @@ pub fn dispatch_ws_message(
                 filled_qty_cache,
                 order_state_cache,
                 ts_init,
+                true,
             );
         }
         OKXWsMessage::SpreadOrders(order_msgs) => {
@@ -961,11 +1160,25 @@ fn route_algo_order_message(
         OKXAlgoOrderType::Iceberg
             | OKXAlgoOrderType::SmartIceberg
             | OKXAlgoOrderType::Twap
-            | OKXAlgoOrderType::Chase
             | OKXAlgoOrderType::Other
     ) || msg.state == OKXAlgoOrderStatus::Unknown
     {
         return ExecutionUpdateRoute::Suppressed;
+    }
+
+    if msg.ord_type == OKXAlgoOrderType::Chase {
+        let chase_id = VenueOrderId::new(msg.algo_id.as_str());
+        let bindings = state.lifecycle_bindings.lock();
+        return bindings
+            .client_order_id(&chase_id)
+            .and_then(|client_order_id| {
+                let binding = bindings.venue_by_client.get(&client_order_id)?;
+                (binding.chase == Some(chase_id) && !state.contains_terminal(&client_order_id))
+                    .then(|| state.order_context(client_order_id))
+                    .flatten()
+                    .map(|context| ExecutionUpdateRoute::Tracked(client_order_id, context))
+            })
+            .unwrap_or(ExecutionUpdateRoute::Suppressed);
     }
 
     let direct_client_order_id = parse_client_order_id(&msg.algo_cl_ord_id)
@@ -1084,8 +1297,24 @@ fn dispatch_tracked_algo_order_message(
         .copied()
         .unwrap_or(OrderVenueBinding {
             parent: parent_venue_order_id,
+            chase: None,
             child: None,
         });
+
+    if binding.chase == Some(parent_venue_order_id) {
+        dispatch_spawned_chase_order(
+            msg,
+            context,
+            &mut binding,
+            &mut bindings,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+            state,
+        );
+        return;
+    }
 
     if binding.parent != parent_venue_order_id {
         log::error!(
@@ -1095,7 +1324,7 @@ fn dispatch_tracked_algo_order_message(
         return;
     }
 
-    if binding.child.is_none() {
+    if !binding.has_spawned_order() {
         let Some(refreshed) = dispatch_pending_algo_order(
             msg, context, instrument, account_id, ts_event, ts_init, emitter, state,
         ) else {
@@ -1116,45 +1345,20 @@ fn dispatch_tracked_algo_order_message(
         | OKXAlgoOrderStatus::PartiallyEffective
         | OKXAlgoOrderStatus::Filled
         | OKXAlgoOrderStatus::PartiallyFailed => {
-            let child_venue_order_id = algo_child_venue_order_id(msg);
-            if let Some(child_venue_order_id) = child_venue_order_id {
-                bind_algo_child_and_emit_transition(
-                    client_order_id,
-                    parent_venue_order_id,
-                    child_venue_order_id,
-                    &mut binding,
-                    context,
-                    account_id,
-                    ts_event,
-                    ts_init,
-                    emitter,
-                    state,
-                );
-            } else {
-                ensure_accepted_emitted(
-                    client_order_id,
-                    account_id,
-                    parent_venue_order_id,
-                    &context.identity,
-                    emitter,
-                    state,
-                    ts_event,
-                    ts_init,
-                );
-            }
-
-            if matches!(
-                msg.state,
-                OKXAlgoOrderStatus::Filled | OKXAlgoOrderStatus::PartiallyFailed
-            ) {
-                log::debug!(
-                    "Deferring tracked algo {:?} update for {client_order_id} to regular child execution updates",
-                    msg.state,
-                );
-            }
+            dispatch_effective_algo_order(
+                msg,
+                context,
+                &mut binding,
+                &mut bindings,
+                account_id,
+                ts_event,
+                ts_init,
+                emitter,
+                state,
+            );
         }
         OKXAlgoOrderStatus::Canceled => {
-            if binding.child.is_some() {
+            if binding.has_spawned_order() {
                 log::debug!(
                     "Suppressing stale canceled algo parent for triggered order {client_order_id}"
                 );
@@ -1190,7 +1394,7 @@ fn dispatch_tracked_algo_order_message(
             }
         }
         OKXAlgoOrderStatus::OrderFailed => {
-            if binding.child.is_some() {
+            if binding.has_spawned_order() {
                 log::debug!(
                     "Suppressing stale failed algo parent for triggered order {client_order_id}"
                 );
@@ -1231,6 +1435,180 @@ fn dispatch_tracked_algo_order_message(
 
     drop(bindings);
     state.linked_child_notify.notify_one();
+}
+
+#[expect(clippy::too_many_arguments)]
+fn dispatch_effective_algo_order(
+    msg: &OKXAlgoOrderMsg,
+    context: OrderContext,
+    binding: &mut OrderVenueBinding,
+    bindings: &mut OrderLifecycleBindings,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) {
+    let client_order_id = context.identity.client_order_id;
+    let parent_venue_order_id = binding.parent;
+
+    if state.is_chase_trigger(client_order_id) {
+        ensure_accepted_emitted(
+            client_order_id,
+            account_id,
+            parent_venue_order_id,
+            &context.identity,
+            emitter,
+            state,
+            ts_event,
+            ts_init,
+        );
+
+        if let Some(chase_id) = bind_spawned_chase(msg, client_order_id, binding, bindings)
+            && binding.child.is_none()
+        {
+            emit_algo_child_transition(
+                client_order_id,
+                parent_venue_order_id,
+                chase_id,
+                context,
+                account_id,
+                ts_event,
+                ts_init,
+                emitter,
+                state,
+            );
+        }
+
+        return;
+    }
+
+    let child_venue_order_id = algo_child_venue_order_id(msg);
+    if let Some(child_venue_order_id) = child_venue_order_id {
+        bind_algo_child_and_emit_transition(
+            client_order_id,
+            parent_venue_order_id,
+            child_venue_order_id,
+            binding,
+            context,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+            state,
+        );
+    } else {
+        ensure_accepted_emitted(
+            client_order_id,
+            account_id,
+            parent_venue_order_id,
+            &context.identity,
+            emitter,
+            state,
+            ts_event,
+            ts_init,
+        );
+    }
+
+    if matches!(
+        msg.state,
+        OKXAlgoOrderStatus::Filled | OKXAlgoOrderStatus::PartiallyFailed
+    ) {
+        log::debug!(
+            "Deferring tracked algo {:?} update for {client_order_id} to regular child execution updates",
+            msg.state,
+        );
+    }
+}
+
+fn bind_spawned_chase(
+    msg: &OKXAlgoOrderMsg,
+    client_order_id: ClientOrderId,
+    binding: &mut OrderVenueBinding,
+    bindings: &mut OrderLifecycleBindings,
+) -> Option<VenueOrderId> {
+    let [id] = msg.sub_algo_id_list.as_slice() else {
+        return None;
+    };
+
+    if id.is_empty() {
+        return None;
+    }
+
+    let chase_id = VenueOrderId::new(id);
+
+    if binding.chase.is_some_and(|id| id != chase_id)
+        || bindings
+            .client_order_id(&chase_id)
+            .is_some_and(|cid| cid != client_order_id)
+    {
+        log::warn!("Ignoring conflicting OKX chase child {chase_id} for {client_order_id}");
+        return None;
+    }
+
+    binding.chase = Some(chase_id);
+    bindings.client_by_parent.insert(chase_id, client_order_id);
+    Some(chase_id)
+}
+
+#[expect(clippy::too_many_arguments)]
+fn dispatch_spawned_chase_order(
+    msg: &OKXAlgoOrderMsg,
+    context: OrderContext,
+    binding: &mut OrderVenueBinding,
+    bindings: &mut OrderLifecycleBindings,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) {
+    let client_order_id = context.identity.client_order_id;
+
+    if let Some(child_id) = algo_child_venue_order_id(msg) {
+        bind_algo_child_and_emit_transition(
+            client_order_id,
+            binding.parent,
+            child_id,
+            binding,
+            context,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+            state,
+        );
+
+        if binding.child == Some(child_id) {
+            bindings.client_by_parent.insert(child_id, client_order_id);
+            bindings.venue_by_client.insert(client_order_id, *binding);
+        }
+    } else if binding.child.is_none()
+        && matches!(
+            msg.state,
+            OKXAlgoOrderStatus::Canceled | OKXAlgoOrderStatus::OrderFailed
+        )
+    {
+        let canceled = OrderCanceled::new(
+            emitter.trader_id(),
+            context.identity.strategy_id,
+            context.identity.instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            ts_init,
+            false,
+            binding.chase,
+            Some(account_id),
+            None,
+        );
+
+        state.insert_terminal(client_order_id);
+        state.remove_accepted(&client_order_id);
+        state.remove_order_tracking(client_order_id);
+        bindings.finish(client_order_id, *binding);
+        emitter.send_order_event(OrderEventAny::Canceled(canceled));
+    }
 }
 
 fn algo_child_venue_order_id(msg: &OKXAlgoOrderMsg) -> Option<VenueOrderId> {
@@ -1322,12 +1700,20 @@ fn dispatch_pending_algo_order(
         }
     }
 
+    let advance_ord_type = msg.advance_ord_type.clone().or_else(|| {
+        state
+            .algo_order_states
+            .get(&client_order_id)
+            .and_then(|previous| previous.advance_ord_type.clone())
+    });
+
     state.track_order_context(context);
     state.algo_order_states.insert(
         client_order_id,
         AlgoOrderState {
             order_type: msg.ord_type,
             ts_last: ts_event,
+            advance_ord_type,
         },
     );
 
@@ -1404,6 +1790,31 @@ fn bind_algo_child_and_emit_transition(
     }
 
     binding.child = Some(child_venue_order_id);
+    emit_algo_child_transition(
+        client_order_id,
+        parent_venue_order_id,
+        child_venue_order_id,
+        context,
+        account_id,
+        ts_event,
+        ts_init,
+        emitter,
+        state,
+    );
+}
+
+#[expect(clippy::too_many_arguments)]
+fn emit_algo_child_transition(
+    client_order_id: ClientOrderId,
+    parent_venue_order_id: VenueOrderId,
+    child_venue_order_id: VenueOrderId,
+    context: OrderContext,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) {
     state.track_order_context(context);
     ensure_accepted_emitted(
         client_order_id,
@@ -1530,6 +1941,7 @@ fn dispatch_order_messages(
     filled_qty_cache: &mut FilledQtyCache,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     ts_init: UnixNanos,
+    allow_chase_hold: bool,
 ) {
     for msg in order_msgs {
         let Some(instrument) = instruments.get(&msg.inst_id) else {
@@ -1537,17 +1949,6 @@ fn dispatch_order_messages(
             continue;
         };
 
-        let direct_client_order_id = state
-            .lifecycle_bindings
-            .lock()
-            .client_by_parent
-            .get(&VenueOrderId::new(msg.ord_id))
-            .copied()
-            .or_else(|| parse_client_order_id(&msg.cl_ord_id));
-        let parent_client_order_id = msg
-            .algo_cl_ord_id
-            .as_deref()
-            .and_then(parse_client_order_id);
         let linked_parent_venue_order_id = msg
             .algo_id
             .as_deref()
@@ -1560,49 +1961,15 @@ fn dispatch_order_messages(
             })
             .map(VenueOrderId::new);
 
-        // Triggered child orders may have a generated or empty cl_ord_id.
-        // Resolve the tracked parent before falling back to a report.
-        let direct_resolution = [direct_client_order_id, parent_client_order_id]
-            .into_iter()
-            .flatten()
-            .find_map(|client_order_id| {
-                state
-                    .order_identity(client_order_id)
-                    .map(|identity| (client_order_id, Some(identity)))
-            });
-
-        let bound_client_order_id = if direct_resolution.is_none()
-            && let Some(parent_venue_order_id) = linked_parent_venue_order_id
-        {
-            match state.resolve_or_hold_linked_child(parent_venue_order_id, instrument.id(), msg) {
-                LinkedChildResolution::Bound(client_order_id) => Some(client_order_id),
-                LinkedChildResolution::Held => {
-                    log::debug!(
-                        "Holding linked child update during algo parent binding: ord_id={} parent_id={parent_venue_order_id}",
-                        msg.ord_id,
-                    );
-                    continue;
-                }
-                LinkedChildResolution::External => None,
-            }
-        } else {
-            None
+        let Ok(resolved) = resolve_regular_order_identity(
+            msg,
+            state,
+            instrument.id(),
+            linked_parent_venue_order_id,
+            allow_chase_hold,
+        ) else {
+            continue;
         };
-
-        let resolved = direct_resolution
-            .or_else(|| {
-                bound_client_order_id.and_then(|client_order_id| {
-                    state
-                        .order_identity(client_order_id)
-                        .map(|identity| (client_order_id, Some(identity)))
-                })
-            })
-            .or_else(|| {
-                bound_client_order_id
-                    .or(parent_client_order_id)
-                    .or(direct_client_order_id)
-                    .map(|client_order_id| (client_order_id, None))
-            });
 
         let Some((client_order_id, identity)) = resolved else {
             log::debug!(
@@ -1629,71 +1996,28 @@ fn dispatch_order_messages(
                 .filter(|entry| OKX_CONDITIONAL_ORDER_TYPES.contains(&entry.identity.order_type))
                 .map(|entry| refresh_regular_child_context(msg, *entry, instrument));
             let mut lifecycle_bindings = context.map(|_| state.lifecycle_bindings.lock());
-
-            if let (Some(context), Some(bindings)) = (context, lifecycle_bindings.as_mut()) {
-                let parent_venue_order_id = linked_parent_venue_order_id.or_else(|| {
-                    bindings
-                        .venue_by_client
-                        .get(&client_order_id)
-                        .map(|binding| binding.parent)
-                });
-
-                let child_venue_order_id = VenueOrderId::new(msg.ord_id);
-                let parent_venue_order_id = parent_venue_order_id.unwrap_or(child_venue_order_id);
-                let mut binding = bindings
-                    .venue_by_client
-                    .get(&client_order_id)
-                    .copied()
-                    .unwrap_or(OrderVenueBinding {
-                        parent: parent_venue_order_id,
-                        child: None,
-                    });
-
-                if binding.parent != parent_venue_order_id {
-                    log::error!(
-                        "Suppressing conflicting child parent binding for {client_order_id}: expected={} received={parent_venue_order_id}",
-                        binding.parent,
-                    );
-                    continue;
-                }
-
-                bindings
-                    .client_by_parent
-                    .insert(parent_venue_order_id, client_order_id);
-                let ts_event = parse_millisecond_timestamp(msg.u_time);
-
-                if binding.child == Some(child_venue_order_id) {
-                    refresh_bound_child_and_emit_update(
-                        client_order_id,
-                        child_venue_order_id,
+            let chase_context =
+                if let (Some(context), Some(bindings)) = (context, lifecycle_bindings.as_mut()) {
+                    let Ok(chase_context) = bind_regular_algo_child(
+                        msg,
+                        linked_parent_venue_order_id,
                         context,
+                        bindings,
                         account_id,
-                        ts_event,
                         ts_init,
-                        emitter,
-                        state,
                         !order_state_cache.contains_key(&client_order_id),
-                    );
-                } else {
-                    bind_algo_child_and_emit_transition(
-                        client_order_id,
-                        parent_venue_order_id,
-                        child_venue_order_id,
-                        &mut binding,
-                        context,
-                        account_id,
-                        ts_event,
-                        ts_init,
                         emitter,
                         state,
-                    );
-                }
+                    ) else {
+                        continue;
+                    };
 
-                bindings.venue_by_client.insert(client_order_id, binding);
-            }
+                    chase_context
+                } else {
+                    None
+                };
 
-            let is_post_only_cancel = is_post_only_auto_cancel(msg);
-
+            let is_post_only_cancel = chase_context.is_none() && is_post_only_auto_cancel(msg);
             if is_post_only_cancel
                 || (!state.contains_accepted(&client_order_id) && is_unfilled_rpi_cancel(msg))
             {
@@ -1740,7 +2064,9 @@ fn dispatch_order_messages(
 
             let previous_fee = fee_cache.get(&msg.ord_id).copied();
             let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
-            let previous_state = order_state_cache.get(&client_order_id);
+            let previous_state = order_state_cache
+                .get(&client_order_id)
+                .filter(|_| chase_context.is_none());
 
             match parse_order_event(
                 msg,
@@ -1754,7 +2080,13 @@ fn dispatch_order_messages(
                 previous_state,
                 ts_init,
             ) {
-                Ok(event) => {
+                Ok(mut event) => {
+                    if let Some(context) = chase_context
+                        && let ParsedOrderEvent::StatusOnly(report) = &mut event
+                    {
+                        project_chase_order_report(report, context);
+                    }
+
                     let needs_status =
                         matches!(event, ParsedOrderEvent::Fill(_) | ParsedOrderEvent::Skipped);
                     update_order_state_cache(msg, instrument, client_order_id, order_state_cache);
@@ -1790,6 +2122,7 @@ fn dispatch_order_messages(
                         state,
                         ts_init,
                         needs_status,
+                        chase_context,
                     );
 
                     if state.contains_terminal(&client_order_id)
@@ -1838,6 +2171,177 @@ fn dispatch_order_messages(
             );
         }
     }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn bind_regular_algo_child(
+    msg: &OKXOrderMsg,
+    linked_parent_venue_order_id: Option<VenueOrderId>,
+    mut context: OrderContext,
+    bindings: &mut OrderLifecycleBindings,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    emit_update: bool,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) -> Result<Option<OrderContext>, ()> {
+    let client_order_id = context.identity.client_order_id;
+    let binding = bindings.venue_by_client.get(&client_order_id).copied();
+    let parent_venue_order_id = linked_parent_venue_order_id
+        .map(|id| {
+            binding
+                .filter(|binding| binding.chase == Some(id))
+                .map_or(id, |binding| binding.parent)
+        })
+        .or_else(|| {
+            bindings
+                .venue_by_client
+                .get(&client_order_id)
+                .map(|binding| binding.parent)
+        });
+
+    let child_venue_order_id = VenueOrderId::new(msg.ord_id);
+    let parent_venue_order_id = parent_venue_order_id.unwrap_or(child_venue_order_id);
+
+    let mut binding = bindings
+        .venue_by_client
+        .get(&client_order_id)
+        .copied()
+        .unwrap_or(OrderVenueBinding {
+            parent: parent_venue_order_id,
+            chase: None,
+            child: None,
+        });
+
+    if binding.parent != parent_venue_order_id {
+        log::error!(
+            "Suppressing conflicting child parent binding for {client_order_id}: expected={} received={parent_venue_order_id}",
+            binding.parent,
+        );
+        return Err(());
+    }
+
+    let is_chase = binding.chase.is_some();
+    if is_chase && binding.child.is_some_and(|id| id != child_venue_order_id) {
+        log::warn!(
+            "Ignoring conflicting OKX chase regular order {child_venue_order_id} for {client_order_id}"
+        );
+        return Err(());
+    }
+
+    if is_chase {
+        context.price = None;
+    }
+
+    bindings
+        .client_by_parent
+        .insert(parent_venue_order_id, client_order_id);
+    let ts_event = parse_millisecond_timestamp(msg.u_time);
+
+    if binding.child == Some(child_venue_order_id) {
+        refresh_bound_child_and_emit_update(
+            client_order_id,
+            child_venue_order_id,
+            context,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+            state,
+            is_chase || emit_update,
+        );
+    } else {
+        bind_algo_child_and_emit_transition(
+            client_order_id,
+            parent_venue_order_id,
+            child_venue_order_id,
+            &mut binding,
+            context,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+            state,
+        );
+    }
+
+    bindings.venue_by_client.insert(client_order_id, binding);
+    if binding.chase.is_some() && binding.child == Some(child_venue_order_id) {
+        bindings
+            .client_by_parent
+            .insert(child_venue_order_id, client_order_id);
+    }
+
+    Ok(is_chase.then_some(context))
+}
+
+fn resolve_regular_order_identity(
+    msg: &OKXOrderMsg,
+    state: &WsDispatchState,
+    instrument_id: InstrumentId,
+    linked_parent_venue_order_id: Option<VenueOrderId>,
+    allow_chase_hold: bool,
+) -> Result<Option<(ClientOrderId, Option<OrderIdentity>)>, ()> {
+    let is_chase_order = msg.source.as_deref() == Some(CHASE_ORDER_SOURCE);
+    let direct_client_order_id = state
+        .lifecycle_bindings
+        .lock()
+        .client_order_id(&VenueOrderId::new(msg.ord_id))
+        .or_else(|| parse_client_order_id(&msg.cl_ord_id));
+    let parent_client_order_id = msg
+        .algo_cl_ord_id
+        .as_deref()
+        .and_then(parse_client_order_id);
+
+    // Triggered child orders may have a generated or empty cl_ord_id.
+    // Resolve the tracked parent before falling back to a report.
+    let direct_resolution = [direct_client_order_id, parent_client_order_id]
+        .into_iter()
+        .flatten()
+        .find_map(|client_order_id| {
+            state
+                .order_identity(client_order_id)
+                .map(|identity| (client_order_id, Some(identity)))
+        });
+
+    let bound_client_order_id = if (direct_resolution.is_none() || is_chase_order)
+        && let Some(parent_venue_order_id) = linked_parent_venue_order_id
+    {
+        match state.resolve_or_hold_linked_child(
+            parent_venue_order_id,
+            instrument_id,
+            msg,
+            allow_chase_hold,
+        ) {
+            LinkedChildResolution::Bound(client_order_id) => Some(client_order_id),
+            LinkedChildResolution::Held => {
+                log::debug!(
+                    "Holding linked child update during algo parent binding: ord_id={} parent_id={parent_venue_order_id}",
+                    msg.ord_id,
+                );
+                return Err(());
+            }
+            LinkedChildResolution::External => None,
+        }
+    } else {
+        None
+    };
+
+    let resolved = bound_client_order_id
+        .and_then(|client_order_id| {
+            state
+                .order_identity(client_order_id)
+                .map(|identity| (client_order_id, Some(identity)))
+        })
+        .or(direct_resolution)
+        .or_else(|| {
+            bound_client_order_id
+                .or(parent_client_order_id)
+                .or(direct_client_order_id)
+                .map(|client_order_id| (client_order_id, None))
+        });
+
+    Ok(resolved)
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -2401,6 +2905,7 @@ fn dispatch_order_msg_as_report(
                     state,
                     ts_init,
                     needs_status,
+                    None,
                 );
                 update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
             }
@@ -2409,6 +2914,10 @@ fn dispatch_order_msg_as_report(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "A tracked chase needs its strategy terms on fallback reports"
+)]
 fn dispatch_filled_order_status(
     msg: &OKXOrderMsg,
     client_order_id: Option<ClientOrderId>,
@@ -2417,6 +2926,7 @@ fn dispatch_filled_order_status(
     state: &WsDispatchState,
     ts_init: UnixNanos,
     needs_status: bool,
+    chase_context: Option<OrderContext>,
 ) {
     if !needs_status || msg.state != OKXOrderStatus::Filled {
         return;
@@ -2432,6 +2942,9 @@ fn dispatch_filled_order_status(
         Ok((mut report, requested)) => {
             if report.filled_qty.is_positive() && report.quantity != requested {
                 report.client_order_id = client_order_id.or(report.client_order_id);
+                if let Some(context) = chase_context {
+                    project_chase_order_report(&mut report, context);
+                }
 
                 // The caller dispatches any real fill first; reconcile base shortfalls and quote sizing
                 dispatch_execution_reports(vec![ExecutionReport::Order(report)], emitter, state);
@@ -2442,6 +2955,14 @@ fn dispatch_filled_order_status(
             msg.ord_id
         ),
     }
+}
+
+fn project_chase_order_report(report: &mut OrderStatusReport, context: OrderContext) {
+    report.client_order_id = Some(context.identity.client_order_id);
+    report.order_type = context.identity.order_type;
+    report.price = None;
+    report.trigger_price = context.trigger_price;
+    report.trigger_type = context.trigger_type;
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -3777,8 +4298,12 @@ mod tests {
         let state = WsDispatchState::default();
         state.track_order_context(context);
 
-        let resolution =
-            state.resolve_or_hold_linked_child(parent, context.identity.instrument_id, &child);
+        let resolution = state.resolve_or_hold_linked_child(
+            parent,
+            context.identity.instrument_id,
+            &child,
+            true,
+        );
 
         assert_eq!(
             resolution,
