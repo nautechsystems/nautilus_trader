@@ -129,6 +129,7 @@ Released on TBD (UTC).
 - Improved TLS `certs_dir` loading to warn when the directory is world-writable on Unix
 - Improved portfolio position-event benchmark coverage
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
+- Improved Polymarket price-change benchmark coverage for local book application
 - Optimized socket client framing to search only unscanned bytes on each read
 - Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
 - Optimized order fill processing for orders with many fills
