@@ -111,9 +111,9 @@ use super::{
         create_orphan_fill_order_report, create_position_reconciliation_report,
         create_reconciliation_canceled, create_reconciliation_command_rejections,
         distinct_position_reports, has_active_inferred_fill, is_exact_order_match,
-        order_report_has_missing_fills, position_avg_px, position_qty_aggregates,
-        resolve_inferred_fill_commission, responsible_client_ids, should_project_fill,
-        sort_reconciliation_events,
+        order_report_has_missing_fills, position_avg_px, position_crosses_zero,
+        position_qty_aggregates, resolve_inferred_fill_commission, responsible_client_ids,
+        should_project_fill, sort_reconciliation_events,
     },
     submission::{SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource},
 };
@@ -1364,14 +1364,10 @@ impl ExecutionManager {
             let dropped_fill_count: usize =
                 dropped_fill_groups.iter().map(|(_, _, count)| count).sum();
 
-            let samples = dropped_fill_groups
-                .iter()
-                .take(LOG_SAMPLES_MAX)
-                .map(|(venue_order_id, instrument_id, _)| {
-                    format!("{venue_order_id} ({instrument_id})")
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
+            let samples = format_log_samples(
+                &dropped_fill_groups,
+                |(venue_order_id, instrument_id, _)| format!("{venue_order_id} ({instrument_id})"),
+            );
 
             log::warn!(
                 "Dropped {dropped_fill_count} fill(s) in {} fill group(s) without an order report \
@@ -1385,12 +1381,10 @@ impl ExecutionManager {
                 || "with no resolvable position".to_string(),
                 |position_id| format!("not to position {position_id}"),
             );
-            let samples = fills
-                .iter()
-                .take(LOG_SAMPLES_MAX)
-                .map(|(trade_id, client_order_id)| format!("{trade_id} ({client_order_id})"))
-                .collect::<Vec<_>>()
-                .join(", ");
+
+            let samples = format_log_samples(fills, |(trade_id, client_order_id)| {
+                format!("{trade_id} ({client_order_id})")
+            });
 
             log::warn!(
                 "Applied {} bounded fill(s) for {instrument_id} on {account_id} to order state \
@@ -1874,12 +1868,7 @@ impl ExecutionManager {
         }
 
         if !missing_origins.is_empty() {
-            let samples = missing_origins
-                .iter()
-                .take(LOG_SAMPLES_MAX)
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
+            let samples = format_log_samples(&missing_origins, ToString::to_string);
 
             log::warn!(
                 "Found {} cached order(s) without an execution client origin ({}): \
@@ -1892,12 +1881,9 @@ impl ExecutionManager {
         }
 
         if !mismatched_origins.is_empty() {
-            let samples = mismatched_origins
-                .iter()
-                .take(LOG_SAMPLES_MAX)
-                .map(|(client_order_id, cached)| format!("{client_order_id} -> {cached}"))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let samples = format_log_samples(&mismatched_origins, |(client_order_id, cached)| {
+                format!("{client_order_id} -> {cached}")
+            });
 
             log::warn!(
                 "Found {} cached order(s) with an execution client origin conflicting with \
@@ -1989,18 +1975,7 @@ impl ExecutionManager {
                 // Intermediate retry: query the venue for current order status
                 let ts_now = self.clock.borrow().timestamp_ns();
                 let client_id = self.cache.borrow().client_id(&client_order_id).copied();
-                let query = TradingCommand::QueryOrder(QueryOrder::new(
-                    order.trader_id(),
-                    client_id,
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    order.venue_order_id(),
-                    UUID4::new(),
-                    ts_now,
-                    None,
-                    None, // correlation_id
-                ));
+                let query = Self::create_order_query(&order, client_id, ts_now);
                 result.queries.push(query);
             }
         }
@@ -2313,23 +2288,30 @@ impl ExecutionManager {
             self.order_query_recency.mark(client_order_id);
             let client_id = self.cache.borrow().client_id(&client_order_id).copied();
             let ts_now = self.clock.borrow().timestamp_ns();
-
-            let cmd = TradingCommand::QueryOrder(QueryOrder::new(
-                order.trader_id(),
-                client_id,
-                order.strategy_id(),
-                order.instrument_id(),
-                client_order_id,
-                order.venue_order_id(),
-                UUID4::new(),
-                ts_now,
-                None,
-                None,
-            ));
-            queries.push(cmd);
+            let query = Self::create_order_query(&order, client_id, ts_now);
+            queries.push(query);
         }
 
         queries
+    }
+
+    fn create_order_query(
+        order: &OrderAny,
+        client_id: Option<ClientId>,
+        ts_now: UnixNanos,
+    ) -> TradingCommand {
+        TradingCommand::QueryOrder(QueryOrder::new(
+            order.trader_id(),
+            client_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.venue_order_id(),
+            UUID4::new(),
+            ts_now,
+            None,
+            None, // correlation_id
+        ))
     }
 
     /// Reconciles bulk open-order report responses against a cached order snapshot.
@@ -2729,9 +2711,7 @@ impl ExecutionManager {
 
         let mut activity_revisions = self.position_activity_revisions.clone();
         for key in &position_keys {
-            activity_revisions
-                .entry(*key)
-                .or_insert_with(|| self.position_activity_revision(key));
+            activity_revisions.entry(*key).or_default();
         }
 
         log::debug!(
@@ -3815,14 +3795,12 @@ impl ExecutionManager {
         let quantities_match = comparison.quantities_match(tolerance);
         let report_shape = comparison.report_shape();
         let PositionQuantityComparison {
-            cached_positions,
             cached_signed_qty,
             cached_long_qty,
             cached_short_qty,
             venue_signed_qty,
             venue_long_qty,
             venue_short_qty,
-            venue_report,
             ..
         } = comparison;
 
@@ -3874,33 +3852,54 @@ impl ExecutionManager {
             "Position discrepancy detected for {instrument_id}: cached_signed_qty={cached_signed_qty}, venue_signed_qty={venue_signed_qty}"
         );
 
-        let Some(instrument) = self.get_instrument(&instrument_id) else {
+        let result = if let Some(instrument) = self.get_instrument(&instrument_id) {
+            self.create_position_discrepancy_events(key, &comparison, &instrument, ts_now)
+        } else {
             log::debug!("Cannot reconcile position for {instrument_id}: instrument not in cache");
+            None
+        };
+
+        // Track retries when reconciliation didn't produce events
+        if result.as_ref().is_none_or(Vec::is_empty) {
             let new_retries = retries + 1;
             self.set_position_reconciliation_retries(key, report_shape, new_retries);
             if new_retries >= self.config.position_check_retries {
                 log::error!(
-                    "Position discrepancy for {instrument_id} unresolved after {} attempts \
-                     (cached_qty={cached_signed_qty}, venue_qty={venue_signed_qty}); \
+                    "Position discrepancy for {} unresolved after {} attempts \
+                     (cached_qty={}, venue_qty={}); \
                      no further reconciliation attempts will be made for the current report shape",
+                    instrument_id,
                     self.config.position_check_retries,
+                    cached_signed_qty,
+                    venue_signed_qty,
                 );
             }
+        } else {
+            self.clear_position_reconciliation(&key);
+        }
 
-            return None;
-        };
+        result
+    }
 
-        let cached_avg_px = position_avg_px(&cached_positions);
-        let venue_avg_px = venue_report.as_ref().and_then(|r| r.avg_px_open);
-        let venue_position_id = venue_report
-            .as_ref()
-            .and_then(|report| report.venue_position_id);
-        let venue_ts_last = venue_report.as_ref().map_or(ts_now, |r| r.ts_last);
+    fn create_position_discrepancy_events(
+        &self,
+        key: InstrumentAccountKey,
+        comparison: &PositionQuantityComparison,
+        instrument: &InstrumentAny,
+        ts_now: UnixNanos,
+    ) -> Option<Vec<OrderEventAny>> {
+        let (instrument_id, account_id) = key;
+        let cached_positions = &comparison.cached_positions;
+        let cached_signed_qty = comparison.cached_signed_qty;
+        let venue_signed_qty = comparison.venue_signed_qty;
+        let venue_report = comparison.venue_report.as_ref();
 
-        let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
-            || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
+        let cached_avg_px = position_avg_px(cached_positions);
+        let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
+        let venue_position_id = venue_report.and_then(|report| report.venue_position_id);
+        let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
 
-        let result = if crosses_zero {
+        if position_crosses_zero(cached_signed_qty, venue_signed_qty) {
             let position_ids = match venue_position_id {
                 Some(open_position_id) => match cached_positions.as_slice() {
                     [position] => Some((Some(position.id), Some(open_position_id))),
@@ -3916,7 +3915,7 @@ impl ExecutionManager {
 
             position_ids.and_then(|(close_position_id, open_position_id)| {
                 self.reconcile_cross_zero_position(
-                    &instrument,
+                    instrument,
                     account_id,
                     cached_signed_qty,
                     cached_avg_px,
@@ -3941,12 +3940,8 @@ impl ExecutionManager {
                 cached_avg_px,
                 venue_signed_qty,
                 venue_avg_px,
-                venue_report
-                    .as_ref()
-                    .map_or_default(|report| report.avg_px_open_reconciliation),
-                venue_report
-                    .as_ref()
-                    .and_then(|report| report.avg_px_open_precision),
+                venue_report.map_or_default(|report| report.avg_px_open_reconciliation),
+                venue_report.and_then(|report| report.avg_px_open_precision),
             );
 
             reconciliation_px
@@ -3957,7 +3952,7 @@ impl ExecutionManager {
                         Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision())
                             .ok()?;
                     let order_report = create_position_reconciliation_report(
-                        &instrument,
+                        instrument,
                         account_id,
                         order_side,
                         quantity,
@@ -3973,39 +3968,10 @@ impl ExecutionManager {
                         "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
                     );
 
-                    let (events, _) = self.handle_external_order(
-                        &order_report,
-                        account_id,
-                        &instrument,
-                        &[],
-                        true,
-                        None,
-                        None,
-                    );
+                    let events = self.handle_synthetic_order(&order_report, account_id, instrument);
                     Some(events)
                 })
-        };
-
-        // Track retries when reconciliation didn't produce events
-        if result.as_ref().is_none_or(Vec::is_empty) {
-            let new_retries = retries + 1;
-            self.set_position_reconciliation_retries(key, report_shape, new_retries);
-            if new_retries >= self.config.position_check_retries {
-                log::error!(
-                    "Position discrepancy for {} unresolved after {} attempts \
-                     (cached_qty={}, venue_qty={}); \
-                     no further reconciliation attempts will be made for the current report shape",
-                    instrument_id,
-                    self.config.position_check_retries,
-                    cached_signed_qty,
-                    venue_signed_qty,
-                );
-            }
-        } else {
-            self.clear_position_reconciliation(&key);
         }
-
-        result
     }
 
     /// Handles position reconciliation when position flips sign, splitting into two
@@ -4088,16 +4054,7 @@ impl ExecutionManager {
             "Generating close fill for cross-zero {instrument_id}: side={close_side:?}, qty={close_qty}, px={close_px}",
         );
 
-        let (close_events, _) = self.handle_external_order(
-            &close_report,
-            account_id,
-            instrument,
-            &[],
-            true,
-            None,
-            None,
-        );
-        let mut all_events = close_events;
+        let mut all_events = self.handle_synthetic_order(&close_report, account_id, instrument);
 
         if let Some((open_report, open_px)) = open_report {
             log::info!(
@@ -4105,15 +4062,7 @@ impl ExecutionManager {
                 "Generating open fill for cross-zero {instrument_id}: side={open_side:?}, qty={open_qty}, px={open_px}",
             );
 
-            let (open_events, _) = self.handle_external_order(
-                &open_report,
-                account_id,
-                instrument,
-                &[],
-                true,
-                None,
-                None,
-            );
+            let open_events = self.handle_synthetic_order(&open_report, account_id, instrument);
             all_events.extend(open_events);
         } else {
             log::warn!("Cannot open new position for {instrument_id}: no venue average price");
@@ -4341,10 +4290,7 @@ impl ExecutionManager {
             return None;
         }
 
-        let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
-            || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
-
-        if crosses_zero {
+        if position_crosses_zero(cached_signed_qty, venue_signed_qty) {
             let ts_now = self.clock.borrow().timestamp_ns();
             return self.reconcile_cross_zero_position(
                 &instrument,
@@ -4418,15 +4364,7 @@ impl ExecutionManager {
             "Creating position from venue report for {instrument_id}: side={order_side:?}, qty={qty_abs}, avg_px={venue_avg_px}",
         );
 
-        let (events, _) = self.handle_external_order(
-            &order_report,
-            account_id,
-            instrument,
-            &[],
-            true,
-            None,
-            None,
-        );
+        let events = self.handle_synthetic_order(&order_report, account_id, instrument);
         Some(events)
     }
 
@@ -4479,15 +4417,7 @@ impl ExecutionManager {
             "Generating reconciliation order for {instrument_id}: side={order_side:?}, qty={diff_qty}, px={fill_px}",
         );
 
-        let (events, _) = self.handle_external_order(
-            &order_report,
-            account_id,
-            instrument,
-            &[],
-            true,
-            None,
-            None,
-        );
+        let events = self.handle_synthetic_order(&order_report, account_id, instrument);
         Some(events)
     }
 
@@ -4738,6 +4668,17 @@ impl ExecutionManager {
             events.push(event);
         }
 
+        events
+    }
+
+    fn handle_synthetic_order(
+        &self,
+        report: &OrderStatusReport,
+        account_id: AccountId,
+        instrument: &InstrumentAny,
+    ) -> Vec<OrderEventAny> {
+        let (events, _) =
+            self.handle_external_order(report, account_id, instrument, &[], true, None, None);
         events
     }
 
@@ -5340,6 +5281,15 @@ impl ExecutionManager {
 
         Some((event, fill_key))
     }
+}
+
+fn format_log_samples<T>(items: &[T], format_item: impl Fn(&T) -> String) -> String {
+    items
+        .iter()
+        .take(LOG_SAMPLES_MAX)
+        .map(format_item)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn position_fill_report_matches(

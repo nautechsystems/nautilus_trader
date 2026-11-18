@@ -942,6 +942,11 @@ pub(super) fn position_qty_aggregates(
     )
 }
 
+pub(super) fn position_crosses_zero(cached_signed_qty: Decimal, venue_signed_qty: Decimal) -> bool {
+    (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
+        || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO)
+}
+
 /// Returns the reports without duplicates, logging a warning for each one removed.
 ///
 /// Reports are duplicates when they match apart from the locally assigned report ID and
